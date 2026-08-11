@@ -115,6 +115,7 @@ export function NewSessionDialog({
               {meta.backend_may_set_cwd
                 ? "Must be inside an allowed root: "
                 : "This connector does not let the platform set a working directory. Allowed roots: "}
+              {/* design-system-exempt: form-suggestion — inline datalist shortcut. */}
               {meta.allowed_roots.map((r, i) => (
                 <button
                   key={r}

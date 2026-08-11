@@ -116,6 +116,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
   const labels = ["Choose bot", "Choose host", "Connect"];
   return (
     <div className="flex items-center gap-2 text-xs">
+      {/* design-system-exempt: step-indicator — ordered wizard progress, not an entity list. */}
       {labels.map((label, i) => (
         <div key={label} className="flex items-center gap-2">
           <span

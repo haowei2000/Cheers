@@ -314,7 +314,12 @@ struct WorkbenchSheet: View {
                 if !sceneState.order.isEmpty {
                     Section("Enabled") {
                         ForEach(sceneState.order, id: \.self) { id in
-                            Label(sceneTitle(id), systemImage: WorkbenchSceneStyle.resolve(id).icon)
+                            CheersWorkbenchItem(row: CheersItemRow(
+                                title: sceneTitle(id),
+                                subtitle: WorkbenchSceneStyle.resolve(id).subtitle,
+                                leading: AnyView(Image(systemName: WorkbenchSceneStyle.resolve(id).icon).foregroundStyle(WorkbenchSceneStyle.resolve(id).tint)),
+                                status: AnyView(Text("ENABLED").font(.caption2.bold()).foregroundStyle(Theme.online))
+                            ))
                         }
                         .onDelete { offsets in Task { await removeScenes(at: offsets) } }
                         .onMove { source, destination in Task { await moveScenes(from: source, to: destination) } }
@@ -323,15 +328,12 @@ struct WorkbenchSheet: View {
                 Section("Available") {
                     ForEach(templates.filter { !sceneState.order.contains($0.manifest.id) }) { template in
                         Button { Task { await apply(template.manifest) } } label: {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(template.title)
-                                    if template.origin == "system" { Text("Built in").font(.caption).foregroundStyle(.secondary) }
-                                }
-                                Spacer()
-                                Image(systemName: "plus.circle.fill")
-                            }
-                            .frame(minHeight: 44)
+                            CheersWorkbenchItem(row: CheersItemRow(
+                                title: template.title,
+                                subtitle: template.origin == "system" ? "Built in" : template.origin,
+                                leading: AnyView(Image(systemName: "square.grid.2x2").foregroundStyle(Theme.accent)),
+                                trailing: AnyView(Image(systemName: "plus.circle.fill").foregroundStyle(Theme.accent))
+                            ))
                         }
                         .disabled(isApplyingTemplate)
                     }
@@ -753,31 +755,24 @@ private struct LegacyWorkbenchSheet: View {
     }
 
     private func row(_ node: TreeNode) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: node.isDir ? "folder.fill" : icon(for: node.name))
+        CheersFileTreeItem(row: CheersItemRow(
+            title: node.name,
+            subtitle: node.isDir ? "\(node.children.count) items" : nil,
+            explicitLevel: .minimal,
+            leading: AnyView(Image(systemName: node.isDir ? "folder.fill" : icon(for: node.name))
                 .font(.subheadline)
                 .foregroundStyle(node.isDir ? Color.accentColor : Color.secondary)
-                .frame(width: 22)
-            Text(node.name)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            if node.isDir {
-                Text("\(node.children.count)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            } else {
-                Text(size(node.sizeBytes))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
+                .frame(width: 22)),
+            trailing: AnyView(Group {
+                if node.isDir {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text(size(node.sizeBytes)).font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
+            })
+        ))
     }
 
     private func icon(for name: String) -> String {
@@ -2778,17 +2773,21 @@ private struct GitPatchView: View {
             }
             Section("Patch") {
                 ForEach(lines) { line in
-                    Text(line.text.isEmpty ? " " : line.text)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(foreground(line.kind))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .listRowBackground(background(line.kind))
-                        .listRowSeparator(.hidden)
+                    CheersDiffLineItem(text: line.text, tone: tone(line.kind))
                 }
             }
         }
         .listStyle(.plain)
+    }
+
+    private func tone(_ kind: Line.Kind) -> CheersDiffTone {
+        switch kind {
+        case .addition: .addition
+        case .deletion: .deletion
+        case .hunk: .hunk
+        case .header: .header
+        case .context: .context
+        }
     }
 
     private func foreground(_ kind: Line.Kind) -> Color {

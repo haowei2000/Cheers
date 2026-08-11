@@ -4,6 +4,7 @@ import { Trash2, UserPlus, X, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { EntityItem, ItemList } from "@/components/ui/item";
 import {
   listWorkspaceMembers,
   inviteWorkspaceMember,
@@ -202,18 +203,14 @@ export function WorkspaceSettingsDialog({
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                 Members ({members.length})
               </label>
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              <ItemList className="max-h-48 overflow-y-auto pr-1">
                 {members.map((m) => (
-                  <div key={m.user_id} className="flex items-center gap-2 rounded-lg bg-zinc-950/40 px-3 py-2.5">
-                    <Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-zinc-200 truncate">
-                        {m.display_name || m.username}
-                        {m.status === "pending" && (
-                          <span className="ml-1.5 text-[10px] text-amber-400">Pending</span>
-                        )}
-                      </p>
-                      {m.user_id !== me?.user_id ? (
+                  <EntityItem key={m.user_id}
+                    title={m.display_name || m.username}
+                    subtitle={m.user_id === me?.user_id ? m.role : undefined}
+                    leading={<Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />}
+                    criticalStatus={m.status === "pending" ? <span className="text-[10px] text-amber-400">Pending</span> : undefined}
+                    actions={<>{m.user_id !== me?.user_id ? (
                         <select
                           value={m.role}
                           onChange={(e) => void changeRole(m, e.target.value)}
@@ -225,10 +222,7 @@ export function WorkspaceSettingsDialog({
                             </option>
                           ))}
                         </select>
-                      ) : (
-                        <p className="text-[11px] text-zinc-400">{m.role}</p>
-                      )}
-                    </div>
+                      ) : null}
                     {m.user_id !== me?.user_id && m.role !== "owner" && (
                       <button
                         onClick={() =>
@@ -246,12 +240,14 @@ export function WorkspaceSettingsDialog({
                         <X className="w-4 h-4" />
                       </button>
                     )}
-                  </div>
+                    </>}
+                    className="border-0 bg-zinc-950/40"
+                  />
                 ))}
                 {members.length === 0 && (
                   <div className="px-3 py-4 text-xs text-zinc-400 text-center">No members yet</div>
                 )}
-              </div>
+              </ItemList>
 
               <div className="relative">
                 <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
@@ -279,20 +275,17 @@ export function WorkspaceSettingsDialog({
                     {searching && (
                       <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                     )}
-                    {results.map((u) => (
-                      <div
+                    <ItemList>{results.map((u) => (
+                      <EntityItem
                         key={u.user_id}
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800"
-                      >
-                        <Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />
-                        <span className="text-sm text-zinc-200 truncate flex-1">
-                          {u.display_name || u.username}
-                        </span>
-                        {u.membership ? (
+                        title={u.display_name || u.username}
+                        leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />}
+                        status={u.membership ? (
                           <span className="text-[10px] text-zinc-400 rounded px-1 py-0.5">
                             {u.membership === "pending" ? "Invited" : "Member"}
                           </span>
-                        ) : (
+                        ) : undefined}
+                        actions={!u.membership ? (
                           <button
                             onClick={() => void invite(u)}
                             title="Send an invite the user must accept"
@@ -300,9 +293,10 @@ export function WorkspaceSettingsDialog({
                           >
                             Invite
                           </button>
-                        )}
-                      </div>
-                    ))}
+                        ) : undefined}
+                        className="border-0 px-3"
+                      />
+                    ))}</ItemList>
                     {!searching && results.length === 0 && query.trim().length >= 2 && (
                       <div className="px-3 py-2 text-xs text-zinc-400">
                         No matches. Name search covers your friends — for anyone else,

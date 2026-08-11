@@ -6,6 +6,7 @@ struct AppShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(ShellModel.self) private var shell
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var convo = ConversationListModel()
     @State private var activity = ActivityModel()
@@ -13,6 +14,7 @@ struct AppShellView: View {
     var body: some View {
         @Bindable var shell = shell
         adaptiveTabs
+            .presentationLevel(horizontalSizeClass == .regular ? .max : .medium)
             .task {
                 convo.attach(app)
                 shell.attach(app)

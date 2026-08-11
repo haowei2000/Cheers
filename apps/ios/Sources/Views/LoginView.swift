@@ -80,7 +80,7 @@ struct LoginView: View {
                 .accessibilityHidden(true)
 
             Text("Cheers")
-                .font(.title2.weight(.bold))
+                .font(Theme.displayFont(for: "Cheers"))
                 .tracking(-0.4)
                 .foregroundStyle(Theme.textPrimary)
 

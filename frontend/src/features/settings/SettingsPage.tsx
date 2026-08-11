@@ -53,6 +53,7 @@ import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, SectionHead, MetaRow } from "@/components/ui/field";
@@ -743,22 +744,13 @@ function DevicesSessionsCard() {
       ) : sessions.length === 0 ? (
         <p className="text-xs text-zinc-500">No active sessions.</p>
       ) : (
-        <ul className="space-y-2">
+        <ItemList>
           {sessions.map((s) => (
-            <li
+            <OperationsItem
               key={s.session_id}
-              className="flex items-center gap-3 rounded-lg bg-zinc-950/60 px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-zinc-200 truncate">
-                  {s.device_name || s.client}
-                  {s.current ? " · this device" : ""}
-                </p>
-                <p className="text-[11px] text-zinc-500">
-                  Last seen {new Date(s.last_seen_at).toLocaleString()}
-                </p>
-              </div>
-              {!s.current && (
+              title={`${s.device_name || s.client}${s.current ? " · this device" : ""}`}
+              subtitle={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}
+              actions={!s.current ? (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -767,10 +759,11 @@ function DevicesSessionsCard() {
                 >
                   Revoke
                 </Button>
-              )}
-            </li>
+              ) : undefined}
+              className="border-0 bg-zinc-950/60"
+            />
           ))}
-        </ul>
+        </ItemList>
       )}
     </div>
   );

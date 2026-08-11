@@ -6,11 +6,33 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "-apple-system",
-          "BlinkMacSystemFont",
-          '"Segoe UI"',
-          "Helvetica",
-          "Arial",
+          '"Source Sans 3"',
+          '"Source Han Sans SC"',
+          '"Noto Sans SC"',
+          '"PingFang SC"',
+          "sans-serif",
+        ],
+        display: [
+          '"Source Serif 4"',
+          '"Source Han Serif CN"',
+          '"Noto Serif SC"',
+          '"Songti SC"',
+          "Georgia",
+          "serif",
+        ],
+        reading: [
+          '"Source Serif 4"',
+          '"Source Han Serif CN"',
+          '"Noto Serif SC"',
+          '"Songti SC"',
+          "Georgia",
+          "serif",
+        ],
+        utility: [
+          '"Source Sans 3"',
+          '"Source Han Sans SC"',
+          '"Noto Sans SC"',
+          '"PingFang SC"',
           "sans-serif",
         ],
       },

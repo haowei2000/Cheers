@@ -2,6 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Source Serif 4 is self-hosted under SIL OFL 1.1. One variable file supplies
+   both the classical display cut and the sturdier text cut through `opsz`. */
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./assets/fonts/SourceSerif4Variable-Roman.ttf.woff2") format("woff2");
+}
+
+/* Source Han Serif CN provides a metrically coherent Chinese run instead of
+   per-glyph platform fallback. The browser only fetches it when matching Han
+   text is present; the compressed regional variable file supplies all weights. */
+@font-face {
+  font-family: "Source Han Serif CN";
+  font-style: normal;
+  font-weight: 250 900;
+  font-display: swap;
+  src: url("./assets/fonts/SourceHanSerifCN-VF.ttf.woff2") format("woff2-variations");
+}
+
+/* Source Sans 3 is Source Serif 4's UI companion. It keeps controls compact and
+   legible without introducing a visually unrelated third voice. CJK falls
+   through to the platform's humanist sans. */
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./assets/fonts/SourceSans3VF-Upright.ttf.woff2") format("woff2");
+}
+
+/* Semantic typography roles. Family, optical size, and intended use travel
+   together so pages cannot quietly create a fourth visual voice. */
+.font-display {
+  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 60;
+}
+
+/* Mastheads need a broader, sturdier cut than ordinary display headings. This
+   remains a display variant, not a fourth typography role. */
+.font-masthead {
+  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 32;
+  letter-spacing: 0.005em;
+}
+
+.font-reading {
+  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+}
+
+.font-utility {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -50,8 +112,8 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
-    sans-serif;
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
   background: #09090b;
   color: #fafafa;
   -webkit-font-smoothing: antialiased;
@@ -92,6 +154,17 @@ textarea {
 /* Buttons: always signal clickability */
 button:not(:disabled) {
   cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Prose / markdown */
@@ -260,4 +333,28 @@ button:not(:disabled) {
 }
 .hljs-operator {
   color: #94a3b8 !important;
+}
+
+/* Public/auth edition: the editorial language uses ink and rules instead of
+   the product workspace's indigo action color. Keep this scoped so chat state
+   controls retain their stronger application semantics. */
+.public-edition button,
+.public-edition input {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+}
+
+.public-edition button.bg-indigo-600 {
+  border: 0;
+  background: #e4e4e7;
+  color: #09090b;
+}
+
+.public-edition button.bg-indigo-600:hover:not(:disabled) {
+  background: transparent;
+  color: #f4f4f5;
+}
+
+.public-edition input:focus {
+  --tw-ring-color: #d4d4d8;
 }

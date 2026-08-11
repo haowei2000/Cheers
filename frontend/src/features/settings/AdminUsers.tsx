@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { ShieldBan, ShieldCheck, UserPlus, Trash2, RefreshCw } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { EntityItem, ItemList } from "@/components/ui/item";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   listUsers,
@@ -107,30 +108,16 @@ export function AdminUsers() {
           placeholder="Filter by name / username / email…"
           className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <div className="space-y-2">
+        <ItemList>
           {users.map((u) => (
-            <div key={u.user_id} className="flex items-center gap-3 rounded-lg px-2 py-2.5">
-              <Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-zinc-200 truncate flex items-center gap-2">
-                  {u.display_name || u.username}
-                  {u.role !== "member" && (
-                    <span className="text-[10px] text-zinc-400">
-                      {roleLabel(u.role)}
-                    </span>
-                  )}
-                  {u.is_suspended && (
-                    <span className="text-[10px] px-1 py-0.5 rounded bg-red-950/60 text-red-300">
-                      suspended
-                    </span>
-                  )}
-                </p>
-                <p className="text-[11px] text-zinc-400 truncate">
-                  @{u.username}
-                  {u.email ? ` · ${u.email}` : ""}
-                </p>
-              </div>
-              {u.is_suspended ? (
+            <EntityItem
+              key={u.user_id}
+              title={u.display_name || u.username}
+              subtitle={`@${u.username}${u.email ? ` · ${u.email}` : ""}`}
+              leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />}
+              status={u.role !== "member" ? <span className="text-[10px] text-zinc-400">{roleLabel(u.role)}</span> : undefined}
+              criticalStatus={u.is_suspended ? <span className="rounded-sm bg-red-950/60 px-1 py-0.5 text-[10px] text-red-300">suspended</span> : undefined}
+              actions={<>{u.is_suspended ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -160,12 +147,14 @@ export function AdminUsers() {
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
-            </div>
+              </>}
+              className="border-0"
+            />
           ))}
           {!loading && users.length === 0 && (
             <p className="text-xs text-zinc-400 py-3 text-center">No users.</p>
           )}
-        </div>
+        </ItemList>
       </div>
     </section>
   );

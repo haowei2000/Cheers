@@ -4,6 +4,12 @@ import toast from "react-hot-toast";
 import { forgotPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  PublicPageShell,
+  publicLabelClass,
+  publicLinkClass,
+  publicPanelClass,
+} from "@/components/public/PublicPageShell";
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -26,15 +32,11 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
-      <div className="w-full max-w-sm my-auto">
-        <div className="flex flex-col items-center mb-8">
-          <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Reset your password</h1>
-          <p className="text-zinc-400 text-sm mt-1">We'll email you a one-time code.</p>
-        </div>
-
-        <div className="bg-zinc-900 rounded-2xl p-6 shadow-xl">
+    <PublicPageShell
+      title="Reset your password"
+      description="We'll email you a one-time code."
+    >
+        <div className={publicPanelClass}>
           {sent ? (
             <div className="space-y-4">
               <p className="text-sm text-zinc-400">
@@ -48,7 +50,7 @@ export default function ForgotPasswordPage() {
                 Enter code
               </Button>
               <p className="text-center text-xs text-zinc-400">
-                <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
+                <Link to="/login" className={publicLinkClass}>
                   Back to sign in
                 </Link>
               </p>
@@ -56,7 +58,7 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                <label className={publicLabelClass}>
                   Email
                 </label>
                 <Input
@@ -72,14 +74,13 @@ export default function ForgotPasswordPage() {
                 Send reset code
               </Button>
               <p className="text-center text-xs text-zinc-400">
-                <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
+                <Link to="/login" className={publicLinkClass}>
                   Back to sign in
                 </Link>
               </p>
             </form>
           )}
         </div>
-      </div>
-    </div>
+    </PublicPageShell>
   );
 }

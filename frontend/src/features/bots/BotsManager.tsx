@@ -10,6 +10,7 @@ import {
 import { listChannels } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EntityItem } from "@/components/ui/item";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
@@ -25,23 +26,15 @@ function BotRow({
   onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <EntityItem
       onClick={onSelect}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-        active ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900"
-      }`}
-    >
-      <div className="w-8 h-8 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+      selected={active}
+      title={bot.display_name || bot.username}
+      subtitle={`@${bot.username}`}
+      leading={<div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
         <Bot className="w-4 h-4 text-indigo-300" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium truncate">{bot.display_name || bot.username}</p>
-        <p className="text-[11px] text-zinc-400 truncate">@{bot.username}</p>
-      </div>
-      {/* Status is carried by shape (filled=online vs outline=offline) + an accessible
-          name, never by hue alone (HIG "never a single channel"). */}
-      {bot.is_disabled ? (
+      </div>}
+      criticalStatus={bot.is_disabled ? (
         <Ban
           className="w-3.5 h-3.5 text-red-400 flex-shrink-0"
           role="img"
@@ -60,7 +53,8 @@ function BotRow({
           aria-label="Offline"
         />
       )}
-    </button>
+      className="border-0"
+    />
   );
 }
 

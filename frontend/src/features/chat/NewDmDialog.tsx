@@ -6,6 +6,7 @@ import { searchUsers, type UserSearchResult } from "@/api/users";
 import { listBots } from "@/api/bots";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
+import { ItemList, NavigationItem } from "@/components/ui/item";
 import type { BotItem } from "@/types";
 
 // Start a DM: pick a user (search) or a bot. find-or-create on the backend → the dm
@@ -99,33 +100,32 @@ export function NewDmDialog({
             </button>
           )}
         </div>
-        <div className="max-h-72 overflow-auto space-y-0.5">
+        <ItemList className="max-h-72 overflow-auto">
           {users.map((u) => (
-            <button
+            <NavigationItem
               key={u.user_id}
               disabled={busy}
               onClick={() => void open({ target_user_id: u.user_id }, u.display_name || u.username)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 text-left text-sm text-zinc-200 disabled:opacity-50"
-            >
-              <User className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-              <span className="truncate">{u.display_name || u.username}</span>
-            </button>
+              title={u.display_name || u.username}
+              leading={<User className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />}
+              className="border-0"
+            />
           ))}
           {bots.length > 0 && (
             <div className="px-2 pt-2 text-[10px] uppercase tracking-wide text-zinc-400">Bots</div>
           )}
           {bots.map((b) => (
-            <button
+            <NavigationItem
               key={b.bot_id}
               disabled={busy}
               onClick={() => void open({ target_bot_id: b.bot_id }, b.display_name || b.username)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 text-left text-sm text-zinc-200 disabled:opacity-50"
-            >
-              <Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-              <span className="truncate">{b.display_name || b.username}</span>
-            </button>
+              title={b.display_name || b.username}
+              leading={<Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
+              status={<span className="text-[10px] text-indigo-300">BOT</span>}
+              className="border-0"
+            />
           ))}
-        </div>
+        </ItemList>
       </>
     </Dialog>
   );

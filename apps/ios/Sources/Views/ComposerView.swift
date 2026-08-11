@@ -210,27 +210,13 @@ struct ComposerView: View {
         Button {
             pick(candidate)
         } label: {
-            HStack(spacing: Theme.space3) {
-                mentionIcon(candidate)
-                VStack(alignment: .leading, spacing: Theme.space1) {
-                    Text("@\(candidate.label)")
-                        .font(.body)
-                        .foregroundStyle(candidate.kind == .bot && candidate.isOnline == false ? .secondary : .primary)
-                    if let sublabel = candidate.sublabel, !sublabel.isEmpty {
-                        Text(candidate.kind == .group ? sublabel : "@\(sublabel)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                if candidate.kind == .bot {
-                    Text(candidate.isOnline == false ? "OFFLINE" : "BOT")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(candidate.isOnline == false ? Theme.textFaint : .secondary)
-                }
-            }
-            .contentShape(Rectangle())
+            CheersNavigationItem(row: CheersItemRow(
+                title: "@\(candidate.label)",
+                subtitle: candidate.sublabel.map { candidate.kind == .group ? $0 : "@\($0)" },
+                leading: AnyView(mentionIcon(candidate)),
+                criticalStatus: candidate.kind == .bot && candidate.isOnline == false ? AnyView(Text("OFFLINE").font(.caption2.bold()).foregroundStyle(Theme.textFaint)) : nil,
+                status: candidate.kind == .bot ? AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.textMuted)) : nil
+            ))
         }
         .buttonStyle(.plain)
         .opacity(candidate.kind == .bot && candidate.isOnline == false ? 0.55 : 1)

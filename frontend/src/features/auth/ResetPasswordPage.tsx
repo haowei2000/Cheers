@@ -4,6 +4,12 @@ import toast from "react-hot-toast";
 import { resetPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  PublicPageShell,
+  publicLabelClass,
+  publicLinkClass,
+  publicPanelClass,
+} from "@/components/public/PublicPageShell";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -36,19 +42,12 @@ export default function ResetPasswordPage() {
     }
   }
 
-  const labelCls = "text-xs font-medium text-zinc-400 uppercase tracking-wide";
+  const labelCls = publicLabelClass;
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
-      <div className="w-full max-w-sm my-auto">
-        <div className="flex flex-col items-center mb-8">
-          <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Set a new password</h1>
-          <p className="text-zinc-400 text-sm mt-1">Enter the code we emailed you.</p>
-        </div>
-
+    <PublicPageShell title="Set a new password" description="Enter the code we emailed you.">
         <form
           onSubmit={submit}
-          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
+          className={publicPanelClass}
         >
           <div className="space-y-1.5">
             <label className={labelCls}>Email</label>
@@ -100,12 +99,11 @@ export default function ResetPasswordPage() {
             Reset password
           </Button>
           <p className="text-center text-xs text-zinc-400">
-            <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
+            <Link to="/login" className={publicLinkClass}>
               Back to sign in
             </Link>
           </p>
         </form>
-      </div>
-    </div>
+    </PublicPageShell>
   );
 }

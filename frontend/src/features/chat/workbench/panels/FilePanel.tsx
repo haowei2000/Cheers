@@ -32,6 +32,7 @@ import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/regi
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
+import { FileTreeItem } from "@/components/ui/item";
 
 // Click-gated: the CodeMirror editor (its own chunk, incl. md/json language packs) only
 // downloads when a user actually opens Raw mode — keeps it off the chat critical path, like
@@ -373,7 +374,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
     nodes.map((node) => {
-      const pad = { paddingLeft: depth * 12 + 8 };
       if (node.isDir) {
         const isCollapsed = collapsed.has(node.path);
         return (
@@ -381,25 +381,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             {/* Row is a real disclosure <button> (keyboard-operable, aria-expanded);
                 the new-file/delete controls are sibling buttons, not nested, to keep
                 interactives un-nested. */}
-            <div
-              style={pad}
-              className="group flex items-center gap-1 pr-2 hover:bg-zinc-800/60 text-zinc-300"
-            >
-              <button
-                type="button"
+            <FileTreeItem
+                depth={depth}
+                title={node.name}
                 onClick={() => toggleCollapse(node.path)}
-                aria-expanded={!isCollapsed}
-                className="flex-1 flex items-center gap-1 min-w-0 py-1 text-left cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
-              >
-                {isCollapsed ? (
+                expanded={!isCollapsed}
+                disclosure={isCollapsed ? (
                   <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-500" />
                 ) : (
                   <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
                 )}
-                <Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />
-                <span className="truncate flex-1">{node.name}</span>
-              </button>
-              <button
+                leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />}
+                actions={<><button
                 type="button"
                 aria-label="New file in this folder"
                 title="New file in this folder"
@@ -412,7 +405,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
               </button>
               {deleteControl(node.path, true)}
-            </div>
+              </>}
+            />
             {!isCollapsed && (
               <>
                 {renderNodes(node.children, depth + 1)}
@@ -423,24 +417,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         );
       }
       return (
-        <div
+        <FileTreeItem
           key={`f:${node.path}`}
-          style={pad}
-          className={`group flex items-center gap-1.5 pr-2 hover:bg-zinc-800/60 ${
-            selected === node.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-400"
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => pickFile(node.path)}
-            aria-current={selected === node.path ? "true" : undefined}
-            className="flex-1 flex items-center gap-1.5 min-w-0 py-1 text-left cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
-          >
-            <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
-            <span className="truncate flex-1">{node.name}</span>
-          </button>
-          {deleteControl(node.path, false)}
-        </div>
+          depth={depth}
+          title={node.name}
+          selected={selected === node.path}
+          leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />}
+          actions={deleteControl(node.path, false)}
+          onClick={() => pickFile(node.path)}
+        />
       );
     });
 

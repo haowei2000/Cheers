@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowUpCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 import { invokeDesktop } from "@/lib/desktop";
 import { checkAgentUpdates, type AgentUpdate } from "@/lib/desktopConnector";
 
@@ -62,16 +63,13 @@ export function AgentUpdates() {
           Recheck
         </button>
       </div>
-      <ul className="text-[11px] text-zinc-400 space-y-0.5">
+      <ItemList>
         {outdated.map((u) => (
-          <li key={u.key} className="flex items-center gap-1.5">
-            <span className="text-zinc-300">{u.label}</span>
-            <span className="tabular-nums">
-              {u.installed ?? "?"} → {u.latest ?? "?"}
-            </span>
-          </li>
+          <OperationsItem key={u.key} title={u.label}
+            trailing={<span className="tabular-nums text-[11px]">{u.installed ?? "?"} → {u.latest ?? "?"}</span>}
+            presentationLevel="minimal" className="border-0" />
         ))}
-      </ul>
+      </ItemList>
       <Button variant="secondary" size="sm" loading={busy} onClick={() => void upgradeAll()}>
         <ArrowUpCircle className="w-3.5 h-3.5" /> Upgrade all
       </Button>

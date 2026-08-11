@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "defaultPresentationLevel": "medium",
+  "visualLanguage": {
+    "name": "Editorial Correspondence",
+    "principles": [
+      "Use editorial rhythm, alignment, and hairline rules before containers or decoration.",
+      "Keep resting surfaces borderless; rules separate dense rows and state rings communicate focus or error.",
+      "Use near-square two-pixel corners. Circles are reserved for identity, presence, and unread state.",
+      "Keep layouts compact while preserving a minimum 44pt iOS and 48dp Android touch target.",
+      "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
+    ],
+    "typography": {
+      "display": "Source Serif 4 at display optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Semibold for Chinese introductions and major headings; Japanese and Korean use locale-correct native serif faces.",
+      "reading": "Source Serif 4 at text optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Regular/Semibold for Chinese messages, previews, and long-form copy; Japanese and Korean use locale-correct native serif faces.",
+      "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts. Monospace is a technical sub-role for code only."
+    },
+    "shape": {
+      "cornerRadius": "2px/pt/dp",
+      "restingBorder": "none",
+      "separator": "hairline rules for editorial or dense scanning surfaces",
+      "minimumTouchTarget": { "web": "44px on touch viewports", "ios": "44pt", "android": "48dp" }
+    },
+    "icons": {
+      "productSemantics": "Cheers editorial icon register on a 24-unit grid with a 1.75-unit stroke.",
+      "utilityActions": "Use the closest platform-native or established library icon.",
+      "rule": "Prefer one distinct silhouette per product concept; do not vary one document glyph for unrelated meanings."
+    }
+  },
+  "presentationLevels": {
+    "max": {
+      "description": "Full identity, primary and secondary content, preview, critical state, and common actions.",
+      "visibleSlots": ["leading", "title", "subtitle", "metadata", "preview", "criticalStatus", "status", "primaryAction", "overflowAction"]
+    },
+    "medium": {
+      "description": "Identity, title, one supporting line, critical state, and a primary or overflow action.",
+      "visibleSlots": ["leading", "title", "subtitle", "criticalStatus", "status", "primaryAction", "overflowAction"]
+    },
+    "minimal": {
+      "description": "Minimum identity and title while preserving critical state. Non-critical actions move to an owning menu.",
+      "visibleSlots": ["leading", "title", "criticalStatus", "overflowAction"]
+    }
+  },
+  "invariants": [
+    "An explicit item presentation level overrides the inherited container level.",
+    "Responsive rules may choose an inherited default but never replace an explicit item level.",
+    "Critical error, approval, unread, mention, and online state remains perceivable at every level.",
+    "Presentation level changes information density, not business behavior or API data.",
+    "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior."
+  ],
+  "semanticActions": {
+    "create": "plus",
+    "attachFile": "paperclip",
+    "addContext": "message-square-plus",
+    "addPerson": "user-plus",
+    "open": "arrow-up-right",
+    "more": "ellipsis",
+    "remove": "x",
+    "danger": "trash",
+    "approve": "check",
+    "reject": "x"
+  },
+  "legacyBaselines": {
+    "webRawButtonElements": 303,
+    "webRawInputElements": 54,
+    "iosDirectButtonCalls": 186,
+    "androidDirectButtonCalls": 6
+  },
+  "itemKinds": [
+    { "id": "button", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "icon-button", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "input", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "search", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "select", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "toggle", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "tabs", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "menu", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "popover", "category": "control", "platforms": ["web"] },
+    { "id": "dialog-sheet", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "chip", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "badge", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "avatar-presence", "category": "identity", "platforms": ["web", "ios", "android"] },
+    { "id": "user", "category": "identity", "platforms": ["web", "ios", "android"] },
+    { "id": "bot", "category": "identity", "platforms": ["web", "ios", "android"] },
+    { "id": "member", "category": "identity", "platforms": ["web", "ios", "android"] },
+    { "id": "friend", "category": "identity", "platforms": ["web", "ios"] },
+    { "id": "workspace", "category": "navigation", "platforms": ["web", "ios", "android"] },
+    { "id": "channel", "category": "navigation", "platforms": ["web", "ios", "android"] },
+    { "id": "dm", "category": "navigation", "platforms": ["web", "ios", "android"] },
+    { "id": "voice-channel", "category": "navigation", "platforms": ["web", "ios"] },
+    { "id": "navigation-destination", "category": "navigation", "platforms": ["web", "ios", "android"] },
+    { "id": "message", "category": "conversation", "platforms": ["web", "ios", "android"] },
+    { "id": "reply-thread", "category": "conversation", "platforms": ["web", "ios"] },
+    { "id": "system-message", "category": "conversation", "platforms": ["web", "ios", "android"] },
+    { "id": "tool-trace", "category": "conversation", "platforms": ["web", "ios"] },
+    { "id": "attachment", "category": "conversation", "platforms": ["web", "ios", "android"] },
+    { "id": "mention", "category": "conversation", "platforms": ["web", "ios", "android"] },
+    { "id": "typing-failed-message", "category": "conversation", "platforms": ["web", "ios", "android"] },
+    { "id": "context-message", "category": "context", "platforms": ["web", "ios"] },
+    { "id": "context-file", "category": "context", "platforms": ["web", "ios"] },
+    { "id": "context-plan-activity-sessions-cost", "category": "context", "platforms": ["web"] },
+    { "id": "context-ranged-text", "category": "context", "platforms": ["web"] },
+    { "id": "context-handoff", "category": "context", "platforms": ["web", "ios"] },
+    { "id": "agent-fleet-bot", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "session", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "task-claim", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "approval", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "notification-invite", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "permission-grant-report", "category": "operations", "platforms": ["web", "ios"] },
+    { "id": "file-folder-diff", "category": "workbench", "platforms": ["web", "ios"] },
+    { "id": "scene-viewboard", "category": "workbench", "platforms": ["web", "ios"] },
+    { "id": "plan-audit-activity", "category": "workbench", "platforms": ["web", "ios"] },
+    { "id": "loading-empty-error", "category": "feedback", "platforms": ["web", "ios", "android"] },
+    { "id": "offline-degraded", "category": "feedback", "platforms": ["web", "ios", "android"] },
+    { "id": "success-confirmation-warning", "category": "feedback", "platforms": ["web", "ios", "android"] }
+  ]
+}

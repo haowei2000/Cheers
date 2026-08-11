@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, Shield } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -241,25 +242,14 @@ export function ActivityCenter() {
                 <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                   Invites
                 </h3>
-                {items.map((n) => {
+                <ItemList>{items.map((n) => {
                   const key = notificationKey(n);
                   return (
-                    <div
+                    <OperationsItem
                       key={key}
-                      className="flex items-center gap-3 rounded-lg bg-zinc-800/40 px-3 py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-zinc-200 truncate">
-                          {kindLabel(n)} · {label(n)}
-                        </p>
-                        <p className="text-[11px] text-zinc-400">
-                          {n.role ? `Role ${n.role}` : "Needs your response"}
-                          {n.bot_name ? ` · ${n.bot_name}` : ""}
-                          {n.actor_name ? ` · from ${n.actor_name}` : ""}
-                          {n.requested_cwd ? ` · ${n.requested_cwd}` : ""}
-                        </p>
-                      </div>
-                      <Button
+                      title={`${kindLabel(n)} · ${label(n)}`}
+                      subtitle={`${n.role ? `Role ${n.role}` : "Needs your response"}${n.bot_name ? ` · ${n.bot_name}` : ""}${n.actor_name ? ` · from ${n.actor_name}` : ""}${n.requested_cwd ? ` · ${n.requested_cwd}` : ""}`}
+                      actions={<><Button
                         size="sm"
                         loading={busy === key}
                         onClick={() => void act(n, true)}
@@ -274,9 +264,11 @@ export function ActivityCenter() {
                       >
                         Decline
                       </Button>
-                    </div>
+                      </>}
+                      className="border-0 bg-zinc-800/40"
+                    />
                   );
-                })}
+                })}</ItemList>
               </section>
             )}
           </div>

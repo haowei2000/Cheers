@@ -47,6 +47,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cheers.android.di.AppContainer
 import com.cheers.android.ui.components.BotPill
 import com.cheers.android.ui.components.CheersAvatar
+import com.cheers.android.ui.components.CheersItemChip
+import com.cheers.android.ui.components.CheersItemRow
 import com.cheers.android.ui.components.SectionHeader
 import com.cheers.android.ui.components.UnreadBadge
 import com.cheers.android.ui.theme.LocalCheersColors
@@ -159,29 +161,11 @@ private fun ConversationList(
                 items(count = state.workspaces.size, key = { state.workspaces[it].workspaceId }) { i ->
                     val ws = state.workspaces[i]
                     val selected = ws.workspaceId == state.selectedWorkspaceId
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                            )
-                            .clickable { onSelectWorkspace(ws.workspaceId) },
-                    ) {
-                        Text(
-                            text = ws.name,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                cc.textSecondary
-                            },
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        )
-                    }
+                    CheersItemChip(
+                        label = ws.name,
+                        selected = selected,
+                        onClick = { onSelectWorkspace(ws.workspaceId) },
+                    )
                 }
             }
             HorizontalDivider(color = cc.border, thickness = 1.dp)
@@ -255,16 +239,14 @@ private fun ConversationRowItem(
     onClick: () -> Unit,
 ) {
     val cc = LocalCheersColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (row.isDm) {
+    CheersItemRow(
+        title = row.title,
+        subtitle = row.preview ?: " ",
+        onClick = onClick,
+        leading = {
+          if (row.isDm) {
             CheersAvatar(id = row.avatarSeed, name = row.title, size = 48.dp)
-        } else {
+          } else {
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -279,45 +261,17 @@ private fun ConversationRowItem(
                     modifier = Modifier.size(22.dp),
                 )
             }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = row.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Spacer(Modifier.width(8.dp))
-                if (row.timeLabel.isNotEmpty()) {
-                    Text(
-                        text = row.timeLabel,
-                        fontSize = 11.sp,
-                        color = cc.textFaint,
-                    )
-                }
-            }
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.previewIsBot) {
-                    BotPill()
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    text = row.preview ?: " ",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                    color = cc.textMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (row.unread > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    UnreadBadge(count = row.unread)
-                }
-            }
-        }
-    }
+          }
+        },
+        status = if (row.previewIsBot) {
+            { BotPill() }
+        } else null,
+        criticalStatus = if (row.unread > 0) {
+            { UnreadBadge(count = row.unread) }
+        } else null,
+        trailing = if (row.timeLabel.isNotEmpty()) {
+            { Text(text = row.timeLabel, fontSize = 11.sp, color = cc.textFaint) }
+        } else null,
+        modifier = Modifier.padding(horizontal = 4.dp),
+    )
 }

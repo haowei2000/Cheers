@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cheers Item Gallery</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          "Source Sans 3", "Source Han Sans SC", "Noto Sans SC", "PingFang SC",
+          sans-serif;
+        background: #09090b;
+        color: #fafafa;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      .file-help {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .file-help__card {
+        width: min(100%, 560px);
+        padding: 28px;
+        border: 1px solid #27272a;
+        border-radius: 16px;
+        background: #18181b;
+        box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+      }
+
+      .file-help h1 {
+        margin: 0 0 12px;
+        font-size: 24px;
+      }
+
+      .file-help p {
+        margin: 0 0 20px;
+        color: #a1a1aa;
+        line-height: 1.6;
+      }
+
+      .file-help code {
+        display: block;
+        overflow-x: auto;
+        padding: 14px 16px;
+        border: 1px solid #3f3f46;
+        border-radius: 10px;
+        background: #09090b;
+        color: #c7d2fe;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: nowrap;
+      }
+
+      .file-help a {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        margin-top: 20px;
+        padding: 0 16px;
+        border-radius: 10px;
+        background: #4f46e5;
+        color: white;
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .file-help a:hover {
+        background: #4338ca;
+      }
+
+      .file-help a:focus-visible {
+        outline: 2px solid #a5b4fc;
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <main id="file-help" class="file-help" hidden>
+        <section class="file-help__card" aria-labelledby="file-help-title">
+          <h1 id="file-help-title">Start the Item Gallery server</h1>
+          <p>
+            This gallery uses React, TypeScript, and Tailwind, so it must be
+            opened through Vite instead of directly with the file protocol.
+          </p>
+          <code>cd frontend &amp;&amp; npm run item-gallery</code>
+          <a href="http://127.0.0.1:4175/dev/item-gallery.html">
+            Open the served gallery
+          </a>
+        </section>
+      </main>
+    </div>
+    <script>
+      if (window.location.protocol === "file:") {
+        document.getElementById("file-help").hidden = false;
+      } else {
+        const galleryEntry = document.createElement("script");
+        galleryEntry.type = "module";
+        galleryEntry.src = "/src/components/ui/ItemGallery.preview.tsx";
+        document.body.appendChild(galleryEntry);
+      }
+    </script>
+  </body>
+</html>

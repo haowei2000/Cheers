@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { ItemRow } from "@/components/ui/item";
 import { getFleet, type FleetApproval, type FleetBot } from "@/api/fleet";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listBots, issueBotToken, type IssuedToken } from "@/api/bots";
@@ -73,12 +74,11 @@ function BotRow({
         }${bot.busy_sessions > 0 ? ` · ${bot.busy_sessions} busy` : ""}`
       : null;
   return (
-    <button
-      type="button"
+    <ItemRow
+      kind="operations"
       onClick={onSelect}
-      className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-zinc-900 text-left"
-    >
-      <div className="relative flex-shrink-0">
+      title={bot.bot_name}
+      leading={<div className="relative flex-shrink-0">
         <Avatar name={bot.bot_name} id={bot.bot_id} size="sm" />
         <span
           className={cn(
@@ -86,39 +86,31 @@ function BotRow({
             bot.online ? "bg-emerald-500" : "bg-zinc-600"
           )}
         />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-200 truncate">
-            {bot.bot_name}
-          </span>
-          <StatusChip bot={bot} />
-        </div>
-        {(bot.status_text || sessions) && (
-          <p className="text-xs text-zinc-400 truncate mt-0.5">
+      </div>}
+      status={<StatusChip bot={bot} />}
+      subtitle={(bot.status_text || sessions) ? (
+        <>
             {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
             {bot.status_text}
             {bot.status_text && sessions && <span className="mx-1.5">·</span>}
             {sessions}
-          </p>
-        )}
-      </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {bot.pending_count > 0 && (
+        </>
+      ) : undefined}
+      criticalStatus={bot.pending_count > 0 ? (
           <span
             className="text-[10px] font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
             title={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
           >
             {bot.pending_count}
           </span>
-        )}
-        {bot.cost_today_usd > 0 && (
+      ) : undefined}
+      trailing={bot.cost_today_usd > 0 ? (
           <span className="text-xs text-zinc-400 tabular-nums" title="Cost today (UTC)">
             ${bot.cost_today_usd.toFixed(2)}
           </span>
-        )}
-      </div>
-    </button>
+      ) : undefined}
+      className="gap-3 px-2.5 hover:bg-zinc-900"
+    />
   );
 }
 
@@ -365,6 +357,7 @@ export default function FleetPage() {
                   />
                 ) : (
                   <div className="space-y-5">
+                    {/* design-system-exempt: item-section — channel grouping delegates rows to BotRow. */}
                     {botsByChannel.map(([channelId, g]) => (
                       <div key={channelId}>
                         <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1 px-2.5">

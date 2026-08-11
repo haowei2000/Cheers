@@ -996,14 +996,13 @@ private struct BlockedUsersSheet: View {
             List {
                 if users.isEmpty { Text("No blocked users").foregroundStyle(Theme.textSecondary) }
                 ForEach(users) { user in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(user.displayName ?? user.username)
-                            Text("@\(user.username)").font(.caption).foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer()
-                        Button("Unblock") { Task { await unblock(user) } }
-                    }
+                    CheersEntityItem(row: CheersItemRow(
+                        title: user.displayName ?? user.username,
+                        subtitle: "@\(user.username)",
+                        leading: AnyView(AvatarView(seedId: user.userId, name: user.displayName ?? user.username, size: Theme.avatarList)),
+                        criticalStatus: AnyView(Text("BLOCKED").font(.caption2.bold()).foregroundStyle(Theme.danger)),
+                        actions: AnyView(Button("Unblock") { Task { await unblock(user) } })
+                    ))
                 }
                 if let errorText { Text(errorText).foregroundStyle(Theme.danger) }
             }
@@ -1106,27 +1105,20 @@ struct WorkspaceAdminSheet: View {
                 Section("Members") {
                     if members.isEmpty, errorText == nil { ProgressView() }
                     ForEach(members) { member in
-                        HStack(spacing: 10) {
-                            AvatarView(seedId: member.userId, name: member.name, size: 36)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(member.name)
-                                Text("@\(member.username) · \(member.status)")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            Spacer()
-                            if member.userId == app.session?.userId {
-                                Text(member.role.capitalized).foregroundStyle(Theme.textSecondary)
-                            } else {
-                                Menu(member.role.capitalized) {
+                        CheersEntityItem(row: CheersItemRow(
+                            title: member.name,
+                            subtitle: "@\(member.username) · \(member.status)",
+                            leading: AnyView(AvatarView(seedId: member.userId, name: member.name, size: 36)),
+                            criticalStatus: member.status == "pending" ? AnyView(Text("PENDING").font(.caption2.bold()).foregroundStyle(Theme.warning)) : nil,
+                            status: AnyView(Text(member.role.uppercased()).font(.caption2.bold()).foregroundStyle(Theme.textMuted)),
+                            actions: member.userId == app.session?.userId ? nil : AnyView(Menu(member.role.capitalized) {
                                     ForEach(["member", "admin", "owner"], id: \.self) { role in
                                         Button(role.capitalized) { Task { await setRole(member, role: role) } }
                                     }
                                     Divider()
                                     Button("Remove", role: .destructive) { confirmation = .remove(member) }
-                                }
-                            }
-                        }
+                                })
+                        ))
                     }
                 }
 
@@ -1267,24 +1259,15 @@ private struct AccountSessionsSheet: View {
             List {
                 if sessions.isEmpty, errorText == nil { ProgressView() }
                 ForEach(sessions) { session in
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack {
-                            Label(session.deviceName ?? session.client.capitalized, systemImage: icon(for: session.client))
-                                .font(.headline)
-                            Spacer()
-                            if session.current {
-                                Text("This device").font(.caption).foregroundStyle(Theme.online)
-                            }
-                        }
-                        Text("Last active \(relativeDate(session.lastSeenAt))")
-                            .font(.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                        if !session.current {
-                            Button("Revoke session", role: .destructive) { Task { await revoke(session) } }
-                                .disabled(revoking != nil)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    CheersOperationsItem(row: CheersItemRow(
+                        title: session.deviceName ?? session.client.capitalized,
+                        subtitle: "Last active \(relativeDate(session.lastSeenAt))",
+                        leading: AnyView(Image(systemName: icon(for: session.client)).foregroundStyle(Theme.accent)),
+                        criticalStatus: session.current ? AnyView(Text("THIS DEVICE").font(.caption2.bold()).foregroundStyle(Theme.online)) : nil,
+                        actions: session.current ? nil : AnyView(Button("Revoke", role: .destructive) {
+                            Task { await revoke(session) }
+                        }.disabled(revoking != nil))
+                    ))
                 }
                 if let errorText { Text(errorText).foregroundStyle(Theme.danger) }
             }

@@ -58,6 +58,7 @@ struct SystemMessageView: View {
 
 struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.presentationLevel) private var presentationLevel
     let message: MessageDto
     let isOwn: Bool
     let showAvatar: Bool
@@ -130,7 +131,9 @@ struct MessageBubbleView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             Spacer(minLength: 0)
-            timeLabel
+            if presentationLevel != .minimal {
+                timeLabel
+            }
         }
         .frame(minHeight: nested ? 24 : 32)
     }
@@ -188,7 +191,7 @@ struct MessageBubbleView: View {
                 // them intentionally plain until message_done supplies the
                 // stable final content for Markdown rendering.
                 Text(message.content)
-                    .font(.body)
+                    .font(Theme.readingFont(for: message.content))
                     .foregroundStyle(Theme.bubbleOtherText)
                     .lineSpacing(3)
             } else {
@@ -446,7 +449,7 @@ struct MessageContentView: View {
                 switch segment {
                 case .text(let attributed, _):
                     Text(attributed)
-                        .font(.body)
+                        .font(Theme.readingFont(for: String(attributed.characters)))
                         .foregroundStyle(Theme.bubbleOtherText)
                         .lineSpacing(3)
                         .tint(Theme.link)
