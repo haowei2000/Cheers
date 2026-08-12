@@ -239,11 +239,11 @@ export function SandboxRenderer({
       )}
       {dev && (
         <>
-          <UiButton variant="plain"
+          <UiButton action={devOpen ? "collapse" : "expand"} variant="plain"
             type="button"
             onClick={() => setDevOpen((v) => !v)}
             title="Protocol inspector (session-loaded plugins only)"
-            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90 text-compact text-zinc-300 ring-1 ring-zinc-700 hover:text-white"
+            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-zinc-300 ring-1 ring-zinc-700 hover:text-white"
           >
             {devOpen ? "Hide" : "Dev"} · {devEvents.length}
           </UiButton>
@@ -251,7 +251,7 @@ export function SandboxRenderer({
             <div className="absolute inset-x-0 bottom-0 z-10 flex h-1/2 flex-col border-t border-zinc-700 bg-zinc-950/95">
               <div className="flex items-center justify-between px-2 py-1 text-compact text-zinc-400">
                 <span>Protocol inspector · {plugin.plugin_id}</span>
-                <UiButton variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-white">
+                <UiButton action="clear" variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-white">
                   Clear
                 </UiButton>
               </div>

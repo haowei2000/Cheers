@@ -269,12 +269,12 @@ export function SceneWorkbench({
           const meta = metaFor(id);
           const Icon = meta.Icon;
           return (
-            <UiButton variant="plain"
+            <UiButton content="iconText" variant="plain" role="tab" aria-selected={activeScene === id}
               key={id}
               type="button"
               onClick={() => setActiveScene(id)}
               controlSize="regular" className={cn(
- "flex flex-shrink-0 items-center gap-2 rounded-sm text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ "flex flex-shrink-0 items-center gap-2 rounded-sm  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  activeScene === id ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
  )}
             >
@@ -293,13 +293,13 @@ export function SceneWorkbench({
               const Icon = meta.Icon;
               const selected = activeScene === id;
               return (
-                <UiButton controlWidth="fill" variant="plain"
+                <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={selected}
                   key={id}
                   type="button"
                   onClick={() => setActiveScene(id)}
                   aria-pressed={selected}
                   controlSize="comfortable" className={cn(
- "flex items-center gap-2 rounded-sm text-left text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  selected ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
  )}
                 >
@@ -337,13 +337,13 @@ export function SceneWorkbench({
               {activePaths.map((path) => {
                 const selected = path === selectedPath;
                 return (
-                  <UiButton variant="plain"
+                  <UiButton variant="plain" role="tab" aria-selected={selected}
                     key={path}
                     type="button"
                     onClick={() => selectPath(path)}
                     aria-current={selected ? "page" : undefined}
                     controlSize="comfortable" className={cn(
- "relative flex-shrink-0 text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+ "relative flex-shrink-0  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
  selected ? "text-indigo-300": "text-zinc-400 hover:text-zinc-200"
  )}
                   >

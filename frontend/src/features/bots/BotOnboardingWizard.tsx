@@ -83,7 +83,7 @@ const FALLBACK_AGENTS: AcpAgentInfo[] = [
 function CopyBtn({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <UiButton variant="plain"
+    <UiButton action="copy" variant="plain"
       type="button"
       onClick={async () => {
         try {
@@ -94,7 +94,7 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
           /* clipboard blocked */
         }
       }}
-      className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       {done ? (
         <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -370,7 +370,7 @@ export function BotOnboardingWizard({
               </p>
             </div>
             <div className="flex gap-2 text-compact">
-              <UiButton variant="plain"
+              <UiButton action="create" variant="plain"
                 type="button"
                 onClick={() => setPick("create")}
                 controlSize="regular" className={`rounded-sm ${
@@ -380,7 +380,7 @@ export function BotOnboardingWizard({
               >
                 New bot
               </UiButton>
-              <UiButton variant="plain"
+              <UiButton action="choose" variant="plain"
                 type="button"
                 disabled={!bots.length}
                 onClick={() => setPick("existing")}
@@ -457,12 +457,12 @@ export function BotOnboardingWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button variant="secondary" onClick={setupLocally} disabled={busy}>
+                <Button action="setup" content="iconText" variant="secondary" onClick={setupLocally} disabled={busy}>
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   <Laptop className="w-4 h-4" /> Set up on this Mac
                 </Button>
               )}
-              <Button onClick={validateAndAdvance} disabled={busy}>
+              <Button action="setup" onClick={validateAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 {localDesktop ? "Set up another host" : "Choose host"}
               </Button>
@@ -505,10 +505,10 @@ export function BotOnboardingWizard({
               />
             </div>
             <div className="flex justify-start">
-              <UiButton variant="plain"
+              <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </UiButton>
@@ -538,17 +538,17 @@ export function BotOnboardingWizard({
             )}
             <ConnectionWatch botId={bot.bot_id} username={bot.username} />
             <div className="flex items-center justify-between">
-              <UiButton variant="plain"
+              <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => {
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
               </UiButton>
-              <Button
+              <Button action="done"
                 onClick={() => {
                   onDone();
                   onClose();
@@ -683,11 +683,11 @@ function ManualPanel({
           <span className="text-compact font-semibold text-zinc-300">
             1. Connector config
           </span>
-          <UiButton variant="plain"
+          <UiButton action="create" variant="plain"
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-compact text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -703,7 +703,7 @@ function ManualPanel({
             </div>
             <div className="flex items-center gap-3">
               <CopyBtn value={config.config_toml} label="Copy config" />
-              <UiButton variant="plain"
+              <UiButton action="download" content="iconText" variant="plain"
                 type="button"
                 onClick={() =>
                   download(
@@ -711,7 +711,7 @@ function ManualPanel({
                     config.config_toml
                   )
                 }
-                className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </UiButton>
@@ -729,7 +729,7 @@ function ManualPanel({
           <span className="text-compact font-semibold text-zinc-300">
             2. One-time token
           </span>
-          <Button controlSize="compact" onClick={onGenToken} disabled={busy}>
+          <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
             <KeyRound className="w-3.5 h-3.5" />
             {token ? "Rotate token" : "Issue token"}
           </Button>
@@ -867,16 +867,16 @@ function ScriptPanel({
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton variant="plain"
+              <UiButton action="revoke" content="iconText" variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 text-compact text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
             )}
-            <Button controlSize="compact" onClick={mint} disabled={busy}>
+            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
@@ -1015,16 +1015,16 @@ function AgentPanel({
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton variant="plain"
+              <UiButton action="revoke" content="iconText" variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 text-compact text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
             )}
-            <Button controlSize="compact" onClick={mint} disabled={busy}>
+            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (

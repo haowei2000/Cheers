@@ -264,15 +264,15 @@ function AuditRow({
         trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-minimal text-zinc-400 hover:text-indigo-300">
+            <UiButton action="open" variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className=" text-zinc-400 hover:text-indigo-300">
               Jump
             </UiButton>
           )}
           {hasDetails && (
-          <UiButton variant="plain"
+          <UiButton action={open ? "collapse" : "expand"} content="iconText" variant="plain"
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="inline-flex items-center gap-1 text-minimal text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
             Details

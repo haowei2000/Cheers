@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,17 +8,20 @@ import {
   Bot as BotIcon,
   Wand2,
   KeyRound,
+  Copy,
+  Check,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
-import { PresenceDot } from "@/components/ui/presence-dot";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { ItemRow, ItemSection } from "@/components/ui/item";
+import { EntityItem, ItemList, ItemSection, OperationsItem } from "@/components/ui/item";
+import { IconButton } from "@/components/ui/icon-button";
+import { OverflowText } from "@/components/ui/overflow-text";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { getFleet, type FleetApproval, type FleetBot } from "@/api/fleet";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
@@ -29,7 +31,7 @@ import { useFleetLive } from "./useFleetLive";
 import { useChatStore } from "@/stores/chatStore";
 import { useActivityUiStore } from "@/stores/activityUiStore";
 import { BotOnboardingWizard } from "@/features/bots/BotOnboardingWizard";
-import { BotDetailPanel, CopyButton } from "@/features/bots/BotDetailPanel";
+import { BotDetailPanel } from "@/features/bots/BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
 
 // Fleet view: workspace bot roster + create/manage (detail + token).
@@ -44,23 +46,15 @@ function channelLabel(name: string): string {
 
 function StatusChip({ bot }: { bot: FleetBot }) {
   if (!bot.online) {
-    return <span className="text-minimal text-zinc-400">offline</span>;
+    return <span className="text-zinc-500">Offline</span>;
   }
   if (bot.pending_count > 0) {
-    return (
-      <span className="text-minimal px-2 py-1 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
-        waiting approval
-      </span>
-    );
+    return <span className="text-amber-300">Waiting approval</span>;
   }
   if (bot.busy_sessions > 0) {
-    return (
-      <span className="text-minimal px-2 py-1 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
-        working
-      </span>
-    );
+    return <span className="text-indigo-200">Working</span>;
   }
-  return <span className="text-minimal text-zinc-400">idle</span>;
+  return <span className="text-zinc-400">Idle</span>;
 }
 
 function BotRow({
@@ -77,20 +71,14 @@ function BotRow({
         }${bot.busy_sessions > 0 ? ` · ${bot.busy_sessions} busy` : ""}`
       : null;
   return (
-    <ItemRow
-      kind="operations"
+    <EntityItem
       onClick={onSelect}
-      title={bot.bot_name}
-      leading={<div className="relative flex-shrink-0">
-        <Avatar name={bot.bot_name} id={bot.bot_id} size="regular" />
-        <PresenceDot
-          contentSize="regular"
-          className={cn(
-            "absolute -bottom-0.5 -right-0.5 ring-zinc-900",
-            bot.online ? "bg-emerald-500" : "bg-zinc-600"
-          )}
-        />
-      </div>}
+      title={<OverflowText fullText={bot.bot_name} touchDisclosure={false}>{bot.bot_name}</OverflowText>}
+      subtitle={[
+        bot.status_emoji && bot.status_text ? `${bot.status_emoji} ${bot.status_text}` : bot.status_text,
+        sessions,
+      ].filter(Boolean).join(" · ") || undefined}
+      leading={<Avatar name={bot.bot_name} id={bot.bot_id} size="regular" online={bot.online} />}
       status={<StatusChip bot={bot} />}
       criticalStatus={bot.pending_count > 0 ? (
           <UnreadBadge
@@ -105,16 +93,11 @@ function BotRow({
       trailing={bot.cost_today_usd > 0 ? (
           <span
             className="text-compact text-zinc-400 tabular-nums"
-            title={[bot.status_text, sessions, "Cost today (UTC)"].filter(Boolean).join(" · ")}
+            title="Cost today (UTC)"
           >
             ${bot.cost_today_usd.toFixed(2)}
           </span>
-      ) : (bot.status_text || sessions) ? (
-        <span className="max-w-36 truncate text-compact text-zinc-400" title={[bot.status_text, sessions].filter(Boolean).join(" · ")}>
-          {bot.status_emoji}{bot.status_emoji ? " " : ""}{bot.status_text || sessions}
-        </span>
       ) : undefined}
-      className="gap-3 hover:bg-zinc-900"
     />
   );
 }
@@ -158,6 +141,7 @@ export default function FleetPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedToken | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   const refreshCatalog = useCallback(
     async (quiet = false) => {
@@ -277,26 +261,34 @@ export default function FleetPage() {
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-        <UiButton variant="plain"
+        <IconButton
+          label="Back to chat"
           onClick={() => navigate("/chat")}
-          title="Back to chat"
-          square controlSize="regular" className="max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          controlSize="regular"
+          className="max-md:-ml-2"
         >
           <ArrowLeft className="w-4 h-4" />
-        </UiButton>
+        </IconButton>
         <Radar className="w-4 h-4 text-indigo-400" />
         <h1 className="text-comfortable font-semibold">Fleet</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <Button controlSize="compact" onClick={() => setWizardOpen(true)}>
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          <Button
+            content="iconText"
+            action="add"
+            aria-label="Add bot"
+            variant="secondary"
+            controlSize="regular"
+            onClick={() => setWizardOpen(true)}
+          >
             <Wand2 className="w-3.5 h-3.5" />
-            Add bot
           </Button>
           {wsOptions.length > 1 && (
             <Select
               value={activeWsId ?? ""}
               onChange={(e) => setWsId(e.target.value)}
               aria-label="Workspace"
-              controlSize="regular" className="text-compact"
+              controlSize="regular"
+              controlWidth="slot"
             >
               {wsOptions.map((w) => (
                 <option key={w.workspace_id} value={w.workspace_id}>
@@ -305,15 +297,14 @@ export default function FleetPage() {
               ))}
             </Select>
           )}
-          <UiButton variant="plain"
+          <IconButton
+            label="Refresh fleet"
             onClick={() => activeWsId && refresh(activeWsId)}
-            title="Refresh"
-            aria-label="Refresh"
             disabled={refreshing || !activeWsId}
-            square controlSize="regular" className="rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
+            controlSize="regular"
           >
             <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-          </UiButton>
+          </IconButton>
         </div>
       </header>
 
@@ -324,44 +315,48 @@ export default function FleetPage() {
           ) : (
             <>
               {error && (
-                <p role="alert" className="text-compact text-red-400">
-                  {error}
-                </p>
+                <ItemList presentationLevel="medium" controlSize="regular">
+                  <OperationsItem
+                    title="Fleet unavailable"
+                    criticalStatus={<span className="text-red-400">Error</span>}
+                    subtitle={error}
+                    actions={activeWsId ? (
+                      <IconButton label="Retry loading fleet" controlSize="regular" onClick={() => void refresh(activeWsId)}>
+                        <RefreshCw className="h-4 w-4" />
+                      </IconButton>
+                    ) : undefined}
+                  />
+                </ItemList>
               )}
 
               {actionableCount > 0 && (
-                <UiButton controlWidth="fill" variant="plain"
-                  type="button"
-                  onClick={() => {
+                <ItemList presentationLevel="medium" controlSize="regular">
+                  <OperationsItem
+                    title={`${actionableCount} waiting on you`}
+                    subtitle="Review in Activity"
+                    leading={<Inbox className="h-4 w-4 text-amber-300" />}
+                    criticalStatus={<UnreadBadge tone="approval" contentSize="regular">{actionableCount}</UnreadBadge>}
+                    onClick={() => {
                     // ActivityCenter lives in the chat shell rail — open the
                     // dialog via the shared store, then land on /chat so it mounts.
                     requestActivityOpen();
                     navigate("/chat");
                   }}
-                  controlSize="regular" className="flex items-center gap-3 rounded-sm bg-amber-950/30 text-left hover:bg-amber-950/50 transition-colors"
-                >
-                  <Inbox className="w-4 h-4 text-amber-300 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-regular font-medium text-zinc-100">
-                      {actionableCount} waiting on you
-                    </p>
-                    <p className="text-compact text-zinc-400">Review in Activity</p>
-                  </div>
-                </UiButton>
+                  />
+                </ItemList>
               )}
 
-              <section>
-                <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-                  Bots
-                </h2>
-                {botsByChannel.length === 0 ? (
-                  <EmptyState
-                    icon={BotIcon}
-                    title="No bots in this workspace"
-                    hint="Add a bot here, then connect it on the machine that will run it."
-                  />
-                ) : (
-                  <div className="space-y-5">
+              {botsByChannel.length === 0 ? (
+                <EmptyState
+                  icon={BotIcon}
+                  title="No bots in this workspace"
+                  hint="Add a bot here, then connect it on the machine that will run it."
+                />
+              ) : (
+                <div className="space-y-5">
+                  <h2 className="px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400">
+                    Bots <span className="font-normal text-zinc-500">{bots.length}</span>
+                  </h2>
                     {botsByChannel.map(([channelId, g]) => (
                       <ItemSection
                         key={channelId}
@@ -378,9 +373,8 @@ export default function FleetPage() {
                         ))}
                       </ItemSection>
                     ))}
-                  </div>
-                )}
-              </section>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -427,7 +421,21 @@ export default function FleetPage() {
             <span className="text-compact text-zinc-400">
               Save this into the bot&apos;s token file on the machine that runs it.
             </span>
-            <CopyButton value={issued.token} label="Copy token" />
+            <IconButton
+              label="Copy connection token"
+              controlSize="regular"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(issued.token);
+                  setTokenCopied(true);
+                  window.setTimeout(() => setTokenCopied(false), 1500);
+                } catch {
+                  toast.error("Clipboard unavailable — select and copy manually");
+                }
+              }}
+            >
+              {tokenCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+            </IconButton>
           </div>
         </Dialog>
       )}

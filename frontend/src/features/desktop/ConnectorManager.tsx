@@ -151,7 +151,7 @@ function HealthRow({
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
       {reason && (
-        <UiButton variant="plain"
+        <UiButton action="restart" variant="plain"
           type="button"
           onClick={onRestart}
           disabled={busy}
@@ -187,7 +187,7 @@ function IconBtn({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      square controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
+      content="icon" controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
  danger
  ? "text-rose-400 hover:bg-rose-950/50"
  : "text-zinc-300 hover:bg-zinc-700"
@@ -541,7 +541,7 @@ export function ConnectorManager() {
         {/* Grid: the local setup tile is always the first item. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {/* design-system-exempt: drop-zone */}
-          <UiButton variant="plain"
+          <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "onboard" })}
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
@@ -557,7 +557,7 @@ export function ConnectorManager() {
               this device had nowhere to go — the desktop could only mint and
               redeem for itself in one shot. */}
           {/* design-system-exempt: drop-zone */}
-          <UiButton variant="plain"
+          <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "redeem" })}
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
@@ -733,10 +733,10 @@ export function ConnectorManager() {
               elsewhere will stop.
             </p>
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setModal(null)}>
+              <Button action="cancel" variant="secondary" onClick={() => setModal(null)}>
                 Cancel
               </Button>
-              <Button onClick={() => void redeemCode()} disabled={onboarding}>
+              <Button action="setup" onClick={() => void redeemCode()} disabled={onboarding}>
                 {onboarding && <Loader2 className="w-4 h-4 animate-spin" />}
                 Set up & start
               </Button>
@@ -790,9 +790,9 @@ export function ConnectorManager() {
       {modal?.kind === "logs" && (
         <Dialog title={`Logs — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-2xl">
           <div className="flex justify-end mb-1">
-            <UiButton variant="plain"
+            <UiButton action="refresh" variant="plain"
               type="button"
-              className="text-compact text-zinc-400 hover:text-zinc-200"
+              className=" text-zinc-400 hover:text-zinc-200"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
@@ -839,10 +839,10 @@ export function ConnectorManager() {
                   <div className="flex flex-wrap gap-2 pl-5">
                     {/* design-system-exempt: menu-option — opener command menu. */}
                     {openers.map((op) => (
-                      <UiButton variant="plain"
+                      <UiButton variant="plain" role="menuitem"
                         key={op.key}
                         type="button"
-                        controlSize="regular" className="text-compact rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                        controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
@@ -911,7 +911,7 @@ export function ConnectorManager() {
             className="mt-3 text-compact text-zinc-400"
           />
           <div className="flex gap-2 mt-4">
-            <Button
+            <Button action="delete"
               variant="danger"
               controlSize="compact"
               className="bg-red-950/70 hover:bg-red-900/80 text-red-300"
@@ -930,7 +930,7 @@ export function ConnectorManager() {
             >
               Remove connector
             </Button>
-            <Button variant="secondary" controlSize="compact" onClick={() => setModal(null)}>
+            <Button action="cancel" variant="secondary" controlSize="compact" onClick={() => setModal(null)}>
               Cancel
             </Button>
           </div>
@@ -978,11 +978,11 @@ function AuditTimeline({
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {/* design-system-exempt: menu-option — audit kind filters. */}
         {kinds.map((k) => (
-          <UiButton variant="plain"
+          <UiButton action="switch" content="iconText" variant="plain"
             key={k}
             type="button"
             onClick={() => toggle(k)}
-            controlSize="regular" className={`text-compact rounded-sm transition-colors ${
+            controlSize="regular" className={` rounded-sm transition-colors ${
  hidden.has(k) ? "bg-zinc-800 text-zinc-500": "bg-zinc-700 text-zinc-100"
  }`}
           >
@@ -990,10 +990,10 @@ function AuditTimeline({
             {AUDIT_META[k].label}
           </UiButton>
         ))}
-        <UiButton variant="plain"
+        <UiButton action="refresh" variant="plain"
           type="button"
           onClick={onRefresh}
-          className="text-compact text-zinc-400 hover:text-zinc-200 ml-auto"
+          className=" text-zinc-400 hover:text-zinc-200 ml-auto"
         >
           Refresh
         </UiButton>
@@ -1072,11 +1072,11 @@ function OnboardForm(props: {
       <div className="flex gap-2">
         {/* design-system-exempt: menu-option — onboarding mode tabs. */}
         {(["existing", "new"] as const).map((m) => (
-          <UiButton variant="plain"
+          <UiButton action="create" variant="plain"
             key={m}
             type="button"
             onClick={() => p.setMode(m)}
-            controlSize="regular" className={`text-compact rounded-sm transition-colors ${
+            controlSize="regular" className={` rounded-sm transition-colors ${
  p.mode === m
  ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
  }`}
@@ -1137,7 +1137,7 @@ function OnboardForm(props: {
       )}
 
       <div>
-        <Button
+        <Button action="setup" content="iconText"
           controlSize="compact"
           disabled={
             p.onboarding || (p.mode === "existing" ? !p.existingBotId : !p.newUsername.trim())
@@ -1149,9 +1149,9 @@ function OnboardForm(props: {
       </div>
 
       <div>
-        <UiButton variant="plain"
+        <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
           type="button"
-          className="text-compact text-zinc-500 hover:text-zinc-300"
+          className=" text-zinc-500 hover:text-zinc-300"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml
@@ -1175,7 +1175,7 @@ function OnboardForm(props: {
               />
             </Field>
             <div>
-              <Button
+              <Button action="start" content="iconText"
                 variant="secondary"
                 controlSize="compact"
                 disabled={!p.newName.trim() || !p.newConfig.trim() || p.busy}

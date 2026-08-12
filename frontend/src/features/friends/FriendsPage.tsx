@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +19,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
+import { TabOption } from "@/components/ui/tab-option";
 import { isComposing } from "@/lib/ime";
 import {
   listFriends,
@@ -57,13 +57,15 @@ export default function FriendsPage() {
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-        <UiButton variant="plain"
+        <IconButton
+          label="Back to chat"
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          square controlSize="regular" className="max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          controlSize="regular"
+          className="max-md:-ml-2"
         >
           <ArrowLeft className="w-4 h-4" />
-        </UiButton>
+        </IconButton>
         <h1 className="text-comfortable font-semibold">Friends</h1>
       </header>
 
@@ -112,19 +114,19 @@ function TabBtn({
   children: ReactNode;
 }) {
   return (
-    <UiButton variant="plain"
-      type="button"
-      aria-current={active ? "page" : undefined}
+    <TabOption
+      selected={active}
+      aria-controls={`friends-panel-${String(children)}`}
       onClick={onClick}
-      controlSize="regular" className={cn(
- "text-regular border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
+      controlSize="regular"
+      label={children}
+      className={cn(
+ " border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
  active
  ? "border-indigo-500 text-zinc-100"
  : "border-transparent text-zinc-400 hover:text-zinc-200"
  )}
-    >
-      {children}
-    </UiButton>
+    />
   );
 }
 
@@ -355,9 +357,7 @@ function AddTab() {
             controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
-        <Button onClick={lookup} disabled={busy || !id.trim()}>
-          {busy ? "…" : "Look up"}
-        </Button>
+        <Button action="lookup" aria-label="Look up user ID" loading={busy} onClick={lookup} disabled={!id.trim()} />
       </div>
       {result === null ? (
         <Empty>Enter a user ID and press Look up.</Empty>
@@ -431,12 +431,12 @@ function BlockedTab() {
           id={u.user_id}
           avatar={u.avatar_url}
         >
-          <UiButton variant="plain"
+          <Button variant="secondary"
+            action="enable"
+            aria-label={`Unblock ${u.display_name || u.username}`}
             onClick={() => unblock(u)}
-            controlSize="regular" className="text-compact rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-          >
-            Unblock
-          </UiButton>
+            controlSize="regular"
+          />
         </Row>
       ))}
     </ItemList>

@@ -185,7 +185,7 @@ export function WorkbenchManager() {
           controlSize="regular"
           className="border-t border-zinc-800 pt-2"
           description="Sandboxed renderer bundles available in every channel."
-          action={<><UiButton variant="plain"
+          action={<><UiButton action="upload" content="iconText" variant="plain"
               type="button"
               onClick={() => pluginRef.current?.click()}
               controlSize="compact"
@@ -221,7 +221,7 @@ export function WorkbenchManager() {
                     Official
                   </span>
                 ) : undefined}
-                actions={<UiButton variant="plain"
+                actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                   onClick={async () => {
                     if (
                       p.origin === "system" &&
@@ -252,7 +252,7 @@ export function WorkbenchManager() {
           controlSize="regular"
           className="border-t border-zinc-800 pt-2"
           description="Declarative scenario manifests available in every channel; no code execution."
-          action={<><UiButton variant="plain"
+          action={<><UiButton action="upload" content="iconText" variant="plain"
               type="button"
               onClick={() => tplRef.current?.click()}
               controlSize="compact"
@@ -283,7 +283,7 @@ export function WorkbenchManager() {
                 title={t.title}
                 status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={t.id}>{t.id}</span>}
                 leading={<Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />}
-                actions={<UiButton variant="plain"
+                actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${t.title}`} variant="plain"
                   onClick={async () => {
                     await deleteGlobalTemplate(t.id);
                     await reload();
@@ -306,7 +306,7 @@ export function WorkbenchManager() {
             controlSize="regular"
             className="border-t border-zinc-800 pt-2"
             description="Renderer plugins installed only for you on this machine."
-            action={<><UiButton variant="plain"
+            action={<><UiButton action="upload" content="iconText" variant="plain"
                 type="button"
                 onClick={() => personalRef.current?.click()}
                 controlSize="compact"
@@ -337,7 +337,7 @@ export function WorkbenchManager() {
                   title={p.title}
                   status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={p.id}>{p.id}</span>}
                   leading={<Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />}
-                  actions={<UiButton variant="plain"
+                  actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                     onClick={async () => {
                       await removePersonalPlugin(p.id);
                       await reloadPersonal();

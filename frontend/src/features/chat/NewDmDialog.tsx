@@ -91,7 +91,7 @@ export function NewDmDialog({
           {q && (
             <UiButton variant="plain"
               type="button"
-              square
+              content="icon"
               controlSize="compact"
               aria-label="Clear search"
               onClick={() => {

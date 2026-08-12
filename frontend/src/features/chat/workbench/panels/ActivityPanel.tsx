@@ -358,7 +358,7 @@ function FlowEpisode({
 }) {
   return (
     <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
-      <UiButton controlWidth="fill" variant="plain"
+      <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded}
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
@@ -422,7 +422,7 @@ function ParticipantStrip({
               aria-label={`Filter by ${name}`}
               aria-pressed={active}
               data-design-system-exempt="identity"
-              square
+              content="icon"
               controlSize="compact"
               className={cn(
  "relative rounded-full ring-2 transition-all",
@@ -593,12 +593,12 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
           <div className="flex items-center gap-1 rounded-sm bg-zinc-900/60 p-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
-              <UiButton variant="plain"
+              <UiButton variant="plain" role="tab" aria-selected={lens === l}
                 key={l}
                 type="button"
                 onClick={() => setLens(l)}
                 controlSize="regular" className={cn(
- "rounded-sm text-minimal capitalize transition-colors",
+ "rounded-sm  capitalize transition-colors",
  lens === l ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:text-zinc-200"
  )}
               >
@@ -634,10 +634,10 @@ function FilterChip({
   children: ReactNode;
 }) {
   return (
-    <UiButton variant="plain"
+    <UiButton variant="plain" role="option" aria-selected={active}
       onClick={onClick}
       controlSize="regular" className={cn(
- "flex items-center gap-1 rounded-sm text-minimal whitespace-nowrap flex-shrink-0 transition-colors",
+ "flex items-center gap-1 rounded-sm  whitespace-nowrap flex-shrink-0 transition-colors",
  active
  ? "border-zinc-600 bg-zinc-800 text-zinc-200": "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
  )}
@@ -680,13 +680,13 @@ function MemberFilter({
 
   return (
     <div ref={rootRef} className="relative flex-shrink-0">
-      <UiButton variant="plain"
+      <UiButton action="search" variant="plain"
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         title="Filter activity by member"
         controlSize="regular" className={cn(
- "inline-flex items-center gap-2 rounded-sm text-compact transition-colors",
+ "inline-flex items-center gap-2 rounded-sm  transition-colors",
  open || selected.size
  ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
  )}
@@ -715,7 +715,7 @@ function MemberFilter({
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
                 return (
-                  <UiButton controlWidth="fill" variant="plain"
+                  <UiButton content="iconText" controlWidth="fill" variant="plain" role="option" aria-selected={on}
                     key={mem.member_id}
                     type="button"
                     onClick={() => onToggle(mem.member_id)}
@@ -761,10 +761,10 @@ function MemberFilter({
                     </FilterChip>
                   ))}
               </div>
-              <UiButton variant="plain"
+              <UiButton action="clear" variant="plain"
                 type="button"
                 onClick={onClear}
-                className="text-compact text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
+                className=" text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
               >
                 Clear
               </UiButton>

@@ -95,7 +95,7 @@ export default function OAuthCallbackPage() {
         <div>
           <h2 className="font-masthead text-comfortable">Couldn&apos;t sign in</h2>
           <p className="mt-2 text-regular text-zinc-400">{error}</p>
-          <UiButton variant="plain" className={`mt-5 text-regular ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
+          <UiButton action="signIn" variant="plain" className={`mt-5 ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
             Back to sign in
           </UiButton>
         </div>

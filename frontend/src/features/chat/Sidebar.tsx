@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useState } from "react";
 import { Plus, Menu, Radio, Settings } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -165,12 +166,12 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            square controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
         )}
-        <UiButton controlWidth="fill" variant="plain"
+        <ControlTrigger controlWidth="fill"
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
           controlSize="regular" className="group flex items-center gap-2 rounded-sm transition-colors hover:bg-zinc-800/60"
@@ -183,7 +184,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             // expanding a dropdown beneath the header, so a chevron would lie.
             <Settings className={cn(controlIconClasses.regular, "text-zinc-500 flex-shrink-0")} />
           )}
-        </UiButton>
+        </ControlTrigger>
       </div>
 
       {/* Channel list */}
@@ -250,7 +251,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         {channels.length === 0 && (
           <div className="px-3 py-4 text-center">
             <p className={cn("text-zinc-400", controlTextClasses.compact)}>No channels yet</p>
-            <UiButton variant="plain"
+            <UiButton action="create" variant="plain"
               type="button"
               onClick={() => setChannelOpen(true)}
               controlSize="compact"

@@ -59,7 +59,7 @@ export function AgentPicker({
         const selected = value === a.key;
         return (
           <div key={a.key} className="relative">
-            <UiButton variant="plain"
+            <UiButton action="install" variant="plain"
               type="button"
               disabled={!a.installed}
               title={
@@ -99,7 +99,7 @@ export function AgentPicker({
                 title={`Install ${a.label}`}
                 disabled={installing !== null}
                 onClick={() => void install(a.key)}
-                square controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
+                content="icon" controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
               >
                 {installing === a.key ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -112,7 +112,7 @@ export function AgentPicker({
         );
       })}
       {/* Custom command escape hatch. */}
-      <UiButton variant="plain"
+      <UiButton action="choose" variant="plain"
         type="button"
         title="Use a custom command"
         onClick={() => onPick("custom", null)}

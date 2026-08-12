@@ -57,7 +57,7 @@ export function ServerPicker() {
         />
         {error && <p className="text-compact text-rose-400 mt-2">{error}</p>}
         <div className="mt-4">
-          <Button onClick={() => void connect()} disabled={busy}>
+          <Button action="connect" onClick={() => void connect()} disabled={busy}>
             {busy ? "Checking…" : "Connect"}
           </Button>
         </div>

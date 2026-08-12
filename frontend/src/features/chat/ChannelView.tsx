@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import {
   useState,
   useCallback,
@@ -1700,7 +1701,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      square controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" />
@@ -1747,7 +1748,7 @@ export function ChannelView({
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              square controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </UiButton>
@@ -1769,11 +1770,11 @@ export function ChannelView({
             You&apos;re not a member of this channel yet. Join to read and send
             messages.
           </p>
-          <UiButton variant="plain"
+          <UiButton action="join" variant="plain"
             type="button"
             onClick={() => void handleJoin()}
             disabled={joining}
-            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-regular font-medium text-white"
+            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60  font-medium text-white"
           >
             {joining && <Loader2 className="w-4 h-4 animate-spin" />}
             Join channel
@@ -1812,7 +1813,7 @@ export function ChannelView({
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              square controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </UiButton>
@@ -1836,7 +1837,7 @@ export function ChannelView({
           <div className="hidden md:flex items-center gap-3 text-compact text-zinc-400">
             {/* Members: was a dead-looking span — now a real button opening the roster. */}
             <div className="relative" ref={membersRootRef}>
-              <UiButton variant="plain"
+              <ControlTrigger controlWidth="slot"
                 type="button"
                 onClick={() => setMembersOpen((v) => !v)}
                 title="Channel members"
@@ -1853,7 +1854,7 @@ export function ChannelView({
                     {onlineCount} online
                   </span>
                 )}
-              </UiButton>
+              </ControlTrigger>
               {membersOpen && (
                 <MembersPopover
                   channelId={channel.channel_id}
@@ -1874,7 +1875,7 @@ export function ChannelView({
               });
             }}
             title="Channel files"
-            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  filesOpen
  ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
@@ -1890,7 +1891,7 @@ export function ChannelView({
               });
             }}
             title="Remote workspace"
-            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wsOpen
  ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
@@ -1905,7 +1906,7 @@ export function ChannelView({
               })
             }
             title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  vbOpen
  ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
@@ -1921,7 +1922,7 @@ export function ChannelView({
               });
             }}
             title="Workbench — file workspace"
-            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wbOpen
  ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
@@ -1933,7 +1934,7 @@ export function ChannelView({
               <UiButton variant="plain"
                 onClick={() => setSettingsOpen(true)}
                 title="Channel settings"
-                square controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+                content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
               >
                 <Settings className="w-4 h-4" />
               </UiButton>
@@ -2018,21 +2019,23 @@ export function ChannelView({
                               onCancel={() => setReplyTo(null)}
                             />
                           )}
-                          <ContextPickBar
-                            channelId={channel.channel_id}
-                            replyTo={replyTo}
-                            draftText={draftText}
-                            files={channelFiles}
-                            onBrowseWorkbench={browseWorkbench}
-                            onBrowseWorkspace={browseWorkspace}
-                            onJumpToSource={jumpToContextSource}
-                          />
                           <MessageComposer
                             channelId={channel.channel_id}
                             channelName={channel.name}
                             mentionables={mentionables}
                             commands={commands}
                             toolbar={composerToolbar}
+                            contextBar={
+                              <ContextPickBar
+                                channelId={channel.channel_id}
+                                replyTo={replyTo}
+                                draftText={draftText}
+                                files={channelFiles}
+                                onBrowseWorkbench={browseWorkbench}
+                                onBrowseWorkspace={browseWorkspace}
+                                onJumpToSource={jumpToContextSource}
+                              />
+                            }
                             onMentionsChange={setMentionedBots}
                             onTextChange={setDraftText}
                             prefill={composePrefill}
@@ -2087,7 +2090,7 @@ export function ChannelView({
                     · click messages to toggle
                   </span>
                   <div className="flex-1" />
-                  <UiButton variant="plain"
+                  <UiButton action="copy" content="iconText" variant="plain"
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
@@ -2096,7 +2099,7 @@ export function ChannelView({
                     <Copy className="w-3.5 h-3.5" />
                     Copy
                   </UiButton>
-                  <UiButton variant="plain"
+                  <UiButton action="send" content="iconText" variant="plain"
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() =>
@@ -2110,7 +2113,7 @@ export function ChannelView({
                     <Forward className="w-3.5 h-3.5" />
                     Forward
                   </UiButton>
-                  <UiButton variant="plain"
+                  <UiButton action="cancel" content="iconText" variant="plain"
                     type="button"
                     onClick={clearSelection}
                     controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-zinc-400 hover:text-zinc-200"
@@ -2132,21 +2135,23 @@ export function ChannelView({
                       onCancel={() => setReplyTo(null)}
                     />
                   )}
-                  <ContextPickBar
-                    channelId={channel.channel_id}
-                    replyTo={replyTo}
-                    draftText={draftText}
-                    files={channelFiles}
-                    onBrowseWorkbench={browseWorkbench}
-                    onBrowseWorkspace={browseWorkspace}
-                    onJumpToSource={jumpToContextSource}
-                  />
                   <MessageComposer
                     channelId={channel.channel_id}
                     channelName={channel.name}
                     mentionables={mentionables}
                     commands={commands}
                     toolbar={composerToolbar}
+                    contextBar={
+                      <ContextPickBar
+                        channelId={channel.channel_id}
+                        replyTo={replyTo}
+                        draftText={draftText}
+                        files={channelFiles}
+                        onBrowseWorkbench={browseWorkbench}
+                        onBrowseWorkspace={browseWorkspace}
+                        onJumpToSource={jumpToContextSource}
+                      />
+                    }
                     onMentionsChange={setMentionedBots}
                     onTextChange={setDraftText}
                     prefill={composePrefill}

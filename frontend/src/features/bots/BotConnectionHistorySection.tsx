@@ -1,4 +1,4 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
@@ -52,14 +52,14 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
         <span className="text-compact text-zinc-400">
           bridge connects/disconnects (newest first)
         </span>
-        <UiButton variant="plain"
-          type="button"
+        <IconButton
+          label="Refresh connection history"
           onClick={load}
           className="ml-auto text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </UiButton>
+        </IconButton>
       </div>
       {events.length === 0 ? (
         <p className="text-compact text-zinc-400">

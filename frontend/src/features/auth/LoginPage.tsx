@@ -197,11 +197,11 @@ export default function LoginPage() {
               placeholder={allowedFactors.includes("email") ? "123456 or email code" : "123456"}
             />
           </div>
-          <Button controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
+          <Button action="send" controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
           {allowedFactors.includes("email") && (
-            <Button controlWidth="fill"
+            <Button action="send" controlWidth="fill"
               type="button"
               variant="secondary"
               disabled={loading}
@@ -217,7 +217,7 @@ export default function LoginPage() {
             </Button>
           )}
           {allowedFactors.includes("passkey") && (
-            <Button controlWidth="fill"
+            <Button action="choose" controlWidth="fill"
               type="button"
               variant="secondary"
               disabled={loading}
@@ -226,9 +226,9 @@ export default function LoginPage() {
               Use Passkey
             </Button>
           )}
-          <UiButton controlWidth="fill" variant="plain"
+          <UiButton action="signIn" controlWidth="fill" variant="plain"
             type="button"
-            className={`text-compact ${publicLinkClass}`}
+            className={` ${publicLinkClass}`}
             onClick={() => {
               setTransactionId(null);
               setAllowedFactors([]);
@@ -280,7 +280,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <Button controlWidth="fill"
+          <Button action="signIn" controlWidth="fill"
             type="submit"
             className="mt-2"
             loading={loading}
@@ -297,7 +297,7 @@ export default function LoginPage() {
                 <span className="h-px flex-1 bg-zinc-800" />
               </div>
               {capabilities.providers.apple && (
-                <Button controlWidth="fill"
+                <Button action="signIn" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
                   disabled={loading}
@@ -314,7 +314,7 @@ export default function LoginPage() {
                 </Button>
               )}
               {capabilities.providers.google && (
-                <Button controlWidth="fill"
+                <Button action="signIn" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
                   disabled={loading}

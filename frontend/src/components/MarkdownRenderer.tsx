@@ -68,11 +68,11 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
           // Linkify a backtick-wrapped path to the remote-workspace browser.
           if (onPath && looksLikePath(text)) {
             return (
-              <UiButton variant="plain"
+              <UiButton action="open" variant="plain"
                 type="button"
                 onClick={() => onPath(text)}
                 title="Open in the remote workspace"
-                controlSize="regular" className="bg-zinc-800 rounded-sm text-regular text-indigo-400 hover:text-indigo-300 hover:underline"
+                controlSize="regular" className="bg-zinc-800 rounded-sm  text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {children} ↗
               </UiButton>

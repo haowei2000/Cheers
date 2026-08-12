@@ -229,7 +229,7 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "none" && <UnsupportedBody file={file} />}
       <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-compact text-zinc-400">
         <span>{typeof file.size_bytes === "number" ? formatBytes(file.size_bytes) : ""}</span>
-        <UiButton variant="plain"
+        <UiButton action="download" content="iconText" variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this file"

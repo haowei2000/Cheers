@@ -32,7 +32,7 @@ function RailButton({
 }) {
   return (
     <UiButton variant="plain"
-      square
+      content="icon"
       controlSize="comfortable"
       onClick={onClick}
       disabled={disabled}

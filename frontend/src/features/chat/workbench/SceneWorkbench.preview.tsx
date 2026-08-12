@@ -130,9 +130,9 @@ function Preview() {
           <h1 className="text-regular font-semibold">Workbench</h1>
           <span className="text-compact text-zinc-500"># engineering</span>
           <div className="ml-auto flex items-center gap-2">
-            <UiButton variant="plain" controlSize="regular" className="flex items-center gap-2 rounded-sm bg-zinc-800 px-3 text-compact text-zinc-300"><Folder className="h-4 w-4" />Raw</UiButton>
-            <UiButton variant="plain" aria-label="Expand" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
-            <UiButton variant="plain" aria-label="Close" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
+            <UiButton content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800 text-zinc-300"><Folder className="h-4 w-4" />Raw</UiButton>
+            <UiButton variant="plain" aria-label="Expand" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" aria-label="Close" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
           </div>
         </header>
         <div className="min-h-0 flex-1">

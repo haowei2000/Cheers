@@ -167,10 +167,10 @@ function ApprovalsGlance({
                   key={m.msg_id}
                   className="rounded-sm  border-zinc-800/80 bg-zinc-900/60 p-2"
                 >
-                  <UiButton controlWidth="fill" variant="plain"
+                  <UiButton controlWidth="fill" variant="plain" role="option"
                     type="button"
                     onClick={() => jumpTo(m)}
-                    className="mb-2 block truncate text-left text-compact text-zinc-300 hover:text-indigo-300"
+                    className="mb-2 block truncate text-left  text-zinc-300 hover:text-indigo-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
@@ -183,10 +183,10 @@ function ApprovalsGlance({
                     onResolved={close}
                   />
                   {data?.request_id && (
-                    <UiButton variant="plain"
+                    <UiButton action="open" variant="plain"
                       type="button"
                       onClick={() => jumpTo(m)}
-                      className="mt-1 text-minimal text-zinc-500 hover:text-zinc-300"
+                      className="mt-1  text-zinc-500 hover:text-zinc-300"
                     >
                       Open in chat
                     </UiButton>
@@ -195,13 +195,13 @@ function ApprovalsGlance({
               );
             })}
           </ul>
-          <UiButton controlWidth="fill" variant="plain"
+          <UiButton action="open" controlWidth="fill" variant="plain"
             type="button"
             onClick={() => {
               setOpen(false);
               onExpandAudit();
             }}
-            controlSize="regular" className="mt-2 rounded-sm text-left text-compact text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            controlSize="regular" className="mt-2 rounded-sm text-left  text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           >
             Open full Audit board…
           </UiButton>

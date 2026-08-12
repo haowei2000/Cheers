@@ -86,10 +86,21 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   业务组件不能通过局部 `width` 制造新槽位。
 - Button、Input、Select、Item 等共享 primitive 的水平 padding 由 primitive 固定，业务调用点禁止
   使用 `px/pl/pr` 覆盖。布局差异进入共享 variant 或父容器，不进入单个调用点。
+- Button 内容类型固定为三种宽度：`icon` 使用随 ControlSize 变化的 28/36/44px 方形，`text`
+  使用 96px 标准槽，`iconText` 使用 128px 宽槽；表单主操作可显式 `fill`，但不形成第四个固定宽度。
+  `iconText` 内部必须拆成独立 icon slot 与 label slot：icon slot 使用当前 ControlSize 的方形宽度，
+  label slot 占据剩余空间并独立持有水平 padding；外层不使用共享 gap 混排两种内容。
+  可见动作必须来自共享 `ActionKey`；对象名和上下文进入 `aria-label` 或邻近信息。英文标签除两词以内外，
+  还必须满足 iconText 剩余文字槽的 8 字符预算，不能用减少字号或裁切规避。
+  此规则 CI ceiling 为 0 且不允许业务例外；selector、tab、menu、disclosure 和 navigation 必须使用对应
+  语义 primitive 或 ARIA role，禁止为了通过扫描伪造 ActionKey。
+  三种 Button 均消费全局 `regular` 字号 token，业务层不得覆盖字号、宽度或水平 padding。
 - 业务调用点也禁止给共享控件添加任意 `p-*`。纯图标动作必须使用 `square + ControlSize`，文本动作
   使用 primitive 的固定 padding。参与控件节奏的 flex row/header 只能使用 28/36/44px，不得产生
   32/40/48/56px 等第四尺寸。语义图标只能是 14/16/20px，身份标识只能是 20/28/36px，并通过
   共享 size map 获取；这些规则在 Web CI 中 ceiling 均为 0。
+- 编辑已有对象必须使用就地编辑模式：默认对象旁显示 Edit IconButton；编辑态在同一位置替换为
+  Cancel 与 Save IconButton。保存动作不得漂到 section 底部或远离被编辑对象；整页首次创建/提交表单除外。
 - 产品布局间距只能使用 4px 网格对应的整数 Tailwind 档位，禁止 `0.5/1.5/2.5/3.5` 等半档；
   Loading Spinner 使用 ContentSize，不接受任意数字尺寸。
 - 响应式规则只能选择未显式设置时的环境默认值，不能覆盖业务显式设置。

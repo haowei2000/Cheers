@@ -253,14 +253,14 @@ export function ActivityCenter() {
                       status={<span className="max-w-36 truncate text-compact text-zinc-400" title={[n.role ? `Role ${n.role}` : "Needs your response", n.bot_name, n.requested_cwd].filter(Boolean).join(" · ")}>
                         {n.role ? `Role ${n.role}` : "Response required"}
                       </span>}
-                      actions={<><Button
+                      actions={<><Button action="accept"
                         controlSize="compact"
                         loading={busy === key}
                         onClick={() => void act(n, true)}
                       >
                         Accept
                       </Button>
-                      <Button
+                      <Button action="decline"
                         variant="ghost"
                         controlSize="compact"
                         disabled={busy === key}

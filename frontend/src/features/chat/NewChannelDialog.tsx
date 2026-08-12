@@ -84,11 +84,11 @@ export function NewChannelDialog({
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["public", "private"] as const).map((t) => (
-            <UiButton variant="plain"
+            <UiButton variant="plain" role="option" aria-selected={type === t}
               key={t}
               onClick={() => setType(t)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-2 rounded-sm border text-regular transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  type === t
  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}
@@ -113,12 +113,12 @@ export function NewChannelDialog({
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["text", "voice"] as const).map((value) => (
-            <UiButton variant="plain"
+            <UiButton variant="plain" role="option" aria-selected={kind === value}
               type="button"
               key={value}
               onClick={() => setKind(value)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-2 rounded-sm border text-regular transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  kind === value
  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}
@@ -134,10 +134,10 @@ export function NewChannelDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>
+          <Button action="cancel" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={!name.trim() || busy} onClick={() => void submit()}>
+          <Button action="create" disabled={!name.trim() || busy} onClick={() => void submit()}>
             Create
           </Button>
         </div>

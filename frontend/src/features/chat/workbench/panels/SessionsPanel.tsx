@@ -21,7 +21,8 @@ import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp } from "lucide-react";
+import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   getSessionControls,
   closeChannelBotSession,
@@ -210,7 +211,7 @@ function SessionCard({
           {fmtTime(s.created_at)}
         </span>}
         actions={<>
-        <UiButton variant="plain"
+        <UiButton action={open ? "collapse" : "expand"} content="icon" aria-label={open ? "Hide session details" : "Show session details"} variant="plain"
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
@@ -219,7 +220,7 @@ function SessionCard({
           <Info className="w-3.5 h-3.5" />
         </UiButton>
         {canClose && (
-          <UiButton variant="plain"
+          <UiButton action="close" content="icon" aria-label="Close session" variant="plain"
             type="button"
             disabled={actionBusy}
             title="Close this session"
@@ -329,7 +330,7 @@ function SessionCard({
                   {dirs.length ? dirs.join(", ") : "—"}
                 </span>
                 {canEditRoots && (
-                  <UiButton variant="plain"
+                  <UiButton action="join" variant="plain"
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
@@ -350,22 +351,21 @@ function SessionCard({
                   controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-minimal text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
-                  <UiButton variant="plain"
-                    type="button"
+                  <IconButton label="Save additional roots"
                     disabled={actionBusy}
                     onClick={saveDirs}
-                    controlSize="regular" className="rounded-sm bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
+                    controlSize="compact"
+                    tone="success"
                   >
-                    Save roots
-                  </UiButton>
-                  <UiButton variant="plain"
-                    type="button"
+                    <Save className="h-3.5 w-3.5" />
+                  </IconButton>
+                  <IconButton label="Cancel editing additional roots"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(null)}
-                    className="text-zinc-400 hover:text-zinc-200"
+                    controlSize="compact"
                   >
-                    cancel
-                  </UiButton>
+                    <X className="h-3.5 w-3.5" />
+                  </IconButton>
                 </div>
               </div>
             )}
@@ -624,10 +624,10 @@ function SessionsBody({
         </span>
         <div className="flex-1" />
         {creatableBots.length > 0 && (
-          <UiButton variant="plain"
+          <UiButton action="create" content="iconText" variant="plain"
             type="button"
             onClick={() => setDialogOpen(true)}
-            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15 text-minimal text-indigo-200 hover:bg-indigo-600/30"
+            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15  text-indigo-200 hover:bg-indigo-600/30"
           >
             <Plus className="w-3.5 h-3.5" />
             New session

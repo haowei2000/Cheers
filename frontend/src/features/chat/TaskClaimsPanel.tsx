@@ -90,7 +90,7 @@ export function TaskClaimsPanel({
             {c.impact}
           </span>}
           actions={canManage ? <>
-                <Button
+                <Button action="cancel" content="iconText"
                   controlSize="compact"
                   variant="secondary"
                   disabled={busy === c.claim_id}
@@ -99,7 +99,7 @@ export function TaskClaimsPanel({
                   <X className="h-3.5 w-3.5" />
                   Cancel
                 </Button>
-                <Button
+                <Button action="reject" content="iconText"
                   controlSize="compact"
                   variant="secondary"
                   disabled={busy === c.claim_id}
@@ -108,7 +108,7 @@ export function TaskClaimsPanel({
                   <X className="h-3.5 w-3.5" />
                   Reject
                 </Button>
-                <Button
+                <Button action="approve" content="iconText"
                   controlSize="compact"
                   loading={busy === c.claim_id}
                   onClick={() => void resolve(c, "accept")}

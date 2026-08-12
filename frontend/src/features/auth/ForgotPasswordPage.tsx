@@ -43,7 +43,7 @@ export default function ForgotPasswordPage() {
                 If <span className="text-zinc-200">{email}</span> has an account, a reset code
                 has been sent. Enter it on the next screen.
               </p>
-              <Button controlWidth="fill"
+              <Button action="reset" controlWidth="fill"
                 onClick={() => navigate(`/reset?email=${encodeURIComponent(email.trim())}`)}
               >
                 Enter code
@@ -69,7 +69,7 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
-              <Button controlWidth="fill" type="submit" className="mt-2" loading={loading} disabled={!email.trim()}>
+              <Button action="send" controlWidth="fill" type="submit" className="mt-2" loading={loading} disabled={!email.trim()}>
                 Send reset code
               </Button>
               <p className="text-center text-compact text-zinc-400">

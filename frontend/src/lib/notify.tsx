@@ -60,14 +60,14 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           <span className="break-words">{message}</span>
           {opts?.action && (
             <div className="mt-1">
-              <Button
+              <Button action="dismiss"
                 variant="ghost"
                 controlSize="compact"
                 onClick={() => {
                   toast.dismiss(t.id);
                   opts.action!.onClick();
                 }}
-                className="text-compact font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
+                className=" font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {opts.action.label}
               </Button>

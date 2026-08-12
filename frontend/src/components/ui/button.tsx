@@ -1,5 +1,6 @@
-import { forwardRef, type ButtonHTMLAttributes } from "react";
+import { Children, forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { actionLabel, type ActionKey } from "./action-labels";
 import {
   controlHeightClasses,
   controlSquareClasses,
@@ -10,13 +11,17 @@ import {
 
 type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill";
+export type ButtonContent = "icon" | "text" | "iconText";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "content"> {
   variant?: Variant;
   controlSize?: ControlSize;
   /** Text controls use a registered width slot; containers may explicitly request fill. */
   controlWidth?: ControlWidth;
-  square?: boolean;
+  /** Icon is content="icon"; text uses the 96px slot; iconText uses the 128px slot. */
+  content?: ButtonContent;
+  /** Generates the visible short label from the shared action dictionary. */
+  action?: ActionKey;
   loading?: boolean;
 }
 
@@ -33,13 +38,69 @@ const variantCls: Record<Variant, string> = {
     "bg-transparent text-inherit hover:bg-zinc-800/70 active:bg-zinc-700/70",
 };
 
+function LoadingIndicator() {
+  return (
+    <svg
+      className="h-4 w-4 animate-spin"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
+    </svg>
+  );
+}
+
+function IconTextContent({ action, children, loading, size }: {
+  action?: ActionKey;
+  children: ReactNode;
+  loading?: boolean;
+  size: ControlSize;
+}) {
+  const parts = Children.toArray(children);
+  const leading = parts.shift();
+  return (
+    <>
+      <span
+        data-button-slot="icon"
+        aria-hidden="true"
+        className={cn(
+          "inline-flex flex-shrink-0 items-center justify-center self-stretch bg-black/10 [&>svg]:flex-shrink-0",
+          controlSquareClasses[size],
+        )}
+      >
+        {loading ? <LoadingIndicator /> : leading}
+      </span>
+      <span
+        data-button-slot="label"
+        className="inline-flex min-w-0 flex-1 items-center justify-center self-stretch px-3"
+      >
+        {action ? actionLabel(action) : parts}
+      </span>
+    </>
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       variant = "primary",
       controlSize,
       controlWidth = "slot",
-      square = false,
+      content = "text",
+      action,
       loading,
       disabled,
       className,
@@ -54,39 +115,31 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       disabled={disabled || loading}
       data-control-size={resolvedSize}
+      data-button-content={content}
+      data-control-width={controlWidth}
+      aria-busy={loading || undefined}
       className={cn(
-        "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden font-medium transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0 [&>span]:truncate",
+        "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
         variantCls[variant],
-        square ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
-        controlTextClasses[resolvedSize],
-        !square && (controlWidth === "fill" ? "w-full" : "w-24 max-w-full"),
-        square ? "rounded-sm p-0" : "rounded-sm px-3",
-        className
+        className,
+        content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
+        controlTextClasses.regular,
+        content === "icon"
+          ? "rounded-sm p-0"
+          : cn(
+              "rounded-sm",
+              content === "text" ? "gap-2 px-3" : "gap-0 p-0",
+              controlWidth === "fill" ? "w-full" : content === "iconText" ? "w-32 max-w-full" : "w-24 max-w-full",
+            ),
       )}
       {...props}
     >
-      {loading ? (
-        <svg
-          className="animate-spin h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
+      {content === "iconText" ? (
+        <IconTextContent action={action} loading={loading} size={resolvedSize}>{children}</IconTextContent>
+      ) : content === "icon" ? (
+        loading ? <LoadingIndicator /> : children
       ) : (
-        children
+        <>{loading && <LoadingIndicator />}{action ? actionLabel(action) : children}</>
       )}
     </button>;
   }

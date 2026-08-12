@@ -200,7 +200,7 @@ export default function RegisterPage() {
                 aria-invalid={!!errors.email}
                 aria-describedby={errors.email ? "email-error" : undefined}
               />
-              <Button
+              <Button action="send"
                 type="button"
                 variant="secondary"
                 className="shrink-0 whitespace-nowrap"
@@ -266,7 +266,7 @@ export default function RegisterPage() {
             )}
           </div>
 
-          <Button controlWidth="fill"
+          <Button action="create" controlWidth="fill"
             type="submit"
             className="mt-2"
             loading={loading}

@@ -20,6 +20,8 @@ import {
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { ItemChip } from "@/components/ui/item";
 import { controlHeightClasses } from "@/components/ui/control-size";
+import { MenuOption } from "@/components/ui/menu-option";
+import { OverflowText } from "@/components/ui/overflow-text";
 import {
   useContextPickStore,
   usePendingContext,
@@ -153,7 +155,7 @@ export function AttachContextButton({
   return (
     <UiButton variant="plain"
       type="button"
-      square
+      content="icon"
       controlSize="compact"
       disabled={disabled || added}
       onClick={() => add(channelId, item)}
@@ -197,26 +199,29 @@ export function ContextPickBar({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div className="mx-auto mt-1 flex w-full max-w-[72rem] items-center flex-wrap gap-2 px-4 py-2 max-md:px-3">
+    <div className="flex min-h-9 min-w-0 items-center gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {/* Suggested context (F3): one-click to add, one-click to dismiss; never
           auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
       {suggestions.map((sg) => {
         const Icon = KIND_ICON[sg.kind];
         return (
-          <span
+          <ItemChip
             key={`sg:${sg.id}`}
-            className={`inline-flex items-center gap-1 rounded-sm bg-zinc-800/50 px-1 text-zinc-500 ${controlHeightClasses.regular}`}
-          >
-            <UiButton variant="plain"
-              type="button"
+            label={<OverflowText fullText={sg.label} touchDisclosure={false} />}
+            leading={<Icon className="w-3.5 h-3.5" />}
+            controlSize="regular"
+            presentationLevel="medium"
+            className={`flex-shrink-0 bg-zinc-800/50 text-zinc-500 ${controlHeightClasses.regular}`}
+            actions={<>
+            <IconButton
               onClick={() => add(channelId, sg)}
-              title={`Suggested: add "${sg.label}" as context`}
-              controlSize="compact" className="min-w-0 flex-1 hover:text-indigo-300"
+              label={`Add suggested context ${sg.label}`}
+              title="Add suggestion"
+              controlSize="compact"
+              className="hover:text-indigo-300"
             >
-              <Icon className="w-3.5 h-3.5" />
-              <span className="max-w-[12rem] truncate">{sg.label}</span>
               <MessageSquarePlus className="w-3.5 h-3.5" />
-            </UiButton>
+            </IconButton>
             <IconButton
               onClick={() => dismissSuggestion(channelId, sg.id)}
               label={`Dismiss suggestion ${sg.label}`}
@@ -226,7 +231,8 @@ export function ContextPickBar({
             >
               <X className="w-3.5 h-3.5" />
             </IconButton>
-          </span>
+            </>}
+          />
         );
       })}
 
@@ -236,9 +242,9 @@ export function ContextPickBar({
         return (
           <ItemChip
             key={it.id}
-            label={it.label}
+            label={<OverflowText fullText={it.label} touchDisclosure={false} />}
             leading={<Icon className="h-4 w-4 flex-shrink-0 text-zinc-400" />}
-            presentationLevel="max"
+            presentationLevel="medium"
             controlSize="regular"
             className="bg-zinc-800/60 text-regular text-zinc-300"
             actions={
@@ -270,12 +276,12 @@ export function ContextPickBar({
       })}
 
       <div ref={rootRef} className="relative inline-flex">
-        <UiButton variant="plain"
+        <UiButton action="add" content="iconText" variant="secondary"
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
           title={ADD_CONTEXT_MENU_TITLE}
-          controlSize="regular" className="gap-2 bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          controlSize="regular"
         >
           <MessageSquarePlus className="h-4 w-4" />
           {ADD_CONTEXT_MENU}
@@ -289,20 +295,18 @@ export function ContextPickBar({
               const Icon = KIND_ICON[q.kind];
               const already = items.some((i) => i.id === q.id);
               return (
-                <UiButton controlWidth="fill" variant="plain"
+                <MenuOption
                   key={q.id}
-                  type="button"
                   disabled={already}
                   onClick={() => {
                     add(channelId, q);
                     setOpen(false);
                   }}
-                  controlSize="regular" className="flex items-center gap-2 rounded-sm text-regular text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                >
-                  <Icon className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="flex-1 text-left">{q.label}</span>
-                  {already && <span className="text-minimal text-zinc-500">added</span>}
-                </UiButton>
+                  controlSize="regular"
+                  label={q.label}
+                  leading={<Icon className="w-3.5 h-3.5 text-zinc-400" />}
+                  trailing={already ? <Check className="h-3.5 w-3.5" /> : undefined}
+                />
               );
             })}
             {(onBrowseWorkbench || onBrowseWorkspace) && (
@@ -311,34 +315,30 @@ export function ContextPickBar({
                   Browse &amp; attach
                 </p>
                 {onBrowseWorkbench && (
-                  <UiButton controlWidth="fill" variant="plain"
-                    type="button"
+                  <MenuOption
                     onClick={() => {
                       setOpen(false);
                       onBrowseWorkbench();
                     }}
                     title="Open the Workbench to pick a file to attach"
-                    controlSize="regular" className="flex items-center gap-2 rounded-sm text-regular text-zinc-300 hover:bg-zinc-800"
-                  >
-                    <PanelRight className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="flex-1 text-left">Workbench files…</span>
-                    <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
-                  </UiButton>
+                    controlSize="regular"
+                    label="Workbench files"
+                    leading={<PanelRight className="w-3.5 h-3.5 text-zinc-400" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />}
+                  />
                 )}
                 {onBrowseWorkspace && (
-                  <UiButton controlWidth="fill" variant="plain"
-                    type="button"
+                  <MenuOption
                     onClick={() => {
                       setOpen(false);
                       onBrowseWorkspace();
                     }}
                     title="Open the Remote workspace to pick a file to attach"
-                    controlSize="regular" className="flex items-center gap-2 rounded-sm text-regular text-zinc-300 hover:bg-zinc-800"
-                  >
-                    <FolderTree className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="flex-1 text-left">Workspace files…</span>
-                    <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
-                  </UiButton>
+                    controlSize="regular"
+                    label="Workspace files"
+                    leading={<FolderTree className="w-3.5 h-3.5 text-zinc-400" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />}
+                  />
                 )}
               </>
             )}

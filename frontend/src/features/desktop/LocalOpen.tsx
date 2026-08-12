@@ -135,14 +135,14 @@ export function LocalOpen({
   return (
     <div className="relative shrink-0" ref={wrapRef}>
       <div className="flex items-center rounded-sm hover:bg-zinc-800">
-        <UiButton variant="plain"
+        <UiButton action="open" variant="plain"
           onClick={() => void open(selected.key)}
           title={`Open in ${selected.label}${suffix}`}
           controlSize="compact" className="flex items-center justify-center rounded-l"
         >
           <OpenerGlyph k={selected.key} />
         </UiButton>
-        <UiButton variant="plain"
+        <UiButton action="open" variant="plain"
           onClick={() => setMenuOpen((o) => !o)}
           title="Open in another app"
           aria-label="Choose an app to open in"
@@ -160,10 +160,10 @@ export function LocalOpen({
           )}
           {/* design-system-exempt: menu-option — opener command menu. */}
           {openers.map((op) => (
-            <UiButton controlWidth="fill" variant="plain"
+            <UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
               key={op.key}
               onClick={() => void open(op.key)}
-              controlSize="regular" className="flex items-center gap-2 text-compact text-zinc-200 hover:bg-zinc-800"
+              controlSize="regular" className="flex items-center gap-2  text-zinc-200 hover:bg-zinc-800"
             >
               <OpenerGlyph k={op.key} className="w-4 h-4" />
               {op.label}

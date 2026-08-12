@@ -29,6 +29,9 @@ const policy = {
     nonStandardSpacing: 0,
     arbitrarySpinnerSize: 0,
     nonStandardTypographySize: 0,
+    sharedButtonTypographyOverride: 0,
+    detachedEditActionButton: 0,
+    actionButtonWithoutKey: 0,
     legacyControlSizeProp: 0,
   },
   allowedNativeReasons: ["checkbox"],
@@ -97,6 +100,30 @@ test("accepts only the four registered typography sizes", () => {
   const source = `<><span className="text-minimal"/><span className="text-compact"/><span className="text-regular"/><span className="text-comfortable"/><span className="text-[11px]"/><span className="text-lg"/></>`;
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
   assert.equal(result.violations.nonStandardTypographySize, 2);
+});
+
+test("rejects business typography overrides on shared buttons", () => {
+  const source = `<><Button className="text-compact"/><UiButton className="font-reading text-comfortable"/><IconButton className="text-regular" label="Open"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedButtonTypographyOverride, 4);
+});
+
+test("rejects detached text save and edit actions for existing objects", () => {
+  const source = `<><Button action="save"/><UiButton action="edit"/><IconButton label="Save channel purpose"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.detachedEditActionButton, 2);
+});
+
+test("counts text actions without an ActionKey while allowing icon and selector controls", () => {
+  const source = `<><Button>Delete project</Button><UiButton content="iconText"><Plus/>Add</UiButton><Button action="delete"/><Button content="icon" aria-label="Close"><X/></Button><UiButton role="tab">Overview</UiButton></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.actionButtonWithoutKey, 2);
+});
+
+test("counts every business Button without an ActionKey and does not accept comments as exemptions", () => {
+  const source = `<>/* design-system-exempt: action */<Button>Save changes</Button><UiButton aria-expanded={open}>Details</UiButton><Button content="icon" aria-label="Close"><X/></Button></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.actionButtonWithoutKey, 2);
 });
 
 test("rejects the legacy shared-control size prop", () => {

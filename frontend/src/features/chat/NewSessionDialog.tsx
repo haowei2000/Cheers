@@ -121,7 +121,7 @@ export function NewSessionDialog({
                 : "This connector does not let the platform set a working directory. Allowed roots: "}
               {/* design-system-exempt: form-suggestion — inline datalist shortcut. */}
               {meta.allowed_roots.map((r, i) => (
-                <UiButton variant="plain"
+                <UiButton variant="plain" role="option" aria-selected={cwd === r}
                   key={r}
                   type="button"
                   disabled={busy}
@@ -148,10 +148,10 @@ export function NewSessionDialog({
           <span className="block text-minimal text-zinc-400">One absolute path per line.</span>
         </label>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>
+          <Button action="cancel" variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button controlSize="compact" disabled={busy || !botId} onClick={() => void create()}>
+          <Button action="create" content="iconText" controlSize="compact" disabled={busy || !botId} onClick={() => void create()}>
             <Plus className="w-3.5 h-3.5" />
             {busy ? "Creating…" : "Create"}
           </Button>

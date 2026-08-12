@@ -42,13 +42,13 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               {c.botLabel}
             </div>
           )}
-          <UiButton controlWidth="fill" variant="plain"
+          <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
             onMouseDown={(e) => {
               e.preventDefault();
               onSelect(c);
             }}
             controlSize="regular" className={cn(
- "flex items-center gap-2 text-left text-regular",
+ "flex items-center gap-2 text-left ",
  i === activeIndex
  ? "bg-indigo-600/30 text-zinc-100": "text-zinc-300 hover:bg-zinc-800"
  )}

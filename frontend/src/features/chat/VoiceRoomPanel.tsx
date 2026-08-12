@@ -407,7 +407,7 @@ export function VoiceRoomPanel({
         </div>
 
         {!connected ? (
-          <Button disabled={joining} onClick={() => void join()} controlSize="comfortable" className="shrink-0">
+          <Button action="join" disabled={joining} onClick={() => void join()} controlSize="comfortable" className="shrink-0">
             {joining ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -417,7 +417,7 @@ export function VoiceRoomPanel({
           </Button>
         ) : (
           <div className="flex shrink-0 items-center gap-2">
-            <UiButton variant="plain"
+            <UiButton action={micEnabled ? "disable" : "enable"} content="iconText" variant="plain"
               type="button"
               onClick={() => void toggleMic()}
               disabled={!canPublish}
@@ -430,7 +430,7 @@ export function VoiceRoomPanel({
               }
               aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
               aria-pressed={micEnabled}
-              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
+              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm  font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
  micEnabled
  ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700": "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
  }`}
@@ -442,12 +442,12 @@ export function VoiceRoomPanel({
               )}
               <span className="hidden sm:inline">{micEnabled ? "Mute" : "Unmute"}</span>
             </UiButton>
-            <UiButton variant="plain"
+            <UiButton action="disconnect" variant="plain"
               type="button"
               onClick={() => void disconnect()}
               title="Leave voice"
               aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40 text-compact font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40  font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>
@@ -484,7 +484,7 @@ export function VoiceRoomPanel({
           )}
         </div>
         {serverCanManage && (
-          <UiButton variant="plain"
+          <UiButton action={transcriptionStatus === "active" ? "disable" : "enable"} variant="plain"
             type="button"
             disabled={!connected || changingTranscription}
             onClick={() => void toggleTranscription()}
@@ -507,7 +507,7 @@ export function VoiceRoomPanel({
           <p className="min-w-0 flex-1 text-zinc-300">
             Live captions send final spoken text to this channel; audio is not recorded.
           </p>
-          <UiButton variant="plain"
+          <UiButton action="accept" variant="plain"
             type="button"
             disabled={consenting}
             onClick={() => void grantConsent()}
@@ -516,7 +516,7 @@ export function VoiceRoomPanel({
             {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
             Accept &amp; speak
           </UiButton>
-          <UiButton variant="plain"
+          <UiButton action="cancel" variant="plain"
             type="button"
             disabled={consenting}
             onClick={() => setConsentRequired(false)}

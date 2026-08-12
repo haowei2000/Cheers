@@ -186,12 +186,12 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 placeholder="value"
                 controlSize="regular" className="min-w-0 rounded-sm bg-zinc-800 text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
-              <UiButton variant="plain"
+              <UiButton action="update" variant="plain"
                 type="button"
                 disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
                 onClick={submitManualConfig}
                 title="Apply this config override"
-                controlSize="regular" className="rounded-sm bg-indigo-500/15 text-compact text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                controlSize="regular" className="rounded-sm bg-indigo-500/15  text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Set
               </UiButton>

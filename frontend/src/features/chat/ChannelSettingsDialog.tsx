@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
+import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { controlIconClasses } from "@/components/ui/control-size";
 import {
   CollectionDeleteItem,
@@ -75,6 +76,12 @@ export function ChannelSettingsDialog({
   const [conversationMode, setConversationMode] = useState<ConversationMode>(
     channel.conversation_mode ?? "chat",
   );
+  const [savedMeta, setSavedMeta] = useState({
+    name: channel.name,
+    purpose: channel.purpose ?? "",
+    conversationMode: channel.conversation_mode ?? "chat" as ConversationMode,
+  });
+  const [editingMeta, setEditingMeta] = useState<"name" | "purpose" | "layout" | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -114,6 +121,19 @@ export function ChannelSettingsDialog({
   }, [channel.channel_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    const next = {
+      name: channel.name,
+      purpose: channel.purpose ?? "",
+      conversationMode: channel.conversation_mode ?? "chat" as ConversationMode,
+    };
+    setSavedMeta(next);
+    setName(next.name);
+    setPurpose(next.purpose);
+    setConversationMode(next.conversationMode);
+    setEditingMeta(null);
+  }, [channel.channel_id, channel.name, channel.purpose, channel.conversation_mode]);
+
+  useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
@@ -129,6 +149,22 @@ export function ChannelSettingsDialog({
     return () => clearTimeout(t);
   }, [query, channel.channel_id]);
 
+  function resetMetaDrafts() {
+    setName(savedMeta.name);
+    setPurpose(savedMeta.purpose);
+    setConversationMode(savedMeta.conversationMode);
+  }
+
+  function beginMetaEdit(field: "name" | "purpose" | "layout") {
+    resetMetaDrafts();
+    setEditingMeta(field);
+  }
+
+  function cancelMetaEdit() {
+    resetMetaDrafts();
+    setEditingMeta(null);
+  }
+
   async function saveMeta() {
     const trimmed = name.trim();
     if (!trimmed || savingMeta) return;
@@ -140,6 +176,8 @@ export function ChannelSettingsDialog({
         conversation_mode: conversationMode,
       });
       patchChannel(channel.channel_id, updated);
+      setSavedMeta({ name: trimmed, purpose: purpose.trim(), conversationMode });
+      setEditingMeta(null);
       toast.success("Saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
@@ -238,43 +276,87 @@ export function ChannelSettingsDialog({
               <span className="text-regular text-zinc-400">Channel avatar</span>
             </div>
           )}
-          <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide">
-            Name
-          </label>
-          <UiInput
-            value={name}
-            disabled={!canManage}
-            onChange={(e) => setName(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-          />
+          <div className="flex items-center gap-2">
+            <label htmlFor="channel-settings-name" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">
+              Name
+            </label>
+            {canManage && (
+              <InlineEditActions
+                label="channel name"
+                editing={editingMeta === "name"}
+                saving={savingMeta}
+                disabled={!name.trim()}
+                onEdit={() => beginMetaEdit("name")}
+                onSave={() => void saveMeta()}
+                onCancel={cancelMetaEdit}
+              />
+            )}
+          </div>
+          {editingMeta === "name" ? (
+            <UiInput
+              id="channel-settings-name"
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          ) : (
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-200">
+              <span className="truncate">{savedMeta.name}</span>
+            </p>
+          )}
           {channel.type !== "dm" && (
             <div className="space-y-2 pt-1">
-              <label className="text-compact font-medium uppercase tracking-wide text-zinc-400">
-                Conversation layout
-              </label>
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-compact font-medium uppercase tracking-wide text-zinc-400">
+                  Conversation layout
+                </span>
+                {canManage && (
+                  <InlineEditActions
+                    label="conversation layout"
+                    editing={editingMeta === "layout"}
+                    saving={savingMeta}
+                    onEdit={() => beginMetaEdit("layout")}
+                    onSave={() => void saveMeta()}
+                    onCancel={cancelMetaEdit}
+                  />
+                )}
+              </div>
               <ConversationModePicker
                 value={conversationMode}
                 onChange={setConversationMode}
-                disabled={!canManage}
+                disabled={editingMeta !== "layout"}
               />
             </div>
           )}
-          <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide">
-            Purpose
-          </label>
-          <UiInput
-            value={purpose}
-            disabled={!canManage}
-            placeholder="(Optional) what this channel is for…"
-            onChange={(e) => setPurpose(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-          />
-          {canManage && (
-            <div className="flex justify-end">
-              <Button controlSize="compact" loading={savingMeta} onClick={() => void saveMeta()}>
-                Save
-              </Button>
-            </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="channel-settings-purpose" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">
+              Purpose
+            </label>
+            {canManage && (
+              <InlineEditActions
+                label="channel purpose"
+                editing={editingMeta === "purpose"}
+                saving={savingMeta}
+                onEdit={() => beginMetaEdit("purpose")}
+                onSave={() => void saveMeta()}
+                onCancel={cancelMetaEdit}
+              />
+            )}
+          </div>
+          {editingMeta === "purpose" ? (
+            <UiInput
+              id="channel-settings-purpose"
+              autoFocus
+              value={purpose}
+              placeholder="(Optional) what this channel is for…"
+              onChange={(e) => setPurpose(e.target.value)}
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          ) : (
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-400">
+              <span className="truncate">{savedMeta.purpose || "No purpose set"}</span>
+            </p>
           )}
         </div>
 
@@ -424,29 +506,25 @@ export function ChannelSettingsDialog({
             focus; the delete action is never the keyboard default. */}
         {canManage && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-regular font-medium text-zinc-200">Delete channel</p>
               <p className="text-compact text-zinc-400 mt-1">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             {confirmingDelete ? (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button
+                  action="cancel"
                   variant="secondary"
                   controlSize="compact"
                   autoFocus
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
-                >
-                  Cancel
-                </Button>
-                <Button variant="danger" controlSize="compact" loading={deleting} onClick={() => void doDelete()}>
-                  Delete channel
-                </Button>
+                />
+                <Button action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" loading={deleting} onClick={() => void doDelete()} />
               </div>
             ) : (
-              <Button variant="danger" controlSize="compact" onClick={() => setConfirmingDelete(true)}>
+              <Button content="iconText" action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" className="shrink-0" onClick={() => setConfirmingDelete(true)}>
                 <Trash2 className="w-3.5 h-3.5" />
-                Delete
               </Button>
             )}
           </div>
@@ -456,23 +534,18 @@ export function ChannelSettingsDialog({
             myRole is undefined for a global admin viewing a channel they're not in. */}
         {myRole && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-regular font-medium text-zinc-200">Leave channel</p>
               <p className="text-compact text-zinc-400 mt-1">Remove yourself from this channel.</p>
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Button variant="ghost" controlSize="compact" autoFocus onClick={() => setConfirmingLeave(false)}>
-                  Cancel
-                </Button>
-                <Button variant="secondary" controlSize="compact" onClick={() => void leave()}>
-                  Leave channel
-                </Button>
+                <Button action="cancel" variant="ghost" controlSize="compact" autoFocus onClick={() => setConfirmingLeave(false)} />
+                <Button action="leave" aria-label="Leave channel" variant="secondary" controlSize="compact" onClick={() => void leave()} />
               </div>
             ) : (
-              <Button variant="secondary" controlSize="compact" onClick={() => setConfirmingLeave(true)}>
+              <Button content="iconText" action="leave" aria-label="Leave channel" variant="secondary" controlSize="compact" className="shrink-0" onClick={() => setConfirmingLeave(true)}>
                 <LogOut className="w-3.5 h-3.5" />
-                Leave
               </Button>
             )}
           </div>

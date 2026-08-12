@@ -5,9 +5,9 @@ import { Button } from "./button";
 type ComposerToolbarButtonProps = ComponentPropsWithoutRef<typeof Button>;
 
 /**
- * Text-bearing controls in the composer toolbar share one regular control
- * slot. Labels truncate inside the slot instead of changing the toolbar's
- * visual rhythm according to their content length.
+ * Composer selectors use the shared regular icon+text slot. Their visible
+ * labels must be short; the full current value belongs in the accessible name
+ * and tooltip instead of being truncated inside the control.
  */
 export const ComposerToolbarButton = forwardRef<
   HTMLButtonElement,
@@ -17,7 +17,8 @@ export const ComposerToolbarButton = forwardRef<
     ref={ref}
     variant={variant}
     controlSize="regular"
-    className={cn("min-w-0", className)}
+    content="iconText"
+    className={cn("flex-shrink-0", className)}
     {...props}
   >
     {children}

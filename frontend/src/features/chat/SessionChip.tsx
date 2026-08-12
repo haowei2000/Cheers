@@ -325,6 +325,7 @@ export function SessionChip({
             ? `Messages will go directly to this session of @${selected.bot_name}, ignoring @mentions`
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
+        aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
         className={cn(
           selected || open
             ? "bg-indigo-600/15 text-indigo-200"
@@ -336,9 +337,7 @@ export function SessionChip({
         ) : (
           <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-indigo-400" : "text-zinc-500")} />
         )}
-        <span className="min-w-0 flex-1 truncate">
-          {selected ? `@${selected.bot_name} · ${tagOf(selected)}` : "Auto"}
-        </span>
+        <span>{selected ? "Session" : "Auto"}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
       </ComposerToolbarButton>
 
@@ -409,7 +408,7 @@ export function SessionChip({
             (() => {
               const idx = rowIndex++;
               return (
-                <UiButton variant="plain"
+                <UiButton action="create" content="iconText" variant="plain"
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
@@ -427,7 +426,7 @@ export function SessionChip({
           {(() => {
             const idx = rowIndex++;
             return (
-              <UiButton variant="plain"
+              <UiButton action="open" content="iconText" variant="plain"
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();

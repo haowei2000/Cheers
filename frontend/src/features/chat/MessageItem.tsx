@@ -214,7 +214,7 @@ function SendStatus({
       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
-        <UiButton variant="plain"
+        <UiButton action="retry" content="iconText" variant="plain"
           type="button"
           onClick={() => onRetry(message)}
           className="inline-flex items-center gap-1 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
@@ -288,7 +288,7 @@ function ReplyPreview({
   };
 
   return (
-    <UiButton variant="plain"
+    <UiButton action="open" variant="plain"
       type="button"
       controlWidth="fill"
       controlSize="regular"
@@ -601,7 +601,7 @@ export const MessageItem = memo(function MessageItem({
       event.preventDefault(),
   };
   // One identity anatomy for Chat and Discuss, including threaded replies.
-  // Metadata intentionally sits outside the square avatar button so it cannot
+  // Metadata intentionally sits outside the content="icon" avatar button so it cannot
   // be clipped by the shared control's overflow guard.
   const identityColumn = (
     <div
@@ -614,7 +614,7 @@ export const MessageItem = memo(function MessageItem({
       <UiButton variant="plain"
         type="button"
         {...avatarInteractionProps}
-        square
+        content="icon"
         controlSize="regular"
         className="touch-manipulation select-none transition-opacity hover:opacity-80 focus-visible:ring-indigo-500/70"
         title={
@@ -666,12 +666,12 @@ export const MessageItem = memo(function MessageItem({
         type="button"
         role="menuitem"
         onClick={mentionSender}
-        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left text-regular text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <AtSign className="h-4 w-4" />
         <span className="min-w-0 truncate">Mention @{name}</span>
       </UiButton>
-      <UiButton controlWidth="fill" variant="plain"
+      <UiButton content="iconText" controlWidth="fill" variant="plain"
         type="button"
         role="menuitem"
         onClick={() => {
@@ -679,7 +679,7 @@ export const MessageItem = memo(function MessageItem({
           setAvatarMenuOpen(false);
           if (anchor) openProfile(anchor);
         }}
-        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left text-regular text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <UserRound className="h-4 w-4" />
         View profile
@@ -715,7 +715,7 @@ export const MessageItem = memo(function MessageItem({
       onClick={(event) => openInspector(event.currentTarget)}
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
-      square controlSize="compact" className={cn(
+      content="icon" controlSize="compact" className={cn(
  "relative inline-flex items-center justify-center self-start text-zinc-500 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
  isOwnAlignedRight && "self-end",
  detailsMeta.hasFailure && "text-red-400/70 opacity-100 hover:text-red-300",
@@ -730,7 +730,7 @@ export const MessageItem = memo(function MessageItem({
         <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-red-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
-          <UiButton variant="plain"
+          <UiButton action="open" variant="plain"
             type="button"
             onClick={(event) => openInspector(event.currentTarget)}
             className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
@@ -926,7 +926,7 @@ export const MessageItem = memo(function MessageItem({
 function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) {
   const [stopping, setStopping] = useState(false);
   return (
-    <UiButton variant="plain"
+    <UiButton action="stop" content="iconText" variant="plain"
       type="button"
       disabled={stopping}
       onClick={async () => {
@@ -936,7 +936,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80 text-compact text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3.5 h-3.5" fill="currentColor" />

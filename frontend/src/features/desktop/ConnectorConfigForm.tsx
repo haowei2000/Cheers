@@ -1,13 +1,14 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { FolderPlus, Settings2 } from "lucide-react";
+import { FolderPlus, Save, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { IconButton } from "@/components/ui/icon-button";
 import { invokeDesktop, pickFolder } from "@/lib/desktop";
 import { AgentPicker } from "./AgentPicker";
 
@@ -123,7 +124,7 @@ export function ConnectorConfigForm({
           spellCheck={false}
         />
         <div className="flex gap-2">
-          <Button
+          <Button action="restart"
             controlSize="compact"
             disabled={busy}
             onClick={() =>
@@ -134,8 +135,7 @@ export function ConnectorConfigForm({
           >
             Save &amp; restart
           </Button>
-          <Button
-            variant="secondary"
+          <IconButton label="Save connector config"
             controlSize="compact"
             disabled={busy}
             onClick={() =>
@@ -144,9 +144,9 @@ export function ConnectorConfigForm({
               )
             }
           >
-            Save only
-          </Button>
-          <Button variant="secondary" controlSize="compact" onClick={() => setRawMode(false)}>
+            <Save className="h-3.5 w-3.5" />
+          </IconButton>
+          <Button action="back" variant="secondary" controlSize="compact" onClick={() => setRawMode(false)}>
             Back to form
           </Button>
         </div>
@@ -203,11 +203,11 @@ export function ConnectorConfigForm({
               placeholder="/opt/homebrew/bin/codex-acp"
             />
           </div>
-          <UiButton variant="plain"
+          <UiButton action="more" content="iconText" variant="plain"
             type="button"
             title="Command arguments"
             onClick={() => setArgsOpen((o) => !o)}
-            controlSize="regular" className={`shrink-0 rounded-sm text-compact flex items-center gap-1 ${
+            controlSize="regular" className={`shrink-0 rounded-sm  flex items-center gap-1 ${
  argsOpen || f.adapter_args.length
  ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
  }`}
@@ -235,9 +235,9 @@ export function ConnectorConfigForm({
             className="font-mono text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
-          <UiButton variant="plain"
+          <UiButton action="add" content="iconText" variant="plain"
             type="button"
-            className="mt-1 text-compact text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            className="mt-1  text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             onClick={() =>
               void pickFolder().then((p) => {
                 if (p && !f.allowed_roots.includes(p)) {
@@ -257,7 +257,7 @@ export function ConnectorConfigForm({
               placeholder="~/Projects"
               className="flex-1"
             />
-            <Button
+            <Button action="choose" content="iconText"
               variant="secondary"
               controlSize="compact"
               onClick={() => void pickFolder().then((p) => p && patch({ default_cwd: p }))}
@@ -269,7 +269,7 @@ export function ConnectorConfigForm({
             <p className="mt-1 text-compact text-amber-400">
               This directory is not under any workspace root — the connector will
               refuse to start.{" "}
-              <UiButton variant="plain"
+              <UiButton action="add" variant="plain"
                 type="button"
                 className="underline hover:text-amber-300"
                 onClick={() => {
@@ -295,9 +295,9 @@ export function ConnectorConfigForm({
 
       {/* ── More ── */}
       <div>
-        <UiButton variant="plain"
+        <UiButton action="more" variant="plain"
           type="button"
-          className="text-compact text-zinc-400 hover:text-zinc-200"
+          className=" text-zinc-400 hover:text-zinc-200"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
@@ -362,25 +362,23 @@ export function ConnectorConfigForm({
               controlSize="compact"
               className="text-compact"
             />
-            <UiButton variant="plain"
-              type="button"
-              className="text-compact text-zinc-500 hover:text-zinc-300"
+            <IconButton label="Edit raw TOML" controlSize="compact"
               onClick={() => void openRaw()}
             >
-              Edit raw TOML…
-            </UiButton>
+              <Settings2 className="h-3.5 w-3.5" />
+            </IconButton>
           </div>
         )}
       </div>
 
       <div className="flex gap-2">
-        <Button controlSize="compact" disabled={busy} onClick={() => onSave(true, apply)}>
+        <Button action="restart" controlSize="compact" disabled={busy} onClick={() => onSave(true, apply)}>
           Save &amp; restart
         </Button>
-        <Button variant="secondary" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)}>
-          Save only
-        </Button>
-        <Button variant="secondary" controlSize="compact" onClick={onClose}>
+        <IconButton label="Save connector settings" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)}>
+          <Save className="h-3.5 w-3.5" />
+        </IconButton>
+        <Button action="cancel" variant="secondary" controlSize="compact" onClick={onClose}>
           Cancel
         </Button>
       </div>

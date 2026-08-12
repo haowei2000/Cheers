@@ -1,4 +1,4 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { TabOption } from "@/components/ui/tab-option";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { MessageCircle, MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -36,30 +36,28 @@ export function ConversationModePicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Conversation layout">
+    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Conversation layout">
       {OPTIONS.map((option) => {
         const selected = value === option.value;
         const Icon = option.icon;
         return (
-          <UiButton
-            variant="plain"
+          <TabOption
             key={option.value}
-            type="button"
+            label={option.title}
+            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-500")} />}
+            selected={selected}
             disabled={disabled}
-            aria-pressed={selected}
+            aria-disabled={disabled}
             aria-label={`${option.title}: ${option.description}`}
             title={option.description}
             onClick={() => onChange(option.value)}
             controlSize="regular"
             className={cn(
- "min-w-0 justify-start text-left",
+ "min-w-0",
  selected
- ? "bg-zinc-700 text-zinc-100": "bg-zinc-950/40 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
+ ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
  )}
-          >
-            <Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-500")} />
-            <span className="min-w-0 truncate">{option.title}</span>
-          </UiButton>
+          />
         );
       })}
     </div>

@@ -37,6 +37,9 @@
     "nonStandardSpacing": 0,
     "arbitrarySpinnerSize": 0,
     "nonStandardTypographySize": 0,
+    "sharedButtonTypographyOverride": 0,
+    "detachedEditActionButton": 0,
+    "actionButtonWithoutKey": 0,
     "legacyControlSizeProp": 0
   },
   "allowedNativeReasons": [

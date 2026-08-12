@@ -284,14 +284,14 @@ export function DiscussionView({
               className="bg-zinc-900/70 placeholder:text-zinc-500"
             />
           </label>
-          <UiButton variant="plain"
+          <UiButton content="iconText" action="create" variant="plain"
             type="button"
             onClick={startDiscussion}
+            aria-label="Create a new discussion"
             controlSize="regular"
             className="shrink-0 bg-indigo-500 text-white hover:bg-indigo-400 focus-visible:ring-indigo-400"
           >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New discussion</span>
           </UiButton>
         </div>
       </div>
@@ -304,7 +304,7 @@ export function DiscussionView({
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <MessageCircle className="h-5 w-5 text-zinc-600" />
             <div><p className="text-regular font-medium text-zinc-200">No discussions yet</p><p className="mt-1 text-compact text-zinc-500">Start a topic for the channel.</p></div>
-            <UiButton variant="plain" type="button" onClick={startDiscussion} className="text-regular font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
+            <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
           </div>
         ) : (
           <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
@@ -347,7 +347,7 @@ export function DiscussionView({
               );
             })}
             {nextCursor && (
-              <UiButton controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className="text-compact text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
+              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className=" text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
               </UiButton>
             )}
@@ -360,7 +360,7 @@ export function DiscussionView({
   const detailPane = (
     <section className="flex min-h-0 flex-[1.5] flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
-        <UiButton controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-zinc-300 hover:bg-zinc-900 focus-visible:ring-inset">
+        <UiButton action="start" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-zinc-300 hover:bg-zinc-900 focus-visible:ring-inset">
           <ArrowLeft className="h-4 w-4" />Discussions
         </UiButton>
       )}
@@ -392,7 +392,7 @@ export function DiscussionView({
           <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto py-3">
             <div className="mx-auto flex max-w-[56rem] flex-col gap-1 px-2 md:px-4">
               {detail.meta.has_more_before && (
-                <UiButton variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto text-compact text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
+                <UiButton action="more" variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto  text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
                   {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
                 </UiButton>
               )}

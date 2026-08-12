@@ -34,9 +34,9 @@ export function AdminReports() {
           </span>}
           criticalStatus={<span className="text-compact text-zinc-400">{report.status}</span>}
           actions={<>
-            <Button controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "reviewing")}>Reviewing</Button>
-            <Button controlSize="compact" onClick={() => void setStatus(report, "resolved")}>Resolve</Button>
-            <Button controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "dismissed")}>Dismiss</Button>
+            <Button action="review" aria-label={`Review report ${report.report_id}`} controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "reviewing")} />
+            <Button action="resolve" aria-label={`Resolve report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "resolved")} />
+            <Button action="dismiss" aria-label={`Dismiss report ${report.report_id}`} controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "dismissed")} />
           </>}
           className="border-0 bg-zinc-900"
         />

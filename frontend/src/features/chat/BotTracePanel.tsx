@@ -280,7 +280,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
             const stats = diffStats(diff);
             const active = diff.path === selected.path;
             return (
-              <UiButton controlWidth="fill" variant="plain"
+              <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={active}
                 key={diff.path}
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
@@ -644,7 +644,7 @@ function TraceItem({
 
   return (
     <div className="relative min-w-0">
-      <UiButton controlWidth="fill" variant="plain"
+      <UiButton action={active ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
         ref={triggerRef}
         type="button"
         onClick={onToggle}
@@ -913,12 +913,12 @@ export function BotTracePanel({
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
-        <UiButton variant="plain"
+        <UiButton action={expanded ? "collapse" : "expand"} content="iconText" variant="plain"
           type="button"
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="flex items-center gap-2 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -980,19 +980,19 @@ export function BotTracePanel({
             );
           })}
           {latestOnly && (
-            <UiButton variant="plain"
+            <UiButton action="collapse" variant="plain"
               type="button"
               onClick={() => setShowAll(true)}
-              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show all {timeline.length} steps
             </UiButton>
           )}
           {streaming && showAll && timeline.length > 1 && (
-            <UiButton variant="plain"
+            <UiButton action="expand" variant="plain"
               type="button"
               onClick={() => setShowAll(false)}
-              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show latest only
             </UiButton>
@@ -1009,7 +1009,7 @@ export function BotTracePanel({
       {expanded && error && !loading && (
         <div className="mt-1 px-3 flex items-center gap-2 text-compact text-red-400">
           <span>Failed to load steps.</span>
-          <UiButton variant="plain"
+          <UiButton action="retry" variant="plain"
             type="button"
             onClick={() => void load()}
             className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"

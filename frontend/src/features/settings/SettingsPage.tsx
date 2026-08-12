@@ -21,6 +21,8 @@ import {
   Server,
   Laptop,
   Shield,
+  Copy,
+  Check,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
@@ -58,13 +60,15 @@ import { Button } from "@/components/ui/button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Field, SectionHead, MetaRow } from "@/components/ui/field";
-import { CopyButton } from "@/features/bots/BotDetailPanel";
+import { Field, SectionHead } from "@/components/ui/field";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 import { AdminReports } from "./AdminReports";
 import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
+import { InlineEditActions } from "@/components/ui/inline-edit-actions";
+import { IconButton } from "@/components/ui/icon-button";
+import { OverflowText } from "@/components/ui/overflow-text";
 
 type SectionId =
   | "profile"
@@ -112,7 +116,7 @@ function ServerCard() {
           </p>
         </div>
         {isTauri() && (
-          <Button
+          <Button action="switch"
             variant="secondary"
             controlSize="compact"
             onClick={() => {
@@ -179,7 +183,7 @@ function LaunchAtLoginCard() {
             Start Cheers (tray + connector supervisor) when you sign in to your Mac.
           </p>
         </div>
-        <Button
+        <Button action="disable"
           variant={enabled ? "secondary" : "primary"}
           controlSize="compact"
           disabled={busy || enabled === null}
@@ -246,7 +250,7 @@ function AppUpdateCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-regular font-medium text-zinc-200">App updates</p>
@@ -260,24 +264,22 @@ function AppUpdateCard() {
         {update ? (
           <Button
             variant="primary"
-            controlSize="compact"
-            disabled={installing}
+            action="restart"
+            aria-label="Install update and restart Cheers"
+            loading={installing}
             onClick={() => void install()}
-          >
-            {installing ? "Installing…" : "Update & restart"}
-          </Button>
+          />
         ) : (
           <Button
             variant="secondary"
-            controlSize="compact"
-            disabled={checking}
+            action="check"
+            aria-label="Check for Cheers updates"
+            loading={checking}
             onClick={() => void check()}
-          >
-            {checking ? "Checking…" : "Check for updates"}
-          </Button>
+          />
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -330,7 +332,7 @@ function PushNotificationsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
@@ -345,14 +347,14 @@ function PushNotificationsCard() {
         </div>
         <Button
           variant={enabled ? "secondary" : "primary"}
-          controlSize="compact"
+          action={enabled ? "disable" : "enable"}
+          aria-label={`${enabled ? "Turn off" : "Turn on"} push notifications`}
+          loading={busy || status === "loading"}
           disabled={busy || status === "loading"}
           onClick={() => void toggle()}
-        >
-          {status === "loading" ? "…" : enabled ? "Turn off" : "Turn on"}
-        </Button>
+        />
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -396,21 +398,18 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   const inputCls =
     "bg-zinc-800 text-zinc-100";
   return (
-    <div className="bg-zinc-900 rounded-sm p-6">
-      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
-        <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
-      </p>
-      <p className="text-compact text-zinc-400 mb-4">
-        Updating your password signs out every other device.
-      </p>
-      <div className="grid gap-3 max-w-sm">
-        <div className="space-y-2">
-          <label
-            htmlFor="cp-current"
-            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
-          >
-            Current password
-          </label>
+    <section className="py-5 first:pt-0">
+      <div className="mb-4 flex min-w-0 items-start gap-3">
+        <KeyRound className="h-4 w-4 flex-shrink-0 text-indigo-400" />
+        <div className="min-w-0 flex-1">
+          <h3 className="font-utility text-regular font-medium text-zinc-200">Change password</h3>
+          <p className="mt-1 font-utility text-compact text-zinc-400">
+            Updating your password signs out every other device.
+          </p>
+        </div>
+      </div>
+      <div className="grid max-w-2xl grid-cols-2 gap-3 max-md:grid-cols-1">
+        <Field label="Current password" htmlFor="cp-current">
           <UiInput
             id="cp-current"
             type="password"
@@ -419,14 +418,8 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             autoComplete="current-password"
             className={inputCls}
           />
-        </div>
-        <div className="space-y-2">
-          <label
-            htmlFor="cp-new"
-            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
-          >
-            New password
-          </label>
+        </Field>
+        <Field label="New password" htmlFor="cp-new">
           <UiInput
             id="cp-new"
             type="password"
@@ -436,14 +429,8 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             autoComplete="new-password"
             className={inputCls}
           />
-        </div>
-        <div className="space-y-2">
-          <label
-            htmlFor="cp-confirm"
-            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
-          >
-            Confirm new password
-          </label>
+        </Field>
+        <Field label="Confirm password" htmlFor="cp-confirm">
           <UiInput
             id="cp-confirm"
             type="password"
@@ -453,14 +440,8 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             autoComplete="new-password"
             className={inputCls}
           />
-        </div>
-        <div className="space-y-2">
-          <label
-            htmlFor="cp-two-factor"
-            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
-          >
-            2FA code
-          </label>
+        </Field>
+        <Field label="2FA code" htmlFor="cp-two-factor">
           <UiInput
             id="cp-two-factor"
             type="text"
@@ -470,14 +451,21 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             autoComplete="one-time-code"
             className={inputCls}
           />
-        </div>
-        <div>
-          <Button onClick={() => void submit()} disabled={busy || !current || !next}>
-            {busy ? "Saving…" : "Update password"}
+        </Field>
+        <div className="col-span-2 flex justify-end max-md:col-span-1">
+          <Button
+            content="iconText"
+            action="update"
+            aria-label="Update account password"
+            loading={busy}
+            onClick={() => void submit()}
+            disabled={!current || !next}
+          >
+            <KeyRound className="h-4 w-4" />
           </Button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -543,7 +531,7 @@ function ExternalIdentitiesCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
         <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
       </p>
@@ -551,27 +539,22 @@ function ExternalIdentitiesCard() {
         Removing a provider signs out other sessions and removes trusted devices.
       </p>
       {loadError ? (
-        <Button variant="secondary" controlSize="compact" onClick={() => setReloadKey((value) => value + 1)}>
-          Retry
-        </Button>
+        <Button variant="secondary" action="retry" aria-label="Retry loading sign-in methods" onClick={() => setReloadKey((value) => value + 1)} />
       ) : (
-        <div className="divide-y divide-zinc-800">
+        <ItemList presentationLevel="medium" controlSize="regular">
           {(identities ?? []).map((identity) => {
             const label = identity.provider === "apple" ? "Apple" : "Google";
             return (
-              <div key={identity.provider} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                <div className="min-w-0">
-                  <p className="text-regular text-zinc-200">{label}</p>
-                  <p className="text-compact text-zinc-500 truncate">
-                    {identity.linked
-                      ? identity.email || identity.display_name || "Linked"
-                      : "Not linked"}
-                  </p>
-                </div>
-                {identity.linked ? (
+              <OperationsItem
+                key={identity.provider}
+                title={label}
+                status={identity.linked ? identity.email || identity.display_name || "Linked" : "Not linked"}
+                actions={identity.linked ? (
                   <Button
                     variant="danger"
-                    controlSize="compact"
+                    action="unlink"
+                    aria-label={`Unlink ${label} sign-in method`}
+                    loading={busy === identity.provider}
                     disabled={
                       busy !== null ||
                       !identity.can_unlink ||
@@ -585,12 +568,12 @@ function ExternalIdentitiesCard() {
                           : `Unlink ${label}`
                     }
                     onClick={() => void unlink(identity)}
-                  >
-                    {busy === identity.provider ? "Removing…" : "Unlink"}
-                  </Button>
+                  />
                 ) : identity.provider === "google" ? (
                   <Button
-                    controlSize="compact"
+                    action="link"
+                    aria-label="Link Google sign-in method"
+                    loading={busy === "google"}
                     disabled={busy !== null || !identity.recent_authentication}
                     title={
                       !identity.recent_authentication
@@ -598,22 +581,20 @@ function ExternalIdentitiesCard() {
                         : "Link Google"
                     }
                     onClick={() => void linkGoogle(identity)}
-                  >
-                    {busy === "google" ? "Opening…" : "Link"}
-                  </Button>
-                ) : null}
-              </div>
+                  />
+                ) : undefined}
+              />
             );
           })}
-          {identities === null && <p className="text-compact text-zinc-500">Loading…</p>}
-        </div>
+          {identities === null && <OperationsItem title="Loading sign-in methods…" disabled />}
+        </ItemList>
       )}
       {identities?.some((identity) => !identity.recent_authentication) && (
         <p className="text-compact text-amber-400 mt-4">
           Sign in again before linking or unlinking an identity.
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -641,39 +622,41 @@ function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
   }
 
   return (
-    <div className="rounded-sm bg-red-950/25 p-6 mt-4">
+    <section className="border-t border-red-950/70 py-5">
       <p className="text-regular font-medium text-red-300 flex items-center gap-2">
         <Trash2 className="w-4 h-4" /> Delete account
       </p>
       <p className="text-compact text-zinc-400 mt-1 mb-4">
         This permanently removes your account. Passwordless accounts must have signed in within the last five minutes.
       </p>
-      <div className="grid gap-3 max-w-sm">
-        <Input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Current password, if your account has one"
-          autoComplete="current-password"
-          aria-label="Current password"
-        />
-        <Input
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
-          placeholder="Type DELETE to confirm"
-          aria-label="Deletion confirmation"
-        />
-        <div>
+      <div className="grid max-w-2xl grid-cols-2 gap-3 max-md:grid-cols-1">
+        <Field label="Current password" hint="Optional for passwordless accounts">
+          <Input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+          />
+        </Field>
+        <Field label="Confirmation" hint="Type DELETE to confirm">
+          <Input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            placeholder="DELETE"
+          />
+        </Field>
+        <div className="col-span-2 flex justify-end max-md:col-span-1">
           <Button
             variant="danger"
+            action="delete"
+            aria-label="Permanently delete account"
             disabled={busy || confirmation !== "DELETE"}
+            loading={busy}
             onClick={() => void remove()}
-          >
-            {busy ? "Deleting…" : "Delete account"}
-          </Button>
+          />
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -736,7 +719,7 @@ function DevicesSessionsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Laptop className="w-4 h-4 text-zinc-400" />
         <p className="text-regular font-medium text-zinc-200">Devices and sessions</p>
@@ -756,20 +739,18 @@ function DevicesSessionsCard() {
               </span>}
               actions={!s.current ? (
                 <Button
-                  controlSize="compact"
                   variant="ghost"
+                  action="revoke"
+                  aria-label={`Revoke session ${s.device_name || s.client}`}
                   loading={busyId === s.session_id}
                   onClick={() => void revoke(s)}
-                >
-                  Revoke
-                </Button>
+                />
               ) : undefined}
-              className="border-0 bg-zinc-950/60"
             />
           ))}
         </ItemList>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -808,7 +789,7 @@ function ExternalAIPermissionsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Shield className="w-4 h-4 text-zinc-400" />
         <p className="text-regular font-medium text-zinc-200">External AI permissions</p>
@@ -821,37 +802,28 @@ function ExternalAIPermissionsCard() {
           appear here.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ItemList presentationLevel="medium" controlSize="regular">
           {consents.map((c) => {
             const key = `${c.channel_id}:${c.bot_id}`;
             return (
-              <li
+              <OperationsItem
                 key={key}
-                className="flex items-center gap-3 rounded-sm bg-zinc-950/60 px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-regular text-zinc-200 truncate">
-                    {c.bot_name}
-                    {c.provider_name ? ` · ${c.provider_name}` : ""}
-                  </p>
-                  <p className="text-compact text-zinc-500 truncate">
-                    #{c.channel_name} · policy {c.policy_version}
-                  </p>
-                </div>
-                <Button
+                title={`${c.bot_name}${c.provider_name ? ` · ${c.provider_name}` : ""}`}
+                status={`#${c.channel_name} · policy ${c.policy_version}`}
+                actions={<Button
                   controlSize="compact"
                   variant="ghost"
+                  action="revoke"
+                  aria-label={`Revoke external AI permission for ${c.bot_name}`}
                   loading={busyKey === key}
                   onClick={() => void revoke(c)}
-                >
-                  Revoke
-                </Button>
-              </li>
+                />}
+              />
             );
           })}
-        </ul>
+        </ItemList>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -866,7 +838,7 @@ function BotsMovedCard() {
       <p className="text-compact text-zinc-400 mb-4">
         Create and manage bots from Fleet — the primary home for your agent roster.
       </p>
-      <Button onClick={() => navigate("/fleet")}>Open Fleet</Button>
+      <Button action="open" onClick={() => navigate("/fleet")}>Open Fleet</Button>
     </div>
   );
 }
@@ -885,6 +857,14 @@ function ProfileEditCard() {
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+  const [savedProfile, setSavedProfile] = useState({
+    displayName: "",
+    statusEmoji: "",
+    statusText: "",
+    bio: "",
+  });
 
   useEffect(() => {
     let alive = true;
@@ -896,6 +876,12 @@ function ProfileEditCard() {
         setStatusEmoji(me.status_emoji ?? "");
         setStatusText(me.status_text ?? "");
         setBio(me.bio ?? "");
+        setSavedProfile({
+          displayName: me.display_name ?? "",
+          statusEmoji: me.status_emoji ?? "",
+          statusText: me.status_text ?? "",
+          bio: me.bio ?? "",
+        });
         setAvatarUrl(me.avatar_url ?? null);
         // Hydrate the store so the rest of the app sees the full profile.
         if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
@@ -923,6 +909,13 @@ function ProfileEditCard() {
         bio: bio.trim(),
       });
       if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
+      setSavedProfile({
+        displayName: me.display_name ?? "",
+        statusEmoji: me.status_emoji ?? "",
+        statusText: me.status_text ?? "",
+        bio: me.bio ?? "",
+      });
+      setEditing(false);
       toast.success("Profile saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save profile");
@@ -950,7 +943,7 @@ function ProfileEditCard() {
           overwritten. Check your connection and try again.
         </p>
         <div className="mt-4">
-          <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+          <Button action="retry" variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
             Retry
           </Button>
         </div>
@@ -960,88 +953,134 @@ function ProfileEditCard() {
 
   const handle = user?.username ?? user?.user_id?.slice(0, 8);
 
+  function cancelEditing() {
+    setDisplayName(savedProfile.displayName);
+    setStatusEmoji(savedProfile.statusEmoji);
+    setStatusText(savedProfile.statusText);
+    setBio(savedProfile.bio);
+    setEditing(false);
+  }
+
+  async function copyUserId() {
+    if (!user?.user_id) return;
+    try {
+      await navigator.clipboard.writeText(user.user_id);
+      setCopiedId(true);
+      window.setTimeout(() => setCopiedId(false), 1500);
+    } catch {
+      toast.error("Clipboard unavailable — select and copy manually");
+    }
+  }
+
   return (
-    // One card with three clearly spaced regions: identity header, form, and details.
-    <div className="bg-zinc-900 rounded-sm p-5 space-y-7">
-      {/* Identity header — the avatar is the upload entry; this doubles as a
-          live preview, so no separate preview block above the form. */}
-      <div className="flex items-center gap-4">
+    <div className="space-y-6">
+      <div className="flex min-w-0 items-center gap-3 border-b border-zinc-800 pb-4">
         <AvatarUpload
           name={displayName || user?.username}
           id={user?.user_id}
           src={avatarUrl}
-          size="large"
+          size="regular"
           onUpload={handleAvatarUpload}
         />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-zinc-100 truncate">
+          <p className="truncate font-utility text-regular font-semibold text-zinc-100">
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
             {displayName || user?.username || "Unknown"}
           </p>
-          <p className="text-regular text-zinc-400 truncate">
+          <p className="truncate font-utility text-compact text-zinc-400">
             @{handle}
             {statusText ? ` · ${statusText}` : ""}
           </p>
         </div>
+        <InlineEditActions
+          label="profile"
+          editing={editing}
+          saving={busy}
+          disabled={!loaded}
+          controlSize="regular"
+          onEdit={() => setEditing(true)}
+          onSave={() => void save()}
+          onCancel={cancelEditing}
+        />
       </div>
 
-      <div className="space-y-4">
-        <Field label="Display name" htmlFor="pf-name">
-          <Input
-            id="pf-name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Your name"
-          />
-        </Field>
-
-        <Field label="Status">
-          <div className="flex gap-2">
+      {editing ? (
+        <div className="space-y-4">
+          <Field label="Display name" htmlFor="pf-name">
             <Input
-              value={statusEmoji}
-              onChange={(e) => setStatusEmoji(e.target.value)}
-              placeholder="🟢"
-              maxLength={8}
-              className="text-center"
-              aria-label="Status emoji"
+              id="pf-name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Your name"
+              autoFocus
             />
-            <Input
-              value={statusText}
-              onChange={(e) => setStatusText(e.target.value)}
-              placeholder="What you're up to (e.g. focusing, on vacation)"
-              maxLength={140}
-              aria-label="Status text"
-            />
-          </div>
-        </Field>
+          </Field>
 
-        <Field label="Bio" htmlFor="pf-bio">
-          <Textarea
-            id="pf-bio"
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            placeholder="A little about you"
-            rows={3}
-            className="resize-y"
+          <Field label="Status">
+            <div className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-2 max-sm:grid-cols-1">
+              <Input
+                value={statusEmoji}
+                onChange={(e) => setStatusEmoji(e.target.value)}
+                placeholder="Emoji"
+                maxLength={8}
+                aria-label="Status emoji"
+              />
+              <Input
+                value={statusText}
+                onChange={(e) => setStatusText(e.target.value)}
+                placeholder="What you're up to"
+                maxLength={140}
+                aria-label="Status text"
+              />
+            </div>
+          </Field>
+
+          <Field label="Bio" htmlFor="pf-bio">
+            <Textarea
+              id="pf-bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="A little about you"
+              rows={3}
+              className="resize-y"
+            />
+          </Field>
+        </div>
+      ) : bio ? (
+        <p className="max-w-prose font-reading text-regular leading-relaxed text-zinc-300">{bio}</p>
+      ) : (
+        <p className="font-utility text-compact text-zinc-500">No bio added.</p>
+      )}
+
+      <div>
+        <SectionHead className="mb-2">Details</SectionHead>
+        <ItemList presentationLevel="medium" controlSize="regular">
+          <OperationsItem
+            title={
+              <OverflowText fullText={`User ID: ${user?.user_id ?? "—"}`} className="w-full">
+                <span className="block truncate">
+                  <span className="text-zinc-400">User ID</span>
+                  <code className="ml-3 font-utility text-compact font-normal text-zinc-300">
+                    {user?.user_id ?? "—"}
+                  </code>
+                </span>
+              </OverflowText>
+            }
+            actions={user?.user_id ? (
+              <IconButton label="Copy user ID" controlSize="regular" onClick={() => void copyUserId()}>
+                {copiedId ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+              </IconButton>
+            ) : undefined}
           />
-        </Field>
-
-        <Button onClick={() => void save()} disabled={busy || !loaded}>
-          {busy ? "Saving…" : "Save profile"}
-        </Button>
-      </div>
-
-      <div className="space-y-3">
-        <SectionHead>Details</SectionHead>
-        <MetaRow label="User ID">
-          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-zinc-400">
-            {user?.user_id ?? "—"}
-          </code>
-          {user?.user_id && <CopyButton value={user.user_id} label="" />}
-        </MetaRow>
-        <MetaRow label="Role">
-          <span className="capitalize text-zinc-300">{user?.role ?? "user"}</span>
-        </MetaRow>
+          <OperationsItem
+            title={
+              <span>
+                <span className="text-zinc-400">Role</span>
+                <span className="ml-3 capitalize text-zinc-300">{user?.role ?? "user"}</span>
+              </span>
+            }
+          />
+        </ItemList>
       </div>
     </div>
   );
@@ -1075,7 +1114,7 @@ export default function SettingsPage() {
       <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
         <UiButton variant="plain"
           type="button"
-          square
+          content="icon"
           controlSize="regular"
           // Always return to the chat home, not the previous history entry — the
           // in-page section nav pushes /settings/:section entries, so navigate(-1)
@@ -1096,12 +1135,12 @@ export default function SettingsPage() {
           {items.map(({ id, label, icon: Icon }) => {
             const active = section === id;
             return (
-              <UiButton variant="plain"
+              <UiButton content="iconText" variant="plain" role="tab" aria-selected={active}
                 key={id}
                 type="button"
                 onClick={() => navigate(`/settings/${id}`)}
                 aria-current={active ? "page" : undefined}
-                controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0 text-regular font-medium whitespace-nowrap transition-colors ${
+                controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0  font-medium whitespace-nowrap transition-colors ${
  active
  ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
  }`}
@@ -1157,30 +1196,31 @@ export default function SettingsPage() {
 
           {section === "account" && (
             <section>
-              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="mb-5 text-compact font-semibold uppercase tracking-wider text-zinc-400">
                 Account
               </h2>
 
-              <ChangePasswordCard onRotated={(token) => setToken(token)} />
+              <div className="bg-zinc-900 px-6 max-md:px-4">
+                <ChangePasswordCard onRotated={(token) => setToken(token)} />
 
-              <TwoFactorCard />
+                <TwoFactorCard />
 
-              <PasskeyCard />
+                <PasskeyCard />
 
-              <ExternalIdentitiesCard />
+                <ExternalIdentitiesCard />
 
-              <DevicesSessionsCard />
+                <DevicesSessionsCard />
 
-              <ExternalAIPermissionsCard />
+                <ExternalAIPermissionsCard />
 
-              {/* Desktop shell: also linked from About — keep a copy here so
-                  Account remains a one-stop for signed-in session controls. */}
-              <AppUpdateCard />
+                {/* Desktop shell: also linked from About — keep a copy here so
+                    Account remains a one-stop for signed-in session controls. */}
+                <AppUpdateCard />
 
-              <PushNotificationsCard />
+                <PushNotificationsCard />
 
-              <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-                <div className="flex items-center justify-between">
+                <section className="border-t border-zinc-800 py-5">
+                  <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-regular font-medium text-zinc-200">Sign out</p>
                     <p className="text-compact text-zinc-400 mt-1">
@@ -1189,7 +1229,8 @@ export default function SettingsPage() {
                   </div>
                   <Button
                     variant="danger"
-                    controlSize="compact"
+                    action="signOut"
+                    aria-label="Sign out of Cheers"
                     onClick={async () => {
                       // Push first (the DELETE needs the auth token), then
                       // best-effort server revocation, then clear local state
@@ -1200,18 +1241,17 @@ export default function SettingsPage() {
                       logout();
                       navigate("/login", { replace: true });
                     }}
-                  >
-                    Sign out
-                  </Button>
-                </div>
-              </div>
+                  />
+                  </div>
+                </section>
 
-              <DeleteAccountCard
-                onDeleted={() => {
-                  logout();
-                  navigate("/login", { replace: true });
-                }}
-              />
+                <DeleteAccountCard
+                  onDeleted={() => {
+                    logout();
+                    navigate("/login", { replace: true });
+                  }}
+                />
+                </div>
 
               <LegalLinks />
             </section>

@@ -15,6 +15,7 @@ const SHARED_CONTROLS = new Set([
   "MenuOption",
   "TabOption",
   "CheckboxField",
+  "ControlTrigger",
   "UiButton",
   "UiInput",
   "UiSelect",
@@ -139,6 +140,9 @@ export function auditSources(files, ts, policy) {
       nonStandardSpacing: 0,
       arbitrarySpinnerSize: 0,
       nonStandardTypographySize: 0,
+      sharedButtonTypographyOverride: 0,
+      detachedEditActionButton: 0,
+      actionButtonWithoutKey: 0,
       legacyControlSizeProp: 0,
     },
     findings: [],
@@ -266,6 +270,44 @@ export function auditSources(files, ts, policy) {
           if (forbiddenTypographyTokens.length) {
             result.violations.nonStandardTypographySize += forbiddenTypographyTokens.length;
             result.findings.push({ file, line, rule: "nonStandardTypographySize", token: forbiddenTypographyTokens.join(" ") });
+          }
+
+          const sharedButtonTypographyTokens = tokens.filter((token) =>
+            /^(?:text-(?:minimal|compact|regular|comfortable)|font-(?:display|reading|utility))$/.test(utilityBase(token))
+          );
+          if (!primitive && ["Button", "UiButton", "IconButton"].includes(tag) && sharedButtonTypographyTokens.length) {
+            result.violations.sharedButtonTypographyOverride += sharedButtonTypographyTokens.length;
+            result.findings.push({ file, line, rule: "sharedButtonTypographyOverride", token: sharedButtonTypographyTokens.join(" ") });
+          }
+
+          if (!primitive && ["Button", "UiButton"].includes(tag)) {
+            const actionAttribute = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "action"
+            );
+            const actionValue = actionAttribute?.initializer && ts.isStringLiteral(actionAttribute.initializer)
+              ? actionAttribute.initializer.text
+              : undefined;
+            if (actionValue === "save" || actionValue === "edit") {
+              result.violations.detachedEditActionButton += 1;
+              result.findings.push({ file, line, rule: "detachedEditActionButton", token: `action=${actionValue}` });
+            }
+            const contentAttribute = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "content"
+            );
+            const contentValue = contentAttribute?.initializer && ts.isStringLiteral(contentAttribute.initializer)
+              ? contentAttribute.initializer.text
+              : undefined;
+            const roleAttribute = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "role"
+            );
+            const roleValue = roleAttribute?.initializer && ts.isStringLiteral(roleAttribute.initializer)
+              ? roleAttribute.initializer.text
+              : undefined;
+            const selectorLike = roleValue === "tab" || roleValue === "menuitem" || roleValue === "option";
+            if (!actionAttribute && contentValue !== "icon" && !selectorLike) {
+              result.violations.actionButtonWithoutKey += 1;
+              result.findings.push({ file, line, rule: "actionButtonWithoutKey", token: contentValue ?? "text" });
+            }
           }
 
           if (SHARED_CONTROLS.has(tag)) {

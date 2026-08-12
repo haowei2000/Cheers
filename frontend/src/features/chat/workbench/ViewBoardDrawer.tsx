@@ -245,7 +245,7 @@ function ViewBoardDrawerImpl({
         <div className="flex-1" />
         {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
           <UiButton variant="plain"
-            square controlSize="compact"
+            content="icon" controlSize="compact"
             onClick={() => {
               const meta = ATTACHABLE_BOARDS[activeBoard.id];
               const scoped = activeBoard.sessionScoped && scope;
@@ -265,7 +265,7 @@ function ViewBoardDrawerImpl({
         )}
         {onToggleMinimal && (
           <UiButton variant="plain"
-            square controlSize="compact"
+            content="icon" controlSize="compact"
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
             className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
@@ -274,7 +274,7 @@ function ViewBoardDrawerImpl({
           </UiButton>
         )}
         <UiButton variant="plain"
-          square controlSize="compact"
+          content="icon" controlSize="compact"
           onClick={onClose}
           title="Close"
           className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
@@ -304,10 +304,10 @@ function ViewBoardDrawerImpl({
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
               return (
-                <UiButton variant="plain"
+                <UiButton variant="plain" role="tab" aria-selected={isActive}
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b text-compact whitespace-nowrap transition-colors ${
+                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b  whitespace-nowrap transition-colors ${
  isActive
  ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  }`}

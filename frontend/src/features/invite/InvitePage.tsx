@@ -120,12 +120,12 @@ export default function InvitePage() {
               </div>
 
               {user ? (
-                <Button controlWidth="fill" className="mt-2" loading={joining} onClick={() => void join()}>
+                <Button action="join" controlWidth="fill" className="mt-2" loading={joining} onClick={() => void join()}>
                   Join {preview.workspace_name}
                 </Button>
               ) : (
                 <>
-                  <Button controlWidth="fill"
+                  <Button action="create" controlWidth="fill"
                     className="mt-2"
                     onClick={() => navigate(`/register?invite=${encodeURIComponent(token)}`)}
                   >

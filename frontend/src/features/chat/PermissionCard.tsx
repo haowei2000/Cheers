@@ -296,10 +296,10 @@ export function PermissionCard({
             </p>
           )}
         </div>
-        <UiButton variant="plain"
+        <UiButton action="request" variant="plain"
           disabled={busy || requested}
           onClick={onRequestAccess}
-          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800 text-compact text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
         >
           {requested ? "Requested" : "Request access"}
         </UiButton>
@@ -310,7 +310,7 @@ export function PermissionCard({
   // ── Pending, collapsed: one-line preview (skipped when embedded) ──────────
   if (collapsed && !embedded) {
     return (
-      <UiButton controlWidth="fill" variant="plain"
+      <UiButton action="expand" controlWidth="fill" variant="plain"
         onClick={() => setCollapsed(false)}
         title="Show approval details"
         controlSize="regular" className={cn(
@@ -338,7 +338,7 @@ export function PermissionCard({
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 text-compact font-medium text-zinc-200">{title}</p>
         {!embedded && (
-          <UiButton variant="plain"
+          <UiButton action="collapse" variant="plain"
             onClick={() => setCollapsed(true)}
             aria-label="Collapse"
             title="Collapse"
@@ -362,11 +362,11 @@ export function PermissionCard({
           )}
           {canViewStagedDiff && (
             <div className="mt-2">
-              <UiButton variant="plain"
+              <UiButton action={diffOpen ? "collapse" : "preview"} content="iconText" variant="plain"
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60 text-compact text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
               >
                 <span className="text-zinc-500">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
@@ -400,7 +400,7 @@ export function PermissionCard({
           const id = optId(o);
           const sel = id === selectedId;
           return (
-            <UiButton controlWidth="fill" variant="plain"
+            <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={sel}
               key={id}
               onClick={() => setSelectedId(id)}
               controlSize="regular" className={cn(
@@ -430,18 +430,18 @@ export function PermissionCard({
 
       <div className="flex items-center justify-end gap-2 pt-1">
         {rejectOption && (
-          <UiButton variant="plain"
+          <UiButton action="reject" variant="plain"
             disabled={busy}
             onClick={() => onResolve(optId(rejectOption))}
-            controlSize="compact" className="rounded-sm text-compact font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            controlSize="compact" className="rounded-sm  font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
           >
             {rejectOption.name || "Deny"}
           </UiButton>
         )}
-        <UiButton variant="plain"
+        <UiButton action="approve" variant="plain"
           disabled={busy || !selectedId}
           onClick={() => onResolve(selectedId)}
-          controlSize="compact" className="rounded-sm bg-zinc-200 text-compact font-semibold text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
+          controlSize="compact" className="rounded-sm bg-zinc-200  font-semibold text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
         >
           {allowOptions.length ? "Approve" : "Confirm"}
         </UiButton>

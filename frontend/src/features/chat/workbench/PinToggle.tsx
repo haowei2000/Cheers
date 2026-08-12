@@ -14,7 +14,7 @@ export function PinToggle({
 }) {
   const isPinned = pinned.includes(path);
   return (
-    <UiButton variant="plain"
+    <UiButton action={isPinned ? "unpin" : "pin"} variant="plain"
       onClick={() => togglePin(path)}
       title={isPinned ? "Pinned: injected into every prompt — click to unpin" : "Pin: inject this file's content into every bot prompt"}
     >

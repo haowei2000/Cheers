@@ -130,20 +130,20 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           )}
           {isOwner ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <UiButton variant="plain"
+              <UiButton action="link" variant="plain"
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("retry")}
-                controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600 text-compact font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600  font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >
                 {busy === "retry" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {link ? "I've signed in" : "Credentials set — retry"}
               </UiButton>
-              <UiButton variant="plain"
+              <UiButton action="cancel" variant="plain"
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("cancel")}
-                controlSize="regular" className="rounded-sm bg-zinc-800 text-compact text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                controlSize="regular" className="rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
               >
                 Cancel
               </UiButton>

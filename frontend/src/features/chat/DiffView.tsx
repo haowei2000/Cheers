@@ -185,9 +185,9 @@ function FileSectionView({ section }: { section: FileSection }) {
 
   return (
     <div className="border-b border-zinc-900 last:border-b-0">
-      <UiButton controlWidth="fill" variant="plain"
+      <UiButton action={open ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
         onClick={() => setOpen((o) => !o)}
-        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900/95 text-left text-compact backdrop-blur-sm hover:bg-zinc-800/90"
+        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900/95 text-left  backdrop-blur-sm hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
@@ -215,9 +215,9 @@ function FileSectionView({ section }: { section: FileSection }) {
         />
       ))}
       {open && hidden > 0 && (
-        <UiButton controlWidth="fill" variant="plain"
+        <UiButton action="expand" controlWidth="fill" variant="plain"
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          controlSize="regular" className="block text-left text-compact italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          controlSize="regular" className="block text-left  italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
         >
           … show more ({hidden} hidden lines)
         </UiButton>

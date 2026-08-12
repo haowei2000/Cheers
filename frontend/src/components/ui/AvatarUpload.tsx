@@ -3,6 +3,8 @@ import { Camera, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "./avatar";
 import { contentIconClasses, type ContentSize } from "./content-size";
+import { controlSquareClasses } from "./control-size";
+import { cn } from "@/lib/cn";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -60,7 +62,10 @@ export function AvatarUpload({
       onClick={() => inputRef.current?.click()}
       disabled={busy}
       data-design-system-exempt="identity"
-      className="group relative flex-shrink-0 rounded-full"
+      className={cn(
+        "group relative inline-flex flex-shrink-0 items-center justify-center rounded-full",
+        controlSquareClasses.comfortable,
+      )}
       title="Change avatar"
     >
       <Avatar name={name} id={id} src={preview || src || undefined} size={size} />

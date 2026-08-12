@@ -34,6 +34,9 @@ Use this checklist after reading the canonical files named in `SKILL.md`.
 - Spacing follows the 4/8 system and controls use only the three shared sizes.
 - Layouts contain no fractional 0.5/1.5/2.5/3.5 spacing utilities; Spinner uses ContentSize.
 - Peer text controls use the shared width slot or fill mode, never content-derived width.
+- Buttons use only icon square, 96px text, or 128px icon+text geometry, with the global regular typography token.
+- Icon+text buttons use separate icon and label slots; only the label slot owns horizontal padding.
+- Existing-object edits keep Edit/Save/Cancel IconButtons beside the object; no detached section-level Save/Edit button.
 - Business call sites do not override shared horizontal padding with px/pl/pr utilities.
 - Composer context items and Add context share regular height; nested item actions use compact controls without increasing the outer row.
 

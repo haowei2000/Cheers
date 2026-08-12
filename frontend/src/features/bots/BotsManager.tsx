@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
@@ -16,6 +15,7 @@ import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
+import { IconButton } from "@/components/ui/icon-button";
 
 /** One row of the master bot list (left column). */
 function BotRow({
@@ -119,22 +119,23 @@ export function BotsManager() {
       <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
-        <Button
+        <Button content="iconText"
+          action="add"
+          aria-label="Add bot"
           controlSize="compact"
           className="ml-auto normal-case tracking-normal"
           onClick={() => setWizardOpen(true)}
         >
           <Wand2 className="w-3.5 h-3.5" />
-          Add bot
         </Button>
-        <UiButton variant="plain"
-          type="button"
+        <IconButton
+          label="Refresh bots"
           onClick={() => void refresh()}
           className="text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </UiButton>
+        </IconButton>
       </h2>
 
       {bots.length === 0 && !loading ? (

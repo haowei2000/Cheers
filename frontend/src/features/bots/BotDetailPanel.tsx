@@ -13,6 +13,7 @@ import {
   Info,
   Trash2,
   Pencil,
+  Save,
 } from "lucide-react";
 import {
   disableBot,
@@ -34,6 +35,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, SectionHead, MetaRow } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
@@ -46,7 +48,7 @@ import type { BotItem, Channel } from "@/types";
 export function CopyButton({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <UiButton variant="plain"
+    <UiButton action="copy" variant="plain"
       type="button"
       onClick={async () => {
         try {
@@ -59,7 +61,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           toast.error("Clipboard unavailable — select and copy manually");
         }
       }}
-      className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       {done ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
@@ -196,12 +198,12 @@ export function BotDetailPanel({
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
-            <UiButton variant="plain"
+            <UiButton content="iconText" variant="plain" role="tab" aria-selected={active}
               key={id}
               type="button"
               onClick={() => setTab(id)}
               controlSize="regular" className={cn(
- "inline-flex items-center gap-2 text-compact font-medium border-b-2 -mb-px transition-colors",
+ "inline-flex items-center gap-2  font-medium border-b-2 -mb-px transition-colors",
  active
  ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  )}
@@ -339,7 +341,7 @@ function BotOverview({
         {bot.can_manage && (
           <MetaRow label="Bridge token">
             <Tip content="Shown once when issued — copy it right away.">
-              <Button controlSize="compact" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
+              <Button action="issue" content="iconText" controlSize="compact" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
                 <KeyRound className="w-3.5 h-3.5" />
                 Issue token
               </Button>
@@ -360,7 +362,7 @@ function BotOverview({
               </option>
             ))}
           </Select>
-          <Button controlSize="compact" variant="secondary" onClick={add} disabled={!channelId || busy}>
+          <Button action="add" controlSize="compact" variant="secondary" onClick={add} disabled={!channelId || busy}>
             {added ? "Added ✓" : "Add"}
           </Button>
         </MetaRow>
@@ -381,12 +383,12 @@ function BotOverview({
                     : "Disconnects the connector; the bot goes offline until re-enabled."
                 }
               >
-                <UiButton variant="plain"
+                <UiButton action="disable" variant="plain"
                   type="button"
                   onClick={toggleDisabled}
                   disabled={toggling}
                   controlSize="regular" className={cn(
- "inline-flex items-center gap-2 rounded-sm text-compact transition-colors disabled:opacity-40",
+ "inline-flex items-center gap-2 rounded-sm  transition-colors disabled:opacity-40",
  bot.is_disabled
  ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
  )}
@@ -399,11 +401,11 @@ function BotOverview({
                 align="end"
                 content="Removes it from all channels — asks you to confirm first. This can't be undone."
               >
-                <UiButton variant="plain"
+                <UiButton action="delete" content="iconText" variant="plain"
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40 text-compact text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
@@ -656,17 +658,16 @@ function BotStatusEditor({
               align="end"
               content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
             >
-              <Button
+              <IconButton
+                label="Edit status prompt"
                 controlSize="compact"
-                variant="secondary"
                 onClick={() => {
                   setPromptDraft(prompt);
                   setPromptOpen(true);
                 }}
               >
                 <Pencil className="w-3.5 h-3.5" />
-                Edit prompt
-              </Button>
+              </IconButton>
             </Tip>
           </div>
         )}
@@ -675,11 +676,11 @@ function BotStatusEditor({
       {promptError && <p className="text-compact text-red-400">{promptError}</p>}
 
       <div className="flex items-center gap-2">
-        <Button controlSize="compact" onClick={() => void save()} disabled={busy}>
-          {busy ? "Saving…" : "Save profile"}
-        </Button>
+        <IconButton label="Save bot profile" controlSize="compact" onClick={() => void save()} disabled={busy}>
+          <Save className="h-3.5 w-3.5" />
+        </IconButton>
         <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
-          <Button
+          <Button action="update"
             controlSize="compact"
             variant="secondary"
             onClick={() => void refreshNow()}
@@ -716,10 +717,10 @@ function BotStatusEditor({
             Save the profile to apply your changes.
           </p>
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setPromptOpen(false)}>
+            <Button action="cancel" variant="secondary" onClick={() => setPromptOpen(false)}>
               Cancel
             </Button>
-            <Button
+            <Button action="done"
               onClick={() => {
                 setPrompt(promptDraft);
                 setPromptOpen(false);

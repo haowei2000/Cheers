@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
@@ -347,7 +348,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       <span className="flex items-center gap-2">
         <UiButton variant="plain"
           type="button"
-          square controlSize="compact"
+          content="icon" controlSize="compact"
           aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
@@ -357,7 +358,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         </UiButton>
         <UiButton variant="plain"
           type="button"
-          square controlSize="compact"
+          content="icon" controlSize="compact"
           aria-label="Cancel delete"
           title="Cancel"
           onClick={() => setConfirmDel(null)}
@@ -369,7 +370,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     ) : (
       <UiButton variant="plain"
         type="button"
-        square controlSize="compact"
+        content="icon" controlSize="compact"
         aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
         onClick={() => setConfirmDel(path)}
@@ -401,7 +402,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />}
                 actions={<><UiButton variant="plain"
                 type="button"
-                square controlSize="compact"
+                content="icon" controlSize="compact"
                 aria-label="New file in this folder"
                 title="New file in this folder"
                 onClick={() => {
@@ -448,18 +449,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       )}
     >
       <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
-        <UiButton variant="plain"
+        <UiButton action="create" content="iconText" variant="plain"
           type="button"
           onClick={() => beginCreate("")}
           controlSize="regular"
-          className="flex items-center gap-1 rounded-sm text-compact text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="flex items-center gap-1 rounded-sm  text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Plus className="w-3.5 h-3.5" /> New
         </UiButton>
         <div className="flex-1" />
         <UiButton variant="plain"
           type="button"
-          square controlSize="compact"
+          content="icon" controlSize="compact"
           onClick={() => void refresh()}
           aria-label="Refresh file tree"
           title="Refresh"
@@ -469,7 +470,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         </UiButton>
         <UiButton variant="plain"
           type="button"
-          square controlSize="compact"
+          content="icon" controlSize="compact"
           onClick={() => setTreeOpenUser(false)}
           aria-label="Hide file tree"
           title="Hide file tree"
@@ -494,7 +495,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       {treeOpen ? (
         treeColumn
       ) : (
-        <UiButton variant="plain"
+        <UiButton action="expand" content="icon" variant="plain"
           type="button"
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
@@ -506,7 +507,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       )}
       {/* Compact overlay scrim — tap outside the tree to return to the file. */}
       {compact && treeOpen && (
-        <UiButton variant="plain"
+        <UiButton action="close" variant="plain"
           type="button"
           aria-label="Close file tree"
           onClick={() => setTreeOpenUser(false)}
@@ -543,7 +544,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     setMoreOpen(false);
                   }}
                   title="Download this file (export)"
-                  square controlSize="compact"
+                  content="icon" controlSize="compact"
                   className="text-zinc-500 hover:text-zinc-300"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -564,7 +565,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 />
                 <UiButton variant="plain"
                   type="button"
-                  square controlSize="compact"
+                  content="icon" controlSize="compact"
                   disabled={pinned.includes(selected)}
                   title={
                     pinned.includes(selected)
@@ -609,7 +610,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
                   <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
-                    <UiButton variant="plain"
+                    <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"}
                       onClick={() => setMode("preview")}
                       disabled={!previewRenderer}
                       title={
@@ -625,7 +626,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     >
                       Preview
                     </UiButton>
-                    <UiButton variant="plain"
+                    <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"}
                       onClick={() => setMode("raw")}
                       controlSize="regular" className={`${
  effMode === "raw"
@@ -671,7 +672,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <div className="relative flex-shrink-0" ref={moreRef}>
                       <UiButton variant="plain"
                         type="button"
-                        square controlSize="compact"
+                        content="icon" controlSize="compact"
                         onClick={() => setMoreOpen((o) => !o)}
                         aria-expanded={moreOpen}
                         aria-label="More file actions"
@@ -705,14 +706,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     secondaryActions
                   )}
                   {effMode === "raw" && (
-                    <UiButton variant="plain"
+                    <IconButton label={`Save ${selected}`}
                       onClick={() => void onSave()}
                       disabled={!editor.dirty}
-                      className="flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-100 disabled:opacity-40 flex-shrink-0"
+                      controlSize="compact"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      {!tight && "Save"}
-                    </UiButton>
+                    </IconButton>
                   )}
                 </div>
                 {effMode === "preview" && previewRenderer ? (

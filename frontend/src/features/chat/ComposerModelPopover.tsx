@@ -75,15 +75,16 @@ export function ComposerModelPopover({
   // No candidate bot → nothing to configure; hide the chip entirely.
   if (bots.length === 0) return null;
 
-  const label =
-    bots.length > 1 ? `Model · ${bots.length} bots` : modelLabel ?? "Model";
+  const currentValue =
+    bots.length > 1 ? `${bots.length} bots` : modelLabel ?? "Default model";
 
   return (
     <div className="relative inline-flex min-w-0" ref={rootRef}>
       <ComposerToolbarButton
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="Model & bot settings"
+        title={`Model & bot settings · ${currentValue}`}
+        aria-label={`Model and bot settings: ${currentValue}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
@@ -93,7 +94,7 @@ export function ComposerModelPopover({
         )}
       >
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span>Model</span>
         <ChevronDown
           className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")}
         />

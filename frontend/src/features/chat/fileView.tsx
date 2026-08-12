@@ -94,11 +94,11 @@ function AudioTile({ file }: { file: FileInfo }) {
         )}
       </div>
       {failed ? (
-        <UiButton variant="plain"
+        <UiButton action="download" variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this audio file"
-          className="text-left text-compact text-zinc-400 hover:text-zinc-200"
+          className="text-left  text-zinc-400 hover:text-zinc-200"
         >
           Playback unavailable — click to download
         </UiButton>
@@ -153,11 +153,11 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 
   return (
     /* design-system-exempt: drop-zone */
-    <UiButton variant="plain"
+    <UiButton action="transcribe" content="iconText" variant="plain"
       type="button"
       onClick={request}
       title="Transcribe this audio to text"
-      className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       <Captions className="h-3.5 w-3.5" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
@@ -219,12 +219,12 @@ function StagedFileTile({ file }: { file: FileInfo }) {
 
   return (
     /* design-system-exempt: drop-zone */
-    <UiButton variant="plain"
+    <UiButton content="iconText" variant="plain" role="option"
       type="button"
       onClick={handleClick}
       disabled={phase === "realizing"}
       title={file.original_filename || file.file_id}
-      controlSize="regular" className="inline-flex items-center gap-2 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40 text-compact text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
+      controlSize="regular" className="inline-flex items-center gap-2 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40  text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
       data-design-system-exempt="drop-zone"
     >
       {phase === "realizing" ? (
@@ -248,7 +248,7 @@ export function FileTile({ file }: { file: FileInfo }) {
   return (
     <>
       {isImage ? (
-        <UiButton variant="plain"
+        <UiButton variant="plain" role="option"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
@@ -257,11 +257,11 @@ export function FileTile({ file }: { file: FileInfo }) {
           <ImagePreview file={file} />
         </UiButton>
       ) : (
-        <UiButton variant="plain"
+        <UiButton content="iconText" variant="plain" role="option"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60 text-compact text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
+          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>

@@ -71,7 +71,7 @@ export function ExistingFilePicker({
             const isSel = selected.has(f.file_id);
             const checked = isAttached || isSel;
             return (
-              <UiButton controlWidth="fill" variant="plain"
+              <UiButton content="iconText" controlWidth="fill" variant="plain" role="option" aria-selected={checked}
                 key={f.file_id}
                 type="button"
                 disabled={isAttached}
@@ -111,10 +111,10 @@ export function ExistingFilePicker({
       )}
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <Button variant="ghost" controlSize="compact" onClick={onClose}>
+        <Button action="cancel" variant="ghost" controlSize="compact" onClick={onClose}>
           Cancel
         </Button>
-        <Button controlSize="compact" onClick={confirm} disabled={selected.size === 0}>
+        <Button action="add" controlSize="compact" onClick={confirm} disabled={selected.size === 0}>
           Add{selected.size > 0 ? ` (${selected.size})` : ""}
         </Button>
       </div>

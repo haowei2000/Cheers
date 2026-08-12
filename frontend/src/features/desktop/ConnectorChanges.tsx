@@ -169,7 +169,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
             {git.ahead > 0 && `↑${git.ahead}`} {git.behind > 0 && `↓${git.behind}`}
           </span>
         )}
-        <Button
+        <Button action="open" content="iconText"
           variant="secondary"
           controlSize="compact"
           className="ml-auto"
@@ -193,7 +193,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                 >
                   {f.status.trim() || "?"}
                 </span>}
-                actions={<><UiButton variant="plain"
+                actions={<><UiButton action="preview" variant="plain"
                   type="button"
                   onClick={() => void toggleDiff(f.path)}
                   className="text-zinc-400 hover:text-zinc-100"
@@ -202,7 +202,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   View diff
                 </UiButton>
                 {primaryOpener && (
-                  <UiButton variant="plain"
+                  <UiButton action="open" variant="plain"
                     type="button"
                     title={`Open in ${primaryOpener.label}`}
                     aria-label={`Open in ${primaryOpener.label}`}
@@ -220,7 +220,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                     <FileText className="w-3.5 h-3.5" />
                   </UiButton>
                 )}
-                <UiButton variant="plain"
+                <UiButton action="discard" variant="plain"
                   type="button"
                   title="Discard changes (revert)"
                   aria-label="Discard changes"

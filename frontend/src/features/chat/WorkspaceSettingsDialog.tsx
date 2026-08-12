@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
+import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { controlIconClasses } from "@/components/ui/control-size";
 import {
   CollectionDeleteItem,
@@ -52,6 +53,8 @@ export function WorkspaceSettingsDialog({
   const personalWorkspace = useChatStore((s) => s.personalWorkspace);
 
   const [name, setName] = useState(workspace.name);
+  const [savedName, setSavedName] = useState(workspace.name);
+  const [editingName, setEditingName] = useState(false);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
@@ -97,6 +100,12 @@ export function WorkspaceSettingsDialog({
     void refreshMembers();
   }, [workspace.workspace_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    setName(workspace.name);
+    setSavedName(workspace.name);
+    setEditingName(false);
+  }, [workspace.workspace_id, workspace.name]);
+
   // Candidate search: friends by substring, anyone by exact username/email — the
   // dedicated workspace endpoint. (The old code hit /friends/search, which only
   // matches an exact UUID, so typing a name always found nobody.)
@@ -125,6 +134,8 @@ export function WorkspaceSettingsDialog({
       setWorkspaces(
         workspaces.map((w) => (w.workspace_id === workspace.workspace_id ? { ...w, ...updated } : w))
       );
+      setSavedName(trimmed);
+      setEditingName(false);
       toast.success("Saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
@@ -205,20 +216,33 @@ export function WorkspaceSettingsDialog({
         )}
 
         <div className="space-y-2">
-          <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide">Name</label>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="workspace-settings-name" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">Name</label>
+            {canManage && (
+              <InlineEditActions
+                label="workspace name"
+                editing={editingName}
+                saving={savingMeta}
+                disabled={!name.trim()}
+                onEdit={() => { setName(savedName); setEditingName(true); }}
+                onSave={() => void saveMeta()}
+                onCancel={() => { setName(savedName); setEditingName(false); }}
+              />
+            )}
+          </div>
+          {editingName ? (
             <UiInput
+              id="workspace-settings-name"
+              autoFocus
               value={name}
-              disabled={!canManage}
               onChange={(e) => setName(e.target.value)}
               controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
-            {canManage && (
-              <Button controlSize="compact" loading={savingMeta} onClick={() => void saveMeta()}>
-                Save
-              </Button>
-            )}
-          </div>
+          ) : (
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-200">
+              <span className="truncate">{savedName}</span>
+            </p>
+          )}
         </div>
 
         {canManage && (
@@ -345,7 +369,7 @@ export function WorkspaceSettingsDialog({
                 <p className="text-regular font-medium text-zinc-200">Delete workspace</p>
                 <p className="text-compact text-zinc-400 mt-1">Deletes its channels too. This cannot be undone.</p>
               </div>
-              <Button
+              <Button action="delete" content="iconText"
                 variant="danger"
                 controlSize="compact"
                 onClick={() =>
@@ -374,7 +398,7 @@ export function WorkspaceSettingsDialog({
               <p className="text-regular font-medium text-zinc-200">Leave workspace</p>
               <p className="text-compact text-zinc-400 mt-1">Remove yourself from this workspace.</p>
             </div>
-            <Button
+            <Button action="leave" content="iconText"
               variant="secondary"
               controlSize="compact"
               onClick={() =>
@@ -404,7 +428,7 @@ export function WorkspaceSettingsDialog({
       >
         <p className="text-regular text-zinc-300">{confirmState.message}</p>
         <div className="flex justify-end gap-2 pt-1">
-          <Button
+          <Button action="cancel"
             variant="secondary"
             controlSize="compact"
             disabled={confirmBusy}
@@ -413,6 +437,7 @@ export function WorkspaceSettingsDialog({
             Cancel
           </Button>
           <Button
+            action={confirmState.confirmLabel === "Delete" ? "delete" : "leave"}
             variant="danger"
             controlSize="compact"
             loading={confirmBusy}

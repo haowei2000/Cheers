@@ -142,7 +142,7 @@ export function QuickPanel() {
             className="flex-1 resize-none min-h-0"
           />
           <div className="flex items-center justify-end">
-            <Button
+            <Button action="send" content="iconText"
               onClick={() => void send()}
               disabled={!target || !text.trim()}
               loading={sending}

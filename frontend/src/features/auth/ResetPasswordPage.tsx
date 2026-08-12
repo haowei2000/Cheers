@@ -90,7 +90,7 @@ export default function ResetPasswordPage() {
               onChange={(e) => setConfirm(e.target.value)}
             />
           </div>
-          <Button controlWidth="fill"
+          <Button action="send" controlWidth="fill"
             type="submit"
             className="mt-2"
             loading={loading}

@@ -22,6 +22,25 @@ Rules of engagement:
 2. If none exists, copy the **canonical recipe** below verbatim.
 3. If you genuinely need a new pattern, add it here in the same PR.
 
+Button geometry is semantic: `content="icon"` is square at the inherited
+ControlSize, `content="text"` owns the 96px slot, and `content="iconText"`
+owns the 128px slot. All three use the global `regular` typography token.
+Inside `iconText`, the leading icon owns a square ControlSize slot while the
+label owns the remaining width and its own horizontal padding. The outer button
+must not emulate this with a shared `gap` or a feature-local padding rule.
+Visible action labels come from `ActionKey`; object names and context belong in
+`aria-label`, adjacent status, or supporting content. Latin labels are limited
+to the calibrated 68px label-slot budget (at most eight characters and two words).
+This has a zero-exception CI policy: selectors, tabs, menu options, disclosures,
+and navigation use their semantic primitives/roles rather than a fabricated action.
+`controlWidth="fill"` is allowed for full-width form actions; feature code may
+not add another fixed width, horizontal padding, or button typography class.
+
+Existing objects use inline editing. Place an Edit IconButton next to the
+object; while editing, replace it in place with Cancel and Save IconButtons.
+Do not place a detached Save/Edit text button at the bottom of a section. A
+first-time creation form or whole-form submission is the only exception.
+
 ## Cross-platform item contract
 
 The platform-independent item inventory and information-density contract lives

@@ -29,6 +29,7 @@ export function CollectionManager({
   onAdd,
   addDisabled,
   showAdd = true,
+  headerAction,
   presentationLevel = "medium",
   controlSize = "regular",
   children,
@@ -43,6 +44,7 @@ export function CollectionManager({
   onAdd: () => void;
   addDisabled?: boolean;
   showAdd?: boolean;
+  headerAction?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   children: ReactNode;
@@ -57,6 +59,7 @@ export function CollectionManager({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{label}</span>
+        {headerAction}
         {typeof count === "number" && (
           <span className="font-normal tabular-nums text-zinc-500">{count}</span>
         )}
@@ -82,7 +85,10 @@ export function CollectionManager({
         </label>
         {showAdd && (
           <Button
+            content="iconText"
+            action="add"
             type="button"
+            aria-label={addLabel}
             controlSize={controlSize}
             variant="secondary"
             disabled={addDisabled}
@@ -90,7 +96,6 @@ export function CollectionManager({
             className="shrink-0"
           >
             <Plus className={controlIconClasses[controlSize]} />
-            <span className="hidden sm:inline">{addLabel}</span>
           </Button>
         )}
       </div>

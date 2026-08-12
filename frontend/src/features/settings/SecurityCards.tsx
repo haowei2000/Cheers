@@ -17,6 +17,7 @@ import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { Button } from "@/components/ui/button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 
 const inputCls =
   "bg-zinc-800 text-zinc-100";
@@ -108,7 +109,7 @@ export function TwoFactorCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-indigo-400" /> Authenticator app
       </p>
@@ -129,19 +130,22 @@ export function TwoFactorCard() {
           {enabled ? (
             <Button
               variant="danger"
-              controlSize="compact"
+              action="disable"
+              aria-label="Turn off authenticator app"
               disabled={busy}
               onClick={() => {
                 setCode("");
                 setPhase("disable");
               }}
-            >
-              Turn off
-            </Button>
+            />
           ) : (
-            <Button controlSize="compact" disabled={busy || enabled == null} onClick={() => void beginSetup()}>
-              {busy ? "Starting…" : "Set up"}
-            </Button>
+            <Button
+              action="setup"
+              aria-label="Set up authenticator app"
+              loading={busy}
+              disabled={enabled == null}
+              onClick={() => void beginSetup()}
+            />
           )}
         </div>
       )}
@@ -156,7 +160,7 @@ export function TwoFactorCard() {
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" controlSize="compact" onClick={() => void copySecret()}>
+            <Button action="copy" content="iconText" variant="secondary" controlSize="compact" onClick={() => void copySecret()}>
               <Copy className="w-3.5 h-3.5" /> Copy secret
             </Button>
             {provisioningUri && (
@@ -168,29 +172,26 @@ export function TwoFactorCard() {
               </a>
             )}
           </div>
-          <label className="block text-compact font-medium text-zinc-400 uppercase tracking-wide">
-            Verification code
-          </label>
-          <Input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="123456"
-            autoComplete="one-time-code"
-            className={inputCls}
-          />
+          <Field label="Verification code">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="123456"
+              autoComplete="one-time-code"
+              className={inputCls}
+            />
+          </Field>
           <div className="flex gap-2">
-            <Button disabled={busy || !code.trim()} onClick={() => void confirmEnable()}>
-              {busy ? "Verifying…" : "Enable"}
-            </Button>
+            <Button action="enable" aria-label="Enable authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
             <Button
               variant="secondary"
               onClick={() => {
                 setPhase("idle");
                 setCode("");
               }}
-            >
-              Cancel
-            </Button>
+              action="cancel"
+              aria-label="Cancel authenticator setup"
+            />
           </div>
         </div>
       )}
@@ -207,17 +208,16 @@ export function TwoFactorCard() {
             ))}
           </ul>
           <div className="flex gap-2">
-            <Button variant="secondary" controlSize="compact" onClick={() => void copyBackup()}>
-              <Copy className="w-3.5 h-3.5" /> Copy codes
+            <Button content="iconText" variant="secondary" action="copy" aria-label="Copy backup codes" onClick={() => void copyBackup()}>
+              <Copy className="w-3.5 h-3.5" />
             </Button>
-            <Button
-              controlSize="compact"
+            <Button content="iconText" action="done" aria-label="Finish authenticator setup"
               onClick={() => {
                 setPhase("idle");
                 setBackupCodes([]);
               }}
             >
-              <Check className="w-3.5 h-3.5" /> Done
+              <Check className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
@@ -238,24 +238,25 @@ export function TwoFactorCard() {
           <div className="flex gap-2">
             <Button
               variant="danger"
+              action="disable"
+              aria-label="Confirm turning off authenticator app"
+              loading={busy}
               disabled={busy || !code.trim()}
               onClick={() => void confirmDisable()}
-            >
-              {busy ? "Turning off…" : "Confirm turn off"}
-            </Button>
+            />
             <Button
               variant="secondary"
               onClick={() => {
                 setPhase("idle");
                 setCode("");
               }}
-            >
-              Cancel
-            </Button>
+              action="cancel"
+              aria-label="Cancel turning off authenticator app"
+            />
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -322,7 +323,7 @@ export function PasskeyCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
+    <section className="border-t border-zinc-800 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <Fingerprint className="w-4 h-4 text-indigo-400" /> Passkeys
       </p>
@@ -351,10 +352,7 @@ export function PasskeyCard() {
               key={c.credential_pk}
               title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
               trailing={c.last_used_at ? <span className="text-compact text-zinc-400">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
-              actions={<Button variant="danger" controlSize="compact" onClick={() => void remove(c.credential_pk)}>
-                Delete
-              </Button>}
-              className="border-0 bg-zinc-800/70"
+              actions={<Button variant="danger" action="delete" aria-label={`Delete passkey ${c.name}`} onClick={() => void remove(c.credential_pk)} />}
             />
           ))}
         </ItemList>
@@ -362,23 +360,19 @@ export function PasskeyCard() {
 
       {available && (
         <div className="flex flex-wrap items-end gap-2 max-w-md">
-          <div className="flex-1 min-w-[10rem]">
-            <label className="block text-compact font-medium text-zinc-400 uppercase tracking-wide mb-1">
-              Name (optional)
-            </label>
+          <Field label="Name (optional)" className="min-w-0 flex-1">
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="This MacBook"
               className={inputCls}
             />
-          </div>
-          <Button disabled={busy} onClick={() => void add()}>
+          </Field>
+          <Button content="iconText" action="add" aria-label="Add passkey" loading={busy} onClick={() => void add()}>
             <KeyRound className="w-3.5 h-3.5" />
-            {busy ? "Waiting…" : "Add passkey"}
           </Button>
         </div>
       )}
-    </div>
+    </section>
   );
 }

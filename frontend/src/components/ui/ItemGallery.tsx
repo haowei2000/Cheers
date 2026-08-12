@@ -117,9 +117,12 @@ export function ItemGallery() {
                   {size}
                 </p>
                 <EntityItem title="Aligned item" leading={<User className="h-4 w-4" />} />
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary">Button</Button>
+                <div className="flex flex-wrap items-center gap-2">
                   <IconButton label={`${size} add`}><Plus className="h-4 w-4" /></IconButton>
+                  <Button variant="secondary">Save</Button>
+                  <Button content="iconText" variant="secondary"><Plus className="h-4 w-4" />Add item</Button>
+                </div>
+                <div className="flex items-center gap-2">
                   <Input aria-label={`${size} input`} placeholder="Input" />
                 </div>
                 <div role="tablist" className="flex items-center gap-1">
@@ -223,7 +226,7 @@ export function ItemGallery() {
                 title="Deploy production change"
                 subtitle="Approval required"
                 criticalStatus={<span className="h-1.5 w-1.5 rounded-full bg-red-400" />}
-                actions={<Button variant="ghost" controlSize="compact" className="px-2 text-amber-200">Review</Button>}
+                actions={<Button variant="ghost" controlSize="compact" className="text-amber-200">Review</Button>}
               />
               <WorkbenchItem
                 leading={<EditorialIcon name="proof" contentSize="large" />}
@@ -253,7 +256,7 @@ export function ItemGallery() {
                     </IconButton>
                   }
                 />
-                <Button variant="plain" controlSize="regular" className="gap-2 bg-zinc-800/60 px-2 text-zinc-400">
+                <Button content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800/60 text-zinc-400">
                   <MessageSquarePlus className="h-4 w-4" />
                   Add context
                 </Button>
