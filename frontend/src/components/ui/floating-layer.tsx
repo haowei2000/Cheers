@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 
 type Placement = "up" | "down";
+export type AnchorPlacement = Placement | "left" | "right";
 type Align = "start" | "center" | "end";
 
 const GAP = 8;
@@ -136,17 +137,32 @@ function placeNearRect(
   anchor: DOMRect,
   panelW: number,
   panelH: number,
-  preferred: Placement = "down",
+  preferred: AnchorPlacement = "down",
   viewport: { width: number; height: number } = {
     width: typeof window !== "undefined" ? window.innerWidth : 0,
     height: typeof window !== "undefined" ? window.innerHeight : 0,
   },
 ): { x: number; y: number } {
+  const horizontal = preferred === "left" || preferred === "right";
   const spaceBelow = viewport.height - anchor.bottom - GAP;
   const spaceAbove = anchor.top - GAP;
-  const side = resolvePlacement(preferred, spaceAbove, spaceBelow);
-  const rawY = side === "down" ? anchor.bottom + GAP : anchor.top - GAP - panelH;
-  const rawX = anchor.left;
+  const spaceLeft = anchor.left - GAP;
+  const spaceRight = viewport.width - anchor.right - GAP;
+  const side: AnchorPlacement = horizontal
+    ? preferred === "left"
+      ? spaceLeft < panelW && spaceRight > spaceLeft ? "right" : "left"
+      : spaceRight < panelW && spaceLeft > spaceRight ? "left" : "right"
+    : resolvePlacement(preferred, spaceAbove, spaceBelow);
+  const rawY = side === "down"
+    ? anchor.bottom + GAP
+    : side === "up"
+      ? anchor.top - GAP - panelH
+      : anchor.top;
+  const rawX = side === "left"
+    ? anchor.left - GAP - panelW
+    : side === "right"
+      ? anchor.right + GAP
+      : anchor.left;
   const maxX = Math.max(GAP, viewport.width - Math.min(panelW, viewport.width - GAP * 2) - GAP);
   const maxY = Math.max(GAP, viewport.height - Math.min(panelH, viewport.height - GAP * 2) - GAP);
   return {

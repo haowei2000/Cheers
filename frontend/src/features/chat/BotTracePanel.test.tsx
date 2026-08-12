@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { TraceEvent } from "@/types";
+import type { Message, TraceEvent } from "@/types";
 import { BotTracePanel } from "./BotTracePanel";
 
 const toolEvent: TraceEvent = {
@@ -25,6 +25,43 @@ const toolEvent: TraceEvent = {
       matched_by: "test",
       path: "server/Cargo.toml",
     },
+  },
+};
+
+const secondToolEvent: TraceEvent = {
+  ...toolEvent,
+  id: "tool-2",
+  event_id: "tool-2",
+  trace_seq: 2,
+  data: {
+    presentation: {
+      v: 2,
+      event_type: "shell_command",
+      family: "shell",
+      operation: "run",
+      confidence: "explicit",
+      matched_by: "test",
+      command: "npm run typecheck",
+    },
+  },
+};
+
+const pendingApproval: Message = {
+  msg_id: "permission-1",
+  sender_id: "bot-1",
+  sender_type: "bot",
+  msg_type: "permission",
+  content: "Approval needed",
+  content_data: {
+    kind: "agent_bridge_permission_request",
+    request_id: "request-1",
+    source_msg_id: "message-1",
+    title: "Publish frontend changes",
+    body: "This command pushes the current branch to the remote repository.",
+    tool: { title: "Git push", command: "git push origin feature" },
+    bot_owner_id: "user-1",
+    resolved: false,
+    options: [{ option_id: "allow-once", kind: "allow_once", name: "Allow once" }],
   },
 };
 
@@ -58,5 +95,55 @@ describe("BotTracePanel disclosure labels", () => {
 
     expect(markup).toContain("Agent steps");
     expect(markup).not.toContain(">Expand<");
+  });
+
+  it("keeps completed history out of the inline message surface", () => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel
+        channelId="channel-1"
+        msgId="message-1"
+        liveEvents={[toolEvent, secondToolEvent]}
+        expanded
+        showToggle={false}
+        view="inline"
+      />,
+    );
+
+    expect(markup).not.toContain("server/Cargo.toml");
+    expect(markup).not.toContain("npm run typecheck");
+  });
+
+  it("shows only the latest live step inline while streaming", () => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel
+        channelId="channel-1"
+        msgId="message-1"
+        liveEvents={[toolEvent, secondToolEvent]}
+        streaming
+        expanded
+        showToggle={false}
+        view="inline"
+      />,
+    );
+
+    expect(markup).not.toContain("server/Cargo.toml");
+    expect(markup).toContain("npm run typecheck");
+  });
+
+  it("renders an inline approval without a duplicate trace header", () => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel
+        channelId="channel-1"
+        msgId="message-1"
+        pendingApprovals={[pendingApproval]}
+        currentUserId="user-1"
+        expanded
+        showToggle={false}
+        view="inline"
+      />,
+    );
+
+    expect(markup.match(/Publish frontend changes/g)).toHaveLength(1);
+    expect(markup).toContain("Needs approval");
   });
 });

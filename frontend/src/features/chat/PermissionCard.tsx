@@ -11,6 +11,9 @@ import { useProfileCard } from "./ProfileHovercard";
 import { DiffView } from "./DiffView";
 import { looksLikeGitCommit } from "./workspaceLink";
 import type { Message, PermissionContentData, PermissionOption } from "@/types";
+import { ControlTrigger } from "@/components/ui/control-trigger";
+import { OverflowText } from "@/components/ui/overflow-text";
+import { ShieldCheck } from "lucide-react";
 
 interface Props {
   message: Message;
@@ -24,6 +27,8 @@ interface Props {
   onResolved?: () => void;
   /** Inline under an Agent steps row: always expanded, no collapse chrome. */
   embedded?: boolean;
+  /** Message-inline approvals use the compact operational presentation. */
+  compact?: boolean;
 }
 
 function optId(o: PermissionOption): string {
@@ -32,10 +37,6 @@ function optId(o: PermissionOption): string {
 
 function isAllow(kind?: string | null): boolean {
   return (kind ?? "").startsWith("allow");
-}
-
-function isReject(kind?: string | null): boolean {
-  return (kind ?? "").startsWith("reject");
 }
 
 /** Compact, human-readable preview of an ACP toolCall rawInput (the command /
@@ -82,6 +83,7 @@ export function PermissionCard({
   approverOverride,
   onResolved,
   embedded = false,
+  compact = false,
 }: Props) {
   const data = (message.content_data ?? {}) as PermissionContentData;
   const botId = message.sender_id;
@@ -135,10 +137,10 @@ export function PermissionCard({
     data.body ??
     null;
   const title =
+    (data.title && data.title !== "ACP permission request" ? data.title : null) ??
     (tool?.title && tool.title.trim() && tool.title !== "ACP permission request"
       ? tool.title
       : null) ??
-    (data.title && data.title !== "ACP permission request" ? data.title : null) ??
     "Approval needed";
   const impact = data.body && data.body !== command ? data.body : null;
 
@@ -154,22 +156,6 @@ export function PermissionCard({
     typeof tool?.cwd === "string" && tool.cwd.trim() ? tool.cwd : null;
   const canViewStagedDiff =
     !!channelId && !!cwd && command != null && looksLikeGitCommit(command);
-
-  // Radio choices are the allow-variants; "Deny" is the footer escape. If the
-  // connector sent no allow option, fall back to showing every option.
-  const allowOptions = useMemo(
-    () => options.filter((o) => isAllow(o.kind)),
-    [options]
-  );
-  const rejectOption = useMemo(
-    () => options.find((o) => isReject(o.kind)),
-    [options]
-  );
-  const radioOptions = allowOptions.length ? allowOptions : options;
-  const [selectedId, setSelectedId] = useState("");
-  useEffect(() => {
-    if (!selectedId && radioOptions[0]) setSelectedId(optId(radioOptions[0]));
-  }, [radioOptions, selectedId]);
 
   // Owner is always an approver; for non-owners, check delegations once.
   // Skipped when the caller already resolved may-answer server-side.
@@ -335,8 +321,16 @@ export function PermissionCard({
   // ── Pending, expanded ─────────────────────────────────────────────────────
   return (
     <div className={cn(shell, "space-y-2 px-3 py-3")}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-compact font-medium text-zinc-200">{title}</p>
+      <div className="flex min-h-7 items-center gap-2">
+        {compact && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />}
+        <OverflowText
+          fullText={title}
+          className="min-w-0 flex-1 text-compact font-medium text-zinc-200"
+          touchDisclosure={false}
+        />
+        {compact && (
+          <span className="shrink-0 text-minimal text-amber-400/90">Needs approval</span>
+        )}
         {!embedded && (
           <UiButton action="collapse" variant="plain"
             onClick={() => setCollapsed(true)}
@@ -351,16 +345,24 @@ export function PermissionCard({
 
       {command && (
         <div>
-          <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-300">
-            {command}
-          </pre>
-          {impact && <p className="mt-2 text-compact text-zinc-400">{impact}</p>}
-          {agentDiff && (
+          {compact ? (
+            <OverflowText
+              fullText={command}
+              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-zinc-300"
+              touchDisclosure={false}
+            />
+          ) : (
+            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-300">
+              {command}
+            </pre>
+          )}
+          {!compact && impact && <p className="mt-2 text-compact text-zinc-400">{impact}</p>}
+          {!compact && agentDiff && (
             <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
               <DiffView diff={agentDiff} className="max-h-72" />
             </div>
           )}
-          {canViewStagedDiff && (
+          {!compact && canViewStagedDiff && (
             <div className="mt-2">
               <UiButton action={diffOpen ? "collapse" : "preview"} content="iconText" variant="plain"
                 type="button"
@@ -395,56 +397,33 @@ export function PermissionCard({
         </div>
       )}
 
-      <div className="space-y-1">
-        {radioOptions.map((o) => {
+      <div className="space-y-1" aria-label="Approval options">
+        {options.map((o) => {
           const id = optId(o);
-          const sel = id === selectedId;
+          const reject = (o.kind ?? "").startsWith("reject");
           return (
-            <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={sel}
+            <ControlTrigger
+              controlWidth="fill"
               key={id}
-              onClick={() => setSelectedId(id)}
-              controlSize="regular" className={cn(
- "flex items-center gap-3 rounded-sm text-left transition-colors",
- sel ? "bg-zinc-800/70": "hover:bg-zinc-800/40"
- )}
+              disabled={busy || !id}
+              onClick={() => onResolve(id)}
+              controlSize="regular"
+              className={cn(
+                "justify-start bg-zinc-800/55 text-left transition-colors hover:bg-zinc-700/70",
+                reject ? "text-red-300 hover:text-red-200" : "text-zinc-200 hover:text-zinc-100",
+              )}
             >
-              <span
-                data-design-system-exempt="progress"
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 rounded-full",
-                  sel ? "bg-indigo-400" : "bg-zinc-700",
-                )}
-              />
-              <span
-                className={cn(
-                  "min-w-0 truncate text-compact font-medium",
-                  sel ? "text-zinc-100" : "text-zinc-300",
-                )}
-              >
+              <span className="min-w-0 truncate text-compact font-medium">
                 {o.name || o.kind || id}
               </span>
-            </UiButton>
+              {!compact && o.description && (
+                <span className="ml-auto min-w-0 truncate text-minimal text-zinc-500">
+                  {o.description}
+                </span>
+              )}
+            </ControlTrigger>
           );
         })}
-      </div>
-
-      <div className="flex items-center justify-end gap-2 pt-1">
-        {rejectOption && (
-          <UiButton action="reject" variant="plain"
-            disabled={busy}
-            onClick={() => onResolve(optId(rejectOption))}
-            controlSize="compact" className="rounded-sm  font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
-          >
-            {rejectOption.name || "Deny"}
-          </UiButton>
-        )}
-        <UiButton action="approve" variant="plain"
-          disabled={busy || !selectedId}
-          onClick={() => onResolve(selectedId)}
-          controlSize="compact" className="rounded-sm bg-zinc-200  font-semibold text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
-        >
-          {allowOptions.length ? "Approve" : "Confirm"}
-        </UiButton>
       </div>
 
       {error && (
