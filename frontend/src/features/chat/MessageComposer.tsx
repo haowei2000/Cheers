@@ -1011,7 +1011,7 @@ function MessageComposerImpl({
                 selectCandidate(c);
               }}
               title={c.label}
-              subtitle={c.sublabel ? `@${c.sublabel}` : undefined}
+              status={c.sublabel ? <span className="truncate text-compact text-zinc-400">@{c.sublabel}</span> : undefined}
               leading={c.type === "bot" ? (
                 <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-500" : "text-indigo-400")} />
               ) : (
@@ -1045,7 +1045,7 @@ function MessageComposerImpl({
           {attachments.map((a) => (
             <span
               key={a.file_id}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300"
+              className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300"
             >
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
               <span
@@ -1095,14 +1095,14 @@ function MessageComposerImpl({
 
       {voiceWarning && (
         <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-amber-200">
-          <p className="flex items-center gap-1.5">
+          <p className="flex items-center gap-2">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
           </p>
           {voiceWarning.error && (
             <p className="mt-1 text-red-300">{voiceWarning.error}</p>
           )}
-          <div className="mt-1.5 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             <UiButton variant="plain"
               type="button"
               onClick={() => void transcribeThenSend()}
@@ -1166,7 +1166,7 @@ function MessageComposerImpl({
           className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-regular"
         />
 
-        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+        <div className="flex items-center gap-1 px-2 pb-2">
           <IconButton
             onClick={() => (dictating ? stopDictation() : void startDictation())}
             disabled={disabled || !channelId || uploading || sending || transcribingDictation}
@@ -1293,7 +1293,7 @@ function MessageComposerImpl({
         </div>
       </div>
       {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
-      <p className="text-compact text-zinc-400 mt-1.5 px-1 max-md:hidden">
+      <p className="text-compact text-zinc-400 mt-2 px-1 max-md:hidden">
         <kbd className="font-mono">Enter</kbd> to send ·{" "}
         <kbd className="font-mono">Shift+Enter</kbd> for new line ·{" "}
         <kbd className="font-mono">@</kbd> to mention ·{" "}

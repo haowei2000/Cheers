@@ -189,10 +189,10 @@ function ProfileCard({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <span className="font-semibold text-zinc-100 truncate">{name}</span>
             {isBot && (
-              <span className="text-minimal px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className="text-minimal px-1 py-1 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
                 BOT
               </span>
             )}
@@ -207,7 +207,7 @@ function ProfileCard({
           {member.status_updated_at &&
             (member.status_emoji || member.status_text) &&
             relativeTime(member.status_updated_at) && (
-              <p className="mt-0.5 text-minimal text-zinc-400">
+              <p className="mt-1 text-minimal text-zinc-400">
                 updated {relativeTime(member.status_updated_at)}
               </p>
             )}

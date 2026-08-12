@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 export const publicPanelClass =
-  "bg-transparent p-0 space-y-4 [&_button]:!rounded-[2px] [&_button]:!border-0 [&_button]:!shadow-none [&_input]:!rounded-[2px]";
+  "bg-transparent p-0 space-y-4 [&_button]:!rounded-sm [&_button]:!border-0 [&_button]:!shadow-none [&_input]:!rounded-sm";
 
 export const publicLabelClass =
   "font-utility text-compact font-semibold text-zinc-400 uppercase tracking-[0.1em]";

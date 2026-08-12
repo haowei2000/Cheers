@@ -26,6 +26,8 @@ const policy = {
     nonStandardRowHeight: 0,
     nonStandardIdentitySize: 0,
     nonStandardIconSize: 0,
+    nonStandardSpacing: 0,
+    arbitrarySpinnerSize: 0,
     nonStandardTypographySize: 0,
     legacyControlSizeProp: 0,
   },
@@ -121,4 +123,19 @@ test("accepts registered row, identity, and icon sizes", () => {
   assert.equal(result.violations.nonStandardRowHeight, 0);
   assert.equal(result.violations.nonStandardIdentitySize, 0);
   assert.equal(result.violations.nonStandardIconSize, 0);
+});
+
+test("resolves static class constants and rejects hidden geometry debt", () => {
+  const source = `const local = "rounded-lg border p-1"; export function Bad(){ return <UiButton className={local}/> }`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRadius, 1);
+  assert.equal(result.violations.restingBorder, 1);
+  assert.equal(result.violations.sharedPaddingOverride, 1);
+});
+
+test("rejects fractional spacing and arbitrary spinner sizes", () => {
+  const source = `<><div className="gap-1.5 px-2.5"/><Spinner size={24}/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardSpacing, 2);
+  assert.equal(result.violations.arbitrarySpinnerSize, 1);
 });

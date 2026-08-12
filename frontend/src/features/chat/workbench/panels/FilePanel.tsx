@@ -315,7 +315,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   };
 
   const createInput = (depth: number) => (
-    <div className="flex items-center gap-1.5 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
+    <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
       <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
       <UiInput
         autoFocus
@@ -489,7 +489,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   );
 
   return (
-    <div ref={rootRef} className="relative flex h-full gap-2 p-1.5 text-regular min-w-0">
+    <div ref={rootRef} className="relative flex h-full gap-2 p-2 text-regular min-w-0">
       {/* file tree — side column normally; overlay drawer when compact + open */}
       {treeOpen ? (
         treeColumn
@@ -681,7 +681,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </UiButton>
                       {moreOpen && (
-                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-sm bg-zinc-900 p-1.5 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
+                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-sm bg-zinc-900 p-2 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
                           {effMode === "preview" && (bound || options.length > 1) && (
                             <UiSelect
                               value={bound?.id ?? ""}

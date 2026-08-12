@@ -49,7 +49,7 @@ export default function ResetPasswordPage() {
           onSubmit={submit}
           className={publicPanelClass}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Email</label>
             <Input
               type="email"
@@ -59,7 +59,7 @@ export default function ResetPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Reset code</label>
             <Input
               type="text"
@@ -70,7 +70,7 @@ export default function ResetPasswordPage() {
               onChange={(e) => setCode(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>New password</label>
             <Input
               type="password"
@@ -80,7 +80,7 @@ export default function ResetPasswordPage() {
               onChange={(e) => setPw(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Confirm new password</label>
             <Input
               type="password"

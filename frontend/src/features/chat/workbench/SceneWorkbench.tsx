@@ -237,7 +237,7 @@ export function SceneWorkbench({
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <LayoutGrid className="h-7 w-7 text-zinc-600" />
+        <LayoutGrid className="h-5 w-5 text-zinc-600" />
         <div>
           <div className="text-regular font-medium text-zinc-200">Choose a scene</div>
           <p className="mt-1 max-w-sm text-compact leading-5 text-zinc-400">
@@ -264,7 +264,7 @@ export function SceneWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-950/30">
-      <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-1.5 md:hidden">
+      <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden">
         {sceneIds.map((id) => {
           const meta = metaFor(id);
           const Icon = meta.Icon;
@@ -370,7 +370,7 @@ export function SceneWorkbench({
               </div>
             )}
           </div>
-          {status && <div className="border-t border-zinc-800 px-3 py-1.5 text-compact text-amber-300">{status}</div>}
+          {status && <div className="border-t border-zinc-800 px-3 py-2 text-compact text-amber-300">{status}</div>}
         </section>
       </div>
     </div>

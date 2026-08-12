@@ -19,7 +19,7 @@ import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 
 const inputCls =
-  "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  "bg-zinc-800 text-zinc-100";
 
 /** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
 export function TwoFactorCard() {
@@ -162,7 +162,7 @@ export function TwoFactorCard() {
             {provisioningUri && (
               <a
                 href={provisioningUri}
-                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-1.5 text-compact text-indigo-300 hover:text-indigo-200"
+                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-2 text-compact text-indigo-300 hover:text-indigo-200"
               >
                 Open otpauth://
               </a>
@@ -345,12 +345,12 @@ export function PasskeyCard() {
       ) : credentials.length === 0 ? (
         <p className="text-compact text-zinc-500 mb-3">No passkeys yet.</p>
       ) : (
-        <ItemList presentationLevel="max" controlSize="regular" className="mb-4">
+        <ItemList presentationLevel="medium" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
             <OperationsItem
               key={c.credential_pk}
-              title={c.name}
-              subtitle={`Added ${c.created_at.slice(0, 10)}${c.last_used_at ? ` · last used ${c.last_used_at.slice(0, 10)}` : ""}`}
+              title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
+              trailing={c.last_used_at ? <span className="text-compact text-zinc-400">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
               actions={<Button variant="danger" controlSize="compact" onClick={() => void remove(c.credential_pk)}>
                 Delete
               </Button>}

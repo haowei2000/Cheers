@@ -24,7 +24,7 @@ export function EmptyState({
     >
       {Icon && <Icon className="w-5 h-5 text-zinc-500 mb-2" />}
       <p className="text-compact text-zinc-400">{title}</p>
-      {hint && <p className="text-compact text-zinc-400 mt-0.5">{hint}</p>}
+      {hint && <p className="text-compact text-zinc-400 mt-1">{hint}</p>}
     </div>
   );
 }

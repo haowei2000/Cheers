@@ -19,7 +19,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { ItemRow } from "@/components/ui/item";
+import { ItemRow, ItemSection } from "@/components/ui/item";
+import { UnreadBadge } from "@/components/ui/unread-badge";
 import { getFleet, type FleetApproval, type FleetBot } from "@/api/fleet";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listBots, issueBotToken, type IssuedToken } from "@/api/bots";
@@ -47,14 +48,14 @@ function StatusChip({ bot }: { bot: FleetBot }) {
   }
   if (bot.pending_count > 0) {
     return (
-      <span className="text-minimal px-1.5 py-0.5 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
+      <span className="text-minimal px-2 py-1 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
         waiting approval
       </span>
     );
   }
   if (bot.busy_sessions > 0) {
     return (
-      <span className="text-minimal px-1.5 py-0.5 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
+      <span className="text-minimal px-2 py-1 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
         working
       </span>
     );
@@ -91,27 +92,27 @@ function BotRow({
         />
       </div>}
       status={<StatusChip bot={bot} />}
-      subtitle={(bot.status_text || sessions) ? (
-        <>
-            {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
-            {bot.status_text}
-            {bot.status_text && sessions && <span className="mx-1.5">·</span>}
-            {sessions}
-        </>
-      ) : undefined}
       criticalStatus={bot.pending_count > 0 ? (
-          <span
-            data-design-system-exempt="unread"
-            className="text-minimal font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+          <UnreadBadge
+            tone="approval"
+            contentSize="regular"
             title={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
+            aria-label={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
           >
             {bot.pending_count}
-          </span>
+          </UnreadBadge>
       ) : undefined}
       trailing={bot.cost_today_usd > 0 ? (
-          <span className="text-compact text-zinc-400 tabular-nums" title="Cost today (UTC)">
+          <span
+            className="text-compact text-zinc-400 tabular-nums"
+            title={[bot.status_text, sessions, "Cost today (UTC)"].filter(Boolean).join(" · ")}
+          >
             ${bot.cost_today_usd.toFixed(2)}
           </span>
+      ) : (bot.status_text || sessions) ? (
+        <span className="max-w-36 truncate text-compact text-zinc-400" title={[bot.status_text, sessions].filter(Boolean).join(" · ")}>
+          {bot.status_emoji}{bot.status_emoji ? " " : ""}{bot.status_text || sessions}
+        </span>
       ) : undefined}
       className="gap-3 hover:bg-zinc-900"
     />
@@ -361,22 +362,21 @@ export default function FleetPage() {
                   />
                 ) : (
                   <div className="space-y-5">
-                    {/* design-system-exempt: item-section — channel grouping delegates rows to BotRow. */}
                     {botsByChannel.map(([channelId, g]) => (
-                      <div key={channelId}>
-                        <p className="text-minimal uppercase tracking-wide text-zinc-400 mb-1 px-2.5">
-                          {channelLabel(g.name)}
-                        </p>
-                        <div>
-                          {g.bots.map((b) => (
-                            <BotRow
-                              key={`${b.bot_id}:${b.channel_id}`}
-                              bot={b}
-                              onSelect={() => openBot(b.bot_id)}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                      <ItemSection
+                        key={channelId}
+                        label={channelLabel(g.name)}
+                        presentationLevel="medium"
+                        controlSize="regular"
+                      >
+                        {g.bots.map((b) => (
+                          <BotRow
+                            key={`${b.bot_id}:${b.channel_id}`}
+                            bot={b}
+                            onSelect={() => openBot(b.bot_id)}
+                          />
+                        ))}
+                      </ItemSection>
                     ))}
                   </div>
                 )}

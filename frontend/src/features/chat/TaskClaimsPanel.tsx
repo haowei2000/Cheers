@@ -74,8 +74,8 @@ export function TaskClaimsPanel({
   return (
     <ItemSection
       label="Task claim requests"
-      action={<span className="font-normal tabular-nums text-zinc-500">{claims.length}</span>}
-      presentationLevel="max"
+      action={<span className="font-normal tabular-nums text-zinc-400">{claims.length}</span>}
+      presentationLevel="medium"
       controlSize="regular"
       className="mx-4 mb-2 max-h-72 overflow-y-auto"
     >
@@ -83,10 +83,12 @@ export function TaskClaimsPanel({
         <OperationsItem
           key={c.claim_id}
           leading={<Bot className="h-4 w-4 text-indigo-400" />}
-          title={`${c.bot_name} wants to claim a task`}
-          subtitle={c.summary}
-          preview={c.proposed_action}
-          metadata={`${Math.round(c.confidence * 100)}% confidence · ${c.impact} impact`}
+          title={<span title={`${c.bot_name}: ${c.summary} — ${c.proposed_action}`}>
+            {c.bot_name}: {c.summary}
+          </span>}
+          criticalStatus={<span className="text-minimal text-amber-300" title={`${Math.round(c.confidence * 100)}% confidence · ${c.impact} impact`}>
+            {c.impact}
+          </span>}
           actions={canManage ? <>
                 <Button
                   controlSize="compact"

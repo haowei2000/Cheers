@@ -77,7 +77,7 @@ export function ExistingFilePicker({
                 disabled={isAttached}
                 onClick={() => toggle(f.file_id)}
                 controlSize="regular" className={
- "flex items-center gap-2.5 rounded-sm text-left transition-colors "+
+ "flex items-center gap-3 rounded-sm text-left transition-colors "+
  (isAttached
  ? "opacity-50 cursor-not-allowed"
  : isSel

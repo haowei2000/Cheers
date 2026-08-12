@@ -1841,14 +1841,14 @@ export function ChannelView({
                 onClick={() => setMembersOpen((v) => !v)}
                 title="Channel members"
                 aria-expanded={membersOpen}
-                controlSize="regular" className={`flex items-center gap-1.5 rounded-sm hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+                controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
  membersOpen ? "text-zinc-100 bg-zinc-800": ""
  }`}
               >
                 <Users className="w-3.5 h-3.5" />
                 {mentionables.length || "Members"}
                 {onlineCount > 0 && (
-                  <span className="flex items-center gap-1.5 ml-1">
+                  <span className="flex items-center gap-2 ml-1">
                     <PresenceDot contentSize="small" className="bg-emerald-500" />
                     {onlineCount} online
                   </span>
@@ -1933,7 +1933,7 @@ export function ChannelView({
               <UiButton variant="plain"
                 onClick={() => setSettingsOpen(true)}
                 title="Channel settings"
-                square controlSize="compact" className="ml-1.5 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+                square controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
               >
                 <Settings className="w-4 h-4" />
               </UiButton>
@@ -2091,7 +2091,7 @@ export function ChannelView({
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Copy
@@ -2105,7 +2105,7 @@ export function ChannelView({
                         count: selectedMessages.length,
                       })
                     }
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Forward className="w-3.5 h-3.5" />
                     Forward
@@ -2113,7 +2113,7 @@ export function ChannelView({
                   <UiButton variant="plain"
                     type="button"
                     onClick={clearSelection}
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm text-zinc-400 hover:text-zinc-200"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-zinc-400 hover:text-zinc-200"
                   >
                     <X className="w-3.5 h-3.5" />
                     Cancel

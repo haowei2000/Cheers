@@ -51,11 +51,11 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
     (t) => (
       <div
         role={severity === "error" ? "alert" : "status"}
-        className={`pointer-events-auto flex max-w-xs items-start gap-2.5 rounded-sm bg-zinc-900 px-3 py-2.5 shadow-xl shadow-black/40 transition-[opacity,transform] duration-150 ${
+        className={`pointer-events-auto flex max-w-xs items-start gap-3 rounded-sm bg-zinc-900 px-3 py-3 shadow-xl shadow-black/40 transition-[opacity,transform] duration-150 ${
           t.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
         }`}
       >
-        <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${ICON_CLS[severity]}`} />
+        <Icon className={`mt-1 h-4 w-4 flex-shrink-0 ${ICON_CLS[severity]}`} />
         <div className="min-w-0 text-regular text-zinc-200">
           <span className="break-words">{message}</span>
           {opts?.action && (

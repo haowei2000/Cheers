@@ -78,7 +78,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
               </UiButton>
             );
           }
-          return <code className="bg-zinc-800 px-1 py-0.5 rounded-sm text-regular">{children}</code>;
+          return <code className="bg-zinc-800 px-1 py-1 rounded-sm text-regular">{children}</code>;
         },
         a({ href, children }) {
           return (

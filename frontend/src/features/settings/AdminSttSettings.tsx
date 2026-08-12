@@ -1,6 +1,7 @@
 import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import toast from "react-hot-toast";
 import { AudioLines, FlaskConical, Loader2 } from "lucide-react";
 import { useIsAdmin } from "@/stores/authStore";
@@ -76,7 +77,7 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "bg-zinc-800 text-zinc-100";
 
   return (
     <section>
@@ -95,16 +96,12 @@ export function AdminSttSettings() {
         </p>
 
         <div className="grid gap-3 max-w-lg">
-          <label className="flex items-center gap-2 text-regular text-zinc-200">
-            {/* design-system-native: checkbox */}
-<input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="h-4 w-4 accent-indigo-500"
-            />
-            Enable speech-to-text
-          </label>
+          <CheckboxField
+            label="Enable speech-to-text"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="text-zinc-200"
+          />
 
           <div>
             <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
@@ -153,16 +150,13 @@ export function AdminSttSettings() {
               className={`${inputCls} disabled:opacity-40`}
             />
             {loaded?.api_key_set && (
-              <label className="mt-1 flex items-center gap-2 text-compact text-zinc-400">
-                {/* design-system-native: checkbox */}
-<input
-                  type="checkbox"
-                  checked={clearKey}
-                  onChange={(e) => setClearKey(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-red-500"
-                />
-                Clear the saved key
-              </label>
+              <CheckboxField
+                label="Clear the saved key"
+                checked={clearKey}
+                onChange={(e) => setClearKey(e.target.checked)}
+                controlSize="compact"
+                className="mt-1 text-compact text-zinc-400"
+              />
             )}
           </div>
 

@@ -88,7 +88,7 @@ export function NewChannelDialog({
               key={t}
               onClick={() => setType(t)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-regular transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border text-regular transition-colors",
  type === t
  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}
@@ -103,7 +103,7 @@ export function NewChannelDialog({
           ))}
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <p className="text-compact font-medium uppercase tracking-wide text-zinc-400">
             Conversation layout
           </p>
@@ -118,7 +118,7 @@ export function NewChannelDialog({
               key={value}
               onClick={() => setKind(value)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-regular transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border text-regular transition-colors",
  kind === value
  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}

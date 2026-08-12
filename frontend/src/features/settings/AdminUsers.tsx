@@ -111,15 +111,16 @@ export function AdminUsers() {
           placeholder="Filter by name / username / email…"
           controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <ItemList presentationLevel="max" controlSize="regular">
+        <ItemList presentationLevel="medium" controlSize="regular">
           {users.map((u) => (
             <EntityItem
               key={u.user_id}
-              title={u.display_name || u.username}
-              subtitle={`@${u.username}${u.email ? ` · ${u.email}` : ""}`}
+              title={<span title={[u.display_name || u.username, `@${u.username}`, u.email].filter(Boolean).join(" · ")}>
+                {u.display_name || u.username} · @{u.username}
+              </span>}
               leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="regular" />}
               status={u.role !== "member" ? <span className="text-minimal text-zinc-400">{roleLabel(u.role)}</span> : undefined}
-              criticalStatus={u.is_suspended ? <span className="rounded-sm bg-red-950/60 px-1 py-0.5 text-minimal text-red-300">suspended</span> : undefined}
+              criticalStatus={u.is_suspended ? <span className="rounded-sm bg-red-950/60 px-1 py-1 text-minimal text-red-300">suspended</span> : undefined}
               actions={<>{u.is_suspended ? (
                 <Button
                   variant="secondary"
@@ -200,8 +201,6 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
     }
   }
 
-  const inputCls =
-    "rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
     <form onSubmit={submit} className="bg-zinc-900 rounded-sm p-6">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-3">
@@ -212,20 +211,17 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Username"
-          className={inputCls}
         />
         <UiInput
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="Display name (optional)"
-          className={inputCls}
         />
         <UiInput
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email (optional)"
           type="email"
-          className={inputCls}
         />
         <UiInput
           value={password}
@@ -233,9 +229,8 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
           placeholder="Temporary password (min 12)"
           type="password"
           autoComplete="new-password"
-          className={inputCls}
         />
-        <UiSelect value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
+        <UiSelect value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="member">{roleLabel("member")}</option>
           <option value="admin">{roleLabel("admin")}</option>
         </UiSelect>

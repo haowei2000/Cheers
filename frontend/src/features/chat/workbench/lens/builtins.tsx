@@ -368,7 +368,7 @@ function ChartLens({ data }: LensProps) {
       {series.length >= 2 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-1">
           {series.map((s, i) => (
-            <span key={`${s.name}${i}`} className="flex items-center gap-1.5 text-zinc-300">
+            <span key={`${s.name}${i}`} className="flex items-center gap-2 text-zinc-300">
               <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color(i) }} />
               {s.name}
             </span>
@@ -588,7 +588,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-regular font-semibold text-zinc-100">{node.label}</h3>
-          <p className="mt-0.5 text-compact capitalize text-zinc-500">{node.kind}</p>
+          <p className="mt-1 text-compact capitalize text-zinc-500">{node.kind}</p>
         </div>
         {onClose && (
           <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" square controlSize="compact" className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
@@ -608,7 +608,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
         {node.tags.length > 0 && (
           <div className="border-t border-zinc-800 pt-4">
             <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Tags</dt>
-            <dd className="mt-2 flex flex-wrap gap-1.5">
+            <dd className="mt-2 flex flex-wrap gap-2">
               {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300">{tag}</span>)}
             </dd>
           </div>
@@ -654,7 +654,7 @@ function CodemapLens({ data }: LensProps) {
   if (!document || document.nodes.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <Boxes className="h-7 w-7 text-zinc-600" />
+        <Boxes className="h-5 w-5 text-zinc-600" />
         <div className="text-regular font-medium text-zinc-200">Codemap is empty</div>
         <p className="max-w-md text-compact leading-5 text-zinc-400">Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</p>
       </div>

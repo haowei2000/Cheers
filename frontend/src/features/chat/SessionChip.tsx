@@ -307,7 +307,7 @@ export function SessionChip({
   let rowIndex = 0;
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
-      "flex w-full items-center gap-2 px-2.5 py-1.5 rounded-sm text-regular text-left transition-colors",
+      "flex w-full items-center gap-2 px-3 py-2 rounded-sm text-regular text-left transition-colors",
       i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:bg-zinc-800",
       isSelected && "text-indigo-200"
     );
@@ -348,8 +348,7 @@ export function SessionChip({
             const autoIdx = rowIndex++;
             return (
               <NavigationItem
-                title="Auto"
-                subtitle="@mention → primary"
+                title="Auto · @mention → primary"
                 leading={<Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />}
                 trailing={!value ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
                 selected={!value}
@@ -368,7 +367,7 @@ export function SessionChip({
 
           {groups.map((g) => (
             <div key={g.botId}>
-              <div className="px-2.5 pt-2 pb-0.5 text-minimal uppercase tracking-wide text-zinc-400">
+              <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400">
                 {g.botName}
               </div>
               {g.sessions.map((s) => {
@@ -377,8 +376,9 @@ export function SessionChip({
                 return (
                   <NavigationItem
                     key={s.session_id}
-                    title={tagOf(s)}
-                    subtitle={s.cwd || "default"}
+                    title={<span title={`${tagOf(s)} · ${s.cwd || "default"}`}>
+                      {tagOf(s)} · {s.cwd || "default"}
+                    </span>}
                     leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
                     status={<span className="text-compact text-zinc-400">{s.status}</span>}
                     trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
@@ -399,7 +399,7 @@ export function SessionChip({
           ))}
 
           {loaded && entries.length === 0 && (
-            <p className="px-2.5 py-2 text-compact text-zinc-400">
+            <p className="px-3 py-2 text-compact text-zinc-400">
               No sessions yet — one is created when a bot first responds.
             </p>
           )}

@@ -67,7 +67,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded-sm bg-zinc-800 px-1 py-0.5 text-minimal text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-zinc-800 text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ function SessionCard({
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>}
         criticalStatus={s.is_primary ? (
-          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-0.5 text-minimal text-indigo-300">
+          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-1 text-minimal text-indigo-300">
             primary
           </span>
         ) : undefined}
@@ -235,7 +235,7 @@ function SessionCard({
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-minimal font-medium text-zinc-950">
+          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-1 text-minimal font-medium text-zinc-950">
             <ArrowUp className="h-3.5 w-3.5" />
             Make primary
           </span>
@@ -244,7 +244,7 @@ function SessionCard({
 
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
-        <div className="mt-1 space-y-1.5 rounded-sm bg-zinc-900/40 p-2">
+        <div className="mt-1 space-y-2 rounded-sm bg-zinc-900/40 p-2">
           <div className="flex items-center gap-2 text-minimal text-zinc-400">
             <span className="w-12 shrink-0">session</span>
             <span className="font-mono text-zinc-200" title={s.session_id}>
@@ -323,7 +323,7 @@ function SessionCard({
               {cwd && <span>· immutable</span>}
             </div>
             {dirsDraft === null ? (
-              <div className="flex items-start gap-1 mt-0.5">
+              <div className="flex items-start gap-1 mt-1">
                 <span className="text-zinc-400 w-12 shrink-0">roots</span>
                 <span className="font-mono text-zinc-400 flex-1 break-all">
                   {dirs.length ? dirs.join(", ") : "—"}
@@ -340,7 +340,7 @@ function SessionCard({
                 )}
               </div>
             ) : (
-              <div className="mt-0.5 flex flex-col gap-1">
+              <div className="mt-1 flex flex-col gap-1">
                 <UiTextarea
                   value={dirsDraft}
                   disabled={actionBusy}
@@ -478,8 +478,8 @@ function BotGroup({
   );
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 px-1">
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 px-1">
         <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
         <span className="text-compact font-medium text-zinc-300 truncate" title={botId}>
           {label}

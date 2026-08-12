@@ -161,7 +161,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         );
       })}
       {bots.length > shown.length && (
-        <span className="ml-0.5 text-minimal text-zinc-400">+{bots.length - shown.length}</span>
+        <span className="ml-1 text-minimal text-zinc-400">+{bots.length - shown.length}</span>
       )}
     </span>
   );
@@ -261,8 +261,8 @@ function MessageRow({
       </span>}
       title={<span className="text-compact font-normal text-zinc-400">{renderExcerpt(n.excerpt)}</span>}
       status={n.fileCount > 0 ? (
-        <span className="inline-flex items-center gap-0.5 text-minimal text-zinc-400 flex-shrink-0">
-          <Paperclip className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1 text-minimal text-zinc-400 flex-shrink-0">
+          <Paperclip className="h-3.5 w-3.5" />
           {n.fileCount}
         </span>
       ) : undefined}
@@ -302,14 +302,14 @@ function EpisodeDetail({
               <div
                 key={`claim-${row.n.seq}-${i}`}
                 className={cn(
-                  "flex items-start gap-1.5 rounded-sm px-1 py-1 text-compact",
+                  "flex items-start gap-2 rounded-sm px-1 py-1 text-compact",
                   failed ? "bg-red-950/30 text-red-200" : "text-zinc-400"
                 )}
               >
                 {failed ? (
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-400" />
+                  <AlertCircle className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                 ) : (
-                  <Activity className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-indigo-300" />
+                  <Activity className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-indigo-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
                 <span className="flex-shrink-0 text-minimal text-zinc-500">{fmtTime(row.n.ts)}</span>
@@ -319,7 +319,7 @@ function EpisodeDetail({
           if (row.type === "muted") {
             const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
-              <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-1.5 py-[3px]">
+              <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-2 py-[3px]">
                 <Icon className="w-3.5 h-3.5 text-zinc-500 self-center flex-shrink-0" />
                 <span className="min-w-0 truncate text-minimal text-zinc-400">
                   {row.items.map((it, j) => (
@@ -407,7 +407,7 @@ function ParticipantStrip({
   const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
 
   return (
-    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-900/50 px-2 py-1.5">
+    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-900/50 px-2 py-2">
       <div className="flex items-center -space-x-2">
         {shown.map((id) => {
           const mem = memberOf(id);
@@ -444,7 +444,7 @@ function ParticipantStrip({
       {overflow > 0 && (
         <span className="ml-1 text-minimal text-zinc-400 flex-shrink-0">+{overflow}</span>
       )}
-      {online > 0 && <span className="ml-1.5 text-minimal text-zinc-400 flex-shrink-0">{online} online</span>}
+      {online > 0 && <span className="ml-2 text-minimal text-zinc-400 flex-shrink-0">{online} online</span>}
     </div>
   );
 }
@@ -589,8 +589,8 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         )}
 
         {/* Footer: lens tabs (left) + member filter (right). */}
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1.5 rounded-sm bg-zinc-900/50 px-2 py-1.5">
-          <div className="flex items-center gap-0.5 rounded-sm bg-zinc-900/60 p-0.5">
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-2 py-2">
+          <div className="flex items-center gap-1 rounded-sm bg-zinc-900/60 p-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <UiButton variant="plain"
@@ -686,7 +686,7 @@ function MemberFilter({
         aria-expanded={open}
         title="Filter activity by member"
         controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 rounded-sm text-compact transition-colors",
+ "inline-flex items-center gap-2 rounded-sm text-compact transition-colors",
  open || selected.size
  ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
  )}
@@ -698,7 +698,7 @@ function MemberFilter({
 
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
-          <div className="m-1 flex items-center gap-1.5 rounded-sm bg-zinc-800/50 px-2 py-1.5">
+          <div className="m-1 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
             <Search className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
             <UiInput
               autoFocus
@@ -727,7 +727,7 @@ function MemberFilter({
                         on ? "border-indigo-400 bg-indigo-500/80" : "border-zinc-600"
                       )}
                     >
-                      {on && <Check className="w-2.5 h-2.5 text-white" />}
+                      {on && <Check className="h-3.5 w-3.5 text-white" />}
                     </span>
                     <Avatar
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}
@@ -748,7 +748,7 @@ function MemberFilter({
             )}
           </div>
           {selected.size > 0 && (
-            <div className="m-1 mt-2 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-1.5">
+            <div className="m-1 mt-2 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
               <div className="flex-1 flex flex-wrap gap-1">
                 {members
                   .filter((mem) => selected.has(mem.member_id))
@@ -757,7 +757,7 @@ function MemberFilter({
                       <span className="truncate max-w-[70px]">
                         {nameOf(memberOf(mem.member_id), mem.member_id)}
                       </span>
-                      <X className="w-2.5 h-2.5 opacity-60" />
+                      <X className="h-3.5 w-3.5 opacity-60" />
                     </FilterChip>
                   ))}
               </div>

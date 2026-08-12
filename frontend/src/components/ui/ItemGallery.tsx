@@ -193,7 +193,7 @@ export function ItemGallery() {
                 title="release"
                 subtitle="3 unread messages"
                 criticalStatus={
-                  <span className="rounded-sm bg-indigo-600 px-1.5 text-minimal font-bold text-white">
+                  <span className="rounded-sm bg-indigo-600 px-2 text-minimal font-bold text-white">
                     3
                   </span>
                 }
@@ -253,7 +253,7 @@ export function ItemGallery() {
                     </IconButton>
                   }
                 />
-                <Button variant="plain" controlSize="regular" className="gap-1.5 bg-zinc-800/60 px-2 text-zinc-400">
+                <Button variant="plain" controlSize="regular" className="gap-2 bg-zinc-800/60 px-2 text-zinc-400">
                   <MessageSquarePlus className="h-4 w-4" />
                   Add context
                 </Button>

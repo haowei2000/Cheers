@@ -26,7 +26,7 @@ import {
 } from "@/api/discussions";
 import { Avatar } from "@/components/ui/avatar";
 import { ErrorState } from "@/components/ui/error-state";
-import { ItemRow } from "@/components/ui/item";
+import { ItemList, ItemRow } from "@/components/ui/item";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
 import type { Message } from "@/types";
@@ -307,7 +307,7 @@ export function DiscussionView({
             <UiButton variant="plain" type="button" onClick={startDiscussion} className="text-regular font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
           </div>
         ) : (
-          <div className="space-y-2">
+          <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
             {topics.map((topic) => {
               const copy = titleAndPreview(topic.root);
               const selected = selectedId === topic.root.msg_id && !creating;
@@ -315,19 +315,18 @@ export function DiscussionView({
                 <ItemRow
                   key={topic.root.msg_id}
                   kind="conversation"
-                  presentationLevel="max"
+                  presentationLevel="medium"
                   controlSize="regular"
                   onClick={() => selectDiscussion(topic.root.msg_id)}
                   selected={selected}
                   leading={<Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="regular" />}
-                  title={copy.title}
-                  subtitle={copy.preview}
-                  metadata={topic.last_reply ? (
-                    <>
-                      <span className="font-medium text-zinc-400">{topic.last_reply.sender_name}</span>
-                      <span className="mx-1">·</span>{topic.last_reply.content || "Attachment"}
-                    </>
-                  ) : undefined}
+                  title={<span title={[
+                    copy.title,
+                    copy.preview,
+                    topic.last_reply ? `${topic.last_reply.sender_name}: ${topic.last_reply.content || "Attachment"}` : null,
+                  ].filter(Boolean).join(" · ")}>
+                    {copy.title}{copy.preview ? ` — ${copy.preview}` : ""}
+                  </span>}
                   status={(
                     <span className={cn("inline-flex shrink-0 items-center gap-2 text-zinc-500", controlTextClasses.compact)}>
                       <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
@@ -352,7 +351,7 @@ export function DiscussionView({
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
               </UiButton>
             )}
-          </div>
+          </ItemList>
         )}
       </div>
     </section>
@@ -382,7 +381,7 @@ export function DiscussionView({
                 <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />
                 <div className="min-w-0 flex-1">
                   <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-[-0.015em] text-zinc-100">{titleAndPreview(detail.root).title}</h2>
-                  <p className="mt-0.5 font-utility text-compact text-zinc-500">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
+                  <p className="mt-1 font-utility text-compact text-zinc-500">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
                   {titleAndPreview(detail.root).preview && (
                     <p className="mt-2 line-clamp-3 font-reading text-regular font-normal leading-6 text-zinc-400">{titleAndPreview(detail.root).preview}</p>
                   )}
@@ -391,7 +390,7 @@ export function DiscussionView({
             </div>
           </header>
           <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto py-3">
-            <div className="mx-auto flex max-w-[56rem] flex-col gap-0.5 px-2 md:px-4">
+            <div className="mx-auto flex max-w-[56rem] flex-col gap-1 px-2 md:px-4">
               {detail.meta.has_more_before && (
                 <UiButton variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto text-compact text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
                   {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
@@ -417,7 +416,7 @@ export function DiscussionView({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-9 w-9 text-zinc-700" /><p className="mt-3 text-regular font-medium text-zinc-300">Select a discussion</p><p className="mt-1 text-compact text-zinc-500">Open a topic to read and reply.</p></div></div>
+        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-zinc-700" /><p className="mt-3 text-regular font-medium text-zinc-300">Select a discussion</p><p className="mt-1 text-compact text-zinc-500">Open a topic to read and reply.</p></div></div>
       )}
       </div>
       {(selectedId || creating) && footer}

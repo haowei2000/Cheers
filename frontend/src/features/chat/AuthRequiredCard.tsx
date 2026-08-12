@@ -71,7 +71,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           : "Auth resolved";
     return (
       <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-zinc-400">
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-2">
           <KeyRound className="h-3.5 w-3.5" />
           {label}
         </span>
@@ -82,7 +82,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
   return (
     <div className="rounded-sm bg-amber-500/5 px-3 py-3">
       <div className="flex items-start gap-2">
-        <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+        <KeyRound className="mt-1 h-4 w-4 shrink-0 text-amber-400" />
         <div className="min-w-0 flex-1">
           <p className="text-regular font-medium text-zinc-100">{title}</p>
           <p className="mt-1 whitespace-pre-wrap text-compact leading-relaxed text-zinc-400">
@@ -104,7 +104,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
               Open login page <ExternalLink className="h-3.5 w-3.5" />
             </a>
           ) : (
-            <div className="mt-2 rounded-sm bg-zinc-950/40 px-2.5 py-2 text-compact leading-relaxed text-zinc-400">
+            <div className="mt-2 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact leading-relaxed text-zinc-400">
               {envAuth ? (
                 <>
                   No login URL for this method — set{" "}
@@ -134,7 +134,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("retry")}
-                controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-600 text-compact font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600 text-compact font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >
                 {busy === "retry" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {link ? "I've signed in" : "Credentials set — retry"}

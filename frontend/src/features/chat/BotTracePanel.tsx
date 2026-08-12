@@ -175,7 +175,7 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
         )}
       </div>
       {result.files.length > 0 && (
-        <div className="mt-3 max-h-64 space-y-0.5 overflow-auto">
+        <div className="mt-3 max-h-64 space-y-1 overflow-auto">
           {result.files.map((file, index) => {
             const marker = file.state === "untracked" ? "A" : file.index.trim() || file.worktree.trim() || "M";
             return (
@@ -268,7 +268,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
   const selectedStats = diffStats(selected);
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
         <span className="min-w-0 truncate font-mono text-compact text-zinc-300" title={selected.path}>
           {pathBasename(selected.path)}
         </span>
@@ -394,7 +394,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
   return (
     <div className="space-y-3 p-3 text-compact text-zinc-400">
       {presentation && (
-        <div className="rounded-sm bg-zinc-950/45 px-3 py-2.5">
+        <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-zinc-200">
               {TOOL_EVENT_META[presentation.event_type].label}
@@ -425,7 +425,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {outputDiff && <DiffView diff={outputDiff} className="max-h-80 rounded-sm bg-zinc-950" />}
       {presentation && hasGitStatus && <GitStatusInspector presentation={presentation} />}
       {planEntries && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">Plan</div>
           {planEntries.length > 0 ? (
             <ol className="space-y-1 pl-4 list-decimal">
@@ -440,7 +440,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                   <li key={`${index}-${content}`} className="break-words">
                     <span className="text-zinc-300">{content}</span>
                     {status && (
-                      <span className="ml-1.5 text-zinc-500">
+                      <span className="ml-2 text-zinc-500">
                         {statusLabel(status)}
                       </span>
                     )}
@@ -469,7 +469,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
         <div>
           <div className="mb-1 text-minimal font-medium uppercase tracking-wide text-zinc-400">Output</div>
-          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-2.5 py-2 text-zinc-300"><DetailValue value={output} /></div>
+          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-zinc-300"><DetailValue value={output} /></div>
         </div>
       )}
       <RawEventData metadata={metadata} data={data} />
@@ -503,10 +503,10 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
 
   return (
     <div className="overflow-hidden rounded-sm bg-zinc-950/45">
-      <header className="flex items-start justify-between gap-3 px-3 py-2.5 border-b border-zinc-800">
+      <header className="flex items-start justify-between gap-3 px-3 py-3 border-b border-zinc-800">
         <div className="min-w-0">
           <p className="text-regular font-medium text-zinc-200">{title}</p>
-          <p className="mt-0.5 text-compact text-zinc-400">
+          <p className="mt-1 text-compact text-zinc-400">
             {pending
               ? "Waiting for a decision."
               : expired
@@ -528,9 +528,9 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </span>
       </header>
       {command && (
-        <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-          <p className="mb-1.5 text-minimal uppercase tracking-wide text-zinc-400">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-1.5 font-mono text-compact text-zinc-300">
+        <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-3">
+          <p className="mb-2 text-minimal uppercase tracking-wide text-zinc-400">Command</p>
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-zinc-300">
             {command}
           </pre>
           {cwd && (
@@ -541,7 +541,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </div>
       )}
       {!pending && decision && (
-        <div className="px-3 py-2.5 text-compact text-zinc-400">
+        <div className="px-3 py-3 text-compact text-zinc-400">
           Decision: <span className="font-mono text-zinc-300">{decision}</span>
         </div>
       )}
@@ -612,7 +612,7 @@ function TraceItem({
   // Pending approvals expand inline under the row with action buttons — no click needed.
   if (needsAction && pendingApproval) {
     return (
-      <div className="min-w-0 space-y-1.5">
+      <div className="min-w-0 space-y-2">
         <div
           className={cn(
             "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left",
@@ -918,7 +918,7 @@ export function BotTracePanel({
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="flex items-center gap-1.5 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -934,12 +934,12 @@ export function BotTracePanel({
                 : ""}
           </span>
           {pendingCount > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-amber-400/80">
+            <span className="inline-flex items-center gap-1 text-amber-400/80">
               <ShieldCheck className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
           ) : approvalCount > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-zinc-400">
+            <span className="inline-flex items-center gap-1 text-zinc-400">
               <ShieldCheck className="w-3.5 h-3.5" />
               {approvalCount}
             </span>
@@ -949,7 +949,7 @@ export function BotTracePanel({
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
-        <div className="flex items-center gap-1.5 text-compact text-zinc-500">
+        <div className="flex items-center gap-2 text-compact text-zinc-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading steps…
         </div>
@@ -983,7 +983,7 @@ export function BotTracePanel({
             <UiButton variant="plain"
               type="button"
               onClick={() => setShowAll(true)}
-              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
+              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show all {timeline.length} steps
             </UiButton>
@@ -992,7 +992,7 @@ export function BotTracePanel({
             <UiButton variant="plain"
               type="button"
               onClick={() => setShowAll(false)}
-              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
+              className="self-start text-compact text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show latest only
             </UiButton>
@@ -1001,13 +1001,13 @@ export function BotTracePanel({
       )}
 
       {expanded && events && !hasRows && !loading && !error && (
-        <div className="mt-1 px-2.5 text-compact text-zinc-400">
+        <div className="mt-1 px-3 text-compact text-zinc-400">
           No steps recorded.
         </div>
       )}
 
       {expanded && error && !loading && (
-        <div className="mt-1 px-2.5 flex items-center gap-2 text-compact text-red-400">
+        <div className="mt-1 px-3 flex items-center gap-2 text-compact text-red-400">
           <span>Failed to load steps.</span>
           <UiButton variant="plain"
             type="button"

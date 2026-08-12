@@ -95,7 +95,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             {completed}/{total}
           </span>
         </div>
-        <div data-design-system-exempt="progress" className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+        <div data-design-system-exempt="progress" className="mt-2 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
           <div
             data-design-system-exempt="progress"
             className="h-full rounded-full bg-emerald-500 transition-[width]"

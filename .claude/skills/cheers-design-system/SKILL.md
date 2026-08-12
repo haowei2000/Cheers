@@ -48,6 +48,7 @@ or a justified specialized tree/diff/table/canvas/editor structure. Use an
 - Never add local `p-*` to a shared control. Use `square` with ControlSize for icon actions and the primitive-owned padding for text actions.
 - Flex rows and headers in the control rhythm must use 28/36/44px; do not create 32/40/48/56px tiers.
 - Semantic icons must resolve through 14/16/20px and identity marks through 20/28/36px shared mappings. Keep every CI ceiling for these rules at zero.
+- Use whole 4px-grid spacing utilities; reject fractional 0.5/1.5/2.5/3.5 spacing tiers. Spinner consumes ContentSize rather than a numeric pixel size.
 - Use `leading -> title -> critical status/status -> actions` anatomy.
 - Use a row action only for a single-action row; use an actions slot for composite rows.
 - Never nest buttons or put interactive controls in a non-interactive trailing slot.

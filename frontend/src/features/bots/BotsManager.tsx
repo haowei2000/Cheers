@@ -31,8 +31,7 @@ function BotRow({
     <EntityItem
       onClick={onSelect}
       selected={active}
-      title={bot.display_name || bot.username}
-      subtitle={`@${bot.username}`}
+      title={`${bot.display_name || bot.username} · @${bot.username}`}
       leading={<div className={`flex flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
         <Bot className="w-4 h-4 text-indigo-300" />
       </div>}

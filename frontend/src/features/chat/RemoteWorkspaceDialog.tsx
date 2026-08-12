@@ -3,6 +3,7 @@ import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { PresenceDot } from "@/components/ui/presence-dot";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import { FsTreeIcon } from "./FsTreeIcon";
 import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
@@ -1268,21 +1269,14 @@ export function RemoteWorkspaceDialog({
           </span>
         )}
         {sessionId && (
-          <label
-            className="flex items-center gap-1 text-zinc-400 cursor-pointer select-none"
+          <CheckboxField
+            label="Entire allowed roots"
+            className="select-none text-compact text-zinc-400"
             title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-          >
-            {/* design-system-native: checkbox */}
-            {/* design-system-native: checkbox */}
-{/* design-system-native: checkbox */}
-<input
-              type="checkbox"
-              checked={!scoped}
-              onChange={toggleScoped}
-              className="accent-emerald-600"
-            />
-            Entire allowed roots
-          </label>
+            checked={!scoped}
+            onChange={toggleScoped}
+            controlSize="compact"
+          />
         )}
       </div>
 
@@ -1315,7 +1309,7 @@ export function RemoteWorkspaceDialog({
       {/* Workspace presence — who ELSE is viewing this bot's workspace right now, so
           co-editing is visible before conflicts happen. */}
       {botId && viewers.length > 0 && (
-        <div className="flex items-center flex-wrap gap-1.5 mb-2 text-compact flex-shrink-0">
+        <div className="flex items-center flex-wrap gap-2 mb-2 text-compact flex-shrink-0">
           <span className="text-zinc-400 shrink-0">Viewing</span>
           {viewers.map((v) => {
             const name = memberNames?.get(v.user_id) || v.user_id.slice(0, 8);
@@ -1326,7 +1320,7 @@ export function RemoteWorkspaceDialog({
               <span
                 key={v.user_id + ":" + (v.path ?? "")}
                 title={v.path ?? name}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm ${
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm ${
                   sameFile
                     ? "bg-amber-950/40 text-amber-300"
                     : "bg-zinc-800 text-zinc-400"
@@ -1355,7 +1349,7 @@ export function RemoteWorkspaceDialog({
           <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
-              <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800">
+              <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800">
                 <UiButton variant="plain"
                   onClick={() => {
                     setLeftView("files");
@@ -1399,7 +1393,7 @@ export function RemoteWorkspaceDialog({
 
             {leftView === "changes" && git ? (
               <>
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 text-compact text-zinc-400">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-zinc-400">
                   <UiButton variant="plain"
                     onClick={() => openDiff("", false)}
                     title="Diff the whole working tree (unstaged)"
@@ -1443,7 +1437,7 @@ export function RemoteWorkspaceDialog({
                           key={(isStaged ? "s:" : "u:") + e.path}
                           onClick={() => openDiff(e.path, isStaged)}
                           title={e.path}
-                          controlSize="regular" className={`flex items-center gap-1.5 text-left text-compact hover:bg-zinc-800 ${
+                          controlSize="regular" className={`flex items-center gap-2 text-left text-compact hover:bg-zinc-800 ${
  active ? "bg-zinc-800 text-zinc-100": "text-zinc-300"
  }`}
                         >
@@ -1487,7 +1481,7 @@ export function RemoteWorkspaceDialog({
               </>
             ) : leftView === "history" && git ? (
               <>
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 text-compact text-zinc-400">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-zinc-400">
                   <span className="flex items-center gap-1 flex-1">
                     <History className="w-3.5 h-3.5" /> Commits
                   </span>
@@ -1509,11 +1503,11 @@ export function RemoteWorkspaceDialog({
                         key={c.hash}
                         onClick={() => openCommit(c)}
                         title={c.subject}
-                        controlSize="regular" className={`flex flex-col gap-0.5 text-left border-b border-zinc-900 hover:bg-zinc-800 ${
+                        controlSize="regular" className={`flex flex-col gap-1 text-left border-b border-zinc-900 hover:bg-zinc-800 ${
  active ? "bg-zinc-800": ""
  }`}
                       >
-                        <div className="flex items-center gap-1.5 text-compact">
+                        <div className="flex items-center gap-2 text-compact">
                           <GitCommit className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                           <span className="font-mono text-minimal text-amber-400 shrink-0">
                             {c.hash.slice(0, 7)}
@@ -1550,7 +1544,7 @@ export function RemoteWorkspaceDialog({
               </>
             ) : (
               <>
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 text-compact text-zinc-400">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-zinc-400">
                   <UiButton variant="plain"
                     onClick={() => parent !== null && loadDir(parent)}
                     disabled={!cwd}
@@ -1593,7 +1587,7 @@ export function RemoteWorkspaceDialog({
                       <div key={ent.path} className="group/row relative">
                         <UiButton controlWidth="fill" variant="plain"
                           onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
-                          controlSize="regular" className={`flex items-center gap-1.5 text-left text-compact hover:bg-zinc-800 ${
+                          controlSize="regular" className={`flex items-center gap-2 text-left text-compact hover:bg-zinc-800 ${
  file?.path === ent.path ? "bg-zinc-800 text-zinc-100": "text-zinc-300"
  }`}
                         >
@@ -1662,7 +1656,7 @@ export function RemoteWorkspaceDialog({
                                 root: treeRoot ?? undefined,
                               })}
                               title={addToContextTitle(`${ent.name} (live reference)`)}
-                              className="flex items-center p-0.5 rounded-sm bg-zinc-800 text-zinc-400 hover:text-indigo-300 disabled:opacity-40"
+                              className="flex items-center p-1 rounded-sm bg-zinc-800 text-zinc-400 hover:text-indigo-300 disabled:opacity-40"
                             />
                           </div>
                         )}
@@ -1681,7 +1675,7 @@ export function RemoteWorkspaceDialog({
           <div className="flex-1 min-h-0 rounded-sm overflow-hidden flex flex-col">
             {diff !== null ? (
               <>
-                <div className="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-800 text-compact">
+                <div className="flex items-center gap-2 px-2 py-2 border-b border-zinc-800 text-compact">
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
@@ -1782,11 +1776,11 @@ export function RemoteWorkspaceDialog({
                 {/* Header actions are icon-only (+ hover tooltip) so the row
                     stays on one line in a narrow panel; the filename shrinks
                     first (min-w-0) and every action is shrink-0. */}
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 text-compact">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact">
                   <span className="text-zinc-200 truncate flex-1 min-w-0" title={file.path}>
                     {file.filename}
                   </span>
-                  <span className="text-zinc-500 shrink-0 tabular-nums mr-0.5">
+                  <span className="text-zinc-500 shrink-0 tabular-nums mr-1">
                     {file.size_bytes}B
                   </span>
                   {file.is_text &&
@@ -1864,7 +1858,7 @@ export function RemoteWorkspaceDialog({
                   )}
                 </div>
                 {conflict && (
-                  <div className="flex items-center gap-2 max-md:flex-wrap px-2 py-1.5 border-b border-amber-800/50 bg-amber-950/30 text-compact text-amber-300">
+                  <div className="flex items-center gap-2 max-md:flex-wrap px-2 py-2 border-b border-amber-800/50 bg-amber-950/30 text-compact text-amber-300">
                     <span className="flex-1">
                       File changed on the server (remote {conflict.sizeBytes}B).
                       Reload replaces your edits; Force overwrite discards the

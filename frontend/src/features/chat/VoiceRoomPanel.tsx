@@ -356,9 +356,9 @@ export function VoiceRoomPanel({
   return (
     <section className="mx-4 mb-2 flex-shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
-      <div className="flex min-h-[64px] items-center gap-3 px-3 py-2.5">
+      <div className="flex min-h-[64px] items-center gap-3 px-3 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-1.5 text-compact font-medium text-zinc-300">
+          <div className="flex shrink-0 items-center gap-2 text-compact font-medium text-zinc-300">
             <PresenceDot
               contentSize="regular"
               className={connected ? "bg-emerald-400" : "bg-zinc-600"}
@@ -381,13 +381,13 @@ export function VoiceRoomPanel({
           </div>
 
           {connected && participantNames.length > 0 && (
-            <div className="hidden min-w-0 items-center gap-1.5 lg:flex">
+            <div className="hidden min-w-0 items-center gap-2 lg:flex">
               {participantNames.slice(0, 4).map((name) => {
                 const speaking = name === speakingName;
                 return (
                   <div
                     key={name}
-                    className={`flex max-w-32 items-center gap-1.5 rounded-sm  px-2 py-1 text-compact transition-colors ${
+                    className={`flex max-w-32 items-center gap-2 rounded-sm  px-2 py-1 text-compact transition-colors ${
                       speaking
                         ? "border-indigo-500/60 bg-indigo-500/10 text-indigo-200"
                         : "border-transparent bg-zinc-800/70 text-zinc-400"
@@ -416,7 +416,7 @@ export function VoiceRoomPanel({
             Join voice
           </Button>
         ) : (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-2">
             <UiButton variant="plain"
               type="button"
               onClick={() => void toggleMic()}
@@ -430,7 +430,7 @@ export function VoiceRoomPanel({
               }
               aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
               aria-pressed={micEnabled}
-              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-1.5 rounded-sm text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
+              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
  micEnabled
  ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700": "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
  }`}
@@ -447,7 +447,7 @@ export function VoiceRoomPanel({
               onClick={() => void disconnect()}
               title="Leave voice"
               aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-1.5 rounded-sm border-rose-500/40 text-compact font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40 text-compact font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>
@@ -456,8 +456,8 @@ export function VoiceRoomPanel({
         )}
       </div>
 
-      <div className="flex min-h-7 items-center gap-2 border-t border-zinc-800/80 px-3 py-1.5 text-compact">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-zinc-500">
+      <div className="flex min-h-7 items-center gap-2 border-t border-zinc-800/80 px-3 py-2 text-compact">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-zinc-500">
           <Captions
             className={`h-3.5 w-3.5 shrink-0 ${
               transcriptionStatus === "active" ? "text-indigo-300" : ""
@@ -527,7 +527,7 @@ export function VoiceRoomPanel({
         </div>
       )}
       {!canPublish && connected && !consentRequired && (
-        <p className="border-t border-zinc-800/80 px-3 py-1.5 text-compact text-zinc-500">
+        <p className="border-t border-zinc-800/80 px-3 py-2 text-compact text-zinc-500">
           You have listen-only access in this channel.
         </p>
       )}

@@ -8,7 +8,7 @@
     "item-gallery": "vite --host 127.0.0.1 --port 4175 --strictPort",
     "build": "vite build",
     "design-system:check": "node ../scripts/check-design-system.mjs",
-    "design-system:test": "node --test ../scripts/lib/design-system-audit.test.mjs",
+    "design-system:test": "node --test ../scripts/lib/design-system-audit.test.mjs ../scripts/lib/website-design-audit.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -182,6 +182,9 @@ registered padding. Flex rows and headers that participate in the control rhythm
 resolve to 28/36/44px rather than introducing 32/40/48/56px variants. Semantic
 icons resolve to 14/16/20px, and identity marks to 20/28/36px, through the shared
 size maps. CI rejects each of these violations with a zero ceiling.
+Layout spacing uses whole Tailwind spacing steps on the 4px grid; fractional
+`0.5/1.5/2.5/3.5` spacing utilities are rejected. Loading indicators consume
+`ContentSize` instead of accepting arbitrary numeric sizes.
 
 For contexts the component doesn't fit (dense workbench panels), the soft
 recipes are:

@@ -39,14 +39,50 @@ function commentReason(source, start, kind) {
   return Array.from(before.matchAll(pattern)).at(-1)?.[1];
 }
 
-function classText(node, sourceFile, ts) {
+function staticExpressionText(expression, sourceFile, ts, declarations, seen = new Set()) {
+  if (!expression) return "";
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return expression.text;
+  if (ts.isIdentifier(expression)) {
+    if (seen.has(expression.text)) return "";
+    const initializer = declarations.get(expression.text);
+    if (!initializer) return "";
+    const next = new Set(seen);
+    next.add(expression.text);
+    return staticExpressionText(initializer, sourceFile, ts, declarations, next);
+  }
+  if (ts.isTemplateExpression(expression)) {
+    return [
+      expression.head.text,
+      ...expression.templateSpans.flatMap((span) => [
+        staticExpressionText(span.expression, sourceFile, ts, declarations, seen),
+        span.literal.text,
+      ]),
+    ].join(" ");
+  }
+  if (ts.isConditionalExpression(expression)) {
+    return `${staticExpressionText(expression.whenTrue, sourceFile, ts, declarations, seen)} ${staticExpressionText(expression.whenFalse, sourceFile, ts, declarations, seen)}`;
+  }
+  if (ts.isBinaryExpression(expression)) {
+    return `${staticExpressionText(expression.left, sourceFile, ts, declarations, seen)} ${staticExpressionText(expression.right, sourceFile, ts, declarations, seen)}`;
+  }
+  if (ts.isCallExpression(expression) || ts.isArrayLiteralExpression(expression)) {
+    const values = ts.isCallExpression(expression) ? expression.arguments : expression.elements;
+    return values.map((value) => staticExpressionText(value, sourceFile, ts, declarations, seen)).join(" ");
+  }
+  if (ts.isParenthesizedExpression(expression)) {
+    return staticExpressionText(expression.expression, sourceFile, ts, declarations, seen);
+  }
+  return "";
+}
+
+function classText(node, sourceFile, ts, declarations) {
   const attr = node.attributes?.properties.find(
     (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "className"
   );
   if (!attr?.initializer) return "";
   if (ts.isStringLiteral(attr.initializer)) return attr.initializer.text;
   if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
-    return attr.initializer.expression.getText(sourceFile);
+    return staticExpressionText(attr.initializer.expression, sourceFile, ts, declarations);
   }
   return "";
 }
@@ -100,6 +136,8 @@ export function auditSources(files, ts, policy) {
       nonStandardRowHeight: 0,
       nonStandardIdentitySize: 0,
       nonStandardIconSize: 0,
+      nonStandardSpacing: 0,
+      arbitrarySpinnerSize: 0,
       nonStandardTypographySize: 0,
       legacyControlSizeProp: 0,
     },
@@ -114,6 +152,14 @@ export function auditSources(files, ts, policy) {
     const development = isDevelopmentFile(file);
     const primitive = !development && isPrimitiveFile(file);
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const declarations = new Map();
+    const collectDeclarations = (node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        declarations.set(node.name.text, node.initializer);
+      }
+      ts.forEachChild(node, collectDeclarations);
+    };
+    collectDeclarations(sourceFile);
 
     for (const match of source.matchAll(/design-system-(native|exempt):\s*([a-z0-9-]+)/g)) {
       const [, kind, reason] = match;
@@ -142,7 +188,12 @@ export function auditSources(files, ts, policy) {
         }
 
         if (!development) {
-          const tokens = classTokens(classText(node, sourceFile, ts));
+          const tokens = classTokens(classText(node, sourceFile, ts, declarations));
+          const spacingTokens = tokens.filter((token) => /^(?:-)?(?:p[trblxy]?|m[trblxy]?|gap(?:-[xy])?|space-[xy])-(?:0\.5|1\.5|2\.5|3\.5)$/.test(utilityBase(token)));
+          if (spacingTokens.length) {
+            result.violations.nonStandardSpacing += spacingTokens.length;
+            result.findings.push({ file, line, rule: "nonStandardSpacing", token: spacingTokens.join(" ") });
+          }
           for (const token of tokens) {
             if (NON_STANDARD_RADIUS.has(token) && !exempt) {
               result.violations.nonStandardRadius += 1;
@@ -196,7 +247,7 @@ export function auditSources(files, ts, policy) {
           }
 
           const dimensions = Object.fromEntries(tokens.map((token) => {
-            const match = utilityBase(token).match(/^(h|w)-(3|3\.5|4|5|6|8|10)$/);
+            const match = utilityBase(token).match(/^(h|w)-([0-9.]+|\[[0-9.]+px\])$/);
             return match ? [match[1], match[2]] : [];
           }).filter((entry) => entry.length));
           if (exemptReason === "identity" && dimensions.h && dimensions.h === dimensions.w && !["5", "7", "9"].includes(dimensions.h)) {
@@ -224,6 +275,15 @@ export function auditSources(files, ts, policy) {
             if (legacySize) {
               result.violations.legacyControlSizeProp += 1;
               result.findings.push({ file, line, rule: "legacyControlSizeProp", token: "size" });
+            }
+          }
+          if (tag === "Spinner") {
+            const arbitrarySize = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "size"
+            );
+            if (arbitrarySize) {
+              result.violations.arbitrarySpinnerSize += 1;
+              result.findings.push({ file, line, rule: "arbitrarySpinnerSize", token: "size" });
             }
           }
         }

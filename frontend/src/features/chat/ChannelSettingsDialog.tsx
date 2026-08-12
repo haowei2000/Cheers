@@ -248,7 +248,7 @@ export function ChannelSettingsDialog({
             controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {channel.type !== "dm" && (
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-2 pt-1">
               <label className="text-compact font-medium uppercase tracking-wide text-zinc-400">
                 Conversation layout
               </label>
@@ -426,7 +426,7 @@ export function ChannelSettingsDialog({
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
               <p className="text-regular font-medium text-zinc-200">Delete channel</p>
-              <p className="text-compact text-zinc-400 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
+              <p className="text-compact text-zinc-400 mt-1">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             {confirmingDelete ? (
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -458,7 +458,7 @@ export function ChannelSettingsDialog({
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
               <p className="text-regular font-medium text-zinc-200">Leave channel</p>
-              <p className="text-compact text-zinc-400 mt-0.5">Remove yourself from this channel.</p>
+              <p className="text-compact text-zinc-400 mt-1">Remove yourself from this channel.</p>
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 flex-shrink-0">

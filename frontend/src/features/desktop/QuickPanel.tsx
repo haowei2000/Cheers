@@ -104,7 +104,7 @@ export function QuickPanel() {
         </div>
       ) : dms === null ? (
         <div className="flex-1 flex items-center justify-center">
-          <Spinner size={20} className="text-zinc-600" />
+          <Spinner contentSize="large" className="text-zinc-600" />
         </div>
       ) : dms.length === 0 ? (
         <div className="flex-1 flex items-center justify-center p-6 text-center">

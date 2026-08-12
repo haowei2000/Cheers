@@ -16,7 +16,7 @@ export function ReplyComposerBanner({
   return (
     <div className="mx-auto w-full max-w-[72rem] px-4 pt-2 max-md:px-3">
       <div
-        className="flex items-center gap-2.5 rounded-sm bg-indigo-500/10 px-3 py-2"
+        className="flex items-center gap-3 rounded-sm bg-indigo-500/10 px-3 py-2"
         role="status"
         aria-label={`Replying to ${preview.sender}`}
       >

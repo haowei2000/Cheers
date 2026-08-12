@@ -45,7 +45,7 @@ export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDe
         )}
       </div>
       {(status || !lens?.viewOnly) && (
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1.5">
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
           <span className="text-compact text-zinc-400 truncate flex-1">{status}</span>
           {!lens?.viewOnly && (
             <UiButton variant="plain" onClick={() => void onSave()} className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100">

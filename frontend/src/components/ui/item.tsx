@@ -87,7 +87,7 @@ export function ItemRow({
     <>
       {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
       <span className="min-w-0 flex-1 text-left">
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-2">
           <span className={cn("truncate font-utility font-medium tracking-normal text-current", controlTextClasses[size])}>
             {title}
           </span>
@@ -95,10 +95,10 @@ export function ItemRow({
           {level !== "minimal" && status}
         </span>
         {level !== "minimal" && subtitle && (
-          <span className={cn("mt-0.5 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{subtitle}</span>
+          <span className={cn("mt-1 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{subtitle}</span>
         )}
         {level === "max" && metadata && (
-          <span className={cn("mt-0.5 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{metadata}</span>
+          <span className={cn("mt-1 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{metadata}</span>
         )}
         {level === "max" && preview && (
           <span className={cn("mt-1 block line-clamp-2 font-reading leading-relaxed text-zinc-300", controlSupportingTextClasses[size])}>
@@ -117,7 +117,7 @@ export function ItemRow({
   const classes = cn(
     "group/item flex w-full min-w-0 items-center gap-2 rounded-sm border-b border-l-2 border-b-zinc-800/90 px-2 text-left transition-colors duration-150",
     controlMinHeightClasses[size],
-    size === "compact" ? "py-0.5" : size === "regular" ? "py-1" : "py-1.5",
+    size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
       ? kind === "navigation"
         ? "border-l-zinc-200 bg-zinc-800 text-zinc-100"
@@ -368,7 +368,7 @@ export function ItemChip({
       className={cn(
         "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-tight text-zinc-400",
         controlMinHeightClasses[size],
-        level === "max" ? "gap-1.5 px-2 text-compact" : level === "medium" ? "gap-1 px-1.5 text-compact" : "gap-1 px-1 text-minimal",
+        level === "max" ? "gap-2 px-2 text-compact" : level === "medium" ? "gap-1 px-2 text-compact" : "gap-1 px-1 text-minimal",
         className
       )}
     >

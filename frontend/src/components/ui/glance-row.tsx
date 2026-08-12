@@ -34,7 +34,7 @@ export function GlanceRow({
       type="button"
       onClick={onClick}
       title={title ?? `Open ${label}`}
-      className="group flex w-full flex-col gap-1 rounded-sm px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/60"
+      className="group flex w-full flex-col gap-1 rounded-sm px-3 py-2 text-left transition-colors hover:bg-zinc-800/60"
     >
       <div className="flex items-center gap-2">
         <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
@@ -50,7 +50,7 @@ export function GlanceRow({
           <div data-design-system-exempt="progress" className="h-full rounded-full bg-emerald-500" style={{ width: `${bar}%` }} />
         </div>
       )}
-      {children && <div className="ml-[22px] w-[calc(100%-22px)] space-y-0.5">{children}</div>}
+      {children && <div className="ml-[22px] w-[calc(100%-22px)] space-y-1">{children}</div>}
     </button>
   );
 }

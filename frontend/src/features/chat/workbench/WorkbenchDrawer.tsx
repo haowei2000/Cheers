@@ -503,17 +503,17 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         cn(
           open ? "flex" : "hidden",
           "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
-          "min-h-0 flex-col rounded-sm border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
           !drag.pos && "top-2 left-2",
           minimized ? "w-[300px]" : "w-[560px] h-[75%]",
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
         )
       : // Fallback (no lane context): a plain docked column.
         cn(
           open ? "flex" : "hidden",
-          "min-h-0 flex-col rounded-sm border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
           minimized ? "w-[300px] self-start max-h-full" : "w-[560px] h-full",
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
         );
 
   // Minimized keeps its dragged spot but sheds the resized size (content-height).
@@ -558,7 +558,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             aria-pressed={rawMode}
             title={rawMode ? "Return to scene tabs" : "Browse every workspace file"}
             controlSize="regular" className={cn(
- "flex items-center gap-1.5 rounded-sm text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ "flex items-center gap-2 rounded-sm text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
  ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
  )}
@@ -651,7 +651,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         </div>
 
         {!minimized && notice && (
-          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-1.5 text-compact text-amber-400/90">
+          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
             <UiButton variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
               <X className="w-3.5 h-3.5" />
@@ -660,7 +660,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         )}
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1.5 text-compact text-zinc-400">
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-zinc-400">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
               No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
@@ -677,7 +677,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         {/* Minimized: a ViewBoard-style glance (scenario + pinned files) in place
             of the full browser. Clicking a row expands back to the browser. */}
         {minimized && (
-          <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
             <GlanceRow
               Icon={Package}
               label="Scenario"

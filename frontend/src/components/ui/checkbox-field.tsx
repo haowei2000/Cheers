@@ -38,10 +38,10 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
           type="checkbox"
           className={cn("mt-1 flex-shrink-0 accent-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 max-md:mt-0", contentIconClasses.regular)}
         />
-        <span className="min-w-0 py-1.5 max-md:py-0">
+        <span className="min-w-0 py-2 max-md:py-0">
           <span className="block">{label}</span>
-          {hint && <span className="mt-0.5 block text-compact text-zinc-500">{hint}</span>}
-          {error && <span className="mt-0.5 block text-compact text-red-400" role="alert">{error}</span>}
+          {hint && <span className="mt-1 block text-compact text-zinc-500">{hint}</span>}
+          {error && <span className="mt-1 block text-compact text-red-400" role="alert">{error}</span>}
         </span>
       </label>
     );

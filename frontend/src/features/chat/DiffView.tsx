@@ -170,7 +170,7 @@ export function parseSections(diff: string): FileSection[] {
 function Gutter({ line }: { line: DiffLine }) {
   const num = (n?: number) => (n == null ? "" : String(n));
   return (
-    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-1.5 text-right text-zinc-400">
+    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-2 text-right text-zinc-400">
       <span className="inline-block w-10">{num(line.oldNo)}</span>
       <span className="inline-block w-10">{num(line.newNo)}</span>
     </span>
@@ -187,7 +187,7 @@ function FileSectionView({ section }: { section: FileSection }) {
     <div className="border-b border-zinc-900 last:border-b-0">
       <UiButton controlWidth="fill" variant="plain"
         onClick={() => setOpen((o) => !o)}
-        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-1.5 border-y border-zinc-800/70 bg-zinc-900/95 text-left text-compact backdrop-blur-sm hover:bg-zinc-800/90"
+        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900/95 text-left text-compact backdrop-blur-sm hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
@@ -196,7 +196,7 @@ function FileSectionView({ section }: { section: FileSection }) {
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
         )}
         <span className="truncate font-mono text-zinc-200">{section.title}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
+        <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
           {section.binary && <span className="text-zinc-400">binary</span>}
           {section.adds > 0 && <span className="text-emerald-400">+{section.adds}</span>}
           {section.dels > 0 && <span className="text-rose-400">−{section.dels}</span>}

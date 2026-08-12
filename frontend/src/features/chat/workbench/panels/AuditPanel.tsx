@@ -230,9 +230,9 @@ function AuditRow({
   );
 
   return (
-    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-1.5`}>
+    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-2`}>
       <WorkbenchItem
-        presentationLevel="max"
+        presentationLevel="medium"
         title={content || t.label}
         leading={e.bot_id ? <Avatar
               name={bot?.display_name || bot?.username || short(e.bot_id)}
@@ -240,7 +240,7 @@ function AuditRow({
               id={e.bot_id}
               size="small"
             /> : undefined}
-        subtitle={<span className="flex items-center gap-1.5 flex-wrap">
+        status={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
               <span
                 className={`inline-flex items-center gap-1 text-compact font-medium ${t.text}`}
                 title={t.raw || undefined}
@@ -272,7 +272,7 @@ function AuditRow({
           <UiButton variant="plain"
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="inline-flex items-center gap-0.5 text-minimal text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="inline-flex items-center gap-1 text-minimal text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
@@ -283,7 +283,7 @@ function AuditRow({
       />
 
         {open && (
-          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-2.5 py-2">
+          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-3 py-2">
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>

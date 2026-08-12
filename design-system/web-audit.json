@@ -4,13 +4,13 @@
   "nativeElementCeilings": {
     "production": {
       "button": 9,
-      "input": 19,
+      "input": 8,
       "select": 1,
       "textarea": 2
     },
     "business": {
       "button": 0,
-      "input": 16,
+      "input": 5,
       "select": 0,
       "textarea": 1
     }
@@ -34,6 +34,8 @@
     "nonStandardRowHeight": 0,
     "nonStandardIdentitySize": 0,
     "nonStandardIconSize": 0,
+    "nonStandardSpacing": 0,
+    "arbitrarySpinnerSize": 0,
     "nonStandardTypographySize": 0,
     "legacyControlSizeProp": 0
   },

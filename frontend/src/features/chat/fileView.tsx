@@ -83,8 +83,8 @@ function AudioTile({ file }: { file: FileInfo }) {
   }, [file.file_id]);
 
   return (
-    <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-2.5 py-2">
-      <div className="flex items-center gap-1.5 text-compact text-zinc-200">
+    <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-3 py-2">
+      <div className="flex items-center gap-2 text-compact text-zinc-200">
         <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
           {file.original_filename || "audio"}
@@ -105,7 +105,7 @@ function AudioTile({ file }: { file: FileInfo }) {
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
-        <div className="flex h-9 items-center gap-1.5 text-compact text-zinc-400">
+        <div className="flex h-9 items-center gap-2 text-compact text-zinc-400">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…
         </div>
       )}
@@ -224,7 +224,7 @@ function StagedFileTile({ file }: { file: FileInfo }) {
       onClick={handleClick}
       disabled={phase === "realizing"}
       title={file.original_filename || file.file_id}
-      controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40 text-compact text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
+      controlSize="regular" className="inline-flex items-center gap-2 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40 text-compact text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
       data-design-system-exempt="drop-zone"
     >
       {phase === "realizing" ? (
@@ -261,7 +261,7 @@ export function FileTile({ file }: { file: FileInfo }) {
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800/60 text-compact text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
+          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60 text-compact text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>

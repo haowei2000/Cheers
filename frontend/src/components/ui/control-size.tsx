@@ -60,5 +60,5 @@ export const controlSupportingTextClasses: Record<ControlSize, string> = {
 export const controlIconClasses: Record<ControlSize, string> = {
   compact: "h-3.5 w-3.5",
   regular: "h-4 w-4",
-  comfortable: "h-[18px] w-[18px]",
+  comfortable: "h-5 w-5",
 };

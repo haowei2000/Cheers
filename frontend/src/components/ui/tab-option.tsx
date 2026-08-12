@@ -27,7 +27,7 @@ export const TabOption = forwardRef<HTMLButtonElement, TabOptionProps>(
         aria-selected={selected}
         data-control-size={size}
         className={cn(
-          "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-sm border-b-2 px-2 font-utility transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex min-w-0 items-center justify-center gap-2 rounded-sm border-b-2 px-2 font-utility transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
           controlMinHeightClasses[size],
           controlTextClasses[size],
           selected

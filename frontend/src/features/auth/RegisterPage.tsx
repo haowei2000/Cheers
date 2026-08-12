@@ -171,7 +171,7 @@ export default function RegisterPage() {
           onSubmit={submit}
           className={publicPanelClass}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Username</label>
             <Input
               type="text"
@@ -182,11 +182,11 @@ export default function RegisterPage() {
               onChange={set("username")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Display name (optional)</label>
             <Input type="text" placeholder="Jane Doe" value={form.display_name} onChange={set("display_name")} />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Email</label>
             <div className="flex gap-2">
               <Input
@@ -217,7 +217,7 @@ export default function RegisterPage() {
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Verification code</label>
             <Input
               type="text"
@@ -227,7 +227,7 @@ export default function RegisterPage() {
               onChange={set("code")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Password</label>
             <Input
               type="password"
@@ -246,7 +246,7 @@ export default function RegisterPage() {
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Confirm password</label>
             <Input
               type="password"

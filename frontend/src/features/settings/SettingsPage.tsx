@@ -107,7 +107,7 @@ function ServerCard() {
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-regular font-medium text-zinc-200">Server</p>
-          <p className="text-compact text-zinc-400 mt-0.5 truncate">
+          <p className="text-compact text-zinc-400 mt-1 truncate">
             {base ?? "same origin"}
           </p>
         </div>
@@ -175,7 +175,7 @@ function LaunchAtLoginCard() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-regular font-medium text-zinc-200">Launch at login</p>
-          <p className="text-compact text-zinc-400 mt-0.5">
+          <p className="text-compact text-zinc-400 mt-1">
             Start Cheers (tray + connector supervisor) when you sign in to your Mac.
           </p>
         </div>
@@ -250,7 +250,7 @@ function AppUpdateCard() {
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-regular font-medium text-zinc-200">App updates</p>
-          <p className="text-compact text-zinc-400 mt-0.5">
+          <p className="text-compact text-zinc-400 mt-1">
             {currentVersion ? `Installed ${currentVersion}. ` : null}
             {update
               ? `Version ${update.version} is available — installing restarts Cheers.`
@@ -336,7 +336,7 @@ function PushNotificationsCard() {
           <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
             <Bell className="w-4 h-4 text-indigo-400" /> Push notifications
           </p>
-          <p className="text-compact text-zinc-400 mt-0.5">
+          <p className="text-compact text-zinc-400 mt-1">
             Approval requests and @mentions reach this device even when Cheers
             isn't open.
             {status === "denied" &&
@@ -394,7 +394,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
 
   // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "bg-zinc-800 text-zinc-100";
   return (
     <div className="bg-zinc-900 rounded-sm p-6">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
@@ -404,7 +404,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
         Updating your password signs out every other device.
       </p>
       <div className="grid gap-3 max-w-sm">
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <label
             htmlFor="cp-current"
             className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
@@ -420,7 +420,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             className={inputCls}
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <label
             htmlFor="cp-new"
             className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
@@ -437,7 +437,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             className={inputCls}
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <label
             htmlFor="cp-confirm"
             className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
@@ -454,7 +454,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             className={inputCls}
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <label
             htmlFor="cp-two-factor"
             className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
@@ -746,12 +746,14 @@ function DevicesSessionsCard() {
       ) : sessions.length === 0 ? (
         <p className="text-compact text-zinc-500">No active sessions.</p>
       ) : (
-        <ItemList presentationLevel="max" controlSize="regular">
+        <ItemList presentationLevel="medium" controlSize="regular">
           {sessions.map((s) => (
             <OperationsItem
               key={s.session_id}
               title={`${s.device_name || s.client}${s.current ? " · this device" : ""}`}
-              subtitle={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}
+              trailing={<span className="text-compact text-zinc-400" title={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}>
+                {new Date(s.last_seen_at).toLocaleDateString()}
+              </span>}
               actions={!s.current ? (
                 <Button
                   controlSize="compact"
@@ -1099,7 +1101,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => navigate(`/settings/${id}`)}
                 aria-current={active ? "page" : undefined}
-                controlSize="regular" className={`flex items-center gap-2.5 rounded-sm shrink-0 text-regular font-medium whitespace-nowrap transition-colors ${
+                controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0 text-regular font-medium whitespace-nowrap transition-colors ${
  active
  ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
  }`}
@@ -1181,7 +1183,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-regular font-medium text-zinc-200">Sign out</p>
-                    <p className="text-compact text-zinc-400 mt-0.5">
+                    <p className="text-compact text-zinc-400 mt-1">
                       Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>

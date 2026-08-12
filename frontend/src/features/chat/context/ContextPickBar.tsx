@@ -82,7 +82,7 @@ export function MessageContextChips({
   if (isHandoff) {
     return (
       <div
-        className={`flex items-center flex-wrap gap-1.5 rounded-sm bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
+        className={`flex items-center flex-wrap gap-2 rounded-sm bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
       >
         <span className="inline-flex items-center gap-1 text-compact font-medium text-indigo-300">
           <CornerDownRight className="w-3.5 h-3.5" />
@@ -93,7 +93,7 @@ export function MessageContextChips({
     );
   }
   return (
-    <div className={`flex items-center flex-wrap gap-1.5 ${className ?? ""}`}>
+    <div className={`flex items-center flex-wrap gap-2 ${className ?? ""}`}>
       {chips}
     </div>
   );
@@ -197,7 +197,7 @@ export function ContextPickBar({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div className="mx-auto mt-1 flex w-full max-w-[72rem] items-center flex-wrap gap-1.5 px-4 py-1.5 max-md:px-3">
+    <div className="mx-auto mt-1 flex w-full max-w-[72rem] items-center flex-wrap gap-2 px-4 py-2 max-md:px-3">
       {/* Suggested context (F3): one-click to add, one-click to dismiss; never
           auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
       {suggestions.map((sg) => {
@@ -275,7 +275,7 @@ export function ContextPickBar({
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
           title={ADD_CONTEXT_MENU_TITLE}
-          controlSize="regular" className="gap-1.5 bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          controlSize="regular" className="gap-2 bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
         >
           <MessageSquarePlus className="h-4 w-4" />
           {ADD_CONTEXT_MENU}
@@ -307,7 +307,7 @@ export function ContextPickBar({
             })}
             {(onBrowseWorkbench || onBrowseWorkspace) && (
               <>
-                <p className="px-2 pt-2 pb-0.5 text-minimal uppercase tracking-wide text-zinc-400 border-t border-zinc-800 mt-1">
+                <p className="px-2 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400 border-t border-zinc-800 mt-1">
                   Browse &amp; attach
                 </p>
                 {onBrowseWorkbench && (
@@ -342,7 +342,7 @@ export function ContextPickBar({
                 )}
               </>
             )}
-            <p className="px-2 pt-1.5 pb-0.5 text-minimal text-zinc-500">
+            <p className="px-2 pt-2 pb-1 text-minimal text-zinc-500">
               Or attach a message from its reply action.
             </p>
           </PopoverPanel>

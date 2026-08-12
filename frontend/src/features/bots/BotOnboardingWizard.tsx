@@ -153,8 +153,8 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
 function ReachabilityNote({ reachability }: { reachability: { configured: boolean } }) {
   if (reachability.configured) return null;
   return (
-    <p className="flex items-start gap-1.5 text-compact text-amber-400">
-      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+    <p className="flex items-start gap-2 text-compact text-amber-400">
+      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
         so a connector running anywhere else may not be able to sign in. Setting
@@ -359,7 +359,7 @@ export function BotOnboardingWizard({
         {/* ── Step 0: choose / create bot ───────────────────────────── */}
         {step === 0 && (
           <div className="space-y-3">
-            <div className="rounded-sm bg-indigo-950/35 px-3 py-2.5 text-compact text-indigo-100">
+            <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-indigo-100">
               <p className="font-medium">A bot is an identity; a connector is where it runs.</p>
               <p className="mt-1 text-indigo-200/75">
                 {localDesktop
@@ -643,9 +643,8 @@ function ModeCard({
       leading={<div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
         {icon}
       </div>}
-      title={title}
-      subtitle={desc}
-      status={badge ? <span className="rounded-sm bg-zinc-900 px-1.5 py-0.5 text-minimal text-zinc-400">{badge}</span> : undefined}
+      title={<span title={`${title} — ${desc}`}>{title} — {desc}</span>}
+      status={badge ? <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-zinc-400">{badge}</span> : undefined}
     />
   );
 }
@@ -688,7 +687,7 @@ function ManualPanel({
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 text-compact text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-compact text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -766,7 +765,7 @@ cce-acp-connector start --config ${configFile} --name ${accountId}
 cce-acp-connector status --name ${accountId}`}
           </pre>
         </div>
-        <div className="space-y-1.5 pt-1">
+        <div className="space-y-2 pt-1">
           <p className="text-compact text-zinc-400">
             Need the connector binary? Download the prebuilt release plus the sibling{" "}
             <code className="text-zinc-400">cheers-mcp-server</code> (no Rust toolchain needed;
@@ -906,7 +905,7 @@ function ScriptPanel({
             </pre>
           </div>
           {needsApiKeyHint && (
-            <div className="rounded-sm bg-amber-500/5 px-2.5 py-2 space-y-1.5">
+            <div className="rounded-sm bg-amber-500/5 px-3 py-2 space-y-2">
               <p className="text-compact leading-relaxed text-amber-200/90">
                 Headless API-key auth: export{" "}
                 <code className="text-amber-100">{apiKeyVar}</code> in the{" "}

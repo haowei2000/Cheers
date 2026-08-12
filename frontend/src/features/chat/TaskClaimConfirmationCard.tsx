@@ -30,7 +30,7 @@ export function TaskClaimConfirmationCard({ message, channelId, currentUserId }:
     return <p className="mt-2 text-compact text-zinc-500">Claim response recorded</p>;
   }
   if (!actionable) return null;
-  return <div className="mt-2.5 flex items-center gap-2">
+  return <div className="mt-3 flex items-center gap-2">
     <Button controlSize="compact" variant="secondary" disabled={busy} onClick={() => void resolve("reject")}>
       <X className="h-3.5 w-3.5" />Decline
     </Button>

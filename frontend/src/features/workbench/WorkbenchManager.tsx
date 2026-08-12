@@ -211,13 +211,12 @@ export function WorkbenchManager() {
             {plugins.map((p) => (
               <WorkbenchItem
                 key={p.plugin_id}
-                title={p.title}
-                subtitle={p.plugin_id}
+                title={<span title={`${p.title} · ${p.plugin_id}`}>{p.title} · {p.plugin_id}</span>}
                 leading={<Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />}
                 status={p.origin === "system" ? (
                   <span
                     title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
-                    className="text-minimal px-1.5 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                    className="text-minimal px-2 py-1 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
                   >
                     Official
                   </span>
@@ -282,7 +281,7 @@ export function WorkbenchManager() {
               <WorkbenchItem
                 key={t.id}
                 title={t.title}
-                subtitle={t.id}
+                status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={t.id}>{t.id}</span>}
                 leading={<Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />}
                 actions={<UiButton variant="plain"
                   onClick={async () => {
@@ -336,7 +335,7 @@ export function WorkbenchManager() {
                 <WorkbenchItem
                   key={p.id}
                   title={p.title}
-                  subtitle={p.id}
+                  status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={p.id}>{p.id}</span>}
                   leading={<Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />}
                   actions={<UiButton variant="plain"
                     onClick={async () => {

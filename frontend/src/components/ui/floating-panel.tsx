@@ -152,7 +152,7 @@ export function FloatingPanel({
   // Collapsed body: the ViewBoard-style glance, if the panel supplies one.
   const summaryEl =
     collapsed && !isMobile && collapsedSummary ? (
-      <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+      <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
         {collapsedSummary(toggleCollapsed)}
       </div>
     ) : null;

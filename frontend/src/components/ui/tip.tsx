@@ -69,7 +69,7 @@ export function Tip({
           align={align}
           id={id}
           role="tooltip"
-          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-2.5 py-1.5 text-left text-compact font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
+          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-3 py-2 text-left text-compact font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
         >
           {content}
         </FloatingLayer>

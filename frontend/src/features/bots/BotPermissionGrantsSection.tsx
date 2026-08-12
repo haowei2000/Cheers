@@ -268,7 +268,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           the explicit overrides below. */}
       {access.effective && access.effective.length > 0 && (
         <div className="overflow-hidden rounded-sm ">
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/40">
             <p className="text-compact font-medium text-zinc-300">Effective defaults · Bot-wide</p>
             <span className="text-minimal text-zinc-400">
               <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
@@ -278,7 +278,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           <table className="w-full text-compact">
             <thead>
               <tr className="text-zinc-400">
-                <th className="px-2.5 py-1 text-left font-normal">Event</th>
+                <th className="px-3 py-1 text-left font-normal">Event</th>
                 <th
                   className="px-2 py-1 text-center font-normal text-indigo-300"
                   title="The bot owner (you). Do/Answer are always allowed — owner privilege, not revocable by grants. View follows the same rules as everyone else."
@@ -301,7 +301,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     <tr>
                       <td
                         colSpan={2 + MATRIX_ROLES.length}
-                        className="px-2.5 pt-2 pb-0.5 text-minimal uppercase tracking-wider text-zinc-400"
+                        className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wider text-zinc-400"
                         title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
                         {CAPABILITY_LABEL[cap].label}
@@ -311,7 +311,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                       const gl = grantLabel(cap, c.event_class);
                       return (
                       <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
-                        <td className="px-2.5 py-1">
+                        <td className="px-3 py-1">
                           <span
                             className="text-zinc-300"
                             title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}

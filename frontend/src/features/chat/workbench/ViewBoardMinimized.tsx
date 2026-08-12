@@ -156,7 +156,7 @@ function ApprovalsGlance({
           align="start"
           className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-zinc-800 bg-zinc-950 p-2 shadow-xl"
         >
-          <div className="px-1.5 pb-1.5 text-compact font-medium text-zinc-400">
+          <div className="px-2 pb-2 text-compact font-medium text-zinc-400">
             Pending approvals
           </div>
           <ul className="space-y-2">
@@ -170,7 +170,7 @@ function ApprovalsGlance({
                   <UiButton controlWidth="fill" variant="plain"
                     type="button"
                     onClick={() => jumpTo(m)}
-                    className="mb-1.5 block truncate text-left text-compact text-zinc-300 hover:text-indigo-300"
+                    className="mb-2 block truncate text-left text-compact text-zinc-300 hover:text-indigo-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
@@ -405,7 +405,7 @@ export function ViewBoardMinimized({
     .join(" · ");
 
   return (
-    <div className="p-1.5">
+    <div className="p-2">
       <GlanceRow
         Icon={ClipboardList}
         label="Plan"

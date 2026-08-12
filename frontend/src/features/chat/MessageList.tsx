@@ -212,7 +212,7 @@ export function MessageList({
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
         <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-sm bg-zinc-950 px-2.5 py-1 text-compact font-medium text-zinc-500">
+        <span className="rounded-sm bg-zinc-950 px-3 py-1 text-compact font-medium text-zinc-500">
           {formatDayLabel(msg.created_at)}
         </span>
         <span className="h-px flex-1 bg-zinc-800/80" />
@@ -231,7 +231,7 @@ export function MessageList({
     const isConsecutive =
       !showDayLabel && !!previous && isVisuallyConsecutive(previous, msg);
     return (
-      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
         {showDayLabel && renderDayLabel(msg)}
         <div
           data-msg-id={msg.msg_id}
@@ -273,7 +273,7 @@ export function MessageList({
     );
 
     return (
-      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
         {showDayLabel && renderDayLabel(msg)}
         <div
           data-msg-id={msg.msg_id}
@@ -306,7 +306,7 @@ export function MessageList({
             <div
               className={
                 depth === 0
-                  ? "relative ml-10 mr-3 mt-2.5 flex flex-col gap-2 md:ml-14 md:mr-5"
+                  ? "relative ml-10 mr-3 mt-3 flex flex-col gap-2 md:ml-14 md:mr-5"
                   : "relative ml-3 mt-2 flex flex-col gap-2"
               }
             >
@@ -354,7 +354,7 @@ export function MessageList({
       <div className="mx-auto w-full max-w-[72rem]">
         {loading && (
           <div className="flex justify-center py-4">
-            <Spinner size={20} className="text-zinc-600" />
+            <Spinner contentSize="large" className="text-zinc-600" />
           </div>
         )}
 

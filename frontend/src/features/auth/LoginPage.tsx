@@ -184,7 +184,7 @@ export default function LoginPage() {
           onSubmit={handleFactorSubmit}
           className={publicPanelClass}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label htmlFor="factor-code" className={publicLabelClass}>
               Verification code
             </label>
@@ -243,7 +243,7 @@ export default function LoginPage() {
           onSubmit={handleSubmit}
           className={publicPanelClass}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label
               htmlFor="login"
               className={publicLabelClass}
@@ -261,7 +261,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label
               htmlFor="password"
               className={publicLabelClass}

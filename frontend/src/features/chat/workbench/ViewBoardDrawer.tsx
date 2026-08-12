@@ -307,7 +307,7 @@ function ViewBoardDrawerImpl({
                 <UiButton variant="plain"
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex items-center gap-1.5 rounded-none border-b text-compact whitespace-nowrap transition-colors ${
+                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b text-compact whitespace-nowrap transition-colors ${
  isActive
  ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  }`}
@@ -320,7 +320,7 @@ function ViewBoardDrawerImpl({
           </div>
 
           {activeBoard?.sessionScoped && (
-            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-1.5">
+            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
               <Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
               <span className="text-minimal uppercase tracking-wide text-zinc-400">Scope</span>
               <UiSelect

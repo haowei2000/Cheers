@@ -66,16 +66,16 @@ export function BotActivitySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
-        <ItemList presentationLevel="max" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
-            <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} metadata={time(e.created_at)}
+            <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} trailing={<span className="text-compact tabular-nums text-zinc-400">{time(e.created_at)}</span>}
               status={<span
-                className={`shrink-0 rounded-sm px-1.5 py-0.5 text-minimal ${homeCls[e.home] ?? homeCls.observe}`}
+                className={`shrink-0 rounded-sm px-2 py-1 text-minimal ${homeCls[e.home] ?? homeCls.observe}`}
                 title={`home: ${e.home || "unclassified"}`}
               >
                 {e.home || "?"}
               </span>}
-              presentationLevel="max" className="border-0 bg-zinc-950/30" />
+              presentationLevel="medium" className="border-0 bg-zinc-950/30" />
           ))}
         </ItemList>
       )}

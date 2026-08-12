@@ -135,10 +135,10 @@ function BotInlineSettings({
     }
   }
 
-  const selBase = "rounded-sm border px-1 py-0.5 text-compact outline-none";
-  const selOn = `${selBase} bg-zinc-800 border-zinc-600 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
+  const selBase = "rounded-sm text-compact outline-none";
+  const selOn = `${selBase} bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
-  const selOff = `${selBase} bg-zinc-900/30 border-zinc-800 text-zinc-400 cursor-not-allowed appearance-none`;
+  const selOff = `${selBase} bg-zinc-900/30 text-zinc-400 cursor-not-allowed appearance-none`;
 
   // Effective current values: optimistic overlay → session override → bot/agent default.
   const mode = localMode ?? targetSession?.session_config?.permission_mode ?? controls.current_mode ?? "";
@@ -157,7 +157,7 @@ function BotInlineSettings({
           title={controls.can_set_mode ? "Session mode" : "Session mode — read-only (no permission)"}
         >
           <span className="text-minimal text-zinc-400">mode</span>
-          {!controls.can_set_mode && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
+          {!controls.can_set_mode && <Lock className="h-3.5 w-3.5 text-zinc-500" />}
           <UiSelect
             value={mode}
             disabled={!canMode || busy}
@@ -195,7 +195,7 @@ function BotInlineSettings({
             title={canCfg ? opt.name : `${opt.name} — read-only (no permission)`}
           >
             <span className="text-minimal text-zinc-400">{opt.name}</span>
-            {!controls.can_set_config_option && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
+            {!controls.can_set_config_option && <Lock className="h-3.5 w-3.5 text-zinc-500" />}
             <UiSelect
               value={cur}
               disabled={!canCfg || busy}

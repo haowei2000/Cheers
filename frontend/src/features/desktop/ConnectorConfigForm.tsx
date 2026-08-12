@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import { invokeDesktop, pickFolder } from "@/lib/desktop";
 import { AgentPicker } from "./AgentPicker";
 
@@ -283,15 +284,13 @@ export function ConnectorConfigForm({
             </p>
           )}
         </Field>
-        <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
-          {/* design-system-native: checkbox */}
-<input
-            type="checkbox"
-            checked={f.auto_allow}
-            onChange={(e) => patch({ auto_allow: e.target.checked })}
-          />
-          Auto-approve tool calls (skip permission prompts) — use with care
-        </label>
+        <CheckboxField
+          label="Auto-approve tool calls (skip permission prompts) — use with care"
+          checked={f.auto_allow}
+          onChange={(e) => patch({ auto_allow: e.target.checked })}
+          controlSize="compact"
+          className="text-compact"
+        />
       </div>
 
       {/* ── More ── */}
@@ -305,15 +304,13 @@ export function ConnectorConfigForm({
         </UiButton>
         {more && (
           <div className="grid gap-3 mt-3 pl-2 border-l border-zinc-800">
-            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.env_inherit}
-                onChange={(e) => patch({ env_inherit: e.target.checked })}
-              />
-              Inherit the app's environment
-            </label>
+            <CheckboxField
+              label="Inherit the app's environment"
+              checked={f.env_inherit}
+              onChange={(e) => patch({ env_inherit: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
             <Field label="Environment variables to pass through (one per line)">
               <Textarea
                 value={text(f.env_allow)}
@@ -323,15 +320,13 @@ export function ConnectorConfigForm({
                 placeholder={"HOME\nPATH\nANTHROPIC_API_KEY"}
               />
             </Field>
-            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.forward_to_backend}
-                onChange={(e) => patch({ forward_to_backend: e.target.checked })}
-              />
-              Forward permission prompts to the agent
-            </label>
+            <CheckboxField
+              label="Forward permission prompts to the agent"
+              checked={f.forward_to_backend}
+              onChange={(e) => patch({ forward_to_backend: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
             <Field label="Permission wait, on timeout">
               <div className="flex gap-2">
                 <Input
@@ -360,15 +355,13 @@ export function ConnectorConfigForm({
             {numField("Heartbeat interval (ms)", f.heartbeat_interval_ms, (n) =>
               patch({ heartbeat_interval_ms: n })
             )}
-            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.file_upload_allow}
-                onChange={(e) => patch({ file_upload_allow: e.target.checked })}
-              />
-              Allow file uploads
-            </label>
+            <CheckboxField
+              label="Allow file uploads"
+              checked={f.file_upload_allow}
+              onChange={(e) => patch({ file_upload_allow: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
             <UiButton variant="plain"
               type="button"
               className="text-compact text-zinc-500 hover:text-zinc-300"

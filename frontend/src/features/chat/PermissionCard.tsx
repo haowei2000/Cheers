@@ -250,7 +250,7 @@ export function PermissionCard({
     const expired = data.resolved_kind === "expired";
     const ok = isAllow(data.chosen_kind);
     return (
-      <div className="flex items-center gap-2 py-0.5 text-compact">
+      <div className="flex items-center gap-2 py-1 text-compact">
         <span
           className={cn(
             expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400/70"
@@ -281,7 +281,7 @@ export function PermissionCard({
   }
 
   const shell = embedded
-    ? "w-full overflow-hidden rounded-sm bg-zinc-900/60"
+    ? "overflow-hidden rounded-sm bg-zinc-900/60"
     : "max-w-md overflow-hidden rounded-sm bg-zinc-900/50";
 
   // ── Pending, not an approver: quiet waiting line ──────────────────────────
@@ -291,7 +291,7 @@ export function PermissionCard({
         <div className="min-w-0 flex-1">
           <p className="text-compact font-medium text-zinc-200">{title}</p>
           {command && (
-            <p className="mt-0.5 truncate font-mono text-compact text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
               {command}
             </p>
           )}
@@ -320,12 +320,12 @@ export function PermissionCard({
         <div className="min-w-0">
           <p className="text-compact font-medium text-zinc-200">{title}</p>
           {command && (
-            <p className="mt-0.5 truncate font-mono text-compact text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
               {command}
             </p>
           )}
         </div>
-        <span className="flex items-center gap-1.5 whitespace-nowrap text-compact text-zinc-400">
+        <span className="flex items-center gap-2 whitespace-nowrap text-compact text-zinc-400">
           Details <span className="text-zinc-500">⌄</span>
         </span>
       </UiButton>
@@ -334,7 +334,7 @@ export function PermissionCard({
 
   // ── Pending, expanded ─────────────────────────────────────────────────────
   return (
-    <div className={cn(shell, "space-y-2 px-3 py-2.5")}>
+    <div className={cn(shell, "space-y-2 px-3 py-3")}>
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 text-compact font-medium text-zinc-200">{title}</p>
         {!embedded && (
@@ -351,10 +351,10 @@ export function PermissionCard({
 
       {command && (
         <div>
-          <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-2.5 py-2 font-mono text-compact leading-relaxed text-zinc-300">
+          <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-300">
             {command}
           </pre>
-          {impact && <p className="mt-1.5 text-compact text-zinc-400">{impact}</p>}
+          {impact && <p className="mt-2 text-compact text-zinc-400">{impact}</p>}
           {agentDiff && (
             <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
               <DiffView diff={agentDiff} className="max-h-72" />
@@ -366,7 +366,7 @@ export function PermissionCard({
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                controlSize="compact" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800/60 text-compact text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60 text-compact text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
               >
                 <span className="text-zinc-500">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
@@ -395,7 +395,7 @@ export function PermissionCard({
         </div>
       )}
 
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {radioOptions.map((o) => {
           const id = optId(o);
           const sel = id === selectedId;
@@ -404,7 +404,7 @@ export function PermissionCard({
               key={id}
               onClick={() => setSelectedId(id)}
               controlSize="regular" className={cn(
- "flex items-center gap-2.5 rounded-sm text-left transition-colors",
+ "flex items-center gap-3 rounded-sm text-left transition-colors",
  sel ? "bg-zinc-800/70": "hover:bg-zinc-800/40"
  )}
             >
@@ -428,7 +428,7 @@ export function PermissionCard({
         })}
       </div>
 
-      <div className="flex items-center justify-end gap-2 pt-0.5">
+      <div className="flex items-center justify-end gap-2 pt-1">
         {rejectOption && (
           <UiButton variant="plain"
             disabled={busy}

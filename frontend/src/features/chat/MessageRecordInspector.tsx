@@ -118,7 +118,7 @@ export function MessageRecordInspector({
             <h2 id={titleId} className="mt-1 text-comfortable font-semibold text-zinc-100">
               {sender}
             </h2>
-            <p className="mt-0.5 text-compact tabular-nums text-zinc-500">
+            <p className="mt-1 text-compact tabular-nums text-zinc-500">
               {formatTime(message.created_at)} · {message.msg_id.slice(0, 8)}
             </p>
           </div>

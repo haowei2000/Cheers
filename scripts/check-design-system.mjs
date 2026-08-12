@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { auditSources, enforceAudit } from "./lib/design-system-audit.mjs";
+import { auditWebsiteSources } from "./lib/website-design-audit.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contractPath = path.join(root, "design-system/item-contract.json");
@@ -95,6 +96,19 @@ async function sourceFiles(directory, extension) {
 
 const webSource = await sourceText(path.join(root, "frontend/src"), ".tsx");
 const webFiles = await sourceFiles(path.join(root, "frontend/src"), ".tsx");
+const websiteFiles = [
+  ...await sourceFiles(path.join(root, "website"), ".html"),
+  {
+    path: path.join(root, "website/editorial.css"),
+    source: await readFile(path.join(root, "website/editorial.css"), "utf8"),
+  },
+];
+const websiteAudit = auditWebsiteSources(
+  websiteFiles.map(({ path: file, source }) => ({ file, source }))
+);
+for (const finding of websiteAudit.findings) {
+  fail(`${path.relative(root, finding.file)}:${finding.line} ${finding.rule} (${finding.token})`);
+}
 const forbiddenTypographyClass = /\btext-(?:xs|sm|base|lg|xl|[2-9]xl|\[[^\]]*(?:px|rem|em|clamp|calc)[^\]]*\])/g;
 const forbiddenInlineFontSize = /\bfontSize\s*(?:=|:)\s*(?:\{\s*)?["']?(?:\d|clamp\(|calc\()/g;
 for (const file of webFiles.filter(({ path: file }) => !/\.(?:test|preview)\.tsx$/.test(file) && !/ItemGallery(?:\.preview)?\.tsx$/.test(file))) {
@@ -251,6 +265,7 @@ if (!process.exitCode) {
     `web unexempted business native: button=${webAudit.unexemptedBusinessNative.button}, input=${webAudit.unexemptedBusinessNative.input}, select=${webAudit.unexemptedBusinessNative.select}, textarea=${webAudit.unexemptedBusinessNative.textarea}`
   );
   console.log(
-    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-size=${violations.sharedControlSizeOverride}, shared-padding=${violations.sharedHorizontalPaddingOverride}, local-padding=${violations.sharedPaddingOverride}, shared-width=${violations.sharedControlWidthOverride}, shared-content=${violations.sharedContentSizeOverride}, row-height=${violations.nonStandardRowHeight}, identity-size=${violations.nonStandardIdentitySize}, icon-size=${violations.nonStandardIconSize}, typography=${violations.nonStandardTypographySize}, legacy-size=${violations.legacyControlSizeProp}`
+    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-size=${violations.sharedControlSizeOverride}, shared-padding=${violations.sharedHorizontalPaddingOverride}, local-padding=${violations.sharedPaddingOverride}, shared-width=${violations.sharedControlWidthOverride}, shared-content=${violations.sharedContentSizeOverride}, row-height=${violations.nonStandardRowHeight}, identity-size=${violations.nonStandardIdentitySize}, icon-size=${violations.nonStandardIconSize}, spacing=${violations.nonStandardSpacing}, spinner-size=${violations.arbitrarySpinnerSize}, typography=${violations.nonStandardTypographySize}, legacy-size=${violations.legacyControlSizeProp}`
   );
+  console.log(`website visual debt: files=${websiteFiles.length}, violations=${websiteAudit.findings.length}`);
 }

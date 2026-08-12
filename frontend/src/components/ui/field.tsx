@@ -18,7 +18,7 @@ export function Field({
   className?: string;
 }) {
   return (
-    <div className={cn("space-y-1.5", className)}>
+    <div className={cn("space-y-2", className)}>
       <label
         htmlFor={htmlFor}
         className="block text-compact font-medium uppercase tracking-wide text-zinc-400"

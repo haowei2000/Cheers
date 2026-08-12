@@ -343,7 +343,7 @@ export function WorkspaceSettingsDialog({
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
               <div>
                 <p className="text-regular font-medium text-zinc-200">Delete workspace</p>
-                <p className="text-compact text-zinc-400 mt-0.5">Deletes its channels too. This cannot be undone.</p>
+                <p className="text-compact text-zinc-400 mt-1">Deletes its channels too. This cannot be undone.</p>
               </div>
               <Button
                 variant="danger"
@@ -372,7 +372,7 @@ export function WorkspaceSettingsDialog({
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
               <p className="text-regular font-medium text-zinc-200">Leave workspace</p>
-              <p className="text-compact text-zinc-400 mt-0.5">Remove yourself from this workspace.</p>
+              <p className="text-compact text-zinc-400 mt-1">Remove yourself from this workspace.</p>
             </div>
             <Button
               variant="secondary"

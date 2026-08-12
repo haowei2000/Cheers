@@ -9,6 +9,7 @@ import { EntityItem, ItemGroup, ItemRow, ItemSection } from "@/components/ui/ite
 import { IconButton } from "@/components/ui/icon-button";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
+import { UnreadBadge } from "@/components/ui/unread-badge";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
@@ -55,17 +56,18 @@ interface ChannelItemProps {
 function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemProps) {
   const participants = voicePresence?.participants ?? [];
   const unread = (channel.mention_count ?? 0) > 0 ? (
-    <span
-      data-design-system-exempt="unread"
+    <UnreadBadge
       title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
-      className={cn(controlTextClasses.compact, "font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center")}
+      aria-label={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
+      tone="mention"
+      contentSize="regular"
     >
       @{channel.mention_count}
-    </span>
+    </UnreadBadge>
   ) : (channel.unread_count ?? 0) > 0 ? (
-    <span data-design-system-exempt="unread" className={cn(controlTextClasses.compact, "font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center")}>
+    <UnreadBadge contentSize="regular" title={`${channel.unread_count} unread messages`} aria-label={`${channel.unread_count} unread messages`}>
       {channel.unread_count}
-    </span>
+    </UnreadBadge>
   ) : null;
   return (
     <ItemGroup>
@@ -90,7 +92,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
         className="rounded-sm border-0"
       />
       {channel.kind === "voice" && participants.length > 0 && (
-        <div className="space-y-0.5 pb-1 pl-7 pr-1">
+        <div className="space-y-1 pb-1 pl-7 pr-1">
           {participants.map((participant) => (
             <EntityItem
               key={participant.user_id}
@@ -163,7 +165,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            square controlSize="comfortable" className="-ml-2 mr-0.5 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            square controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>

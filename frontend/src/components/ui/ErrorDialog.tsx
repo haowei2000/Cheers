@@ -21,7 +21,7 @@ export function ErrorDialog({
   return (
     <Dialog
       title={
-        <span className="flex items-center gap-1.5 text-red-400">
+        <span className="flex items-center gap-2 text-red-400">
           <AlertCircle className="w-4 h-4" />
           {title}
         </span>

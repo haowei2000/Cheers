@@ -15,10 +15,11 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
-import { ItemRow } from "@/components/ui/item";
+import { ItemList, ItemRow, ItemSection } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { SurfaceSpinner } from "@/components/ui/spinner";
+import { UnreadBadge } from "@/components/ui/unread-badge";
 import { isComposing } from "@/lib/ime";
 import {
   listFriends,
@@ -78,9 +79,9 @@ export default function FriendsPage() {
             <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
               Requests
               {incomingCount > 0 && (
-                <span data-design-system-exempt="unread" className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-minimal font-bold text-white">
+                <UnreadBadge tone="mention" contentSize="regular" className="ml-2" title={`${incomingCount} incoming requests`} aria-label={`${incomingCount} incoming requests`}>
                   {incomingCount}
-                </span>
+                </UnreadBadge>
               )}
             </TabBtn>
             <TabBtn active={tab === "add"} onClick={() => setTab("add")}>
@@ -173,7 +174,7 @@ function FriendsTab() {
     return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
 
   return (
-    <div className="space-y-1">
+    <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
       {friends.map((f) => (
         <Row
           key={f.friendship_id}
@@ -190,7 +191,7 @@ function FriendsTab() {
           </IconBtn>
         </Row>
       ))}
-    </div>
+    </ItemList>
   );
 }
 
@@ -370,7 +371,7 @@ function AddTab() {
       ) : result === "none" ? (
         <Empty>No user with that ID.</Empty>
       ) : (
-        <div className="space-y-1">
+        <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
           <Row
             name={result.display_name || result.username}
             sub={`@${result.username}`}
@@ -387,7 +388,7 @@ function AddTab() {
               </IconBtn>
             )}
           </Row>
-        </div>
+        </ItemList>
       )}
     </div>
   );
@@ -421,7 +422,7 @@ function BlockedTab() {
   if (loading) return <SurfaceSpinner />;
   if (!blocked.length) return <Empty>No blocked users.</Empty>;
   return (
-    <div className="space-y-1">
+    <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
       {blocked.map((u) => (
         <Row
           key={u.user_id}
@@ -438,7 +439,7 @@ function BlockedTab() {
           </UiButton>
         </Row>
       ))}
-    </div>
+    </ItemList>
   );
 }
 
@@ -459,9 +460,9 @@ function Row({
     <ItemRow
       kind="identity"
       title={name}
-      subtitle={sub}
+      status={<span className="truncate text-compact text-zinc-400">{sub}</span>}
       leading={<Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />}
-      trailing={<span className="flex items-center gap-1.5">{children}</span>}
+      actions={<>{children}</>}
       className="gap-3 hover:bg-zinc-900/60"
     />
   );
@@ -495,12 +496,9 @@ function IconBtn({
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div>
-      <div className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-1 px-2">
-        {title}
-      </div>
-      <div className="space-y-1">{children}</div>
-    </div>
+    <ItemSection label={title} presentationLevel="medium" controlSize="regular">
+      {children}
+    </ItemSection>
   );
 }
 

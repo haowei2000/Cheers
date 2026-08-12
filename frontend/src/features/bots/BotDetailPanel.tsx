@@ -33,6 +33,7 @@ import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, SectionHead, MetaRow } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
@@ -170,7 +171,7 @@ export function BotDetailPanel({
             {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
         </div>
-        <div className="ml-auto flex flex-shrink-0 items-center gap-2.5">
+        <div className="ml-auto flex flex-shrink-0 items-center gap-3">
           {bot.is_disabled && (
             <span className="inline-flex items-center gap-1 text-compact text-red-400">
               <Ban className="w-3.5 h-3.5" />
@@ -200,7 +201,7 @@ export function BotDetailPanel({
               type="button"
               onClick={() => setTab(id)}
               controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 text-compact font-medium border-b-2 -mb-px transition-colors",
+ "inline-flex items-center gap-2 text-compact font-medium border-b-2 -mb-px transition-colors",
  active
  ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  )}
@@ -385,7 +386,7 @@ function BotOverview({
                   onClick={toggleDisabled}
                   disabled={toggling}
                   controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 rounded-sm text-compact transition-colors disabled:opacity-40",
+ "inline-flex items-center gap-2 rounded-sm text-compact transition-colors disabled:opacity-40",
  bot.is_disabled
  ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
  )}
@@ -402,7 +403,7 @@ function BotOverview({
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-red-950/40 text-compact text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40 text-compact text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
@@ -613,11 +614,12 @@ function BotStatusEditor({
       </Field>
 
       <div className="rounded-sm bg-zinc-900/35 p-4 space-y-3">
-        <label className="flex items-center gap-2 text-regular text-zinc-200">
-          {/* design-system-native: checkbox */}
-<input type="checkbox" checked={externalProcessor} onChange={(e) => setExternalProcessor(e.target.checked)} className="accent-indigo-500" />
-          Sends channel data to an external AI provider
-        </label>
+        <CheckboxField
+          label="Sends channel data to an external AI provider"
+          checked={externalProcessor}
+          onChange={(e) => setExternalProcessor(e.target.checked)}
+          className="text-zinc-200"
+        />
         {externalProcessor && (
           <>
             <Field label="Provider name"><Input value={processorName} onChange={(e) => setProcessorName(e.target.value)} placeholder="OpenAI, Anthropic, or operator name" /></Field>
@@ -631,16 +633,11 @@ function BotStatusEditor({
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-regular text-zinc-300">
-          {/* design-system-native: checkbox */}
-<input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => setAuto(e.target.checked)}
-            className="accent-indigo-500"
-          />
-          Auto-refresh status
-        </label>
+        <CheckboxField
+          label="Auto-refresh status"
+          checked={auto}
+          onChange={(e) => setAuto(e.target.checked)}
+        />
         <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
         {auto && (
           <div className="ml-auto flex items-center gap-2">

@@ -145,7 +145,7 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-0.5 rounded-sm  border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
+        "flex items-center gap-1 rounded-sm  border-zinc-700/70 bg-zinc-800/95 p-1 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
@@ -203,21 +203,21 @@ function SendStatus({
 }) {
   if (message._status === "sending") {
     return (
-      <div className={cn("mt-0.5 flex items-center gap-1 text-zinc-400", controlTextClasses.compact)}>
+      <div className={cn("mt-1 flex items-center gap-1 text-zinc-400", controlTextClasses.compact)}>
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Sending…
       </div>
     );
   }
   return (
-    <div role="alert" className={cn("mt-0.5 flex items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
+    <div role="alert" className={cn("mt-1 flex items-center gap-2 text-red-400", controlTextClasses.compact)}>
       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
         <UiButton variant="plain"
           type="button"
           onClick={() => onRetry(message)}
-          className="inline-flex items-center gap-0.5 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+          className="inline-flex items-center gap-1 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
         >
           <RotateCw className="w-3.5 h-3.5" />
           Retry
@@ -259,9 +259,9 @@ function ReplyPreview({
     />
   );
   const source = (
-    <span className="flex min-w-0 items-center gap-2 py-0.5">
+    <span className="flex min-w-0 items-center gap-2 py-1">
       {repliedTo && who && (
-        <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 text-indigo-300 transition-colors group-hover/reply:text-indigo-200">
+        <span className="flex max-w-[45%] shrink-0 items-center gap-2 text-indigo-300 transition-colors group-hover/reply:text-indigo-200">
           <Avatar
             name={who}
             src={avatarUrl}
@@ -296,7 +296,7 @@ function ReplyPreview({
       onClick={jumpToSource}
       aria-label={repliedTo ? `Jump to message from ${who}` : undefined}
       className={cn(
- "group/reply -mb-0.5 flex max-w-full items-start text-left leading-5",
+ "group/reply -mb-1 flex max-w-full items-start text-left leading-5",
  controlTextClasses.compact,
  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
  repliedTo ? "cursor-pointer": "cursor-default",
@@ -326,7 +326,7 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
   return (
     <span
       className={cn(
-        "flex items-center justify-center w-4 h-4 mt-1.5 rounded-sm  flex-shrink-0",
+        "flex items-center justify-center w-4 h-4 mt-2 rounded-sm  flex-shrink-0",
         selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
         className
       )}
@@ -356,7 +356,7 @@ export const MessageItem = memo(function MessageItem({
   const presentationLevel = usePresentationLevel();
   if (message.is_deleted) {
     return (
-      <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-0.5 flex items-center gap-3 group">
+      <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
         <span className="text-zinc-400 italic text-regular">
@@ -370,7 +370,7 @@ export const MessageItem = memo(function MessageItem({
     // Orphan permission cards (no source_msg_id) stay as their own row.
     // Anchored approvals render inside the source bot turn's Agent steps.
     return (
-      <div className="flex items-start gap-3 px-4 py-0.5">
+      <div className="flex items-start gap-3 px-4 py-1">
         <div className="w-9 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <PermissionCard
@@ -385,7 +385,7 @@ export const MessageItem = memo(function MessageItem({
 
   if (message.msg_type === "auth_required") {
     return (
-      <div className="flex items-start gap-3 px-4 py-0.5">
+      <div className="flex items-start gap-3 px-4 py-1">
         <div className="w-9 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <AuthRequiredCard
@@ -607,7 +607,7 @@ export const MessageItem = memo(function MessageItem({
     <div
       data-content-size="regular"
       className={cn(
-        "flex flex-shrink-0 flex-col items-center gap-0.5 pt-0.5 font-utility",
+        "flex flex-shrink-0 flex-col items-center gap-1 pt-1 font-utility",
         identityRailWidthClasses.regular,
       )}
     >
@@ -660,7 +660,7 @@ export const MessageItem = memo(function MessageItem({
       placement="down"
       align={isOwnAlignedRight ? "end" : "start"}
       role="menu"
-      className="w-56 overflow-hidden rounded-sm bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
+      className="w-56 overflow-hidden rounded-sm bg-zinc-900 p-2 shadow-xl shadow-black/40"
     >
       <UiButton controlWidth="fill" variant="plain"
         type="button"
@@ -727,7 +727,7 @@ export const MessageItem = memo(function MessageItem({
   const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {detailsMeta.hasFailure && (
-        <div role="alert" className={cn("flex min-h-7 items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
+        <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-red-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
           <UiButton variant="plain"
@@ -809,7 +809,7 @@ export const MessageItem = memo(function MessageItem({
         <div
           ref={contentRef}
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
+            "flex min-w-0 flex-1 flex-col gap-2 md:flex-none md:w-fit md:max-w-[52rem]",
             isOwnAlignedRight && "items-end",
           )}
         >
@@ -874,7 +874,7 @@ export const MessageItem = memo(function MessageItem({
       <div
         ref={contentRef}
         className={cn(
-          "flex min-w-0 flex-1 flex-col gap-1.5 md:w-fit md:max-w-[52rem] md:flex-[0_1_auto]",
+          "flex min-w-0 flex-1 flex-col gap-2 md:w-fit md:max-w-[52rem] md:flex-[0_1_auto]",
           isOwnAlignedRight && "items-end",
         )}
       >
@@ -1025,10 +1025,10 @@ function MessageBody({
           </p>
         ))}
       {message._streaming && (
-        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-0.5 align-text-bottom" />
+        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
       )}
       {active && message._trace && (
-        <p className="text-compact text-zinc-400 italic mt-0.5">{message._trace}</p>
+        <p className="text-compact text-zinc-400 italic mt-1">{message._trace}</p>
       )}
       {active && isBot && channelId && (
         <div className="mt-1">

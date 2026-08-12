@@ -38,7 +38,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
       {commands.map((c, i) => (
         <Fragment key={`${c.botId}/${c.name}`}>
           {grouped && (i === 0 || commands[i - 1].botId !== c.botId) && (
-            <div className="px-3 pt-2 pb-0.5 text-minimal uppercase tracking-wide text-zinc-400">
+            <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400">
               {c.botLabel}
             </div>
           )}
@@ -61,7 +61,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               </span>
             )}
             {!grouped && (
-              <span className="ml-auto text-minimal px-1 py-0.5 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
+              <span className="ml-auto text-minimal px-1 py-1 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
                 {c.botLabel}
               </span>
             )}

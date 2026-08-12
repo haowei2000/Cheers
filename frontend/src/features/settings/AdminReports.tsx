@@ -28,10 +28,10 @@ export function AdminReports() {
       {loading && <p className="text-regular text-zinc-400">Loading…</p>}
       {!loading && reports.length === 0 && <p className="text-regular text-zinc-400">No reports.</p>}
       {reports.map((report) => (
-        <OperationsItem key={report.report_id} presentationLevel="max"
-          title={`${report.reason} · ${report.target_type}`}
-          subtitle={`Target: ${report.target_id}${report.channel_id ? ` · Channel: ${report.channel_id}` : ""}`}
-          preview={report.details}
+        <OperationsItem key={report.report_id} presentationLevel="medium"
+          title={<span title={`${report.reason} · ${report.target_type} · ${report.target_id}${report.channel_id ? ` · Channel ${report.channel_id}` : ""}${report.details ? ` · ${report.details}` : ""}`}>
+            {report.reason} · {report.target_type}
+          </span>}
           criticalStatus={<span className="text-compact text-zinc-400">{report.status}</span>}
           actions={<>
             <Button controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "reviewing")}>Reviewing</Button>

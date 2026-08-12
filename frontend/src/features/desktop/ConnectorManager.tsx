@@ -25,6 +25,7 @@ import { Field } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { WorkbenchItem } from "@/components/ui/item";
 import { PresenceDot } from "@/components/ui/presence-dot";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorHealth,
@@ -532,7 +533,7 @@ export function ConnectorManager() {
 
       <div className="bg-zinc-900 rounded-sm p-6">
         <p className="text-regular font-medium text-zinc-200">Local connector daemons</p>
-        <p className="text-compact text-zinc-400 mt-0.5 mb-4">
+        <p className="text-compact text-zinc-400 mt-1 mb-4">
           Instances under <code className="bg-zinc-800 rounded-sm px-1">~/.cheers/acp-connector</code>.
           "Start with app" instances are launched on app start and revived if they die.
         </p>
@@ -585,11 +586,9 @@ export function ConnectorManager() {
                   title={inst.running ? "running" : "stopped"}
                 />}
                 title={inst.name}
-                subtitle={inst.running
-                      ? `running · pid ${inst.pid}`
-                      : inst.config_path
-                        ? "stopped"
-                        : "stopped · no config"}
+                status={<span className="truncate text-compact text-zinc-400">
+                  {inst.running ? `running · pid ${inst.pid}` : inst.config_path ? "stopped" : "stopped · no config"}
+                </span>}
                 className="border-b-0 bg-transparent"
               />
 
@@ -607,7 +606,7 @@ export function ConnectorManager() {
                 />
               )}
 
-              <div className="flex items-center gap-0.5 flex-wrap mt-auto">
+              <div className="flex items-center gap-1 flex-wrap mt-auto">
                 {inst.running ? (
                   <IconBtn
                     icon={<Square className="w-4 h-4" />}
@@ -689,25 +688,23 @@ export function ConnectorManager() {
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-compact text-zinc-400 cursor-pointer w-fit">
-                {/* design-system-native: checkbox */}
-<input
-                  type="checkbox"
-                  checked={inst.start_with_app}
-                  onChange={(e) =>
-                    void act(
-                      inst.name,
-                      () =>
-                        invokeDesktop("connector_set_start_with_app", {
-                          name: inst.name,
-                          enabled: e.target.checked,
-                        }),
-                      e.target.checked ? "Will start with app" : "Won't start with app"
-                    )
-                  }
-                />
-                Start with app
-              </label>
+              <CheckboxField
+                label="Start with app"
+                checked={inst.start_with_app}
+                onChange={(e) =>
+                  void act(
+                    inst.name,
+                    () =>
+                      invokeDesktop("connector_set_start_with_app", {
+                        name: inst.name,
+                        enabled: e.target.checked,
+                      }),
+                    e.target.checked ? "Will start with app" : "Won't start with app"
+                  )
+                }
+                controlSize="compact"
+                className="text-compact text-zinc-400"
+              />
             </div>
           ))}
         </div>
@@ -821,7 +818,7 @@ export function ConnectorManager() {
               <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
             </p>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {/* design-system-exempt: item-section — filesystem root grouping. */}
               {wsDirs.map((dir) => (
                 <div key={dir}>
@@ -839,7 +836,7 @@ export function ConnectorManager() {
                       <span className="text-minimal text-zinc-500 shrink-0">cwd</span>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-1.5 pl-5">
+                  <div className="flex flex-wrap gap-2 pl-5">
                     {/* design-system-exempt: menu-option — opener command menu. */}
                     {openers.map((op) => (
                       <UiButton variant="plain"
@@ -900,17 +897,19 @@ export function ConnectorManager() {
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
           </p>
-          <label className="flex items-center gap-2 mt-3 text-compact text-zinc-400 cursor-pointer w-fit">
-            {/* design-system-native: checkbox */}
-<input
-              type="checkbox"
-              checked={keepConfig}
-              onChange={(e) => setKeepConfig(e.target.checked)}
-            />
-            Keep a backup of the config as{" "}
-            <code className="bg-zinc-800 rounded-sm px-1">.toml.kept</code> (won&apos;t
-            show in the list)
-          </label>
+          <CheckboxField
+            label={
+              <>
+                Keep a backup of the config as{" "}
+                <code className="bg-zinc-800 rounded-sm px-1">.toml.kept</code> (won&apos;t
+                show in the list)
+              </>
+            }
+            checked={keepConfig}
+            onChange={(e) => setKeepConfig(e.target.checked)}
+            controlSize="compact"
+            className="mt-3 text-compact text-zinc-400"
+          />
           <div className="flex gap-2 mt-4">
             <Button
               variant="danger"
@@ -976,7 +975,7 @@ function AuditTimeline({
     });
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1.5 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         {/* design-system-exempt: menu-option — audit kind filters. */}
         {kinds.map((k) => (
           <UiButton variant="plain"
@@ -1006,7 +1005,7 @@ function AuditTimeline({
           restarts, permission asks/decisions and errors.
         </p>
       ) : (
-        <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-1" role="list">
+        <div className="space-y-2 max-h-[60vh] overflow-auto pr-1" role="list">
           {shown.map((e, i) => (
             <AuditRow key={i} e={e} />
           ))}
@@ -1070,7 +1069,7 @@ function OnboardForm(props: {
           If a start fails, the saved connector remains below for Logs, Edit, or Retry.
         </p>
       </div>
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         {/* design-system-exempt: menu-option — onboarding mode tabs. */}
         {(["existing", "new"] as const).map((m) => (
           <UiButton variant="plain"
