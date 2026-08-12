@@ -1,3 +1,4 @@
+import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
@@ -134,7 +135,7 @@ function BotInlineSettings({
     }
   }
 
-  const selBase = "rounded border px-1 py-0.5 text-[11px] outline-none";
+  const selBase = "rounded-sm border px-1 py-0.5 text-[11px] outline-none";
   const selOn = `${selBase} bg-zinc-800 border-zinc-600 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
   const selOff = `${selBase} bg-zinc-900/30 border-zinc-800 text-zinc-400 cursor-not-allowed appearance-none`;
@@ -144,7 +145,7 @@ function BotInlineSettings({
   const canMode = controls.can_set_mode && !!target;
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-zinc-800/60 px-2 py-1">
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-zinc-800/60 px-2 py-1">
       <span className="inline-flex items-center gap-1">
         <SlidersHorizontal className="w-3 h-3 text-zinc-500" />
         <span className="text-[11px] font-medium text-zinc-300">@{bot.name}</span>
@@ -157,7 +158,7 @@ function BotInlineSettings({
         >
           <span className="text-[10px] text-zinc-400">mode</span>
           {!controls.can_set_mode && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
-          <select
+          <UiSelect
             value={mode}
             disabled={!canMode || busy}
             onChange={(e) => {
@@ -176,7 +177,7 @@ function BotInlineSettings({
                 {m}
               </option>
             ))}
-          </select>
+          </UiSelect>
         </span>
       )}
 
@@ -195,7 +196,7 @@ function BotInlineSettings({
           >
             <span className="text-[10px] text-zinc-400">{opt.name}</span>
             {!controls.can_set_config_option && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
-            <select
+            <UiSelect
               value={cur}
               disabled={!canCfg || busy}
               onChange={(e) => {
@@ -214,7 +215,7 @@ function BotInlineSettings({
                   {v.name}
                 </option>
               ))}
-            </select>
+            </UiSelect>
           </span>
         );
       })}

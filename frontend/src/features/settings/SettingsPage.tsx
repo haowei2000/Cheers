@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -101,7 +103,7 @@ function ServerCard() {
   const logout = useAuthStore((s) => s.logout);
   const base = isTauri() ? getServerBase() : window.location.origin;
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-200">Server</p>
@@ -169,7 +171,7 @@ function LaunchAtLoginCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-zinc-200">Launch at login</p>
@@ -244,7 +246,7 @@ function AppUpdateCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-200">App updates</p>
@@ -328,7 +330,7 @@ function PushNotificationsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
@@ -392,9 +394,9 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
 
   // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6">
+    <div className="bg-zinc-900 rounded-sm p-6">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
       </p>
@@ -409,7 +411,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           >
             Current password
           </label>
-          <input
+          <UiInput
             id="cp-current"
             type="password"
             value={current}
@@ -425,7 +427,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           >
             New password
           </label>
-          <input
+          <UiInput
             id="cp-new"
             type="password"
             value={next}
@@ -442,7 +444,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           >
             Confirm new password
           </label>
-          <input
+          <UiInput
             id="cp-confirm"
             type="password"
             value={confirm}
@@ -459,7 +461,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           >
             2FA code
           </label>
-          <input
+          <UiInput
             id="cp-two-factor"
             type="text"
             value={twoFactorCode}
@@ -541,7 +543,7 @@ function ExternalIdentitiesCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
         <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
       </p>
@@ -639,7 +641,7 @@ function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
   }
 
   return (
-    <div className="border border-red-900/70 rounded-xl p-6 mt-4">
+    <div className="rounded-sm bg-red-950/25 p-6 mt-4">
       <p className="text-sm font-medium text-red-300 flex items-center gap-2">
         <Trash2 className="w-4 h-4" /> Delete account
       </p>
@@ -734,7 +736,7 @@ function DevicesSessionsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center gap-2 mb-3">
         <Laptop className="w-4 h-4 text-zinc-400" />
         <p className="text-sm font-medium text-zinc-200">Devices and sessions</p>
@@ -744,7 +746,7 @@ function DevicesSessionsCard() {
       ) : sessions.length === 0 ? (
         <p className="text-xs text-zinc-500">No active sessions.</p>
       ) : (
-        <ItemList>
+        <ItemList presentationLevel="max" controlSize="regular">
           {sessions.map((s) => (
             <OperationsItem
               key={s.session_id}
@@ -804,7 +806,7 @@ function ExternalAIPermissionsCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center gap-2 mb-3">
         <Shield className="w-4 h-4 text-zinc-400" />
         <p className="text-sm font-medium text-zinc-200">External AI permissions</p>
@@ -823,7 +825,7 @@ function ExternalAIPermissionsCard() {
             return (
               <li
                 key={key}
-                className="flex items-center gap-3 rounded-lg bg-zinc-950/60 px-3 py-2"
+                className="flex items-center gap-3 rounded-sm bg-zinc-950/60 px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-zinc-200 truncate">
@@ -854,7 +856,7 @@ function ExternalAIPermissionsCard() {
 function BotsMovedCard() {
   const navigate = useNavigate();
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6">
+    <div className="bg-zinc-900 rounded-sm p-6">
       <div className="flex items-center gap-2 mb-2">
         <Bot className="w-4 h-4 text-indigo-300" />
         <p className="text-sm font-medium text-zinc-200">Bots live in Fleet</p>
@@ -939,7 +941,7 @@ function ProfileEditCard() {
   // profile that never hydrated would silently wipe the user's real details.
   if (loadError) {
     return (
-      <div className="bg-zinc-900 rounded-xl p-6">
+      <div className="bg-zinc-900 rounded-sm p-6">
         <p className="text-sm font-medium text-zinc-200">Couldn't load your profile</p>
         <p className="text-xs text-zinc-400 mt-1">
           Editing is disabled until it loads so your saved details aren't
@@ -958,7 +960,7 @@ function ProfileEditCard() {
 
   return (
     // One card with three clearly spaced regions: identity header, form, and details.
-    <div className="bg-zinc-900 rounded-xl p-5 space-y-7">
+    <div className="bg-zinc-900 rounded-sm p-5 space-y-7">
       {/* Identity header — the avatar is the upload entry; this doubles as a
           live preview, so no separate preview block above the form. */}
       <div className="flex items-center gap-4">
@@ -1030,7 +1032,7 @@ function ProfileEditCard() {
       <div className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="User ID">
-          <code className="flex-1 truncate rounded bg-zinc-800 px-2 py-1 text-zinc-400">
+          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-zinc-400">
             {user?.user_id ?? "—"}
           </code>
           {user?.user_id && <CopyButton value={user.user_id} label="" />}
@@ -1069,7 +1071,7 @@ export default function SettingsPage() {
     <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
       {/* Header */}
       <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
-        <button
+        <UiButton variant="plain"
           type="button"
           // Always return to the chat home, not the previous history entry — the
           // in-page section nav pushes /settings/:section entries, so navigate(-1)
@@ -1077,10 +1079,10 @@ export default function SettingsPage() {
           // leaving Settings. Matches FriendsPage's back button.
           onClick={() => navigate("/chat")}
           title="Back"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-2 -m-2 rounded-lg"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-2 -m-2 rounded-sm"
         >
           <ArrowLeft className="w-5 h-5" />
-        </button>
+        </UiButton>
         <h1 className="text-lg font-semibold">Settings</h1>
       </div>
 
@@ -1090,20 +1092,20 @@ export default function SettingsPage() {
           {items.map(({ id, label, icon: Icon }) => {
             const active = section === id;
             return (
-              <button
+              <UiButton variant="plain"
                 key={id}
                 type="button"
                 onClick={() => navigate(`/settings/${id}`)}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 max-md:py-2.5 shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
-                  active
-                    ? "bg-zinc-800 text-zinc-100"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                }`}
+                controlSize="regular" className={`flex items-center gap-2.5 rounded-sm px-3 max-md: shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
+ active
+ ? "bg-zinc-800 text-zinc-100"
+ : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+ }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 {label}
-              </button>
+              </UiButton>
             );
           })}
         </nav>
@@ -1174,7 +1176,7 @@ export default function SettingsPage() {
 
               <PushNotificationsCard />
 
-              <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+              <div className="bg-zinc-900 rounded-sm p-6 mt-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-zinc-200">Sign out</p>

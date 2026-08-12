@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { exchangeOAuthHandoff } from "@/api/auth";
@@ -94,9 +95,9 @@ export default function OAuthCallbackPage() {
         <div>
           <h2 className="font-masthead text-xl">Couldn&apos;t sign in</h2>
           <p className="mt-2 text-sm text-zinc-400">{error}</p>
-          <button className={`mt-5 text-sm ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
+          <UiButton variant="plain" className={`mt-5 text-sm ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
             Back to sign in
-          </button>
+          </UiButton>
         </div>
       ) : linkedMessage ? (
         <div>

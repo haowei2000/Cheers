@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 // Activity — the channel's collaboration history as a FLOW LIST. One row per
 // episode (a causal unit: a human's @mention plus the bot turns / approvals /
 // file writes that follow — see activityEpisodes.ts). The collapsed row is a
@@ -301,7 +303,7 @@ function EpisodeDetail({
               <div
                 key={`claim-${row.n.seq}-${i}`}
                 className={cn(
-                  "flex items-start gap-1.5 rounded px-1 py-1 text-[11px]",
+                  "flex items-start gap-1.5 rounded-sm px-1 py-1 text-[11px]",
                   failed ? "bg-red-950/30 text-red-200" : "text-zinc-400"
                 )}
               >
@@ -357,14 +359,14 @@ function FlowEpisode({
 }) {
   return (
     <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
-      <button
+      <UiButton variant="plain"
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className={cn(
-          "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
-          !expanded && "hover:bg-zinc-800/40"
-        )}
+        controlSize="regular" className={cn(
+ "w-full flex items-center gap-2 px-3 text-left transition-colors",
+ !expanded && "hover:bg-zinc-800/40"
+ )}
       >
         <ChainAvatars ep={ep} memberOf={memberOf} />
         <span
@@ -376,7 +378,7 @@ function FlowEpisode({
           {episodeTitle(ep, memberOf)}
         </span>
         <span className="text-[10px] text-zinc-400 tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
-      </button>
+      </UiButton>
       {expanded && <EpisodeDetail ep={ep} memberOf={memberOf} onJump={onJump} />}
     </div>
   );
@@ -406,20 +408,23 @@ function ParticipantStrip({
   const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
 
   return (
-    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-lg bg-zinc-900/50 px-2 py-1.5">
+    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-900/50 px-2 py-1.5">
       <div className="flex items-center -space-x-2">
         {shown.map((id) => {
           const mem = memberOf(id);
           const name = nameOf(mem, id);
           const active = selected.has(id);
           return (
-            <button
+            <UiButton variant="plain"
               key={id}
               type="button"
               onClick={() => onToggle(id)}
               title={`${name}${mem?.is_online != null ? (mem.is_online ? " · online" : " · offline") : ""}`}
               aria-label={`Filter by ${name}`}
               aria-pressed={active}
+              data-design-system-exempt="identity"
+              square
+              controlSize="compact"
               className={cn(
                 "relative rounded-full ring-2 transition-all",
                 active ? "ring-indigo-500" : "ring-zinc-900",
@@ -434,7 +439,7 @@ function ParticipantStrip({
                 size="xs"
                 className="!w-6 !h-6"
               />
-            </button>
+            </UiButton>
           );
         })}
       </div>
@@ -586,21 +591,21 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         )}
 
         {/* Footer: lens tabs (left) + member filter (right). */}
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900/50 px-2 py-1.5">
-          <div className="flex items-center gap-0.5 rounded-full bg-zinc-900/60 p-0.5">
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1.5 rounded-sm bg-zinc-900/50 px-2 py-1.5">
+          <div className="flex items-center gap-0.5 rounded-sm bg-zinc-900/60 p-0.5">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
-              <button
+              <UiButton variant="plain"
                 key={l}
                 type="button"
                 onClick={() => setLens(l)}
-                className={cn(
-                  "rounded-full px-2.5 py-0.5 text-[10px] capitalize transition-colors",
-                  lens === l ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
-                )}
+                controlSize="regular" className={cn(
+ "rounded-sm px-2.5 text-[10px] capitalize transition-colors",
+ lens === l ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+ )}
               >
                 {l}
-              </button>
+              </UiButton>
             ))}
           </div>
           <div className="flex-1" />
@@ -631,17 +636,17 @@ function FilterChip({
   children: ReactNode;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
       onClick={onClick}
-      className={cn(
-        "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] whitespace-nowrap flex-shrink-0 border transition-colors",
-        active
-          ? "border-zinc-600 bg-zinc-800 text-zinc-200"
-          : "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
-      )}
+      controlSize="regular" className={cn(
+ "flex items-center gap-1 rounded-sm px-2 text-[10px] whitespace-nowrap flex-shrink-0 transition-colors",
+ active
+ ? "border-zinc-600 bg-zinc-800 text-zinc-200"
+ : "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
+ )}
     >
       {children}
-    </button>
+    </UiButton>
   );
 }
 
@@ -678,28 +683,28 @@ function MemberFilter({
 
   return (
     <div ref={rootRef} className="relative flex-shrink-0">
-      <button
+      <UiButton variant="plain"
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         title="Filter activity by member"
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] transition-colors",
-          open || selected.size
-            ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200"
-            : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
-        )}
+        controlSize="regular" className={cn(
+ "inline-flex items-center gap-1.5 rounded-sm  px-2 text-[11px] transition-colors",
+ open || selected.size
+ ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200"
+ : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
+ )}
       >
         <Filter className="w-3.5 h-3.5" />
         <span>{selected.size ? `${selected.size}` : "Filter"}</span>
         <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
-      </button>
+      </UiButton>
 
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
-          <div className="m-1 flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-2 py-1.5">
+          <div className="m-1 flex items-center gap-1.5 rounded-sm bg-zinc-800/50 px-2 py-1.5">
             <Search className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-            <input
+            <UiInput
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -714,15 +719,15 @@ function MemberFilter({
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
                 return (
-                  <button
+                  <UiButton variant="plain"
                     key={mem.member_id}
                     type="button"
                     onClick={() => onToggle(mem.member_id)}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-zinc-800/70 transition-colors"
+                    controlSize="regular" className="w-full flex items-center gap-2 px-2.5 text-left hover:bg-zinc-800/70 transition-colors"
                   >
                     <span
                       className={cn(
-                        "flex items-center justify-center w-3.5 h-3.5 rounded border flex-shrink-0",
+                        "flex items-center justify-center w-3.5 h-3.5 rounded-sm  flex-shrink-0",
                         on ? "border-indigo-400 bg-indigo-500/80" : "border-zinc-600"
                       )}
                     >
@@ -742,13 +747,13 @@ function MemberFilter({
                     {mem.member_type === "bot" && (
                       <span className="text-[10px] uppercase tracking-wide text-zinc-400 flex-shrink-0">bot</span>
                     )}
-                  </button>
+                  </UiButton>
                 );
               })
             )}
           </div>
           {selected.size > 0 && (
-            <div className="m-1 mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-2 py-1.5">
+            <div className="m-1 mt-2 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-1.5">
               <div className="flex-1 flex flex-wrap gap-1">
                 {members
                   .filter((mem) => selected.has(mem.member_id))
@@ -761,13 +766,13 @@ function MemberFilter({
                     </FilterChip>
                   ))}
               </div>
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={onClear}
                 className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
               >
                 Clear
-              </button>
+              </UiButton>
             </div>
           )}
         </PopoverPanel>

@@ -211,7 +211,7 @@ export function MessageList({
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
         <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
+        <span className="rounded-sm bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
           {formatDayLabel(msg.created_at)}
         </span>
         <span className="h-px flex-1 bg-zinc-800/80" />
@@ -221,7 +221,7 @@ export function MessageList({
 
   function rowHighlightClass(msg: Message) {
     return msg.msg_id === highlightId
-      ? "rounded-lg bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
+      ? "rounded-sm bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
       : "transition-colors duration-700";
   }
 

@@ -40,7 +40,7 @@ export function ServerPicker() {
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
-      <div className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6">
+      <div className="w-full max-w-sm bg-zinc-900 rounded-sm p-6">
         <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
           <Server className="w-4 h-4 text-indigo-400" /> Connect to a Cheers server
         </p>

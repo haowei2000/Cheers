@@ -1,3 +1,7 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -88,20 +92,20 @@ function TableLens({ data, config, onChange }: LensProps) {
                     // edit that update() must refuse. Delete (index-based) still works.
                     <span className="text-zinc-500">—</span>
                   ) : c.options ? (
-                    <select value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded px-1 outline-none">
+                    <UiSelect value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded-sm px-1 outline-none">
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
-                    </select>
+                    </UiSelect>
                   ) : (
-                    <input value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent w-full text-zinc-200 outline-none" />
+                    <UiInput value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent w-full text-zinc-200 outline-none" />
                   )}
                 </td>
               ))}
               <td className="p-1">
-                <button onClick={() => del(i)} title="Delete row">
+                <UiButton variant="plain" onClick={() => del(i)} title="Delete row">
                   <Trash2 className="w-3 h-3 text-zinc-600 hover:text-red-400" />
-                </button>
+                </UiButton>
               </td>
             </tr>
           ))}
@@ -112,9 +116,9 @@ function TableLens({ data, config, onChange }: LensProps) {
           )}
         </tbody>
       </table>
-      <button onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
+      <UiButton variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
         <Plus className="w-3.5 h-3.5" /> Add row
-      </button>
+      </UiButton>
     </div>
   );
 }
@@ -153,8 +157,8 @@ function KanbanLens({ data, onChange }: LensProps) {
     <div className="p-2 text-xs flex gap-2 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-zinc-400">Empty board</div>}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded ">
-          <div className="mx-1 mt-1 rounded-md bg-zinc-800/50 px-2 py-1 text-zinc-300">
+        <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded-sm ">
+          <div className="mx-1 mt-1 rounded-sm bg-zinc-800/50 px-2 py-1 text-zinc-300">
             {c.name} <span className="text-zinc-400">{c.items.length}</span>
           </div>
           <div className="p-1 space-y-1">
@@ -164,30 +168,30 @@ function KanbanLens({ data, onChange }: LensProps) {
                 presentationLevel="minimal"
                 title={it}
                 actions={<>
-                <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
+                <UiButton variant="plain" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
-                </button>
-                <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
+                </UiButton>
+                <UiButton variant="plain" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
                   <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
-                </button>
-                <button onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
+                </UiButton>
+                <UiButton variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
                   <X className="w-3 h-3 text-zinc-600 hover:text-red-400" />
-                </button>
+                </UiButton>
                 </>}
                 className="border-b-0 bg-zinc-800/70 px-1.5 text-zinc-200"
               />
             ))}
             <div className="flex items-center gap-1 pt-1">
-              <input
+              <UiInput
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
                 placeholder="+ Task"
                 className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
               />
-              <button onClick={() => addItem(ci)} title="Add task">
+              <UiButton variant="plain" onClick={() => addItem(ci)} title="Add task">
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
-              </button>
+              </UiButton>
             </div>
           </div>
         </div>
@@ -196,12 +200,12 @@ function KanbanLens({ data, onChange }: LensProps) {
   );
 }
 
-// ── markdown: a string (prompt templates, notes, drafts). Inert <textarea> edit;
+// ── markdown: a string (prompt templates, notes, drafts). Inert <UiTextarea> edit;
 //    never dangerouslySetInnerHTML. (A sanitized preview can be added later.)
 function MarkdownLens({ data, onChange }: LensProps) {
   const text = typeof data === "string" ? data : "";
   return (
-    <textarea
+    <UiTextarea
       value={text}
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
@@ -579,7 +583,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
   return (
     <aside className="h-full w-full overflow-y-auto bg-zinc-900/95 p-4 text-xs">
       <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300">
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-indigo-300">
           <CodemapKindIcon kind={node.kind} />
         </span>
         <div className="min-w-0 flex-1">
@@ -587,9 +591,9 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
           <p className="mt-0.5 text-[11px] capitalize text-zinc-500">{node.kind}</p>
         </div>
         {onClose && (
-          <button type="button" onClick={onClose} aria-label="Close node details" className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
+          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
             <X className="h-4 w-4" />
-          </button>
+          </UiButton>
         )}
       </div>
       <dl className="mt-5 space-y-5">
@@ -605,14 +609,14 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
           <div className="border-t border-zinc-800 pt-4">
             <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Tags</dt>
             <dd className="mt-2 flex flex-wrap gap-1.5">
-              {node.tags.map((tag) => <span key={tag} className="rounded-md bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">{tag}</span>)}
+              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">{tag}</span>)}
             </dd>
           </div>
         )}
         {node.loc && (
           <div className="border-t border-zinc-800 pt-4">
             <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Source locator</dt>
-            <dd className="mt-2 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-4 text-zinc-300">{node.loc}</dd>
+            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-4 text-zinc-300">{node.loc}</dd>
           </div>
         )}
       </dl>
@@ -703,40 +707,40 @@ function CodemapLens({ data }: LensProps) {
             const focused = document.focus.has(node.id);
             const selectedNode = selectedId === node.id;
             return (
-              <button
+              <UiButton variant="plain"
                 key={node.id}
                 type="button"
                 onClick={() => setSelectedId(node.id)}
-                className={`absolute flex h-14 w-36 items-center gap-2 rounded-lg border bg-zinc-900 px-3 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60" : focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
+                controlSize="comfortable" className={`absolute flex w-36 items-center gap-2 rounded-sm  bg-zinc-900 px-3 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60" : focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-300"><CodemapKindIcon kind={node.kind} /></span>
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-zinc-300"><CodemapKindIcon kind={node.kind} /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-[11px] font-medium text-zinc-100">{node.label}</span>
                   <span className="mt-1 flex items-center gap-1 text-[10px] capitalize text-zinc-400"><CodemapStatus status={node.status} />{node.status}</span>
                 </span>
-              </button>
+              </UiButton>
             );
           })}
         </div>
 
-        <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/95 px-3 py-2 text-[10px] text-zinc-400">
+        <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-sm  border-zinc-800 bg-zinc-900/95 px-3 py-2 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Explored</span>
           <span className="flex items-center gap-1"><CircleDotDashed className="h-3 w-3 text-amber-400" /> Partial</span>
           <span className="flex items-center gap-1"><TriangleAlert className="h-3 w-3 text-orange-400" /> Stale</span>
         </div>
-        <div className="absolute bottom-3 right-3 flex items-center rounded-lg border border-zinc-800 bg-zinc-900/95 p-1">
-          <button type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></button>
+        <div className="absolute bottom-3 right-3 flex items-center rounded-sm  border-zinc-800 bg-zinc-900/95 p-1">
+          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
           <span className="w-12 text-center text-[10px] tabular-nums text-zinc-400">{Math.round(scale * 100)}%</span>
-          <button type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></button>
-          <button type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></button>
-          <button type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></button>
+          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
         </div>
       </div>
       {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} /></div>}
       {!wide && selected && (
-        <div className="absolute inset-x-3 bottom-16 z-20 max-h-[70%] overflow-hidden rounded-xl border border-zinc-700 shadow-2xl shadow-black/60">
+        <div className="absolute inset-x-3 bottom-16 z-20 max-h-[70%] overflow-hidden rounded-sm  border-zinc-700 shadow-2xl shadow-black/60">
           <CodemapInspector node={selected} onClose={() => setSelectedId(null)} />
         </div>
       )}

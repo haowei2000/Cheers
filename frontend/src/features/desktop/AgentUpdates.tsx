@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpCircle } from "lucide-react";
 import toast from "react-hot-toast";
@@ -48,22 +49,22 @@ export function AgentUpdates() {
   }
 
   return (
-    <div className="rounded-lg bg-zinc-800/60 p-3 space-y-2">
+    <div className="rounded-sm bg-zinc-800/60 p-3 space-y-2">
       <div className="flex items-center gap-2">
         <ArrowUpCircle className="w-4 h-4 text-indigo-400 shrink-0" />
         <p className="text-xs font-medium text-zinc-200">
           {outdated.length} adapter update{outdated.length > 1 ? "s" : ""} available
         </p>
-        <button
+        <UiButton variant="plain"
           type="button"
           className="text-[11px] text-zinc-500 hover:text-zinc-300 ml-auto"
           onClick={() => void check()}
           disabled={busy}
         >
           Recheck
-        </button>
+        </UiButton>
       </div>
-      <ItemList>
+      <ItemList presentationLevel="minimal" controlSize="compact">
         {outdated.map((u) => (
           <OperationsItem key={u.key} title={u.label}
             trailing={<span className="tabular-nums text-[11px]">{u.installed ?? "?"} → {u.latest ?? "?"}</span>}

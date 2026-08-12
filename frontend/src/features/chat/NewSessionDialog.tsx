@@ -1,3 +1,7 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
 // New-session dialog — extracted from SessionsPanel so both the Sessions board
 // and the composer's session chip share one creation flow. Pick a bot (only
 // those the caller holds a session_create grant for) + optional working
@@ -81,22 +85,22 @@ export function NewSessionDialog({
       <div className="space-y-3">
         <label className="block space-y-1">
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Bot</span>
-          <select
+          <UiSelect
             value={botId}
             disabled={busy}
             onChange={(e) => setBotId(e.target.value)}
-            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.label}
               </option>
             ))}
-          </select>
+          </UiSelect>
         </label>
         <label className="block space-y-1">
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Working directory (optional)</span>
-          <input
+          <UiInput
             type="text"
             value={cwd}
             disabled={busy}
@@ -104,7 +108,7 @@ export function NewSessionDialog({
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
-            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
@@ -117,7 +121,7 @@ export function NewSessionDialog({
                 : "This connector does not let the platform set a working directory. Allowed roots: "}
               {/* design-system-exempt: form-suggestion — inline datalist shortcut. */}
               {meta.allowed_roots.map((r, i) => (
-                <button
+                <UiButton variant="plain"
                   key={r}
                   type="button"
                   disabled={busy}
@@ -126,20 +130,20 @@ export function NewSessionDialog({
                 >
                   {r}
                   {i < meta.allowed_roots.length - 1 ? ", " : ""}
-                </button>
+                </UiButton>
               ))}
             </span>
           )}
         </label>
         <label className="block space-y-1">
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Extra roots (optional)</span>
-          <textarea
+          <UiTextarea
             value={dirs}
             disabled={busy}
             rows={2}
             placeholder={"/abs/extra-root"}
             onChange={(e) => setDirs(e.target.value)}
-            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <span className="block text-[10px] text-zinc-400">One absolute path per line.</span>
         </label>

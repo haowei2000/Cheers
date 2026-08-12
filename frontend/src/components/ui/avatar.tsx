@@ -25,6 +25,7 @@ function PresenceDot({ online }: { online: boolean }) {
   return (
     <span
       title={online ? "online" : "offline"}
+      data-design-system-exempt="presence"
       className={cn(
         "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900",
         online ? "bg-emerald-500" : "bg-zinc-600"
@@ -44,6 +45,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
         // (tauri://) they must be absolutized against the configured server.
         src={resolveServerUrl(src)}
         alt={name ?? "avatar"}
+        data-design-system-exempt="identity"
         className={cn(
           "rounded-full object-cover flex-shrink-0",
           sizeCls[size],
@@ -57,6 +59,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
     const brand = agentIconFor(name);
     inner = brand ? (
       <span
+        data-design-system-exempt="identity"
         className={cn(
           "rounded-full flex items-center justify-center flex-shrink-0",
           sizeCls[size],
@@ -69,6 +72,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
       </span>
     ) : (
       <span
+        data-design-system-exempt="identity"
         className={cn(
           "rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0",
           sizeCls[size],

@@ -1,4 +1,4 @@
-import { AlertTriangle, User } from "lucide-react";
+import { AlertTriangle, Plus, User } from "lucide-react";
 import {
   EditorialIcon,
   editorialIconNames,
@@ -16,10 +16,19 @@ import {
   OperationsItem,
   WorkbenchItem,
 } from "@/components/ui/item";
-import { PresentationProvider, type PresentationLevel } from "@/components/ui/presentation";
+import type { PresentationLevel } from "@/components/ui/presentation";
 import { cn } from "@/lib/cn";
+import { ControlSizeProvider, type ControlSize } from "@/components/ui/control-size";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { MenuOption } from "@/components/ui/menu-option";
+import { TabOption } from "@/components/ui/tab-option";
+import { CheckboxField } from "@/components/ui/checkbox-field";
+import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
+const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
 
 const iconLabels: Record<EditorialIconName, string> = {
   correspondence: "Correspondence",
@@ -91,10 +100,69 @@ export function ItemGallery() {
         </div>
       </section>
 
+      <section aria-labelledby="control-size-register" className="mb-4 border-y border-zinc-700 py-3">
+        <div className="mb-2 flex items-baseline justify-between border-b border-zinc-600 pb-1">
+          <h2 id="control-size-register" className="font-display text-lg font-semibold tracking-tight">
+            Control Height Register
+          </h2>
+          <span className="font-utility text-[9px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+            44 · 36 · 28 px
+          </span>
+        </div>
+        <div className="grid gap-px bg-zinc-800 lg:grid-cols-3">
+          {controlSizes.map((size) => (
+            <ControlSizeProvider key={size} size={size}>
+              <div className="space-y-2 bg-zinc-950 p-3">
+                <p className="font-utility text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  {size}
+                </p>
+                <EntityItem title="Aligned item" leading={<User className="h-4 w-4" />} />
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary">Button</Button>
+                  <IconButton label={`${size} add`}><Plus className="h-4 w-4" /></IconButton>
+                  <Input aria-label={`${size} input`} placeholder="Input" />
+                </div>
+                <div role="tablist" className="flex items-center gap-1">
+                  <TabOption label="Active" selected />
+                  <TabOption label="Archive" selected={false} />
+                </div>
+                <div role="menu">
+                  <MenuOption label="Open correspondence" leading={<EditorialIcon name="correspondence" className="h-4 w-4" />} />
+                </div>
+                <CheckboxField label="Include resolved items" />
+              </div>
+            </ControlSizeProvider>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="state-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="state-register" className="mb-2 px-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400">State register</h2>
+        <div className="grid gap-px bg-zinc-800 lg:grid-cols-2">
+          <ItemList className="bg-zinc-950 px-2">
+            <NavigationItem title="Selected destination" subtitle="Current channel" selected onClick={() => undefined} />
+            <EntityItem title="Disabled identity" subtitle="Unavailable on this platform" disabled onClick={() => undefined} />
+          </ItemList>
+          <ItemList className="bg-zinc-950 px-2">
+            <OperationsItem
+              title="Composite approval"
+              subtitle="Critical status remains visible"
+              criticalStatus={<span className="text-[10px] font-semibold text-red-300">ERROR</span>}
+              actions={<><Button variant="ghost" controlSize="compact">Inspect</Button><Button variant="danger" controlSize="compact">Reject</Button></>}
+            />
+            <OperationsItem
+              title="Loading operation"
+              subtitle="Actions retain the shared height"
+              actions={<Button variant="secondary" controlSize="compact" loading>Loading</Button>}
+            />
+          </ItemList>
+        </div>
+      </section>
+
       <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
         {levels.map((level, index) => (
-          <PresentationProvider key={level} level={level}>
             <section
+              key={level}
               aria-labelledby={`gallery-${level}`}
               className={cn(
                 "space-y-1 py-3 lg:px-3",
@@ -112,6 +180,7 @@ export function ItemGallery() {
                   Edition 0{index + 1}
                 </span>
               </div>
+              <ItemList presentationLevel={level} controlSize="regular">
               <EntityItem
                 leading={<User className="h-5 w-5" />}
                 title="Ada Lovelace"
@@ -154,7 +223,7 @@ export function ItemGallery() {
                 title="Deploy production change"
                 subtitle="Approval required"
                 criticalStatus={<span className="h-1.5 w-1.5 rounded-full bg-red-400" />}
-                actions={<button type="button" className="rounded-sm px-2 py-1 text-xs text-amber-200 hover:bg-zinc-800">Review</button>}
+                actions={<Button variant="ghost" controlSize="compact" className="px-2 text-amber-200">Review</Button>}
               />
               <WorkbenchItem
                 leading={<EditorialIcon name="proof" className="h-5 w-5" />}
@@ -162,6 +231,7 @@ export function ItemGallery() {
                 subtitle="4 completed · 1 active"
                 status={<span className="text-[10px] text-emerald-400">ACTIVE</span>}
               />
+              </ItemList>
               <div className="flex flex-wrap gap-1 pt-1">
                 <ItemChip
                   leading={<EditorialIcon name="excerpt" className="h-3 w-3" />}
@@ -173,9 +243,28 @@ export function ItemGallery() {
                 />
               </div>
             </section>
-          </PresentationProvider>
         ))}
       </div>
+
+      <section aria-labelledby="collection-manager-register" className="mt-4 border-y border-zinc-700 py-3">
+        <div className="mb-3 flex flex-col gap-1 border-b border-zinc-600 pb-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-utility text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
+              CRUD collection pattern
+            </p>
+            <h2 id="collection-manager-register" className="font-display text-lg font-semibold tracking-tight">
+              Search · Add · Edit · Delete
+            </h2>
+          </div>
+          <p className="max-w-xl font-utility text-xs leading-5 text-zinc-500 sm:text-right">
+            Browse is the resting state. Add inserts an editor first; edit replaces its row;
+            delete replaces its row with confirmation. No detached form and no immediate destructive icon.
+          </p>
+        </div>
+        <div className="mx-auto max-w-3xl">
+          <CollectionManagerDemo />
+        </div>
+      </section>
 
       <section aria-labelledby="specialized-register" className="mt-4 grid border-y border-zinc-700 lg:grid-cols-2 lg:divide-x lg:divide-zinc-700">
         <ItemSection label="Specialized file tree" className="px-3 py-3">
@@ -186,7 +275,7 @@ export function ItemGallery() {
           <h2 id="specialized-register" className="mb-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400">Specialized diff</h2>
           <ItemList className="overflow-x-auto bg-zinc-950">
             <DiffLineItem tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
-            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 2px;" />
+            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 4px;" />
             <DiffLineItem lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
           </ItemList>
         </div>

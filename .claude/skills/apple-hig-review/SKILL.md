@@ -21,8 +21,10 @@ VoiceOver → screen reader, Increase Contrast → `prefers-contrast: more`).
 
 **Scope discipline**: HIG governs *behavior, hierarchy, and accessibility
 minimums*. If the project has its own visual-token contract (in this repo:
-`frontend/DESIGN.md`), that contract wins on token specifics — which hue,
-which radius, which shadow. This skill wins on UX behavior and on
+`design-system/DESIGN_LANGUAGE.zh-CN.md`, applied through the
+`cheers-design-system` skill), that contract wins on token specifics — which
+hue, radius, type role, item anatomy, and control size. Read that contract
+before `frontend/DESIGN.md`. This skill wins on UX behavior and on
 accessibility floors, which are never negotiable downward. When the two seem
 to conflict, the resolution is almost always "keep the project's look, fix
 the behavior."

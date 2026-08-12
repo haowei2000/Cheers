@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import {
   useState,
   useCallback,
@@ -1694,18 +1695,18 @@ export function ChannelView({
   // the empty state, so an expanded toggle is always reachable while collapsed).
   const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
   const sidebarToggle = onToggleSidebar ? (
-    <button
+    <UiButton variant="plain"
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      className="max-md:hidden flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      square controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" />
       ) : (
         <PanelLeftOpen className="w-4 h-4" />
       )}
-    </button>
+    </UiButton>
   ) : null;
 
   if (!channel) {
@@ -1741,14 +1742,14 @@ export function ChannelView({
         <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
           {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
-            <button
+            <UiButton variant="plain"
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              square controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </UiButton>
           )}
           <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
           <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
@@ -1767,15 +1768,15 @@ export function ChannelView({
             You&apos;re not a member of this channel yet. Join to read and send
             messages.
           </p>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => void handleJoin()}
             disabled={joining}
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 px-4 py-2 text-sm font-medium text-white"
+            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 px-4 text-sm font-medium text-white"
           >
             {joining && <Loader2 className="w-4 h-4 animate-spin" />}
             Join channel
-          </button>
+          </UiButton>
         </div>
       </div>
     );
@@ -1806,14 +1807,14 @@ export function ChannelView({
         <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
           {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
-            <button
+            <UiButton variant="plain"
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              square controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </UiButton>
           )}
           {isDm ? (
             <MessageSquare className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
@@ -1834,24 +1835,24 @@ export function ChannelView({
           <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
             {/* Members: was a dead-looking span — now a real button opening the roster. */}
             <div className="relative" ref={membersRootRef}>
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => setMembersOpen((v) => !v)}
                 title="Channel members"
                 aria-expanded={membersOpen}
-                className={`flex items-center gap-1.5 rounded px-1.5 py-1 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
-                  membersOpen ? "text-zinc-100 bg-zinc-800" : ""
-                }`}
+                controlSize="regular" className={`flex items-center gap-1.5 rounded-sm px-1.5 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+ membersOpen ? "text-zinc-100 bg-zinc-800" : ""
+ }`}
               >
                 <Users className="w-3.5 h-3.5" />
                 {mentionables.length || "Members"}
                 {onlineCount > 0 && (
                   <span className="flex items-center gap-1.5 ml-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     {onlineCount} online
                   </span>
                 )}
-              </button>
+              </UiButton>
               {membersOpen && (
                 <MembersPopover
                   channelId={channel.channel_id}
@@ -1863,7 +1864,7 @@ export function ChannelView({
             </div>
           </div>
           {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
-          <button
+          <UiButton variant="plain"
             onClick={() => {
               setFilesFocus(undefined);
               setFilesOpen((v) => {
@@ -1872,15 +1873,15 @@ export function ChannelView({
               });
             }}
             title="Channel files"
-            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-              filesOpen
-                ? "text-zinc-100 bg-zinc-800"
-                : "text-zinc-500 hover:text-zinc-100"
-            }`}
+            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ filesOpen
+ ? "text-zinc-100 bg-zinc-800"
+ : "text-zinc-500 hover:text-zinc-100"
+ }`}
           >
             <Paperclip className="w-4 h-4" />
-          </button>
-          <button
+          </UiButton>
+          <UiButton variant="plain"
             onClick={() => {
               setWsInit({});
               setWsOpen((v) => {
@@ -1889,15 +1890,15 @@ export function ChannelView({
               });
             }}
             title="Remote workspace"
-            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-              wsOpen
-                ? "text-zinc-100 bg-zinc-800"
-                : "text-zinc-500 hover:text-zinc-100"
-            }`}
+            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ wsOpen
+ ? "text-zinc-100 bg-zinc-800"
+ : "text-zinc-500 hover:text-zinc-100"
+ }`}
           >
             <FolderTree className="w-4 h-4" />
-          </button>
-          <button
+          </UiButton>
+          <UiButton variant="plain"
             onClick={() =>
               setVbOpen((v) => {
                 if (!v) openInstrument("viewboard", "open", false);
@@ -1905,15 +1906,15 @@ export function ChannelView({
               })
             }
             title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-              vbOpen
-                ? "text-zinc-100 bg-zinc-800"
-                : "text-zinc-500 hover:text-zinc-100"
-            }`}
+            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ vbOpen
+ ? "text-zinc-100 bg-zinc-800"
+ : "text-zinc-500 hover:text-zinc-100"
+ }`}
           >
             <LayoutDashboard className="w-4 h-4" />
-          </button>
-          <button
+          </UiButton>
+          <UiButton variant="plain"
             onClick={() => {
               setWbTarget(undefined);
               setWbOpen((v) => {
@@ -1922,23 +1923,23 @@ export function ChannelView({
               });
             }}
             title="Workbench — file workspace"
-            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-              wbOpen
-                ? "text-zinc-100 bg-zinc-800"
-                : "text-zinc-500 hover:text-zinc-100"
-            }`}
+            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ wbOpen
+ ? "text-zinc-100 bg-zinc-800"
+ : "text-zinc-500 hover:text-zinc-100"
+ }`}
           >
             <PanelRight className="w-4 h-4" />
-          </button>
+          </UiButton>
           {channel.type !== "dm" && (
             <>
-              <button
+              <UiButton variant="plain"
                 onClick={() => setSettingsOpen(true)}
                 title="Channel settings"
-                className="ml-1.5 flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+                square controlSize="compact" className="ml-1.5 flex items-center justify-center max-md: max-md: rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
               >
                 <Settings className="w-4 h-4" />
-              </button>
+              </UiButton>
             </>
           )}
         </div>
@@ -1965,7 +1966,7 @@ export function ChannelView({
               {channel.kind === "voice" && (
                 <Suspense
                   fallback={
-                    <div className="mx-4 mb-3 h-[74px] rounded-xl border border-zinc-800 bg-zinc-900/50 animate-pulse" />
+                    <div className="mx-4 mb-3 h-[74px] rounded-sm bg-zinc-900/50 animate-pulse" />
                   }
                 >
                   <VoiceRoomPanel
@@ -2081,7 +2082,7 @@ export function ChannelView({
 
               {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
               {selectMode && (
-                <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/80 px-3 py-2 text-xs">
+                <div className="mx-4 mt-2 flex items-center gap-2 rounded-sm bg-zinc-900/80 px-3 py-2 text-xs">
                   <span className="text-zinc-300 font-medium">
                     {selectedIds.size} selected
                   </span>
@@ -2089,16 +2090,16 @@ export function ChannelView({
                     · click messages to toggle
                   </span>
                   <div className="flex-1" />
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Copy
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton variant="plain"
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() =>
@@ -2107,19 +2108,19 @@ export function ChannelView({
                         count: selectedMessages.length,
                       })
                     }
-                    className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Forward className="w-3.5 h-3.5" />
                     Forward
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton variant="plain"
                     type="button"
                     onClick={clearSelection}
-                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-400 hover:text-zinc-200"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm px-2.5 text-zinc-400 hover:text-zinc-200"
                   >
                     <X className="w-3.5 h-3.5" />
                     Cancel
-                  </button>
+                  </UiButton>
                 </div>
               )}
 

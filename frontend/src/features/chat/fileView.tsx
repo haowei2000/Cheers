@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Captions, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -43,7 +44,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-lg bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-400">
+      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-400">
         Loading image…
       </div>
     );
@@ -52,7 +53,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
     <img
       src={src}
       alt={file.original_filename || "image"}
-      className="max-h-48 max-w-[240px] rounded-lg object-cover hover:opacity-90 transition-opacity"
+      className="max-h-48 max-w-[240px] rounded-sm object-cover hover:opacity-90 transition-opacity"
     />
   );
 }
@@ -82,7 +83,7 @@ function AudioTile({ file }: { file: FileInfo }) {
   }, [file.file_id]);
 
   return (
-    <div className="flex max-w-[320px] flex-col gap-1 rounded-lg bg-zinc-800/60 px-2.5 py-2">
+    <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-2.5 py-2">
       <div className="flex items-center gap-1.5 text-xs text-zinc-200">
         <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
@@ -93,14 +94,14 @@ function AudioTile({ file }: { file: FileInfo }) {
         )}
       </div>
       {failed ? (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this audio file"
           className="text-left text-[11px] text-zinc-400 hover:text-zinc-200"
         >
           Playback unavailable — click to download
-        </button>
+        </UiButton>
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
@@ -151,7 +152,8 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   };
 
   return (
-    <button
+    /* design-system-exempt: drop-zone */
+    <UiButton variant="plain"
       type="button"
       onClick={request}
       title="Transcribe this audio to text"
@@ -159,7 +161,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
     >
       <Captions className="h-3 w-3" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
-    </button>
+    </UiButton>
   );
 }
 
@@ -216,12 +218,14 @@ function StagedFileTile({ file }: { file: FileInfo }) {
         : file.original_filename || "Remote file";
 
   return (
-    <button
+    /* design-system-exempt: drop-zone */
+    <UiButton variant="plain"
       type="button"
       onClick={handleClick}
       disabled={phase === "realizing"}
       title={file.original_filename || file.file_id}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-600 bg-zinc-800/40 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
+      controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40 px-2.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
+      data-design-system-exempt="drop-zone"
     >
       {phase === "realizing" ? (
         <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
@@ -229,7 +233,7 @@ function StagedFileTile({ file }: { file: FileInfo }) {
         <FileText className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
       )}
       <span className="truncate">{label}</span>
-    </button>
+    </UiButton>
   );
 }
 
@@ -244,27 +248,27 @@ export function FileTile({ file }: { file: FileInfo }) {
   return (
     <>
       {isImage ? (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          className="block rounded-lg transition-opacity hover:opacity-90"
+          className="block rounded-sm transition-opacity hover:opacity-90"
         >
           <ImagePreview file={file} />
-        </button>
+        </UiButton>
       ) : (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
+          controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800/60 px-2.5 text-xs text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>
           {typeof file.size_bytes === "number" && (
             <span className="text-zinc-400">{formatBytes(file.size_bytes)}</span>
           )}
-        </button>
+        </UiButton>
       )}
       {open && (
         <Suspense fallback={null}>
@@ -299,7 +303,7 @@ export function FileGrid({
           <div
             key={f.file_id}
             ref={focused ? focusRef : undefined}
-            className={focused ? "rounded-lg ring-2 ring-indigo-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
+            className={focused ? "rounded-sm ring-2 ring-indigo-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
           >
             <FileTile file={f} />
           </div>

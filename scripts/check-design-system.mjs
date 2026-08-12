@@ -1,10 +1,17 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { auditSources, enforceAudit } from "./lib/design-system-audit.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contractPath = path.join(root, "design-system/item-contract.json");
 const contract = JSON.parse(await readFile(contractPath, "utf8"));
+const webAuditPolicy = JSON.parse(
+  await readFile(path.join(root, "design-system/web-audit.json"), "utf8")
+);
+const require = createRequire(path.join(root, "frontend/package.json"));
+const ts = require("typescript");
 
 const fail = (message) => {
   console.error(`design-system: ${message}`);
@@ -12,18 +19,25 @@ const fail = (message) => {
 };
 
 const expectedLevels = ["max", "medium", "minimal"];
+const expectedControlSizes = ["comfortable", "regular", "compact"];
 const expectedTypeRoles = ["display", "reading", "utility"];
 if (contract.defaultPresentationLevel !== "medium") {
   fail("defaultPresentationLevel must remain medium");
 }
+if (contract.defaultControlSize !== "regular") {
+  fail("defaultControlSize must remain regular");
+}
 if (JSON.stringify(Object.keys(contract.presentationLevels).sort()) !== JSON.stringify([...expectedLevels].sort())) {
   fail("presentationLevels must contain exactly max, medium, and minimal");
+}
+if (JSON.stringify(Object.keys(contract.controlSizes ?? {}).sort()) !== JSON.stringify([...expectedControlSizes].sort())) {
+  fail("controlSizes must contain exactly comfortable, regular, and compact");
 }
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()) !== JSON.stringify([...expectedTypeRoles].sort())) {
   fail("visualLanguage.typography must contain exactly display, reading, and utility");
 }
-if (contract.visualLanguage?.shape?.cornerRadius !== "2px/pt/dp") {
-  fail("visualLanguage.shape.cornerRadius must remain the shared 2px/pt/dp editorial radius");
+if (contract.visualLanguage?.shape?.cornerRadius !== "4px/pt/dp") {
+  fail("visualLanguage.shape.cornerRadius must remain the shared 4px/pt/dp editorial radius");
 }
 
 const ids = contract.itemKinds.map((item) => item.id);
@@ -66,8 +80,6 @@ const webFiles = await sourceFiles(path.join(root, "frontend/src"), ".tsx");
 const iosSource = await sourceText(path.join(root, "apps/ios/Sources"), ".swift");
 const androidSource = await sourceText(path.join(root, "apps/android/app/src/main/java"), ".kt");
 const legacyCounts = {
-  webRawButtonElements: (webSource.match(/<button\b/g) ?? []).length,
-  webRawInputElements: (webSource.match(/<input\b/g) ?? []).length,
   iosDirectButtonCalls: (iosSource.match(/\bButton\s*\(/g) ?? []).length,
   androidDirectButtonCalls: (androidSource.match(/\b(?:Button|IconButton|TextButton|FilledTonalButton)\s*\(/g) ?? []).length,
 };
@@ -77,10 +89,35 @@ for (const [name, count] of Object.entries(legacyCounts)) {
   else if (count > ceiling) fail(`${name} increased from ceiling ${ceiling} to ${count}; use a shared design-system primitive`);
 }
 
+const webAudit = auditSources(
+  webFiles.map(({ path: file, source }) => ({ file, source })),
+  ts,
+  webAuditPolicy
+);
+for (const error of enforceAudit(webAudit, webAuditPolicy)) fail(`Web audit: ${error}`);
+if (process.exitCode) {
+  const exceededRules = new Set(
+    Object.entries(webAudit.violations)
+      .filter(([rule, count]) => count > (webAuditPolicy.violationCeilings?.[rule] ?? -1))
+      .map(([rule]) => rule)
+  );
+  for (const finding of webAudit.findings.filter(({ rule }) => exceededRules.has(rule)).slice(0, 100)) {
+    console.error(
+      `design-system: ${path.relative(root, finding.file)}:${finding.line} ${finding.rule} (${finding.token})`
+    );
+  }
+}
+
 const itemPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/item.tsx"), "utf8");
+const collectionPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/collection-manager.tsx"), "utf8");
+const webControlSizeSource = await readFile(path.join(root, "frontend/src/components/ui/control-size.tsx"), "utf8");
+for (const size of expectedControlSizes) {
+  if (!webControlSizeSource.includes(size)) fail(`Web control-size registry does not mention ${size}`);
+}
 for (const primitive of [
   "ItemRow",
   "ItemList",
+  "ItemGroup",
   "ItemSection",
   "EntityItem",
   "NavigationItem",
@@ -90,6 +127,32 @@ for (const primitive of [
   "DiffLineItem",
 ]) {
   if (!itemPrimitiveSource.includes(`function ${primitive}`)) fail(`Web item primitive ${primitive} is not registered`);
+}
+for (const primitive of [
+  "CollectionManager",
+  "CollectionPickerItem",
+  "CollectionEditorItem",
+  "CollectionDeleteItem",
+  "CollectionEmptyItem",
+]) {
+  if (!collectionPrimitiveSource.includes(`function ${primitive}`)) fail(`Web collection primitive ${primitive} is not registered`);
+}
+
+// Business lists must declare both orthogonal inheritance axes at the container.
+// This prevents rows within one list from silently falling back to unrelated sizes.
+for (const file of webFiles.filter(({ path: file }) => file.includes(`${path.sep}features${path.sep}`))) {
+  for (const match of file.source.matchAll(/<ItemList\b([^>]*)>/g)) {
+    const attributes = match[1];
+    if (attributes.includes("presentationLevel=") && attributes.includes("controlSize=")) continue;
+    const line = file.source.slice(0, match.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} ItemList must declare presentationLevel and controlSize for inherited list anatomy`);
+  }
+  for (const block of file.source.matchAll(/<ItemList\b[^>]*>[\s\S]*?<\/ItemList>/g)) {
+    const rawMappedChild = block[0].match(/\.map\([\s\S]{0,260}?=>\s*\(\s*<(div|p)\b/);
+    if (!rawMappedChild) continue;
+    const line = file.source.slice(0, block.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} ItemList maps a raw ${rawMappedChild[1]} wrapper; use ItemGroup or a semantic Item`);
+  }
 }
 
 const iosItemPrimitiveSource = await readFile(path.join(root, "apps/ios/Sources/Views/ShellComponents.swift"), "utf8");
@@ -130,5 +193,21 @@ for (const [platform, relative] of Object.entries(registryFiles)) {
 }
 
 if (!process.exitCode) {
-  console.log(`design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels; legacy duplication did not increase)`);
+  const native = webAudit.native;
+  const violations = webAudit.violations;
+  console.log(
+    `design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels, ${expectedControlSizes.length} control sizes)`
+  );
+  console.log(
+    `web native production: button=${native.production.button}, input=${native.production.input}, select=${native.production.select}, textarea=${native.production.textarea}`
+  );
+  console.log(
+    `web native business: button=${native.business.button}, input=${native.business.input}, select=${native.business.select}, textarea=${native.business.textarea}`
+  );
+  console.log(
+    `web unexempted business native: button=${webAudit.unexemptedBusinessNative.button}, input=${webAudit.unexemptedBusinessNative.input}, select=${webAudit.unexemptedBusinessNative.select}, textarea=${webAudit.unexemptedBusinessNative.textarea}`
+  );
+  console.log(
+    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-override=${violations.sharedControlSizeOverride}`
+  );
 }

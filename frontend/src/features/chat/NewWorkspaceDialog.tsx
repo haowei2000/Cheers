@@ -1,3 +1,4 @@
+import { Input as UiInput } from "@/components/ui/input";
 import { useState } from "react";
 import { createWorkspace } from "@/api/workspaces";
 import { useChatStore } from "@/stores/chatStore";
@@ -30,13 +31,13 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="New workspace" onClose={onClose}>
       <div className="space-y-3">
-        <input
+        <UiInput
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
           placeholder="Workspace name…"
-          className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" onClick={onClose}>

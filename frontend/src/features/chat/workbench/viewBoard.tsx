@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 // ViewBoard — the channel's instrument / observability plane, SEPARATE from the
 // Workbench. The Workbench is a *file-based workspace* (context_files, fs.*, editable,
 // rendered via lenses/plugins). A ViewBoard is NOT file-based: it renders a live,
@@ -175,11 +176,11 @@ export function ViewBoardShell({
         <div className="flex-1" />
         {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
         {onRefresh && (
-          <button onClick={onRefresh} title="Refresh" disabled={loading}>
+          <UiButton variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
             />
-          </button>
+          </UiButton>
         )}
       </div>
       <div className="flex-1 overflow-auto">{children}</div>
@@ -213,11 +214,11 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
           <span className="text-xs text-zinc-300">{def.title}</span>
           <div className="flex-1" />
           {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
-          <button onClick={onRefresh} title="Refresh" disabled={loading}>
+          <UiButton variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
             />
-          </button>
+          </UiButton>
         </div>
 
         <div className="flex-1 overflow-auto">

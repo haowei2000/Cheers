@@ -19,7 +19,7 @@ import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 
 const inputCls =
-  "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
 /** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
 export function TwoFactorCard() {
@@ -108,7 +108,7 @@ export function TwoFactorCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-indigo-400" /> Authenticator app
       </p>
@@ -152,7 +152,7 @@ export function TwoFactorCard() {
             Add this account in your authenticator app using the secret below
             (or open the otpauth link).
           </p>
-          <div className="rounded-lg bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 break-all">
+          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 break-all">
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -162,7 +162,7 @@ export function TwoFactorCard() {
             {provisioningUri && (
               <a
                 href={provisioningUri}
-                className="inline-flex items-center rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-indigo-300 hover:text-indigo-200"
+                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-1.5 text-xs text-indigo-300 hover:text-indigo-200"
               >
                 Open otpauth://
               </a>
@@ -200,7 +200,7 @@ export function TwoFactorCard() {
           <p className="text-xs text-amber-200/90">
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
-          <ul className="rounded-lg bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 space-y-1">
+          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 space-y-1">
             {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
             {backupCodes.map((c) => (
               <li key={c}>{c}</li>
@@ -322,7 +322,7 @@ export function PasskeyCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <Fingerprint className="w-4 h-4 text-indigo-400" /> Passkeys
       </p>
@@ -345,7 +345,7 @@ export function PasskeyCard() {
       ) : credentials.length === 0 ? (
         <p className="text-xs text-zinc-500 mb-3">No passkeys yet.</p>
       ) : (
-        <ItemList className="mb-4">
+        <ItemList presentationLevel="max" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
             <OperationsItem
               key={c.credential_pk}

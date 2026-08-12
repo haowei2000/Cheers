@@ -1,3 +1,4 @@
+import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
@@ -75,7 +76,7 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
   return (
     <section>
@@ -84,7 +85,7 @@ export function AdminSttSettings() {
         Speech-to-text
       </h2>
 
-      <div className="bg-zinc-900 rounded-2xl p-6">
+      <div className="bg-zinc-900 rounded-sm p-6">
         <p className="text-xs text-zinc-400 mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
@@ -95,7 +96,8 @@ export function AdminSttSettings() {
 
         <div className="grid gap-3 max-w-lg">
           <label className="flex items-center gap-2 text-sm text-zinc-200">
-            <input
+            {/* design-system-native: checkbox */}
+<input
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
@@ -108,7 +110,7 @@ export function AdminSttSettings() {
             <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Endpoint (base URL including /v1)
             </label>
-            <input
+            <UiInput
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               placeholder="https://api.openai.com/v1 or http://cheers-stt:8000/v1"
@@ -120,7 +122,7 @@ export function AdminSttSettings() {
             <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Model
             </label>
-            <input
+            <UiInput
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="whisper-1"
@@ -137,7 +139,7 @@ export function AdminSttSettings() {
                 </span>
               )}
             </label>
-            <input
+            <UiInput
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -152,7 +154,8 @@ export function AdminSttSettings() {
             />
             {loaded?.api_key_set && (
               <label className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
-                <input
+                {/* design-system-native: checkbox */}
+<input
                   type="checkbox"
                   checked={clearKey}
                   onChange={(e) => setClearKey(e.target.checked)}

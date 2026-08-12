@@ -1,3 +1,7 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -112,8 +116,8 @@ function basename(path: string) {
 // The file browser IS the workbench body: browse the channel workspace (context_files)
 // as a folder tree; a selected file has exactly three controls — PIN (inject into every
 // bot prompt), PREVIEW (render with the bound or best content-matching renderer; a
-// switcher appears when several match), RAW (plain <textarea> editor, also the fallback
-// when nothing matches). Raw content is rendered ONLY inside a <textarea> (inert text —
+// switcher appears when several match), RAW (plain <UiTextarea> editor, also the fallback
+// when nothing matches). Raw content is rendered ONLY inside a <UiTextarea> (inert text —
 // no HTML execution), so stored content cannot XSS co-channel users.
 export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const { fs, plugins, bindings, setBinding, configs, pinned, togglePin } = ctx;
@@ -313,7 +317,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const createInput = (depth: number) => (
     <div className="flex items-center gap-1.5 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
       <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
-      <input
+      <UiInput
         autoFocus
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
@@ -330,7 +334,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           if (!newName.trim()) setCreatingIn(null);
         }}
         placeholder={creatingIn ? "File name" : "Path, e.g. notes/todo.md"}
-        className="flex-1 bg-zinc-800 text-zinc-200 text-xs rounded px-1 py-0.5 outline-none"
+        controlSize="regular" className="flex-1 bg-zinc-800 text-zinc-200 text-xs rounded-sm px-1 outline-none"
       />
     </div>
   );
@@ -341,35 +345,35 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       // and the pair is spaced gap-2 with padded hit areas, so a near-miss after
       // arming delete lands on Cancel, never on the irreversible Confirm.
       <span className="flex items-center gap-2">
-        <button
+        <UiButton variant="plain"
           type="button"
           aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
-          className="p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="p-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Check className="w-3 h-3 text-red-400 hover:text-red-300" />
-        </button>
-        <button
+        </UiButton>
+        <UiButton variant="plain"
           type="button"
           aria-label="Cancel delete"
           title="Cancel"
           onClick={() => setConfirmDel(null)}
-          className="p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="p-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <X className="w-3 h-3 text-zinc-500 hover:text-zinc-300" />
-        </button>
+        </UiButton>
       </span>
     ) : (
-      <button
+      <UiButton variant="plain"
         type="button"
         aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
         onClick={() => setConfirmDel(path)}
-        className="p-1.5 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="p-1.5 rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
         <Trash2 className="w-3 h-3 text-zinc-500 hover:text-red-400" />
-      </button>
+      </UiButton>
     );
 
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
@@ -378,7 +382,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         const isCollapsed = collapsed.has(node.path);
         return (
           <div key={`d:${node.path}`}>
-            {/* Row is a real disclosure <button> (keyboard-operable, aria-expanded);
+            {/* Row is a real disclosure <UiButton variant="plain"> (keyboard-operable, aria-expanded);
                 the new-file/delete controls are sibling buttons, not nested, to keep
                 interactives un-nested. */}
             <FileTreeItem
@@ -392,7 +396,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
                 )}
                 leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />}
-                actions={<><button
+                actions={<><UiButton variant="plain"
                 type="button"
                 aria-label="New file in this folder"
                 title="New file in this folder"
@@ -400,10 +404,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   if (isCollapsed) toggleCollapse(node.path);
                   beginCreate(node.path);
                 }}
-                className="p-1.5 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="p-1.5 rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
-              </button>
+              </UiButton>
               {deleteControl(node.path, true)}
               </>}
             />
@@ -432,40 +436,40 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const treeColumn = (
     <div
       className={cn(
-        "flex flex-col rounded-lg bg-zinc-900/50",
+        "flex flex-col rounded-sm bg-zinc-900/50",
         // Compact: overlay drawer over the editor so reading width isn't halved.
         compact
           ? "absolute inset-y-1.5 left-1.5 z-10 w-[min(16rem,calc(100%-1.5rem))] shadow-xl shadow-black/40 ring-1 ring-zinc-700/80"
           : "w-52 flex-shrink-0"
       )}
     >
-      <div className="mx-1 mt-1 flex h-8 flex-shrink-0 items-center gap-1 rounded-md bg-zinc-800/50 px-2">
-        <button
+      <div className="mx-1 mt-1 flex h-8 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
+        <UiButton variant="plain"
           type="button"
           onClick={() => beginCreate("")}
-          className="flex items-center gap-1 rounded p-1 -ml-1 text-xs text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="flex items-center gap-1 rounded-sm p-1 -ml-1 text-xs text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Plus className="w-3.5 h-3.5" /> New
-        </button>
+        </UiButton>
         <div className="flex-1" />
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => void refresh()}
           aria-label="Refresh file tree"
           title="Refresh"
-          className="rounded p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <RefreshCw className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
-        </button>
-        <button
+        </UiButton>
+        <UiButton variant="plain"
           type="button"
           onClick={() => setTreeOpenUser(false)}
           aria-label="Hide file tree"
           title="Hide file tree"
-          className="rounded p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <PanelLeftClose className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
-        </button>
+        </UiButton>
       </div>
       <div className="flex-1 overflow-auto py-1">
         {creatingIn === "" && createInput(0)}
@@ -483,19 +487,19 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       {treeOpen ? (
         treeColumn
       ) : (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex w-6 flex-shrink-0 items-start justify-center rounded-md bg-zinc-900/50 pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex w-6 flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
-        </button>
+        </UiButton>
       )}
       {/* Compact overlay scrim — tap outside the tree to return to the file. */}
       {compact && treeOpen && (
-        <button
+        <UiButton variant="plain"
           type="button"
           aria-label="Close file tree"
           onClick={() => setTreeOpenUser(false)}
@@ -526,7 +530,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
             const secondaryActions = (
               <>
-                <button
+                <UiButton variant="plain"
                   onClick={() => {
                     downloadText(selected, editor.content);
                     setMoreOpen(false);
@@ -535,7 +539,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   className="text-zinc-500 hover:text-zinc-300 p-0.5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                </button>
+                </UiButton>
                 <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
                 <AttachContextButton
                   channelId={ctx.channelId}
@@ -550,7 +554,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     kind: "file",
                   }}
                 />
-                <button
+                <UiButton variant="plain"
                   type="button"
                   disabled={pinned.includes(selected)}
                   title={
@@ -572,10 +576,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
                     setMoreOpen(false);
                   }}
-                  className="rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
+                  className="rounded-sm p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
                 >
                   <TextQuote className="w-3.5 h-3.5" />
-                </button>
+                </UiButton>
               </>
             );
 
@@ -583,7 +587,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
               <>
                 <div
                   className={cn(
-                    "mx-1 mt-1 flex flex-shrink-0 items-center gap-2 rounded-md bg-zinc-900/50 px-3",
+                    "mx-1 mt-1 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3",
                     tight ? "min-h-8 flex-wrap py-1" : "h-8"
                   )}
                 >
@@ -595,8 +599,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   )}
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
-                  <div className="flex rounded overflow-hidden bg-zinc-800 text-[11px] flex-shrink-0">
-                    <button
+                  <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-[11px] flex-shrink-0">
+                    <UiButton variant="plain"
                       onClick={() => setMode("preview")}
                       disabled={!previewRenderer}
                       title={
@@ -604,34 +608,34 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           ? `Preview with ${previewRenderer.title}`
                           : "No matching renderer — raw only"
                       }
-                      className={`px-2 py-0.5 disabled:opacity-40 ${
-                        effMode === "preview"
-                          ? "bg-zinc-700 text-zinc-100"
-                          : "text-zinc-400 hover:text-zinc-200"
-                      }`}
+                      controlSize="regular" className={`px-2 disabled:opacity-40 ${
+ effMode === "preview"
+ ? "bg-zinc-700 text-zinc-100"
+ : "text-zinc-400 hover:text-zinc-200"
+ }`}
                     >
                       Preview
-                    </button>
-                    <button
+                    </UiButton>
+                    <UiButton variant="plain"
                       onClick={() => setMode("raw")}
-                      className={`px-2 py-0.5 ${
-                        effMode === "raw"
-                          ? "bg-zinc-700 text-zinc-100"
-                          : "text-zinc-400 hover:text-zinc-200"
-                      }`}
+                      controlSize="regular" className={`px-2 ${
+ effMode === "raw"
+ ? "bg-zinc-700 text-zinc-100"
+ : "text-zinc-400 hover:text-zinc-200"
+ }`}
                     >
                       Raw
-                    </button>
+                    </UiButton>
                   </div>
                   {/* renderer picker: Auto = clear the binding, follow the best content
                       match. Shown whenever there is a binding to clear OR a real choice —
                       so a stale/wrong binding always has a UI way out. */}
                   {effMode === "preview" && (bound || options.length > 1) && !tight && (
-                    <select
+                    <UiSelect
                       value={bound?.id ?? ""}
                       onChange={(e) => setBinding(selected, e.target.value || null)}
                       title="Renderer for Preview (Auto = best content match)"
-                      className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[110px]"
+                      controlSize="regular" className="bg-zinc-800 text-zinc-300 text-[11px] rounded-sm px-1 outline-none max-w-[110px]"
                     >
                       <option value="">Auto</option>
                       {options.map((r) => {
@@ -652,28 +656,28 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           </option>
                         );
                       })}
-                    </select>
+                    </UiSelect>
                   )}
                   {tight ? (
                     <div className="relative flex-shrink-0" ref={moreRef}>
-                      <button
+                      <UiButton variant="plain"
                         type="button"
                         onClick={() => setMoreOpen((o) => !o)}
                         aria-expanded={moreOpen}
                         aria-label="More file actions"
                         title="More"
-                        className="rounded p-0.5 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        className="rounded-sm p-0.5 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" />
-                      </button>
+                      </UiButton>
                       {moreOpen && (
-                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-lg bg-zinc-900 p-1.5 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
+                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-sm bg-zinc-900 p-1.5 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
                           {effMode === "preview" && (bound || options.length > 1) && (
-                            <select
+                            <UiSelect
                               value={bound?.id ?? ""}
                               onChange={(e) => setBinding(selected, e.target.value || null)}
                               title="Renderer for Preview (Auto = best content match)"
-                              className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[110px]"
+                              controlSize="regular" className="bg-zinc-800 text-zinc-300 text-[11px] rounded-sm px-1 outline-none max-w-[110px]"
                             >
                               <option value="">Auto</option>
                               {options.map((r) => (
@@ -681,7 +685,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                                   {r.title}
                                 </option>
                               ))}
-                            </select>
+                            </UiSelect>
                           )}
                           {secondaryActions}
                         </div>
@@ -691,14 +695,14 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     secondaryActions
                   )}
                   {effMode === "raw" && (
-                    <button
+                    <UiButton variant="plain"
                       onClick={() => void onSave()}
                       disabled={!editor.dirty}
                       className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40 flex-shrink-0"
                     >
                       <Save className="w-3.5 h-3.5" />
                       {!tight && "Save"}
-                    </button>
+                    </UiButton>
                   )}
                 </div>
                 {effMode === "preview" && previewRenderer ? (
@@ -732,7 +736,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {(editor.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 rounded-md bg-zinc-900/50 px-3 py-1 text-[11px] text-zinc-400"
+            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-[11px] text-zinc-400"
           >
             {editor.status || status}
           </div>

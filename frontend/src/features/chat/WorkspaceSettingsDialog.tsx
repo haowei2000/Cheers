@@ -1,10 +1,21 @@
-import { useEffect, useState } from "react";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, UserPlus, X, LogOut } from "lucide-react";
+import { Trash2, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { EntityItem, ItemList } from "@/components/ui/item";
+import { EntityItem, OperationsItem } from "@/components/ui/item";
+import { IconButton } from "@/components/ui/icon-button";
+import { controlIconClasses } from "@/components/ui/control-size";
+import {
+  CollectionDeleteItem,
+  CollectionEmptyItem,
+  CollectionManager,
+  CollectionPickerItem,
+  type CollectionMode,
+} from "@/components/ui/collection-manager";
 import {
   listWorkspaceMembers,
   inviteWorkspaceMember,
@@ -46,6 +57,8 @@ export function WorkspaceSettingsDialog({
   const [savingMeta, setSavingMeta] = useState(false);
 
   const [query, setQuery] = useState("");
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberMode, setMemberMode] = useState<CollectionMode>({ kind: "browse" });
   const [role, setRole] = useState<(typeof ROLES)[number]>("member");
   const [results, setResults] = useState<WorkspaceInvitable[]>([]);
   const [searching, setSearching] = useState(false);
@@ -61,6 +74,15 @@ export function WorkspaceSettingsDialog({
     onConfirm: () => Promise<void>;
   } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const visibleMembers = useMemo(() => {
+    const normalized = memberQuery.trim().toLocaleLowerCase();
+    if (!normalized) return members;
+    return members.filter((member) => (
+      `${member.display_name ?? ""} ${member.username ?? ""} ${member.role} ${member.status}`
+        .toLocaleLowerCase()
+        .includes(normalized)
+    ));
+  }, [memberQuery, members]);
 
   async function refreshMembers() {
     try {
@@ -122,6 +144,7 @@ export function WorkspaceSettingsDialog({
       toast.success(res.status === "exists" ? "Already a member" : "Invite sent");
       setQuery("");
       setResults([]);
+      setMemberMode({ kind: "browse" });
       await refreshMembers();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Operation failed");
@@ -132,6 +155,7 @@ export function WorkspaceSettingsDialog({
     try {
       await removeWorkspaceMember(workspace.workspace_id, m.user_id);
       await refreshMembers();
+      setMemberMode({ kind: "browse" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to remove");
     }
@@ -175,7 +199,7 @@ export function WorkspaceSettingsDialog({
     <Dialog title={`Workspace settings · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {!canManage && (
-          <p className="text-xs text-amber-400/80 bg-amber-950/30 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-400/80 bg-amber-950/30 rounded-sm px-3 py-2">
             You are not an admin of this workspace, so you can only view its name.
           </p>
         )}
@@ -183,11 +207,11 @@ export function WorkspaceSettingsDialog({
         <div className="space-y-2">
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Name</label>
           <div className="flex gap-2">
-            <input
+            <UiInput
               value={name}
               disabled={!canManage}
               onChange={(e) => setName(e.target.value)}
-              className="flex-1 rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
             {canManage && (
               <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
@@ -199,114 +223,120 @@ export function WorkspaceSettingsDialog({
 
         {canManage && (
           <>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                Members ({members.length})
-              </label>
-              <ItemList className="max-h-48 overflow-y-auto pr-1">
-                {members.map((m) => (
-                  <EntityItem key={m.user_id}
-                    title={m.display_name || m.username}
-                    subtitle={m.user_id === me?.user_id ? m.role : undefined}
-                    leading={<Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />}
-                    criticalStatus={m.status === "pending" ? <span className="text-[10px] text-amber-400">Pending</span> : undefined}
-                    actions={<>{m.user_id !== me?.user_id ? (
-                        <select
-                          value={m.role}
-                          onChange={(e) => void changeRole(m, e.target.value)}
-                          className="mt-0.5 bg-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-                    {m.user_id !== me?.user_id && m.role !== "owner" && (
-                      <button
-                        onClick={() =>
-                          setConfirmState({
-                            title: "Remove member",
-                            message: `Remove ${m.display_name || m.username} from this workspace? They must accept a new invite to rejoin.`,
-                            confirmLabel: "Remove",
-                            onConfirm: () => removeMember(m),
-                          })
-                        }
-                        title={`Remove ${m.display_name || m.username}`}
-                        aria-label={`Remove ${m.display_name || m.username}`}
-                        className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
+            <CollectionManager
+              label="Members"
+              count={members.length}
+              query={memberQuery}
+              onQueryChange={setMemberQuery}
+              searchPlaceholder="Search members"
+              addLabel="Add member"
+              onAdd={() => {
+                setQuery("");
+                setResults([]);
+                setRole("member");
+                setMemberMode({ kind: "add" });
+              }}
+              addDisabled={memberMode.kind !== "browse"}
+              presentationLevel="medium"
+              controlSize="regular"
+              className="border-t border-zinc-800 pt-3"
+            >
+              {memberMode.kind === "add" && (
+                <CollectionPickerItem
+                  title="Invite workspace member"
+                  query={query}
+                  onQueryChange={setQuery}
+                  placeholder="Search friends, username, or email…"
+                  onCancel={() => setMemberMode({ kind: "browse" })}
+                >
+                  <OperationsItem
+                    title="Invite role"
+                    trailing={(
+                      <UiSelect
+                        aria-label="Role for new workspace member"
+                        value={role}
+                        onChange={(event) => setRole(event.target.value as (typeof ROLES)[number])}
+                        controlSize="compact"
                       >
-                        <X className="w-4 h-4" />
-                      </button>
+                        {ROLES.map((candidateRole) => (
+                          <option key={candidateRole} value={candidateRole}>{candidateRole}</option>
+                        ))}
+                      </UiSelect>
                     )}
-                    </>}
-                    className="border-0 bg-zinc-950/40"
                   />
-                ))}
-                {members.length === 0 && (
-                  <div className="px-3 py-4 text-xs text-zinc-400 text-center">No members yet</div>
-                )}
-              </ItemList>
+                  {searching && <OperationsItem title="Searching…" />}
+                  {!searching && query.trim().length < 2 && <OperationsItem title="Type at least 2 characters" />}
+                  {!searching && query.trim().length >= 2 && results.length === 0 && <OperationsItem title="No matching members" />}
+                  {!searching && results.map((candidate) => (
+                    <EntityItem
+                      key={candidate.user_id}
+                      disabled={Boolean(candidate.membership)}
+                      onClick={() => void invite(candidate)}
+                      title={candidate.display_name || candidate.username}
+                      leading={<Avatar name={candidate.display_name || candidate.username} id={candidate.user_id} size="sm" />}
+                      status={candidate.membership ? (
+                        <span className="font-utility text-xs uppercase text-zinc-500">
+                          {candidate.membership === "pending" ? "Invited" : "Member"}
+                        </span>
+                      ) : undefined}
+                    />
+                  ))}
+                </CollectionPickerItem>
+              )}
 
-              <div className="relative">
-                <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-                  <UserPlus className="w-4 h-4 text-zinc-500" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search friends, or exact username / email…"
-                    className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
-                  />
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as (typeof ROLES)[number])}
-                    className="bg-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {(results.length > 0 || searching || query.trim().length >= 2) && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
-                    {searching && (
-                      <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
-                    )}
-                    <ItemList>{results.map((u) => (
-                      <EntityItem
-                        key={u.user_id}
-                        title={u.display_name || u.username}
-                        leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />}
-                        status={u.membership ? (
-                          <span className="text-[10px] text-zinc-400 rounded px-1 py-0.5">
-                            {u.membership === "pending" ? "Invited" : "Member"}
-                          </span>
-                        ) : undefined}
-                        actions={!u.membership ? (
-                          <button
-                            onClick={() => void invite(u)}
-                            title="Send an invite the user must accept"
-                            className="text-xs text-indigo-400 hover:text-indigo-300"
+              {visibleMembers.map((member) => {
+                if (memberMode.kind === "delete" && memberMode.id === member.user_id) {
+                  return (
+                    <CollectionDeleteItem
+                      key={member.user_id}
+                      title={`Remove ${member.display_name || member.username}?`}
+                      description="They must accept a new invite to rejoin."
+                      onCancel={() => setMemberMode({ kind: "browse" })}
+                      onConfirm={() => void removeMember(member)}
+                    />
+                  );
+                }
+                const isSelf = member.user_id === me?.user_id;
+                const removable = !isSelf && member.role !== "owner";
+                return (
+                  <EntityItem
+                    key={member.user_id}
+                    title={member.display_name || member.username}
+                    leading={<Avatar name={member.display_name || member.username} id={member.user_id} size="sm" />}
+                    status={isSelf ? <span className="font-utility text-xs uppercase text-zinc-500">{member.role}</span> : undefined}
+                    criticalStatus={member.status === "pending" ? <span className="font-utility text-xs uppercase text-amber-400">Pending</span> : undefined}
+                    actions={!isSelf ? (
+                      <>
+                        <UiSelect
+                          aria-label={`Role for ${member.display_name || member.username}`}
+                          value={member.role}
+                          onChange={(event) => void changeRole(member, event.target.value)}
+                          controlSize="compact"
+                        >
+                          {ROLES.map((candidateRole) => (
+                            <option key={candidateRole} value={candidateRole}>{candidateRole}</option>
+                          ))}
+                        </UiSelect>
+                        {removable && (
+                          <IconButton
+                            label={`Remove ${member.display_name || member.username}`}
+                            tone="danger"
+                            controlSize="compact"
+                            onClick={() => setMemberMode({ kind: "delete", id: member.user_id })}
                           >
-                            Invite
-                          </button>
-                        ) : undefined}
-                        className="border-0 px-3"
-                      />
-                    ))}</ItemList>
-                    {!searching && results.length === 0 && query.trim().length >= 2 && (
-                      <div className="px-3 py-2 text-xs text-zinc-400">
-                        No matches. Name search covers your friends — for anyone else,
-                        type their exact username or email.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+                            <Trash2 className={controlIconClasses.compact} />
+                          </IconButton>
+                        )}
+                      </>
+                    ) : undefined}
+                  />
+                );
+              })}
+
+              {visibleMembers.length === 0 && memberMode.kind !== "add" && (
+                <CollectionEmptyItem query={memberQuery} onClear={() => setMemberQuery("")} />
+              )}
+            </CollectionManager>
 
             <InviteLinksSection workspaceId={workspace.workspace_id} />
 

@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Atom,
@@ -243,18 +245,18 @@ export function SceneWorkbench({
           </p>
         </div>
         {available.length > 0 && (
-          <select
+          <UiSelect
             defaultValue=""
             onChange={(event) => {
               const manifest = templates.find((candidate) => candidate.id === event.target.value);
               if (manifest) void onAddScene(manifest);
               event.currentTarget.value = "";
             }}
-            className="h-9 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white outline-none"
+            controlSize="regular" className=" rounded-sm bg-indigo-600 px-3 text-xs font-medium text-white outline-none"
           >
             <option value="" disabled>Add a scene…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
-          </select>
+          </UiSelect>
         )}
       </div>
     );
@@ -267,18 +269,18 @@ export function SceneWorkbench({
           const meta = metaFor(id);
           const Icon = meta.Icon;
           return (
-            <button
+            <UiButton variant="plain"
               key={id}
               type="button"
               onClick={() => setActiveScene(id)}
-              className={cn(
-                "flex h-10 flex-shrink-0 items-center gap-2 rounded-lg px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
-                activeScene === id ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-              )}
+              controlSize="regular" className={cn(
+ "flex flex-shrink-0 items-center gap-2 rounded-sm px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ activeScene === id ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ )}
             >
               <Icon className="h-4 w-4" />
               {id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id}
-            </button>
+            </UiButton>
           );
         })}
       </div>
@@ -291,19 +293,19 @@ export function SceneWorkbench({
               const Icon = meta.Icon;
               const selected = activeScene === id;
               return (
-                <button
+                <UiButton variant="plain"
                   key={id}
                   type="button"
                   onClick={() => setActiveScene(id)}
                   aria-pressed={selected}
-                  className={cn(
-                    "flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
-                    selected ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-                  )}
+                  controlSize="comfortable" className={cn(
+ "flex w-full items-center gap-2 rounded-sm px-2 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ selected ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ )}
                 >
                   <Icon className={cn("h-4 w-4 flex-shrink-0", selected && meta.color)} />
                   <span className="min-w-0 truncate">{id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id}</span>
-                </button>
+                </UiButton>
               );
             })}
           </div>
@@ -311,7 +313,7 @@ export function SceneWorkbench({
             {available.length > 0 && (
               <label className="relative block">
                 <FolderPlus className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-                <select
+                <UiSelect
                   aria-label="Add scene"
                   defaultValue=""
                   onChange={(event) => {
@@ -319,11 +321,11 @@ export function SceneWorkbench({
                     if (manifest) void onAddScene(manifest);
                     event.currentTarget.value = "";
                   }}
-                  className="h-10 w-full appearance-none rounded-lg bg-zinc-900 pl-8 pr-2 text-[11px] text-zinc-400 outline-none hover:text-zinc-200 focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className=" w-full appearance-none rounded-sm bg-zinc-900 pl-8 pr-2 text-[11px] text-zinc-400 outline-none hover:text-zinc-200 focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="" disabled>Add scene</option>
                   {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
-                </select>
+                </UiSelect>
               </label>
             )}
           </div>
@@ -335,19 +337,19 @@ export function SceneWorkbench({
               {activePaths.map((path) => {
                 const selected = path === selectedPath;
                 return (
-                  <button
+                  <UiButton variant="plain"
                     key={path}
                     type="button"
                     onClick={() => selectPath(path)}
                     aria-current={selected ? "page" : undefined}
-                    className={cn(
-                      "relative min-h-11 flex-shrink-0 px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
-                      selected ? "text-indigo-300" : "text-zinc-400 hover:text-zinc-200"
-                    )}
+                    controlSize="comfortable" className={cn(
+ "relative flex-shrink-0 px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+ selected ? "text-indigo-300" : "text-zinc-400 hover:text-zinc-200"
+ )}
                   >
                     {itemTitle(activeScene, path, templates)}
-                    {selected && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
-                  </button>
+                    {selected && <span data-design-system-exempt="progress" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
+                  </UiButton>
                 );
               })}
             </nav>

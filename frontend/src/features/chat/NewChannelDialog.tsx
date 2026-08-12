@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 import { useState } from "react";
 import { Hash, Lock, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -67,30 +69,30 @@ export function NewChannelDialog({
   return (
     <Dialog title="New channel" onClose={onClose}>
       <div className="space-y-3">
-        <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+        <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
           <Hash className="w-3.5 h-3.5 text-zinc-500" />
-          <input
+          <UiInput
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
             placeholder="Channel name…"
-            className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
+            controlSize="regular" className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
           />
         </div>
 
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["public", "private"] as const).map((t) => (
-            <button
+            <UiButton variant="plain"
               key={t}
               onClick={() => setType(t)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-sm transition-colors",
-                type === t
-                  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
-                  : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
-              )}
+              controlSize="regular" className={cn(
+ "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-sm transition-colors",
+ type === t
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
+ : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ )}
             >
               {t === "public" ? (
                 <Hash className="w-3.5 h-3.5" />
@@ -98,7 +100,7 @@ export function NewChannelDialog({
                 <Lock className="w-3.5 h-3.5" />
               )}
               {t === "public" ? "Public" : "Private"}
-            </button>
+            </UiButton>
           ))}
         </div>
 
@@ -112,16 +114,16 @@ export function NewChannelDialog({
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["text", "voice"] as const).map((value) => (
-            <button
+            <UiButton variant="plain"
               type="button"
               key={value}
               onClick={() => setKind(value)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-sm transition-colors",
-                kind === value
-                  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
-                  : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
-              )}
+              controlSize="regular" className={cn(
+ "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-sm transition-colors",
+ kind === value
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
+ : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ )}
             >
               {value === "text" ? (
                 <Hash className="w-3.5 h-3.5" />
@@ -129,7 +131,7 @@ export function NewChannelDialog({
                 <Volume2 className="w-3.5 h-3.5" />
               )}
               {value === "text" ? "Text" : "Voice"}
-            </button>
+            </UiButton>
           ))}
         </div>
 

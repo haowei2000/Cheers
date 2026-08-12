@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { ShieldBan, ShieldCheck, UserPlus, Trash2, RefreshCw } from "lucide-react";
@@ -89,26 +92,26 @@ export function AdminUsers() {
       <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <ShieldBan className="w-3.5 h-3.5" />
         User management (admin)
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => load(filter)}
           className="ml-auto text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        </UiButton>
       </h2>
 
       <CreateUserForm onCreated={() => load(filter)} />
 
-      <div className="bg-zinc-900 rounded-2xl p-6 mt-4 space-y-3">
-        <input
+      <div className="bg-zinc-900 rounded-sm p-6 mt-4 space-y-3">
+        <UiInput
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by name / username / email…"
-          className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <ItemList>
+        <ItemList presentationLevel="max" controlSize="regular">
           {users.map((u) => (
             <EntityItem
               key={u.user_id}
@@ -198,33 +201,33 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
   }
 
   const inputCls =
-    "rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
-    <form onSubmit={submit} className="bg-zinc-900 rounded-2xl p-6">
+    <form onSubmit={submit} className="bg-zinc-900 rounded-sm p-6">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-3">
         <UserPlus className="w-4 h-4 text-indigo-400" /> Add user
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <input
+        <UiInput
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Username"
           className={inputCls}
         />
-        <input
+        <UiInput
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="Display name (optional)"
           className={inputCls}
         />
-        <input
+        <UiInput
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email (optional)"
           type="email"
           className={inputCls}
         />
-        <input
+        <UiInput
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Temporary password (min 12)"
@@ -232,10 +235,10 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
           autoComplete="new-password"
           className={inputCls}
         />
-        <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
+        <UiSelect value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
           <option value="member">{roleLabel("member")}</option>
           <option value="admin">{roleLabel("admin")}</option>
-        </select>
+        </UiSelect>
         <div className="flex items-end">
           <Button type="submit" disabled={busy}>
             {busy ? "Creating…" : "Create user"}

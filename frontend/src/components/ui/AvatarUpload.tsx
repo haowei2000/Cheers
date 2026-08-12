@@ -58,11 +58,12 @@ export function AvatarUpload({
       type="button"
       onClick={() => inputRef.current?.click()}
       disabled={busy}
+      data-design-system-exempt="identity"
       className="group relative flex-shrink-0 rounded-full"
       title="Change avatar"
     >
       <Avatar name={name} id={id} src={preview || src || undefined} size={size} />
-      <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+      <span data-design-system-exempt="identity" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
         {busy ? (
           <Loader2 className="h-4 w-4 animate-spin text-white" />
         ) : (
