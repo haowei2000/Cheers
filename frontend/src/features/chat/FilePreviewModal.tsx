@@ -42,7 +42,7 @@ function useFileText(fileId: string): { state: "loading" | "ready" | "error"; te
 function Centered({ children, tone = "muted" }: { children: React.ReactNode; tone?: "muted" | "error" }) {
   return (
     <div
-      className={`flex items-center justify-center gap-2 py-12 text-sm ${
+      className={`flex items-center justify-center gap-2 py-12 text-regular ${
         tone === "error" ? "text-red-400" : "text-zinc-400"
       }`}
     >
@@ -106,7 +106,7 @@ function TextBody({ file }: { file: FileInfo }) {
     html = escapeHtml(text);
   }
   return (
-    <pre className="max-h-[70vh] overflow-auto rounded-sm bg-zinc-900 p-4 text-sm leading-relaxed">
+    <pre className="max-h-[70vh] overflow-auto rounded-sm bg-zinc-900 p-4 text-regular leading-relaxed">
       <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
     </pre>
   );
@@ -189,7 +189,7 @@ function AudioBody({ file }: { file: FileInfo }) {
     <div className="flex flex-col gap-3 rounded-sm bg-zinc-950/40 p-4">
       <audio controls src={src} className="w-full" />
       {file.summary && (
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
+        <p className="whitespace-pre-wrap break-words text-regular leading-relaxed text-zinc-400">
           {file.summary}
         </p>
       )}
@@ -227,13 +227,13 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "audio" && <AudioBody file={file} />}
       {kind === "office" && <OfficeBody file={file} />}
       {kind === "none" && <UnsupportedBody file={file} />}
-      <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-400">
+      <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-compact text-zinc-400">
         <span>{typeof file.size_bytes === "number" ? formatBytes(file.size_bytes) : ""}</span>
-        <UiButton variant="plain"
+        <UiButton action="download" content="iconText" variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this file"
-          controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-200 hover:bg-zinc-700"
+          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
         >
           <Download className="h-3.5 w-3.5" /> Download
         </UiButton>

@@ -3,12 +3,14 @@
   "version": 2,
   "defaultPresentationLevel": "medium",
   "defaultControlSize": "regular",
+  "defaultContentSize": "regular",
+  "defaultTypographySize": "regular",
   "visualLanguage": {
     "name": "Editorial Correspondence",
     "principles": [
       "Use editorial rhythm, alignment, and hairline rules before containers or decoration.",
       "Keep resting surfaces borderless; rules separate dense rows and state rings communicate focus or error.",
-      "Use near-square two-pixel corners. Circles are reserved for identity, presence, and unread state.",
+      "Use near-square four-pixel corners. Circles are reserved for identity, presence, and unread state.",
       "Keep layouts compact while preserving a minimum 44pt iOS and 48dp Android touch target.",
       "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
     ],
@@ -16,6 +18,12 @@
       "display": "Source Serif 4 at display optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Semibold for Chinese introductions and major headings; Japanese and Korean use locale-correct native serif faces.",
       "reading": "Source Serif 4 at text optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Regular/Semibold for Chinese messages, previews, and long-form copy; Japanese and Korean use locale-correct native serif faces.",
       "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts. Monospace is a technical sub-role for code only."
+    },
+    "typographySizes": {
+      "minimal": "10px",
+      "compact": "12px",
+      "regular": "14px",
+      "comfortable": "16px"
     },
     "shape": {
       "cornerRadius": "4px/pt/dp",
@@ -57,12 +65,36 @@
       "description": "Dense desktop utilities and section controls; touch viewports retain a 44px hit target."
     }
   },
+  "contentSizes": {
+    "small": {
+      "avatar": "20px",
+      "icon": "14px",
+      "presence": "6px",
+      "identityRail": "64px"
+    },
+    "regular": {
+      "avatar": "28px",
+      "icon": "16px",
+      "presence": "8px",
+      "identityRail": "96px"
+    },
+    "large": {
+      "avatar": "36px",
+      "icon": "20px",
+      "presence": "10px",
+      "identityRail": "128px"
+    }
+  },
   "invariants": [
     "An explicit item presentation level overrides the inherited container level.",
     "Responsive rules may choose an inherited default but never replace an explicit item level.",
     "Critical error, approval, unread, mention, and online state remains perceivable at every level.",
     "Presentation level changes information density, not business behavior or API data.",
     "Control size changes physical height, not visible information or business state.",
+    "Content size has exactly small, regular, and large tiers; it scales identity and semantic glyphs without changing the control hit target.",
+    "Typography size has exactly minimal, compact, regular, and comfortable tiers; every production surface, including code, diff, charts, dense panels, and mastheads, must use one of them without exception.",
+    "Peer text controls use a shared width slot or an explicit fill mode; content length never determines control width.",
+    "Horizontal control padding belongs to the shared primitive and cannot be overridden by business call sites.",
     "Presentation level and control size inherit and override independently.",
     "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior."
   ],

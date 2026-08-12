@@ -54,6 +54,12 @@ export default {
           "sans-serif",
         ],
       },
+      fontSize: {
+        minimal: ["var(--type-minimal)", { lineHeight: "1.4" }],
+        compact: ["var(--type-compact)", { lineHeight: "1.45" }],
+        regular: ["var(--type-regular)", { lineHeight: "1.55" }],
+        comfortable: ["var(--type-comfortable)", { lineHeight: "1.4" }],
+      },
       colors: {
         rail: "#0f0f11",
         sidebar: "#18181b",

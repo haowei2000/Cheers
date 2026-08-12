@@ -1,11 +1,10 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { ComposerBotSettings, type MentionedBot } from "./ComposerBotSettings";
 import { readBotControls } from "./sessionControlsCache";
-import { controlHeightClasses } from "@/components/ui/control-size";
 
 /**
  * Collapsed entry point for the composer's bot model/mode + config controls.
@@ -76,32 +75,30 @@ export function ComposerModelPopover({
   // No candidate bot → nothing to configure; hide the chip entirely.
   if (bots.length === 0) return null;
 
-  const label =
-    bots.length > 1 ? `Model · ${bots.length} bots` : modelLabel ?? "Model";
+  const currentValue =
+    bots.length > 1 ? `${bots.length} bots` : modelLabel ?? "Default model";
 
   return (
     <div className="relative inline-flex min-w-0" ref={rootRef}>
-      <UiButton variant="plain"
+      <ComposerToolbarButton
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="Model & bot settings"
+        title={`Model & bot settings · ${currentValue}`}
+        aria-label={`Model and bot settings: ${currentValue}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
-          controlHeightClasses.regular,
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           open
             ? "bg-indigo-600/15 text-indigo-200"
             : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
         )}
       >
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="truncate max-w-[120px]">{label}</span>
+        <span>Model</span>
         <ChevronDown
-          className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")}
+          className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")}
         />
-      </UiButton>
+      </ComposerToolbarButton>
 
       {open && (
         <PopoverPanel className="min-w-[240px] max-w-[calc(100vw-2rem)] md:max-w-[420px] p-2">

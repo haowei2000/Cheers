@@ -111,18 +111,25 @@ header.nav {
 .brand {
   gap: 8px !important;
   color: var(--ink) !important;
-  font-size: 18px !important;
+  font-size: 16px !important;
   letter-spacing: .01em !important;
 }
-.brand .glass { font-size: 0 !important; }
+.brand .glass {
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  color: transparent;
+  font-size: 10px !important;
+}
 .brand .glass::before {
   content: "C";
   display: grid;
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 0;
-  font: 600 13px/1 var(--font-display);
+  border: 0 !important;
+  color: var(--ink);
+  font: 600 14px/1 var(--font-display);
 }
 .brand-mark { width: 20px !important; height: 20px !important; }
 .nav-links { margin-left: 24px !important; gap: 18px !important; }
@@ -155,7 +162,7 @@ header.nav {
   transition: color 140ms var(--ease), background 140ms var(--ease), border-color 140ms var(--ease) !important;
 }
 .btn { padding: 9px 13px !important; }
-.btn-lg { min-height: 42px; padding: 11px 16px !important; font-size: 13px !important; }
+.btn-lg { min-height: 44px; padding: 11px 16px !important; font-size: 14px !important; }
 .btn-solid, .btn-primary {
   border: 0 !important;
   background: var(--ink) !important;
@@ -173,27 +180,28 @@ header.nav {
 .icon-btn { width: auto !important; min-width: 36px; padding: 0 9px; }
 
 /* Editorial hierarchy */
-.page-hero, article > .wrap:first-child, article.wrap > .hero { border: 0; }
+.page-hero, article > .wrap:first-child, article.wrap > .hero { border: 0 !important; }
 .page-hero { padding: 64px 0 34px !important; }
 .page-hero h1, article h1, .hero h1 {
   max-width: 18ch;
   margin: 0;
-  font-size: clamp(38px, 7vw, 76px) !important;
-  font-weight: 480 !important;
-  letter-spacing: .006em !important;
+  font-size: 16px !important;
+  font-weight: 720 !important;
+  letter-spacing: .025em !important;
+  line-height: 1.2;
 }
 .hero h1 { max-width: 14ch; }
-.hero-top h1 { max-width: 16ch; font-size: clamp(44px, 7vw, 88px) !important; }
+.hero-top h1 { max-width: 16ch; font-size: 16px !important; }
 .lead, .lede, .page-hero .lead, .section-head p, .hero p {
   max-width: 62ch;
   color: var(--ink-soft) !important;
   font-family: var(--font-reading) !important;
-  font-size: clamp(16px, 2vw, 19px) !important;
+  font-size: 16px !important;
   line-height: 1.55 !important;
 }
 .eyebrow, .kicker, .label {
   color: var(--ink-faint) !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 650 !important;
   letter-spacing: .12em !important;
   text-transform: uppercase;
@@ -201,9 +209,9 @@ header.nav {
 section { padding-block: 50px !important; }
 .section-head { margin-bottom: 22px !important; }
 .section-head h2, section > h2, article h2, .prose h2 {
-  font-size: clamp(25px, 3vw, 34px) !important;
-  font-weight: 500 !important;
-  letter-spacing: .006em !important;
+  font-size: 16px !important;
+  font-weight: 650 !important;
+  letter-spacing: .015em !important;
 }
 
 /* Cards become columns, rules, and restrained panels. */
@@ -256,7 +264,7 @@ section { padding-block: 50px !important; }
   width: 24px;
   height: 24px;
   place-items: center;
-  border: 0;
+  border: 0 !important;
   background: var(--accent-tint);
   color: var(--ink-soft);
   font: 650 10px/1 var(--font-utility);
@@ -274,10 +282,10 @@ article p, article li, .prose p, .prose li {
   line-height: 1.72 !important;
 }
 article h2 { margin-top: 52px !important; padding-top: 18px; border-top: 1px solid var(--line); }
-article h3 { margin-top: 30px; font-size: 21px; }
+article h3 { margin-top: 30px; font-size: 16px; font-weight: 600; letter-spacing: .01em; }
 .legal { padding: 18px 0 76px !important; }
 .legal .prose { max-width: 760px !important; }
-.prose h2 { margin: 48px 0 13px !important; padding-top: 0; border: 0; }
+.prose h2 { margin: 48px 0 13px !important; padding-top: 0; border: 0 !important; }
 .prose h2:first-of-type { margin-top: 8px !important; }
 .prose p + p { margin-top: 15px !important; }
 .prose a, article p a, article li a { color: var(--ink) !important; text-decoration: underline; }
@@ -294,7 +302,7 @@ pre.code, .code {
 code { border: 0 !important; border-radius: var(--radius) !important; background: var(--accent-tint) !important; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 0 !important; border-bottom: 1px solid var(--line) !important; }
-th { color: var(--ink) !important; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+th { color: var(--ink) !important; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 td { color: var(--ink-soft) !important; }
 .doc-row, .list-row { padding-block: 14px !important; border-color: var(--line) !important; }
 
@@ -411,15 +419,15 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
   .nav-links { display: none !important; }
   .nav-actions .btn-outline, .nav-actions .btn-primary { display: none; }
   .page-hero, article > .wrap:first-child, article.wrap > .hero { padding-top: 42px !important; }
-  .page-hero h1, article h1, .hero h1 { font-size: clamp(36px, 12vw, 58px) !important; }
+  .page-hero h1, article h1, .hero h1 { font-size: 16px !important; }
   .foot-grid { grid-template-columns: 1fr 1fr !important; }
 }
 
 @media (max-width: 560px) {
   .nav-inner { gap: 12px !important; }
-  .brand { font-size: 17px !important; }
+  .brand { font-size: 16px !important; }
   .nav-actions { margin-left: auto !important; }
-  .nav-actions .btn { min-height: 34px; padding-inline: 9px !important; }
+  .nav-actions .btn { min-height: 36px; padding-inline: 9px !important; }
   .start-grid, .platform-grid, .link-grid, .surface-grid, .cards, .docs-grid, .steps, .values {
     grid-template-columns: 1fr !important;
   }

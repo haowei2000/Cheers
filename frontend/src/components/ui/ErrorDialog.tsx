@@ -21,7 +21,7 @@ export function ErrorDialog({
   return (
     <Dialog
       title={
-        <span className="flex items-center gap-1.5 text-red-400">
+        <span className="flex items-center gap-2 text-red-400">
           <AlertCircle className="w-4 h-4" />
           {title}
         </span>
@@ -29,15 +29,15 @@ export function ErrorDialog({
       onClose={onClose}
       maxWidth="max-w-sm"
     >
-      <p className="text-sm text-zinc-300 whitespace-pre-wrap break-words">{message}</p>
+      <p className="text-regular text-zinc-300 whitespace-pre-wrap break-words">{message}</p>
       <div className="flex justify-end gap-2 pt-1">
         {action ? (
           <>
-            <Button variant="secondary" size="sm" onClick={onClose}>
+            <Button variant="secondary" controlSize="compact" onClick={onClose}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              controlSize="compact"
               onClick={() => {
                 onClose();
                 action.onClick();
@@ -47,7 +47,7 @@ export function ErrorDialog({
             </Button>
           </>
         ) : (
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" controlSize="compact" onClick={onClose}>
             Got it
           </Button>
         )}

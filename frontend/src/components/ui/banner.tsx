@@ -48,7 +48,7 @@ export function Banner({
     <div
       role={severity === "error" ? "alert" : "status"}
       className={cn(
-        "flex items-center gap-2.5 rounded-sm px-3 py-2 text-sm",
+        "flex items-center gap-3 rounded-sm px-3 py-2 text-regular",
         severityCls[severity],
         className
       )}
@@ -61,7 +61,7 @@ export function Banner({
           controlSize="compact"
           onClick={action.onClick}
           className={cn(
-            "flex-shrink-0 px-2.5 font-semibold",
+            "flex-shrink-0 px-3 font-semibold",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
             actionCls[severity]
           )}

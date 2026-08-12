@@ -200,7 +200,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   );
 
   if (!access) {
-    return <p className="text-xs text-zinc-400 px-1 py-2">Loading grants…</p>;
+    return <p className="text-compact text-zinc-400 px-1 py-2">Loading grants…</p>;
   }
 
   const editor = (editorMode: "add" | "edit", key?: string) => (
@@ -256,7 +256,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
   return (
     <div className="space-y-3">
-          <p className="font-utility text-xs text-zinc-400">
+          <p className="font-utility text-compact text-zinc-400">
             Who is authorized for what. No grant → the default: members may message the bot,
             cancel a running task, and view its activity; agent settings, session controls,
             remote file write, and answering approvals start owner-only. Precedence: user ▸
@@ -268,17 +268,17 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           the explicit overrides below. */}
       {access.effective && access.effective.length > 0 && (
         <div className="overflow-hidden rounded-sm ">
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
-            <p className="text-[11px] font-medium text-zinc-300">Effective defaults · Bot-wide</p>
-            <span className="text-[10px] text-zinc-400">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/40">
+            <p className="text-compact font-medium text-zinc-300">Effective defaults · Bot-wide</p>
+            <span className="text-minimal text-zinc-400">
               <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
               grants can narrow this per scope
             </span>
           </div>
-          <table className="w-full text-[11px]">
+          <table className="w-full text-compact">
             <thead>
               <tr className="text-zinc-400">
-                <th className="px-2.5 py-1 text-left font-normal">Event</th>
+                <th className="px-3 py-1 text-left font-normal">Event</th>
                 <th
                   className="px-2 py-1 text-center font-normal text-indigo-300"
                   title="The bot owner (you). Do/Answer are always allowed — owner privilege, not revocable by grants. View follows the same rules as everyone else."
@@ -301,7 +301,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     <tr>
                       <td
                         colSpan={2 + MATRIX_ROLES.length}
-                        className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-400"
+                        className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wider text-zinc-400"
                         title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
                         {CAPABILITY_LABEL[cap].label}
@@ -311,7 +311,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                       const gl = grantLabel(cap, c.event_class);
                       return (
                       <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
-                        <td className="px-2.5 py-1">
+                        <td className="px-3 py-1">
                           <span
                             className="text-zinc-300"
                             title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}
@@ -409,8 +409,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               key={id}
               leading={<ShieldCheck className={controlIconClasses.regular} />}
               title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-xs uppercase text-emerald-300" : "font-utility text-xs uppercase text-red-300"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-xs uppercase text-amber-400">Expired</span> : undefined}
+              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-emerald-300" : "font-utility text-compact uppercase text-red-300"}>{rule.decision}</span>}
+              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-amber-400">Expired</span> : undefined}
               actions={(
                 <>
                   <IconButton label="Edit permission grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>

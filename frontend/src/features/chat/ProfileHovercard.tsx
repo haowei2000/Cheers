@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { AtSign } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { PresenceDot } from "@/components/ui/presence-dot";
 
 /** Minimal profile shape the card renders. A channel MemberItem is a superset. */
 export interface ProfileData {
@@ -175,12 +176,12 @@ function ProfileCard({
     >
       <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
-          <Avatar name={name} src={member.avatar_url || undefined} id={member.member_id} size="lg" />
+          <Avatar name={name} src={member.avatar_url || undefined} id={member.member_id} size="large" />
           {member.is_online != null && (
-            <span
-              data-design-system-exempt="presence"
+            <PresenceDot
+              contentSize="large"
               className={
-                "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 " +
+                "absolute -bottom-0.5 -right-0.5 ring-zinc-900 " +
                 (member.is_online ? "bg-emerald-500" : "bg-zinc-600")
               }
               title={member.is_online ? "Online" : "Offline"}
@@ -188,17 +189,17 @@ function ProfileCard({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <span className="font-semibold text-zinc-100 truncate">{name}</span>
             {isBot && (
-              <span className="text-[10px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className="text-minimal px-1 py-1 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
                 BOT
               </span>
             )}
           </div>
-          {handle && <p className="text-xs text-zinc-400 truncate">{handle}</p>}
+          {handle && <p className="text-compact text-zinc-400 truncate">{handle}</p>}
           {(member.status_emoji || member.status_text) && (
-            <p className="mt-1 text-xs text-zinc-300 truncate">
+            <p className="mt-1 text-compact text-zinc-300 truncate">
               {member.status_emoji && <span className="mr-1">{member.status_emoji}</span>}
               {member.status_text}
             </p>
@@ -206,7 +207,7 @@ function ProfileCard({
           {member.status_updated_at &&
             (member.status_emoji || member.status_text) &&
             relativeTime(member.status_updated_at) && (
-              <p className="mt-0.5 text-[10px] text-zinc-400">
+              <p className="mt-1 text-minimal text-zinc-400">
                 updated {relativeTime(member.status_updated_at)}
               </p>
             )}
@@ -215,23 +216,23 @@ function ProfileCard({
 
       {member.bio && (
         <div>
-          <p className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          <p className="text-compact text-zinc-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
             {member.bio}
           </p>
         </div>
       )}
       {member.role && member.role !== "member" && (
         <div>
-          <span className="text-[10px] uppercase tracking-wide text-zinc-400">
+          <span className="text-minimal uppercase tracking-wide text-zinc-400">
             {member.role}
           </span>
         </div>
       )}
       {onMention && (
-        <UiButton variant="plain"
+        <UiButton action="mention" content="iconText" controlWidth="fill" variant="plain"
           type="button"
           onClick={onMention}
-          controlSize="comfortable" className="flex w-full items-center justify-center gap-2 rounded-sm bg-indigo-500/12 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          controlSize="comfortable" className="flex items-center justify-center gap-2 rounded-sm bg-indigo-500/12  font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
         >
           <AtSign className="h-4 w-4" />
           Mention {name}

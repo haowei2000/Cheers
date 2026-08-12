@@ -1,10 +1,11 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
-import { controlSquareClasses, useControlSize, type ControlSize } from "./control-size";
+import type { ControlSize } from "./control-size";
+import { Button } from "./button";
 
 type IconButtonTone = "neutral" | "danger" | "success" | "accent";
 
-interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "content"> {
   label: string;
   tone?: IconButtonTone;
   controlSize?: ControlSize;
@@ -30,24 +31,24 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     },
     ref
   ) => {
-    const size = useControlSize(controlSize);
     return (
-      <button
+      <Button
         ref={ref}
         type={type}
         title={props.title ?? label}
         aria-label={label}
-        data-control-size={size}
+        content="icon"
+        controlSize={controlSize}
+        variant="plain"
         className={cn(
-          "inline-flex flex-shrink-0 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
-          controlSquareClasses[size],
+          "flex-shrink-0",
           toneClasses[tone],
           className
         )}
         {...props}
       >
         {children}
-      </button>
+      </Button>
     );
   }
 );

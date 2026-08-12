@@ -44,7 +44,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-400">
+      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-zinc-400">
         Loading image…
       </div>
     );
@@ -83,8 +83,8 @@ function AudioTile({ file }: { file: FileInfo }) {
   }, [file.file_id]);
 
   return (
-    <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-2.5 py-2">
-      <div className="flex items-center gap-1.5 text-xs text-zinc-200">
+    <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-3 py-2">
+      <div className="flex items-center gap-2 text-compact text-zinc-200">
         <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
           {file.original_filename || "audio"}
@@ -94,18 +94,18 @@ function AudioTile({ file }: { file: FileInfo }) {
         )}
       </div>
       {failed ? (
-        <UiButton variant="plain"
+        <UiButton action="download" variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this audio file"
-          className="text-left text-[11px] text-zinc-400 hover:text-zinc-200"
+          className="text-left  text-zinc-400 hover:text-zinc-200"
         >
           Playback unavailable — click to download
         </UiButton>
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
-        <div className="flex h-9 items-center gap-1.5 text-[11px] text-zinc-400">
+        <div className="flex h-9 items-center gap-2 text-compact text-zinc-400">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…
         </div>
       )}
@@ -128,7 +128,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 
   if (file.summary) {
     return (
-      <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-400">
+      <p className="whitespace-pre-wrap break-words text-compact leading-relaxed text-zinc-400">
         {file.summary}
       </p>
     );
@@ -137,8 +137,8 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   const status = file.transcript_status;
   if (requested || status === "pending") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
-        <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
+      <span className="inline-flex items-center gap-1 text-compact text-zinc-400">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Transcribing…
       </span>
     );
   }
@@ -153,13 +153,13 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 
   return (
     /* design-system-exempt: drop-zone */
-    <UiButton variant="plain"
+    <UiButton action="transcribe" content="iconText" variant="plain"
       type="button"
       onClick={request}
       title="Transcribe this audio to text"
-      className="inline-flex w-fit items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
     >
-      <Captions className="h-3 w-3" />
+      <Captions className="h-3.5 w-3.5" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
     </UiButton>
   );
@@ -219,12 +219,12 @@ function StagedFileTile({ file }: { file: FileInfo }) {
 
   return (
     /* design-system-exempt: drop-zone */
-    <UiButton variant="plain"
+    <UiButton content="iconText" variant="plain" role="option"
       type="button"
       onClick={handleClick}
       disabled={phase === "realizing"}
       title={file.original_filename || file.file_id}
-      controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40 px-2.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
+      controlSize="regular" className="inline-flex items-center gap-2 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40  text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
       data-design-system-exempt="drop-zone"
     >
       {phase === "realizing" ? (
@@ -248,7 +248,7 @@ export function FileTile({ file }: { file: FileInfo }) {
   return (
     <>
       {isImage ? (
-        <UiButton variant="plain"
+        <UiButton variant="plain" role="option"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
@@ -257,11 +257,11 @@ export function FileTile({ file }: { file: FileInfo }) {
           <ImagePreview file={file} />
         </UiButton>
       ) : (
-        <UiButton variant="plain"
+        <UiButton content="iconText" variant="plain" role="option"
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800/60 px-2.5 text-xs text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
+          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>

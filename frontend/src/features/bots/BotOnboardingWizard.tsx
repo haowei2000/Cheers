@@ -43,6 +43,7 @@ import {
   type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
+import { NavigationItem } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
 
@@ -82,7 +83,7 @@ const FALLBACK_AGENTS: AcpAgentInfo[] = [
 function CopyBtn({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <UiButton variant="plain"
+    <UiButton action="copy" variant="plain"
       type="button"
       onClick={async () => {
         try {
@@ -93,7 +94,7 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
           /* clipboard blocked */
         }
       }}
-      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       {done ? (
         <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -118,12 +119,12 @@ function download(filename: string, text: string) {
 function Stepper({ step }: { step: 0 | 1 | 2 }) {
   const labels = ["Choose bot", "Choose host", "Connect"];
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex items-center gap-2 text-compact">
       {/* design-system-exempt: step-indicator — ordered wizard progress, not an entity list. */}
       {labels.map((label, i) => (
         <div key={label} className="flex items-center gap-2">
           <span
-            className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+            className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-compact font-semibold ${
               i <= step
                 ? "bg-indigo-600 text-white"
                 : "bg-zinc-800 text-zinc-400"
@@ -152,8 +153,8 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
 function ReachabilityNote({ reachability }: { reachability: { configured: boolean } }) {
   if (reachability.configured) return null;
   return (
-    <p className="flex items-start gap-1.5 text-xs text-amber-400">
-      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+    <p className="flex items-start gap-2 text-compact text-amber-400">
+      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
         so a connector running anywhere else may not be able to sign in. Setting
@@ -352,13 +353,13 @@ export function BotOnboardingWizard({
       <Stepper step={step} />
       <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-3">
         {error && (
-          <p className="text-xs text-red-400 break-words">{error}</p>
+          <p className="text-compact text-red-400 break-words">{error}</p>
         )}
 
         {/* ── Step 0: choose / create bot ───────────────────────────── */}
         {step === 0 && (
           <div className="space-y-3">
-            <div className="rounded-sm bg-indigo-950/35 px-3 py-2.5 text-xs text-indigo-100">
+            <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-indigo-100">
               <p className="font-medium">A bot is an identity; a connector is where it runs.</p>
               <p className="mt-1 text-indigo-200/75">
                 {localDesktop
@@ -368,25 +369,23 @@ export function BotOnboardingWizard({
                     : "This browser creates the bot and a secure pairing code. Run the connector later on the Mac or Linux machine where your agent is installed."}
               </p>
             </div>
-            <div className="flex gap-2 text-xs">
-              <UiButton variant="plain"
+            <div className="flex gap-2 text-compact">
+              <UiButton action="create" variant="plain"
                 type="button"
                 onClick={() => setPick("create")}
-                controlSize="regular" className={`rounded-sm px-3 ${
- pick === "create"
- ? "bg-indigo-600 text-white"
+                controlSize="regular" className={`rounded-sm ${
+ pick === "create"? "bg-indigo-600 text-white"
  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
  }`}
               >
                 New bot
               </UiButton>
-              <UiButton variant="plain"
+              <UiButton action="choose" variant="plain"
                 type="button"
                 disabled={!bots.length}
                 onClick={() => setPick("existing")}
-                controlSize="regular" className={`rounded-sm px-3 disabled:opacity-40 ${
- pick === "existing"
- ? "bg-indigo-600 text-white"
+                controlSize="regular" className={`rounded-sm disabled:opacity-40 ${
+ pick === "existing"? "bg-indigo-600 text-white"
  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
  }`}
               >
@@ -398,36 +397,36 @@ export function BotOnboardingWizard({
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+                    <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Username
                     </label>
                     <UiInput
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="codex-main"
-                      controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+                    <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Display name
                     </label>
                     <UiInput
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="Codex"
-                      controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
               </div>
             ) : (
               <div>
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot</label>
+                <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot</label>
                 <UiSelect
                   value={existingId}
                   onChange={(e) => setExistingId(e.target.value)}
-                  controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {bots.map((b) => (
                     <option key={b.bot_id} value={b.bot_id}>
@@ -439,13 +438,13 @@ export function BotOnboardingWizard({
             )}
 
             <div>
-              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+              <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                 Agent type
               </label>
               <UiSelect
                 value={agentType}
                 onChange={(e) => setAgentType(e.target.value)}
-                controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -458,12 +457,12 @@ export function BotOnboardingWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button variant="secondary" onClick={setupLocally} disabled={busy}>
+                <Button action="setup" content="iconText" variant="secondary" onClick={setupLocally} disabled={busy}>
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   <Laptop className="w-4 h-4" /> Set up on this Mac
                 </Button>
               )}
-              <Button onClick={validateAndAdvance} disabled={busy}>
+              <Button action="setup" onClick={validateAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 {localDesktop ? "Set up another host" : "Choose host"}
               </Button>
@@ -474,7 +473,7 @@ export function BotOnboardingWizard({
         {/* ── Step 1: pick a mode ───────────────────────────────────── */}
         {step === 1 && (
           <div className="space-y-3">
-            <p className="text-xs text-zinc-400">
+            <p className="text-compact text-zinc-400">
               Connecting{" "}
               <span className="text-zinc-300">
                 @{bot?.username ?? username.trim()}
@@ -506,10 +505,10 @@ export function BotOnboardingWizard({
               />
             </div>
             <div className="flex justify-start">
-              <UiButton variant="plain"
+              <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </UiButton>
@@ -539,17 +538,17 @@ export function BotOnboardingWizard({
             )}
             <ConnectionWatch botId={bot.bot_id} username={bot.username} />
             <div className="flex items-center justify-between">
-              <UiButton variant="plain"
+              <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => {
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
               </UiButton>
-              <Button
+              <Button action="done"
                 onClick={() => {
                   onDone();
                   onClose();
@@ -599,19 +598,19 @@ function ConnectionWatch({ botId, username }: { botId: string; username: string 
 
   if (online === null) {
     return (
-      <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+      <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-zinc-400">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Checking whether @{username} is connected…
       </p>
     );
   }
   return online ? (
-    <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
+    <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-compact text-emerald-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
       @{username} is online — the connector reached the gateway. You're done.
     </p>
   ) : (
-    <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+    <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-zinc-400">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
       Waiting for @{username} to connect — finish the steps above on the agent's
       machine. This updates on its own.
@@ -635,27 +634,18 @@ function ModeCard({
   disabled?: boolean;
 }) {
   return (
-    <UiButton variant="plain"
-      type="button"
+    <NavigationItem
       onClick={onClick}
       disabled={disabled}
-      className="flex items-start gap-3 rounded-sm bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:hover:bg-zinc-800/60"
-    >
-      <div className="w-9 h-9 rounded-sm bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+      controlSize="comfortable"
+      presentationLevel="medium"
+      className="border-b-0 bg-zinc-800/60 hover:bg-zinc-800"
+      leading={<div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
         {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-zinc-100 flex items-center gap-2">
-          {title}
-          {badge && (
-            <span className="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-              {badge}
-            </span>
-          )}
-        </p>
-        <p className="text-xs text-zinc-400 mt-0.5">{desc}</p>
-      </div>
-    </UiButton>
+      </div>}
+      title={<span title={`${title} — ${desc}`}>{title} — {desc}</span>}
+      status={badge ? <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-zinc-400">{badge}</span> : undefined}
+    />
   );
 }
 
@@ -681,7 +671,7 @@ function ManualPanel({
   const tokenFile = config?.token_file ?? `secrets/${accountId}.token`;
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-400">
+      <p className="text-compact text-zinc-400">
         Manual setup for <span className="text-zinc-300">@{bot.username}</span>{" "}
         ({agentType}). Two pieces: a settings file (safe to keep) and a token
         (a password — save it so only you can read it, and never commit it).
@@ -690,14 +680,14 @@ function ManualPanel({
       {/* 1. config */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             1. Connector config
           </span>
-          <UiButton variant="plain"
+          <UiButton action="create" variant="plain"
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-3 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -707,13 +697,13 @@ function ManualPanel({
           <>
             <ReachabilityNote reachability={config.reachability} />
             <div className="rounded-sm bg-zinc-950 p-3 max-h-48 overflow-y-auto">
-              <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+              <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
                 {config.config_toml}
               </pre>
             </div>
             <div className="flex items-center gap-3">
               <CopyBtn value={config.config_toml} label="Copy config" />
-              <UiButton variant="plain"
+              <UiButton action="download" content="iconText" variant="plain"
                 type="button"
                 onClick={() =>
                   download(
@@ -721,11 +711,11 @@ function ManualPanel({
                     config.config_toml
                   )
                 }
-                className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </UiButton>
-              <span className="text-xs text-zinc-400">
+              <span className="text-compact text-zinc-400">
                 save as <code className="text-zinc-400">{configFile}</code>
               </span>
             </div>
@@ -736,26 +726,26 @@ function ManualPanel({
       {/* 2. token */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             2. One-time token
           </span>
-          <Button size="sm" onClick={onGenToken} disabled={busy}>
+          <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
             <KeyRound className="w-3.5 h-3.5" />
             {token ? "Rotate token" : "Issue token"}
           </Button>
         </div>
         {token && (
           <>
-            <p className="text-xs text-amber-400">
+            <p className="text-compact text-amber-400">
               {token.note ?? "Shown once. Rotating replaces any previous token."}
             </p>
             <div className="rounded-sm bg-zinc-950 p-3">
-              <code className="text-xs text-emerald-300 break-all">
+              <code className="text-compact text-emerald-300 break-all">
                 {token.token}
               </code>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-400">
+              <span className="text-compact text-zinc-400">
                 write to <code className="text-zinc-400">~/.cheers/{tokenFile}</code> (chmod 600)
               </span>
               <CopyBtn value={token.token} label="Copy token" />
@@ -766,24 +756,24 @@ function ManualPanel({
 
       {/* 3. run */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <span className="text-xs font-semibold text-zinc-300">3. Start it</span>
+        <span className="text-compact font-semibold text-zinc-300">3. Start it</span>
         <div className="rounded-sm bg-zinc-950 p-3">
-          <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+          <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
 # (save the config + token from above into the paths shown)
 cce-acp-connector start --config ${configFile} --name ${accountId}
 cce-acp-connector status --name ${accountId}`}
           </pre>
         </div>
-        <div className="space-y-1.5 pt-1">
-          <p className="text-xs text-zinc-400">
+        <div className="space-y-2 pt-1">
+          <p className="text-compact text-zinc-400">
             Need the connector binary? Download the prebuilt release plus the sibling{" "}
             <code className="text-zinc-400">cheers-mcp-server</code> (no Rust toolchain needed;
             default <code className="text-zinc-400">inject_cheers</code> resolves the MCP companion
             next to the connector):
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+            <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
               {CONNECTOR_DOWNLOAD_CMD}
             </pre>
           </div>
@@ -792,13 +782,13 @@ cce-acp-connector status --name ${accountId}`}
               href={`https://github.com/${CONNECTOR_RELEASES_REPO}/releases/tag/${CONNECTOR_RELEASE_TAG}`}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-indigo-300 hover:text-indigo-200 underline underline-offset-2"
+              className="text-compact text-indigo-300 hover:text-indigo-200 underline underline-offset-2"
             >
               All platforms &amp; versions on GitHub Releases
             </a>
             <CopyBtn value={CONNECTOR_DOWNLOAD_CMD} label="Copy command" />
           </div>
-          <p className="text-xs text-zinc-400">
+          <p className="text-compact text-zinc-400">
             Or build from source:{" "}
             <code className="text-zinc-400">cargo build --release</code> in{" "}
             <code className="text-zinc-400">packages/cheers-acp-connector-rs</code>.
@@ -863,7 +853,7 @@ function ScriptPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-400">
+      <p className="text-compact text-zinc-400">
         One command on the agent's machine for{" "}
         <span className="text-zinc-300">@{bot.username}</span> ({agentType}). It
         trades the code below for a token, saves both files, and installs the
@@ -872,21 +862,21 @@ function ScriptPanel({
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton variant="plain"
+              <UiButton action="revoke" content="iconText" variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
             )}
-            <Button size="sm" onClick={mint} disabled={busy}>
+            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
@@ -897,7 +887,7 @@ function ScriptPanel({
           </div>
         </div>
         {code && (
-          <p className="text-xs text-amber-400">
+          <p className="text-compact text-amber-400">
             Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.{" "}
             {code.live_codes} live code{code.live_codes === 1 ? "" : "s"} for this bot.
           </p>
@@ -906,17 +896,17 @@ function ScriptPanel({
 
       {code && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             2. Run on the agent's machine
           </span>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <pre className="text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
+            <pre className="text-compact leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
               {command}
             </pre>
           </div>
           {needsApiKeyHint && (
-            <div className="rounded-sm bg-amber-500/5 px-2.5 py-2 space-y-1.5">
-              <p className="text-[11px] leading-relaxed text-amber-200/90">
+            <div className="rounded-sm bg-amber-500/5 px-3 py-2 space-y-2">
+              <p className="text-compact leading-relaxed text-amber-200/90">
                 Headless API-key auth: export{" "}
                 <code className="text-amber-100">{apiKeyVar}</code> in the{" "}
                 <span className="text-amber-100">same</span> command so
@@ -924,7 +914,7 @@ function ScriptPanel({
                 shell profile will not reach the connector — and Cheers will not
                 show a login URL for EnvVar methods.
               </p>
-              <pre className="text-[11px] leading-relaxed text-emerald-300/90 whitespace-pre-wrap break-all">
+              <pre className="text-compact leading-relaxed text-emerald-300/90 whitespace-pre-wrap break-all">
                 {commandWithKey}
               </pre>
               <div className="flex justify-end">
@@ -932,13 +922,13 @@ function ScriptPanel({
               </div>
             </div>
           )}
-          <p className="text-xs text-zinc-400">
+          <p className="text-compact text-zinc-400">
             No terminal handy? If that machine has the Cheers desktop app, open{" "}
             <span className="text-zinc-300">Settings → Connector → I have a code</span>{" "}
             and paste the code there instead.
           </p>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400">
+            <span className="text-compact text-zinc-400">
               Tip: prepend a space so the code stays out of shell history
               (<code className="text-zinc-400">HISTCONTROL=ignorespace</code>).
             </span>
@@ -1005,7 +995,7 @@ function AgentPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-400">
+      <p className="text-compact text-zinc-400">
         Hand your own agent a prompt and it runs the installer for you. Honest
         framing: this is the install script (mode 2), driven by your agent — so
         it must leave a background service running, or{" "}
@@ -1013,28 +1003,28 @@ function AgentPanel({
         the agent's turn ends.
       </p>
       {guidanceError && (
-        <p className="text-xs text-red-400 break-words">
+        <p className="text-compact text-red-400 break-words">
           Failed to load the agent prompt template: {guidanceError}
         </p>
       )}
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton variant="plain"
+              <UiButton action="revoke" content="iconText" variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
             )}
-            <Button size="sm" onClick={mint} disabled={busy}>
+            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
@@ -1045,7 +1035,7 @@ function AgentPanel({
           </div>
         </div>
         {code && (
-          <p className="text-xs text-amber-400">
+          <p className="text-compact text-amber-400">
             Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.
           </p>
         )}
@@ -1053,11 +1043,11 @@ function AgentPanel({
 
       {code && guidance && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-xs font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-300">
             2. Paste this to your agent
           </span>
           <div className="rounded-sm bg-zinc-950 p-3 max-h-56 overflow-y-auto">
-            <pre className="text-[11px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
+            <pre className="text-compact leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
               {prompt}
             </pre>
           </div>

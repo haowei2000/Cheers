@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   groupMessagesByReply,
+  isDiscussionConsecutive,
   isVisuallyConsecutive,
   messageSessionId,
 } from "./messageTree";
@@ -129,5 +130,19 @@ describe("isVisuallyConsecutive", () => {
       created_at: at(1),
     });
     expect(isVisuallyConsecutive(first, task)).toBe(false);
+  });
+});
+
+describe("isDiscussionConsecutive", () => {
+  it("groups replies from the same sender and parent within thirty minutes", () => {
+    const first = msg({ msg_id: "a", sender_id: "u1", reply_to_msg_id: "root", created_at: "2026-08-09T10:00:00Z" });
+    const next = msg({ msg_id: "b", sender_id: "u1", reply_to_msg_id: "root", created_at: "2026-08-09T10:29:00Z" });
+    expect(isDiscussionConsecutive(first, next)).toBe(true);
+  });
+
+  it("keeps identity visible when the reply target changes", () => {
+    const first = msg({ msg_id: "a", sender_id: "u1", reply_to_msg_id: "root-a", created_at: "2026-08-09T10:00:00Z" });
+    const next = msg({ msg_id: "b", sender_id: "u1", reply_to_msg_id: "root-b", created_at: "2026-08-09T10:01:00Z" });
+    expect(isDiscussionConsecutive(first, next)).toBe(false);
   });
 });

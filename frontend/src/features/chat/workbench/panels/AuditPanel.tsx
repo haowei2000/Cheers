@@ -184,7 +184,7 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
   const name = member?.display_name || member?.username || short(id);
   return (
     <span className="inline-flex items-center gap-1 min-w-0">
-      <Avatar name={name} src={member?.avatar_url ?? undefined} id={id} size="xs" className="!w-4 !h-4 !text-[8px]" />
+      <Avatar name={name} src={member?.avatar_url ?? undefined} id={id} size="small" />
       <span className="truncate text-zinc-400">{name}</span>
     </span>
   );
@@ -193,8 +193,8 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-2">
-      <span className="text-[10px] uppercase tracking-wide text-zinc-400 w-14 flex-shrink-0 pt-px">{label}</span>
-      <span className="min-w-0 flex-1 text-[11px] text-zinc-400 break-words">{children}</span>
+      <span className="text-minimal uppercase tracking-wide text-zinc-400 w-14 flex-shrink-0 pt-px">{label}</span>
+      <span className="min-w-0 flex-1 text-compact text-zinc-400 break-words">{children}</span>
     </div>
   );
 }
@@ -230,23 +230,22 @@ function AuditRow({
   );
 
   return (
-    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-1.5`}>
+    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-2`}>
       <WorkbenchItem
-        presentationLevel="max"
+        presentationLevel="medium"
         title={content || t.label}
         leading={e.bot_id ? <Avatar
               name={bot?.display_name || bot?.username || short(e.bot_id)}
               src={bot?.avatar_url ?? undefined}
               id={e.bot_id}
-              size="xs"
-              className="!w-5 !h-5 !text-[9px]"
+              size="small"
             /> : undefined}
-        subtitle={<span className="flex items-center gap-1.5 flex-wrap">
+        status={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
               <span
-                className={`inline-flex items-center gap-1 text-[11px] font-medium ${t.text}`}
+                className={`inline-flex items-center gap-1 text-compact font-medium ${t.text}`}
                 title={t.raw || undefined}
               >
-                <t.Icon className="w-3 h-3" />
+                <t.Icon className="w-3.5 h-3.5" />
                 {t.label}
               </span>
               {e.actor_id && (
@@ -257,25 +256,25 @@ function AuditRow({
               )}
               {target && (
                 <>
-                  <span className="text-[10px] text-zinc-400">for</span>
+                  <span className="text-minimal text-zinc-400">for</span>
                   <MemberChip id={e.target_user_id} member={target} />
                 </>
               )}
             </span>}
-        trailing={<span className="text-[10px] tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
+        trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-[10px] text-zinc-400 hover:text-indigo-300">
+            <UiButton action="open" variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className=" text-zinc-400 hover:text-indigo-300">
               Jump
             </UiButton>
           )}
           {hasDetails && (
-          <UiButton variant="plain"
+          <UiButton action={open ? "collapse" : "expand"} content="iconText" variant="plain"
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
           >
-            <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
+            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
           </UiButton>
           )}
@@ -284,7 +283,7 @@ function AuditRow({
       />
 
         {open && (
-          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-2.5 py-2">
+          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-3 py-2">
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
@@ -357,9 +356,9 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   return (
     <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
       {events == null ? (
-        <div className="px-3 py-6 text-xs text-zinc-400">Loading…</div>
+        <div className="px-3 py-6 text-compact text-zinc-400">Loading…</div>
       ) : events.length === 0 ? (
-        <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
+        <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4" />
           No permission decisions yet
         </div>

@@ -43,12 +43,12 @@
     display: flex; align-items: center; gap: 8px;
     height: 56px; max-width: 1280px; margin: 0 auto; padding: 0 24px;
   }
-  .brand { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; color: var(--ink); }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-size: 16px; color: var(--ink); }
   .brand:hover { opacity: 1; }
   .brand-mark { width: 18px; height: 18px; display: grid; place-items: center; }
   .brand-mark svg { width: 18px; height: 18px; }
   .nav-links { display: flex; align-items: center; gap: 2px; margin-left: 28px; }
-  .nav-links a { font-size: 14px; color: var(--ink); padding: 6px 14px; border-radius: 999px; }
+  .nav-links a { font-size: 14px; color: var(--ink); padding: 6px 14px; border-radius: 4px; }
   .nav-links a:hover, .nav-links a[aria-current="page"] { opacity: 1; background: rgba(237,236,236,.06); }
   .nav-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .nav-text { font-size: 14px; color: var(--ink); padding: 4px 8px; }
@@ -57,7 +57,7 @@
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     font-family: inherit; font-size: 14px; font-weight: 400;
-    border-radius: 999px; border: 1px solid transparent; padding: 6px 12px; cursor: pointer;
+    border-radius: 4px; border: 0; padding: 6px 12px; cursor: pointer;
     transition: opacity 160ms var(--ease), background 160ms var(--ease), border-color 160ms var(--ease);
   }
   .btn:hover { opacity: 1; text-decoration: none; }
@@ -66,10 +66,10 @@
   .btn-solid:hover { opacity: 0.88; }
   .btn-outline { background: transparent; color: var(--ink); border-color: rgba(237,236,236,.28); }
   .btn-outline:hover { border-color: rgba(237,236,236,.5); background: rgba(237,236,236,.04); }
-  .btn-lg { font-size: 15px; padding: 11px 18px; }
+  .btn-lg { font-size: 16px; padding: 11px 18px; }
 
   .page-hero { padding: 72px 0 40px; }
-  .page-hero h1 { font-size: clamp(28px, 4vw, 42px); max-width: 18ch; letter-spacing: -0.03em; }
+  .page-hero h1 { font-size: 16px; max-width: 18ch; letter-spacing: -0.03em; }
   .page-hero .lead { margin-top: 14px; font-size: 16px; color: var(--ink-soft); max-width: 42ch; }
 
   .surface-grid {
@@ -77,16 +77,16 @@
     margin: 40px 0 72px;
   }
   .surface {
-    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    border: 0; border-radius: 4px; overflow: hidden;
     background: var(--bg-elevated); display: flex; flex-direction: column;
   }
   .surface-body { padding: 24px 24px 28px; display: flex; flex-direction: column; flex: 1; }
-  .surface h2 { font-size: 20px; margin-bottom: 8px; }
-  .surface p { font-size: 14.5px; color: var(--ink-soft); line-height: 1.55; flex: 1; }
+  .surface h2 { font-size: 16px; margin-bottom: 8px; }
+  .surface p { font-size: 16px; color: var(--ink-soft); line-height: 1.55; flex: 1; }
   .surface .actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
   .surface pre {
-    margin-top: 18px; background: var(--code-bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 12px 14px; font-size: 12.5px; overflow-x: auto;
+    margin-top: 18px; background: var(--code-bg); border: 0;
+    border-radius: 4px; padding: 12px 14px; font-size: 14px; overflow-x: auto;
     color: var(--ink-soft); line-height: 1.5;
   }
   @media (max-width: 900px) { .surface-grid { grid-template-columns: 1fr; } }
@@ -94,12 +94,12 @@
   .divider { border: 0; border-top: 1px solid var(--line); margin: 0; }
   section { padding: 72px 0; }
   .section-head { max-width: 640px; margin-bottom: 36px; }
-  .section-head h2 { font-size: clamp(24px, 3.2vw, 32px); }
-  .section-head p { margin-top: 12px; color: var(--ink-soft); font-size: 15.5px; }
+  .section-head h2 { font-size: 16px; }
+  .section-head p { margin-top: 12px; color: var(--ink-soft); font-size: 16px; }
 
   .dl-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-    background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: var(--line); border: 0; border-radius: 4px; overflow: hidden;
   }
   .dl-col { background: var(--bg); padding: 28px 26px; }
   .dl-col h3 { font-size: 16px; margin-bottom: 16px; }
@@ -110,8 +110,8 @@
   }
   .dl-col a.row:last-child { border-bottom: 0; }
   .dl-col a.row:hover { opacity: 1; color: var(--ink); }
-  .dl-col .meta { color: var(--ink-faint); font-size: 12.5px; }
-  .dl-col .note { margin-top: 16px; font-size: 13px; color: var(--ink-faint); line-height: 1.5; }
+  .dl-col .meta { color: var(--ink-faint); font-size: 14px; }
+  .dl-col .note { margin-top: 16px; font-size: 14px; color: var(--ink-faint); line-height: 1.5; }
   @media (max-width: 800px) { .dl-grid { grid-template-columns: 1fr; } }
 
   .list-block { border-top: 1px solid var(--line); }
@@ -119,7 +119,7 @@
     display: grid; grid-template-columns: 160px 1fr auto; gap: 20px; align-items: center;
     padding: 18px 0; border-bottom: 1px solid var(--line);
   }
-  .list-row .label { font-size: 15px; }
+  .list-row .label { font-size: 16px; }
   .list-row .desc { font-size: 14px; color: var(--ink-soft); }
   @media (max-width: 700px) {
     .list-row { grid-template-columns: 1fr; gap: 8px; }
@@ -129,8 +129,8 @@
   .foot-grid {
     display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 32px; margin-bottom: 40px;
   }
-  .foot-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 12px; }
-  .foot-desc { font-size: 13.5px; color: var(--ink-soft); max-width: 240px; }
+  .foot-brand { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 12px; }
+  .foot-desc { font-size: 14px; color: var(--ink-soft); max-width: 240px; }
   .foot-col h4 {
     font-size: 12px; font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--ink-faint); margin: 0 0 14px;
@@ -140,7 +140,7 @@
   .foot-bottom {
     display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     padding-top: 24px; border-top: 1px solid var(--line);
-    font-size: 13px; color: var(--ink-faint);
+    font-size: 14px; color: var(--ink-faint);
   }
   .foot-bottom a { color: var(--ink-faint); }
   @media (max-width: 800px) { .foot-grid { grid-template-columns: 1fr 1fr; } }
@@ -250,7 +250,7 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
           <a class="row" href="./index.html#deploy"><span>Self-host options</span><span class="meta">→</span></a>
         </div>
       </div>
-      <p style="margin-top:20px;font-size:14px;color:var(--ink-soft);">
+      <p style="margin-top:20px;font-size: 14px;color:var(--ink-soft);">
         <a href="https://github.com/haowei2000/Cheers/releases">View all releases →</a>
       </p>
     </div>

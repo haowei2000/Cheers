@@ -130,7 +130,7 @@ function glyphFor(k: string) {
 /** Embedded app-tile icon for an opener key. */
 export function OpenerGlyph({
   k,
-  className = "w-[18px] h-[18px]",
+  className = "h-5 w-5",
 }: {
   k: string;
   className?: string;

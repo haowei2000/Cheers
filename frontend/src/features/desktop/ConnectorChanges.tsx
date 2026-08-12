@@ -4,6 +4,7 @@ import { GitBranch, GitPullRequest, RotateCcw, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { ItemGroup, ItemList, WorkbenchItem } from "@/components/ui/item";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorWatchStart,
@@ -26,10 +27,10 @@ interface Opener {
 /** Colorize a unified diff into per-line spans (no external diff lib). */
 function DiffView({ diff }: { diff: string }) {
   if (!diff.trim()) {
-    return <p className="text-[11px] text-zinc-500 px-2 py-1">No textual diff (binary or unchanged).</p>;
+    return <p className="text-compact text-zinc-500 px-2 py-1">No textual diff (binary or unchanged).</p>;
   }
   return (
-    <pre className="text-[11px] bg-zinc-950 rounded-sm p-2 overflow-auto max-h-72 leading-relaxed">
+    <pre className="text-compact bg-zinc-950 rounded-sm p-2 overflow-auto max-h-72 leading-relaxed">
       {diff.split("\n").map((line, i) => {
         const c = line[0];
         const cls =
@@ -137,14 +138,14 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
   }
 
   if (error) {
-    return <p className="text-xs text-rose-400">{error}</p>;
+    return <p className="text-compact text-rose-400">{error}</p>;
   }
   if (git === null) {
-    return <p className="text-xs text-zinc-500">Loading…</p>;
+    return <p className="text-compact text-zinc-500">Loading…</p>;
   }
   if (!git.is_repo) {
     return (
-      <p className="text-xs text-zinc-500">
+      <p className="text-compact text-zinc-500">
         This workspace isn't a git repository — no changes to track.
       </p>
     );
@@ -155,22 +156,22 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
   return (
     <div>
       {/* status header */}
-      <div className="flex items-center gap-2 mb-3 text-xs">
+      <div className="flex items-center gap-2 mb-3 text-compact">
         <GitBranch className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
         <span className="font-medium text-zinc-200 truncate">{git.branch || "(detached)"}</span>
         {git.dirty ? (
-          <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="uncommitted changes" />
+          <PresenceDot contentSize="small" className="bg-amber-400" title="uncommitted changes" />
         ) : (
-          <span className="text-[11px] text-zinc-500">clean</span>
+          <span className="text-compact text-zinc-500">clean</span>
         )}
         {(git.ahead > 0 || git.behind > 0) && (
-          <span className="text-[11px] text-zinc-500 tabular-nums">
+          <span className="text-compact text-zinc-500 tabular-nums">
             {git.ahead > 0 && `↑${git.ahead}`} {git.behind > 0 && `↓${git.behind}`}
           </span>
         )}
-        <Button
+        <Button action="open" content="iconText"
           variant="secondary"
-          size="sm"
+          controlSize="compact"
           className="ml-auto"
           loading={busyPr}
           onClick={() => void openPr()}
@@ -180,19 +181,19 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
       </div>
 
       {git.files.length === 0 ? (
-        <p className="text-xs text-zinc-500">No changed files.</p>
+        <p className="text-compact text-zinc-500">No changed files.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="max-h-[55vh] overflow-auto pr-1">
           {git.files.map((f: FileStatus) => (
-            <ItemGroup key={f.path} className="text-xs">
+            <ItemGroup key={f.path} className="text-compact">
               <WorkbenchItem containerRole="presentation" title={f.path}
                 leading={<span
-                  className="font-mono text-[10px] text-zinc-500 w-6 shrink-0 uppercase"
+                  className="font-mono text-minimal text-zinc-500 w-6 shrink-0 uppercase"
                   title={f.status}
                 >
                   {f.status.trim() || "?"}
                 </span>}
-                actions={<><UiButton variant="plain"
+                actions={<><UiButton action="preview" variant="plain"
                   type="button"
                   onClick={() => void toggleDiff(f.path)}
                   className="text-zinc-400 hover:text-zinc-100"
@@ -201,7 +202,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   View diff
                 </UiButton>
                 {primaryOpener && (
-                  <UiButton variant="plain"
+                  <UiButton action="open" variant="plain"
                     type="button"
                     title={`Open in ${primaryOpener.label}`}
                     aria-label={`Open in ${primaryOpener.label}`}
@@ -219,7 +220,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                     <FileText className="w-3.5 h-3.5" />
                   </UiButton>
                 )}
-                <UiButton variant="plain"
+                <UiButton action="discard" variant="plain"
                   type="button"
                   title="Discard changes (revert)"
                   aria-label="Discard changes"
@@ -235,7 +236,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
               {open === f.path && (
                 <div className="ml-8 mt-1 mb-1">
                   {diffLoading ? (
-                    <p className="text-[11px] text-zinc-500 px-2">Loading diff…</p>
+                    <p className="text-compact text-zinc-500 px-2">Loading diff…</p>
                   ) : (
                     <DiffView diff={diff} />
                   )}

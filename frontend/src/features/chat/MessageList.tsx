@@ -5,6 +5,7 @@ import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message } from "@/types";
 import {
+  isDiscussionConsecutive,
   isVisuallyConsecutive,
   isFoldedPermission,
   permissionSourceId,
@@ -191,7 +192,7 @@ export function MessageList({
 
   if (!loading && topLevel.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
+      <div className="flex-1 flex items-center justify-center text-zinc-400 text-regular">
         No messages yet. Start the conversation!
       </div>
     );
@@ -211,7 +212,7 @@ export function MessageList({
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
         <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-sm bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
+        <span className="rounded-sm bg-zinc-950 px-3 py-1 text-compact font-medium text-zinc-500">
           {formatDayLabel(msg.created_at)}
         </span>
         <span className="h-px flex-1 bg-zinc-800/80" />
@@ -230,7 +231,7 @@ export function MessageList({
     const isConsecutive =
       !showDayLabel && !!previous && isVisuallyConsecutive(previous, msg);
     return (
-      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
         {showDayLabel && renderDayLabel(msg)}
         <div
           data-msg-id={msg.msg_id}
@@ -264,17 +265,15 @@ export function MessageList({
     const showDayLabel =
       depth === 0 &&
       (!prevRoot || !sameDay(prevRoot.created_at, msg.created_at));
-    const isConsecutive =
-      depth === 0 &&
-      !showDayLabel &&
-      !!prevRoot &&
-      isVisuallyConsecutive(prevRoot, msg);
+    const isConsecutive = depth === 0
+      ? !showDayLabel && !!prevRoot && isVisuallyConsecutive(prevRoot, msg)
+      : !!prevRoot && isDiscussionConsecutive(prevRoot, msg);
     const parentInView = !!(
       msg.reply_to_msg_id && byId.has(msg.reply_to_msg_id)
     );
 
     return (
-      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
         {showDayLabel && renderDayLabel(msg)}
         <div
           data-msg-id={msg.msg_id}
@@ -307,7 +306,7 @@ export function MessageList({
             <div
               className={
                 depth === 0
-                  ? "relative ml-10 mr-3 mt-2.5 flex flex-col gap-2 md:ml-14 md:mr-5"
+                  ? "relative ml-10 mr-3 mt-3 flex flex-col gap-2 md:ml-14 md:mr-5"
                   : "relative ml-3 mt-2 flex flex-col gap-2"
               }
             >
@@ -329,7 +328,13 @@ export function MessageList({
                       aria-hidden
                       className="pointer-events-none absolute left-0 top-4 w-3 border-t border-zinc-700/70"
                     />
-                    {renderNode(child, depth + 1, null)}
+                    {renderNode(
+                      child,
+                      depth + 1,
+                      i > 0 && isDiscussionConsecutive(kids[i - 1], child)
+                        ? kids[i - 1]
+                        : null,
+                    )}
                   </div>
                 );
               })}
@@ -349,7 +354,7 @@ export function MessageList({
       <div className="mx-auto w-full max-w-[72rem]">
         {loading && (
           <div className="flex justify-center py-4">
-            <Spinner size={20} className="text-zinc-600" />
+            <Spinner contentSize="large" className="text-zinc-600" />
           </div>
         )}
 

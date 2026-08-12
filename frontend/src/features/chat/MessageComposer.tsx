@@ -46,6 +46,9 @@ import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { appendMentionToken } from "./mentionInsertion";
 import { IconButton } from "@/components/ui/icon-button";
+import { ItemChip } from "@/components/ui/item";
+import { OverflowText } from "@/components/ui/overflow-text";
+import { MenuOption } from "@/components/ui/menu-option";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -95,6 +98,8 @@ interface Props {
   /** Optional controls rendered in the card's controls row, between the attach
       button and the send button (session chip, model chip, …). */
   toolbar?: ReactNode;
+  /** Context picks share the composer surface instead of floating as a separate bar. */
+  contextBar?: ReactNode;
   /** Fires with the bots currently @mentioned in the draft (token still present),
       so the parent can surface per-bot controls contextual to the mention. */
   onMentionsChange?: (mentionedBots: MentionCandidate[]) => void;
@@ -203,6 +208,7 @@ function MessageComposerImpl({
   mentionables = [],
   commands = [],
   toolbar,
+  contextBar,
   onMentionsChange,
   onTextChange,
   prefill,
@@ -1011,22 +1017,21 @@ function MessageComposerImpl({
                 selectCandidate(c);
               }}
               title={c.label}
-              subtitle={c.sublabel ? `@${c.sublabel}` : undefined}
+              status={c.sublabel ? <span className="truncate text-compact text-zinc-400">@{c.sublabel}</span> : undefined}
               leading={c.type === "bot" ? (
                 <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-500" : "text-indigo-400")} />
               ) : (
                 <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               )}
-              criticalStatus={c.type === "bot" ? <span className="text-[10px] text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
+              criticalStatus={c.type === "bot" ? <span className="text-minimal text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
               selected={i === picker.index}
               className={cn(
-                "border-0 px-3",
-                i === picker.index
-                  ? "bg-indigo-600/30 text-zinc-100"
-                  : c.type === "bot" && c.isOnline === false
-                    ? "text-zinc-500 hover:bg-zinc-800"
-                    : "text-zinc-300 hover:bg-zinc-800"
-              )}
+ "border-0 ",
+ i === picker.index
+ ? "bg-indigo-600/30 text-zinc-100": c.type === "bot" && c.isOnline === false
+ ? "text-zinc-500 hover:bg-zinc-800"
+ : "text-zinc-300 hover:bg-zinc-800"
+ )}
             />
           ))}
         </div>
@@ -1044,30 +1049,33 @@ function MessageComposerImpl({
       {(attachments.length > 0 || uploading) && (
         <div className="mb-2 flex flex-wrap gap-2">
           {attachments.map((a) => (
-            <span
+            <ItemChip
               key={a.file_id}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
-            >
-              <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              <span
-                className="max-w-[160px] truncate"
-                title={a.original_filename || a.file_id}
-              >
-                {a.original_filename || a.file_id.slice(0, 8)}
-              </span>
-              <UiButton variant="plain"
-                type="button"
+              label={
+                <OverflowText
+                  fullText={a.original_filename || a.file_id}
+                  touchDisclosure={false}
+                >
+                  {a.original_filename || a.file_id.slice(0, 8)}
+                </OverflowText>
+              }
+              leading={<FileText className="w-3.5 h-3.5 text-indigo-400" />}
+              controlSize="regular"
+              className="bg-zinc-800 text-zinc-300"
+              actions={
+                <IconButton
                 onClick={() => removeAttachment(a.file_id)}
-                className="text-zinc-400 hover:text-zinc-200"
-                aria-label="Remove attachment"
+                label={`Remove attachment ${a.original_filename || a.file_id}`}
                 title="Remove attachment"
+                controlSize="compact"
               >
-                <X className="w-3 h-3" />
-              </UiButton>
-            </span>
+                <X className="w-3.5 h-3.5" />
+                </IconButton>
+              }
+            />
           ))}
           {uploading && (
-            <span className="inline-flex items-center text-xs text-zinc-400 px-1">
+            <span className="inline-flex items-center text-compact text-zinc-400 px-1">
               uploading…
             </span>
           )}
@@ -1075,9 +1083,7 @@ function MessageComposerImpl({
       )}
 
       {/* design-system-native: file-input */}
-      {/* design-system-native: file-input */}
-{/* design-system-native: file-input */}
-<input
+      <input
         ref={fileInputRef}
         type="file"
         multiple
@@ -1095,40 +1101,46 @@ function MessageComposerImpl({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-          <p className="flex items-center gap-1.5">
+        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-amber-200">
+          <p className="flex items-center gap-2">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
           </p>
           {voiceWarning.error && (
             <p className="mt-1 text-red-300">{voiceWarning.error}</p>
           )}
-          <div className="mt-1.5 flex items-center gap-2">
-            <UiButton variant="plain"
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <UiButton variant="secondary"
               type="button"
               onClick={() => void transcribeThenSend()}
               disabled={transcribing}
-              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-600/80 px-2 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
+              controlSize="regular"
+              content="iconText"
+              action="transcribe"
+              aria-label="Transcribe the audio attachment, then send the message"
             >
-              {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
-              {transcribing ? "Transcribing…" : "Transcribe, then send"}
+              {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
             </UiButton>
-            <UiButton variant="plain"
+            <UiButton variant="secondary"
               type="button"
               onClick={() => void submit(true)}
               disabled={transcribing}
-              controlSize="regular" className="rounded-sm bg-amber-900/40 px-2 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
+              controlSize="regular"
+              content="iconText"
+              action="send"
+              aria-label="Send the audio attachment without a transcript"
             >
-              Send anyway
+              <SendHorizontal className="h-3.5 w-3.5" />
             </UiButton>
             <UiButton variant="plain"
               type="button"
               onClick={() => setVoiceWarning(null)}
               disabled={transcribing}
+              controlSize="regular"
+              action="cancel"
+              aria-label="Cancel audio attachment warning"
               className="ml-auto text-amber-400/70 hover:text-amber-200"
-            >
-              Cancel
-            </UiButton>
+            />
           </div>
         </div>
       )}
@@ -1144,6 +1156,11 @@ function MessageComposerImpl({
             : "focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50"
         )}
       >
+        {contextBar && (
+          <div className="min-w-0 px-1 pt-1">
+            {contextBar}
+          </div>
+        )}
         {/* design-system-native: composer-editor */}
         <textarea
           ref={textareaRef}
@@ -1163,22 +1180,21 @@ function MessageComposerImpl({
               ? "Select a channel to start chatting"
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
-          // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-base leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-sm"
+          // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-regular"
         />
 
-        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+        <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
           <IconButton
             onClick={() => (dictating ? stopDictation() : void startDictation())}
             disabled={disabled || !channelId || uploading || sending || transcribingDictation}
             controlSize="regular"
             label={dictating ? "Stop dictation" : "Start voice dictation"}
             className={cn(
-              "disabled:opacity-40",
-              dictating
-                ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
-            )}
+ "disabled:opacity-40",
+ dictating
+ ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
+ )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
             {transcribingDictation ? (
@@ -1196,61 +1212,48 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Attach file"
               className={cn(
-                "disabled:opacity-40",
-                attachMenuOpen
-                  ? "text-zinc-200 bg-zinc-700/50"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
-              )}
+ "disabled:opacity-40",
+ attachMenuOpen
+ ? "text-zinc-200 bg-zinc-700/50": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+ )}
               title="Attach file"
             >
               <Paperclip className="w-4 h-4" />
             </IconButton>
             {attachMenuOpen && (
               <PopoverPanel className="w-48 overflow-hidden rounded-sm py-1">
-                <UiButton variant="plain"
-                  type="button"
+                <MenuOption
                   onClick={() => {
                     setAttachMenuOpen(false);
                     fileInputRef.current?.click();
                   }}
-                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <Upload className="w-3.5 h-3.5 text-zinc-500" />
-                  Upload from computer
-                </UiButton>
-                <UiButton variant="plain"
-                  type="button"
+                  controlSize="regular"
+                  label="Upload file"
+                  leading={<Upload className="w-3.5 h-3.5 text-zinc-500" />}
+                />
+                <MenuOption
                   onClick={() => {
                     setAttachMenuOpen(false);
                     setLibraryOpen(true);
                   }}
-                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
-                  Pick a channel file
-                </UiButton>
+                  controlSize="regular"
+                  label="Channel file"
+                  leading={<FolderOpen className="w-3.5 h-3.5 text-zinc-500" />}
+                />
                 {isTauri() && (
-                  <UiButton variant="plain"
-                    type="button"
+                  <MenuOption
                     onClick={() => {
                       setAttachMenuOpen(false);
                       void takeScreenshot();
                     }}
-                    controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-                  >
-                    <Camera className="w-3.5 h-3.5 text-zinc-500" />
-                    Take screenshot
-                  </UiButton>
+                    controlSize="regular"
+                    label="Screenshot"
+                    leading={<Camera className="w-3.5 h-3.5 text-zinc-500" />}
+                  />
                 )}
               </PopoverPanel>
             )}
           </div>
-
-          {/* Session + model chips from the parent; min-w-0 lets them truncate
-              instead of pushing the send button off a narrow screen. */}
-          {toolbar && (
-            <div className="flex min-w-0 items-center gap-1">{toolbar}</div>
-          )}
 
           {commands.length > 0 && (
             <IconButton
@@ -1265,7 +1268,12 @@ function MessageComposerImpl({
             </IconButton>
           )}
 
-          <div className="flex-1" />
+          {toolbar && (
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {toolbar}
+            </div>
+          )}
+          {!toolbar && <div className="flex-1" />}
 
           {showStop ? (
             <IconButton
@@ -1285,10 +1293,9 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Send message"
               className={cn(
-                canSend
-                  ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
-                  : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
-              )}
+ canSend
+ ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
+ )}
               title="Send message"
             >
               <SendHorizontal className="w-4 h-4" />
@@ -1296,12 +1303,8 @@ function MessageComposerImpl({
           )}
         </div>
       </div>
-      {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
-      <p className="text-[11px] text-zinc-400 mt-1.5 px-1 max-md:hidden">
-        <kbd className="font-mono">Enter</kbd> to send ·{" "}
-        <kbd className="font-mono">Shift+Enter</kbd> for new line ·{" "}
-        <kbd className="font-mono">@</kbd> to mention ·{" "}
-        <kbd className="font-mono">/</kbd> for commands
+      <p className="sr-only">
+        Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands.
       </p>
     </div>
   );

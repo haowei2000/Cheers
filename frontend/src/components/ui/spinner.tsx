@@ -1,23 +1,24 @@
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { contentIconClasses, type ContentSize } from "./content-size";
 
 // The canonical loading indicator (DESIGN.md §2.10). Color inherits
 // currentColor — set a text-* class on it (or a parent) to tint it.
 export function Spinner({
-  size = 16,
+  contentSize = "regular",
   className,
 }: {
-  size?: number;
+  contentSize?: ContentSize;
   className?: string;
 }) {
-  return <Loader2 size={size} className={cn("animate-spin", className)} />;
+  return <Loader2 className={cn("animate-spin", contentIconClasses[contentSize], className)} />;
 }
 
 // Full-surface variant: centered, muted — for panel/page loads.
 export function SurfaceSpinner({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center justify-center py-8", className)}>
-      <Spinner size={20} className="text-zinc-600" />
+      <Spinner contentSize="large" className="text-zinc-600" />
     </div>
   );
 }

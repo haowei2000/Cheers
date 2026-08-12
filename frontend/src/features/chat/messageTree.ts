@@ -4,6 +4,7 @@ import type { Message, PermissionContentData } from "@/types";
  *  Older messages and replies need their own author header so the timeline does
  *  not turn into an anonymous wall of text. */
 export const CONSECUTIVE_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
+export const DISCUSSION_CONSECUTIVE_WINDOW_MS = 30 * 60 * 1000;
 
 export function isVisuallyConsecutive(
   previous: Message,
@@ -29,6 +30,32 @@ export function isVisuallyConsecutive(
   const currentAt = Date.parse(current.created_at ?? "");
   if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt)) return false;
 
+  const gap = currentAt - previousAt;
+  return gap >= 0 && gap <= maxGapMs;
+}
+
+/** Discuss threads may span a slower editorial exchange. Collapse repeated
+ * identity chrome only when sender and reply target are unchanged. */
+export function isDiscussionConsecutive(
+  previous: Message,
+  current: Message,
+  maxGapMs = DISCUSSION_CONSECUTIVE_WINDOW_MS,
+): boolean {
+  const previousIsNormal = !previous.msg_type || previous.msg_type === "normal";
+  const currentIsNormal = !current.msg_type || current.msg_type === "normal";
+  if (
+    !previousIsNormal ||
+    !currentIsNormal ||
+    previous.sender_id !== current.sender_id ||
+    previous.sender_type !== current.sender_type ||
+    previous.reply_to_msg_id !== current.reply_to_msg_id ||
+    previous.is_deleted ||
+    current.is_deleted
+  ) return false;
+
+  const previousAt = Date.parse(previous.created_at ?? "");
+  const currentAt = Date.parse(current.created_at ?? "");
+  if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt)) return false;
   const gap = currentAt - previousAt;
   return gap >= 0 && gap <= maxGapMs;
 }

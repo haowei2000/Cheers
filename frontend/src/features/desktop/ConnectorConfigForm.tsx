@@ -1,12 +1,14 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { FolderPlus, Settings2 } from "lucide-react";
+import { FolderPlus, Save, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { CheckboxField } from "@/components/ui/checkbox-field";
+import { IconButton } from "@/components/ui/icon-button";
 import { invokeDesktop, pickFolder } from "@/lib/desktop";
 import { AgentPicker } from "./AgentPicker";
 
@@ -107,23 +109,23 @@ export function ConnectorConfigForm({
   }
 
   if (!f) {
-    return <p className="text-xs text-zinc-500 mt-3">Loading config…</p>;
+    return <p className="text-compact text-zinc-500 mt-3">Loading config…</p>;
   }
 
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-xs text-zinc-500">Raw TOML — full control.</p>
+        <p className="text-compact text-zinc-500">Raw TOML — full control.</p>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={16}
-          className="font-mono text-xs"
+          className="font-mono text-compact"
           spellCheck={false}
         />
         <div className="flex gap-2">
-          <Button
-            size="sm"
+          <Button action="restart"
+            controlSize="compact"
             disabled={busy}
             onClick={() =>
               onSave(true, () =>
@@ -133,9 +135,8 @@ export function ConnectorConfigForm({
           >
             Save &amp; restart
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
+          <IconButton label="Save connector config"
+            controlSize="compact"
             disabled={busy}
             onClick={() =>
               onSave(false, () =>
@@ -143,9 +144,9 @@ export function ConnectorConfigForm({
               )
             }
           >
-            Save only
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setRawMode(false)}>
+            <Save className="h-3.5 w-3.5" />
+          </IconButton>
+          <Button action="back" variant="secondary" controlSize="compact" onClick={() => setRawMode(false)}>
             Back to form
           </Button>
         </div>
@@ -172,7 +173,7 @@ export function ConnectorConfigForm({
 
   return (
     <div className="mt-3 space-y-4">
-      <p className="text-xs text-zinc-500">
+      <p className="text-compact text-zinc-500">
         Editing <b>{name}</b> — account <code className="bg-zinc-800 rounded-sm px-1">{f.account_id}</code>.
       </p>
 
@@ -202,14 +203,13 @@ export function ConnectorConfigForm({
               placeholder="/opt/homebrew/bin/codex-acp"
             />
           </div>
-          <UiButton variant="plain"
+          <UiButton action="more" content="iconText" variant="plain"
             type="button"
             title="Command arguments"
             onClick={() => setArgsOpen((o) => !o)}
-            controlSize="regular" className={`shrink-0 rounded-sm px-2.5 text-xs flex items-center gap-1 ${
+            controlSize="regular" className={`shrink-0 rounded-sm  flex items-center gap-1 ${
  argsOpen || f.adapter_args.length
- ? "bg-zinc-700 text-zinc-100"
- : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
  }`}
           >
             <Settings2 className="w-3.5 h-3.5" /> Args
@@ -222,7 +222,7 @@ export function ConnectorConfigForm({
               value={text(f.adapter_args)}
               onChange={(e) => patch({ adapter_args: lines(e.target.value) })}
               rows={2}
-              className="font-mono text-xs"
+              className="font-mono text-compact"
             />
           </Field>
         )}
@@ -232,12 +232,12 @@ export function ConnectorConfigForm({
             value={text(f.allowed_roots)}
             onChange={(e) => patch({ allowed_roots: lines(e.target.value) })}
             rows={3}
-            className="font-mono text-xs"
+            className="font-mono text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
-          <UiButton variant="plain"
+          <UiButton action="add" content="iconText" variant="plain"
             type="button"
-            className="mt-1 text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            className="mt-1  text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             onClick={() =>
               void pickFolder().then((p) => {
                 if (p && !f.allowed_roots.includes(p)) {
@@ -257,19 +257,19 @@ export function ConnectorConfigForm({
               placeholder="~/Projects"
               className="flex-1"
             />
-            <Button
+            <Button action="choose" content="iconText"
               variant="secondary"
-              size="sm"
+              controlSize="compact"
               onClick={() => void pickFolder().then((p) => p && patch({ default_cwd: p }))}
             >
               <FolderPlus className="w-3.5 h-3.5" /> Choose…
             </Button>
           </div>
           {cwdUnderRoot === false && f.default_cwd?.trim() && (
-            <p className="mt-1 text-xs text-amber-400">
+            <p className="mt-1 text-compact text-amber-400">
               This directory is not under any workspace root — the connector will
               refuse to start.{" "}
-              <UiButton variant="plain"
+              <UiButton action="add" variant="plain"
                 type="button"
                 className="underline hover:text-amber-300"
                 onClick={() => {
@@ -284,55 +284,49 @@ export function ConnectorConfigForm({
             </p>
           )}
         </Field>
-        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
-          {/* design-system-native: checkbox */}
-<input
-            type="checkbox"
-            checked={f.auto_allow}
-            onChange={(e) => patch({ auto_allow: e.target.checked })}
-          />
-          Auto-approve tool calls (skip permission prompts) — use with care
-        </label>
+        <CheckboxField
+          label="Auto-approve tool calls (skip permission prompts) — use with care"
+          checked={f.auto_allow}
+          onChange={(e) => patch({ auto_allow: e.target.checked })}
+          controlSize="compact"
+          className="text-compact"
+        />
       </div>
 
       {/* ── More ── */}
       <div>
-        <UiButton variant="plain"
+        <UiButton action="more" variant="plain"
           type="button"
-          className="text-xs text-zinc-400 hover:text-zinc-200"
+          className=" text-zinc-400 hover:text-zinc-200"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
         </UiButton>
         {more && (
           <div className="grid gap-3 mt-3 pl-2 border-l border-zinc-800">
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.env_inherit}
-                onChange={(e) => patch({ env_inherit: e.target.checked })}
-              />
-              Inherit the app's environment
-            </label>
+            <CheckboxField
+              label="Inherit the app's environment"
+              checked={f.env_inherit}
+              onChange={(e) => patch({ env_inherit: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
             <Field label="Environment variables to pass through (one per line)">
               <Textarea
                 value={text(f.env_allow)}
                 onChange={(e) => patch({ env_allow: lines(e.target.value) })}
                 rows={3}
-                className="font-mono text-xs"
+                className="font-mono text-compact"
                 placeholder={"HOME\nPATH\nANTHROPIC_API_KEY"}
               />
             </Field>
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.forward_to_backend}
-                onChange={(e) => patch({ forward_to_backend: e.target.checked })}
-              />
-              Forward permission prompts to the agent
-            </label>
+            <CheckboxField
+              label="Forward permission prompts to the agent"
+              checked={f.forward_to_backend}
+              onChange={(e) => patch({ forward_to_backend: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
             <Field label="Permission wait, on timeout">
               <div className="flex gap-2">
                 <Input
@@ -344,7 +338,7 @@ export function ConnectorConfigForm({
                 <UiSelect
                   value={f.on_timeout}
                   onChange={(e) => patch({ on_timeout: e.target.value })}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="cancel">cancel</option>
                   <option value="reject">reject</option>
@@ -361,34 +355,30 @@ export function ConnectorConfigForm({
             {numField("Heartbeat interval (ms)", f.heartbeat_interval_ms, (n) =>
               patch({ heartbeat_interval_ms: n })
             )}
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
-              {/* design-system-native: checkbox */}
-<input
-                type="checkbox"
-                checked={f.file_upload_allow}
-                onChange={(e) => patch({ file_upload_allow: e.target.checked })}
-              />
-              Allow file uploads
-            </label>
-            <UiButton variant="plain"
-              type="button"
-              className="text-xs text-zinc-500 hover:text-zinc-300 w-fit"
+            <CheckboxField
+              label="Allow file uploads"
+              checked={f.file_upload_allow}
+              onChange={(e) => patch({ file_upload_allow: e.target.checked })}
+              controlSize="compact"
+              className="text-compact"
+            />
+            <IconButton label="Edit raw TOML" controlSize="compact"
               onClick={() => void openRaw()}
             >
-              Edit raw TOML…
-            </UiButton>
+              <Settings2 className="h-3.5 w-3.5" />
+            </IconButton>
           </div>
         )}
       </div>
 
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy} onClick={() => onSave(true, apply)}>
+        <Button action="restart" controlSize="compact" disabled={busy} onClick={() => onSave(true, apply)}>
           Save &amp; restart
         </Button>
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => onSave(false, apply)}>
-          Save only
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onClose}>
+        <IconButton label="Save connector settings" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)}>
+          <Save className="h-3.5 w-3.5" />
+        </IconButton>
+        <Button action="cancel" variant="secondary" controlSize="compact" onClick={onClose}>
           Cancel
         </Button>
       </div>

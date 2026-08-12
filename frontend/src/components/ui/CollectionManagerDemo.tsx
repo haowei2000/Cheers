@@ -184,7 +184,7 @@ export function CollectionManagerDemo() {
             )}
             title={record.title}
             status={(
-              <span className="font-utility text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-500">
                 {record.type}
               </span>
             )}

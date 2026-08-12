@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
@@ -15,6 +14,8 @@ import { EntityItem } from "@/components/ui/item";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
+import { avatarSizeClasses } from "@/components/ui/content-size";
+import { IconButton } from "@/components/ui/icon-button";
 
 /** One row of the master bot list (left column). */
 function BotRow({
@@ -30,9 +31,8 @@ function BotRow({
     <EntityItem
       onClick={onSelect}
       selected={active}
-      title={bot.display_name || bot.username}
-      subtitle={`@${bot.username}`}
-      leading={<div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
+      title={`${bot.display_name || bot.username} · @${bot.username}`}
+      leading={<div className={`flex flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
         <Bot className="w-4 h-4 text-indigo-300" />
       </div>}
       criticalStatus={bot.is_disabled ? (
@@ -43,13 +43,13 @@ function BotRow({
         />
       ) : bot.is_online ? (
         <Circle
-          className="w-3 h-3 flex-shrink-0 fill-emerald-400 text-emerald-400"
+          className="w-3.5 h-3.5 flex-shrink-0 fill-emerald-400 text-emerald-400"
           role="img"
           aria-label="Online"
         />
       ) : (
         <CircleDot
-          className="w-3 h-3 flex-shrink-0 text-zinc-500"
+          className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500"
           role="img"
           aria-label="Offline"
         />
@@ -116,34 +116,35 @@ export function BotsManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
-        <Button
-          size="sm"
+        <Button content="iconText"
+          action="add"
+          aria-label="Add bot"
+          controlSize="compact"
           className="ml-auto normal-case tracking-normal"
           onClick={() => setWizardOpen(true)}
         >
           <Wand2 className="w-3.5 h-3.5" />
-          Add bot
         </Button>
-        <UiButton variant="plain"
-          type="button"
+        <IconButton
+          label="Refresh bots"
           onClick={() => void refresh()}
           className="text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </UiButton>
+        </IconButton>
       </h2>
 
       {bots.length === 0 && !loading ? (
         loadFailed ? (
-          <p className="text-sm text-red-400 px-1">
+          <p className="text-regular text-red-400 px-1">
             Couldn't load bots — check the gateway connection, then press refresh.
           </p>
         ) : (
-          <p className="text-sm text-zinc-400 px-1">
+          <p className="text-regular text-zinc-400 px-1">
             No bots yet. Click <span className="text-zinc-200">Add bot</span> to create one, then
             connect it to the machine that will run it.
           </p>
@@ -175,7 +176,7 @@ export function BotsManager() {
                 onPoll={pollRefresh}
               />
             ) : (
-              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-sm text-zinc-400">
+              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-regular text-zinc-400">
                 Select a bot to manage it.
               </div>
             )}
@@ -194,14 +195,14 @@ export function BotsManager() {
           onClose={() => setIssued(null)}
           maxWidth="max-w-lg"
         >
-          <p className="text-xs text-amber-400">
+          <p className="text-compact text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
+            <code className="text-compact text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400">
+            <span className="text-compact text-zinc-400">
               This is what proves the bot is yours when it connects. Save it into
               the bot's token file on the machine that runs it.
             </span>

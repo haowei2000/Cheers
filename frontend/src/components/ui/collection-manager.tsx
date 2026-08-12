@@ -29,6 +29,7 @@ export function CollectionManager({
   onAdd,
   addDisabled,
   showAdd = true,
+  headerAction,
   presentationLevel = "medium",
   controlSize = "regular",
   children,
@@ -43,6 +44,7 @@ export function CollectionManager({
   onAdd: () => void;
   addDisabled?: boolean;
   showAdd?: boolean;
+  headerAction?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   children: ReactNode;
@@ -52,11 +54,12 @@ export function CollectionManager({
     <section className={cn("min-w-0", className)}>
       <header
         className={cn(
-          "flex items-center gap-2 px-1 font-utility text-xs font-semibold uppercase tracking-[0.1em] text-zinc-400",
+          "flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400",
           controlMinHeightClasses[controlSize],
         )}
       >
         <span className="min-w-0 flex-1 truncate">{label}</span>
+        {headerAction}
         {typeof count === "number" && (
           <span className="font-normal tabular-nums text-zinc-500">{count}</span>
         )}
@@ -82,7 +85,10 @@ export function CollectionManager({
         </label>
         {showAdd && (
           <Button
+            content="iconText"
+            action="add"
             type="button"
+            aria-label={addLabel}
             controlSize={controlSize}
             variant="secondary"
             disabled={addDisabled}
@@ -90,7 +96,6 @@ export function CollectionManager({
             className="shrink-0"
           >
             <Plus className={controlIconClasses[controlSize]} />
-            <span className="hidden sm:inline">{addLabel}</span>
           </Button>
         )}
       </div>
@@ -119,7 +124,7 @@ export function CollectionPickerItem({
   return (
     <div role="listitem" data-collection-mode="add" className="rounded-sm bg-zinc-900/80 px-2 py-2">
       <div className={cn("flex items-center gap-2", controlMinHeightClasses.compact)}>
-        <span className="min-w-0 flex-1 truncate font-utility text-sm font-semibold text-zinc-100">{title}</span>
+        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">{title}</span>
         <Button type="button" variant="ghost" controlSize="compact" onClick={onCancel}>Cancel</Button>
       </div>
       <label className="relative mt-1 block min-w-0">
@@ -170,10 +175,10 @@ export function CollectionEditorItem({
       className="rounded-sm bg-zinc-900/80 px-2 py-2"
     >
       <div className={cn("flex items-center gap-2", controlMinHeightClasses.compact)}>
-        <span className="min-w-0 flex-1 truncate font-utility text-sm font-semibold text-zinc-100">
+        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">
           {title}
         </span>
-        <span className="font-utility text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-500">
           {mode}
         </span>
       </div>
@@ -217,7 +222,7 @@ export function CollectionDeleteItem({
       leading={<AlertTriangle className="h-4 w-4 text-red-400" />}
       title={<span title={String(description)}>{title}</span>}
       criticalStatus={(
-        <span className="font-utility text-xs font-semibold uppercase tracking-wide text-red-400">
+        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-red-400">
           Delete?
         </span>
       )}

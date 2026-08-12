@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { auditSources, enforceAudit } from "./lib/design-system-audit.mjs";
+import { auditWebsiteSources } from "./lib/website-design-audit.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contractPath = path.join(root, "design-system/item-contract.json");
@@ -20,12 +21,18 @@ const fail = (message) => {
 
 const expectedLevels = ["max", "medium", "minimal"];
 const expectedControlSizes = ["comfortable", "regular", "compact"];
+const expectedContentSizes = ["small", "regular", "large"];
+const expectedIdentityRails = { small: "64px", regular: "96px", large: "128px" };
 const expectedTypeRoles = ["display", "reading", "utility"];
+const expectedTypographySizes = ["minimal", "compact", "regular", "comfortable"];
 if (contract.defaultPresentationLevel !== "medium") {
   fail("defaultPresentationLevel must remain medium");
 }
 if (contract.defaultControlSize !== "regular") {
   fail("defaultControlSize must remain regular");
+}
+if (contract.defaultContentSize !== "regular") {
+  fail("defaultContentSize must remain regular");
 }
 if (JSON.stringify(Object.keys(contract.presentationLevels).sort()) !== JSON.stringify([...expectedLevels].sort())) {
   fail("presentationLevels must contain exactly max, medium, and minimal");
@@ -33,8 +40,20 @@ if (JSON.stringify(Object.keys(contract.presentationLevels).sort()) !== JSON.str
 if (JSON.stringify(Object.keys(contract.controlSizes ?? {}).sort()) !== JSON.stringify([...expectedControlSizes].sort())) {
   fail("controlSizes must contain exactly comfortable, regular, and compact");
 }
+if (JSON.stringify(Object.keys(contract.contentSizes ?? {}).sort()) !== JSON.stringify([...expectedContentSizes].sort())) {
+  fail("contentSizes must contain exactly small, regular, and large");
+}
+for (const [size, width] of Object.entries(expectedIdentityRails)) {
+  if (contract.contentSizes?.[size]?.identityRail !== width) {
+    fail(`contentSizes.${size}.identityRail must remain ${width}`);
+  }
+}
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()) !== JSON.stringify([...expectedTypeRoles].sort())) {
   fail("visualLanguage.typography must contain exactly display, reading, and utility");
+}
+if (contract.defaultTypographySize !== "regular") fail("defaultTypographySize must remain regular");
+if (JSON.stringify(Object.keys(contract.visualLanguage?.typographySizes ?? {}).sort()) !== JSON.stringify([...expectedTypographySizes].sort())) {
+  fail("visualLanguage.typographySizes must contain exactly minimal, compact, regular, and comfortable");
 }
 if (contract.visualLanguage?.shape?.cornerRadius !== "4px/pt/dp") {
   fail("visualLanguage.shape.cornerRadius must remain the shared 4px/pt/dp editorial radius");
@@ -77,6 +96,37 @@ async function sourceFiles(directory, extension) {
 
 const webSource = await sourceText(path.join(root, "frontend/src"), ".tsx");
 const webFiles = await sourceFiles(path.join(root, "frontend/src"), ".tsx");
+const websiteFiles = [
+  ...await sourceFiles(path.join(root, "website"), ".html"),
+  {
+    path: path.join(root, "website/editorial.css"),
+    source: await readFile(path.join(root, "website/editorial.css"), "utf8"),
+  },
+];
+const websiteAudit = auditWebsiteSources(
+  websiteFiles.map(({ path: file, source }) => ({ file, source }))
+);
+for (const finding of websiteAudit.findings) {
+  fail(`${path.relative(root, finding.file)}:${finding.line} ${finding.rule} (${finding.token})`);
+}
+const forbiddenTypographyClass = /\btext-(?:xs|sm|base|lg|xl|[2-9]xl|\[[^\]]*(?:px|rem|em|clamp|calc)[^\]]*\])/g;
+const forbiddenInlineFontSize = /\bfontSize\s*(?:=|:)\s*(?:\{\s*)?["']?(?:\d|clamp\(|calc\()/g;
+for (const file of webFiles.filter(({ path: file }) => !/\.(?:test|preview)\.tsx$/.test(file) && !/ItemGallery(?:\.preview)?\.tsx$/.test(file))) {
+  for (const match of file.source.matchAll(forbiddenTypographyClass)) {
+    const line = file.source.slice(0, match.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} uses a nonstandard typography class; use text-minimal, text-compact, text-regular, or text-comfortable`);
+  }
+  for (const match of file.source.matchAll(forbiddenInlineFontSize)) {
+    const line = file.source.slice(0, match.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} uses a literal fontSize; use a registered typography CSS variable`);
+  }
+}
+const webCss = await readFile(path.join(root, "frontend/src/index.css"), "utf8");
+for (const match of webCss.matchAll(/font-size:\s*([^;]+);/g)) {
+  if (/^var\(--type-(?:minimal|compact|regular|comfortable)\)$/.test(match[1].trim())) continue;
+  const line = webCss.slice(0, match.index).split("\n").length;
+  fail(`frontend/src/index.css:${line} uses a nonstandard font-size declaration`);
+}
 const iosSource = await sourceText(path.join(root, "apps/ios/Sources"), ".swift");
 const androidSource = await sourceText(path.join(root, "apps/android/app/src/main/java"), ".kt");
 const legacyCounts = {
@@ -111,8 +161,15 @@ if (process.exitCode) {
 const itemPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/item.tsx"), "utf8");
 const collectionPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/collection-manager.tsx"), "utf8");
 const webControlSizeSource = await readFile(path.join(root, "frontend/src/components/ui/control-size.tsx"), "utf8");
+const webContentSizeSource = await readFile(path.join(root, "frontend/src/components/ui/content-size.ts"), "utf8");
 for (const size of expectedControlSizes) {
   if (!webControlSizeSource.includes(size)) fail(`Web control-size registry does not mention ${size}`);
+}
+for (const size of expectedContentSizes) {
+  if (!webContentSizeSource.includes(size)) fail(`Web content-size registry does not mention ${size}`);
+}
+for (const widthClass of ["w-16", "w-24", "w-32"]) {
+  if (!webContentSizeSource.includes(widthClass)) fail(`Web content-size registry does not mention identity rail ${widthClass}`);
 }
 for (const primitive of [
   "ItemRow",
@@ -196,7 +253,7 @@ if (!process.exitCode) {
   const native = webAudit.native;
   const violations = webAudit.violations;
   console.log(
-    `design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels, ${expectedControlSizes.length} control sizes)`
+    `design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels, ${expectedControlSizes.length} control sizes, ${expectedContentSizes.length} content sizes, ${expectedTypographySizes.length} typography sizes)`
   );
   console.log(
     `web native production: button=${native.production.button}, input=${native.production.input}, select=${native.production.select}, textarea=${native.production.textarea}`
@@ -208,6 +265,7 @@ if (!process.exitCode) {
     `web unexempted business native: button=${webAudit.unexemptedBusinessNative.button}, input=${webAudit.unexemptedBusinessNative.input}, select=${webAudit.unexemptedBusinessNative.select}, textarea=${webAudit.unexemptedBusinessNative.textarea}`
   );
   console.log(
-    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-override=${violations.sharedControlSizeOverride}`
+    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-size=${violations.sharedControlSizeOverride}, shared-padding=${violations.sharedHorizontalPaddingOverride}, local-padding=${violations.sharedPaddingOverride}, shared-width=${violations.sharedControlWidthOverride}, shared-content=${violations.sharedContentSizeOverride}, row-height=${violations.nonStandardRowHeight}, identity-size=${violations.nonStandardIdentitySize}, icon-size=${violations.nonStandardIconSize}, spacing=${violations.nonStandardSpacing}, spinner-size=${violations.arbitrarySpinnerSize}, typography=${violations.nonStandardTypographySize}, button-typography=${violations.sharedButtonTypographyOverride}, detached-edit=${violations.detachedEditActionButton}, action-key=${violations.actionButtonWithoutKey}, legacy-size=${violations.legacyControlSizeProp}`
   );
+  console.log(`website visual debt: files=${websiteFiles.length}, violations=${websiteAudit.findings.length}`);
 }
