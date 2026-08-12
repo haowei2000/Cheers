@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -644,14 +645,14 @@ function TraceItem({
 
   return (
     <div className="relative min-w-0">
-      <UiButton action={active ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
+      <ControlTrigger controlWidth="fill"
         ref={triggerRef}
         type="button"
         onClick={onToggle}
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
- "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-900/70",
+ "justify-start gap-2 text-left text-zinc-400 transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
  )}
       >
@@ -675,7 +676,7 @@ function TraceItem({
             active && "rotate-90 text-zinc-300",
           )}
         />
-      </UiButton>
+      </ControlTrigger>
       {active &&
         createPortal(
           <FloatingPanel
@@ -913,12 +914,13 @@ export function BotTracePanel({
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
-        <UiButton action={expanded ? "collapse" : "expand"} content="iconText" variant="plain"
+        <ControlTrigger
           type="button"
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
+          aria-label={expanded ? "Hide agent steps" : "Show agent steps"}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="w-auto justify-start text-zinc-400 transition-colors hover:bg-zinc-900/70 hover:text-zinc-200"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -945,7 +947,7 @@ export function BotTracePanel({
             </span>
           ) : null}
           {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-        </UiButton>
+        </ControlTrigger>
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
@@ -980,22 +982,24 @@ export function BotTracePanel({
             );
           })}
           {latestOnly && (
-            <UiButton action="collapse" variant="plain"
+            <ControlTrigger
               type="button"
               onClick={() => setShowAll(true)}
-              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              aria-label={`Show all ${timeline.length} agent steps`}
+              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
             >
               Show all {timeline.length} steps
-            </UiButton>
+            </ControlTrigger>
           )}
           {streaming && showAll && timeline.length > 1 && (
-            <UiButton action="expand" variant="plain"
+            <ControlTrigger
               type="button"
               onClick={() => setShowAll(false)}
-              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              aria-label="Show the latest agent step only"
+              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
             >
               Show latest only
-            </UiButton>
+            </ControlTrigger>
           )}
         </div>
       )}

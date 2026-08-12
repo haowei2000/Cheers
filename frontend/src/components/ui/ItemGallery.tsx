@@ -26,9 +26,27 @@ import { MenuOption } from "@/components/ui/menu-option";
 import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
+import { InlineReference } from "@/components/ui/inline-reference";
+import { BotTracePanel } from "@/features/chat/BotTracePanel";
+import type { TraceEvent } from "@/types";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
 const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
+
+const traceGalleryEvents: TraceEvent[] = [
+  {
+    v: 1, id: "gallery-read", event_id: "gallery-read", msg_id: "gallery-message", channel_id: "gallery-channel",
+    trace_seq: 1, kind: "trace", phase: "tool_call", status: "completed", is_terminal: true,
+    created_at: "2026-08-12T07:44:00Z",
+    data: { presentation: { v: 2, event_type: "file_read", family: "file", operation: "read", confidence: "explicit", matched_by: "gallery", path: "server/Cargo.toml" } },
+  },
+  {
+    v: 1, id: "gallery-shell", event_id: "gallery-shell", msg_id: "gallery-message", channel_id: "gallery-channel",
+    trace_seq: 2, kind: "trace", phase: "tool_call", status: "in_progress", is_terminal: false,
+    created_at: "2026-08-12T07:44:01Z",
+    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "npm run typecheck" } },
+  },
+];
 
 const iconLabels: Record<EditorialIconName, string> = {
   correspondence: "Correspondence",
@@ -98,6 +116,38 @@ export function ItemGallery() {
           </p>
           <p className="mt-2 font-utility text-compact text-zinc-500">Controls · Status · Trace labels</p>
         </div>
+      </section>
+
+      <section aria-labelledby="inline-reference-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="inline-reference-register" className="font-display text-comfortable font-semibold tracking-tight">
+          Inline Workspace References
+        </h2>
+        <p className="mt-2 font-reading text-regular leading-6 text-zinc-300">
+          Current project directory: <InlineReference reference="/workspace/Cheers" aria-label="Open /workspace/Cheers in the remote workspace" />;
+          branch: <InlineReference reference="codex/fix-inline-workspace-links" aria-label="Open codex/fix-inline-workspace-links in the remote workspace" />;
+          client: <InlineReference reference="frontend/src" aria-label="Open frontend/src in the remote workspace" />.
+        </p>
+        <p className="mt-1 font-utility text-compact text-zinc-500">
+          Preserve the referenced text; the Open action belongs to its accessible name, never the visible label.
+        </p>
+      </section>
+
+      <section aria-labelledby="trace-disclosure-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="trace-disclosure-register" className="font-display text-comfortable font-semibold tracking-tight">
+          Trace Disclosure
+        </h2>
+        <div className="mt-2">
+          <BotTracePanel
+            channelId="gallery-channel"
+            msgId="gallery-message"
+            liveEvents={traceGalleryEvents}
+            expanded
+            showToggle={false}
+          />
+        </div>
+        <p className="mt-1 font-utility text-compact text-zinc-500">
+          Tool name, operation summary, and critical status remain visible; disclosure state is not a replacement label.
+        </p>
       </section>
 
       <section aria-labelledby="control-size-register" className="mb-4 border-y border-zinc-700 py-3">
