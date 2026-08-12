@@ -135,8 +135,8 @@ pr: https://github.com/haowei2000/Cheers/pull/492
 
 ## 后续
 
-- 等待 PR #492 CI 与 review，通过后合并到 `develop`。
-- 在已登录环境重点回归 Chat、Discussion、Composer、Channel Settings、Profile、Account、Members、Fleet 和 Workbench。
-- 合并后再创建 `develop → main` promotion PR；是否发版根据最终回归和产品变更范围决定。
+- Web 迁移 PR #492 已通过完整 CI 并合并到 `develop`。
+- `main → develop` 发布历史回流 PR #493、Web promotion PR #494、promotion 回流 PR #495 均已通过 CI 并合并。
+- 桌面端直接嵌入 Web 生产构建，因此本次迁移需要发布 Desktop 0.1.15；先通过独立版本 PR 的 Desktop Check，再 promotion 并创建 `desktop-v0.1.15` 标签。
+- 发布后继续在已登录环境重点回归 Chat、Discussion、Composer、Channel Settings、Profile、Account、Members、Fleet 和 Workbench。
 - iOS 继续参考 [[Cheers-iOS-Item-System-Migration-2026-08-11]]，保持跨端语义契约一致。
-
