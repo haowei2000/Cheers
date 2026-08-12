@@ -32,7 +32,7 @@ function RailButton({
 }) {
   return (
     <UiButton variant="plain"
-      square
+      content="icon"
       controlSize="comfortable"
       onClick={onClick}
       disabled={disabled}
@@ -65,7 +65,7 @@ function WorkspaceButton({
         name={workspace.name}
         src={workspace.avatar_url}
         id={workspace.workspace_id}
-        size="md"
+        size="large"
         className={cn(
           "rounded-sm transition-colors duration-150",
           selected ? "bg-zinc-600" : "group-hover:bg-zinc-600"
@@ -174,7 +174,7 @@ export function WorkspaceRail({
           label="Fleet — bots & status"
           className="relative text-zinc-500"
         >
-          <EditorialIcon name="agentMark" className={controlIconClasses.comfortable} />
+          <EditorialIcon name="agentMark" contentSize="large" />
         </IconButton>
 
         <IconButton
@@ -205,7 +205,7 @@ export function WorkspaceRail({
         <Avatar
           name={user?.display_name ?? user?.username}
           id={user?.user_id}
-          size="md"
+          size="large"
         />
 
         <IconButton

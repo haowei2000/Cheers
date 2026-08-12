@@ -1,4 +1,4 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useEffect, useRef } from "react";
 import { Save } from "lucide-react";
 import type { FsClient } from "../fsClient";
@@ -36,7 +36,7 @@ export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDe
   };
 
   return (
-    <div className="flex flex-col h-full text-xs">
+    <div className="flex flex-col h-full text-compact">
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
           lens.render({ data, config: view.config, onChange })
@@ -45,12 +45,12 @@ export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDe
         )}
       </div>
       {(status || !lens?.viewOnly) && (
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1.5">
-          <span className="text-[11px] text-zinc-400 truncate flex-1">{status}</span>
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
+          <span className="text-compact text-zinc-400 truncate flex-1">{status}</span>
           {!lens?.viewOnly && (
-            <UiButton variant="plain" onClick={() => void onSave()} className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
-              <Save className="w-3.5 h-3.5" /> Save
-            </UiButton>
+            <IconButton label={`Save ${view.file}`} controlSize="compact" onClick={() => void onSave()}>
+              <Save className="w-3.5 h-3.5" />
+            </IconButton>
           )}
         </div>
       )}

@@ -31,7 +31,7 @@
   a:hover { opacity: 0.72; }
   h1, h2, h3 { font-weight: 400; letter-spacing: -0.025em; line-height: 1.2; margin: 0; }
   p { margin: 0; }
-  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
 
   header.nav {
@@ -43,12 +43,12 @@
     display: flex; align-items: center; gap: 8px;
     height: 56px; max-width: 1280px; margin: 0 auto; padding: 0 24px;
   }
-  .brand { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; color: var(--ink); }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-size: 16px; color: var(--ink); }
   .brand:hover { opacity: 1; }
   .brand-mark { width: 18px; height: 18px; display: grid; place-items: center; }
   .brand-mark svg { width: 18px; height: 18px; }
   .nav-links { display: flex; align-items: center; gap: 2px; margin-left: 28px; }
-  .nav-links a { font-size: 14px; color: var(--ink); padding: 6px 14px; border-radius: 999px; }
+  .nav-links a { font-size: 14px; color: var(--ink); padding: 6px 14px; border-radius: 4px; }
   .nav-links a:hover, .nav-links a[aria-current="page"] { opacity: 1; background: rgba(237,236,236,.06); }
   .nav-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .nav-text { font-size: 14px; color: var(--ink); padding: 4px 8px; }
@@ -57,7 +57,7 @@
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     font-family: inherit; font-size: 14px; font-weight: 400;
-    border-radius: 999px; border: 1px solid transparent; padding: 6px 12px; cursor: pointer;
+    border-radius: 4px; border: 0; padding: 6px 12px; cursor: pointer;
   }
   .btn:hover { opacity: 1; text-decoration: none; }
   .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
@@ -67,17 +67,17 @@
   .btn-outline:hover { border-color: rgba(237,236,236,.5); background: rgba(237,236,236,.04); }
 
   .page-hero { padding: 72px 0 32px; }
-  .page-hero h1 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -0.03em; }
-  .page-hero .lead { margin-top: 14px; font-size: 15px; color: var(--ink-soft); }
+  .page-hero h1 { font-size: 16px; letter-spacing: -0.03em; }
+  .page-hero .lead { margin-top: 14px; font-size: 16px; color: var(--ink-soft); }
 
   .legal { padding: 8px 0 80px; }
   .legal .prose { max-width: 720px; }
   .prose h2 {
-    font-size: 20px; margin: 40px 0 12px; letter-spacing: -0.02em; color: var(--ink);
+    font-size: 16px; margin: 40px 0 12px; letter-spacing: -0.02em; color: var(--ink);
   }
   .prose h2:first-of-type { margin-top: 8px; }
   .prose p, .prose li {
-    font-size: 15px; line-height: 1.65; color: var(--ink-soft);
+    font-size: 16px; line-height: 1.65; color: var(--ink-soft);
   }
   .prose p + p { margin-top: 14px; }
   .prose a {
@@ -95,8 +95,8 @@
   .foot-grid {
     display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 32px; margin-bottom: 40px;
   }
-  .foot-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 12px; }
-  .foot-desc { font-size: 13.5px; color: var(--ink-soft); max-width: 240px; }
+  .foot-brand { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 12px; }
+  .foot-desc { font-size: 14px; color: var(--ink-soft); max-width: 240px; }
   .foot-col h4 {
     font-size: 12px; font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--ink-faint); margin: 0 0 14px;
@@ -106,7 +106,7 @@
   .foot-bottom {
     display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     padding-top: 24px; border-top: 1px solid var(--line);
-    font-size: 13px; color: var(--ink-faint);
+    font-size: 14px; color: var(--ink-faint);
   }
   .foot-bottom a { color: var(--ink-faint); }
   @media (max-width: 800px) { .foot-grid { grid-template-columns: 1fr 1fr; } }

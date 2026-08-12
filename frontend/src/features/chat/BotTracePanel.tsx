@@ -166,25 +166,25 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <span className="font-mono text-[11px] text-zinc-400">{result.branch ?? "Working tree"}</span>
+        <span className="font-mono text-compact text-zinc-400">{result.branch ?? "Working tree"}</span>
         {result.clean === true && <span className="text-emerald-400/80">Clean</span>}
         {countItems.length > 0 && (
-          <span className="text-[10px] text-zinc-400">
+          <span className="text-minimal text-zinc-400">
             {countItems.map(([name, count]) => `${count} ${name}`).join(" · ")}
           </span>
         )}
       </div>
       {result.files.length > 0 && (
-        <div className="mt-3 max-h-64 space-y-0.5 overflow-auto">
+        <div className="mt-3 max-h-64 space-y-1 overflow-auto">
           {result.files.map((file, index) => {
             const marker = file.state === "untracked" ? "A" : file.index.trim() || file.worktree.trim() || "M";
             return (
               <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-sm px-1 py-2 hover:bg-zinc-900/60">
                 <span className={cn(
-                  "w-4 shrink-0 font-mono text-[10px]",
+                  "w-4 shrink-0 font-mono text-minimal",
                   file.state === "conflicted" ? "text-red-300/80" : file.state === "untracked" ? "text-emerald-400/80" : "text-zinc-500",
                 )}>{marker}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-300" title={file.path}>{file.path}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-compact text-zinc-300" title={file.path}>{file.path}</span>
               </div>
             );
           })}
@@ -192,7 +192,7 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
       )}
       {result.truncated && <div className="mt-2 text-zinc-400">More files omitted.</div>}
       {presentation.compound && (
-        <div className="mt-2 text-[10px] text-zinc-400">
+        <div className="mt-2 text-minimal text-zinc-400">
           Status summary extracted from compound shell output.
         </div>
       )}
@@ -252,7 +252,7 @@ function RawEventData({ metadata, data }: { metadata: JsonRecord; data: JsonReco
 
 function DiffDelta({ stats }: { stats: { additions: number; deletions: number } }) {
   return (
-    <span className="shrink-0 font-mono text-[10px] tabular-nums">
+    <span className="shrink-0 font-mono text-minimal tabular-nums">
       <span className="text-emerald-400/90">+{stats.additions}</span>
       {" "}
       <span className="text-red-400/80">−{stats.deletions}</span>
@@ -268,8 +268,8 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
   const selectedStats = diffStats(selected);
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
-        <span className="min-w-0 truncate font-mono text-[11px] text-zinc-300" title={selected.path}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
+        <span className="min-w-0 truncate font-mono text-compact text-zinc-300" title={selected.path}>
           {pathBasename(selected.path)}
         </span>
         <DiffDelta stats={diffs.length === 1 ? selectedStats : total} />
@@ -280,17 +280,17 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
             const stats = diffStats(diff);
             const active = diff.path === selected.path;
             return (
-              <UiButton variant="plain"
+              <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={active}
                 key={diff.path}
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular" className={cn(
- "flex w-full items-center gap-2 rounded-sm px-2 text-left transition-colors hover:bg-zinc-800",
- active ? "bg-indigo-600/15 text-indigo-200" : "text-zinc-400 hover:text-zinc-200",
+ "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-800",
+ active ? "bg-indigo-600/15 text-indigo-200": "text-zinc-400 hover:text-zinc-200",
  )}
                 title={diff.path}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                <span className="min-w-0 flex-1 truncate font-mono text-compact">
                   {pathBasename(diff.path)}
                 </span>
                 <DiffDelta stats={stats} />
@@ -307,13 +307,13 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
 function FileEditEmptyState({ path }: { path: string | null }) {
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
-      <div className="text-[11px] text-zinc-300">No file changes</div>
+      <div className="text-compact text-zinc-300">No file changes</div>
       {path && (
-        <div className="mt-1 truncate font-mono text-[11px] text-zinc-400" title={path}>
+        <div className="mt-1 truncate font-mono text-compact text-zinc-400" title={path}>
           {path}
         </div>
       )}
-      <div className="mt-1 text-[10px] text-zinc-400">
+      <div className="mt-1 text-minimal text-zinc-400">
         The edit reported identical before/after content.
       </div>
     </div>
@@ -392,20 +392,20 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
   };
 
   return (
-    <div className="space-y-3 p-3 text-[11px] text-zinc-400">
+    <div className="space-y-3 p-3 text-compact text-zinc-400">
       {presentation && (
-        <div className="rounded-sm bg-zinc-950/45 px-3 py-2.5">
+        <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-zinc-200">
               {TOOL_EVENT_META[presentation.event_type].label}
             </span>
             {presentation.risk && (
-              <span className="text-[10px] text-zinc-500">
+              <span className="text-minimal text-zinc-500">
                 {presentation.risk.replace(/_/g, " ")}
               </span>
             )}
             {presentation.compound && (
-              <span className="text-[10px] text-amber-300/80">
+              <span className="text-minimal text-amber-300/80">
                 compound shell command
               </span>
             )}
@@ -425,8 +425,8 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {outputDiff && <DiffView diff={outputDiff} className="max-h-80 rounded-sm bg-zinc-950" />}
       {presentation && hasGitStatus && <GitStatusInspector presentation={presentation} />}
       {planEntries && (
-        <div className="space-y-1.5">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Plan</div>
+        <div className="space-y-2">
+          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">Plan</div>
           {planEntries.length > 0 ? (
             <ol className="space-y-1 pl-4 list-decimal">
               {planEntries.map((entry, index) => {
@@ -440,7 +440,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                   <li key={`${index}-${content}`} className="break-words">
                     <span className="text-zinc-300">{content}</span>
                     {status && (
-                      <span className="ml-1.5 text-zinc-500">
+                      <span className="ml-2 text-zinc-500">
                         {statusLabel(status)}
                       </span>
                     )}
@@ -456,20 +456,20 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
 
       {cwd && (
         <div>
-          <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Working directory</div>
+          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">Working directory</div>
           <div className="mt-1 font-mono text-zinc-200">{cwd}</div>
         </div>
       )}
       {!diffs.length && !showFileEditEmpty && filePath && (
         <div>
-          <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">File</div>
+          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">File</div>
           <div className="mt-1 font-mono text-zinc-200">{filePath}</div>
         </div>
       )}
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
         <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">Output</div>
-          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-2.5 py-2 text-zinc-300"><DetailValue value={output} /></div>
+          <div className="mb-1 text-minimal font-medium uppercase tracking-wide text-zinc-400">Output</div>
+          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-zinc-300"><DetailValue value={output} /></div>
         </div>
       )}
       <RawEventData metadata={metadata} data={data} />
@@ -503,10 +503,10 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
 
   return (
     <div className="overflow-hidden rounded-sm bg-zinc-950/45">
-      <header className="flex items-start justify-between gap-3 px-3 py-2.5 border-b border-zinc-800">
+      <header className="flex items-start justify-between gap-3 px-3 py-3 border-b border-zinc-800">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-200">{title}</p>
-          <p className="mt-0.5 text-xs text-zinc-400">
+          <p className="text-regular font-medium text-zinc-200">{title}</p>
+          <p className="mt-1 text-compact text-zinc-400">
             {pending
               ? "Waiting for a decision."
               : expired
@@ -520,7 +520,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </div>
         <span
           className={cn(
-            "shrink-0 text-[11px]",
+            "shrink-0 text-compact",
             pending ? "text-amber-400/90" : ok ? "text-zinc-400" : denied || expired ? "text-red-400/70" : "text-zinc-400",
           )}
         >
@@ -528,20 +528,20 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </span>
       </header>
       {command && (
-        <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-          <p className="mb-1.5 text-[10px] uppercase tracking-wide text-zinc-400">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-1.5 font-mono text-xs text-zinc-300">
+        <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-3">
+          <p className="mb-2 text-minimal uppercase tracking-wide text-zinc-400">Command</p>
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-zinc-300">
             {command}
           </pre>
           {cwd && (
-            <p className="mt-2 truncate font-mono text-[11px] text-zinc-500" title={cwd}>
+            <p className="mt-2 truncate font-mono text-compact text-zinc-500" title={cwd}>
               {cwd}
             </p>
           )}
         </div>
       )}
       {!pending && decision && (
-        <div className="px-3 py-2.5 text-xs text-zinc-400">
+        <div className="px-3 py-3 text-compact text-zinc-400">
           Decision: <span className="font-mono text-zinc-300">{decision}</span>
         </div>
       )}
@@ -612,7 +612,7 @@ function TraceItem({
   // Pending approvals expand inline under the row with action buttons — no click needed.
   if (needsAction && pendingApproval) {
     return (
-      <div className="min-w-0 space-y-1.5">
+      <div className="min-w-0 space-y-2">
         <div
           className={cn(
             "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left",
@@ -620,16 +620,16 @@ function TraceItem({
           )}
         >
           <Icon className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />
-          <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] font-medium text-zinc-200">
+          <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-zinc-200">
             {displayTitle}
           </span>
           {preview && (
-            <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-zinc-400" title={preview}>
+            <span className="min-w-0 flex-1 truncate font-mono text-minimal text-zinc-400" title={preview}>
               {preview}
             </span>
           )}
-          <span className={cn("shrink-0 text-[10px]", statusTone)}>{statusText}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 text-amber-400/70" />
+          <span className={cn("shrink-0 text-minimal", statusTone)}>{statusText}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-amber-400/70" />
         </div>
         <PermissionCard
           message={pendingApproval}
@@ -644,34 +644,34 @@ function TraceItem({
 
   return (
     <div className="relative min-w-0">
-      <UiButton variant="plain"
+      <UiButton action={active ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
         ref={triggerRef}
         type="button"
         onClick={onToggle}
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
- "flex w-full items-center gap-2 rounded-sm px-2 text-left transition-colors hover:bg-zinc-900/70",
+ "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
  )}
       >
         <Icon className={cn("h-3.5 w-3.5 shrink-0", tone)} />
-        <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] font-medium text-zinc-200">
+        <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-zinc-200">
           {displayTitle}
         </span>
         {preview && (
-          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-zinc-400" title={preview}>
+          <span className="min-w-0 flex-1 truncate font-mono text-minimal text-zinc-400" title={preview}>
             {preview}
           </span>
         )}
         {statusText && (
-          <span className={cn("shrink-0 text-[10px]", statusTone)}>
+          <span className={cn("shrink-0 text-minimal", statusTone)}>
             {statusText}
           </span>
         )}
         <ChevronRight
           className={cn(
-            "h-3 w-3 shrink-0 text-zinc-500 transition-transform",
+            "h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform",
             active && "rotate-90 text-zinc-300",
           )}
         />
@@ -913,17 +913,17 @@ export function BotTracePanel({
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
-        <UiButton variant="plain"
+        <UiButton action={expanded ? "collapse" : "expand"} content="iconText" variant="plain"
           type="button"
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           {expanded ? (
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="w-3.5 h-3.5" />
           ) : (
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3.5 h-3.5" />
           )}
           <span>
             Agent steps
@@ -934,23 +934,23 @@ export function BotTracePanel({
                 : ""}
           </span>
           {pendingCount > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-amber-400/80">
-              <ShieldCheck className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1 text-amber-400/80">
+              <ShieldCheck className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
           ) : approvalCount > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-zinc-400">
-              <ShieldCheck className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1 text-zinc-400">
+              <ShieldCheck className="w-3.5 h-3.5" />
               {approvalCount}
             </span>
           ) : null}
-          {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+          {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
         </UiButton>
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-          <Loader2 className="h-3 w-3 animate-spin" />
+        <div className="flex items-center gap-2 text-compact text-zinc-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading steps…
         </div>
       )}
@@ -980,19 +980,19 @@ export function BotTracePanel({
             );
           })}
           {latestOnly && (
-            <UiButton variant="plain"
+            <UiButton action="collapse" variant="plain"
               type="button"
               onClick={() => setShowAll(true)}
-              className="self-start text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
+              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show all {timeline.length} steps
             </UiButton>
           )}
           {streaming && showAll && timeline.length > 1 && (
-            <UiButton variant="plain"
+            <UiButton action="expand" variant="plain"
               type="button"
               onClick={() => setShowAll(false)}
-              className="self-start text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
+              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
             >
               Show latest only
             </UiButton>
@@ -1001,15 +1001,15 @@ export function BotTracePanel({
       )}
 
       {expanded && events && !hasRows && !loading && !error && (
-        <div className="mt-1 px-2.5 text-[11px] text-zinc-400">
+        <div className="mt-1 px-3 text-compact text-zinc-400">
           No steps recorded.
         </div>
       )}
 
       {expanded && error && !loading && (
-        <div className="mt-1 px-2.5 flex items-center gap-2 text-[11px] text-red-400">
+        <div className="mt-1 px-3 flex items-center gap-2 text-compact text-red-400">
           <span>Failed to load steps.</span>
-          <UiButton variant="plain"
+          <UiButton action="retry" variant="plain"
             type="button"
             onClick={() => void load()}
             className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"

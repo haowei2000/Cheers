@@ -1,8 +1,10 @@
 import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import toast from "react-hot-toast";
-import { AudioLines, FlaskConical, Loader2 } from "lucide-react";
+import { AudioLines, FlaskConical, Loader2, Save } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   getSttSettings,
@@ -76,17 +78,17 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "bg-zinc-800 text-zinc-100";
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <AudioLines className="w-3.5 h-3.5" />
         Speech-to-text
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-xs text-zinc-400 mb-4">
+        <p className="text-compact text-zinc-400 mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
           (<code className="text-zinc-400">/audio/transcriptions</code>). Transcripts are shown
@@ -95,19 +97,15 @@ export function AdminSttSettings() {
         </p>
 
         <div className="grid gap-3 max-w-lg">
-          <label className="flex items-center gap-2 text-sm text-zinc-200">
-            {/* design-system-native: checkbox */}
-<input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="h-4 w-4 accent-indigo-500"
-            />
-            Enable speech-to-text
-          </label>
+          <CheckboxField
+            label="Enable speech-to-text"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="text-zinc-200"
+          />
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Endpoint (base URL including /v1)
             </label>
             <UiInput
@@ -119,7 +117,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Model
             </label>
             <UiInput
@@ -131,7 +129,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               API key{" "}
               {loaded?.api_key_set && !clearKey && (
                 <span className="normal-case text-zinc-400">
@@ -153,24 +151,21 @@ export function AdminSttSettings() {
               className={`${inputCls} disabled:opacity-40`}
             />
             {loaded?.api_key_set && (
-              <label className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
-                {/* design-system-native: checkbox */}
-<input
-                  type="checkbox"
-                  checked={clearKey}
-                  onChange={(e) => setClearKey(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-red-500"
-                />
-                Clear the saved key
-              </label>
+              <CheckboxField
+                label="Clear the saved key"
+                checked={clearKey}
+                onChange={(e) => setClearKey(e.target.checked)}
+                controlSize="compact"
+                className="mt-1 text-compact text-zinc-400"
+              />
             )}
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <Button onClick={() => void save()} disabled={busy !== null}>
-              {busy === "save" ? "Saving…" : "Save"}
-            </Button>
-            <Button
+            <IconButton label="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null}>
+              {busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            </IconButton>
+            <Button action="test"
               variant="secondary"
               onClick={() => void test()}
               disabled={busy !== null || !loaded?.configured}
@@ -191,7 +186,7 @@ export function AdminSttSettings() {
 
           {testResult && (
             <p
-              className={`text-xs ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
+              className={`text-compact ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
             >
               {testResult}
             </p>

@@ -157,7 +157,7 @@ export function WorkbenchManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Blocks className="w-3.5 h-3.5" />
         Workbench extensions
       </h2>
@@ -185,7 +185,7 @@ export function WorkbenchManager() {
           controlSize="regular"
           className="border-t border-zinc-800 pt-2"
           description="Sandboxed renderer bundles available in every channel."
-          action={<><UiButton variant="plain"
+          action={<><UiButton action="upload" content="iconText" variant="plain"
               type="button"
               onClick={() => pluginRef.current?.click()}
               controlSize="compact"
@@ -211,18 +211,17 @@ export function WorkbenchManager() {
             {plugins.map((p) => (
               <WorkbenchItem
                 key={p.plugin_id}
-                title={p.title}
-                subtitle={p.plugin_id}
+                title={<span title={`${p.title} · ${p.plugin_id}`}>{p.title} · {p.plugin_id}</span>}
                 leading={<Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />}
                 status={p.origin === "system" ? (
                   <span
                     title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
-                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                    className="text-minimal px-2 py-1 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
                   >
                     Official
                   </span>
                 ) : undefined}
-                actions={<UiButton variant="plain"
+                actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                   onClick={async () => {
                     if (
                       p.origin === "system" &&
@@ -253,7 +252,7 @@ export function WorkbenchManager() {
           controlSize="regular"
           className="border-t border-zinc-800 pt-2"
           description="Declarative scenario manifests available in every channel; no code execution."
-          action={<><UiButton variant="plain"
+          action={<><UiButton action="upload" content="iconText" variant="plain"
               type="button"
               onClick={() => tplRef.current?.click()}
               controlSize="compact"
@@ -282,9 +281,9 @@ export function WorkbenchManager() {
               <WorkbenchItem
                 key={t.id}
                 title={t.title}
-                subtitle={t.id}
+                status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={t.id}>{t.id}</span>}
                 leading={<Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />}
-                actions={<UiButton variant="plain"
+                actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${t.title}`} variant="plain"
                   onClick={async () => {
                     await deleteGlobalTemplate(t.id);
                     await reload();
@@ -307,7 +306,7 @@ export function WorkbenchManager() {
             controlSize="regular"
             className="border-t border-zinc-800 pt-2"
             description="Renderer plugins installed only for you on this machine."
-            action={<><UiButton variant="plain"
+            action={<><UiButton action="upload" content="iconText" variant="plain"
                 type="button"
                 onClick={() => personalRef.current?.click()}
                 controlSize="compact"
@@ -336,9 +335,9 @@ export function WorkbenchManager() {
                 <WorkbenchItem
                   key={p.id}
                   title={p.title}
-                  subtitle={p.id}
+                  status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={p.id}>{p.id}</span>}
                   leading={<Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />}
-                  actions={<UiButton variant="plain"
+                  actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                     onClick={async () => {
                       await removePersonalPlugin(p.id);
                       await reloadPersonal();

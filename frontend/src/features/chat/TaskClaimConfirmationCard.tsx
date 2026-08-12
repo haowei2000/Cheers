@@ -27,14 +27,14 @@ export function TaskClaimConfirmationCard({ message, channelId, currentUserId }:
   // renders the avatar, sender header, reply quote and text exactly like any
   // other bot reply; this is only the small action footer attached to it.
   if (resolved) {
-    return <p className="mt-2 text-xs text-zinc-500">Claim response recorded</p>;
+    return <p className="mt-2 text-compact text-zinc-500">Claim response recorded</p>;
   }
   if (!actionable) return null;
-  return <div className="mt-2.5 flex items-center gap-2">
-    <Button size="sm" variant="secondary" disabled={busy} onClick={() => void resolve("reject")}>
+  return <div className="mt-3 flex items-center gap-2">
+    <Button action="decline" content="iconText" controlSize="compact" variant="secondary" disabled={busy} onClick={() => void resolve("reject")}>
       <X className="h-3.5 w-3.5" />Decline
     </Button>
-    <Button size="sm" loading={busy} onClick={() => void resolve("accept")}>
+    <Button action="accept" content="iconText" controlSize="compact" loading={busy} onClick={() => void resolve("accept")}>
       <Check className="h-3.5 w-3.5" />Accept claim
     </Button>
   </div>;

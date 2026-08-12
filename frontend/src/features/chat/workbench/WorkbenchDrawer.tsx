@@ -1,4 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
+import { Tip } from "@/components/ui/tip";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Eye, Folder, LayoutGrid, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -503,17 +505,17 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         cn(
           open ? "flex" : "hidden",
           "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
-          "min-h-0 flex-col rounded-sm border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
           !drag.pos && "top-2 left-2",
           minimized ? "w-[300px]" : "w-[560px] h-[75%]",
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
         )
       : // Fallback (no lane context): a plain docked column.
         cn(
           open ? "flex" : "hidden",
-          "min-h-0 flex-col rounded-sm border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
           minimized ? "w-[300px] self-start max-h-full" : "w-[560px] h-full",
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
         );
 
   // Minimized keeps its dragged spot but sheds the resized size (content-height).
@@ -534,78 +536,82 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       >
         <div
           {...(float ? drag.handleProps : {})}
-          className="mx-2 mt-2 flex h-12 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
+          className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
         >
           {minimized ? (
             // Collapsed: the whole title is the expand target (bigger than the
             // 14px restore icon); a button also opts out of the drag handle.
-            <UiButton variant="plain"
+            <UiButton action="expand" variant="plain"
               type="button"
               onClick={toggleCollapsed}
               title="Expand"
-              controlSize="regular" className="-mx-1 rounded-sm px-1 text-sm font-semibold text-zinc-100 hover:bg-zinc-800/60"
+              controlSize="regular" className="-mx-1 rounded-sm  font-semibold text-zinc-100 hover:bg-zinc-800/60"
             >
               Workbench
             </UiButton>
           ) : (
-            <span className="text-sm font-semibold text-zinc-100">Workbench</span>
+            <span className="text-regular font-semibold text-zinc-100">Workbench</span>
           )}
           {!minimized && (
           <>
-          <UiButton variant="plain"
+          <ControlTrigger
             type="button"
             onClick={() => setRawMode((current) => !current)}
             aria-pressed={rawMode}
             title={rawMode ? "Return to scene tabs" : "Browse every workspace file"}
             controlSize="regular" className={cn(
- "flex items-center gap-1.5 rounded-sm px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ "flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
- ? "bg-indigo-500/15 text-indigo-200"
- : "bg-zinc-800/70 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+ ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
  )}
           >
             {rawMode ? <LayoutGrid className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
             {rawMode ? "Scenes" : "Raw"}
-          </UiButton>
-          <UiButton variant="plain"
+          </ControlTrigger>
+          <Tip content="Load a temporary template or renderer extension for this session.">
+          <UiButton action="upload" content="iconText" variant="plain"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            title="Load a temporary extension: a template .json or a renderer plugin .html, this session only (install globally in Settings → Workbench extensions)"
-            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
           >
-            <Clock className="w-3.5 h-3.5" /> Load extension
+            <Clock className="w-3.5 h-3.5" /> Load
           </UiButton>
+          </Tip>
           {canWatch &&
             (watching ? (
-              <UiButton variant="plain"
+              <Tip content="Stop watching the current extension file.">
+              <UiButton action="stop" content="iconText" variant="plain"
                 onClick={stopWatch}
-                title={`Hot reload is watching ${watching} — saving it in your editor reloads the plugin here. Click to stop.`}
-                className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+                aria-label={`Stop watching ${watching}`}
+                className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300"
               >
-                <Eye className="w-3.5 h-3.5" /> Watching {watching}
+                <Eye className="w-3.5 h-3.5" /> Stop watch
               </UiButton>
+              </Tip>
             ) : (
-              <UiButton variant="plain"
+              <Tip content="Watch an extension file and reload it after every editor save.">
+              <UiButton action="watch" content="iconText" variant="plain"
                 onClick={() => void startWatch()}
                 disabled={busy}
-                title="Watch an extension file on disk: every save in your editor reloads it here, no re-dropping"
-                className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+                aria-label="Watch an extension file on disk"
+                className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
               >
-                <Eye className="w-3.5 h-3.5" /> Watch file
+                <Eye className="w-3.5 h-3.5" /> Watch
               </UiButton>
+              </Tip>
             ))}
           {pinned.length > 0 && (
             <div className="relative">
-              <UiButton variant="plain"
+              <UiButton action={pinMenu ? "collapse" : "expand"} variant="plain"
                 onClick={() => setPinMenu((o) => !o)}
                 title="Pinned files (click to manage / unpin)"
-                className="text-[11px] text-amber-400/80 hover:text-amber-300"
+                className="text-amber-400/80 hover:text-amber-300"
               >
                 📌 {pinned.length}
               </UiButton>
               {pinMenu && (
                 <div className="absolute left-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
-                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400">
+                  <div className="px-2 py-1 text-minimal uppercase tracking-wider text-zinc-400">
                     Pinned (injected into every prompt)
                   </div>
                   <ItemList presentationLevel="minimal" controlSize="compact">{pinned.map((p) => (
@@ -613,7 +619,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                       key={p}
                       title={p}
                       controlSize="compact"
-                      actions={<UiButton variant="plain"
+                      actions={<UiButton action="unpin" content="icon" variant="plain" aria-label={`Unpin ${p}`}
                         onClick={() => togglePin(p)}
                         title="Unpin"
                         className="text-zinc-500 hover:text-red-400 flex-shrink-0"
@@ -641,33 +647,34 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <UiButton variant="plain"
             onClick={toggleCollapsed}
             title={minimized ? "Expand" : "Minimize"}
-            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
+            content="icon" controlSize="compact"
+            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
           >
             {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
-          <UiButton variant="plain" onClick={onClose} title="Close">
+          <UiButton action="close" variant="plain" onClick={onClose} title="Close">
             <X className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
           </UiButton>
         </div>
 
         {!minimized && notice && (
-          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-400/90">
+          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
-            <UiButton variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
-              <X className="w-3 h-3" />
+            <UiButton action="dismiss" variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
+              <X className="w-3.5 h-3.5" />
             </UiButton>
           </div>
         )}
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1.5 text-[11px] text-zinc-400">
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-zinc-400">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
               No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
             </span>
-            <UiButton variant="plain"
+            <UiButton action="create" variant="plain"
               onClick={() => loadTemporary(JSON.stringify(researchExample))}
-              controlSize="regular" className="px-2 rounded-sm bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex-shrink-0"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex-shrink-0"
             >
               Try it now: Research
             </UiButton>
@@ -677,7 +684,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         {/* Minimized: a ViewBoard-style glance (scenario + pinned files) in place
             of the full browser. Clicking a row expands back to the browser. */}
         {minimized && (
-          <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
             <GlanceRow
               Icon={Package}
               label="Scenario"

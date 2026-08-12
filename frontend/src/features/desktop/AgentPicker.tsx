@@ -4,6 +4,7 @@ import { Download, Loader2, Terminal, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 import { agentIconFor, AgentGlyph } from "@/components/ui/agentIcons";
 import { invokeDesktop } from "@/lib/desktop";
+import { avatarSizeClasses } from "@/components/ui/content-size";
 
 /** Mirror of the Rust `DetectedAgent` (connector.rs). */
 export interface DetectedAgent {
@@ -58,7 +59,7 @@ export function AgentPicker({
         const selected = value === a.key;
         return (
           <div key={a.key} className="relative">
-            <UiButton variant="plain"
+            <UiButton action="install" variant="plain"
               type="button"
               disabled={!a.installed}
               title={
@@ -69,15 +70,14 @@ export function AgentPicker({
                     : `${a.label} can't be connected yet`
               }
               onClick={() => a.installed && onPick(a.key, a.path)}
-              controlSize="regular" className={`flex flex-col items-center gap-1 w-20 rounded-sm px-2 transition-all ${
+              controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
  selected
- ? "ring-2 ring-indigo-500 bg-zinc-800"
- : "bg-zinc-800/60 hover:bg-zinc-800"
+ ? "ring-2 ring-indigo-500 bg-zinc-800": "bg-zinc-800/60 hover:bg-zinc-800"
  } ${a.installed ? "" : "opacity-50"}`}
             >
               <span
                 data-design-system-exempt="identity"
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                className={`${avatarSizeClasses.regular} flex shrink-0 items-center justify-center rounded-full`}
                 style={{ backgroundColor: icon?.bg ?? "#3f3f46", color: icon?.fg ?? "#e4e4e7" }}
               >
                 {icon ? (
@@ -86,10 +86,10 @@ export function AgentPicker({
                   <Terminal className="w-4 h-4" />
                 )}
               </span>
-              <span className="text-[11px] text-zinc-300 truncate w-full text-center">
+              <span className="text-compact text-zinc-300 truncate w-full text-center">
                 {a.label}
               </span>
-              <span className="text-[9px] text-zinc-500">
+              <span className="text-minimal text-zinc-500">
                 {a.installed ? "installed" : a.installable ? "not installed" : "unavailable"}
               </span>
             </UiButton>
@@ -99,12 +99,12 @@ export function AgentPicker({
                 title={`Install ${a.label}`}
                 disabled={installing !== null}
                 onClick={() => void install(a.key)}
-                square controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
+                content="icon" controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
               >
                 {installing === a.key ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Download className="w-3 h-3" />
+                  <Download className="w-3.5 h-3.5" />
                 )}
               </UiButton>
             )}
@@ -112,21 +112,20 @@ export function AgentPicker({
         );
       })}
       {/* Custom command escape hatch. */}
-      <UiButton variant="plain"
+      <UiButton action="choose" variant="plain"
         type="button"
         title="Use a custom command"
         onClick={() => onPick("custom", null)}
-        controlSize="regular" className={`flex flex-col items-center gap-1 w-20 rounded-sm px-2 transition-all ${
- value === "custom"
- ? "ring-2 ring-indigo-500 bg-zinc-800"
+        controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
+ value === "custom"? "ring-2 ring-indigo-500 bg-zinc-800"
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
-        <span data-design-system-exempt="identity" className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 flex items-center justify-center">
+        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-zinc-300`}>
           <Wrench className="w-4 h-4" />
         </span>
-        <span className="text-[11px] text-zinc-300">Custom</span>
-        <span className="text-[9px] text-zinc-500">command</span>
+        <span className="text-compact text-zinc-300">Custom</span>
+        <span className="text-minimal text-zinc-500">command</span>
       </UiButton>
       </div>
     </div>

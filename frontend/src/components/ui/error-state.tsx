@@ -37,18 +37,18 @@ export function ErrorState({
     >
       <Icon
         className={cn(
-          "w-8 h-8 mb-3",
+          "mb-3 h-5 w-5",
           tone === "error" ? "text-red-400" : "text-amber-400"
         )}
       />
-      <p className="text-sm font-semibold text-zinc-100">{title}</p>
+      <p className="text-regular font-semibold text-zinc-100">{title}</p>
       {description && (
-        <p className="text-xs text-zinc-400 mt-1 max-w-xs">{description}</p>
+        <p className="text-compact text-zinc-400 mt-1 max-w-xs">{description}</p>
       )}
       {(action || secondaryAction) && (
         <div className="flex items-center gap-3 mt-4">
           {action && (
-            <Button size="sm" onClick={action.onClick}>
+            <Button controlSize="compact" onClick={action.onClick}>
               {action.label}
             </Button>
           )}
@@ -56,7 +56,7 @@ export function ErrorState({
             <button
               type="button"
               onClick={secondaryAction.onClick}
-              className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
+              className="text-compact text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
             >
               {secondaryAction.label}
             </button>

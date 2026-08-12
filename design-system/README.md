@@ -77,6 +77,13 @@ minimum 44px hit target. Workspace navigation uses comfortable; ordinary items,
 fields, buttons, and composer controls use regular; dense section utilities use
 compact. A size change must never remove information or critical state.
 
+Identity and semantic glyphs use an independent `ContentSize`: `small`,
+`regular`, or `large`. On Web these map to 20/28/36px avatars, 14/16/20px
+semantic icons, and 6/8/10px presence dots. ContentSize never changes the
+ControlSize hit target. FileTree and Diff rows remain specialized structures but
+must declare ControlSize; editor, canvas, gutter, and responsive panel geometry
+use dedicated layout tokens instead of inventing control tiers.
+
 ## Web gallery
 
 The gallery is a Vite entry and cannot be rendered directly with a `file://`

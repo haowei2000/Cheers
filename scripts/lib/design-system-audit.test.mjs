@@ -19,6 +19,20 @@ const policy = {
     restingBorder: 0,
     hardcodedControlSize: 0,
     sharedControlSizeOverride: 0,
+    sharedHorizontalPaddingOverride: 0,
+    sharedControlWidthOverride: 0,
+    sharedContentSizeOverride: 0,
+    sharedPaddingOverride: 0,
+    nonStandardRowHeight: 0,
+    nonStandardIdentitySize: 0,
+    nonStandardIconSize: 0,
+    nonStandardSpacing: 0,
+    arbitrarySpinnerSize: 0,
+    nonStandardTypographySize: 0,
+    sharedButtonTypographyOverride: 0,
+    detachedEditActionButton: 0,
+    actionButtonWithoutKey: 0,
+    legacyControlSizeProp: 0,
   },
   allowedNativeReasons: ["checkbox"],
   allowedExemptReasons: ["presence"],
@@ -60,4 +74,95 @@ test("accepts an explicit semantic exemption attribute", () => {
   const result = auditSources([{ file: "/repo/frontend/src/Presence.tsx", source }], ts, policy);
   assert.equal(result.violations.unregisteredFullRadius, 0);
   assert.deepEqual(result.invalidReasons, []);
+});
+
+test("rejects business overrides of shared horizontal padding and button width", () => {
+  const source = `<><Button className="px-2"/><UiButton className="w-full pr-1"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedHorizontalPaddingOverride, 2);
+  assert.equal(result.violations.sharedControlWidthOverride, 1);
+});
+
+test("allows primitives to own their horizontal geometry", () => {
+  const source = `<Button className="w-24 px-3"/>`;
+  const result = auditSources([{ file: "/repo/frontend/src/components/ui/Good.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedHorizontalPaddingOverride, 0);
+  assert.equal(result.violations.sharedControlWidthOverride, 0);
+});
+
+test("rejects business overrides of shared content geometry", () => {
+  const source = `<><Avatar size="small" className="!h-4 !w-4"/><EditorialIcon name="proof" className="h-6 w-6"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedContentSizeOverride, 4);
+});
+
+test("accepts only the four registered typography sizes", () => {
+  const source = `<><span className="text-minimal"/><span className="text-compact"/><span className="text-regular"/><span className="text-comfortable"/><span className="text-[11px]"/><span className="text-lg"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardTypographySize, 2);
+});
+
+test("rejects business typography overrides on shared buttons", () => {
+  const source = `<><Button className="text-compact"/><UiButton className="font-reading text-comfortable"/><IconButton className="text-regular" label="Open"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedButtonTypographyOverride, 4);
+});
+
+test("rejects detached text save and edit actions for existing objects", () => {
+  const source = `<><Button action="save"/><UiButton action="edit"/><IconButton label="Save channel purpose"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.detachedEditActionButton, 2);
+});
+
+test("counts text actions without an ActionKey while allowing icon and selector controls", () => {
+  const source = `<><Button>Delete project</Button><UiButton content="iconText"><Plus/>Add</UiButton><Button action="delete"/><Button content="icon" aria-label="Close"><X/></Button><UiButton role="tab">Overview</UiButton></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.actionButtonWithoutKey, 2);
+});
+
+test("counts every business Button without an ActionKey and does not accept comments as exemptions", () => {
+  const source = `<>/* design-system-exempt: action */<Button>Save changes</Button><UiButton aria-expanded={open}>Details</UiButton><Button content="icon" aria-label="Close"><X/></Button></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.actionButtonWithoutKey, 2);
+});
+
+test("rejects the legacy shared-control size prop", () => {
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source: `<Button size="sm"/>` }], ts, policy);
+  assert.equal(result.violations.legacyControlSizeProp, 1);
+});
+
+test("rejects business padding overrides on shared controls", () => {
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source: `<><Button className="p-1"/><UiTextarea className="p-3"/></>` }], ts, policy);
+  assert.equal(result.violations.sharedPaddingOverride, 2);
+});
+
+test("rejects nonstandard row, identity, and icon sizes", () => {
+  const source = `<><header className="flex h-14 items-center"/><span data-design-system-exempt="identity" className="h-8 w-8 rounded-full"/><Search className="h-3 w-3"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRowHeight, 1);
+  assert.equal(result.violations.nonStandardIdentitySize, 1);
+  assert.equal(result.violations.nonStandardIconSize, 1);
+});
+
+test("accepts registered row, identity, and icon sizes", () => {
+  const source = `<><header className="flex h-11 items-center"/><Avatar size="regular"/><Search className="h-3.5 w-3.5"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Good.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRowHeight, 0);
+  assert.equal(result.violations.nonStandardIdentitySize, 0);
+  assert.equal(result.violations.nonStandardIconSize, 0);
+});
+
+test("resolves static class constants and rejects hidden geometry debt", () => {
+  const source = `const local = "rounded-lg border p-1"; export function Bad(){ return <UiButton className={local}/> }`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRadius, 1);
+  assert.equal(result.violations.restingBorder, 1);
+  assert.equal(result.violations.sharedPaddingOverride, 1);
+});
+
+test("rejects fractional spacing and arbitrary spinner sizes", () => {
+  const source = `<><div className="gap-1.5 px-2.5"/><Spinner size={24}/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardSpacing, 2);
+  assert.equal(result.violations.arbitrarySpinnerSize, 1);
 });

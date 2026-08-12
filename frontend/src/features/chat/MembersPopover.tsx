@@ -47,7 +47,7 @@ export function MembersPopover({
       <PopoverPanel placement="down" align="end" className="w-72 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-950/60">
           <Users className="w-3.5 h-3.5 text-zinc-500" />
-          <span className="text-xs font-medium text-zinc-300">
+          <span className="text-compact font-medium text-zinc-300">
             Members{members ? ` · ${members.length}` : ""}
           </span>
         </div>
@@ -73,9 +73,9 @@ export function MembersPopover({
                     card?.open(anchor, m);
                   }}
                   title={name}
-                  leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" online={m.is_online ?? undefined} />}
-                  status={m.member_type === "bot" ? <Bot className="h-3 w-3 text-indigo-400" /> : undefined}
-                  trailing={m.role && m.role !== "member" ? <span className="text-[10px] capitalize text-zinc-400">{m.role}</span> : undefined}
+                  leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="regular" online={m.is_online ?? undefined} />}
+                  status={m.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-indigo-400" /> : undefined}
+                  trailing={m.role && m.role !== "member" ? <span className="text-minimal capitalize text-zinc-400">{m.role}</span> : undefined}
                 />
               );
             })
@@ -83,13 +83,13 @@ export function MembersPopover({
         </ItemList>
 
         {!isDm && (
-          <UiButton variant="plain"
+          <UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
             type="button"
             onClick={() => {
               onClose();
               onManage();
             }}
-            controlSize="regular" className="w-full flex items-center gap-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+            controlSize="regular" className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
             Manage members…

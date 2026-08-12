@@ -130,7 +130,7 @@ export function FloatingPanel({
   const titleLabel = (
     <>
       {Icon && <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 truncate">
+      <span className="text-compact font-semibold uppercase tracking-wider text-zinc-400 truncate">
         {title}
       </span>
     </>
@@ -152,7 +152,7 @@ export function FloatingPanel({
   // Collapsed body: the ViewBoard-style glance, if the panel supplies one.
   const summaryEl =
     collapsed && !isMobile && collapsedSummary ? (
-      <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+      <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
         {collapsedSummary(toggleCollapsed)}
       </div>
     ) : null;
@@ -185,7 +185,7 @@ export function FloatingPanel({
     >
       <div
         {...drag.handleProps}
-        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
+        className="flex h-9 flex-shrink-0 select-none items-center gap-2 border-b border-zinc-800 px-3"
       >
         {titleEl}
         <div className="flex-1" />

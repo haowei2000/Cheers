@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { UnreadBadge } from "@/components/ui/unread-badge";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useActivityUiStore } from "@/stores/activityUiStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -192,14 +193,15 @@ export function ActivityCenter() {
       >
         <Bell className="w-4 h-4" />
         {badge > 0 && (
-          <span
-            data-design-system-exempt="unread"
-            className={`absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
-              approvalCount > 0 ? "bg-amber-600" : "bg-indigo-600"
-            }`}
+          <UnreadBadge
+            contentSize="small"
+            tone={approvalCount > 0 ? "approval" : "unread"}
+            className="absolute -right-0.5 -top-0.5"
+            title={`${badge} pending activities`}
+            aria-label={`${badge} pending activities`}
           >
             {badge}
-          </span>
+          </UnreadBadge>
         )}
       </IconButton>
 
@@ -218,14 +220,14 @@ export function ActivityCenter() {
               <ItemSection
                 presentationLevel="medium"
                 controlSize="regular"
-                label={<span className="flex items-center gap-1.5">
-                  <Shield className="w-3 h-3 text-amber-400" />
+                label={<span className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-amber-400" />
                   Needs approval
                 </span>}
               >
                   {approvals.map((a) => (
                     <div role="listitem" key={a.message_id} className="space-y-1 py-1">
-                      <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
+                      <p className="text-minimal uppercase tracking-wide text-zinc-400 mb-1">
                         {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
                       </p>
                       <PermissionCard
@@ -247,18 +249,20 @@ export function ActivityCenter() {
                   return (
                     <OperationsItem
                       key={key}
-                      title={`${kindLabel(n)} · ${label(n)}`}
-                      subtitle={`${n.role ? `Role ${n.role}` : "Needs your response"}${n.bot_name ? ` · ${n.bot_name}` : ""}${n.actor_name ? ` · from ${n.actor_name}` : ""}${n.requested_cwd ? ` · ${n.requested_cwd}` : ""}`}
-                      actions={<><Button
-                        size="sm"
+                      title={`${kindLabel(n)} · ${label(n)}${n.actor_name ? ` · from ${n.actor_name}` : ""}`}
+                      status={<span className="max-w-36 truncate text-compact text-zinc-400" title={[n.role ? `Role ${n.role}` : "Needs your response", n.bot_name, n.requested_cwd].filter(Boolean).join(" · ")}>
+                        {n.role ? `Role ${n.role}` : "Response required"}
+                      </span>}
+                      actions={<><Button action="accept"
+                        controlSize="compact"
                         loading={busy === key}
                         onClick={() => void act(n, true)}
                       >
                         Accept
                       </Button>
-                      <Button
+                      <Button action="decline"
                         variant="ghost"
-                        size="sm"
+                        controlSize="compact"
                         disabled={busy === key}
                         onClick={() => void act(n, false)}
                       >

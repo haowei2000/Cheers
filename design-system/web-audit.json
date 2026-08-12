@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": 1,
+  "version": 2,
   "nativeElementCeilings": {
     "production": {
       "button": 9,
-      "input": 19,
+      "input": 8,
       "select": 1,
       "textarea": 2
     },
     "business": {
       "button": 0,
-      "input": 16,
+      "input": 5,
       "select": 0,
       "textarea": 1
     }
@@ -26,7 +26,21 @@
     "unregisteredFullRadius": 0,
     "restingBorder": 0,
     "hardcodedControlSize": 4,
-    "sharedControlSizeOverride": 0
+    "sharedControlSizeOverride": 0,
+    "sharedHorizontalPaddingOverride": 0,
+    "sharedControlWidthOverride": 0,
+    "sharedContentSizeOverride": 0,
+    "sharedPaddingOverride": 0,
+    "nonStandardRowHeight": 0,
+    "nonStandardIdentitySize": 0,
+    "nonStandardIconSize": 0,
+    "nonStandardSpacing": 0,
+    "arbitrarySpinnerSize": 0,
+    "nonStandardTypographySize": 0,
+    "sharedButtonTypographyOverride": 0,
+    "detachedEditActionButton": 0,
+    "actionButtonWithoutKey": 0,
+    "legacyControlSizeProp": 0
   },
   "allowedNativeReasons": [
     "checkbox",

@@ -171,7 +171,7 @@ export default function RegisterPage() {
           onSubmit={submit}
           className={publicPanelClass}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Username</label>
             <Input
               type="text"
@@ -182,11 +182,11 @@ export default function RegisterPage() {
               onChange={set("username")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Display name (optional)</label>
             <Input type="text" placeholder="Jane Doe" value={form.display_name} onChange={set("display_name")} />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Email</label>
             <div className="flex gap-2">
               <Input
@@ -200,7 +200,7 @@ export default function RegisterPage() {
                 aria-invalid={!!errors.email}
                 aria-describedby={errors.email ? "email-error" : undefined}
               />
-              <Button
+              <Button action="send"
                 type="button"
                 variant="secondary"
                 className="shrink-0 whitespace-nowrap"
@@ -212,12 +212,12 @@ export default function RegisterPage() {
               </Button>
             </div>
             {errors.email && (
-              <p id="email-error" role="alert" className="text-xs text-red-400">
+              <p id="email-error" role="alert" className="text-compact text-red-400">
                 {errors.email}
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Verification code</label>
             <Input
               type="text"
@@ -227,7 +227,7 @@ export default function RegisterPage() {
               onChange={set("code")}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Password</label>
             <Input
               type="password"
@@ -241,12 +241,12 @@ export default function RegisterPage() {
               aria-describedby={errors.password ? "password-error" : undefined}
             />
             {errors.password && (
-              <p id="password-error" role="alert" className="text-xs text-red-400">
+              <p id="password-error" role="alert" className="text-compact text-red-400">
                 {errors.password}
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className={labelCls}>Confirm password</label>
             <Input
               type="password"
@@ -260,15 +260,15 @@ export default function RegisterPage() {
               aria-describedby={errors.confirm ? "confirm-error" : undefined}
             />
             {errors.confirm && (
-              <p id="confirm-error" role="alert" className="text-xs text-red-400">
+              <p id="confirm-error" role="alert" className="text-compact text-red-400">
                 {errors.confirm}
               </p>
             )}
           </div>
 
-          <Button
+          <Button action="create" controlWidth="fill"
             type="submit"
-            className="w-full mt-2"
+            className="mt-2"
             loading={loading}
             disabled={
               !form.username.trim() ||
@@ -280,7 +280,7 @@ export default function RegisterPage() {
             Create account
           </Button>
 
-          <p className="text-center text-xs text-zinc-400">
+          <p className="text-center text-compact text-zinc-400">
             Already have an account?{" "}
             <Link to="/login" className={publicLinkClass}>
               Sign in

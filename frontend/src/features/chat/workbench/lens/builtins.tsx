@@ -72,7 +72,7 @@ function TableLens({ data, config, onChange }: LensProps) {
   const del = (i: number) => onChange(rows.filter((_, j) => j !== i));
 
   return (
-    <div className="p-2 text-xs overflow-auto h-full">
+    <div className="p-2 text-compact overflow-auto h-full">
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-zinc-400 text-left">
@@ -92,19 +92,19 @@ function TableLens({ data, config, onChange }: LensProps) {
                     // edit that update() must refuse. Delete (index-based) still works.
                     <span className="text-zinc-500">—</span>
                   ) : c.options ? (
-                    <UiSelect value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded-sm px-1 outline-none">
+                    <UiSelect value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded-sm outline-none">
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
                     </UiSelect>
                   ) : (
-                    <UiInput value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent w-full text-zinc-200 outline-none" />
+                    <UiInput value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent text-zinc-200 outline-none" />
                   )}
                 </td>
               ))}
               <td className="p-1">
-                <UiButton variant="plain" onClick={() => del(i)} title="Delete row">
-                  <Trash2 className="w-3 h-3 text-zinc-600 hover:text-red-400" />
+                <UiButton action="delete" variant="plain" onClick={() => del(i)} title="Delete row">
+                  <Trash2 className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
                 </UiButton>
               </td>
             </tr>
@@ -116,7 +116,7 @@ function TableLens({ data, config, onChange }: LensProps) {
           )}
         </tbody>
       </table>
-      <UiButton variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
+      <UiButton action="add" content="iconText" variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
         <Plus className="w-3.5 h-3.5" /> Add row
       </UiButton>
     </div>
@@ -154,7 +154,7 @@ function KanbanLens({ data, onChange }: LensProps) {
   };
 
   return (
-    <div className="p-2 text-xs flex gap-2 items-start overflow-auto h-full">
+    <div className="p-2 text-compact flex gap-2 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-zinc-400">Empty board</div>}
       {cols.map((c, ci) => (
         <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded-sm ">
@@ -168,17 +168,17 @@ function KanbanLens({ data, onChange }: LensProps) {
                 presentationLevel="minimal"
                 title={it}
                 actions={<>
-                <UiButton variant="plain" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
-                  <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                <UiButton content="icon" variant="plain" aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
+                  <ChevronLeft className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
                 </UiButton>
-                <UiButton variant="plain" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
-                  <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                <UiButton content="icon" variant="plain" aria-label="Move right" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
                 </UiButton>
-                <UiButton variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
-                  <X className="w-3 h-3 text-zinc-600 hover:text-red-400" />
+                <UiButton action="delete" variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
+                  <X className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
                 </UiButton>
                 </>}
-                className="border-b-0 bg-zinc-800/70 px-1.5 text-zinc-200"
+                className="border-b-0 bg-zinc-800/70 text-zinc-200"
               />
             ))}
             <div className="flex items-center gap-1 pt-1">
@@ -189,8 +189,8 @@ function KanbanLens({ data, onChange }: LensProps) {
                 placeholder="+ Task"
                 className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
               />
-              <UiButton variant="plain" onClick={() => addItem(ci)} title="Add task">
-                <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+              <UiButton action="add" variant="plain" onClick={() => addItem(ci)} title="Add task">
+                <Plus className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
               </UiButton>
             </div>
           </div>
@@ -210,7 +210,7 @@ function MarkdownLens({ data, onChange }: LensProps) {
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"
-      className="w-full h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
+      className="h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-compact outline-none"
     />
   );
 }
@@ -290,7 +290,7 @@ function ChartLens({ data }: LensProps) {
   const [hoverX, setHoverX] = useState<number | null>(null);
   if (series.length === 0) {
     return (
-      <div className="p-3 text-zinc-400 text-xs">
+      <div className="p-3 text-zinc-400 text-compact">
         Empty — this file holds metric curves: {'{ "series": [{ "name": "loss", "points": [[step, value], …] }] }'}
       </div>
     );
@@ -364,11 +364,11 @@ function ChartLens({ data }: LensProps) {
   };
 
   return (
-    <div className="p-2 h-full overflow-auto text-xs">
+    <div className="p-2 h-full overflow-auto text-compact">
       {series.length >= 2 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-1">
           {series.map((s, i) => (
-            <span key={`${s.name}${i}`} className="flex items-center gap-1.5 text-zinc-300">
+            <span key={`${s.name}${i}`} className="flex items-center gap-2 text-zinc-300">
               <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color(i) }} />
               {s.name}
             </span>
@@ -379,24 +379,24 @@ function ChartLens({ data }: LensProps) {
         {yTicks.map((t) => (
           <g key={`y${t}`}>
             <line x1={PAD.l} y1={sy(t)} x2={CW - PAD.r} y2={sy(t)} stroke="#27272a" strokeWidth="1" />
-            <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="var(--type-minimal)" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
               {fmtNum(t, yStep)}
             </text>
           </g>
         ))}
         {xTicks.map((t) => (
-          <text key={`x${t}`} x={sx(t)} y={CH - PAD.b + 14} textAnchor="middle" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <text key={`x${t}`} x={sx(t)} y={CH - PAD.b + 14} textAnchor="middle" fontSize="var(--type-minimal)" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
             {fmtNum(t, xStep)}
           </text>
         ))}
         <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="#3f3f46" strokeWidth="1" />
         {d?.yLabel && (
-          <text x={PAD.l} y={PAD.t - 3} fontSize="10" fill="#a1a1aa">
+          <text x={PAD.l} y={PAD.t - 3} fontSize="var(--type-minimal)" fill="#a1a1aa">
             {d.yLabel}
           </text>
         )}
         {d?.xLabel && (
-          <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="10" fill="#a1a1aa">
+          <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="var(--type-minimal)" fill="#a1a1aa">
             {d.xLabel}
           </text>
         )}
@@ -417,7 +417,7 @@ function ChartLens({ data }: LensProps) {
           )
         )}
         {endLabels.map((l) => (
-          <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="10" fill="#d4d4d8">
+          <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="var(--type-minimal)" fill="#d4d4d8">
             {l.name}
           </text>
         ))}
@@ -429,13 +429,13 @@ function ChartLens({ data }: LensProps) {
             ))}
             <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
               <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
-              <text x="8" y="12" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <text x="8" y="12" fontSize="var(--type-minimal)" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {d?.xLabel ?? "x"} {fmtNum(hx)}
               </text>
               {hoverRows.map((r, j) => (
                 <g key={`t${r.i}`} transform={`translate(8, ${26 + j * 14})`}>
                   <rect width="8" height="8" y="-8" rx="2" fill={color(r.i)} />
-                  <text x="12" fontSize="10" fill="#d4d4d8" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <text x="12" fontSize="var(--type-minimal)" fill="#d4d4d8" style={{ fontVariantNumeric: "tabular-nums" }}>
                     {r.name} {fmtNum(r.p.y)}
                   </text>
                 </g>
@@ -581,42 +581,42 @@ function CodemapKindIcon({ kind }: { kind: string }) {
 
 function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () => void }) {
   return (
-    <aside className="h-full w-full overflow-y-auto bg-zinc-900/95 p-4 text-xs">
+    <aside className="h-full w-full overflow-y-auto bg-zinc-900/95 p-4 text-compact">
       <div className="flex items-start gap-3">
         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-indigo-300">
           <CodemapKindIcon kind={node.kind} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-zinc-100">{node.label}</h3>
-          <p className="mt-0.5 text-[11px] capitalize text-zinc-500">{node.kind}</p>
+          <h3 className="truncate text-regular font-semibold text-zinc-100">{node.label}</h3>
+          <p className="mt-1 text-compact capitalize text-zinc-500">{node.kind}</p>
         </div>
         {onClose && (
-          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
+          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" content="icon" controlSize="compact" className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
             <X className="h-4 w-4" />
           </UiButton>
         )}
       </div>
       <dl className="mt-5 space-y-5">
         <div>
-          <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Summary</dt>
+          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Summary</dt>
           <dd className="mt-2 whitespace-pre-wrap leading-5 text-zinc-300">{node.summary || "No summary yet."}</dd>
         </div>
         <div className="border-t border-zinc-800 pt-4">
-          <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Status</dt>
+          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Status</dt>
           <dd className="mt-2 flex items-center gap-2 capitalize text-zinc-200"><CodemapStatus status={node.status} />{node.status}</dd>
         </div>
         {node.tags.length > 0 && (
           <div className="border-t border-zinc-800 pt-4">
-            <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Tags</dt>
-            <dd className="mt-2 flex flex-wrap gap-1.5">
-              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">{tag}</span>)}
+            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Tags</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300">{tag}</span>)}
             </dd>
           </div>
         )}
         {node.loc && (
           <div className="border-t border-zinc-800 pt-4">
-            <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Source locator</dt>
-            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-4 text-zinc-300">{node.loc}</dd>
+            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Source locator</dt>
+            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-4 text-zinc-300">{node.loc}</dd>
           </div>
         )}
       </dl>
@@ -654,9 +654,9 @@ function CodemapLens({ data }: LensProps) {
   if (!document || document.nodes.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <Boxes className="h-7 w-7 text-zinc-600" />
-        <div className="text-sm font-medium text-zinc-200">Codemap is empty</div>
-        <p className="max-w-md text-xs leading-5 text-zinc-400">Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</p>
+        <Boxes className="h-5 w-5 text-zinc-600" />
+        <div className="text-regular font-medium text-zinc-200">Codemap is empty</div>
+        <p className="max-w-md text-compact leading-5 text-zinc-400">Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</p>
       </div>
     );
   }
@@ -697,7 +697,7 @@ function CodemapLens({ data }: LensProps) {
               return (
                 <g key={`${edge.from}:${edge.to}:${index}`}>
                   <path d={`M ${x1} ${y1} C ${x1} ${y1 + 36}, ${x2} ${y2 - 36}, ${x2} ${y2}`} fill="none" stroke="#52525b" strokeWidth="1.25" strokeDasharray={edge.kind === "data" ? "4 4" : undefined} />
-                  {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle" fontSize="10" fill="#71717a">{edge.label}</text>}
+                  {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle" fontSize="var(--type-minimal)" fill="#71717a">{edge.label}</text>}
                 </g>
               );
             })}
@@ -707,35 +707,35 @@ function CodemapLens({ data }: LensProps) {
             const focused = document.focus.has(node.id);
             const selectedNode = selectedId === node.id;
             return (
-              <UiButton variant="plain"
+              <UiButton variant="plain" role="option" aria-selected={selectedNode}
                 key={node.id}
                 type="button"
                 onClick={() => setSelectedId(node.id)}
-                controlSize="comfortable" className={`absolute flex w-36 items-center gap-2 rounded-sm  bg-zinc-900 px-3 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60" : focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
+                controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm bg-zinc-900 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60": focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >
                 <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-zinc-300"><CodemapKindIcon kind={node.kind} /></span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[11px] font-medium text-zinc-100">{node.label}</span>
-                  <span className="mt-1 flex items-center gap-1 text-[10px] capitalize text-zinc-400"><CodemapStatus status={node.status} />{node.status}</span>
+                  <span className="block truncate text-compact font-medium text-zinc-100">{node.label}</span>
+                  <span className="mt-1 flex items-center gap-1 text-minimal capitalize text-zinc-400"><CodemapStatus status={node.status} />{node.status}</span>
                 </span>
               </UiButton>
             );
           })}
         </div>
 
-        <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-sm  border-zinc-800 bg-zinc-900/95 px-3 py-2 text-[10px] text-zinc-400">
-          <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Explored</span>
-          <span className="flex items-center gap-1"><CircleDotDashed className="h-3 w-3 text-amber-400" /> Partial</span>
-          <span className="flex items-center gap-1"><TriangleAlert className="h-3 w-3 text-orange-400" /> Stale</span>
+        <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-sm  border-zinc-800 bg-zinc-900/95 px-3 py-2 text-minimal text-zinc-400">
+          <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Explored</span>
+          <span className="flex items-center gap-1"><CircleDotDashed className="h-3.5 w-3.5 text-amber-400" /> Partial</span>
+          <span className="flex items-center gap-1"><TriangleAlert className="h-3.5 w-3.5 text-orange-400" /> Stale</span>
         </div>
         <div className="absolute bottom-3 right-3 flex items-center rounded-sm  border-zinc-800 bg-zinc-900/95 p-1">
-          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
-          <span className="w-12 text-center text-[10px] tabular-nums text-zinc-400">{Math.round(scale * 100)}%</span>
-          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
+          <span className="w-12 text-center text-minimal tabular-nums text-zinc-400">{Math.round(scale * 100)}%</span>
+          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
         </div>
       </div>
       {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} /></div>}

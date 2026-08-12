@@ -239,12 +239,13 @@ function ViewBoardDrawerImpl({
         className="mx-3 mt-2 flex h-9 flex-shrink-0 select-none items-center gap-2 border-y border-zinc-800/90 px-1"
       >
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        <span className="text-compact font-semibold uppercase tracking-wider text-zinc-400">
           ViewBoard
         </span>
         <div className="flex-1" />
         {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
           <UiButton variant="plain"
+            content="icon" controlSize="compact"
             onClick={() => {
               const meta = ATTACHABLE_BOARDS[activeBoard.id];
               const scoped = activeBoard.sessionScoped && scope;
@@ -257,24 +258,26 @@ function ViewBoardDrawerImpl({
               });
             }}
             title={addToContextTitle("this board")}
-            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
+            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
         )}
         {onToggleMinimal && (
           <UiButton variant="plain"
+            content="icon" controlSize="compact"
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
-            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
         )}
         <UiButton variant="plain"
+          content="icon" controlSize="compact"
           onClick={onClose}
           title="Close"
-          className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
         </UiButton>
@@ -301,13 +304,12 @@ function ViewBoardDrawerImpl({
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
               return (
-                <UiButton variant="plain"
+                <UiButton variant="plain" role="tab" aria-selected={isActive}
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex items-center gap-1.5 rounded-none border-b px-0.5 text-xs whitespace-nowrap transition-colors ${
+                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b  whitespace-nowrap transition-colors ${
  isActive
- ? "border-zinc-200 text-zinc-100"
- : "border-transparent text-zinc-400 hover:text-zinc-200"
+ ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -318,13 +320,13 @@ function ViewBoardDrawerImpl({
           </div>
 
           {activeBoard?.sessionScoped && (
-            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-1.5">
-              <Layers className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-              <span className="text-[10px] uppercase tracking-wide text-zinc-400">Scope</span>
+            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
+              <Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+              <span className="text-minimal uppercase tracking-wide text-zinc-400">Scope</span>
               <UiSelect
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (

@@ -44,7 +44,7 @@ const theme = EditorView.theme(
       height: "100%",
       backgroundColor: "#09090b", // zinc-950
       color: "#e4e4e7", // zinc-200
-      fontSize: "12px",
+      fontSize: "var(--type-compact)",
     },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": {

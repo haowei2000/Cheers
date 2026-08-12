@@ -250,7 +250,7 @@ export function PermissionCard({
     const expired = data.resolved_kind === "expired";
     const ok = isAllow(data.chosen_kind);
     return (
-      <div className="flex items-center gap-2 py-0.5 text-xs">
+      <div className="flex items-center gap-2 py-1 text-compact">
         <span
           className={cn(
             expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400/70"
@@ -281,7 +281,7 @@ export function PermissionCard({
   }
 
   const shell = embedded
-    ? "w-full overflow-hidden rounded-sm bg-zinc-900/60"
+    ? "overflow-hidden rounded-sm bg-zinc-900/60"
     : "max-w-md overflow-hidden rounded-sm bg-zinc-900/50";
 
   // ── Pending, not an approver: quiet waiting line ──────────────────────────
@@ -289,17 +289,17 @@ export function PermissionCard({
     return (
       <div className={cn(shell, "flex items-center gap-3 px-3 py-2")}>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium text-zinc-200">{title}</p>
+          <p className="text-compact font-medium text-zinc-200">{title}</p>
           {command && (
-            <p className="mt-0.5 truncate font-mono text-[11px] text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
               {command}
             </p>
           )}
         </div>
-        <UiButton variant="plain"
+        <UiButton action="request" variant="plain"
           disabled={busy || requested}
           onClick={onRequestAccess}
-          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800 px-2.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
         >
           {requested ? "Requested" : "Request access"}
         </UiButton>
@@ -310,23 +310,22 @@ export function PermissionCard({
   // ── Pending, collapsed: one-line preview (skipped when embedded) ──────────
   if (collapsed && !embedded) {
     return (
-      <UiButton variant="plain"
+      <UiButton action="expand" controlWidth="fill" variant="plain"
         onClick={() => setCollapsed(false)}
         title="Show approval details"
         controlSize="regular" className={cn(
  shell,
- "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 text-left transition-colors hover:bg-zinc-900/70"
- )}
+ "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-left transition-colors hover:bg-zinc-900/70")}
       >
         <div className="min-w-0">
-          <p className="text-[11px] font-medium text-zinc-200">{title}</p>
+          <p className="text-compact font-medium text-zinc-200">{title}</p>
           {command && (
-            <p className="mt-0.5 truncate font-mono text-[11px] text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
               {command}
             </p>
           )}
         </div>
-        <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-zinc-400">
+        <span className="flex items-center gap-2 whitespace-nowrap text-compact text-zinc-400">
           Details <span className="text-zinc-500">⌄</span>
         </span>
       </UiButton>
@@ -335,27 +334,27 @@ export function PermissionCard({
 
   // ── Pending, expanded ─────────────────────────────────────────────────────
   return (
-    <div className={cn(shell, "space-y-2 px-3 py-2.5")}>
+    <div className={cn(shell, "space-y-2 px-3 py-3")}>
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-[11px] font-medium text-zinc-200">{title}</p>
+        <p className="min-w-0 text-compact font-medium text-zinc-200">{title}</p>
         {!embedded && (
-          <UiButton variant="plain"
+          <UiButton action="collapse" variant="plain"
             onClick={() => setCollapsed(true)}
             aria-label="Collapse"
             title="Collapse"
             className="shrink-0 leading-none text-zinc-500 transition-colors hover:text-zinc-300"
           >
-            <span className="inline-block rotate-180 text-[11px]">⌄</span>
+            <span className="inline-block rotate-180 text-compact">⌄</span>
           </UiButton>
         )}
       </div>
 
       {command && (
         <div>
-          <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-zinc-300">
+          <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-300">
             {command}
           </pre>
-          {impact && <p className="mt-1.5 text-[11px] text-zinc-400">{impact}</p>}
+          {impact && <p className="mt-2 text-compact text-zinc-400">{impact}</p>}
           {agentDiff && (
             <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
               <DiffView diff={agentDiff} className="max-h-72" />
@@ -363,11 +362,11 @@ export function PermissionCard({
           )}
           {canViewStagedDiff && (
             <div className="mt-2">
-              <UiButton variant="plain"
+              <UiButton action={diffOpen ? "collapse" : "preview"} content="iconText" variant="plain"
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                controlSize="compact" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800/60 px-2 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
               >
                 <span className="text-zinc-500">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
@@ -376,12 +375,12 @@ export function PermissionCard({
               {diffOpen && (
                 <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
                   {diffLoading ? (
-                    <div className="px-3 py-3 text-[11px] text-zinc-400">
+                    <div className="px-3 py-3 text-compact text-zinc-400">
                       Loading staged diff…
                     </div>
                   ) : diffError ? (
                     <div
-                      className="px-3 py-3 text-[11px] text-amber-400/80"
+                      className="px-3 py-3 text-compact text-amber-400/80"
                       title={diffError}
                     >
                       Couldn’t load the staged diff
@@ -396,29 +395,29 @@ export function PermissionCard({
         </div>
       )}
 
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {radioOptions.map((o) => {
           const id = optId(o);
           const sel = id === selectedId;
           return (
-            <UiButton variant="plain"
+            <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={sel}
               key={id}
               onClick={() => setSelectedId(id)}
               controlSize="regular" className={cn(
- "flex w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors",
- sel ? "bg-zinc-800/70" : "hover:bg-zinc-800/40"
+ "flex items-center gap-3 rounded-sm text-left transition-colors",
+ sel ? "bg-zinc-800/70": "hover:bg-zinc-800/40"
  )}
             >
               <span
                 data-design-system-exempt="progress"
                 className={cn(
-                  "h-3 w-3 shrink-0 rounded-full",
+                  "h-3.5 w-3.5 shrink-0 rounded-full",
                   sel ? "bg-indigo-400" : "bg-zinc-700",
                 )}
               />
               <span
                 className={cn(
-                  "min-w-0 truncate text-[11px] font-medium",
+                  "min-w-0 truncate text-compact font-medium",
                   sel ? "text-zinc-100" : "text-zinc-300",
                 )}
               >
@@ -429,27 +428,27 @@ export function PermissionCard({
         })}
       </div>
 
-      <div className="flex items-center justify-end gap-2 pt-0.5">
+      <div className="flex items-center justify-end gap-2 pt-1">
         {rejectOption && (
-          <UiButton variant="plain"
+          <UiButton action="reject" variant="plain"
             disabled={busy}
             onClick={() => onResolve(optId(rejectOption))}
-            controlSize="compact" className="rounded-sm px-2.5 text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            controlSize="compact" className="rounded-sm  font-medium text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
           >
             {rejectOption.name || "Deny"}
           </UiButton>
         )}
-        <UiButton variant="plain"
+        <UiButton action="approve" variant="plain"
           disabled={busy || !selectedId}
           onClick={() => onResolve(selectedId)}
-          controlSize="compact" className="rounded-sm bg-zinc-200 px-3 text-[11px] font-semibold text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
+          controlSize="compact" className="rounded-sm bg-zinc-200  font-semibold text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
         >
           {allowOptions.length ? "Approve" : "Confirm"}
         </UiButton>
       </div>
 
       {error && (
-        <p role="alert" className="text-[11px] text-red-400">
+        <p role="alert" className="text-compact text-red-400">
           {error}
         </p>
       )}

@@ -246,7 +246,7 @@ export function TaskClaimSettings({
               controlSize="regular"
               leading={<Radio className={controlIconClasses.regular} />}
               title={botName(bot)}
-              status={<span className="font-utility text-xs uppercase tracking-wide text-zinc-500">{modeLabel(policy.mode)}</span>}
+              status={<span className="font-utility text-compact uppercase tracking-wide text-zinc-500">{modeLabel(policy.mode)}</span>}
               actions={(
                 <>
                   <IconButton label={`Edit ${botName(bot)} claim policy`} controlSize="compact" onClick={() => beginEdit(bot)}>

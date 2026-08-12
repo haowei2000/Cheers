@@ -80,23 +80,22 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             name={memberLabel(members, plan.bot_id)}
             src={members.get(plan.bot_id)?.avatar_url ?? undefined}
             id={plan.bot_id}
-            size="xs"
-            className="!w-4 !h-4 !text-[8px]"
+            size="small"
           />
-          <span className="text-xs text-zinc-200 font-medium truncate" title={plan.bot_id}>
+          <span className="text-compact text-zinc-200 font-medium truncate" title={plan.bot_id}>
             {memberLabel(members, plan.bot_id)}
           </span>
           {plan.session_id ? (
-            <span className="text-[10px] text-zinc-400 truncate" title={plan.session_id}>
+            <span className="text-minimal text-zinc-400 truncate" title={plan.session_id}>
               · {plan.session_id.slice(0, 8)}
             </span>
           ) : null}
           <div className="flex-1" />
-          <span className="text-[11px] text-zinc-400 tabular-nums flex-shrink-0">
+          <span className="text-compact text-zinc-400 tabular-nums flex-shrink-0">
             {completed}/{total}
           </span>
         </div>
-        <div data-design-system-exempt="progress" className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+        <div data-design-system-exempt="progress" className="mt-2 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
           <div
             data-design-system-exempt="progress"
             className="h-full rounded-full bg-emerald-500 transition-[width]"
@@ -111,7 +110,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
           if (items.length === 0) return null;
           return (
             <div key={g.key} className="mb-2 last:mb-0">
-              <div className="px-1 mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
+              <div className="px-1 mb-1 text-minimal uppercase tracking-wide text-zinc-400">
                 {g.label} · {items.length}
               </div>
               <ItemList presentationLevel="medium" controlSize="regular">
@@ -120,9 +119,9 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
                     key={`${g.key}-${i}`}
                     title={e.content}
                     leading={<StatusIcon group={g.key} />}
-                    trailing={e.priority ? <span className="text-[10px] text-zinc-400">{e.priority}</span> : undefined}
+                    trailing={e.priority ? <span className="text-minimal text-zinc-400">{e.priority}</span> : undefined}
                     presentationLevel="minimal"
-                    className={g.key === "completed" ? "border-0 text-zinc-400 line-through" : "border-0"}
+                    className={g.key === "completed"? "border-0 text-zinc-400 line-through" : "border-0"}
                   />
                 ))}
               </ItemList>
@@ -141,8 +140,8 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-600">
         <ClipboardList className="w-5 h-5" />
-        <span className="text-xs text-zinc-400">No plan yet</span>
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-compact text-zinc-400">No plan yet</span>
+        <span className="text-compact text-zinc-400">
           A plan appears here when an agent shares one.
         </span>
       </div>

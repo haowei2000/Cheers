@@ -77,21 +77,20 @@ export function NewChannelDialog({
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
             placeholder="Channel name…"
-            controlSize="regular" className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
+            controlSize="regular" className="flex-1 bg-transparent text-regular text-zinc-200 outline-none"
           />
         </div>
 
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["public", "private"] as const).map((t) => (
-            <UiButton variant="plain"
+            <UiButton variant="plain" role="option" aria-selected={type === t}
               key={t}
               onClick={() => setType(t)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-sm transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  type === t
- ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
- : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}
             >
               {t === "public" ? (
@@ -104,8 +103,8 @@ export function NewChannelDialog({
           ))}
         </div>
 
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+        <div className="space-y-2">
+          <p className="text-compact font-medium uppercase tracking-wide text-zinc-400">
             Conversation layout
           </p>
           <ConversationModePicker value={conversationMode} onChange={setConversationMode} />
@@ -114,15 +113,14 @@ export function NewChannelDialog({
         <div className="flex gap-2">
           {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["text", "voice"] as const).map((value) => (
-            <UiButton variant="plain"
+            <UiButton variant="plain" role="option" aria-selected={kind === value}
               type="button"
               key={value}
               onClick={() => setKind(value)}
               controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-1.5 rounded-sm border text-sm transition-colors",
+ "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  kind === value
- ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
- : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
  )}
             >
               {value === "text" ? (
@@ -136,10 +134,10 @@ export function NewChannelDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>
+          <Button action="cancel" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={!name.trim() || busy} onClick={() => void submit()}>
+          <Button action="create" disabled={!name.trim() || busy} onClick={() => void submit()}>
             Create
           </Button>
         </div>

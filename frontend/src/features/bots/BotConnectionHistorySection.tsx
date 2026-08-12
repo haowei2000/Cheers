@@ -1,4 +1,4 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
@@ -48,34 +48,34 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-zinc-300">Connection history</span>
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-compact font-medium text-zinc-300">Connection history</span>
+        <span className="text-compact text-zinc-400">
           bridge connects/disconnects (newest first)
         </span>
-        <UiButton variant="plain"
-          type="button"
+        <IconButton
+          label="Refresh connection history"
           onClick={load}
           className="ml-auto text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </UiButton>
+        </IconButton>
       </div>
       {events.length === 0 ? (
-        <p className="text-[11px] text-zinc-400">
+        <p className="text-compact text-zinc-400">
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
-        <ItemList presentationLevel="max" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
-            <WorkbenchItem key={i} title={e.event} subtitle={e.reason ? reasonLabel[e.reason] ?? e.reason : undefined}
-              metadata={time(e.created_at)} leading={e.event === "connected" ? (
+            <WorkbenchItem key={i} title={`${e.event}${e.reason ? ` · ${reasonLabel[e.reason] ?? e.reason}` : ""}`}
+              trailing={<span className="text-compact tabular-nums text-zinc-400">{time(e.created_at)}</span>} leading={e.event === "connected" ? (
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
                 <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
-              )} status={<span className="shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400">
+              )} status={<span className="shrink-0 rounded-sm px-2 py-1 text-minimal bg-zinc-800 text-zinc-400">
                 {e.stream}
-              </span>} presentationLevel="max" className="border-0 bg-zinc-950/30" />
+              </span>} presentationLevel="medium" className="border-0 bg-zinc-950/30" />
           ))}
         </ItemList>
       )}
