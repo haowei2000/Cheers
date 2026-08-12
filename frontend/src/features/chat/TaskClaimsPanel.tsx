@@ -89,9 +89,8 @@ export function TaskClaimsPanel({
           metadata={`${Math.round(c.confidence * 100)}% confidence · ${c.impact} impact`}
           actions={canManage ? <>
                 <Button
-                  size="sm"
+                  controlSize="compact"
                   variant="secondary"
-                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void cancel(c)}
                 >
@@ -99,9 +98,8 @@ export function TaskClaimsPanel({
                   Cancel
                 </Button>
                 <Button
-                  size="sm"
+                  controlSize="compact"
                   variant="secondary"
-                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void resolve(c, "reject")}
                 >
@@ -109,8 +107,7 @@ export function TaskClaimsPanel({
                   Reject
                 </Button>
                 <Button
-                  size="sm"
-                  className="px-2"
+                  controlSize="compact"
                   loading={busy === c.claim_id}
                   onClick={() => void resolve(c, "accept")}
                 >

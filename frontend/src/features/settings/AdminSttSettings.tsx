@@ -76,17 +76,17 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <AudioLines className="w-3.5 h-3.5" />
         Speech-to-text
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-xs text-zinc-400 mb-4">
+        <p className="text-compact text-zinc-400 mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
           (<code className="text-zinc-400">/audio/transcriptions</code>). Transcripts are shown
@@ -95,7 +95,7 @@ export function AdminSttSettings() {
         </p>
 
         <div className="grid gap-3 max-w-lg">
-          <label className="flex items-center gap-2 text-sm text-zinc-200">
+          <label className="flex items-center gap-2 text-regular text-zinc-200">
             {/* design-system-native: checkbox */}
 <input
               type="checkbox"
@@ -107,7 +107,7 @@ export function AdminSttSettings() {
           </label>
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Endpoint (base URL including /v1)
             </label>
             <UiInput
@@ -119,7 +119,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Model
             </label>
             <UiInput
@@ -131,7 +131,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               API key{" "}
               {loaded?.api_key_set && !clearKey && (
                 <span className="normal-case text-zinc-400">
@@ -153,7 +153,7 @@ export function AdminSttSettings() {
               className={`${inputCls} disabled:opacity-40`}
             />
             {loaded?.api_key_set && (
-              <label className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+              <label className="mt-1 flex items-center gap-2 text-compact text-zinc-400">
                 {/* design-system-native: checkbox */}
 <input
                   type="checkbox"
@@ -191,7 +191,7 @@ export function AdminSttSettings() {
 
           {testResult && (
             <p
-              className={`text-xs ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
+              className={`text-compact ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
             >
               {testResult}
             </p>

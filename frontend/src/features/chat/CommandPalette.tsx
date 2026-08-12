@@ -38,31 +38,30 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
       {commands.map((c, i) => (
         <Fragment key={`${c.botId}/${c.name}`}>
           {grouped && (i === 0 || commands[i - 1].botId !== c.botId) && (
-            <div className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+            <div className="px-3 pt-2 pb-0.5 text-minimal uppercase tracking-wide text-zinc-400">
               {c.botLabel}
             </div>
           )}
-          <UiButton variant="plain"
+          <UiButton controlWidth="fill" variant="plain"
             onMouseDown={(e) => {
               e.preventDefault();
               onSelect(c);
             }}
             controlSize="regular" className={cn(
- "flex w-full items-center gap-2 px-3 text-left text-sm",
+ "flex items-center gap-2 text-left text-regular",
  i === activeIndex
- ? "bg-indigo-600/30 text-zinc-100"
- : "text-zinc-300 hover:bg-zinc-800"
+ ? "bg-indigo-600/30 text-zinc-100": "text-zinc-300 hover:bg-zinc-800"
  )}
           >
             <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <span className="font-medium font-mono">/{c.name}</span>
             {c.description && (
-              <span className="text-xs text-zinc-400 truncate">
+              <span className="text-compact text-zinc-400 truncate">
                 {c.description}
               </span>
             )}
             {!grouped && (
-              <span className="ml-auto text-[10px] px-1 py-0.5 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
+              <span className="ml-auto text-minimal px-1 py-0.5 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
                 {c.botLabel}
               </span>
             )}

@@ -70,7 +70,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           ? "Auth cancelled"
           : "Auth resolved";
     return (
-      <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+      <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-zinc-400">
         <span className="inline-flex items-center gap-1.5">
           <KeyRound className="h-3.5 w-3.5" />
           {label}
@@ -84,12 +84,12 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
       <div className="flex items-start gap-2">
         <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-zinc-100">{title}</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-zinc-400">
+          <p className="text-regular font-medium text-zinc-100">{title}</p>
+          <p className="mt-1 whitespace-pre-wrap text-compact leading-relaxed text-zinc-400">
             {description}
           </p>
           {data.method_id && (
-            <p className="mt-1 font-mono text-[10px] text-zinc-500">
+            <p className="mt-1 font-mono text-minimal text-zinc-500">
               method: {data.method_id}
               {data.auth_type ? ` · ${data.auth_type}` : ""}
             </p>
@@ -99,12 +99,12 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
               href={link}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
+              className="mt-2 inline-flex items-center gap-1 text-compact text-indigo-300 hover:text-indigo-200"
             >
               Open login page <ExternalLink className="h-3 w-3" />
             </a>
           ) : (
-            <div className="mt-2 rounded-sm bg-zinc-950/40 px-2.5 py-2 text-[11px] leading-relaxed text-zinc-400">
+            <div className="mt-2 rounded-sm bg-zinc-950/40 px-2.5 py-2 text-compact leading-relaxed text-zinc-400">
               {envAuth ? (
                 <>
                   No login URL for this method — set{" "}
@@ -134,7 +134,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("retry")}
-                controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-600 text-compact font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >
                 {busy === "retry" && <Loader2 className="h-3 w-3 animate-spin" />}
                 {link ? "I've signed in" : "Credentials set — retry"}
@@ -143,13 +143,13 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("cancel")}
-                controlSize="regular" className="rounded-sm bg-zinc-800 px-3 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                controlSize="regular" className="rounded-sm bg-zinc-800 text-compact text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
               >
                 Cancel
               </UiButton>
             </div>
           ) : (
-            <p className="mt-2 text-[11px] text-zinc-500">
+            <p className="mt-2 text-compact text-zinc-500">
               Waiting for the bot owner to finish agent authentication.
             </p>
           )}

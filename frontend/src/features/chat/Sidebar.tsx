@@ -1,13 +1,14 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Menu, Radio, Settings } from "lucide-react";
+import { Plus, Menu, Radio, Settings } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
-import { EntityItem, ItemRow } from "@/components/ui/item";
+import { EntityItem, ItemGroup, ItemRow, ItemSection } from "@/components/ui/item";
+import { IconButton } from "@/components/ui/icon-button";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
-import { controlIconClasses, controlMinHeightClasses, controlTextClasses } from "@/components/ui/control-size";
+import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
@@ -15,76 +16,32 @@ import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
 interface SectionProps {
   label: string;
   children: React.ReactNode;
-  defaultOpen?: boolean;
   onAdd?: () => void;
   /** Accessible name for the add (+) control, e.g. "New channel". */
   addLabel?: string;
 }
 
-// Persist each section's collapsed/expanded choice per label, mirroring the
-// existing "cheers.sidebar.open" pattern, so the state survives reloads and the
-// mobile Sidebar remount when returning from a conversation.
-const SECTION_STATE_PREFIX = "cheers.sidebar.section.";
-
-function Section({ label, children, defaultOpen = true, onAdd, addLabel }: SectionProps) {
-  const storageKey = SECTION_STATE_PREFIX + label;
-  const [open, setOpen] = useState<boolean>(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      return stored === null ? defaultOpen : stored === "1";
-    } catch {
-      return defaultOpen;
-    }
-  });
-
-  const toggle = () =>
-    setOpen((o) => {
-      const next = !o;
-      try {
-        localStorage.setItem(storageKey, next ? "1" : "0");
-      } catch {
-        // Storage unavailable (private mode / quota) — keep the in-memory state.
-      }
-      return next;
-    });
-
+function Section({ label, children, onAdd, addLabel }: SectionProps) {
   return (
-    <div className="space-y-1">
-      {/* Two sibling buttons (not a span nested in the toggle) so the add control
-          is its own focusable, keyboard-reachable button with valid ARIA. */}
-      <div className={cn("group flex items-center gap-1 px-1", controlMinHeightClasses.compact)}>
-        <UiButton variant="plain"
-          type="button"
-          controlSize="compact"
-          onClick={toggle}
-          aria-expanded={open}
-          className="font-utility flex flex-1 items-center gap-1.5 font-semibold uppercase tracking-[0.1em] text-zinc-400 transition-colors hover:text-zinc-200"
-        >
-          {open ? (
-            <ChevronDown className={controlIconClasses.compact} />
-          ) : (
-            <ChevronRight className={controlIconClasses.compact} />
-          )}
-          <span className="flex-1 text-left">{label}</span>
-        </UiButton>
-        {onAdd && (
-          <UiButton variant="plain"
-            square
+    <ItemSection
+      label={label}
+      presentationLevel="medium"
+      controlSize="regular"
+      headerControlSize="compact"
+      action={onAdd ? (
+          <IconButton
             controlSize="compact"
-            type="button"
             onClick={onAdd}
-            aria-label={addLabel ?? "Add"}
+            label={addLabel ?? "Add"}
             title={addLabel ?? "Add"}
-            // Hover-revealed on desktop, revealed on keyboard focus too, and always
-            // visible (with a bigger tap area) on touch.
-            className="text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
+            className="text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
           >
             <Plus className={controlIconClasses.compact} />
-          </UiButton>
-        )}
-      </div>
-      {open && <div className="space-y-0.5">{children}</div>}
-    </div>
+          </IconButton>
+      ) : undefined}
+    >
+      {children}
+    </ItemSection>
   );
 }
 
@@ -111,18 +68,18 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
     </span>
   ) : null;
   return (
-    <div>
+    <ItemGroup>
       <ItemRow
         kind="navigation"
         onClick={onClick}
         selected={selected}
         title={<span className={cn(channel.is_member === false && "opacity-50")}>{channel.name}</span>}
         leading={channel.avatar_url ? (
-          <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="xs" />
+          <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
         ) : channel.kind === "voice" ? (
           <Radio className="h-4 w-4 flex-shrink-0 opacity-70" />
         ) : (
-          <EditorialIcon name="section" className="h-4 w-4 flex-shrink-0 opacity-70" />
+          <EditorialIcon name="section" contentSize="regular" className="flex-shrink-0 opacity-70" />
         )}
         status={participants.length > 0 ? (
           <span className={cn(controlTextClasses.compact, "tabular-nums text-emerald-400")}>
@@ -130,13 +87,14 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
           </span>
         ) : undefined}
         criticalStatus={unread}
-        className="rounded-sm border-0 px-1"
+        className="rounded-sm border-0"
       />
       {channel.kind === "voice" && participants.length > 0 && (
         <div className="space-y-0.5 pb-1 pl-7 pr-1">
           {participants.map((participant) => (
             <EntityItem
               key={participant.user_id}
+              containerRole="presentation"
               presentationLevel="minimal"
               controlSize="compact"
               title={participant.display_name}
@@ -144,16 +102,16 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
                 name={participant.display_name}
                 src={participant.avatar_url}
                 id={participant.user_id}
-                size="xs"
+                size="small"
                 online
               />}
               criticalStatus={<span className="sr-only">Online</span>}
-              className="border-b-0 px-1"
+              className="border-b-0"
             />
           ))}
         </div>
       )}
-    </div>
+    </ItemGroup>
   );
 }
 
@@ -210,12 +168,12 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
         )}
-        <UiButton variant="plain"
+        <UiButton controlWidth="fill" variant="plain"
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
-          controlSize="regular" className="group flex w-full items-center gap-2 rounded-sm px-1 transition-colors hover:bg-zinc-800/60"
+          controlSize="regular" className="group flex items-center gap-2 rounded-sm transition-colors hover:bg-zinc-800/60"
         >
-          <span className="font-utility flex-1 truncate text-left text-sm font-semibold text-zinc-100">
+          <span className="font-utility flex-1 truncate text-left text-regular font-semibold text-zinc-100">
             {workspace?.name ?? "Workspace"}
           </span>
           {canOpenSettings && (
@@ -240,7 +198,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         </Section>
 
         {voiceChannels.length > 0 && (
-          <Section label="Voice Channels" defaultOpen>
+          <Section label="Voice Channels">
             {voiceChannels.map((ch) => (
               <ChannelItem
                 key={ch.channel_id}
@@ -254,7 +212,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         )}
 
         {privateChannels.length > 0 && (
-          <Section label="Private" defaultOpen>
+          <Section label="Private">
             {privateChannels.map((ch) => (
               <ChannelItem
                 key={ch.channel_id}
@@ -277,12 +235,12 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 kind="navigation"
                 selected={selectedChannelId === ch.channel_id}
                 title={ch.peer_name || ch.name || "Direct Message"}
-                leading={<EditorialIcon name="correspondence" className="h-4 w-4 flex-shrink-0 opacity-70" />}
-                className="rounded-sm border-0 px-1"
+                leading={<EditorialIcon name="correspondence" contentSize="regular" className="flex-shrink-0 opacity-70" />}
+                className="rounded-sm border-0"
               />
             ))}
             {dms.length === 0 && (
-              <div className={cn("px-3 py-1 text-zinc-400", controlTextClasses.compact)}>Click + to start a direct message</div>
+              <div role="listitem" className={cn("px-2 py-1 text-zinc-400", controlTextClasses.compact)}>Use + to start a direct message</div>
             )}
           </Section>
         )}

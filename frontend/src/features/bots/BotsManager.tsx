@@ -116,11 +116,11 @@ export function BotsManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
         <Button
-          size="sm"
+          controlSize="compact"
           className="ml-auto normal-case tracking-normal"
           onClick={() => setWizardOpen(true)}
         >
@@ -139,11 +139,11 @@ export function BotsManager() {
 
       {bots.length === 0 && !loading ? (
         loadFailed ? (
-          <p className="text-sm text-red-400 px-1">
+          <p className="text-regular text-red-400 px-1">
             Couldn't load bots — check the gateway connection, then press refresh.
           </p>
         ) : (
-          <p className="text-sm text-zinc-400 px-1">
+          <p className="text-regular text-zinc-400 px-1">
             No bots yet. Click <span className="text-zinc-200">Add bot</span> to create one, then
             connect it to the machine that will run it.
           </p>
@@ -175,7 +175,7 @@ export function BotsManager() {
                 onPoll={pollRefresh}
               />
             ) : (
-              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-sm text-zinc-400">
+              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-regular text-zinc-400">
                 Select a bot to manage it.
               </div>
             )}
@@ -194,14 +194,14 @@ export function BotsManager() {
           onClose={() => setIssued(null)}
           maxWidth="max-w-lg"
         >
-          <p className="text-xs text-amber-400">
+          <p className="text-compact text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
+            <code className="text-compact text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400">
+            <span className="text-compact text-zinc-400">
               This is what proves the bot is yours when it connects. Save it into
               the bot's token file on the machine that runs it.
             </span>

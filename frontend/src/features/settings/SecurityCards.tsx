@@ -19,7 +19,7 @@ import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 
 const inputCls =
-  "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+  "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
 /** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
 export function TwoFactorCard() {
@@ -109,17 +109,17 @@ export function TwoFactorCard() {
 
   return (
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
+      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-indigo-400" /> Authenticator app
       </p>
-      <p className="text-xs text-zinc-400 mb-4">
+      <p className="text-compact text-zinc-400 mb-4">
         Use an authenticator app (or backup codes) when signing in.
       </p>
 
       {phase === "idle" && (
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-zinc-200">
+            <p className="text-regular text-zinc-200">
               Status:{" "}
               <span className={enabled ? "text-emerald-400" : "text-zinc-500"}>
                 {enabled == null ? "…" : enabled ? "On" : "Off"}
@@ -129,7 +129,7 @@ export function TwoFactorCard() {
           {enabled ? (
             <Button
               variant="danger"
-              size="sm"
+              controlSize="compact"
               disabled={busy}
               onClick={() => {
                 setCode("");
@@ -139,7 +139,7 @@ export function TwoFactorCard() {
               Turn off
             </Button>
           ) : (
-            <Button size="sm" disabled={busy || enabled == null} onClick={() => void beginSetup()}>
+            <Button controlSize="compact" disabled={busy || enabled == null} onClick={() => void beginSetup()}>
               {busy ? "Starting…" : "Set up"}
             </Button>
           )}
@@ -148,27 +148,27 @@ export function TwoFactorCard() {
 
       {phase === "setup" && (
         <div className="space-y-3 max-w-md">
-          <p className="text-xs text-zinc-400">
+          <p className="text-compact text-zinc-400">
             Add this account in your authenticator app using the secret below
             (or open the otpauth link).
           </p>
-          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 break-all">
+          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-zinc-100 break-all">
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={() => void copySecret()}>
+            <Button variant="secondary" controlSize="compact" onClick={() => void copySecret()}>
               <Copy className="w-3.5 h-3.5" /> Copy secret
             </Button>
             {provisioningUri && (
               <a
                 href={provisioningUri}
-                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-1.5 text-xs text-indigo-300 hover:text-indigo-200"
+                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-1.5 text-compact text-indigo-300 hover:text-indigo-200"
               >
                 Open otpauth://
               </a>
             )}
           </div>
-          <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <label className="block text-compact font-medium text-zinc-400 uppercase tracking-wide">
             Verification code
           </label>
           <Input
@@ -197,21 +197,21 @@ export function TwoFactorCard() {
 
       {phase === "backup" && (
         <div className="space-y-3 max-w-md">
-          <p className="text-xs text-amber-200/90">
+          <p className="text-compact text-amber-200/90">
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
-          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 space-y-1">
+          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-zinc-100 space-y-1">
             {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
             {backupCodes.map((c) => (
               <li key={c}>{c}</li>
             ))}
           </ul>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => void copyBackup()}>
+            <Button variant="secondary" controlSize="compact" onClick={() => void copyBackup()}>
               <Copy className="w-3.5 h-3.5" /> Copy codes
             </Button>
             <Button
-              size="sm"
+              controlSize="compact"
               onClick={() => {
                 setPhase("idle");
                 setBackupCodes([]);
@@ -225,7 +225,7 @@ export function TwoFactorCard() {
 
       {phase === "disable" && (
         <div className="space-y-3 max-w-sm">
-          <p className="text-xs text-zinc-400">
+          <p className="text-compact text-zinc-400">
             Enter an authenticator or backup code to turn off 2FA.
           </p>
           <Input
@@ -323,27 +323,27 @@ export function PasskeyCard() {
 
   return (
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
+      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <Fingerprint className="w-4 h-4 text-indigo-400" /> Passkeys
       </p>
-      <p className="text-xs text-zinc-400 mb-4">
+      <p className="text-compact text-zinc-400 mb-4">
         Sign in with Face ID, Touch ID, or a device passkey when 2FA is required.
       </p>
 
-      <p className="text-sm text-zinc-300 mb-3">
+      <p className="text-regular text-zinc-300 mb-3">
         Status:{" "}
         <span className={available ? "text-emerald-400" : "text-zinc-500"}>
           {loading ? "…" : available ? "Available" : "Not configured on server"}
         </span>
         {rpId && (
-          <span className="ml-2 font-mono text-xs text-zinc-500">{rpId}</span>
+          <span className="ml-2 font-mono text-compact text-zinc-500">{rpId}</span>
         )}
       </p>
 
       {loading ? (
-        <p className="text-xs text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-500">Loading…</p>
       ) : credentials.length === 0 ? (
-        <p className="text-xs text-zinc-500 mb-3">No passkeys yet.</p>
+        <p className="text-compact text-zinc-500 mb-3">No passkeys yet.</p>
       ) : (
         <ItemList presentationLevel="max" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
@@ -351,7 +351,7 @@ export function PasskeyCard() {
               key={c.credential_pk}
               title={c.name}
               subtitle={`Added ${c.created_at.slice(0, 10)}${c.last_used_at ? ` · last used ${c.last_used_at.slice(0, 10)}` : ""}`}
-              actions={<Button variant="danger" size="sm" onClick={() => void remove(c.credential_pk)}>
+              actions={<Button variant="danger" controlSize="compact" onClick={() => void remove(c.credential_pk)}>
                 Delete
               </Button>}
               className="border-0 bg-zinc-800/70"
@@ -363,7 +363,7 @@ export function PasskeyCard() {
       {available && (
         <div className="flex flex-wrap items-end gap-2 max-w-md">
           <div className="flex-1 min-w-[10rem]">
-            <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide mb-1">
+            <label className="block text-compact font-medium text-zinc-400 uppercase tracking-wide mb-1">
               Name (optional)
             </label>
             <Input

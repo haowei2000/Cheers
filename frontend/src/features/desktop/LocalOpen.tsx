@@ -138,7 +138,7 @@ export function LocalOpen({
         <UiButton variant="plain"
           onClick={() => void open(selected.key)}
           title={`Open in ${selected.label}${suffix}`}
-          controlSize="compact" className=" pl-1.5 pr-0.5 flex items-center justify-center rounded-l"
+          controlSize="compact" className="flex items-center justify-center rounded-l"
         >
           <OpenerGlyph k={selected.key} />
         </UiButton>
@@ -146,7 +146,7 @@ export function LocalOpen({
           onClick={() => setMenuOpen((o) => !o)}
           title="Open in another app"
           aria-label="Choose an app to open in"
-          controlSize="compact" className=" pr-1 pl-0 flex items-center rounded-r text-zinc-400 hover:text-zinc-200"
+          controlSize="compact" className="flex items-center rounded-r text-zinc-400 hover:text-zinc-200"
         >
           <ChevronDown className="w-3 h-3" />
         </UiButton>
@@ -154,16 +154,16 @@ export function LocalOpen({
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-[9.5rem]">
           {hintLocal === false && (
-            <p className="px-3 py-1 text-[10px] text-zinc-500 border-b border-zinc-800">
+            <p className="px-3 py-1 text-minimal text-zinc-500 border-b border-zinc-800">
               Remote file — opens a downloaded copy
             </p>
           )}
           {/* design-system-exempt: menu-option — opener command menu. */}
           {openers.map((op) => (
-            <UiButton variant="plain"
+            <UiButton controlWidth="fill" variant="plain"
               key={op.key}
               onClick={() => void open(op.key)}
-              controlSize="regular" className="flex w-full items-center gap-2 px-3 text-xs text-zinc-200 hover:bg-zinc-800"
+              controlSize="regular" className="flex items-center gap-2 text-compact text-zinc-200 hover:bg-zinc-800"
             >
               <OpenerGlyph k={op.key} className="w-4 h-4" />
               {op.label}

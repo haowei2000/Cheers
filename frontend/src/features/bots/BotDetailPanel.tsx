@@ -24,6 +24,7 @@ import {
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { Avatar } from "@/components/ui/avatar";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           toast.error("Clipboard unavailable — select and copy manually");
         }
       }}
-      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       {done ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
@@ -144,16 +145,16 @@ export function BotDetailPanel({
               name={name}
               id={bot.bot_id}
               src={bot.avatar_url}
-              size="lg"
+              size="large"
               onUpload={handleAvatarUpload}
             />
           ) : (
-            <Avatar name={name} id={bot.bot_id} src={bot.avatar_url} size="lg" />
+            <Avatar name={name} id={bot.bot_id} src={bot.avatar_url} size="large" />
           )}
-          <span
-            data-design-system-exempt="presence"
+          <PresenceDot
+            contentSize="large"
             className={cn(
-              "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-900",
+              "absolute bottom-0 right-0 ring-zinc-900",
               bot.is_online ? "bg-emerald-500" : "bg-zinc-600"
             )}
             aria-hidden
@@ -164,21 +165,21 @@ export function BotDetailPanel({
             {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
             {name}
           </p>
-          <p className="text-sm text-zinc-400 truncate">
+          <p className="text-regular text-zinc-400 truncate">
             @{bot.username}
             {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
         </div>
         <div className="ml-auto flex flex-shrink-0 items-center gap-2.5">
           {bot.is_disabled && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
+            <span className="inline-flex items-center gap-1 text-compact text-red-400">
               <Ban className="w-3 h-3" />
               Disabled
             </span>
           )}
           <span
             className={cn(
-              "inline-flex items-center gap-1 text-[11px]",
+              "inline-flex items-center gap-1 text-compact",
               bot.is_online ? "text-emerald-400" : "text-zinc-400"
             )}
             title={bot.is_online ? "Connector attached" : "Connector not attached"}
@@ -199,10 +200,9 @@ export function BotDetailPanel({
               type="button"
               onClick={() => setTab(id)}
               controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 px-3 text-xs font-medium border-b-2 -mb-px transition-colors",
+ "inline-flex items-center gap-1.5 text-compact font-medium border-b-2 -mb-px transition-colors",
  active
- ? "border-indigo-500 text-zinc-100"
- : "border-transparent text-zinc-400 hover:text-zinc-200"
+ ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  )}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -338,7 +338,7 @@ function BotOverview({
         {bot.can_manage && (
           <MetaRow label="Bridge token">
             <Tip content="Shown once when issued — copy it right away.">
-              <Button size="sm" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
+              <Button controlSize="compact" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
                 <KeyRound className="w-3.5 h-3.5" />
                 Issue token
               </Button>
@@ -350,7 +350,7 @@ function BotOverview({
             value={channelId}
             onChange={(e) => setChannelId(e.target.value)}
             aria-label="Add bot to channel"
-            controlSize="regular" className=" min-w-0 flex-1 text-xs"
+            controlSize="regular" className="min-w-0 flex-1 text-compact"
           >
             <option value="">Add to channel…</option>
             {channels.map((c) => (
@@ -359,7 +359,7 @@ function BotOverview({
               </option>
             ))}
           </Select>
-          <Button size="sm" variant="secondary" onClick={add} disabled={!channelId || busy}>
+          <Button controlSize="compact" variant="secondary" onClick={add} disabled={!channelId || busy}>
             {added ? "Added ✓" : "Add"}
           </Button>
         </MetaRow>
@@ -385,10 +385,9 @@ function BotOverview({
                   onClick={toggleDisabled}
                   disabled={toggling}
                   controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 rounded-sm px-3 text-xs transition-colors disabled:opacity-40",
+ "inline-flex items-center gap-1.5 rounded-sm text-compact transition-colors disabled:opacity-40",
  bot.is_disabled
- ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
- : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
+ ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
  )}
                 >
                   {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
@@ -403,7 +402,7 @@ function BotOverview({
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-red-950/40 px-3 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-red-950/40 text-compact text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
@@ -589,7 +588,7 @@ function BotStatusEditor({
             onChange={(e) => setStatusEmoji(e.target.value)}
             placeholder="🤖"
             maxLength={8}
-            className="w-16 text-center"
+            className="text-center"
             aria-label="Status emoji"
           />
           <Input
@@ -614,7 +613,7 @@ function BotStatusEditor({
       </Field>
 
       <div className="rounded-sm bg-zinc-900/35 p-4 space-y-3">
-        <label className="flex items-center gap-2 text-sm text-zinc-200">
+        <label className="flex items-center gap-2 text-regular text-zinc-200">
           {/* design-system-native: checkbox */}
 <input type="checkbox" checked={externalProcessor} onChange={(e) => setExternalProcessor(e.target.checked)} className="accent-indigo-500" />
           Sends channel data to an external AI provider
@@ -625,14 +624,14 @@ function BotStatusEditor({
             <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
             <Field label="Data use shown to members"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
             <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
-            <p className="text-xs text-zinc-400">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
+            <p className="text-compact text-zinc-400">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
           </>
         )}
       </div>
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
+        <label className="flex items-center gap-2 text-regular text-zinc-300">
           {/* design-system-native: checkbox */}
 <input
             type="checkbox"
@@ -645,23 +644,23 @@ function BotStatusEditor({
         <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
         {auto && (
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-zinc-400">Every</span>
+            <span className="text-compact text-zinc-400">Every</span>
             <Input
               type="number"
               min={5}
               value={interval}
               onChange={(e) => setIntervalMin(e.target.value)}
               controlSize="compact"
-              className="w-16 text-center"
+              className="text-center"
               aria-label="Interval minutes"
             />
-            <span className="text-xs text-zinc-400">min</span>
+            <span className="text-compact text-zinc-400">min</span>
             <Tip
               align="end"
               content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
             >
               <Button
-                size="sm"
+                controlSize="compact"
                 variant="secondary"
                 onClick={() => {
                   setPromptDraft(prompt);
@@ -676,15 +675,15 @@ function BotStatusEditor({
         )}
       </div>
 
-      {promptError && <p className="text-xs text-red-400">{promptError}</p>}
+      {promptError && <p className="text-compact text-red-400">{promptError}</p>}
 
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={() => void save()} disabled={busy}>
+        <Button controlSize="compact" onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save profile"}
         </Button>
         <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
           <Button
-            size="sm"
+            controlSize="compact"
             variant="secondary"
             onClick={() => void refreshNow()}
             disabled={refreshPhase === "waiting"}
@@ -699,7 +698,7 @@ function BotStatusEditor({
       </div>
 
       {refreshPhase === "timeout" && (
-        <p className="text-[11px] text-amber-400/80 leading-snug">
+        <p className="text-compact text-amber-400/80 leading-snug">
           The agent hasn't responded yet — it may still be working. Its status will update
           here on its own once it writes back.
         </p>
@@ -715,7 +714,7 @@ function BotStatusEditor({
             autoFocus
             aria-label="Status update prompt"
           />
-          <p className="text-xs text-zinc-400">
+          <p className="text-compact text-zinc-400">
             The bot answers this prompt on the schedule and the reply becomes its status.
             Save the profile to apply your changes.
           </p>

@@ -19,6 +19,11 @@ const policy = {
     restingBorder: 0,
     hardcodedControlSize: 0,
     sharedControlSizeOverride: 0,
+    sharedHorizontalPaddingOverride: 0,
+    sharedControlWidthOverride: 0,
+    sharedContentSizeOverride: 0,
+    nonStandardTypographySize: 0,
+    legacyControlSizeProp: 0,
   },
   allowedNativeReasons: ["checkbox"],
   allowedExemptReasons: ["presence"],
@@ -60,4 +65,35 @@ test("accepts an explicit semantic exemption attribute", () => {
   const result = auditSources([{ file: "/repo/frontend/src/Presence.tsx", source }], ts, policy);
   assert.equal(result.violations.unregisteredFullRadius, 0);
   assert.deepEqual(result.invalidReasons, []);
+});
+
+test("rejects business overrides of shared horizontal padding and button width", () => {
+  const source = `<><Button className="px-2"/><UiButton className="w-full pr-1"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedHorizontalPaddingOverride, 2);
+  assert.equal(result.violations.sharedControlWidthOverride, 1);
+});
+
+test("allows primitives to own their horizontal geometry", () => {
+  const source = `<Button className="w-24 px-3"/>`;
+  const result = auditSources([{ file: "/repo/frontend/src/components/ui/Good.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedHorizontalPaddingOverride, 0);
+  assert.equal(result.violations.sharedControlWidthOverride, 0);
+});
+
+test("rejects business overrides of shared content geometry", () => {
+  const source = `<><Avatar size="small" className="!h-4 !w-4"/><EditorialIcon name="proof" className="h-6 w-6"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedContentSizeOverride, 4);
+});
+
+test("accepts only the four registered typography sizes", () => {
+  const source = `<><span className="text-minimal"/><span className="text-compact"/><span className="text-regular"/><span className="text-comfortable"/><span className="text-[11px]"/><span className="text-lg"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardTypographySize, 2);
+});
+
+test("rejects the legacy shared-control size prop", () => {
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source: `<Button size="sm"/>` }], ts, policy);
+  assert.equal(result.violations.legacyControlSizeProp, 1);
 });

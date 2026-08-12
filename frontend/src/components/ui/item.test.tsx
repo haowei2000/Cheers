@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { EntityItem, ItemGroup, ItemList, ItemRow, OperationsItem, WorkbenchItem } from "@/components/ui/item";
+import { EntityItem, ItemChip, ItemGroup, ItemList, ItemRow, ItemSection, NavigationItem, OperationsItem, WorkbenchItem } from "@/components/ui/item";
 import { PresentationProvider } from "@/components/ui/presentation";
 import { ControlSizeProvider } from "@/components/ui/control-size";
 
@@ -107,5 +107,42 @@ describe("ItemRow presentation levels", () => {
     );
     expect(markup.match(/role="listitem"/g)).toHaveLength(1);
     expect(markup).toContain("Diff detail");
+  });
+
+  it("keeps composite chip actions inside the registered control height", () => {
+    const markup = renderToStaticMarkup(
+      <ItemChip
+        label="Cost"
+        controlSize="regular"
+        actions={<button type="button" data-control-size="compact">Remove</button>}
+      />,
+    );
+    expect(markup).toContain('data-control-size="regular"');
+    expect(markup).toContain("min-h-9");
+    expect(markup).toContain("data-item-actions");
+    expect(markup).toContain('data-control-size="compact"');
+  });
+
+  it("renders section labels as static dividers while rows inherit regular size", () => {
+    const markup = renderToStaticMarkup(
+      <ItemSection label="Channels" controlSize="regular" headerControlSize="compact">
+        <NavigationItem title="general" />
+      </ItemSection>,
+    );
+    expect(markup).toContain("<header");
+    expect(markup).toContain(">Channels</span>");
+    expect(markup).not.toMatch(/<button[^>]*>[^<]*Channels/s);
+    expect(markup).toContain("min-h-7");
+    expect(markup).toContain('data-control-size="regular"');
+    expect(markup).toContain("min-h-9");
+  });
+
+  it("gives selected navigation a visible fill and current-page semantics", () => {
+    const markup = renderToStaticMarkup(
+      <NavigationItem title="general" selected onClick={() => undefined} />,
+    );
+    expect(markup).toContain("bg-zinc-800");
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).not.toContain("aria-pressed");
   });
 });

@@ -9,13 +9,13 @@ import {
 } from "./control-size";
 
 type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
-type LegacySize = "sm" | "md" | "icon";
+export type ControlWidth = "slot" | "fill";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
-  /** @deprecated Prefer controlSize; retained while existing call sites migrate. */
-  size?: LegacySize;
   controlSize?: ControlSize;
+  /** Text controls use a registered width slot; containers may explicitly request fill. */
+  controlWidth?: ControlWidth;
   square?: boolean;
   loading?: boolean;
 }
@@ -37,9 +37,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       variant = "primary",
-      size,
       controlSize,
-      square = size === "icon",
+      controlWidth = "slot",
+      square = false,
       loading,
       disabled,
       className,
@@ -49,16 +49,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const inheritedSize = useControlSize(controlSize);
-    const resolvedSize = size === "sm" ? "compact" : size === "md" || size === "icon" ? "regular" : inheritedSize;
+    const resolvedSize = inheritedSize;
     return <button
       ref={ref}
       disabled={disabled || loading}
       data-control-size={resolvedSize}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer",
+        "inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden font-medium transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0 [&>span]:truncate",
         variantCls[variant],
         square ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses[resolvedSize],
+        !square && (controlWidth === "fill" ? "w-full" : "w-24 max-w-full"),
         square ? "rounded-sm p-0" : "rounded-sm px-3",
         className
       )}

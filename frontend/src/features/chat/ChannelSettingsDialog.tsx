@@ -235,21 +235,21 @@ export function ChannelSettingsDialog({
                 src={channel.avatar_url}
                 onUpload={uploadAvatar}
               />
-              <span className="text-sm text-zinc-400">Channel avatar</span>
+              <span className="text-regular text-zinc-400">Channel avatar</span>
             </div>
           )}
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide">
             Name
           </label>
           <UiInput
             value={name}
             disabled={!canManage}
             onChange={(e) => setName(e.target.value)}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {channel.type !== "dm" && (
             <div className="space-y-1.5 pt-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+              <label className="text-compact font-medium uppercase tracking-wide text-zinc-400">
                 Conversation layout
               </label>
               <ConversationModePicker
@@ -259,7 +259,7 @@ export function ChannelSettingsDialog({
               />
             </div>
           )}
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide">
             Purpose
           </label>
           <UiInput
@@ -267,11 +267,11 @@ export function ChannelSettingsDialog({
             disabled={!canManage}
             placeholder="(Optional) what this channel is for…"
             onChange={(e) => setPurpose(e.target.value)}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {canManage && (
             <div className="flex justify-end">
-              <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
+              <Button controlSize="compact" loading={savingMeta} onClick={() => void saveMeta()}>
                 Save
               </Button>
             </div>
@@ -318,10 +318,10 @@ export function ChannelSettingsDialog({
                   disabled={it.already_member}
                   onClick={() => void addMember(it)}
                   title={it.display_name || it.username || it.member_id.slice(0, 8)}
-                  leading={<Avatar name={it.display_name || it.username} src={it.avatar_url} id={it.member_id} size="sm" />}
-                  status={it.member_type === "bot" ? <span className="font-utility text-xs uppercase text-zinc-500">Bot</span> : undefined}
-                  criticalStatus={it.requires_workspace_acceptance ? <span className="font-utility text-xs uppercase text-amber-400">Workspace first</span> : undefined}
-                  trailing={it.already_member ? <span className="font-utility text-xs text-zinc-500">Already in</span> : undefined}
+                  leading={<Avatar name={it.display_name || it.username} src={it.avatar_url} id={it.member_id} size="regular" />}
+                  status={it.member_type === "bot" ? <span className="font-utility text-compact uppercase text-zinc-500">Bot</span> : undefined}
+                  criticalStatus={it.requires_workspace_acceptance ? <span className="font-utility text-compact uppercase text-amber-400">Workspace first</span> : undefined}
+                  trailing={it.already_member ? <span className="font-utility text-compact text-zinc-500">Already in</span> : undefined}
                 />
               ))}
             </CollectionPickerItem>
@@ -351,19 +351,19 @@ export function ChannelSettingsDialog({
                     name={m.display_name || m.username}
                     src={m.avatar_url}
                     id={m.member_id}
-                    size="sm"
+                    size="regular"
                     online={m.is_online === true ? true : m.is_online === false && m.member_type === "bot" ? false : undefined}
                   />
                 )}
                 status={!canChangeRole ? (
-                  <span className="font-utility text-xs uppercase text-zinc-500">
+                  <span className="font-utility text-compact uppercase text-zinc-500">
                     {m.member_type === "bot" ? `Bot · ${roleLabel}` : roleLabel}
                   </span>
                 ) : m.member_type === "bot" ? (
-                  <span className="font-utility text-xs uppercase text-zinc-500">Bot</span>
+                  <span className="font-utility text-compact uppercase text-zinc-500">Bot</span>
                 ) : undefined}
                 criticalStatus={m.status && m.status !== "active" ? (
-                  <span className="font-utility text-xs uppercase text-amber-400">
+                  <span className="font-utility text-compact uppercase text-amber-400">
                     {m.status === "pending_owner" ? "Waiting for owner" : m.status === "pending_workspace" ? "Waiting for workspace" : "Pending"}
                   </span>
                 ) : undefined}
@@ -425,26 +425,26 @@ export function ChannelSettingsDialog({
         {canManage && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-zinc-200">Delete channel</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
+              <p className="text-regular font-medium text-zinc-200">Delete channel</p>
+              <p className="text-compact text-zinc-400 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             {confirmingDelete ? (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button
                   variant="secondary"
-                  size="sm"
+                  controlSize="compact"
                   autoFocus
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
                 >
                   Cancel
                 </Button>
-                <Button variant="danger" size="sm" loading={deleting} onClick={() => void doDelete()}>
+                <Button variant="danger" controlSize="compact" loading={deleting} onClick={() => void doDelete()}>
                   Delete channel
                 </Button>
               </div>
             ) : (
-              <Button variant="danger" size="sm" onClick={() => setConfirmingDelete(true)}>
+              <Button variant="danger" controlSize="compact" onClick={() => setConfirmingDelete(true)}>
                 <Trash2 className="w-3.5 h-3.5" />
                 Delete
               </Button>
@@ -457,20 +457,20 @@ export function ChannelSettingsDialog({
         {myRole && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-zinc-200">Leave channel</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Remove yourself from this channel.</p>
+              <p className="text-regular font-medium text-zinc-200">Leave channel</p>
+              <p className="text-compact text-zinc-400 mt-0.5">Remove yourself from this channel.</p>
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Button variant="ghost" size="sm" autoFocus onClick={() => setConfirmingLeave(false)}>
+                <Button variant="ghost" controlSize="compact" autoFocus onClick={() => setConfirmingLeave(false)}>
                   Cancel
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => void leave()}>
+                <Button variant="secondary" controlSize="compact" onClick={() => void leave()}>
                   Leave channel
                 </Button>
               </div>
             ) : (
-              <Button variant="secondary" size="sm" onClick={() => setConfirmingLeave(true)}>
+              <Button variant="secondary" controlSize="compact" onClick={() => setConfirmingLeave(true)}>
                 <LogOut className="w-3.5 h-3.5" />
                 Leave
               </Button>

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": 1,
+  "version": 2,
   "nativeElementCeilings": {
     "production": {
       "button": 9,
@@ -26,7 +26,12 @@
     "unregisteredFullRadius": 0,
     "restingBorder": 0,
     "hardcodedControlSize": 4,
-    "sharedControlSizeOverride": 0
+    "sharedControlSizeOverride": 0,
+    "sharedHorizontalPaddingOverride": 0,
+    "sharedControlWidthOverride": 0,
+    "sharedContentSizeOverride": 0,
+    "nonStandardTypographySize": 0,
+    "legacyControlSizeProp": 0
   },
   "allowedNativeReasons": [
     "checkbox",

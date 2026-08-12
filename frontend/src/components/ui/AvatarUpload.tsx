@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "./avatar";
+import { contentIconClasses, type ContentSize } from "./content-size";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -15,13 +16,13 @@ export function AvatarUpload({
   name,
   id,
   src,
-  size = "lg",
+  size = "large",
   onUpload,
 }: {
   name?: string | null;
   id?: string;
   src?: string | null;
-  size?: "sm" | "md" | "lg";
+  size?: ContentSize;
   onUpload: (file: File) => Promise<string>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,9 +66,9 @@ export function AvatarUpload({
       <Avatar name={name} id={id} src={preview || src || undefined} size={size} />
       <span data-design-system-exempt="identity" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
         {busy ? (
-          <Loader2 className="h-4 w-4 animate-spin text-white" />
+          <Loader2 className={`${contentIconClasses.regular} animate-spin text-white`} />
         ) : (
-          <Camera className="h-4 w-4 text-white" />
+          <Camera className={`${contentIconClasses.regular} text-white`} />
         )}
       </span>
       <input

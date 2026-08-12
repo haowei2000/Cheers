@@ -334,7 +334,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           if (!newName.trim()) setCreatingIn(null);
         }}
         placeholder={creatingIn ? "File name" : "Path, e.g. notes/todo.md"}
-        controlSize="regular" className="flex-1 bg-zinc-800 text-zinc-200 text-xs rounded-sm px-1 outline-none"
+        controlSize="regular" className="flex-1 bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none"
       />
     </div>
   );
@@ -447,7 +447,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         <UiButton variant="plain"
           type="button"
           onClick={() => beginCreate("")}
-          className="flex items-center gap-1 rounded-sm p-1 -ml-1 text-xs text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="flex items-center gap-1 rounded-sm p-1 -ml-1 text-compact text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Plus className="w-3.5 h-3.5" /> New
         </UiButton>
@@ -474,7 +474,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       <div className="flex-1 overflow-auto py-1">
         {creatingIn === "" && createInput(0)}
         {tree.length === 0 && creatingIn === null && (
-          <div className="px-2 py-3 text-xs text-zinc-400">No files</div>
+          <div className="px-2 py-3 text-compact text-zinc-400">No files</div>
         )}
         {renderNodes(tree, 0)}
       </div>
@@ -482,7 +482,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   );
 
   return (
-    <div ref={rootRef} className="relative flex h-full gap-2 p-1.5 text-sm min-w-0">
+    <div ref={rootRef} className="relative flex h-full gap-2 p-1.5 text-regular min-w-0">
       {/* file tree — side column normally; overlay drawer when compact + open */}
       {treeOpen ? (
         treeColumn
@@ -492,7 +492,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex w-6 flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -510,7 +510,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       {/* selected file: preview (matching renderer) or raw (textarea fallback) */}
       <div className="flex-1 flex flex-col min-w-0">
         {selected === null ? (
-          <div className="flex-1 flex items-center justify-center text-zinc-400 text-xs gap-2">
+          <div className="flex-1 flex items-center justify-center text-zinc-400 text-compact gap-2">
             <FolderOpen className="w-4 h-4" /> Select a file
           </div>
         ) : (
@@ -591,15 +591,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     tight ? "min-h-8 flex-wrap py-1" : "h-8"
                   )}
                 >
-                  <span className="text-xs text-zinc-300 truncate min-w-0" title={selected}>
+                  <span className="text-compact text-zinc-300 truncate min-w-0" title={selected}>
                     {pathLabel}
                   </span>
                   {effMode === "raw" && editor.dirty && (
-                    <span className="text-[10px] text-amber-400 flex-shrink-0">●</span>
+                    <span className="text-minimal text-amber-400 flex-shrink-0">●</span>
                   )}
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
-                  <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-[11px] flex-shrink-0">
+                  <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
                     <UiButton variant="plain"
                       onClick={() => setMode("preview")}
                       disabled={!previewRenderer}
@@ -608,7 +608,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           ? `Preview with ${previewRenderer.title}`
                           : "No matching renderer — raw only"
                       }
-                      controlSize="regular" className={`px-2 disabled:opacity-40 ${
+                      controlSize="regular" className={`disabled:opacity-40 ${
  effMode === "preview"
  ? "bg-zinc-700 text-zinc-100"
  : "text-zinc-400 hover:text-zinc-200"
@@ -618,7 +618,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     </UiButton>
                     <UiButton variant="plain"
                       onClick={() => setMode("raw")}
-                      controlSize="regular" className={`px-2 ${
+                      controlSize="regular" className={`${
  effMode === "raw"
  ? "bg-zinc-700 text-zinc-100"
  : "text-zinc-400 hover:text-zinc-200"
@@ -635,7 +635,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       value={bound?.id ?? ""}
                       onChange={(e) => setBinding(selected, e.target.value || null)}
                       title="Renderer for Preview (Auto = best content match)"
-                      controlSize="regular" className="bg-zinc-800 text-zinc-300 text-[11px] rounded-sm px-1 outline-none max-w-[110px]"
+                      controlSize="regular" className="bg-zinc-800 text-zinc-300 text-compact rounded-sm outline-none max-w-[110px]"
                     >
                       <option value="">Auto</option>
                       {options.map((r) => {
@@ -677,7 +677,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                               value={bound?.id ?? ""}
                               onChange={(e) => setBinding(selected, e.target.value || null)}
                               title="Renderer for Preview (Auto = best content match)"
-                              controlSize="regular" className="bg-zinc-800 text-zinc-300 text-[11px] rounded-sm px-1 outline-none max-w-[110px]"
+                              controlSize="regular" className="bg-zinc-800 text-zinc-300 text-compact rounded-sm outline-none max-w-[110px]"
                             >
                               <option value="">Auto</option>
                               {options.map((r) => (
@@ -698,7 +698,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <UiButton variant="plain"
                       onClick={() => void onSave()}
                       disabled={!editor.dirty}
-                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40 flex-shrink-0"
+                      className="flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-100 disabled:opacity-40 flex-shrink-0"
                     >
                       <Save className="w-3.5 h-3.5" />
                       {!tight && "Save"}
@@ -736,7 +736,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {(editor.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-[11px] text-zinc-400"
+            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-zinc-400"
           >
             {editor.status || status}
           </div>

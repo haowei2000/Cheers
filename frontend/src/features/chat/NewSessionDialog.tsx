@@ -84,12 +84,12 @@ export function NewSessionDialog({
     <Dialog title="New session" onClose={onClose} maxWidth="max-w-sm">
       <div className="space-y-3">
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Bot</span>
+          <span className="text-compact font-medium text-zinc-400 uppercase tracking-wide">Bot</span>
           <UiSelect
             value={botId}
             disabled={busy}
             onChange={(e) => setBotId(e.target.value)}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
@@ -99,7 +99,7 @@ export function NewSessionDialog({
           </UiSelect>
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Working directory (optional)</span>
+          <span className="text-compact font-medium text-zinc-400 uppercase tracking-wide">Working directory (optional)</span>
           <UiInput
             type="text"
             value={cwd}
@@ -108,14 +108,14 @@ export function NewSessionDialog({
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
             {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
           </datalist>
           {meta && meta.allowed_roots.length > 0 && (
-            <span className="block text-[10px] text-zinc-400">
+            <span className="block text-minimal text-zinc-400">
               {meta.backend_may_set_cwd
                 ? "Must be inside an allowed root: "
                 : "This connector does not let the platform set a working directory. Allowed roots: "}
@@ -136,22 +136,22 @@ export function NewSessionDialog({
           )}
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Extra roots (optional)</span>
+          <span className="text-compact font-medium text-zinc-400 uppercase tracking-wide">Extra roots (optional)</span>
           <UiTextarea
             value={dirs}
             disabled={busy}
             rows={2}
             placeholder={"/abs/extra-root"}
             onChange={(e) => setDirs(e.target.value)}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-2 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
-          <span className="block text-[10px] text-zinc-400">One absolute path per line.</span>
+          <span className="block text-minimal text-zinc-400">One absolute path per line.</span>
         </label>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+          <Button variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" disabled={busy || !botId} onClick={() => void create()}>
+          <Button controlSize="compact" disabled={busy || !botId} onClick={() => void create()}>
             <Plus className="w-3.5 h-3.5" />
             {busy ? "Creating…" : "Create"}
           </Button>

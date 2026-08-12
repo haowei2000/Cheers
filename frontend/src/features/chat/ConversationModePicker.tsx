@@ -52,11 +52,10 @@ export function ConversationModePicker({
             onClick={() => onChange(option.value)}
             controlSize="regular"
             className={cn(
-              "min-w-0 justify-start px-3 text-left",
-              selected
-                ? "bg-zinc-700 text-zinc-100"
-                : "bg-zinc-950/40 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
-            )}
+ "min-w-0 justify-start text-left",
+ selected
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-950/40 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
+ )}
           >
             <Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-500")} />
             <span className="min-w-0 truncate">{option.title}</span>

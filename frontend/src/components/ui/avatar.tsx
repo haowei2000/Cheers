@@ -3,38 +3,20 @@ import { cn } from "@/lib/cn";
 import { initials, avatarColor } from "@/lib/format";
 import { agentIconFor, AgentGlyph } from "@/components/ui/agentIcons";
 import { resolveServerUrl } from "@/lib/serverConfig";
+import { avatarSizeClasses, type ContentSize } from "@/components/ui/content-size";
+import { PresenceDot } from "@/components/ui/presence-dot";
 
 interface AvatarProps {
   name?: string | null;
   src?: string | null;
   id?: string;
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: ContentSize;
   className?: string;
   /** Presence dot (DESIGN.md §2.7): omit for no dot, true/false for online/offline. */
   online?: boolean;
 }
 
-const sizeCls = {
-  xs: "w-5 h-5 text-[10px]",
-  sm: "w-7 h-7 text-xs",
-  md: "w-9 h-9 text-sm",
-  lg: "w-11 h-11 text-base",
-};
-
-function PresenceDot({ online }: { online: boolean }) {
-  return (
-    <span
-      title={online ? "online" : "offline"}
-      data-design-system-exempt="presence"
-      className={cn(
-        "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900",
-        online ? "bg-emerald-500" : "bg-zinc-600"
-      )}
-    />
-  );
-}
-
-export function Avatar({ name, src, id, size = "md", className, online }: AvatarProps) {
+export function Avatar({ name, src, id, size = "regular", className, online }: AvatarProps) {
   const color = id ? avatarColor(id) : "bg-zinc-700";
 
   let inner: ReactNode;
@@ -48,7 +30,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
         data-design-system-exempt="identity"
         className={cn(
           "rounded-full object-cover flex-shrink-0",
-          sizeCls[size],
+          avatarSizeClasses[size],
           className
         )}
       />
@@ -62,7 +44,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
         data-design-system-exempt="identity"
         className={cn(
           "rounded-full flex items-center justify-center flex-shrink-0",
-          sizeCls[size],
+          avatarSizeClasses[size],
           className
         )}
         style={{ backgroundColor: brand.bg, color: brand.fg }}
@@ -75,7 +57,7 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
         data-design-system-exempt="identity"
         className={cn(
           "rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0",
-          sizeCls[size],
+          avatarSizeClasses[size],
           color,
           className
         )}
@@ -89,7 +71,14 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
   return (
     <span className="relative inline-flex flex-shrink-0">
       {inner}
-      <PresenceDot online={online} />
+      <PresenceDot
+        contentSize={size}
+        title={online ? "online" : "offline"}
+        className={cn(
+          "absolute -bottom-0.5 -right-0.5 ring-zinc-900",
+          online ? "bg-emerald-500" : "bg-zinc-600"
+        )}
+      />
     </span>
   );
 }

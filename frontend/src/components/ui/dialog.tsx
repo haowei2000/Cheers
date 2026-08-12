@@ -130,7 +130,7 @@ export function Dialog({
       >
         {title !== undefined && (
           <div className="flex items-center gap-2 max-md:flex-shrink-0">
-            <h2 id={titleId} className="text-sm font-semibold text-zinc-100">
+            <h2 id={titleId} className="text-regular font-semibold text-zinc-100">
               {title}
             </h2>
             <IconButton

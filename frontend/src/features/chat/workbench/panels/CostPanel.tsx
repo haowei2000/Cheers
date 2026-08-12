@@ -51,14 +51,14 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   const bots = data.bots ?? [];
   if (bots.length === 0) {
     return (
-      <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
+      <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
         <Gauge className="w-4 h-4" />
         No usage reported yet
       </div>
     );
   }
   return (
-    <table className="w-full text-xs">
+    <table className="w-full text-compact">
       <thead>
         <tr className="text-zinc-400 border-b border-zinc-800">
           <th className="text-left font-normal px-3 py-1.5">Bot</th>
@@ -84,8 +84,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
                   name={memberLabel(members, b.bot_id)}
                   src={members.get(b.bot_id)?.avatar_url ?? undefined}
                   id={b.bot_id}
-                  size="xs"
-                  className="!w-4 !h-4 !text-[8px]"
+                  size="small"
                 />
                 <span className="truncate">{memberLabel(members, b.bot_id)}</span>
               </span>

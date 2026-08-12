@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 import { Select as UiSelect } from "@/components/ui/select";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
 // the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
@@ -18,7 +19,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { controlHeightClasses } from "@/components/ui/control-size";
 import {
   getSessionControls,
   listChannelBotSessions,
@@ -26,6 +26,7 @@ import {
 } from "@/api/sessionControl";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { NavigationItem } from "@/components/ui/item";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import type { SendResourceReq } from "./workbench/fsClient";
 import { sessionTag, statusDotColor } from "./sessionLabel";
 import { NewSessionDialog } from "./NewSessionDialog";
@@ -306,14 +307,14 @@ export function SessionChip({
   let rowIndex = 0;
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
-      "flex w-full items-center gap-2 px-2.5 py-1.5 rounded-sm text-sm text-left transition-colors",
+      "flex w-full items-center gap-2 px-2.5 py-1.5 rounded-sm text-regular text-left transition-colors",
       i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:bg-zinc-800",
       isSelected && "text-indigo-200"
     );
 
   return (
     <div ref={rootRef} className="relative inline-flex min-w-0">
-      <UiButton variant="plain"
+      <ComposerToolbarButton
         type="button"
         onClick={toggle}
         onKeyDown={handleKeyDown}
@@ -325,9 +326,6 @@ export function SessionChip({
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
-          controlHeightClasses.regular,
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           selected || open
             ? "bg-indigo-600/15 text-indigo-200"
             : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
@@ -338,11 +336,11 @@ export function SessionChip({
         ) : (
           <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-indigo-400" : "text-zinc-500")} />
         )}
-        <span className="truncate max-w-[160px]">
+        <span className="min-w-0 flex-1 truncate">
           {selected ? `@${selected.bot_name} · ${tagOf(selected)}` : "Auto"}
         </span>
         <ChevronDown className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")} />
-      </UiButton>
+      </ComposerToolbarButton>
 
       {open && (
         <PopoverPanel className="w-72 max-w-[calc(100vw-2rem)] max-h-72 overflow-y-auto p-1">
@@ -370,7 +368,7 @@ export function SessionChip({
 
           {groups.map((g) => (
             <div key={g.botId}>
-              <div className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+              <div className="px-2.5 pt-2 pb-0.5 text-minimal uppercase tracking-wide text-zinc-400">
                 {g.botName}
               </div>
               {g.sessions.map((s) => {
@@ -381,8 +379,8 @@ export function SessionChip({
                     key={s.session_id}
                     title={tagOf(s)}
                     subtitle={s.cwd || "default"}
-                    leading={<span data-design-system-exempt="presence" className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
-                    status={<span className="text-[11px] text-zinc-400">{s.status}</span>}
+                    leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
+                    status={<span className="text-compact text-zinc-400">{s.status}</span>}
                     trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
                     selected={isSel}
                     role="option"
@@ -401,7 +399,7 @@ export function SessionChip({
           ))}
 
           {loaded && entries.length === 0 && (
-            <p className="px-2.5 py-2 text-xs text-zinc-400">
+            <p className="px-2.5 py-2 text-compact text-zinc-400">
               No sessions yet — one is created when a bot first responds.
             </p>
           )}

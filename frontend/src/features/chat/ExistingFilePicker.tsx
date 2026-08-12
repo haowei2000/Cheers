@@ -57,11 +57,11 @@ export function ExistingFilePicker({
   return (
     <Dialog title="Pick channel files" onClose={onClose} maxWidth="max-w-xl">
       {files === null ? (
-        <div className="py-8 flex items-center justify-center gap-2 text-xs text-zinc-400">
+        <div className="py-8 flex items-center justify-center gap-2 text-compact text-zinc-400">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : files.length === 0 ? (
-        <div className="py-8 text-center text-xs text-zinc-400">
+        <div className="py-8 text-center text-compact text-zinc-400">
           No files in this channel yet. Upload one with 📎 first.
         </div>
       ) : (
@@ -71,13 +71,13 @@ export function ExistingFilePicker({
             const isSel = selected.has(f.file_id);
             const checked = isAttached || isSel;
             return (
-              <UiButton variant="plain"
+              <UiButton controlWidth="fill" variant="plain"
                 key={f.file_id}
                 type="button"
                 disabled={isAttached}
                 onClick={() => toggle(f.file_id)}
                 controlSize="regular" className={
- "flex w-full items-center gap-2.5 rounded-sm px-2.5 text-left transition-colors " +
+ "flex items-center gap-2.5 rounded-sm text-left transition-colors "+
  (isAttached
  ? "opacity-50 cursor-not-allowed"
  : isSel
@@ -95,15 +95,15 @@ export function ExistingFilePicker({
                 </span>
                 <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
                 <span
-                  className="min-w-0 flex-1 truncate text-sm text-zinc-200"
+                  className="min-w-0 flex-1 truncate text-regular text-zinc-200"
                   title={f.original_filename || f.file_id}
                 >
                   {f.original_filename || f.file_id.slice(0, 8)}
                 </span>
                 {typeof f.size_bytes === "number" && (
-                  <span className="text-xs text-zinc-400">{formatBytes(f.size_bytes)}</span>
+                  <span className="text-compact text-zinc-400">{formatBytes(f.size_bytes)}</span>
                 )}
-                {isAttached && <span className="text-[10px] text-zinc-400">Added</span>}
+                {isAttached && <span className="text-minimal text-zinc-400">Added</span>}
               </UiButton>
             );
           })}
@@ -111,10 +111,10 @@ export function ExistingFilePicker({
       )}
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        <Button variant="ghost" controlSize="compact" onClick={onClose}>
           Cancel
         </Button>
-        <Button size="sm" onClick={confirm} disabled={selected.size === 0}>
+        <Button controlSize="compact" onClick={confirm} disabled={selected.size === 0}>
           Add{selected.size > 0 ? ` (${selected.size})` : ""}
         </Button>
       </div>

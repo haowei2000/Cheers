@@ -1017,16 +1017,15 @@ function MessageComposerImpl({
               ) : (
                 <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               )}
-              criticalStatus={c.type === "bot" ? <span className="text-[10px] text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
+              criticalStatus={c.type === "bot" ? <span className="text-minimal text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
               selected={i === picker.index}
               className={cn(
-                "border-0 px-3",
-                i === picker.index
-                  ? "bg-indigo-600/30 text-zinc-100"
-                  : c.type === "bot" && c.isOnline === false
-                    ? "text-zinc-500 hover:bg-zinc-800"
-                    : "text-zinc-300 hover:bg-zinc-800"
-              )}
+ "border-0 ",
+ i === picker.index
+ ? "bg-indigo-600/30 text-zinc-100": c.type === "bot" && c.isOnline === false
+ ? "text-zinc-500 hover:bg-zinc-800"
+ : "text-zinc-300 hover:bg-zinc-800"
+ )}
             />
           ))}
         </div>
@@ -1046,7 +1045,7 @@ function MessageComposerImpl({
           {attachments.map((a) => (
             <span
               key={a.file_id}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300"
             >
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
               <span
@@ -1067,7 +1066,7 @@ function MessageComposerImpl({
             </span>
           ))}
           {uploading && (
-            <span className="inline-flex items-center text-xs text-zinc-400 px-1">
+            <span className="inline-flex items-center text-compact text-zinc-400 px-1">
               uploading…
             </span>
           )}
@@ -1095,7 +1094,7 @@ function MessageComposerImpl({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-amber-200">
           <p className="flex items-center gap-1.5">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
@@ -1108,7 +1107,7 @@ function MessageComposerImpl({
               type="button"
               onClick={() => void transcribeThenSend()}
               disabled={transcribing}
-              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-600/80 px-2 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
+              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-600/80 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
             >
               {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
               {transcribing ? "Transcribing…" : "Transcribe, then send"}
@@ -1117,7 +1116,7 @@ function MessageComposerImpl({
               type="button"
               onClick={() => void submit(true)}
               disabled={transcribing}
-              controlSize="regular" className="rounded-sm bg-amber-900/40 px-2 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
+              controlSize="regular" className="rounded-sm bg-amber-900/40 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
             >
               Send anyway
             </UiButton>
@@ -1163,8 +1162,8 @@ function MessageComposerImpl({
               ? "Select a channel to start chatting"
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
-          // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-base leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-sm"
+          // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-regular"
         />
 
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
@@ -1174,11 +1173,10 @@ function MessageComposerImpl({
             controlSize="regular"
             label={dictating ? "Stop dictation" : "Start voice dictation"}
             className={cn(
-              "disabled:opacity-40",
-              dictating
-                ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
-            )}
+ "disabled:opacity-40",
+ dictating
+ ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
+ )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
             {transcribingDictation ? (
@@ -1196,47 +1194,46 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Attach file"
               className={cn(
-                "disabled:opacity-40",
-                attachMenuOpen
-                  ? "text-zinc-200 bg-zinc-700/50"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
-              )}
+ "disabled:opacity-40",
+ attachMenuOpen
+ ? "text-zinc-200 bg-zinc-700/50": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+ )}
               title="Attach file"
             >
               <Paperclip className="w-4 h-4" />
             </IconButton>
             {attachMenuOpen && (
               <PopoverPanel className="w-48 overflow-hidden rounded-sm py-1">
-                <UiButton variant="plain"
+                <UiButton controlWidth="fill" variant="plain"
                   type="button"
                   onClick={() => {
                     setAttachMenuOpen(false);
                     fileInputRef.current?.click();
                   }}
-                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                  controlSize="regular" className="flex items-center gap-2 text-left text-compact text-zinc-300 hover:bg-zinc-800"
                 >
                   <Upload className="w-3.5 h-3.5 text-zinc-500" />
                   Upload from computer
                 </UiButton>
-                <UiButton variant="plain"
+                <UiButton controlWidth="fill" variant="plain"
                   type="button"
                   onClick={() => {
                     setAttachMenuOpen(false);
                     setLibraryOpen(true);
                   }}
-                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                  controlSize="regular" className="flex items-center gap-2 text-left text-compact text-zinc-300 hover:bg-zinc-800"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
                   Pick a channel file
                 </UiButton>
                 {isTauri() && (
-                  <UiButton variant="plain"
+                  <UiButton controlWidth="fill" variant="plain"
                     type="button"
                     onClick={() => {
                       setAttachMenuOpen(false);
                       void takeScreenshot();
                     }}
-                    controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                    controlSize="regular" className="flex items-center gap-2 text-left text-compact text-zinc-300 hover:bg-zinc-800"
                   >
                     <Camera className="w-3.5 h-3.5 text-zinc-500" />
                     Take screenshot
@@ -1285,10 +1282,9 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Send message"
               className={cn(
-                canSend
-                  ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
-                  : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
-              )}
+ canSend
+ ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
+ )}
               title="Send message"
             >
               <SendHorizontal className="w-4 h-4" />
@@ -1297,7 +1293,7 @@ function MessageComposerImpl({
         </div>
       </div>
       {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
-      <p className="text-[11px] text-zinc-400 mt-1.5 px-1 max-md:hidden">
+      <p className="text-compact text-zinc-400 mt-1.5 px-1 max-md:hidden">
         <kbd className="font-mono">Enter</kbd> to send ·{" "}
         <kbd className="font-mono">Shift+Enter</kbd> for new line ·{" "}
         <kbd className="font-mono">@</kbd> to mention ·{" "}

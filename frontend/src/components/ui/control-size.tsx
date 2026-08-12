@@ -45,16 +45,16 @@ export const controlSquareClasses: Record<ControlSize, string> = {
 };
 
 export const controlTextClasses: Record<ControlSize, string> = {
-  compact: "text-xs",
-  regular: "text-sm",
-  comfortable: "text-base",
+  compact: "text-compact",
+  regular: "text-regular",
+  comfortable: "text-comfortable",
 };
 
 /** Supporting copy uses the next quieter registered tier, never an ad-hoc size. */
 export const controlSupportingTextClasses: Record<ControlSize, string> = {
-  compact: "text-xs",
-  regular: "text-xs",
-  comfortable: "text-sm",
+  compact: "text-compact",
+  regular: "text-compact",
+  comfortable: "text-regular",
 };
 
 export const controlIconClasses: Record<ControlSize, string> = {

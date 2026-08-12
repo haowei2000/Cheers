@@ -197,14 +197,13 @@ export default function LoginPage() {
               placeholder={allowedFactors.includes("email") ? "123456 or email code" : "123456"}
             />
           </div>
-          <Button type="submit" className="w-full" loading={loading} disabled={!factorCode}>
+          <Button controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
           {allowedFactors.includes("email") && (
-            <Button
+            <Button controlWidth="fill"
               type="button"
               variant="secondary"
-              className="w-full"
               disabled={loading}
               onClick={() => void handleSendEmailCode()}
             >
@@ -218,19 +217,18 @@ export default function LoginPage() {
             </Button>
           )}
           {allowedFactors.includes("passkey") && (
-            <Button
+            <Button controlWidth="fill"
               type="button"
               variant="secondary"
-              className="w-full"
               disabled={loading}
               onClick={() => void handlePasskey()}
             >
               Use Passkey
             </Button>
           )}
-          <UiButton variant="plain"
+          <UiButton controlWidth="fill" variant="plain"
             type="button"
-            className={`w-full text-xs ${publicLinkClass}`}
+            className={`text-compact ${publicLinkClass}`}
             onClick={() => {
               setTransactionId(null);
               setAllowedFactors([]);
@@ -282,9 +280,9 @@ export default function LoginPage() {
             />
           </div>
 
-          <Button
+          <Button controlWidth="fill"
             type="submit"
-            className="w-full mt-2"
+            className="mt-2"
             loading={loading}
             disabled={!form.login || !form.password}
           >
@@ -295,14 +293,13 @@ export default function LoginPage() {
             <div className="space-y-3 pt-1">
               <div className="flex items-center gap-3" aria-hidden="true">
                 <span className="h-px flex-1 bg-zinc-800" />
-                <span className="text-xs text-zinc-500">or</span>
+                <span className="text-compact text-zinc-500">or</span>
                 <span className="h-px flex-1 bg-zinc-800" />
               </div>
               {capabilities.providers.apple && (
-                <Button
+                <Button controlWidth="fill"
                   type="button"
                   variant="secondary"
-                  className="w-full"
                   disabled={loading}
                   onClick={() => {
                     sessionStorage.setItem("cheers.oauth_redirect", redirect);
@@ -317,10 +314,9 @@ export default function LoginPage() {
                 </Button>
               )}
               {capabilities.providers.google && (
-                <Button
+                <Button controlWidth="fill"
                   type="button"
                   variant="secondary"
-                  className="w-full"
                   disabled={loading}
                   onClick={() => {
                     sessionStorage.setItem("cheers.oauth_redirect", redirect);
@@ -337,7 +333,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between text-xs text-zinc-400">
+          <div className="flex items-center justify-between text-compact text-zinc-400">
             <Link to="/register" className={publicLinkClass}>
               Create account
             </Link>

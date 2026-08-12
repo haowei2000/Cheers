@@ -212,7 +212,7 @@ export default function RegisterPage() {
               </Button>
             </div>
             {errors.email && (
-              <p id="email-error" role="alert" className="text-xs text-red-400">
+              <p id="email-error" role="alert" className="text-compact text-red-400">
                 {errors.email}
               </p>
             )}
@@ -241,7 +241,7 @@ export default function RegisterPage() {
               aria-describedby={errors.password ? "password-error" : undefined}
             />
             {errors.password && (
-              <p id="password-error" role="alert" className="text-xs text-red-400">
+              <p id="password-error" role="alert" className="text-compact text-red-400">
                 {errors.password}
               </p>
             )}
@@ -260,15 +260,15 @@ export default function RegisterPage() {
               aria-describedby={errors.confirm ? "confirm-error" : undefined}
             />
             {errors.confirm && (
-              <p id="confirm-error" role="alert" className="text-xs text-red-400">
+              <p id="confirm-error" role="alert" className="text-compact text-red-400">
                 {errors.confirm}
               </p>
             )}
           </div>
 
-          <Button
+          <Button controlWidth="fill"
             type="submit"
-            className="w-full mt-2"
+            className="mt-2"
             loading={loading}
             disabled={
               !form.username.trim() ||
@@ -280,7 +280,7 @@ export default function RegisterPage() {
             Create account
           </Button>
 
-          <p className="text-center text-xs text-zinc-400">
+          <p className="text-center text-compact text-zinc-400">
             Already have an account?{" "}
             <Link to="/login" className={publicLinkClass}>
               Sign in

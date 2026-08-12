@@ -104,15 +104,15 @@ export function ForwardDialog({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search channels and DMs…"
-          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 outline-none placeholder:text-zinc-400"
+          className="flex-1 bg-transparent text-comfortable md:text-regular text-zinc-100 outline-none placeholder:text-zinc-400"
         />
       </div>
 
       <div className="max-h-80 overflow-y-auto">
         {targets === null ? (
-          <p className="px-2.5 py-4 text-xs text-zinc-400 text-center">Loading…</p>
+          <p className="px-2.5 py-4 text-compact text-zinc-400 text-center">Loading…</p>
         ) : filtered.length === 0 ? (
-          <p className="px-2.5 py-4 text-xs text-zinc-400 text-center">
+          <p className="px-2.5 py-4 text-compact text-zinc-400 text-center">
             No matching destination
           </p>
         ) : (
@@ -127,8 +127,8 @@ export function ForwardDialog({
               ) : (
                 <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
               )}
-              trailing={sending === c.channel_id ? <span className="text-[11px] text-zinc-400">Sending…</span> : undefined}
-              className="border-0 px-2.5"
+              trailing={sending === c.channel_id ? <span className="text-compact text-zinc-400">Sending…</span> : undefined}
+              className="border-0"
             />
           ))
         )}

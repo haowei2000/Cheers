@@ -67,7 +67,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded-sm bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-zinc-800 px-1 py-0.5 text-minimal text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -186,7 +186,7 @@ function SessionCard({
         selected={Boolean(isSelected)}
         leading={<Folder className="h-3.5 w-3.5 text-zinc-500" />}
         title={<span
-          className="block truncate font-mono text-[11px]"
+          className="block truncate font-mono text-compact"
           style={{ direction: "rtl" }}
           title={cwd || "connector default"}
         >
@@ -195,7 +195,7 @@ function SessionCard({
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>}
         criticalStatus={s.is_primary ? (
-          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-0.5 text-[10px] text-indigo-300">
+          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-0.5 text-minimal text-indigo-300">
             primary
           </span>
         ) : undefined}
@@ -214,7 +214,7 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-indigo-300" : "text-zinc-500 hover:text-zinc-200"}`}
+          className={`shrink-0 ${open ? "text-indigo-300": "text-zinc-500 hover:text-zinc-200"}`}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>
@@ -235,7 +235,7 @@ function SessionCard({
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-950">
+          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-minimal font-medium text-zinc-950">
             <ArrowUp className="h-3 w-3" />
             Make primary
           </span>
@@ -245,13 +245,13 @@ function SessionCard({
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
         <div className="mt-1 space-y-1.5 rounded-sm bg-zinc-900/40 p-2">
-          <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+          <div className="flex items-center gap-2 text-minimal text-zinc-400">
             <span className="w-12 shrink-0">session</span>
             <span className="font-mono text-zinc-200" title={s.session_id}>
               {s.session_id.slice(0, 8)}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+          <div className="flex items-center gap-2 text-minimal text-zinc-400">
             <span className="w-12 shrink-0">last used</span>
             <span className="tabular-nums text-zinc-200">{fmtTime(s.last_used_at)}</span>
             {!canMode && mode && <span>· mode {mode}</span>}
@@ -261,7 +261,7 @@ function SessionCard({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {canMode && (
                 <label className="inline-flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-400">mode</span>
+                  <span className="text-minimal text-zinc-400">mode</span>
                   <UiSelect
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
                     disabled={actionBusy}
@@ -287,7 +287,7 @@ function SessionCard({
                   const cur = cfgValues[opt.id] ?? opt.currentValue ?? "";
                   return (
                     <label key={opt.id} className="inline-flex items-center gap-1">
-                      <span className="text-[10px] text-zinc-400">{opt.name}</span>
+                      <span className="text-minimal text-zinc-400">{opt.name}</span>
                       <UiSelect
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
                         disabled={actionBusy}
@@ -314,7 +314,7 @@ function SessionCard({
             </div>
           )}
 
-          <div className="text-[10px] text-zinc-400">
+          <div className="text-minimal text-zinc-400">
             <div className="flex items-center gap-1">
               <span className="w-12 shrink-0">wd</span>
               <span className="font-mono text-zinc-200 truncate" title={cwd || "connector default"}>
@@ -347,14 +347,14 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-1 font-mono text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-minimal text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <UiButton variant="plain"
                     type="button"
                     disabled={actionBusy}
                     onClick={saveDirs}
-                    controlSize="regular" className="rounded-sm bg-indigo-600/15 px-1.5 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
+                    controlSize="regular" className="rounded-sm bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
                   >
                     Save roots
                   </UiButton>
@@ -481,10 +481,10 @@ function BotGroup({
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 px-1">
         <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-[11px] font-medium text-zinc-300 truncate" title={botId}>
+        <span className="text-compact font-medium text-zinc-300 truncate" title={botId}>
           {label}
         </span>
-        <span className="text-[10px] text-zinc-500">
+        <span className="text-minimal text-zinc-500">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -619,7 +619,7 @@ function SessionsBody({
   return (
     <div className="p-2 space-y-3">
       <div className="flex items-center gap-2 px-1">
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-compact text-zinc-400">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
         <div className="flex-1" />
@@ -627,7 +627,7 @@ function SessionsBody({
           <UiButton variant="plain"
             type="button"
             onClick={() => setDialogOpen(true)}
-            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15 px-1.5 text-[10px] text-indigo-200 hover:bg-indigo-600/30"
+            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15 text-minimal text-indigo-200 hover:bg-indigo-600/30"
           >
             <Plus className="w-3 h-3" />
             New session
@@ -636,7 +636,7 @@ function SessionsBody({
       </div>
 
       {sessions.length === 0 ? (
-        <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
+        <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
           <Layers className="w-4 h-4" />
           No sessions yet
         </div>

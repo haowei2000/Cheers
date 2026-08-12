@@ -59,11 +59,11 @@ export default function FriendsPage() {
         <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          square controlSize="regular" className=" max-md: max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          square controlSize="regular" className="max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </UiButton>
-        <h1 className="text-lg font-semibold">Friends</h1>
+        <h1 className="text-comfortable font-semibold">Friends</h1>
       </header>
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
@@ -78,7 +78,7 @@ export default function FriendsPage() {
             <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
               Requests
               {incomingCount > 0 && (
-                <span data-design-system-exempt="unread" className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-[10px] font-bold text-white">
+                <span data-design-system-exempt="unread" className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-minimal font-bold text-white">
                   {incomingCount}
                 </span>
               )}
@@ -116,7 +116,7 @@ function TabBtn({
       aria-current={active ? "page" : undefined}
       onClick={onClick}
       controlSize="regular" className={cn(
- "px-3 max-md: text-sm border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
+ "text-regular border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
  active
  ? "border-indigo-500 text-zinc-100"
  : "border-transparent text-zinc-400 hover:text-zinc-200"
@@ -278,7 +278,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
               id={u.user_id}
               avatar={u.avatar_url}
             >
-              <span className="text-xs text-zinc-400 flex items-center gap-1">
+              <span className="text-compact text-zinc-400 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 Pending
               </span>
@@ -335,7 +335,7 @@ function AddTab() {
 
   return (
     <div>
-      <p className="text-xs text-zinc-400 mb-2 leading-relaxed">
+      <p className="text-compact text-zinc-400 mb-2 leading-relaxed">
         Add a friend by their exact <span className="text-zinc-300">user ID</span>. Ask them
         to copy it from <span className="text-zinc-300">Settings → Profile → User ID</span>.
       </p>
@@ -350,8 +350,8 @@ function AddTab() {
             }}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
-            // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
-            controlSize="regular" className="w-full pl-9 pr-3 rounded-sm bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
+            // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
+            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
         <Button onClick={lookup} disabled={busy || !id.trim()}>
@@ -363,7 +363,7 @@ function AddTab() {
       ) : result === "error" ? (
         <div
           role="alert"
-          className="text-sm text-red-400 py-10 text-center"
+          className="text-regular text-red-400 py-10 text-center"
         >
           Couldn&apos;t look up that ID — check your connection and try again.
         </div>
@@ -378,9 +378,9 @@ function AddTab() {
             avatar={result.avatar_url}
           >
             {sent[result.user_id] === "accepted" ? (
-              <span className="text-xs text-emerald-400">Friends</span>
+              <span className="text-compact text-emerald-400">Friends</span>
             ) : sent[result.user_id] === "pending" ? (
-              <span className="text-xs text-zinc-400">Requested</span>
+              <span className="text-compact text-zinc-400">Requested</span>
             ) : (
               <IconBtn title="Add friend" onClick={() => add(result)} primary>
                 <UserPlus className="w-4 h-4" />
@@ -432,7 +432,7 @@ function BlockedTab() {
         >
           <UiButton variant="plain"
             onClick={() => unblock(u)}
-            controlSize="regular" className="text-xs px-2.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+            controlSize="regular" className="text-compact rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
           >
             Unblock
           </UiButton>
@@ -460,9 +460,9 @@ function Row({
       kind="identity"
       title={name}
       subtitle={sub}
-      leading={<Avatar name={name} src={avatar ?? undefined} id={id} size="sm" />}
+      leading={<Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />}
       trailing={<span className="flex items-center gap-1.5">{children}</span>}
-      className="gap-3 px-2 hover:bg-zinc-900/60"
+      className="gap-3 hover:bg-zinc-900/60"
     />
   );
 }
@@ -496,7 +496,7 @@ function IconBtn({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 px-2">
+      <div className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-1 px-2">
         {title}
       </div>
       <div className="space-y-1">{children}</div>
@@ -505,5 +505,5 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <div className="text-sm text-zinc-400 py-10 text-center">{children}</div>;
+  return <div className="text-regular text-zinc-400 py-10 text-center">{children}</div>;
 }

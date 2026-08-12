@@ -113,6 +113,14 @@ only as **states**: focus (`ring-indigo-500`) and error (`ring-red-500`).
 
 ### Typography
 
+All production text uses exactly four semantic size tokens: `text-minimal`
+(10px), `text-compact` (12px), `text-regular` (14px), or
+`text-comfortable` (16px). There are no exceptions for mastheads, dense
+panels, code, Diff, charts, or empty states. Do not use Tailwind's default
+Tailwind's legacy size names, arbitrary pixel utilities, relative `em` sizing, or
+literal `fontSize`; use the corresponding CSS variable when an external API
+requires an inline value.
+
 The Web client has three semantic roles: Source Serif 4 plus Source Han Serif
 CN `display`, the same pair at text optical sizes for `reading`, and Source
 Sans 3 `utility`. The default UI face is utility; entity names, navigation,
@@ -122,14 +130,20 @@ precache; CJK utility text falls through to the locale-correct platform sans.
 
 | Role | Recipe |
 |---|---|
-| Page H1 | `text-lg font-semibold` |
-| Dialog / panel title | `text-sm font-semibold text-zinc-100` |
-| Body | `text-sm text-zinc-200/300` |
-| Form label | `text-xs font-medium text-zinc-400 uppercase tracking-wide` |
-| Section header | `text-xs font-semibold text-zinc-400 uppercase tracking-wider` |
-| In-panel group label | `text-[10px] uppercase tracking-wide text-zinc-400` |
-| Hint / helper | `text-xs text-zinc-400` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
-| Mini scale (dense panels) | `text-[11px]` / `text-[10px]` — floor is 10px |
+| Page H1 | `text-comfortable font-semibold` |
+| Dialog / panel title | `text-regular font-semibold text-zinc-100` |
+| Body | `text-regular text-zinc-200/300` |
+| Form label | `text-compact font-medium text-zinc-400 uppercase tracking-wide` |
+| Section header | `text-compact font-semibold text-zinc-400 uppercase tracking-wider` |
+| In-panel group label | `text-minimal uppercase tracking-wide text-zinc-400` |
+| Hint / helper | `text-compact text-zinc-400` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
+| Mini scale (dense panels) | `text-compact` / `text-minimal` — floor is 10px |
+
+Sidebar group labels such as Channels, Voice Channels, Private, and Direct
+Messages use the static header of `<ItemSection>`. They are typographic
+dividers, not disclosure buttons: do not add a chevron, collapsed state, or
+`aria-expanded`. A create action, when available, remains a separate labeled
+`IconButton` in the section action slot.
 
 ### Shape & states
 
@@ -156,6 +170,11 @@ Use `<Button>` (`src/components/ui/button.tsx`). Variants: `primary`
 (red text). Physical sizing must resolve through `ControlSize`: compact 28px,
 regular 36px, or comfortable 44px. An icon-only button uses the same selected
 ControlSize; it does not introduce a separate 32px tier.
+Text buttons default to the registered 96px `slot`; use
+`controlWidth="fill"` only when the owning container requires a full-width
+control. Label length never determines peer-control width. Business call sites
+must not add `px-*`, `pl-*`, or `pr-*` to shared controls; horizontal padding
+is owned by the primitive or a registered variant.
 
 For contexts the component doesn't fit (dense workbench panels), the soft
 recipes are:
@@ -183,7 +202,7 @@ Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
 <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
                 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
   <Search className="w-4 h-4 text-zinc-500" />
-  <input className="flex-1 bg-transparent text-sm text-zinc-200 outline-none
+  <input className="flex-1 bg-transparent text-regular text-zinc-200 outline-none
                     placeholder:text-zinc-600" placeholder="…" />
 </div>
 ```
@@ -195,7 +214,7 @@ positioned icon. Used by AdminUsers filter, FriendsPage lookup:
 <div className="relative">
   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
   <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-base md:text-sm text-zinc-100 placeholder:text-zinc-600
+                    text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-600
                     focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
 </div>
 ```
@@ -205,11 +224,11 @@ dense popovers/panels (ActivityPanel search):
 
 ```tsx
 <input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-xs text-zinc-200 outline-none placeholder:text-zinc-600
+                  text-compact text-zinc-200 outline-none placeholder:text-zinc-600
                   focus:border-indigo-500/60" />
 ```
 
-Notes: `text-base md:text-sm` on any input reachable on mobile (iOS zoom
+Notes: `text-comfortable md:text-regular` on any input reachable on mobile (iOS zoom
 guard). Field background inside dialogs is `bg-zinc-950` (inset look);
 standalone on a `zinc-950` page it is `bg-zinc-900`.
 
@@ -221,7 +240,7 @@ the same recipe until a shared component exists:
 
 ```tsx
 // field canon (input / select / textarea) — no border
-className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600
+className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-zinc-100 placeholder:text-zinc-600
            focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
 // error state: add ring-1 ring-red-500/70
@@ -264,30 +283,47 @@ ancestor, portal to `document.body` instead (ProfileHovercard precedent,
 
 ### 2.5 Chips (composer, files)
 
-Borderless soft pills: `rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px]`.
+Borderless soft pills: `rounded-lg bg-zinc-800/60 px-2 py-1 text-compact`.
 Interactive chips add `hover:bg-zinc-800 hover:text-zinc-200`; an active/open
 chip switches to `bg-indigo-600/15 text-indigo-200`.
 
-**Composer control chips** (session target, model — the composer card's
-controls row): the interactive chip recipe above plus a leading `w-3.5 h-3.5`
-icon, a `truncate` label with a `max-w-*` cap, and a trailing `ChevronDown
-w-3 h-3` that rotates 180° while open. Three states: resting (soft zinc),
+**Composer toolbar controls** (session target, model — the composer card's
+controls row) use `<ComposerToolbarButton>`. Both consume the same regular
+36px height and 96px width slot; the label is a flexible single line that
+truncates inside the slot, so content length never changes the button size.
+Use a leading semantic icon and a trailing `ChevronDown` that rotates 180°
+while open. Three states: resting (soft zinc),
 open/targeted (`bg-indigo-600/15 text-indigo-200`, icon `text-indigo-400`),
-mobile touch target via `max-md:py-2`. Focus:
-`focus-visible:ring-2 focus-visible:ring-indigo-500`. The composer card itself
-is the canonical borderless field: `rounded-xl bg-zinc-800/80` with
+mobile touch target via the regular ControlSize mapping. Focus comes from the
+shared Button primitive. The composer card itself
+is the canonical borderless field with the shared 4px radius and
+`bg-zinc-800/80` plus
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 
 ### 2.6 Badges & counters
 
 | Badge | Recipe |
 |---|---|
-| BOT tag | `text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
-| Unread count | `text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
+| BOT tag | `text-minimal px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
+| Unread count | `text-minimal font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
 | Mention count | same shape, `bg-rose-600` |
-| Role / status label | plain `text-[10px] text-zinc-500` next to the name (no pill) |
+| Role / status label | plain `text-minimal text-zinc-500` next to the name (no pill) |
 
 ### 2.7 Presence dot
+
+Presence and avatar geometry uses the shared three-tier `ContentSize`: small,
+regular, and large. Web mappings are 20/28/36px for avatars, 14/16/20px for
+semantic icons, and 6/8/10px for presence dots. Do not override these shared
+primitives with local width or height classes. ContentSize is visual content
+scale only; its containing control still uses ControlSize for the hit target.
+
+Chat, Discussion, and Reply identity columns use the same regular avatar
+inside a regular control that retains a 44px hit target on touch viewports,
+plus the registered regular 96px identity rail. They show only the avatar and
+sender name; visible timestamps and BOT labels are omitted. The rail follows
+the ContentSize 64/96/128px scale and never uses a feature-local width. Message-record affordances use the
+record icon; raw attachment/trace counts belong in the accessible label and
+tooltip, not as unexplained zero-padded folio numbers in the timeline.
 
 `w-2 h-2 rounded-full ring-2 ring-zinc-900` overlaid bottom-right of the
 avatar; `bg-emerald-500` online / `bg-zinc-600` offline. One size, one ring
@@ -298,11 +334,11 @@ cut-out mask, not a decorative border.)
 
 - **Underline tabs** (page & detail navigation — FriendsPage, BotDetailPanel):
   container `flex gap-1 border-b border-zinc-800`; item
-  `px-3 py-2 text-sm border-b-2 -mb-px transition-colors` with active
+  `px-3 py-2 text-regular border-b-2 -mb-px transition-colors` with active
   `border-indigo-500 text-zinc-100`, inactive
   `border-transparent text-zinc-400 hover:text-zinc-200`.
 - **Pill tabs** (dense panel toolbars — ViewBoard):
-  `rounded-md px-2 py-1 text-xs` with active `bg-zinc-800 text-zinc-100`,
+  `rounded-md px-2 py-1 text-compact` with active `bg-zinc-800 text-zinc-100`,
   inactive `text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200`.
 
 Don't introduce a third style; segmented controls reuse the pill recipe
@@ -315,12 +351,12 @@ Canon is the Plan panel: centered, icon + primary + secondary line.
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
   <SomeIcon className="w-5 h-5 text-zinc-500 mb-2" />   {/* decorative glyph: zinc-500 ok */}
-  <p className="text-xs text-zinc-400">Nothing here yet</p>       {/* primary line: meaningful text */}
-  <p className="text-[11px] text-zinc-400 mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
+  <p className="text-compact text-zinc-400">Nothing here yet</p>       {/* primary line: meaningful text */}
+  <p className="text-compact text-zinc-400 mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
 </div>
 ```
 
-Compact lists may use the one-liner `text-xs text-zinc-400 py-4 text-center`.
+Compact lists may use the one-liner `text-compact text-zinc-400 py-4 text-center`.
 
 ### 2.10 Loading
 
@@ -338,9 +374,10 @@ floating panels may add `rounded p-0.5 hover:bg-zinc-800`. Hover target is
 
 ### 2.12 List rows
 
-Selectable rows: `px-2.5 py-1.5 rounded-md text-sm hover:bg-zinc-800`;
-selected `bg-zinc-800 text-zinc-100` (nav lists may tint with indigo per
-§2.8's active pill). Every interactive row needs a hover state.
+Selectable rows use the shared Item geometry and hover fill. Selected
+NavigationItems use `bg-zinc-800 text-zinc-100` plus `aria-current="page"`;
+the fill remains visible even when a borderless placement suppresses the
+ordinary left marker. Every interactive row needs a hover state.
 
 ### 2.13 Field (label + control + hint)
 
@@ -357,7 +394,7 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
 ```
 
 `<SectionHead>` (same file) is the in-card divider heading —
-`text-xs font-semibold text-zinc-400 uppercase tracking-wider`, optional
+`text-compact font-semibold text-zinc-400 uppercase tracking-wider`, optional
 leading icon. Don't repeat a heading the surrounding chrome already says (a
 card whose header shows the identity doesn't also need a "Profile" heading).
 
@@ -413,7 +450,7 @@ overlapping avatars, most-relevant first. Used by the Activity ViewBoard
     </button>
   ))}
 </div>
-{overflow > 0 && <span className="ml-1 text-[10px] text-zinc-400">+{overflow}</span>}
+{overflow > 0 && <span className="ml-1 text-minimal text-zinc-400">+{overflow}</span>}
 ```
 
 The `ring-zinc-900`/`ring-indigo-500` ring doubles as the overlap separator
@@ -487,6 +524,12 @@ Add-to-context is centralized in `AttachContextButton`
 (`src/features/chat/context/ContextPickBar.tsx`) — reuse it rather than
 hand-drawing an attach glyph. `Paperclip` is reserved: it never means
 "add to context" (that pipeline is resource references, not uploaded files).
+
+Pending composer context uses `ItemChip` at regular height. Its remove and
+jump actions use compact `IconButton`s inside that registered height; never
+wrap a regular action in a padded chip, which creates an unregistered fourth
+control height. The pending item and the Add context entry must align to the
+same 36px desktop / 44px touch row.
 
 
 ---

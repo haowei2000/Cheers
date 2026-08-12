@@ -106,15 +106,15 @@ function ServerCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-200">Server</p>
-          <p className="text-xs text-zinc-400 mt-0.5 truncate">
+          <p className="text-regular font-medium text-zinc-200">Server</p>
+          <p className="text-compact text-zinc-400 mt-0.5 truncate">
             {base ?? "same origin"}
           </p>
         </div>
         {isTauri() && (
           <Button
             variant="secondary"
-            size="sm"
+            controlSize="compact"
             onClick={() => {
               // Order matters: drop the session first (the token belongs to the
               // old server), then clear the base — reload lands on the picker.
@@ -128,7 +128,7 @@ function ServerCard() {
         )}
       </div>
       {!isTauri() && (
-        <p className="text-xs text-zinc-500 mt-3">
+        <p className="text-compact text-zinc-500 mt-3">
           Web clients use this origin. Switch servers from the desktop app or by
           opening a different gateway URL.
         </p>
@@ -174,14 +174,14 @@ function LaunchAtLoginCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-zinc-200">Launch at login</p>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <p className="text-regular font-medium text-zinc-200">Launch at login</p>
+          <p className="text-compact text-zinc-400 mt-0.5">
             Start Cheers (tray + connector supervisor) when you sign in to your Mac.
           </p>
         </div>
         <Button
           variant={enabled ? "secondary" : "primary"}
-          size="sm"
+          controlSize="compact"
           disabled={busy || enabled === null}
           onClick={() => void toggle()}
         >
@@ -249,8 +249,8 @@ function AppUpdateCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-200">App updates</p>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <p className="text-regular font-medium text-zinc-200">App updates</p>
+          <p className="text-compact text-zinc-400 mt-0.5">
             {currentVersion ? `Installed ${currentVersion}. ` : null}
             {update
               ? `Version ${update.version} is available — installing restarts Cheers.`
@@ -260,7 +260,7 @@ function AppUpdateCard() {
         {update ? (
           <Button
             variant="primary"
-            size="sm"
+            controlSize="compact"
             disabled={installing}
             onClick={() => void install()}
           >
@@ -269,7 +269,7 @@ function AppUpdateCard() {
         ) : (
           <Button
             variant="secondary"
-            size="sm"
+            controlSize="compact"
             disabled={checking}
             onClick={() => void check()}
           >
@@ -333,10 +333,10 @@ function PushNotificationsCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+          <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
             <Bell className="w-4 h-4 text-indigo-400" /> Push notifications
           </p>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <p className="text-compact text-zinc-400 mt-0.5">
             Approval requests and @mentions reach this device even when Cheers
             isn't open.
             {status === "denied" &&
@@ -345,7 +345,7 @@ function PushNotificationsCard() {
         </div>
         <Button
           variant={enabled ? "secondary" : "primary"}
-          size="sm"
+          controlSize="compact"
           disabled={busy || status === "loading"}
           onClick={() => void toggle()}
         >
@@ -392,22 +392,22 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
     }
   }
 
-  // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
+  // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
     <div className="bg-zinc-900 rounded-sm p-6">
-      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
+      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
       </p>
-      <p className="text-xs text-zinc-400 mb-4">
+      <p className="text-compact text-zinc-400 mb-4">
         Updating your password signs out every other device.
       </p>
       <div className="grid gap-3 max-w-sm">
         <div className="space-y-1.5">
           <label
             htmlFor="cp-current"
-            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
           >
             Current password
           </label>
@@ -423,7 +423,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
         <div className="space-y-1.5">
           <label
             htmlFor="cp-new"
-            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
           >
             New password
           </label>
@@ -440,7 +440,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
         <div className="space-y-1.5">
           <label
             htmlFor="cp-confirm"
-            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
           >
             Confirm new password
           </label>
@@ -457,7 +457,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
         <div className="space-y-1.5">
           <label
             htmlFor="cp-two-factor"
-            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            className="block text-compact font-medium text-zinc-400 uppercase tracking-wide"
           >
             2FA code
           </label>
@@ -544,14 +544,14 @@ function ExternalIdentitiesCard() {
 
   return (
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
         <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
       </p>
-      <p className="text-xs text-zinc-400 mt-1 mb-4">
+      <p className="text-compact text-zinc-400 mt-1 mb-4">
         Removing a provider signs out other sessions and removes trusted devices.
       </p>
       {loadError ? (
-        <Button variant="secondary" size="sm" onClick={() => setReloadKey((value) => value + 1)}>
+        <Button variant="secondary" controlSize="compact" onClick={() => setReloadKey((value) => value + 1)}>
           Retry
         </Button>
       ) : (
@@ -561,8 +561,8 @@ function ExternalIdentitiesCard() {
             return (
               <div key={identity.provider} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                 <div className="min-w-0">
-                  <p className="text-sm text-zinc-200">{label}</p>
-                  <p className="text-xs text-zinc-500 truncate">
+                  <p className="text-regular text-zinc-200">{label}</p>
+                  <p className="text-compact text-zinc-500 truncate">
                     {identity.linked
                       ? identity.email || identity.display_name || "Linked"
                       : "Not linked"}
@@ -571,7 +571,7 @@ function ExternalIdentitiesCard() {
                 {identity.linked ? (
                   <Button
                     variant="danger"
-                    size="sm"
+                    controlSize="compact"
                     disabled={
                       busy !== null ||
                       !identity.can_unlink ||
@@ -590,7 +590,7 @@ function ExternalIdentitiesCard() {
                   </Button>
                 ) : identity.provider === "google" ? (
                   <Button
-                    size="sm"
+                    controlSize="compact"
                     disabled={busy !== null || !identity.recent_authentication}
                     title={
                       !identity.recent_authentication
@@ -605,11 +605,11 @@ function ExternalIdentitiesCard() {
               </div>
             );
           })}
-          {identities === null && <p className="text-xs text-zinc-500">Loading…</p>}
+          {identities === null && <p className="text-compact text-zinc-500">Loading…</p>}
         </div>
       )}
       {identities?.some((identity) => !identity.recent_authentication) && (
-        <p className="text-xs text-amber-400 mt-4">
+        <p className="text-compact text-amber-400 mt-4">
           Sign in again before linking or unlinking an identity.
         </p>
       )}
@@ -642,10 +642,10 @@ function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
 
   return (
     <div className="rounded-sm bg-red-950/25 p-6 mt-4">
-      <p className="text-sm font-medium text-red-300 flex items-center gap-2">
+      <p className="text-regular font-medium text-red-300 flex items-center gap-2">
         <Trash2 className="w-4 h-4" /> Delete account
       </p>
-      <p className="text-xs text-zinc-400 mt-1 mb-4">
+      <p className="text-compact text-zinc-400 mt-1 mb-4">
         This permanently removes your account. Passwordless accounts must have signed in within the last five minutes.
       </p>
       <div className="grid gap-3 max-w-sm">
@@ -693,7 +693,7 @@ function LegalLinks() {
           href={href}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
+          className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
         >
           {label} <ExternalLink className="w-3 h-3" />
         </a>
@@ -739,12 +739,12 @@ function DevicesSessionsCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center gap-2 mb-3">
         <Laptop className="w-4 h-4 text-zinc-400" />
-        <p className="text-sm font-medium text-zinc-200">Devices and sessions</p>
+        <p className="text-regular font-medium text-zinc-200">Devices and sessions</p>
       </div>
       {loading ? (
-        <p className="text-xs text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-500">Loading…</p>
       ) : sessions.length === 0 ? (
-        <p className="text-xs text-zinc-500">No active sessions.</p>
+        <p className="text-compact text-zinc-500">No active sessions.</p>
       ) : (
         <ItemList presentationLevel="max" controlSize="regular">
           {sessions.map((s) => (
@@ -754,7 +754,7 @@ function DevicesSessionsCard() {
               subtitle={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}
               actions={!s.current ? (
                 <Button
-                  size="sm"
+                  controlSize="compact"
                   variant="ghost"
                   loading={busyId === s.session_id}
                   onClick={() => void revoke(s)}
@@ -809,12 +809,12 @@ function ExternalAIPermissionsCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center gap-2 mb-3">
         <Shield className="w-4 h-4 text-zinc-400" />
-        <p className="text-sm font-medium text-zinc-200">External AI permissions</p>
+        <p className="text-regular font-medium text-zinc-200">External AI permissions</p>
       </div>
       {loading ? (
-        <p className="text-xs text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-500">Loading…</p>
       ) : consents.length === 0 ? (
-        <p className="text-xs text-zinc-500">
+        <p className="text-compact text-zinc-500">
           No stored consents. When a bot uses an external AI processor, agreements
           appear here.
         </p>
@@ -828,16 +828,16 @@ function ExternalAIPermissionsCard() {
                 className="flex items-center gap-3 rounded-sm bg-zinc-950/60 px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-zinc-200 truncate">
+                  <p className="text-regular text-zinc-200 truncate">
                     {c.bot_name}
                     {c.provider_name ? ` · ${c.provider_name}` : ""}
                   </p>
-                  <p className="text-[11px] text-zinc-500 truncate">
+                  <p className="text-compact text-zinc-500 truncate">
                     #{c.channel_name} · policy {c.policy_version}
                   </p>
                 </div>
                 <Button
-                  size="sm"
+                  controlSize="compact"
                   variant="ghost"
                   loading={busyKey === key}
                   onClick={() => void revoke(c)}
@@ -859,9 +859,9 @@ function BotsMovedCard() {
     <div className="bg-zinc-900 rounded-sm p-6">
       <div className="flex items-center gap-2 mb-2">
         <Bot className="w-4 h-4 text-indigo-300" />
-        <p className="text-sm font-medium text-zinc-200">Bots live in Fleet</p>
+        <p className="text-regular font-medium text-zinc-200">Bots live in Fleet</p>
       </div>
-      <p className="text-xs text-zinc-400 mb-4">
+      <p className="text-compact text-zinc-400 mb-4">
         Create and manage bots from Fleet — the primary home for your agent roster.
       </p>
       <Button onClick={() => navigate("/fleet")}>Open Fleet</Button>
@@ -942,8 +942,8 @@ function ProfileEditCard() {
   if (loadError) {
     return (
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-sm font-medium text-zinc-200">Couldn't load your profile</p>
-        <p className="text-xs text-zinc-400 mt-1">
+        <p className="text-regular font-medium text-zinc-200">Couldn't load your profile</p>
+        <p className="text-compact text-zinc-400 mt-1">
           Editing is disabled until it loads so your saved details aren't
           overwritten. Check your connection and try again.
         </p>
@@ -968,7 +968,7 @@ function ProfileEditCard() {
           name={displayName || user?.username}
           id={user?.user_id}
           src={avatarUrl}
-          size="lg"
+          size="large"
           onUpload={handleAvatarUpload}
         />
         <div className="min-w-0 flex-1">
@@ -976,7 +976,7 @@ function ProfileEditCard() {
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
             {displayName || user?.username || "Unknown"}
           </p>
-          <p className="text-sm text-zinc-400 truncate">
+          <p className="text-regular text-zinc-400 truncate">
             @{handle}
             {statusText ? ` · ${statusText}` : ""}
           </p>
@@ -1000,7 +1000,7 @@ function ProfileEditCard() {
               onChange={(e) => setStatusEmoji(e.target.value)}
               placeholder="🟢"
               maxLength={8}
-              className="w-16 text-center"
+              className="text-center"
               aria-label="Status emoji"
             />
             <Input
@@ -1083,7 +1083,7 @@ export default function SettingsPage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </UiButton>
-        <h1 className="text-lg font-semibold">Settings</h1>
+        <h1 className="text-comfortable font-semibold">Settings</h1>
       </div>
 
       <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
@@ -1097,10 +1097,9 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => navigate(`/settings/${id}`)}
                 aria-current={active ? "page" : undefined}
-                controlSize="regular" className={`flex items-center gap-2.5 rounded-sm px-3 max-md: shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
+                controlSize="regular" className={`flex items-center gap-2.5 rounded-sm shrink-0 text-regular font-medium whitespace-nowrap transition-colors ${
  active
- ? "bg-zinc-800 text-zinc-100"
- : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+ ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
  }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -1114,7 +1113,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           {section === "profile" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <User className="w-3.5 h-3.5" />
                 Profile
               </h2>
@@ -1127,7 +1126,7 @@ export default function SettingsPage() {
 
           {section === "server" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                 Server
               </h2>
               <ServerCard />
@@ -1138,7 +1137,7 @@ export default function SettingsPage() {
 
           {section === "about" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                 About
               </h2>
               <AppUpdateCard />
@@ -1154,7 +1153,7 @@ export default function SettingsPage() {
 
           {section === "account" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                 Account
               </h2>
 
@@ -1179,14 +1178,14 @@ export default function SettingsPage() {
               <div className="bg-zinc-900 rounded-sm p-6 mt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-zinc-200">Sign out</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className="text-regular font-medium text-zinc-200">Sign out</p>
+                    <p className="text-compact text-zinc-400 mt-0.5">
                       Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>
                   <Button
                     variant="danger"
-                    size="sm"
+                    controlSize="compact"
                     onClick={async () => {
                       // Push first (the DELETE needs the auth token), then
                       // best-effort server revocation, then clear local state

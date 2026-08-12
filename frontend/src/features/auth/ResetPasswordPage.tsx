@@ -90,15 +90,15 @@ export default function ResetPasswordPage() {
               onChange={(e) => setConfirm(e.target.value)}
             />
           </div>
-          <Button
+          <Button controlWidth="fill"
             type="submit"
-            className="w-full mt-2"
+            className="mt-2"
             loading={loading}
             disabled={!email.trim() || !code.trim() || !pw}
           >
             Reset password
           </Button>
-          <p className="text-center text-xs text-zinc-400">
+          <p className="text-center text-compact text-zinc-400">
             <Link to="/login" className={publicLinkClass}>
               Back to sign in
             </Link>

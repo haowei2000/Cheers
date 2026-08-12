@@ -38,9 +38,9 @@ export function GlanceRow({
     >
       <div className="flex items-center gap-2">
         <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
-        <span className="flex-1 text-xs text-zinc-400">{label}</span>
-        {sub && <span className="text-[10px] tabular-nums text-zinc-400">{sub}</span>}
-        <span className="text-xs font-medium tabular-nums text-zinc-100 truncate max-w-[55%] text-right">
+        <span className="flex-1 text-compact text-zinc-400">{label}</span>
+        {sub && <span className="text-minimal tabular-nums text-zinc-400">{sub}</span>}
+        <span className="text-compact font-medium tabular-nums text-zinc-100 truncate max-w-[55%] text-right">
           {value}
         </span>
         <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -58,7 +58,7 @@ export function GlanceRow({
 /** One indented detail line under a glance row (name left, figure right). */
 export function DetailLine({ name, figure }: { name: string; figure?: string }) {
   return (
-    <div className="flex items-baseline gap-2 text-[10px]">
+    <div className="flex items-baseline gap-2 text-minimal">
       <span className="min-w-0 flex-1 truncate text-zinc-400">{name}</span>
       {figure && <span className="tabular-nums text-zinc-400">{figure}</span>}
     </div>

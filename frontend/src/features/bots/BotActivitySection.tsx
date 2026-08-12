@@ -48,8 +48,8 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-zinc-300">Recent activity</span>
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-compact font-medium text-zinc-300">Recent activity</span>
+        <span className="text-compact text-zinc-400">
           every event the bot emitted (newest first)
         </span>
         <UiButton variant="plain"
@@ -62,7 +62,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
         </UiButton>
       </div>
       {events.length === 0 ? (
-        <p className="text-[11px] text-zinc-400">
+        <p className="text-compact text-zinc-400">
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
@@ -70,7 +70,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
           {events.map((e, i) => (
             <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} metadata={time(e.created_at)}
               status={<span
-                className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] ${homeCls[e.home] ?? homeCls.observe}`}
+                className={`shrink-0 rounded-sm px-1.5 py-0.5 text-minimal ${homeCls[e.home] ?? homeCls.observe}`}
                 title={`home: ${e.home || "unclassified"}`}
               >
                 {e.home || "?"}

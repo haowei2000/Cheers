@@ -119,7 +119,9 @@ export function ItemRow({
     controlMinHeightClasses[size],
     size === "compact" ? "py-0.5" : size === "regular" ? "py-1" : "py-1.5",
     selected
-      ? "border-l-zinc-200 bg-zinc-900 text-zinc-100"
+      ? kind === "navigation"
+        ? "border-l-zinc-200 bg-zinc-800 text-zinc-100"
+        : "border-l-zinc-200 bg-zinc-900 text-zinc-100"
       : "border-l-transparent text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
     disabled && "pointer-events-none opacity-50",
     className
@@ -132,7 +134,8 @@ export function ItemRow({
         data-item-kind={kind}
         data-presentation-level={level}
         data-control-size={size}
-        aria-pressed={selected || undefined}
+        aria-current={kind === "navigation" && selected ? "page" : undefined}
+        aria-pressed={kind !== "navigation" && selected ? true : undefined}
         className={cn(
           classes,
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
@@ -220,6 +223,7 @@ export function ItemSection({
   children,
   className,
   controlSize,
+  headerControlSize = "compact",
   presentationLevel,
 }: {
   label: ReactNode;
@@ -228,6 +232,8 @@ export function ItemSection({
   children: ReactNode;
   className?: string;
   controlSize?: ControlSize;
+  /** Section labels are typographic dividers, not list controls. */
+  headerControlSize?: ControlSize;
   presentationLevel?: PresentationLevel;
 }) {
   const size = useControlSize(controlSize);
@@ -238,12 +244,12 @@ export function ItemSection({
       data-control-size={size}
       className={cn("min-w-0 space-y-1", className)}
     >
-      <header className={cn("flex items-center gap-2 px-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400", controlMinHeightClasses[size])}>
+      <header className={cn("flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400", controlMinHeightClasses[headerControlSize])}>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {action}
       </header>
       {description && (
-        <p className="px-1 font-utility text-xs leading-relaxed text-zinc-500">{description}</p>
+        <p className="px-1 font-utility text-compact leading-relaxed text-zinc-500">{description}</p>
       )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
@@ -276,9 +282,10 @@ export function FileTreeItem({
   return (
     <div
       role="treeitem"
+      data-control-size={size}
       aria-selected={selected || undefined}
       className={cn(
-        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-sm text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
+        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
         controlMinHeightClasses[size],
         selected && "bg-zinc-900 text-zinc-100"
       )}
@@ -305,18 +312,23 @@ export function DiffLineItem({
   content,
   tone = "context",
   lineNumber,
+  controlSize,
 }: {
   marker?: ReactNode;
   content: ReactNode;
   tone?: "add" | "remove" | "context";
   lineNumber?: ReactNode;
+  controlSize?: ControlSize;
 }) {
+  const size = useControlSize(controlSize);
   return (
     <div
       role="listitem"
       data-diff-tone={tone}
+      data-control-size={size}
       className={cn(
-        "flex min-h-6 whitespace-pre px-2 font-mono text-xs",
+        "flex whitespace-pre px-2 font-mono text-compact",
+        controlMinHeightClasses[size],
         tone === "add" && "bg-emerald-950/30 text-emerald-200",
         tone === "remove" && "bg-rose-950/30 text-rose-200",
         tone === "context" && "text-zinc-400"
@@ -333,6 +345,7 @@ export function ItemChip({
   label,
   leading,
   criticalStatus,
+  actions,
   presentationLevel,
   controlSize,
   className,
@@ -340,6 +353,7 @@ export function ItemChip({
   label: ReactNode;
   leading?: ReactNode;
   criticalStatus?: ReactNode;
+  actions?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   className?: string;
@@ -354,7 +368,7 @@ export function ItemChip({
       className={cn(
         "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-tight text-zinc-400",
         controlMinHeightClasses[size],
-        level === "max" ? "gap-1.5 px-2 text-xs" : level === "medium" ? "gap-1 px-1.5 text-[11px]" : "gap-1 px-1 text-[10px]",
+        level === "max" ? "gap-1.5 px-2 text-compact" : level === "medium" ? "gap-1 px-1.5 text-compact" : "gap-1 px-1 text-minimal",
         className
       )}
     >
@@ -363,6 +377,11 @@ export function ItemChip({
         {label}
       </span>
       {criticalStatus}
+      {actions && (
+        <span data-item-actions className="ml-auto inline-flex flex-shrink-0 items-center gap-1">
+          {actions}
+        </span>
+      )}
     </span>
   );
 }

@@ -144,8 +144,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         name={nameOf(leadMember, lead)}
         src={leadMember?.avatar_url ?? undefined}
         id={lead ?? ep.id}
-        size="xs"
-        className="!w-4 !h-4"
+        size="small"
       />
       {shown.length > 0 && <ArrowRight className="w-3 h-3 text-zinc-600 flex-shrink-0" />}
       {shown.map((id, i) => {
@@ -156,13 +155,13 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
             name={nameOf(mem, id)}
             src={mem?.avatar_url ?? undefined}
             id={id}
-            size="xs"
-            className={cn("!w-4 !h-4", i > 0 && "-ml-1 ring-1 ring-zinc-900")}
+            size="small"
+            className={cn(i > 0 && "-ml-1 ring-1 ring-zinc-900")}
           />
         );
       })}
       {bots.length > shown.length && (
-        <span className="ml-0.5 text-[10px] text-zinc-400">+{bots.length - shown.length}</span>
+        <span className="ml-0.5 text-minimal text-zinc-400">+{bots.length - shown.length}</span>
       )}
     </span>
   );
@@ -255,28 +254,28 @@ function MessageRow({
       presentationLevel="minimal"
       onClick={clickable ? () => n.msgId && onJump?.(n.msgId) : undefined}
       leading={<span
-        className={cn("text-[11px] font-medium flex-shrink-0", !brand && "text-zinc-300")}
+        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-zinc-300")}
         style={brand ? { color: brand } : undefined}
       >
         {name}
       </span>}
-      title={<span className="text-[11px] font-normal text-zinc-400">{renderExcerpt(n.excerpt)}</span>}
+      title={<span className="text-compact font-normal text-zinc-400">{renderExcerpt(n.excerpt)}</span>}
       status={n.fileCount > 0 ? (
-        <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 flex-shrink-0">
+        <span className="inline-flex items-center gap-0.5 text-minimal text-zinc-400 flex-shrink-0">
           <Paperclip className="w-2.5 h-2.5" />
           {n.fileCount}
         </span>
       ) : undefined}
       trailing={<span
         className={cn(
-          "text-[10px] text-zinc-400 tabular-nums flex-shrink-0",
+          "text-minimal text-zinc-400 tabular-nums flex-shrink-0",
           clickable && "group-hover/item:hidden"
         )}
       >
         {fmtTime(n.ts)}
       </span>}
       criticalStatus={clickable ? <ArrowUpRight className="hidden h-3 w-3 flex-shrink-0 text-indigo-300 group-hover/item:block" /> : undefined}
-      className="border-b-0 px-1"
+      className="border-b-0"
     />
   );
 }
@@ -294,7 +293,7 @@ function EpisodeDetail({
   const summary = episodeSummary(ep);
   return (
     <div className="px-3 pb-2">
-      {summary && <div className="pl-[26px] pb-1 text-[10px] text-zinc-400">{summary}</div>}
+      {summary && <div className="pl-[26px] pb-1 text-minimal text-zinc-400">{summary}</div>}
       <div className="ml-[7px] border-l-2 border-zinc-800 pl-3">
         {rows.map((row, i) => {
           if (row.type === "claim") {
@@ -303,7 +302,7 @@ function EpisodeDetail({
               <div
                 key={`claim-${row.n.seq}-${i}`}
                 className={cn(
-                  "flex items-start gap-1.5 rounded-sm px-1 py-1 text-[11px]",
+                  "flex items-start gap-1.5 rounded-sm px-1 py-1 text-compact",
                   failed ? "bg-red-950/30 text-red-200" : "text-zinc-400"
                 )}
               >
@@ -313,7 +312,7 @@ function EpisodeDetail({
                   <Activity className="mt-0.5 h-3 w-3 flex-shrink-0 text-indigo-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
-                <span className="flex-shrink-0 text-[10px] text-zinc-500">{fmtTime(row.n.ts)}</span>
+                <span className="flex-shrink-0 text-minimal text-zinc-500">{fmtTime(row.n.ts)}</span>
               </div>
             );
           }
@@ -322,7 +321,7 @@ function EpisodeDetail({
             return (
               <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-1.5 py-[3px]">
                 <Icon className="w-3 h-3 text-zinc-500 self-center flex-shrink-0" />
-                <span className="min-w-0 truncate text-[10px] text-zinc-400">
+                <span className="min-w-0 truncate text-minimal text-zinc-400">
                   {row.items.map((it, j) => (
                     <span key={j}>
                       {j > 0 && " · "}
@@ -359,25 +358,25 @@ function FlowEpisode({
 }) {
   return (
     <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
-      <UiButton variant="plain"
+      <UiButton controlWidth="fill" variant="plain"
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         controlSize="regular" className={cn(
- "w-full flex items-center gap-2 px-3 text-left transition-colors",
+ "flex items-center gap-2 text-left transition-colors",
  !expanded && "hover:bg-zinc-800/40"
  )}
       >
         <ChainAvatars ep={ep} memberOf={memberOf} />
         <span
           className={cn(
-            "flex-1 min-w-0 truncate text-[11px]",
+            "flex-1 min-w-0 truncate text-compact",
             expanded ? "text-zinc-100" : "text-zinc-400"
           )}
         >
           {episodeTitle(ep, memberOf)}
         </span>
-        <span className="text-[10px] text-zinc-400 tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
+        <span className="text-minimal text-zinc-400 tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
       </UiButton>
       {expanded && <EpisodeDetail ep={ep} memberOf={memberOf} onJump={onJump} />}
     </div>
@@ -426,27 +425,26 @@ function ParticipantStrip({
               square
               controlSize="compact"
               className={cn(
-                "relative rounded-full ring-2 transition-all",
-                active ? "ring-indigo-500" : "ring-zinc-900",
-                dim && !active && "opacity-50 hover:opacity-100"
-              )}
+ "relative rounded-full ring-2 transition-all",
+ active ? "ring-indigo-500": "ring-zinc-900",
+ dim && !active && "opacity-50 hover:opacity-100"
+ )}
             >
               <Avatar
                 name={name}
                 src={mem?.avatar_url ?? undefined}
                 id={id}
                 online={mem?.is_online ?? undefined}
-                size="xs"
-                className="!w-6 !h-6"
+                size="small"
               />
             </UiButton>
           );
         })}
       </div>
       {overflow > 0 && (
-        <span className="ml-1 text-[10px] text-zinc-400 flex-shrink-0">+{overflow}</span>
+        <span className="ml-1 text-minimal text-zinc-400 flex-shrink-0">+{overflow}</span>
       )}
-      {online > 0 && <span className="ml-1.5 text-[10px] text-zinc-400 flex-shrink-0">{online} online</span>}
+      {online > 0 && <span className="ml-1.5 text-minimal text-zinc-400 flex-shrink-0">{online} online</span>}
     </div>
   );
 }
@@ -600,8 +598,8 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
                 type="button"
                 onClick={() => setLens(l)}
                 controlSize="regular" className={cn(
- "rounded-sm px-2.5 text-[10px] capitalize transition-colors",
- lens === l ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+ "rounded-sm text-minimal capitalize transition-colors",
+ lens === l ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:text-zinc-200"
  )}
               >
                 {l}
@@ -639,10 +637,9 @@ function FilterChip({
     <UiButton variant="plain"
       onClick={onClick}
       controlSize="regular" className={cn(
- "flex items-center gap-1 rounded-sm px-2 text-[10px] whitespace-nowrap flex-shrink-0 transition-colors",
+ "flex items-center gap-1 rounded-sm text-minimal whitespace-nowrap flex-shrink-0 transition-colors",
  active
- ? "border-zinc-600 bg-zinc-800 text-zinc-200"
- : "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
+ ? "border-zinc-600 bg-zinc-800 text-zinc-200": "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
  )}
     >
       {children}
@@ -689,10 +686,9 @@ function MemberFilter({
         aria-expanded={open}
         title="Filter activity by member"
         controlSize="regular" className={cn(
- "inline-flex items-center gap-1.5 rounded-sm  px-2 text-[11px] transition-colors",
+ "inline-flex items-center gap-1.5 rounded-sm text-compact transition-colors",
  open || selected.size
- ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200"
- : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
+ ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
  )}
       >
         <Filter className="w-3.5 h-3.5" />
@@ -709,21 +705,21 @@ function MemberFilter({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search members…"
-              className="flex-1 min-w-0 bg-transparent text-xs text-zinc-200 placeholder:text-zinc-400 outline-none"
+              className="flex-1 min-w-0 bg-transparent text-compact text-zinc-200 placeholder:text-zinc-400 outline-none"
             />
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
-              <div className="px-3 py-3 text-center text-[11px] text-zinc-400">No members match.</div>
+              <div className="px-3 py-3 text-center text-compact text-zinc-400">No members match.</div>
             ) : (
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
                 return (
-                  <UiButton variant="plain"
+                  <UiButton controlWidth="fill" variant="plain"
                     key={mem.member_id}
                     type="button"
                     onClick={() => onToggle(mem.member_id)}
-                    controlSize="regular" className="w-full flex items-center gap-2 px-2.5 text-left hover:bg-zinc-800/70 transition-colors"
+                    controlSize="regular" className="flex items-center gap-2 text-left hover:bg-zinc-800/70 transition-colors"
                   >
                     <span
                       className={cn(
@@ -738,14 +734,13 @@ function MemberFilter({
                       src={mem.avatar_url ?? undefined}
                       id={mem.member_id}
                       online={mem.is_online ?? undefined}
-                      size="xs"
-                      className="!w-4 !h-4"
+                      size="small"
                     />
-                    <span className="flex-1 truncate text-xs text-zinc-300">
+                    <span className="flex-1 truncate text-compact text-zinc-300">
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
-                      <span className="text-[10px] uppercase tracking-wide text-zinc-400 flex-shrink-0">bot</span>
+                      <span className="text-minimal uppercase tracking-wide text-zinc-400 flex-shrink-0">bot</span>
                     )}
                   </UiButton>
                 );
@@ -769,7 +764,7 @@ function MemberFilter({
               <UiButton variant="plain"
                 type="button"
                 onClick={onClear}
-                className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
+                className="text-compact text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
               >
                 Clear
               </UiButton>

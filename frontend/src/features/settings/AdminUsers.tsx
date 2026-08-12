@@ -89,7 +89,7 @@ export function AdminUsers() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <ShieldBan className="w-3.5 h-3.5" />
         User management (admin)
         <UiButton variant="plain"
@@ -109,7 +109,7 @@ export function AdminUsers() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by name / username / email…"
-          controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <ItemList presentationLevel="max" controlSize="regular">
           {users.map((u) => (
@@ -117,13 +117,13 @@ export function AdminUsers() {
               key={u.user_id}
               title={u.display_name || u.username}
               subtitle={`@${u.username}${u.email ? ` · ${u.email}` : ""}`}
-              leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />}
-              status={u.role !== "member" ? <span className="text-[10px] text-zinc-400">{roleLabel(u.role)}</span> : undefined}
-              criticalStatus={u.is_suspended ? <span className="rounded-sm bg-red-950/60 px-1 py-0.5 text-[10px] text-red-300">suspended</span> : undefined}
+              leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="regular" />}
+              status={u.role !== "member" ? <span className="text-minimal text-zinc-400">{roleLabel(u.role)}</span> : undefined}
+              criticalStatus={u.is_suspended ? <span className="rounded-sm bg-red-950/60 px-1 py-0.5 text-minimal text-red-300">suspended</span> : undefined}
               actions={<>{u.is_suspended ? (
                 <Button
                   variant="secondary"
-                  size="sm"
+                  controlSize="compact"
                   disabled={busy === u.user_id}
                   onClick={() => void act(u, "unsuspend")}
                 >
@@ -133,7 +133,7 @@ export function AdminUsers() {
               ) : (
                 <Button
                   variant="secondary"
-                  size="sm"
+                  controlSize="compact"
                   disabled={busy === u.user_id}
                   onClick={() => void act(u, "suspend")}
                 >
@@ -143,7 +143,7 @@ export function AdminUsers() {
               )}
               <Button
                 variant="danger"
-                size="sm"
+                controlSize="compact"
                 disabled={busy === u.user_id}
                 onClick={() => void act(u, "delete")}
                 title="Delete user"
@@ -155,7 +155,7 @@ export function AdminUsers() {
             />
           ))}
           {!loading && users.length === 0 && (
-            <p className="text-xs text-zinc-400 py-3 text-center">No users.</p>
+            <p className="text-compact text-zinc-400 py-3 text-center">No users.</p>
           )}
         </ItemList>
       </div>
@@ -201,10 +201,10 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
   }
 
   const inputCls =
-    "rounded-sm bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+    "rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
     <form onSubmit={submit} className="bg-zinc-900 rounded-sm p-6">
-      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-3">
+      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-3">
         <UserPlus className="w-4 h-4 text-indigo-400" /> Add user
       </p>
       <div className="grid gap-3 sm:grid-cols-2">

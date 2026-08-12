@@ -56,7 +56,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
         }`}
       >
         <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${ICON_CLS[severity]}`} />
-        <div className="min-w-0 text-sm text-zinc-200">
+        <div className="min-w-0 text-regular text-zinc-200">
           <span className="break-words">{message}</span>
           {opts?.action && (
             <div className="mt-1">
@@ -67,7 +67,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
                   toast.dismiss(t.id);
                   opts.action!.onClick();
                 }}
-                className="px-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
+                className="text-compact font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {opts.action.label}
               </Button>

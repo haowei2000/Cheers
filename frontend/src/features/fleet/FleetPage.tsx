@@ -13,6 +13,7 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
@@ -42,23 +43,23 @@ function channelLabel(name: string): string {
 
 function StatusChip({ bot }: { bot: FleetBot }) {
   if (!bot.online) {
-    return <span className="text-[10px] text-zinc-400">offline</span>;
+    return <span className="text-minimal text-zinc-400">offline</span>;
   }
   if (bot.pending_count > 0) {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
+      <span className="text-minimal px-1.5 py-0.5 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
         waiting approval
       </span>
     );
   }
   if (bot.busy_sessions > 0) {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
+      <span className="text-minimal px-1.5 py-0.5 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
         working
       </span>
     );
   }
-  return <span className="text-[10px] text-zinc-400">idle</span>;
+  return <span className="text-minimal text-zinc-400">idle</span>;
 }
 
 function BotRow({
@@ -80,11 +81,11 @@ function BotRow({
       onClick={onSelect}
       title={bot.bot_name}
       leading={<div className="relative flex-shrink-0">
-        <Avatar name={bot.bot_name} id={bot.bot_id} size="sm" />
-        <span
-          data-design-system-exempt="presence"
+        <Avatar name={bot.bot_name} id={bot.bot_id} size="regular" />
+        <PresenceDot
+          contentSize="regular"
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900",
+            "absolute -bottom-0.5 -right-0.5 ring-zinc-900",
             bot.online ? "bg-emerald-500" : "bg-zinc-600"
           )}
         />
@@ -101,18 +102,18 @@ function BotRow({
       criticalStatus={bot.pending_count > 0 ? (
           <span
             data-design-system-exempt="unread"
-            className="text-[10px] font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+            className="text-minimal font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
             title={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
           >
             {bot.pending_count}
           </span>
       ) : undefined}
       trailing={bot.cost_today_usd > 0 ? (
-          <span className="text-xs text-zinc-400 tabular-nums" title="Cost today (UTC)">
+          <span className="text-compact text-zinc-400 tabular-nums" title="Cost today (UTC)">
             ${bot.cost_today_usd.toFixed(2)}
           </span>
       ) : undefined}
-      className="gap-3 px-2.5 hover:bg-zinc-900"
+      className="gap-3 hover:bg-zinc-900"
     />
   );
 }
@@ -278,14 +279,14 @@ export default function FleetPage() {
         <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          square controlSize="regular" className=" max-md: max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          square controlSize="regular" className="max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </UiButton>
         <Radar className="w-4 h-4 text-indigo-400" />
-        <h1 className="text-lg font-semibold">Fleet</h1>
+        <h1 className="text-comfortable font-semibold">Fleet</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" onClick={() => setWizardOpen(true)}>
+          <Button controlSize="compact" onClick={() => setWizardOpen(true)}>
             <Wand2 className="w-3.5 h-3.5" />
             Add bot
           </Button>
@@ -294,7 +295,7 @@ export default function FleetPage() {
               value={activeWsId ?? ""}
               onChange={(e) => setWsId(e.target.value)}
               aria-label="Workspace"
-              controlSize="regular" className=" text-xs w-44"
+              controlSize="regular" className="text-compact"
             >
               {wsOptions.map((w) => (
                 <option key={w.workspace_id} value={w.workspace_id}>
@@ -308,7 +309,7 @@ export default function FleetPage() {
             title="Refresh"
             aria-label="Refresh"
             disabled={refreshing || !activeWsId}
-            square controlSize="regular" className=" max-md: rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
+            square controlSize="regular" className="rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
           >
             <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
           </UiButton>
@@ -322,13 +323,13 @@ export default function FleetPage() {
           ) : (
             <>
               {error && (
-                <p role="alert" className="text-xs text-red-400">
+                <p role="alert" className="text-compact text-red-400">
                   {error}
                 </p>
               )}
 
               {actionableCount > 0 && (
-                <UiButton variant="plain"
+                <UiButton controlWidth="fill" variant="plain"
                   type="button"
                   onClick={() => {
                     // ActivityCenter lives in the chat shell rail — open the
@@ -336,20 +337,20 @@ export default function FleetPage() {
                     requestActivityOpen();
                     navigate("/chat");
                   }}
-                  controlSize="regular" className="w-full flex items-center gap-3 rounded-sm bg-amber-950/30 px-4 text-left hover:bg-amber-950/50 transition-colors"
+                  controlSize="regular" className="flex items-center gap-3 rounded-sm bg-amber-950/30 text-left hover:bg-amber-950/50 transition-colors"
                 >
                   <Inbox className="w-4 h-4 text-amber-300 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-100">
+                    <p className="text-regular font-medium text-zinc-100">
                       {actionableCount} waiting on you
                     </p>
-                    <p className="text-xs text-zinc-400">Review in Activity</p>
+                    <p className="text-compact text-zinc-400">Review in Activity</p>
                   </div>
                 </UiButton>
               )}
 
               <section>
-                <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+                <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-3">
                   Bots
                 </h2>
                 {botsByChannel.length === 0 ? (
@@ -363,7 +364,7 @@ export default function FleetPage() {
                     {/* design-system-exempt: item-section — channel grouping delegates rows to BotRow. */}
                     {botsByChannel.map(([channelId, g]) => (
                       <div key={channelId}>
-                        <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1 px-2.5">
+                        <p className="text-minimal uppercase tracking-wide text-zinc-400 mb-1 px-2.5">
                           {channelLabel(g.name)}
                         </p>
                         <div>
@@ -416,14 +417,14 @@ export default function FleetPage() {
           onClose={() => setIssued(null)}
           maxWidth="max-w-lg"
         >
-          <p className="text-xs text-amber-400">
+          <p className="text-compact text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
+            <code className="text-compact text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between gap-3 mt-3">
-            <span className="text-xs text-zinc-400">
+            <span className="text-compact text-zinc-400">
               Save this into the bot&apos;s token file on the machine that runs it.
             </span>
             <CopyButton value={issued.token} label="Copy token" />

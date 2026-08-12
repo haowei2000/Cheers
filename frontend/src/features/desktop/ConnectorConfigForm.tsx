@@ -107,23 +107,23 @@ export function ConnectorConfigForm({
   }
 
   if (!f) {
-    return <p className="text-xs text-zinc-500 mt-3">Loading config…</p>;
+    return <p className="text-compact text-zinc-500 mt-3">Loading config…</p>;
   }
 
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-xs text-zinc-500">Raw TOML — full control.</p>
+        <p className="text-compact text-zinc-500">Raw TOML — full control.</p>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={16}
-          className="font-mono text-xs"
+          className="font-mono text-compact"
           spellCheck={false}
         />
         <div className="flex gap-2">
           <Button
-            size="sm"
+            controlSize="compact"
             disabled={busy}
             onClick={() =>
               onSave(true, () =>
@@ -135,7 +135,7 @@ export function ConnectorConfigForm({
           </Button>
           <Button
             variant="secondary"
-            size="sm"
+            controlSize="compact"
             disabled={busy}
             onClick={() =>
               onSave(false, () =>
@@ -145,7 +145,7 @@ export function ConnectorConfigForm({
           >
             Save only
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setRawMode(false)}>
+          <Button variant="secondary" controlSize="compact" onClick={() => setRawMode(false)}>
             Back to form
           </Button>
         </div>
@@ -172,7 +172,7 @@ export function ConnectorConfigForm({
 
   return (
     <div className="mt-3 space-y-4">
-      <p className="text-xs text-zinc-500">
+      <p className="text-compact text-zinc-500">
         Editing <b>{name}</b> — account <code className="bg-zinc-800 rounded-sm px-1">{f.account_id}</code>.
       </p>
 
@@ -206,10 +206,9 @@ export function ConnectorConfigForm({
             type="button"
             title="Command arguments"
             onClick={() => setArgsOpen((o) => !o)}
-            controlSize="regular" className={`shrink-0 rounded-sm px-2.5 text-xs flex items-center gap-1 ${
+            controlSize="regular" className={`shrink-0 rounded-sm text-compact flex items-center gap-1 ${
  argsOpen || f.adapter_args.length
- ? "bg-zinc-700 text-zinc-100"
- : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
  }`}
           >
             <Settings2 className="w-3.5 h-3.5" /> Args
@@ -222,7 +221,7 @@ export function ConnectorConfigForm({
               value={text(f.adapter_args)}
               onChange={(e) => patch({ adapter_args: lines(e.target.value) })}
               rows={2}
-              className="font-mono text-xs"
+              className="font-mono text-compact"
             />
           </Field>
         )}
@@ -232,12 +231,12 @@ export function ConnectorConfigForm({
             value={text(f.allowed_roots)}
             onChange={(e) => patch({ allowed_roots: lines(e.target.value) })}
             rows={3}
-            className="font-mono text-xs"
+            className="font-mono text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
           <UiButton variant="plain"
             type="button"
-            className="mt-1 text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            className="mt-1 text-compact text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             onClick={() =>
               void pickFolder().then((p) => {
                 if (p && !f.allowed_roots.includes(p)) {
@@ -259,14 +258,14 @@ export function ConnectorConfigForm({
             />
             <Button
               variant="secondary"
-              size="sm"
+              controlSize="compact"
               onClick={() => void pickFolder().then((p) => p && patch({ default_cwd: p }))}
             >
               <FolderPlus className="w-3.5 h-3.5" /> Choose…
             </Button>
           </div>
           {cwdUnderRoot === false && f.default_cwd?.trim() && (
-            <p className="mt-1 text-xs text-amber-400">
+            <p className="mt-1 text-compact text-amber-400">
               This directory is not under any workspace root — the connector will
               refuse to start.{" "}
               <UiButton variant="plain"
@@ -284,7 +283,7 @@ export function ConnectorConfigForm({
             </p>
           )}
         </Field>
-        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
+        <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
           {/* design-system-native: checkbox */}
 <input
             type="checkbox"
@@ -299,14 +298,14 @@ export function ConnectorConfigForm({
       <div>
         <UiButton variant="plain"
           type="button"
-          className="text-xs text-zinc-400 hover:text-zinc-200"
+          className="text-compact text-zinc-400 hover:text-zinc-200"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
         </UiButton>
         {more && (
           <div className="grid gap-3 mt-3 pl-2 border-l border-zinc-800">
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
+            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
               {/* design-system-native: checkbox */}
 <input
                 type="checkbox"
@@ -320,11 +319,11 @@ export function ConnectorConfigForm({
                 value={text(f.env_allow)}
                 onChange={(e) => patch({ env_allow: lines(e.target.value) })}
                 rows={3}
-                className="font-mono text-xs"
+                className="font-mono text-compact"
                 placeholder={"HOME\nPATH\nANTHROPIC_API_KEY"}
               />
             </Field>
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
+            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
               {/* design-system-native: checkbox */}
 <input
                 type="checkbox"
@@ -344,7 +343,7 @@ export function ConnectorConfigForm({
                 <UiSelect
                   value={f.on_timeout}
                   onChange={(e) => patch({ on_timeout: e.target.value })}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="cancel">cancel</option>
                   <option value="reject">reject</option>
@@ -361,7 +360,7 @@ export function ConnectorConfigForm({
             {numField("Heartbeat interval (ms)", f.heartbeat_interval_ms, (n) =>
               patch({ heartbeat_interval_ms: n })
             )}
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
+            <label className="flex items-center gap-2 text-compact text-zinc-300 cursor-pointer w-fit">
               {/* design-system-native: checkbox */}
 <input
                 type="checkbox"
@@ -372,7 +371,7 @@ export function ConnectorConfigForm({
             </label>
             <UiButton variant="plain"
               type="button"
-              className="text-xs text-zinc-500 hover:text-zinc-300 w-fit"
+              className="text-compact text-zinc-500 hover:text-zinc-300"
               onClick={() => void openRaw()}
             >
               Edit raw TOML…
@@ -382,13 +381,13 @@ export function ConnectorConfigForm({
       </div>
 
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy} onClick={() => onSave(true, apply)}>
+        <Button controlSize="compact" disabled={busy} onClick={() => onSave(true, apply)}>
           Save &amp; restart
         </Button>
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => onSave(false, apply)}>
+        <Button variant="secondary" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)}>
           Save only
         </Button>
-        <Button variant="secondary" size="sm" onClick={onClose}>
+        <Button variant="secondary" controlSize="compact" onClick={onClose}>
           Cancel
         </Button>
       </div>

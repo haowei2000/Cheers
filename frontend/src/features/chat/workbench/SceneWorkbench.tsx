@@ -231,7 +231,7 @@ export function SceneWorkbench({
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
   if (loading && entries.length === 0) {
-    return <div className="flex h-full items-center justify-center text-xs text-zinc-400">Preparing Workbench…</div>;
+    return <div className="flex h-full items-center justify-center text-compact text-zinc-400">Preparing Workbench…</div>;
   }
 
   if (sceneIds.length === 0) {
@@ -239,8 +239,8 @@ export function SceneWorkbench({
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <LayoutGrid className="h-7 w-7 text-zinc-600" />
         <div>
-          <div className="text-sm font-medium text-zinc-200">Choose a scene</div>
-          <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-400">
+          <div className="text-regular font-medium text-zinc-200">Choose a scene</div>
+          <p className="mt-1 max-w-sm text-compact leading-5 text-zinc-400">
             Scenes turn workspace data into focused tabs. Unsupported files remain available in Raw.
           </p>
         </div>
@@ -252,7 +252,7 @@ export function SceneWorkbench({
               if (manifest) void onAddScene(manifest);
               event.currentTarget.value = "";
             }}
-            controlSize="regular" className=" rounded-sm bg-indigo-600 px-3 text-xs font-medium text-white outline-none"
+            controlSize="regular" className="rounded-sm bg-indigo-600 text-compact font-medium text-white outline-none"
           >
             <option value="" disabled>Add a scene…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
@@ -274,8 +274,8 @@ export function SceneWorkbench({
               type="button"
               onClick={() => setActiveScene(id)}
               controlSize="regular" className={cn(
- "flex flex-shrink-0 items-center gap-2 rounded-sm px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- activeScene === id ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ "flex flex-shrink-0 items-center gap-2 rounded-sm text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ activeScene === id ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
  )}
             >
               <Icon className="h-4 w-4" />
@@ -286,21 +286,21 @@ export function SceneWorkbench({
       </div>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
-          <div className="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500">Scenes</div>
+          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-[0.12em] text-zinc-500">Scenes</div>
           <div className="space-y-1">
             {sceneIds.map((id) => {
               const meta = metaFor(id);
               const Icon = meta.Icon;
               const selected = activeScene === id;
               return (
-                <UiButton variant="plain"
+                <UiButton controlWidth="fill" variant="plain"
                   key={id}
                   type="button"
                   onClick={() => setActiveScene(id)}
                   aria-pressed={selected}
                   controlSize="comfortable" className={cn(
- "flex w-full items-center gap-2 rounded-sm px-2 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- selected ? "bg-indigo-500/15 text-indigo-200" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ "flex items-center gap-2 rounded-sm text-left text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+ selected ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
  )}
                 >
                   <Icon className={cn("h-4 w-4 flex-shrink-0", selected && meta.color)} />
@@ -321,7 +321,7 @@ export function SceneWorkbench({
                     if (manifest) void onAddScene(manifest);
                     event.currentTarget.value = "";
                   }}
-                  controlSize="regular" className=" w-full appearance-none rounded-sm bg-zinc-900 pl-8 pr-2 text-[11px] text-zinc-400 outline-none hover:text-zinc-200 focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="appearance-none rounded-sm bg-zinc-900 text-compact text-zinc-400 outline-none hover:text-zinc-200 focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="" disabled>Add scene</option>
                   {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
@@ -343,8 +343,8 @@ export function SceneWorkbench({
                     onClick={() => selectPath(path)}
                     aria-current={selected ? "page" : undefined}
                     controlSize="comfortable" className={cn(
- "relative flex-shrink-0 px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
- selected ? "text-indigo-300" : "text-zinc-400 hover:text-zinc-200"
+ "relative flex-shrink-0 text-compact focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+ selected ? "text-indigo-300": "text-zinc-400 hover:text-zinc-200"
  )}
                   >
                     {itemTitle(activeScene, path, templates)}
@@ -363,14 +363,14 @@ export function SceneWorkbench({
                 config={ctx.configs[selectedPath]}
               />
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-xs text-zinc-400">
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-zinc-400">
                 <FileQuestion className="h-6 w-6 text-zinc-600" />
                 <span>No native items in this scene.</span>
-                <span className="max-w-xs text-[11px] leading-4 text-zinc-500">Unsupported files stay hidden here and remain available from Raw.</span>
+                <span className="max-w-xs text-compact leading-4 text-zinc-500">Unsupported files stay hidden here and remain available from Raw.</span>
               </div>
             )}
           </div>
-          {status && <div className="border-t border-zinc-800 px-3 py-1.5 text-[11px] text-amber-300">{status}</div>}
+          {status && <div className="border-t border-zinc-800 px-3 py-1.5 text-compact text-amber-300">{status}</div>}
         </section>
       </div>
     </div>

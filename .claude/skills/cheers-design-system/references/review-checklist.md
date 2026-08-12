@@ -9,6 +9,13 @@ Use this checklist after reading the canonical files named in `SKILL.md`.
 - Browse items are single-line; long content truncates instead of overflowing.
 - Composite rows have no row click and no nested buttons.
 - Critical states remain visible in max, medium, and minimal.
+- Sidebar group labels are static ItemSection dividers; only a separate labeled action is interactive.
+- Selected NavigationItems retain a visible neutral fill and expose current-page semantics in borderless placements.
+- Avatar, semantic icon, Presence/Unread/Progress content uses only small, regular, or large ContentSize.
+- Checkbox keeps a 16px glyph inside a ControlSize-governed label hit target.
+- FileTree and Diff rows declare ControlSize; canvas, gutter, editor, and panel geometry use specialized layout tokens.
+- Shared content primitives have no business-level width/height overrides.
+- Vertical identity rails use only the ContentSize 64/96/128px width mapping.
 
 ## Managed collections
 
@@ -25,13 +32,18 @@ Use this checklist after reading the canonical files named in `SKILL.md`.
 - Hairlines are directional and structural.
 - No neon glow, decorative gradient, saturated shadow, or boxed-card wall remains.
 - Spacing follows the 4/8 system and controls use only the three shared sizes.
+- Peer text controls use the shared width slot or fill mode, never content-derived width.
+- Business call sites do not override shared horizontal padding with px/pl/pr utilities.
+- Composer context items and Add context share regular height; nested item actions use compact controls without increasing the outer row.
 
 ## Typography and icons
 
 - Display, reading, and utility are the only semantic font roles.
 - Entity and navigation names use utility sans; message and long-form copy use reading serif.
 - Chinese reading/display text resolves to Source Han Serif CN or the approved localized fallback.
-- A view does not introduce arbitrary font sizes beyond its three-level hierarchy.
+- Every visible text run uses minimal, compact, regular, or comfortable; no
+  arbitrary or legacy Tailwind size remains, including code, Diff, charts,
+  dense panels, mastheads, and empty states.
 - Semantic icons use the shared mapping; utility icons follow platform convention.
 - Personal workspace uses the Cheers system mark.
 

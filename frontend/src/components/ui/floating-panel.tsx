@@ -130,7 +130,7 @@ export function FloatingPanel({
   const titleLabel = (
     <>
       {Icon && <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 truncate">
+      <span className="text-compact font-semibold uppercase tracking-wider text-zinc-400 truncate">
         {title}
       </span>
     </>

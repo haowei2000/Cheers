@@ -20,6 +20,7 @@ const SHARED_CONTROLS = new Set([
   "UiSelect",
   "UiTextarea",
 ]);
+const SHARED_CONTENT = new Set(["Avatar", "EditorialIcon", "PresenceDot"]);
 const NON_STANDARD_RADIUS = new Set([
   "rounded",
   "rounded-md",
@@ -65,6 +66,10 @@ function classTokens(value) {
     .map((token) => token.replace(/^!/, ""));
 }
 
+function utilityBase(token) {
+  return token.split(":").at(-1);
+}
+
 function isDevelopmentFile(file) {
   return /\.(?:test|preview)\.tsx$/.test(file) || /ItemGallery(?:\.preview)?\.tsx$/.test(file);
 }
@@ -88,6 +93,11 @@ export function auditSources(files, ts, policy) {
       restingBorder: 0,
       hardcodedControlSize: 0,
       sharedControlSizeOverride: 0,
+      sharedHorizontalPaddingOverride: 0,
+      sharedControlWidthOverride: 0,
+      sharedContentSizeOverride: 0,
+      nonStandardTypographySize: 0,
+      legacyControlSizeProp: 0,
     },
     findings: [],
     invalidReasons: [],
@@ -153,6 +163,39 @@ export function auditSources(files, ts, policy) {
           if (SHARED_CONTROLS.has(tag) && overrideTokens.length && !exempt) {
             result.violations.sharedControlSizeOverride += overrideTokens.length;
             result.findings.push({ file, line, rule: "sharedControlSizeOverride", token: overrideTokens.join(" ") });
+          }
+          const horizontalPaddingTokens = tokens.filter((token) => /^(?:px|pl|pr)-(?:[0-9.]+|\[[^\]]+\])$/.test(utilityBase(token)));
+          if (!primitive && SHARED_CONTROLS.has(tag) && horizontalPaddingTokens.length && !exempt) {
+            result.violations.sharedHorizontalPaddingOverride += horizontalPaddingTokens.length;
+            result.findings.push({ file, line, rule: "sharedHorizontalPaddingOverride", token: horizontalPaddingTokens.join(" ") });
+          }
+          const widthTokens = tokens.filter((token) => /^w-(?:[0-9.]+|full|fit|min|max|\[[^\]]+\])$/.test(utilityBase(token)));
+          if (!primitive && SHARED_CONTROLS.has(tag) && widthTokens.length && !exempt) {
+            result.violations.sharedControlWidthOverride += widthTokens.length;
+            result.findings.push({ file, line, rule: "sharedControlWidthOverride", token: widthTokens.join(" ") });
+          }
+          const contentDimensionTokens = tokens.filter((token) => /^(?:h|w)-(?:[0-9.]+|\[[^\]]+\])$/.test(utilityBase(token)));
+          if (!primitive && SHARED_CONTENT.has(tag) && contentDimensionTokens.length && !exempt) {
+            result.violations.sharedContentSizeOverride += contentDimensionTokens.length;
+            result.findings.push({ file, line, rule: "sharedContentSizeOverride", token: contentDimensionTokens.join(" ") });
+          }
+
+          const forbiddenTypographyTokens = tokens.filter((token) =>
+            /^text-(?:xs|sm|base|lg|xl|[2-9]xl|\[[^\]]*(?:px|rem|em|clamp|calc)[^\]]*\])$/.test(utilityBase(token))
+          );
+          if (forbiddenTypographyTokens.length) {
+            result.violations.nonStandardTypographySize += forbiddenTypographyTokens.length;
+            result.findings.push({ file, line, rule: "nonStandardTypographySize", token: forbiddenTypographyTokens.join(" ") });
+          }
+
+          if (SHARED_CONTROLS.has(tag)) {
+            const legacySize = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "size"
+            );
+            if (legacySize) {
+              result.violations.legacyControlSizeProp += 1;
+              result.findings.push({ file, line, rule: "legacyControlSizeProp", token: "size" });
+            }
           }
         }
       }

@@ -39,17 +39,16 @@ export default function ForgotPasswordPage() {
         <div className={publicPanelClass}>
           {sent ? (
             <div className="space-y-4">
-              <p className="text-sm text-zinc-400">
+              <p className="text-regular text-zinc-400">
                 If <span className="text-zinc-200">{email}</span> has an account, a reset code
                 has been sent. Enter it on the next screen.
               </p>
-              <Button
-                className="w-full"
+              <Button controlWidth="fill"
                 onClick={() => navigate(`/reset?email=${encodeURIComponent(email.trim())}`)}
               >
                 Enter code
               </Button>
-              <p className="text-center text-xs text-zinc-400">
+              <p className="text-center text-compact text-zinc-400">
                 <Link to="/login" className={publicLinkClass}>
                   Back to sign in
                 </Link>
@@ -70,10 +69,10 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
-              <Button type="submit" className="w-full mt-2" loading={loading} disabled={!email.trim()}>
+              <Button controlWidth="fill" type="submit" className="mt-2" loading={loading} disabled={!email.trim()}>
                 Send reset code
               </Button>
-              <p className="text-center text-xs text-zinc-400">
+              <p className="text-center text-compact text-zinc-400">
                 <Link to="/login" className={publicLinkClass}>
                   Back to sign in
                 </Link>

@@ -5,6 +5,7 @@ import {
   useControlSize,
   type ControlSize,
 } from "./control-size";
+import { contentIconClasses } from "./content-size";
 
 interface CheckboxFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
@@ -22,7 +23,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
       <label
         htmlFor={id}
         className={cn(
-          "flex min-w-0 items-start gap-2 rounded-sm px-1 font-utility text-sm text-zinc-300",
+          "flex min-w-0 items-start gap-2 rounded-sm px-1 font-utility text-regular text-zinc-300",
           controlMinHeightClasses[size],
           "max-md:items-center",
           props.disabled && "cursor-not-allowed opacity-50",
@@ -35,12 +36,12 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
           ref={ref}
           id={id}
           type="checkbox"
-          className="mt-1 h-4 w-4 flex-shrink-0 accent-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 max-md:mt-0"
+          className={cn("mt-1 flex-shrink-0 accent-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 max-md:mt-0", contentIconClasses.regular)}
         />
         <span className="min-w-0 py-1.5 max-md:py-0">
           <span className="block">{label}</span>
-          {hint && <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>}
-          {error && <span className="mt-0.5 block text-xs text-red-400" role="alert">{error}</span>}
+          {hint && <span className="mt-0.5 block text-compact text-zinc-500">{hint}</span>}
+          {error && <span className="mt-0.5 block text-compact text-red-400" role="alert">{error}</span>}
         </span>
       </label>
     );

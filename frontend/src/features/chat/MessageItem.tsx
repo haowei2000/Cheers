@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
-import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
@@ -35,6 +34,7 @@ import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
 import { usePresentationLevel } from "@/components/ui/presentation";
 import { MessageRecordInspector } from "./MessageRecordInspector";
+import { identityRailWidthClasses } from "@/components/ui/content-size";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -86,7 +86,7 @@ const SYSTEM_TYPES = new Set([
 function SystemMessage({ message }: { message: Message }) {
   return (
     <div className="flex justify-center py-3 px-4">
-      <span className="text-xs text-zinc-400 whitespace-nowrap">
+      <span className="text-compact text-zinc-400 whitespace-nowrap">
         {message.content}
       </span>
     </div>
@@ -266,8 +266,8 @@ function ReplyPreview({
             name={who}
             src={avatarUrl}
             id={repliedTo.sender_id}
-            size="xs"
-            className="h-4 w-4 shrink-0 text-[8px]"
+            size="small"
+            className="shrink-0"
           />
           <span className="truncate font-semibold">@{who}</span>
         </span>
@@ -290,16 +290,18 @@ function ReplyPreview({
   return (
     <UiButton variant="plain"
       type="button"
+      controlWidth="fill"
+      controlSize="regular"
       disabled={!repliedTo}
       onClick={jumpToSource}
       aria-label={repliedTo ? `Jump to message from ${who}` : undefined}
       className={cn(
-        "group/reply -mb-0.5 flex max-w-full items-start text-left leading-5",
-        controlTextClasses.compact,
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
-        repliedTo ? "cursor-pointer" : "cursor-default",
-        reversed && "self-end",
-      )}
+ "group/reply -mb-0.5 flex max-w-full items-start text-left leading-5",
+ controlTextClasses.compact,
+ "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+ repliedTo ? "cursor-pointer": "cursor-default",
+ reversed && "self-end",
+ )}
       title={excerpt}
     >
       {reversed ? (
@@ -357,7 +359,7 @@ export const MessageItem = memo(function MessageItem({
       <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-0.5 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-zinc-400 italic text-sm">
+        <span className="text-zinc-400 italic text-regular">
           This message was deleted
         </span>
       </div>
@@ -402,10 +404,6 @@ export const MessageItem = memo(function MessageItem({
 
   const isOwn = message.sender_id === currentUserId;
   const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
-  // Chat keeps the identity attached to the avatar so message content starts at
-  // the top of the row. Discuss deliberately retains its document-style author
-  // header above the body. `alignOwnMessages` is enabled only by the Chat layout.
-  const showChatIdentityUnderAvatar = alignOwnMessages && !nested;
   const name =
     message.sender_name || senderName || message.sender_id.slice(0, 8);
   const hasName = Boolean(message.sender_name || senderName);
@@ -602,6 +600,60 @@ export const MessageItem = memo(function MessageItem({
     onDragStart: (event: React.DragEvent<HTMLButtonElement>) =>
       event.preventDefault(),
   };
+  // One identity anatomy for Chat and Discuss, including threaded replies.
+  // Metadata intentionally sits outside the square avatar button so it cannot
+  // be clipped by the shared control's overflow guard.
+  const identityColumn = (
+    <div
+      data-content-size="regular"
+      className={cn(
+        "flex flex-shrink-0 flex-col items-center gap-0.5 pt-0.5 font-utility",
+        identityRailWidthClasses.regular,
+      )}
+    >
+      <UiButton variant="plain"
+        type="button"
+        {...avatarInteractionProps}
+        square
+        controlSize="regular"
+        className="touch-manipulation select-none transition-opacity hover:opacity-80 focus-visible:ring-indigo-500/70"
+        title={
+          canMention
+            ? `View profile · double-click to mention @${name}`
+            : hasName
+              ? name
+              : message.sender_id
+        }
+        aria-label={`View profile for ${name}`}
+      >
+        <Avatar
+          name={name}
+          src={profileCard?.memberOf(message.sender_id)?.avatar_url ?? undefined}
+          id={message.sender_id}
+          size="regular"
+        />
+      </UiButton>
+      <span
+        className={cn(
+          "block w-full truncate text-center font-medium leading-4 text-zinc-300",
+          controlTextClasses.regular,
+        )}
+        title={name}
+      >
+        {name}
+      </span>
+    </div>
+  );
+  const identityPlaceholder = (
+    <div
+      data-content-size="regular"
+      className={cn(
+        "flex flex-shrink-0 items-start justify-center pt-1 font-utility",
+        identityRailWidthClasses.regular,
+      )}
+      aria-hidden="true"
+    />
+  );
   const avatarMenu = avatarMenuOpen ? (
     <FloatingLayer
       anchorRef={avatarRef}
@@ -610,16 +662,16 @@ export const MessageItem = memo(function MessageItem({
       role="menu"
       className="w-56 overflow-hidden rounded-sm bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
     >
-      <UiButton variant="plain"
+      <UiButton controlWidth="fill" variant="plain"
         type="button"
         role="menuitem"
         onClick={mentionSender}
-        controlSize="comfortable" className="flex w-full items-center gap-3 rounded-sm px-3 text-left text-sm text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left text-regular text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <AtSign className="h-4 w-4" />
         <span className="min-w-0 truncate">Mention @{name}</span>
       </UiButton>
-      <UiButton variant="plain"
+      <UiButton controlWidth="fill" variant="plain"
         type="button"
         role="menuitem"
         onClick={() => {
@@ -627,7 +679,7 @@ export const MessageItem = memo(function MessageItem({
           setAvatarMenuOpen(false);
           if (anchor) openProfile(anchor);
         }}
-        controlSize="comfortable" className="flex w-full items-center gap-3 rounded-sm px-3 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left text-regular text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <UserRound className="h-4 w-4" />
         View profile
@@ -657,7 +709,6 @@ export const MessageItem = memo(function MessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  const folioCount = detailsMeta.traceCount + detailsMeta.contextCount;
   const folio = detailsMeta.hasDetails ? (
     <UiButton variant="plain"
       type="button"
@@ -665,13 +716,12 @@ export const MessageItem = memo(function MessageItem({
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       square controlSize="compact" className={cn(
- "relative inline-flex items-center justify-center self-start font-mono tabular-nums tracking-[0.08em] text-zinc-500 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200",
- controlTextClasses.compact,
+ "relative inline-flex items-center justify-center self-start text-zinc-500 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
  isOwnAlignedRight && "self-end",
- detailsMeta.hasFailure && "text-red-400/70 hover:text-red-300",
+ detailsMeta.hasFailure && "text-red-400/70 opacity-100 hover:text-red-300",
  )}
     >
-      {String(folioCount).padStart(2, "0")}
+      <ListTree className={controlIconClasses.compact} aria-hidden />
     </UiButton>
   ) : null;
   const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
@@ -735,7 +785,7 @@ export const MessageItem = memo(function MessageItem({
         className={cn(
           "group relative flex items-start gap-3 rounded-sm transition-colors hover:z-20 focus-within:z-20",
           nested
-            ? "w-full bg-zinc-900/20 px-2.5 py-2 hover:bg-zinc-900/50 md:w-fit md:max-w-[56rem]"
+            ? "w-full px-2 py-1 hover:bg-zinc-900/40 md:w-fit md:max-w-[56rem]"
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
           isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
@@ -753,30 +803,7 @@ export const MessageItem = memo(function MessageItem({
             className={isOwnAlignedRight ? "order-last" : undefined}
           />
         )}
-        {!nested && presentationLevel !== "minimal" && (
-          <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
-            <span className={cn("whitespace-nowrap tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none", controlTextClasses.compact)}>
-              {formatTime(message.created_at)}
-            </span>
-          </div>
-        )}
-        {nested && (
-          <UiButton variant="plain"
-            type="button"
-            data-design-system-exempt="identity"
-            {...avatarInteractionProps}
-            square controlSize="comfortable" className="mt-0.5 flex flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
-            title={canMention ? `View profile · double-click to mention @${name}` : "View profile"}
-            aria-label={`View profile for ${name}`}
-          >
-            <Avatar
-              name={name}
-              src={profileCard?.memberOf(message.sender_id)?.avatar_url ?? undefined}
-              id={message.sender_id}
-              size="xs"
-            />
-          </UiButton>
-        )}
+        {isConsecutive ? identityPlaceholder : identityColumn}
         {avatarMenu}
         {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
         <div
@@ -786,28 +813,6 @@ export const MessageItem = memo(function MessageItem({
             isOwnAlignedRight && "items-end",
           )}
         >
-          {nested && (
-            <div className="flex items-baseline gap-1.5">
-              <UiButton variant="plain"
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openProfile(e.currentTarget);
-                }}
-                className={cn("font-medium text-zinc-300 hover:underline truncate", controlTextClasses.compact)}
-              >
-                {name}
-              </UiButton>
-              {isBot && (
-                <span className={cn("px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium", controlTextClasses.compact)}>
-                  BOT
-                </span>
-              )}
-              {presentationLevel !== "minimal" && <span className={cn("text-zinc-500 tabular-nums", controlTextClasses.compact)}>
-                {formatTime(message.created_at)}
-              </span>}
-            </div>
-          )}
           {quote}
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
           {presentationLevel !== "minimal" && folio}
@@ -862,49 +867,7 @@ export const MessageItem = memo(function MessageItem({
       {selectable && (
         <SelectBox selected={selected} className={isOwnAlignedRight ? "order-last" : undefined} />
       )}
-      {/* Chat puts compact identity metadata below the avatar; Discuss keeps its
-          author header beside the avatar so the topic remains document-like. */}
-      <UiButton variant="plain"
-        type="button"
-        {...avatarInteractionProps}
-        square controlSize="comfortable" className={cn(
- "mt-0.5 flex-shrink-0 touch-manipulation select-none rounded-sm transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
- showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
- !showChatIdentityUnderAvatar && "flex items-center justify-center",
- )}
-        title={
-          canMention
-            ? `View profile · double-click to mention @${name}`
-            : hasName
-              ? name
-              : message.sender_id
-        }
-        aria-label={`View profile for ${name}`}
-      >
-        <Avatar
-          name={name}
-          src={profileCard?.memberOf(message.sender_id)?.avatar_url ?? undefined}
-          id={message.sender_id}
-          size="sm"
-        />
-        {showChatIdentityUnderAvatar && (
-          <>
-            <span className={cn("mt-0.5 block w-full truncate text-center font-medium leading-3 text-zinc-400", controlTextClasses.compact)}>
-              {name}
-            </span>
-            {presentationLevel !== "minimal" && <span className={cn("flex items-center justify-center gap-1 whitespace-nowrap leading-3 text-zinc-500", controlTextClasses.compact)}>
-              {isBot && (
-                <span className="font-semibold uppercase tracking-wide text-indigo-400">
-                  Bot
-                </span>
-              )}
-              <span className="tabular-nums">
-                {formatTime(message.created_at)}
-              </span>
-            </span>}
-          </>
-        )}
-      </UiButton>
+      {identityColumn}
       {avatarMenu}
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
@@ -916,27 +879,6 @@ export const MessageItem = memo(function MessageItem({
         )}
       >
         {quote}
-        {!showChatIdentityUnderAvatar && (
-          <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
-            <UiButton variant="plain"
-              type="button"
-              onClick={(e) => openProfile(e.currentTarget)}
-              className="text-sm font-semibold text-zinc-100 hover:underline"
-              title={hasName ? "View profile" : message.sender_id}
-            >
-              {name}
-            </UiButton>
-            {isBot && (
-              <span className={cn("px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium", controlTextClasses.compact)}>
-                BOT
-              </span>
-            )}
-            {presentationLevel !== "minimal" && <span className={cn("text-zinc-400 tabular-nums", controlTextClasses.compact)}>
-              {formatTime(message.created_at)}
-            </span>}
-          </div>
-        )}
-
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
         {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (
@@ -994,7 +936,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80 px-1.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80 text-compact text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3 h-3" fill="currentColor" />
@@ -1037,7 +979,7 @@ function MessageBody({
           <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
         </div>
         {message._trace && (
-          <span className="text-xs text-zinc-400 italic truncate">
+          <span className="text-compact text-zinc-400 italic truncate">
             {message._trace}
           </span>
         )}
@@ -1049,7 +991,7 @@ function MessageBody({
   }
 
   if (message.error) {
-    return <p className="text-sm text-red-400 italic">{message.error}</p>;
+    return <p className="text-regular text-red-400 italic">{message.error}</p>;
   }
 
   // While a bubble is streaming, re-parsing the whole accumulated Markdown +
@@ -1074,11 +1016,11 @@ function MessageBody({
           <PathOpenContext.Provider value={pathOpen}>
             <MarkdownRenderer
               content={content}
-              className="font-reading text-sm font-normal leading-[1.55] tracking-[-0.005em]"
+              className="font-reading text-regular font-normal leading-[1.55] tracking-[-0.005em]"
             />
           </PathOpenContext.Provider>
         ) : (
-          <p className="font-reading text-sm font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
+          <p className="font-reading text-regular font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
             {content}
           </p>
         ))}
@@ -1086,7 +1028,7 @@ function MessageBody({
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-0.5 align-text-bottom" />
       )}
       {active && message._trace && (
-        <p className="text-xs text-zinc-400 italic mt-0.5">{message._trace}</p>
+        <p className="text-compact text-zinc-400 italic mt-0.5">{message._trace}</p>
       )}
       {active && isBot && channelId && (
         <div className="mt-1">

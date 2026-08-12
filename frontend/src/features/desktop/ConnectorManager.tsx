@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { WorkbenchItem } from "@/components/ui/item";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorHealth,
@@ -144,7 +145,7 @@ function HealthRow({
           ? "Not responding"
           : "";
   return (
-    <div className="flex items-center gap-2 text-[11px] min-w-0">
+    <div className="flex items-center gap-2 text-compact min-w-0">
       <span className="text-zinc-500 tabular-nums shrink-0">
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
@@ -154,7 +155,7 @@ function HealthRow({
           onClick={onRestart}
           disabled={busy}
           title={`${reason} — restart this connector`}
-          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 px-1.5 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
+          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
           <AlertTriangle className="w-3 h-3 shrink-0" />
           <span className="truncate">{reason} · Restart</span>
@@ -185,7 +186,7 @@ function IconBtn({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      square controlSize="regular" className={` rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
+      square controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
  danger
  ? "text-rose-400 hover:bg-rose-950/50"
  : "text-zinc-300 hover:bg-zinc-700"
@@ -524,14 +525,14 @@ export function ConnectorManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Plug className="w-3.5 h-3.5" />
         Connector
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-sm font-medium text-zinc-200">Local connector daemons</p>
-        <p className="text-xs text-zinc-400 mt-0.5 mb-4">
+        <p className="text-regular font-medium text-zinc-200">Local connector daemons</p>
+        <p className="text-compact text-zinc-400 mt-0.5 mb-4">
           Instances under <code className="bg-zinc-800 rounded-sm px-1">~/.cheers/acp-connector</code>.
           "Start with app" instances are launched on app start and revived if they die.
         </p>
@@ -545,8 +546,8 @@ export function ConnectorManager() {
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="w-6 h-6" />
-            <span className="text-sm font-medium">Set up on this Mac</span>
-            <span className="text-xs text-zinc-500">Create or attach a bot, then verify it starts</span>
+            <span className="text-regular font-medium">Set up on this Mac</span>
+            <span className="text-compact text-zinc-500">Create or attach a bot, then verify it starts</span>
           </UiButton>
 
           {/* The other direction: a bot created somewhere else (the phone, the
@@ -561,8 +562,8 @@ export function ConnectorManager() {
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Ticket className="w-6 h-6" />
-            <span className="text-sm font-medium">I have a code</span>
-            <span className="text-xs text-zinc-500">Set up a bot made elsewhere</span>
+            <span className="text-regular font-medium">I have a code</span>
+            <span className="text-compact text-zinc-500">Set up a bot made elsewhere</span>
           </UiButton>
 
           {instances.map((inst) => (
@@ -578,11 +579,9 @@ export function ConnectorManager() {
             >
               <WorkbenchItem
                 presentationLevel="medium"
-                leading={<span
-                  data-design-system-exempt="presence"
-                  className={`h-2 w-2 rounded-full ${
-                    inst.running ? "bg-emerald-500" : "bg-zinc-600"
-                  }`}
+                leading={<PresenceDot
+                  contentSize="regular"
+                  className={inst.running ? "bg-emerald-500" : "bg-zinc-600"}
                   title={inst.running ? "running" : "stopped"}
                 />}
                 title={inst.name}
@@ -591,7 +590,7 @@ export function ConnectorManager() {
                       : inst.config_path
                         ? "stopped"
                         : "stopped · no config"}
-                className="border-b-0 bg-transparent px-0"
+                className="border-b-0 bg-transparent"
               />
 
               {inst.running && health[inst.name] && (
@@ -690,7 +689,7 @@ export function ConnectorManager() {
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer w-fit">
+              <label className="flex items-center gap-2 text-compact text-zinc-400 cursor-pointer w-fit">
                 {/* design-system-native: checkbox */}
 <input
                   type="checkbox"
@@ -718,7 +717,7 @@ export function ConnectorManager() {
       {modal?.kind === "redeem" && (
         <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <div className="space-y-3">
-            <p className="text-xs text-zinc-400">
+            <p className="text-compact text-zinc-400">
               Paste the one-time code from wherever the bot was created — the
               Cheers app on your phone, the web UI, or a teammate. This Mac
               becomes the machine that runs it.
@@ -729,9 +728,9 @@ export function ConnectorManager() {
               placeholder="agbenr_…"
               autoFocus
               spellCheck={false}
-              controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
             />
-            <p className="text-xs text-zinc-500">
+            <p className="text-compact text-zinc-500">
               Codes are single-use and expire after about 15 minutes. Using one
               replaces the bot's token, so any connector already running it
               elsewhere will stop.
@@ -796,13 +795,13 @@ export function ConnectorManager() {
           <div className="flex justify-end mb-1">
             <UiButton variant="plain"
               type="button"
-              className="text-xs text-zinc-400 hover:text-zinc-200"
+              className="text-compact text-zinc-400 hover:text-zinc-200"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
             </UiButton>
           </div>
-          <pre className="text-xs bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-300">
+          <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-300">
             {logs}
           </pre>
         </Dialog>
@@ -810,14 +809,14 @@ export function ConnectorManager() {
 
       {modal?.kind === "workspace" && (
         <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <p className="text-xs text-zinc-500 mb-3">
+          <p className="text-compact text-zinc-500 mb-3">
             Open the agent's own directories in a local editor or Finder — only
             this desktop app can reach your disk.
           </p>
           {roots === null ? (
-            <p className="text-xs text-zinc-500">Loading…</p>
+            <p className="text-compact text-zinc-500">Loading…</p>
           ) : wsDirs.length === 0 ? (
-            <p className="text-xs text-zinc-500">
+            <p className="text-compact text-zinc-500">
               No workspace roots on disk (check the config's{" "}
               <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
             </p>
@@ -829,7 +828,7 @@ export function ConnectorManager() {
                   <div className="flex items-center gap-2 mb-1">
                     <FolderOpen className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
                     <span
-                      className="truncate text-xs text-zinc-300 min-w-0"
+                      className="truncate text-compact text-zinc-300 min-w-0"
                       dir="rtl"
                       style={{ unicodeBidi: "plaintext" }}
                       title={dir}
@@ -837,7 +836,7 @@ export function ConnectorManager() {
                       {dir}
                     </span>
                     {dir === roots?.cwd && (
-                      <span className="text-[10px] text-zinc-500 shrink-0">cwd</span>
+                      <span className="text-minimal text-zinc-500 shrink-0">cwd</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-1.5 pl-5">
@@ -846,7 +845,7 @@ export function ConnectorManager() {
                       <UiButton variant="plain"
                         key={op.key}
                         type="button"
-                        controlSize="regular" className="text-[11px] rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 transition-colors"
+                        controlSize="regular" className="text-compact rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
@@ -896,12 +895,12 @@ export function ConnectorManager() {
 
       {modal?.kind === "delete" && (
         <Dialog title="Remove connector" onClose={() => setModal(null)} maxWidth="max-w-md">
-          <p className="text-sm text-zinc-300">
+          <p className="text-regular text-zinc-300">
             Remove the local connector <b>{modal.inst.name}</b> (stops it and
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
           </p>
-          <label className="flex items-center gap-2 mt-3 text-xs text-zinc-400 cursor-pointer w-fit">
+          <label className="flex items-center gap-2 mt-3 text-compact text-zinc-400 cursor-pointer w-fit">
             {/* design-system-native: checkbox */}
 <input
               type="checkbox"
@@ -915,7 +914,7 @@ export function ConnectorManager() {
           <div className="flex gap-2 mt-4">
             <Button
               variant="danger"
-              size="sm"
+              controlSize="compact"
               className="bg-red-950/70 hover:bg-red-900/80 text-red-300"
               disabled={busy === modal.inst.name}
               onClick={() =>
@@ -932,7 +931,7 @@ export function ConnectorManager() {
             >
               Remove connector
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setModal(null)}>
+            <Button variant="secondary" controlSize="compact" onClick={() => setModal(null)}>
               Cancel
             </Button>
           </div>
@@ -965,7 +964,7 @@ function AuditTimeline({
   onRefresh: () => void;
 }) {
   const [hidden, setHidden] = useState<Set<AuditEvent["kind"]>>(new Set());
-  if (events === null) return <p className="text-xs text-zinc-500">Loading…</p>;
+  if (events === null) return <p className="text-compact text-zinc-500">Loading…</p>;
   const kinds = Array.from(new Set(events.map((e) => e.kind)));
   const shown = events.filter((e) => !hidden.has(e.kind));
   const toggle = (k: AuditEvent["kind"]) =>
@@ -984,27 +983,24 @@ function AuditTimeline({
             key={k}
             type="button"
             onClick={() => toggle(k)}
-            controlSize="regular" className={`text-[11px] rounded-sm px-2 transition-colors ${
- hidden.has(k) ? "bg-zinc-800 text-zinc-500" : "bg-zinc-700 text-zinc-100"
+            controlSize="regular" className={`text-compact rounded-sm transition-colors ${
+ hidden.has(k) ? "bg-zinc-800 text-zinc-500": "bg-zinc-700 text-zinc-100"
  }`}
           >
-            <span
-              data-design-system-exempt="presence"
-              className={`inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle ${AUDIT_META[k].dot}`}
-            />
+            <PresenceDot contentSize="small" className={`mr-1 align-middle ${AUDIT_META[k].dot}`} />
             {AUDIT_META[k].label}
           </UiButton>
         ))}
         <UiButton variant="plain"
           type="button"
           onClick={onRefresh}
-          className="text-xs text-zinc-400 hover:text-zinc-200 ml-auto"
+          className="text-compact text-zinc-400 hover:text-zinc-200 ml-auto"
         >
           Refresh
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <p className="text-xs text-zinc-500">
+        <p className="text-compact text-zinc-500">
           No audit events yet. Per-command / file detail needs the connector running with{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
@@ -1024,16 +1020,16 @@ function AuditRow({ e }: { e: AuditEvent }) {
   const [open, setOpen] = useState(false);
   const time = e.ts.slice(11, 19); // HH:MM:SS from the rfc3339 timestamp
   return (
-    <div role="listitem" className="text-xs">
+    <div role="listitem" className="text-compact">
       <WorkbenchItem
         presentationLevel="medium"
         title={e.detail}
-        leading={<span data-design-system-exempt="presence" className={`h-1.5 w-1.5 rounded-full ${AUDIT_META[e.kind].dot}`} />}
-        trailing={<span className="font-mono text-[10px] tabular-nums">{time}</span>}
+        leading={<PresenceDot contentSize="small" className={AUDIT_META[e.kind].dot} />}
+        trailing={<span className="font-mono text-minimal tabular-nums">{time}</span>}
         onClick={e.extra ? () => setOpen((o) => !o) : undefined}
       />
       {open && e.extra && (
-        <pre className="ml-6 mt-1 mb-1 text-[11px] bg-zinc-950 rounded-sm p-2 overflow-auto whitespace-pre-wrap text-zinc-400 max-h-48">
+        <pre className="ml-6 mt-1 mb-1 text-compact bg-zinc-950 rounded-sm p-2 overflow-auto whitespace-pre-wrap text-zinc-400 max-h-48">
           {e.extra}
         </pre>
       )}
@@ -1067,7 +1063,7 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <div className="rounded-sm bg-indigo-950/35 p-3 text-xs text-indigo-100">
+      <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-indigo-100">
         <p className="font-medium">Four steps, all on this Mac</p>
         <p className="mt-1 text-indigo-200/75">
           Choose a bot → check its agent → save the secure local config → start and verify it.
@@ -1081,10 +1077,9 @@ function OnboardForm(props: {
             key={m}
             type="button"
             onClick={() => p.setMode(m)}
-            controlSize="regular" className={`text-xs rounded-sm px-3 transition-colors ${
+            controlSize="regular" className={`text-compact rounded-sm transition-colors ${
  p.mode === m
- ? "bg-zinc-700 text-zinc-100"
- : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
  }`}
           >
             {m === "existing" ? "Existing bot" : "New bot"}
@@ -1098,7 +1093,7 @@ function OnboardForm(props: {
             id="onb-bot"
             value={p.existingBotId}
             onChange={(e) => p.setExistingBotId(e.target.value)}
-            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {p.bots.length === 0 && <option value="">No manageable bots</option>}
             {p.bots.map((b) => (
@@ -1133,7 +1128,7 @@ function OnboardForm(props: {
       <AgentUpdates />
 
       {p.onboardingError && (
-        <div className="rounded-sm bg-rose-950/35 p-3 text-xs text-rose-200">
+        <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-rose-200">
           <p className="font-medium">Setup needs attention</p>
           <p className="mt-1 break-words text-rose-200/80">{p.onboardingError}</p>
           <p className="mt-1 text-rose-200/70">
@@ -1144,7 +1139,7 @@ function OnboardForm(props: {
 
       <div>
         <Button
-          size="sm"
+          controlSize="compact"
           disabled={
             p.onboarding || (p.mode === "existing" ? !p.existingBotId : !p.newUsername.trim())
           }
@@ -1157,7 +1152,7 @@ function OnboardForm(props: {
       <div>
         <UiButton variant="plain"
           type="button"
-          className="text-xs text-zinc-500 hover:text-zinc-300"
+          className="text-compact text-zinc-500 hover:text-zinc-300"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml
@@ -1183,7 +1178,7 @@ function OnboardForm(props: {
             <div>
               <Button
                 variant="secondary"
-                size="sm"
+                controlSize="compact"
                 disabled={!p.newName.trim() || !p.newConfig.trim() || p.busy}
                 onClick={p.startFromToml}
               >

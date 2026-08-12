@@ -53,7 +53,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 - 字体资产只使用 Adobe 官方开源发布并保留 SIL OFL 1.1 许可；缺少脚本字形时使用平台正确的
   本地化 fallback，不能显示 tofu、错误日文字形或混合基线。
 - 代码、路径、命令、ID 和 tracing value 可使用 monospace；按钮、warning 标题仍使用 utility。
-- 单个页面最多出现三种可见字号层级；不要通过局部任意 `text-[Npx]` 制造第四、第五级。
+- 字号只有四档：`minimal 10px`、`compact 12px`、`regular 14px`、`comfortable 16px`。
+  所有产品页面、网站介绍、密集面板、代码、Diff、图表和空状态一律从四档选择，不允许例外。
+- 字体角色与字号档位正交；标题可使用 display、字重、字距和留白建立层级，但不能创建第五种字号。
+- 禁止局部 `text-[Npx]`、Tailwind 默认 `text-xs/sm/base/lg/xl/...` 和裸 `fontSize` 数值。
 
 ## 4. 两个正交的三级体系
 
@@ -79,9 +82,31 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 
 - PresentationLevel 控制“显示多少”，ControlSize 控制“占多高”，两者不得混为一档。
 - 页面或容器设置继承默认值；单个组件仅在确有语义差异时显式覆盖。
+- 同级文字控件禁止按内容长度决定宽度：默认使用共享标准槽位，需要占满容器时显式使用 fill；
+  业务组件不能通过局部 `width` 制造新槽位。
+- Button、Input、Select、Item 等共享 primitive 的水平 padding 由 primitive 固定，业务调用点禁止
+  使用 `px/pl/pr` 覆盖。布局差异进入共享 variant 或父容器，不进入单个调用点。
 - 响应式规则只能选择未显式设置时的环境默认值，不能覆盖业务显式设置。
 - 触控命中区域 Web/iOS 至少 44px/pt，Android 至少 48dp；视觉 glyph 可以更小。
 - 页面 header、画布、图片和纯图标 glyph 不机械套用 ControlSize，但其中的交互控件必须套用。
+
+### 4.3 内容尺寸：ContentSize
+
+`ContentSize = small | regular | large`，默认 `regular`，只控制非容器内容，不创建第四档。
+
+| 档位 | Avatar | 语义图标 | Presence | Identity rail |
+|---|---:|---:|---:|---:|
+| `small` | 20px | 14px | 6px | 64px |
+| `regular` | 28px | 16px | 8px | 96px |
+| `large` | 36px | 20px | 10px | 128px |
+
+- Checkbox glyph 固定 16px，整体 label/hit row 仍继承 ControlSize。
+- Unread、Progress 使用同一档 ContentSize 选择视觉直径，但不得削弱关键状态。
+- Avatar、Presence、语义图标禁止在业务调用点用 `w/h` 覆盖；更换档位而不是制造新尺寸。
+- Avatar 纵向身份列的宽度必须随 ContentSize 使用 64/96/128px，不允许业务页面写局部宽度。
+- FileTree、Diff 行使用 ControlSize；缩进、gutter、Canvas 节点和 Workbench 面板几何使用专用布局 token。
+- 拖拽柄使用共享视觉 token；其可交互命中区域由所属面板保证。
+- Editor/Composer textarea、隐藏 file input 与响应式浮层宽度不是内容尺寸，不强套 ContentSize。
 
 ## 5. Item 与 ItemList
 
@@ -145,19 +170,28 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 
 ## 8. 消息、Discussion 与 Details
 
-- 消息正文使用 reading 正文字号，作者、BOT、时间、trace、状态和操作使用 utility。
+- 消息正文使用 reading 正文字号，作者、trace、状态和操作使用 utility。
+- Chat、Discussion 与 Reply 使用同一套 regular 身份区：28px Avatar、96px identity rail，
+  只显示头像和名称，不显示时间或 BOT 标识。
 - Message、Discussion、Reply 的悬浮动作必须使用 ControlSize；桌面可 compact，触屏命中区域仍
   不小于 44px，不能出现难以点击的任意小按钮。
 - 消息下方 details/tracing 默认降噪：优先摘要、折叠或按需展开，使用 utility/monospace，视觉
   层级低于正文。错误、审批和失败原因仍必须直接可见。
 - details 不能使用霓虹 glow，也不能靠高饱和边框抢占消息正文注意力。
 - Composer 的输入面、toolbar、附件、发送与上下文控件共享 regular 高度和统一 4px shape；多行
-  textarea 行为可以 specialized，但不能自创另一套控件高度。
+  textarea 行为可以 specialized，但不能自创另一套控件高度。Session 与 model 这类带文字的
+  toolbar 控件必须使用相同宽度槽位，长标签在槽位内截断，不能随内容长度改变按钮尺寸。
+- Composer 的已添加 Context item 与 Add context 入口必须共享 regular 外框高度；Context item
+  内的 remove/jump 使用 compact 图标动作，禁止在 regular item 外再叠加 padding 形成第四种高度。
 
 ## 9. 页面与平台边界
 
 - 网站/政策/帮助页：display 大标题、窄 reading 正文栏、清晰章节节奏；不用带框营销卡片墙。
 - 产品工作区：导航和列表依靠选中 fill、左侧标记、留白或方向性 hairline，不靠每项四周边框。
+- Channel、DM 与其他 NavigationItem 的选中状态统一使用清晰的中性填充高亮和高对比文字；
+  无边框场景不能移除唯一可见的选中提示，Web 同时暴露 `aria-current="page"`。
+- Sidebar 中 Channels、Voice Channels、Private、Direct Messages 等分组名称是静态文字分隔符，
+  不作为展开按钮，也不显示 disclosure 箭头；创建动作保持为标题右侧独立的可访问按钮。
 - 弹层/表单：保留平台原生行为；resting 无框，focus、error、disabled、loading 必须明确可见。
 - 移动端：使用系统 Navigation、Sheet、Menu、Dynamic Type 和返回手势，不把 Web 侧栏压缩成小网页。
 - Android 未支持的产品能力只在共享契约登记 `unavailable`，不创建假占位页面。

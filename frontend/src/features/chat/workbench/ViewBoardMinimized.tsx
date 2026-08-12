@@ -156,7 +156,7 @@ function ApprovalsGlance({
           align="start"
           className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-zinc-800 bg-zinc-950 p-2 shadow-xl"
         >
-          <div className="px-1.5 pb-1.5 text-[11px] font-medium text-zinc-400">
+          <div className="px-1.5 pb-1.5 text-compact font-medium text-zinc-400">
             Pending approvals
           </div>
           <ul className="space-y-2">
@@ -167,10 +167,10 @@ function ApprovalsGlance({
                   key={m.msg_id}
                   className="rounded-sm  border-zinc-800/80 bg-zinc-900/60 p-2"
                 >
-                  <UiButton variant="plain"
+                  <UiButton controlWidth="fill" variant="plain"
                     type="button"
                     onClick={() => jumpTo(m)}
-                    className="mb-1.5 block w-full truncate text-left text-[11px] text-zinc-300 hover:text-indigo-300"
+                    className="mb-1.5 block truncate text-left text-compact text-zinc-300 hover:text-indigo-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
@@ -186,7 +186,7 @@ function ApprovalsGlance({
                     <UiButton variant="plain"
                       type="button"
                       onClick={() => jumpTo(m)}
-                      className="mt-1 text-[10px] text-zinc-500 hover:text-zinc-300"
+                      className="mt-1 text-minimal text-zinc-500 hover:text-zinc-300"
                     >
                       Open in chat
                     </UiButton>
@@ -195,13 +195,13 @@ function ApprovalsGlance({
               );
             })}
           </ul>
-          <UiButton variant="plain"
+          <UiButton controlWidth="fill" variant="plain"
             type="button"
             onClick={() => {
               setOpen(false);
               onExpandAudit();
             }}
-            controlSize="regular" className="mt-2 w-full rounded-sm px-2 text-left text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            controlSize="regular" className="mt-2 rounded-sm text-left text-compact text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           >
             Open full Audit board…
           </UiButton>

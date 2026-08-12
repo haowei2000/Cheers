@@ -135,7 +135,7 @@ function BotInlineSettings({
     }
   }
 
-  const selBase = "rounded-sm border px-1 py-0.5 text-[11px] outline-none";
+  const selBase = "rounded-sm border px-1 py-0.5 text-compact outline-none";
   const selOn = `${selBase} bg-zinc-800 border-zinc-600 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
   const selOff = `${selBase} bg-zinc-900/30 border-zinc-800 text-zinc-400 cursor-not-allowed appearance-none`;
@@ -148,7 +148,7 @@ function BotInlineSettings({
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-zinc-800/60 px-2 py-1">
       <span className="inline-flex items-center gap-1">
         <SlidersHorizontal className="w-3 h-3 text-zinc-500" />
-        <span className="text-[11px] font-medium text-zinc-300">@{bot.name}</span>
+        <span className="text-compact font-medium text-zinc-300">@{bot.name}</span>
       </span>
 
       {hasMode && (
@@ -156,7 +156,7 @@ function BotInlineSettings({
           className="inline-flex items-center gap-1"
           title={controls.can_set_mode ? "Session mode" : "Session mode — read-only (no permission)"}
         >
-          <span className="text-[10px] text-zinc-400">mode</span>
+          <span className="text-minimal text-zinc-400">mode</span>
           {!controls.can_set_mode && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
           <UiSelect
             value={mode}
@@ -194,7 +194,7 @@ function BotInlineSettings({
             className="inline-flex items-center gap-1"
             title={canCfg ? opt.name : `${opt.name} — read-only (no permission)`}
           >
-            <span className="text-[10px] text-zinc-400">{opt.name}</span>
+            <span className="text-minimal text-zinc-400">{opt.name}</span>
             {!controls.can_set_config_option && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
             <UiSelect
               value={cur}

@@ -24,10 +24,10 @@ export function ReplyComposerBanner({
           <Reply className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium text-indigo-300">
+          <p className="text-compact font-medium text-indigo-300">
             Replying to {preview.sender}
           </p>
-          <p className="truncate text-xs text-zinc-400">{preview.excerpt}</p>
+          <p className="truncate text-compact text-zinc-400">{preview.excerpt}</p>
         </div>
         <UiButton variant="plain"
           type="button"

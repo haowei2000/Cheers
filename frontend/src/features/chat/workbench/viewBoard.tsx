@@ -169,12 +169,12 @@ export function ViewBoardShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col h-full text-sm">
+    <div className="flex flex-col h-full text-regular">
       <div className="mx-3 mt-1 flex h-8 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
         {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
-        <span className="text-xs text-zinc-300">{title}</span>
+        <span className="text-compact text-zinc-300">{title}</span>
         <div className="flex-1" />
-        {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
+        {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
         {onRefresh && (
           <UiButton variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
@@ -208,12 +208,12 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
     useBoardTickRefetch(ctx, def.id, refetch);
 
     return (
-      <div className="flex flex-col h-full text-sm">
+      <div className="flex flex-col h-full text-regular">
         <div className="mx-3 mt-1 flex h-8 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
           {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
-          <span className="text-xs text-zinc-300">{def.title}</span>
+          <span className="text-compact text-zinc-300">{def.title}</span>
           <div className="flex-1" />
-          {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
+          {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
           <UiButton variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
@@ -223,10 +223,10 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
 
         <div className="flex-1 overflow-auto">
           {error ? (
-            <div className="px-3 py-3 text-xs text-red-400">{error}</div>
+            <div className="px-3 py-3 text-compact text-red-400">{error}</div>
           ) : data == null ? (
             // First load (no data yet) — neutral hint, not the board's "empty" state.
-            <div className="px-3 py-6 text-xs text-zinc-400">Loading…</div>
+            <div className="px-3 py-6 text-compact text-zinc-400">Loading…</div>
           ) : (
             def.render(data, ctx, refetch)
           )}

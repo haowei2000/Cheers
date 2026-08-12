@@ -25,6 +25,7 @@ import {
   setVoiceTranscription,
 } from "@/api/channels";
 import { Button } from "@/components/ui/button";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import type { VoiceInterimSegment, VoiceTranscriptSegment } from "@/types";
 
 interface Props {
@@ -357,22 +358,20 @@ export function VoiceRoomPanel({
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
       <div className="flex min-h-[64px] items-center gap-3 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-300">
-            <span
-              data-design-system-exempt="presence"
-              className={`h-2 w-2 rounded-full ${
-                connected ? "bg-emerald-400" : "bg-zinc-600"
-              }`}
+          <div className="flex shrink-0 items-center gap-1.5 text-compact font-medium text-zinc-300">
+            <PresenceDot
+              contentSize="regular"
+              className={connected ? "bg-emerald-400" : "bg-zinc-600"}
             />
             <span className="hidden sm:inline">
               {connected ? "LIVE" : "VOICE"}
             </span>
           </div>
           <div className="min-w-0 border-l border-zinc-800 pl-3">
-            <p className="truncate text-sm font-medium text-zinc-100">
+            <p className="truncate text-regular font-medium text-zinc-100">
               {connected ? "Meeting in progress" : "Voice meeting ready"}
             </p>
-            <p className="truncate text-xs text-zinc-500">
+            <p className="truncate text-compact text-zinc-500">
               {reconnecting
                 ? "Reconnecting…"
                 : connected
@@ -388,7 +387,7 @@ export function VoiceRoomPanel({
                 return (
                   <div
                     key={name}
-                    className={`flex max-w-32 items-center gap-1.5 rounded-sm  px-2 py-1 text-xs transition-colors ${
+                    className={`flex max-w-32 items-center gap-1.5 rounded-sm  px-2 py-1 text-compact transition-colors ${
                       speaking
                         ? "border-indigo-500/60 bg-indigo-500/10 text-indigo-200"
                         : "border-transparent bg-zinc-800/70 text-zinc-400"
@@ -408,7 +407,7 @@ export function VoiceRoomPanel({
         </div>
 
         {!connected ? (
-          <Button disabled={joining} onClick={() => void join()} controlSize="comfortable" className=" shrink-0">
+          <Button disabled={joining} onClick={() => void join()} controlSize="comfortable" className="shrink-0">
             {joining ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -431,10 +430,9 @@ export function VoiceRoomPanel({
               }
               aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
               aria-pressed={micEnabled}
-              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-1.5 rounded-sm px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
+              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-1.5 rounded-sm text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
  micEnabled
- ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
- : "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+ ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700": "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
  }`}
             >
               {micEnabled ? (
@@ -449,7 +447,7 @@ export function VoiceRoomPanel({
               onClick={() => void disconnect()}
               title="Leave voice"
               aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-1.5 rounded-sm  border-rose-500/40 px-3 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-1.5 rounded-sm border-rose-500/40 text-compact font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>
@@ -458,7 +456,7 @@ export function VoiceRoomPanel({
         )}
       </div>
 
-      <div className="flex min-h-8 items-center gap-2 border-t border-zinc-800/80 px-3 py-1.5 text-xs">
+      <div className="flex min-h-8 items-center gap-2 border-t border-zinc-800/80 px-3 py-1.5 text-compact">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-zinc-500">
           <Captions
             className={`h-3.5 w-3.5 shrink-0 ${
@@ -492,7 +490,7 @@ export function VoiceRoomPanel({
             onClick={() => void toggleTranscription()}
             title={!connected ? "Join the room first" : undefined}
             aria-pressed={transcriptionStatus === "active"}
-            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm px-2.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {changingTranscription ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -505,7 +503,7 @@ export function VoiceRoomPanel({
       </div>
 
       {consentRequired && connected && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-compact">
           <p className="min-w-0 flex-1 text-zinc-300">
             Live captions send final spoken text to this channel; audio is not recorded.
           </p>
@@ -513,7 +511,7 @@ export function VoiceRoomPanel({
             type="button"
             disabled={consenting}
             onClick={() => void grantConsent()}
-            controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 px-3 font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-60"
+            controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-60"
           >
             {consenting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
             Accept &amp; speak
@@ -522,14 +520,14 @@ export function VoiceRoomPanel({
             type="button"
             disabled={consenting}
             onClick={() => setConsentRequired(false)}
-            controlSize="comfortable" className="rounded-sm px-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+            controlSize="comfortable" className="rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
           >
             Listen only
           </UiButton>
         </div>
       )}
       {!canPublish && connected && !consentRequired && (
-        <p className="border-t border-zinc-800/80 px-3 py-1.5 text-xs text-zinc-500">
+        <p className="border-t border-zinc-800/80 px-3 py-1.5 text-compact text-zinc-500">
           You have listen-only access in this channel.
         </p>
       )}

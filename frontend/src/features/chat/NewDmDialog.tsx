@@ -86,7 +86,7 @@ export function NewDmDialog({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
-            controlSize="regular" className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
+            controlSize="regular" className="flex-1 bg-transparent text-regular text-zinc-200 outline-none"
           />
           {q && (
             <UiButton variant="plain"
@@ -114,7 +114,7 @@ export function NewDmDialog({
             />
           ))}
           {bots.length > 0 && (
-            <div className="px-2 pt-2 text-[10px] uppercase tracking-wide text-zinc-400">Bots</div>
+            <div className="px-2 pt-2 text-minimal uppercase tracking-wide text-zinc-400">Bots</div>
           )}
           {bots.map((b) => (
             <NavigationItem
@@ -123,7 +123,7 @@ export function NewDmDialog({
               onClick={() => void open({ target_bot_id: b.bot_id }, b.display_name || b.username)}
               title={b.display_name || b.username}
               leading={<Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
-              status={<span className="text-[10px] text-indigo-300">BOT</span>}
+              status={<span className="text-minimal text-indigo-300">BOT</span>}
               className="border-0"
             />
           ))}

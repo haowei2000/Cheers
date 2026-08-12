@@ -1,4 +1,6 @@
 import type { ReactNode, SVGProps } from "react";
+import { cn } from "@/lib/cn";
+import { contentIconClasses, type ContentSize } from "@/components/ui/content-size";
 
 export const editorialIconNames = [
   "correspondence",
@@ -104,10 +106,11 @@ const iconArtwork: Record<EditorialIconName, ReactNode> = {
 export interface EditorialIconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   name: EditorialIconName;
   title?: string;
+  contentSize?: ContentSize;
 }
 
 /** Cheers product-semantic icon. Utility actions should keep using platform-native icons. */
-export function EditorialIcon({ name, title, ...props }: EditorialIconProps) {
+export function EditorialIcon({ name, title, contentSize = "regular", className, ...props }: EditorialIconProps) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -118,6 +121,8 @@ export function EditorialIcon({ name, title, ...props }: EditorialIconProps) {
       strokeLinejoin="round"
       aria-hidden={title ? undefined : true}
       role={title ? "img" : undefined}
+      data-content-size={contentSize}
+      className={cn(contentIconClasses[contentSize], className)}
       {...props}
     >
       {title ? <title>{title}</title> : null}

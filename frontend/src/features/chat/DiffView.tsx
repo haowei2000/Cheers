@@ -185,9 +185,9 @@ function FileSectionView({ section }: { section: FileSection }) {
 
   return (
     <div className="border-b border-zinc-900 last:border-b-0">
-      <UiButton variant="plain"
+      <UiButton controlWidth="fill" variant="plain"
         onClick={() => setOpen((o) => !o)}
-        controlSize="regular" className="sticky top-[22px] z-[1] flex w-full items-center gap-1.5 border-y border-zinc-800/70 bg-zinc-900/95 px-2 text-left text-[11px] backdrop-blur-sm hover:bg-zinc-800/90"
+        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-1.5 border-y border-zinc-800/70 bg-zinc-900/95 text-left text-compact backdrop-blur-sm hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
@@ -204,6 +204,7 @@ function FileSectionView({ section }: { section: FileSection }) {
       </UiButton>
       {lines.map((l, i) => (
         <DiffLineItem key={i}
+          controlSize="compact"
           tone={l.kind === "add" ? "add" : l.kind === "del" ? "remove" : "context"}
           marker={l.kind === "meta" || l.kind === "hunk" ? (
             <span className="sticky left-0 inline-block w-[5.375rem] shrink-0 select-none bg-zinc-950/95" />
@@ -214,9 +215,9 @@ function FileSectionView({ section }: { section: FileSection }) {
         />
       ))}
       {open && hidden > 0 && (
-        <UiButton variant="plain"
+        <UiButton controlWidth="fill" variant="plain"
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          controlSize="regular" className="block w-full px-2 text-left text-[11px] italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          controlSize="regular" className="block text-left text-compact italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
         >
           … show more ({hidden} hidden lines)
         </UiButton>
@@ -236,7 +237,7 @@ export function DiffView({
 
   if (!diff.trim()) {
     return (
-      <div className="px-3 py-4 text-[11px] text-zinc-400">No changes.</div>
+      <div className="px-3 py-4 text-compact text-zinc-400">No changes.</div>
     );
   }
 
@@ -245,9 +246,9 @@ export function DiffView({
 
   return (
     <div className={`overflow-auto ${className ?? ""}`}>
-      <div className="w-max min-w-full font-mono text-[13px] leading-[1.55]">
+      <div className="w-max min-w-full font-mono text-regular leading-[1.55]">
         {/* Diffstat summary — sticky so totals stay visible while scrolling. */}
-        <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] tabular-nums backdrop-blur-sm">
+        <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1 text-compact tabular-nums backdrop-blur-sm">
           <span className="text-zinc-400">
             {sections.length} file{sections.length === 1 ? "" : "s"}
           </span>

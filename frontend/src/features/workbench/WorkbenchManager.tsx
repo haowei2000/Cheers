@@ -157,7 +157,7 @@ export function WorkbenchManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Blocks className="w-3.5 h-3.5" />
         Workbench extensions
       </h2>
@@ -217,7 +217,7 @@ export function WorkbenchManager() {
                 status={p.origin === "system" ? (
                   <span
                     title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
-                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                    className="text-minimal px-1.5 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
                   >
                     Official
                   </span>

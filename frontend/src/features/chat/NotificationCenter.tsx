@@ -194,7 +194,7 @@ export function ActivityCenter() {
         {badge > 0 && (
           <span
             data-design-system-exempt="unread"
-            className={`absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
+            className={`absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full text-white text-minimal font-bold flex items-center justify-center ${
               approvalCount > 0 ? "bg-amber-600" : "bg-indigo-600"
             }`}
           >
@@ -225,7 +225,7 @@ export function ActivityCenter() {
               >
                   {approvals.map((a) => (
                     <div role="listitem" key={a.message_id} className="space-y-1 py-1">
-                      <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
+                      <p className="text-minimal uppercase tracking-wide text-zinc-400 mb-1">
                         {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
                       </p>
                       <PermissionCard
@@ -250,7 +250,7 @@ export function ActivityCenter() {
                       title={`${kindLabel(n)} · ${label(n)}`}
                       subtitle={`${n.role ? `Role ${n.role}` : "Needs your response"}${n.bot_name ? ` · ${n.bot_name}` : ""}${n.actor_name ? ` · from ${n.actor_name}` : ""}${n.requested_cwd ? ` · ${n.requested_cwd}` : ""}`}
                       actions={<><Button
-                        size="sm"
+                        controlSize="compact"
                         loading={busy === key}
                         onClick={() => void act(n, true)}
                       >
@@ -258,7 +258,7 @@ export function ActivityCenter() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        controlSize="compact"
                         disabled={busy === key}
                         onClick={() => void act(n, false)}
                       >

@@ -69,10 +69,9 @@ export function AgentPicker({
                     : `${a.label} can't be connected yet`
               }
               onClick={() => a.installed && onPick(a.key, a.path)}
-              controlSize="regular" className={`flex flex-col items-center gap-1 w-20 rounded-sm px-2 transition-all ${
+              controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
  selected
- ? "ring-2 ring-indigo-500 bg-zinc-800"
- : "bg-zinc-800/60 hover:bg-zinc-800"
+ ? "ring-2 ring-indigo-500 bg-zinc-800": "bg-zinc-800/60 hover:bg-zinc-800"
  } ${a.installed ? "" : "opacity-50"}`}
             >
               <span
@@ -86,10 +85,10 @@ export function AgentPicker({
                   <Terminal className="w-4 h-4" />
                 )}
               </span>
-              <span className="text-[11px] text-zinc-300 truncate w-full text-center">
+              <span className="text-compact text-zinc-300 truncate w-full text-center">
                 {a.label}
               </span>
-              <span className="text-[9px] text-zinc-500">
+              <span className="text-minimal text-zinc-500">
                 {a.installed ? "installed" : a.installable ? "not installed" : "unavailable"}
               </span>
             </UiButton>
@@ -116,17 +115,16 @@ export function AgentPicker({
         type="button"
         title="Use a custom command"
         onClick={() => onPick("custom", null)}
-        controlSize="regular" className={`flex flex-col items-center gap-1 w-20 rounded-sm px-2 transition-all ${
- value === "custom"
- ? "ring-2 ring-indigo-500 bg-zinc-800"
+        controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
+ value === "custom"? "ring-2 ring-indigo-500 bg-zinc-800"
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
         <span data-design-system-exempt="identity" className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 flex items-center justify-center">
           <Wrench className="w-4 h-4" />
         </span>
-        <span className="text-[11px] text-zinc-300">Custom</span>
-        <span className="text-[9px] text-zinc-500">command</span>
+        <span className="text-compact text-zinc-300">Custom</span>
+        <span className="text-minimal text-zinc-500">command</span>
       </UiButton>
       </div>
     </div>

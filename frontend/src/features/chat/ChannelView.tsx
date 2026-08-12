@@ -27,6 +27,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { PresenceDot } from "@/components/ui/presence-dot";
 import { listMessages, sendMessage } from "@/api/messages";
 import {
   useContextPickStore,
@@ -1711,7 +1712,7 @@ export function ChannelView({
 
   if (!channel) {
     return (
-      <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-sm flex-col gap-3">
+      <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-regular flex-col gap-3">
         {sidebarToggle && (
           <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
         )}
@@ -1752,19 +1753,19 @@ export function ChannelView({
             </UiButton>
           )}
           <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
-          <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
+          <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
             {channel.name}
           </span>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <Hash className="w-10 h-10 text-zinc-700" />
-          <div className="text-zinc-100 font-semibold text-lg">
+          <div className="text-zinc-100 font-semibold text-comfortable">
             #{channel.name}
           </div>
           {channel.purpose && (
-            <p className="text-sm text-zinc-400 max-w-md">{channel.purpose}</p>
+            <p className="text-regular text-zinc-400 max-w-md">{channel.purpose}</p>
           )}
-          <p className="text-sm text-zinc-400">
+          <p className="text-regular text-zinc-400">
             You&apos;re not a member of this channel yet. Join to read and send
             messages.
           </p>
@@ -1772,7 +1773,7 @@ export function ChannelView({
             type="button"
             onClick={() => void handleJoin()}
             disabled={joining}
-            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 px-4 text-sm font-medium text-white"
+            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-regular font-medium text-white"
           >
             {joining && <Loader2 className="w-4 h-4 animate-spin" />}
             Join channel
@@ -1821,18 +1822,18 @@ export function ChannelView({
           ) : (
             <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
           )}
-          <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
+          <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
             {channelTitle}
           </span>
           {channel.purpose && (
             <div className="hidden md:flex items-center gap-3 pl-1 min-w-0">
-              <span className="text-xs text-zinc-400 truncate">
+              <span className="text-compact text-zinc-400 truncate">
                 {channel.purpose}
               </span>
             </div>
           )}
           <div className="flex-1" />
-          <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
+          <div className="hidden md:flex items-center gap-3 text-compact text-zinc-400">
             {/* Members: was a dead-looking span — now a real button opening the roster. */}
             <div className="relative" ref={membersRootRef}>
               <UiButton variant="plain"
@@ -1840,15 +1841,15 @@ export function ChannelView({
                 onClick={() => setMembersOpen((v) => !v)}
                 title="Channel members"
                 aria-expanded={membersOpen}
-                controlSize="regular" className={`flex items-center gap-1.5 rounded-sm px-1.5 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
- membersOpen ? "text-zinc-100 bg-zinc-800" : ""
+                controlSize="regular" className={`flex items-center gap-1.5 rounded-sm hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+ membersOpen ? "text-zinc-100 bg-zinc-800": ""
  }`}
               >
                 <Users className="w-3.5 h-3.5" />
                 {mentionables.length || "Members"}
                 {onlineCount > 0 && (
                   <span className="flex items-center gap-1.5 ml-1">
-                    <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <PresenceDot contentSize="small" className="bg-emerald-500" />
                     {onlineCount} online
                   </span>
                 )}
@@ -1873,10 +1874,9 @@ export function ChannelView({
               });
             }}
             title="Channel files"
-            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  filesOpen
- ? "text-zinc-100 bg-zinc-800"
- : "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
           >
             <Paperclip className="w-4 h-4" />
@@ -1890,10 +1890,9 @@ export function ChannelView({
               });
             }}
             title="Remote workspace"
-            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wsOpen
- ? "text-zinc-100 bg-zinc-800"
- : "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
           >
             <FolderTree className="w-4 h-4" />
@@ -1906,10 +1905,9 @@ export function ChannelView({
               })
             }
             title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  vbOpen
- ? "text-zinc-100 bg-zinc-800"
- : "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -1923,10 +1921,9 @@ export function ChannelView({
               });
             }}
             title="Workbench — file workspace"
-            square controlSize="compact" className={`flex items-center justify-center max-md: rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+            square controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wbOpen
- ? "text-zinc-100 bg-zinc-800"
- : "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
  }`}
           >
             <PanelRight className="w-4 h-4" />
@@ -1936,7 +1933,7 @@ export function ChannelView({
               <UiButton variant="plain"
                 onClick={() => setSettingsOpen(true)}
                 title="Channel settings"
-                square controlSize="compact" className="ml-1.5 flex items-center justify-center max-md: max-md: rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+                square controlSize="compact" className="ml-1.5 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
               >
                 <Settings className="w-4 h-4" />
               </UiButton>
@@ -2082,7 +2079,7 @@ export function ChannelView({
 
               {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
               {selectMode && (
-                <div className="mx-4 mt-2 flex items-center gap-2 rounded-sm bg-zinc-900/80 px-3 py-2 text-xs">
+                <div className="mx-4 mt-2 flex items-center gap-2 rounded-sm bg-zinc-900/80 px-3 py-2 text-compact">
                   <span className="text-zinc-300 font-medium">
                     {selectedIds.size} selected
                   </span>
@@ -2094,7 +2091,7 @@ export function ChannelView({
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Copy
@@ -2108,7 +2105,7 @@ export function ChannelView({
                         count: selectedMessages.length,
                       })
                     }
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
                   >
                     <Forward className="w-3.5 h-3.5" />
                     Forward
@@ -2116,7 +2113,7 @@ export function ChannelView({
                   <UiButton variant="plain"
                     type="button"
                     onClick={clearSelection}
-                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm px-2.5 text-zinc-400 hover:text-zinc-200"
+                    controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm text-zinc-400 hover:text-zinc-200"
                   >
                     <X className="w-3.5 h-3.5" />
                     Cancel
