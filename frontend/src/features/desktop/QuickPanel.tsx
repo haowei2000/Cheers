@@ -89,7 +89,7 @@ export function QuickPanel() {
       {/* Frameless window: this strip is the drag handle. */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 px-4 h-10 shrink-0 border-b border-zinc-800 select-none"
+        className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-zinc-800 px-4"
       >
         <Zap className="w-4 h-4 text-indigo-400" />
         <span className="text-compact font-medium text-zinc-300">Quick send</span>

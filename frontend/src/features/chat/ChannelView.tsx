@@ -1716,7 +1716,7 @@ export function ChannelView({
         {sidebarToggle && (
           <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
         )}
-        <Hash className="w-10 h-10 text-zinc-700" />
+        <Hash className="h-5 w-5 text-zinc-700" />
         <span>Select a channel to start chatting</span>
       </div>
     );
@@ -1740,7 +1740,7 @@ export function ChannelView({
     };
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+        <div className="mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-zinc-950/80 px-4 backdrop-blur-sm max-md:gap-1 max-md:px-2">
           {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
             <UiButton variant="plain"
@@ -1758,7 +1758,7 @@ export function ChannelView({
           </span>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <Hash className="w-10 h-10 text-zinc-700" />
+          <Hash className="h-5 w-5 text-zinc-700" />
           <div className="text-zinc-100 font-semibold text-comfortable">
             #{channel.name}
           </div>
@@ -1805,7 +1805,7 @@ export function ChannelView({
         {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
-        <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+        <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-zinc-950/80 px-4 backdrop-blur-sm max-md:gap-1 max-md:px-2">
           {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
             <UiButton variant="plain"

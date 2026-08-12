@@ -74,7 +74,7 @@ export function MembersPopover({
                   }}
                   title={name}
                   leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="regular" online={m.is_online ?? undefined} />}
-                  status={m.member_type === "bot" ? <Bot className="h-3 w-3 text-indigo-400" /> : undefined}
+                  status={m.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-indigo-400" /> : undefined}
                   trailing={m.role && m.role !== "member" ? <span className="text-minimal capitalize text-zinc-400">{m.role}</span> : undefined}
                 />
               );

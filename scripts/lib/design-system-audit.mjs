@@ -96,6 +96,10 @@ export function auditSources(files, ts, policy) {
       sharedHorizontalPaddingOverride: 0,
       sharedControlWidthOverride: 0,
       sharedContentSizeOverride: 0,
+      sharedPaddingOverride: 0,
+      nonStandardRowHeight: 0,
+      nonStandardIdentitySize: 0,
+      nonStandardIconSize: 0,
       nonStandardTypographySize: 0,
       legacyControlSizeProp: 0,
     },
@@ -169,6 +173,11 @@ export function auditSources(files, ts, policy) {
             result.violations.sharedHorizontalPaddingOverride += horizontalPaddingTokens.length;
             result.findings.push({ file, line, rule: "sharedHorizontalPaddingOverride", token: horizontalPaddingTokens.join(" ") });
           }
+          const paddingTokens = tokens.filter((token) => /^p-(?:[0-9.]+|\[[^\]]+\])$/.test(utilityBase(token)));
+          if (!primitive && SHARED_CONTROLS.has(tag) && paddingTokens.length) {
+            result.violations.sharedPaddingOverride += paddingTokens.length;
+            result.findings.push({ file, line, rule: "sharedPaddingOverride", token: paddingTokens.join(" ") });
+          }
           const widthTokens = tokens.filter((token) => /^w-(?:[0-9.]+|full|fit|min|max|\[[^\]]+\])$/.test(utilityBase(token)));
           if (!primitive && SHARED_CONTROLS.has(tag) && widthTokens.length && !exempt) {
             result.violations.sharedControlWidthOverride += widthTokens.length;
@@ -178,6 +187,26 @@ export function auditSources(files, ts, policy) {
           if (!primitive && SHARED_CONTENT.has(tag) && contentDimensionTokens.length && !exempt) {
             result.violations.sharedContentSizeOverride += contentDimensionTokens.length;
             result.findings.push({ file, line, rule: "sharedContentSizeOverride", token: contentDimensionTokens.join(" ") });
+          }
+
+          const rowHeightTokens = tokens.filter((token) => /^(?:h|min-h)-(?:8|10|12|14)$/.test(utilityBase(token)));
+          if (["div", "header"].includes(tag) && tokens.includes("flex") && tokens.includes("items-center") && rowHeightTokens.length) {
+            result.violations.nonStandardRowHeight += rowHeightTokens.length;
+            result.findings.push({ file, line, rule: "nonStandardRowHeight", token: rowHeightTokens.join(" ") });
+          }
+
+          const dimensions = Object.fromEntries(tokens.map((token) => {
+            const match = utilityBase(token).match(/^(h|w)-(3|3\.5|4|5|6|8|10)$/);
+            return match ? [match[1], match[2]] : [];
+          }).filter((entry) => entry.length));
+          if (exemptReason === "identity" && dimensions.h && dimensions.h === dimensions.w && !["5", "7", "9"].includes(dimensions.h)) {
+            result.violations.nonStandardIdentitySize += 1;
+            result.findings.push({ file, line, rule: "nonStandardIdentitySize", token: `h-${dimensions.h} w-${dimensions.w}` });
+          }
+          const isComponent = /^[A-Z]/.test(tag);
+          if (isComponent && !SHARED_CONTROLS.has(tag) && !SHARED_CONTENT.has(tag) && dimensions.h && dimensions.h === dimensions.w && !["3.5", "4", "5"].includes(dimensions.h)) {
+            result.violations.nonStandardIconSize += 1;
+            result.findings.push({ file, line, rule: "nonStandardIconSize", token: `h-${dimensions.h} w-${dimensions.w}` });
           }
 
           const forbiddenTypographyTokens = tokens.filter((token) =>

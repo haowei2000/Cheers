@@ -43,6 +43,7 @@ import {
   type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
+import { NavigationItem } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
 
@@ -633,27 +634,19 @@ function ModeCard({
   disabled?: boolean;
 }) {
   return (
-    <UiButton variant="plain"
-      type="button"
+    <NavigationItem
       onClick={onClick}
       disabled={disabled}
-      className="flex items-start gap-3 rounded-sm bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:hover:bg-zinc-800/60"
-    >
-      <div className="w-9 h-9 rounded-sm bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+      controlSize="comfortable"
+      presentationLevel="medium"
+      className="border-b-0 bg-zinc-800/60 hover:bg-zinc-800"
+      leading={<div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
         {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-regular font-medium text-zinc-100 flex items-center gap-2">
-          {title}
-          {badge && (
-            <span className="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-minimal text-zinc-400">
-              {badge}
-            </span>
-          )}
-        </p>
-        <p className="text-compact text-zinc-400 mt-0.5">{desc}</p>
-      </div>
-    </UiButton>
+      </div>}
+      title={title}
+      subtitle={desc}
+      status={badge ? <span className="rounded-sm bg-zinc-900 px-1.5 py-0.5 text-minimal text-zinc-400">{badge}</span> : undefined}
+    />
   );
 }
 

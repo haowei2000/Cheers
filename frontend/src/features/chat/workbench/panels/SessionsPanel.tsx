@@ -200,7 +200,7 @@ function SessionCard({
           </span>
         ) : undefined}
         status={<span className="inline-flex shrink-0 items-center gap-1 text-zinc-400">
-          <CircleDot className={`w-3 h-3 ${statusColor(s.status)}`} />
+          <CircleDot className={`w-3.5 h-3.5 ${statusColor(s.status)}`} />
           {s.status}
         </span>}
         trailing={<span
@@ -236,7 +236,7 @@ function SessionCard({
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-minimal font-medium text-zinc-950">
-            <ArrowUp className="h-3 w-3" />
+            <ArrowUp className="h-3.5 w-3.5" />
             Make primary
           </span>
         </div>
@@ -629,7 +629,7 @@ function SessionsBody({
             onClick={() => setDialogOpen(true)}
             controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15 text-minimal text-indigo-200 hover:bg-indigo-600/30"
           >
-            <Plus className="w-3 h-3" />
+            <Plus className="w-3.5 h-3.5" />
             New session
           </UiButton>
         )}

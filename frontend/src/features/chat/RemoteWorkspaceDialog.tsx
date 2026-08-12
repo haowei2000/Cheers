@@ -1289,7 +1289,7 @@ export function RemoteWorkspaceDialog({
       {/* Git branch badge — quiet, only when the current dir resolves to a repo. */}
       {botId && git && (
         <div className="flex items-center gap-2 mb-2 text-compact text-zinc-400 flex-shrink-0">
-          <GitBranch className="w-3 h-3 text-zinc-500 shrink-0" />
+          <GitBranch className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
           <span
             className="text-zinc-300 font-mono truncate"
             title={git.branch ?? undefined}
@@ -1392,7 +1392,7 @@ export function RemoteWorkspaceDialog({
  : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
  }`}
                 >
-                  <History className="w-3 h-3" /> History
+                  <History className="w-3.5 h-3.5" /> History
                 </UiButton>
               </div>
             )}
@@ -1423,8 +1423,8 @@ export function RemoteWorkspaceDialog({
                     <GitCompare className="w-3.5 h-3.5" /> Staged
                   </UiButton>
                   <div className="flex-1" />
-                  {diffBusy && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" className="p-0.5 rounded-sm hover:bg-zinc-800">
+                  {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
+                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" square controlSize="compact" className="rounded-sm hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
@@ -1491,11 +1491,12 @@ export function RemoteWorkspaceDialog({
                   <span className="flex items-center gap-1 flex-1">
                     <History className="w-3.5 h-3.5" /> Commits
                   </span>
-                  {logBusy && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+                  {logBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
                   <UiButton variant="plain"
                     onClick={() => void loadLog()}
                     title="Refresh"
-                    className="p-0.5 rounded-sm hover:bg-zinc-800"
+                    square controlSize="compact"
+                    className="rounded-sm hover:bg-zinc-800"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1513,7 +1514,7 @@ export function RemoteWorkspaceDialog({
  }`}
                       >
                         <div className="flex items-center gap-1.5 text-compact">
-                          <GitCommit className="w-3 h-3 text-zinc-500 shrink-0" />
+                          <GitCommit className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                           <span className="font-mono text-minimal text-amber-400 shrink-0">
                             {c.hash.slice(0, 7)}
                           </span>
@@ -1554,7 +1555,8 @@ export function RemoteWorkspaceDialog({
                     onClick={() => parent !== null && loadDir(parent)}
                     disabled={!cwd}
                     title="Go up one level"
-                    className="p-0.5 rounded-sm hover:bg-zinc-800 disabled:opacity-30"
+                    square controlSize="compact"
+                    className="rounded-sm hover:bg-zinc-800 disabled:opacity-30"
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1563,7 +1565,8 @@ export function RemoteWorkspaceDialog({
                     <UiButton variant="plain"
                       onClick={() => openDiff(cwd, false)}
                       title="Diff this directory (working tree)"
-                      className="p-0.5 rounded-sm hover:bg-zinc-800"
+                      square controlSize="compact"
+                      className="rounded-sm hover:bg-zinc-800"
                     >
                       <GitCompare className="w-3.5 h-3.5" />
                     </UiButton>
@@ -1573,12 +1576,13 @@ export function RemoteWorkspaceDialog({
                       onClick={() => void createSessionAt(cwd)}
                       disabled={creatingSession}
                       title={`Start a new session rooted here (${joinAbs(treeRoot, cwd)})`}
-                      className="p-0.5 rounded-sm hover:bg-zinc-800 hover:text-emerald-300 disabled:opacity-40"
+                      square controlSize="compact"
+                      className="rounded-sm hover:bg-zinc-800 hover:text-emerald-300 disabled:opacity-40"
                     >
                       <FolderPlus className="w-3.5 h-3.5" />
                     </UiButton>
                   )}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" className="p-0.5 rounded-sm hover:bg-zinc-800">
+                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" square controlSize="compact" className="rounded-sm hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
@@ -1617,9 +1621,10 @@ export function RemoteWorkspaceDialog({
                                 }}
                                 disabled={creatingSession}
                                 title={`Start a new session rooted at ${ent.name}/`}
-                                className="flex items-center p-0.5 rounded-sm bg-zinc-800 text-zinc-400 hover:text-emerald-300 disabled:opacity-40"
+                                square controlSize="compact"
+                                className="flex items-center rounded-sm bg-zinc-800 text-zinc-400 hover:text-emerald-300 disabled:opacity-40"
                               >
-                                <FolderPlus className="w-3 h-3" />
+                                <FolderPlus className="w-3.5 h-3.5" />
                               </UiButton>
                             )}
                             {git && (
@@ -1629,9 +1634,10 @@ export function RemoteWorkspaceDialog({
                                   void openDiff(ent.path, false);
                                 }}
                                 title={`Diff ${ent.name}/ (working tree)`}
-                                className="flex items-center p-0.5 rounded-sm bg-zinc-800 text-zinc-400 hover:text-zinc-100"
+                                square controlSize="compact"
+                                className="flex items-center rounded-sm bg-zinc-800 text-zinc-400 hover:text-zinc-100"
                               >
-                                <GitCompare className="w-3 h-3" />
+                                <GitCompare className="w-3.5 h-3.5" />
                               </UiButton>
                             )}
                           </div>
@@ -1709,7 +1715,7 @@ export function RemoteWorkspaceDialog({
                     title="Close diff and return to the file view"
                     controlSize="regular" className="flex items-center gap-1 rounded-sm hover:bg-zinc-800 text-zinc-300"
                   >
-                    <X className="w-3 h-3" /> Close
+                    <X className="w-3.5 h-3.5" /> Close
                   </UiButton>
                 </div>
                 {/* Changed-file strip for a commit: jump between per-file diffs without
@@ -1870,7 +1876,7 @@ export function RemoteWorkspaceDialog({
                       title="Discard your edits and reload the latest from the server"
                       controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 disabled:opacity-40"
                     >
-                      <RefreshCw className="w-3 h-3" /> Reload
+                      <RefreshCw className="w-3.5 h-3.5" /> Reload
                     </UiButton>
                     <UiButton variant="plain"
                       onClick={() => {
@@ -1886,7 +1892,7 @@ export function RemoteWorkspaceDialog({
                       title="Overwrite the server version with your edits"
                       controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-amber-700 hover:bg-amber-600 text-zinc-100 disabled:opacity-40"
                     >
-                      <Save className="w-3 h-3" /> Force overwrite
+                      <Save className="w-3.5 h-3.5" /> Force overwrite
                     </UiButton>
                   </div>
                 )}

@@ -185,7 +185,7 @@ export function FloatingPanel({
     >
       <div
         {...drag.handleProps}
-        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
+        className="flex h-9 flex-shrink-0 select-none items-center gap-2 border-b border-zinc-800 px-3"
       >
         {titleEl}
         <div className="flex-1" />

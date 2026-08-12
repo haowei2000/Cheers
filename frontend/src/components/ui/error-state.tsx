@@ -37,7 +37,7 @@ export function ErrorState({
     >
       <Icon
         className={cn(
-          "w-8 h-8 mb-3",
+          "mb-3 h-5 w-5",
           tone === "error" ? "text-red-400" : "text-amber-400"
         )}
       />

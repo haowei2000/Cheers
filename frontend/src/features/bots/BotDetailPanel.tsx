@@ -173,7 +173,7 @@ export function BotDetailPanel({
         <div className="ml-auto flex flex-shrink-0 items-center gap-2.5">
           {bot.is_disabled && (
             <span className="inline-flex items-center gap-1 text-compact text-red-400">
-              <Ban className="w-3 h-3" />
+              <Ban className="w-3.5 h-3.5" />
               Disabled
             </span>
           )}
@@ -184,7 +184,7 @@ export function BotDetailPanel({
             )}
             title={bot.is_online ? "Connector attached" : "Connector not attached"}
           >
-            <CircleDot className="w-3 h-3" />
+            <CircleDot className="w-3.5 h-3.5" />
             {bot.is_online ? "online" : "offline"}
           </span>
         </div>
@@ -667,7 +667,7 @@ function BotStatusEditor({
                   setPromptOpen(true);
                 }}
               >
-                <Pencil className="w-3 h-3" />
+                <Pencil className="w-3.5 h-3.5" />
                 Edit prompt
               </Button>
             </Tip>

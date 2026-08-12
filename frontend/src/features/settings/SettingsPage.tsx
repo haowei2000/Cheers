@@ -695,7 +695,7 @@ function LegalLinks() {
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
         >
-          {label} <ExternalLink className="w-3 h-3" />
+          {label} <ExternalLink className="w-3.5 h-3.5" />
         </a>
       ))}
     </div>
@@ -1073,13 +1073,15 @@ export default function SettingsPage() {
       <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
         <UiButton variant="plain"
           type="button"
+          square
+          controlSize="regular"
           // Always return to the chat home, not the previous history entry — the
           // in-page section nav pushes /settings/:section entries, so navigate(-1)
           // would step through those (or leave the app on a fresh load) instead of
           // leaving Settings. Matches FriendsPage's back button.
           onClick={() => navigate("/chat")}
           title="Back"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-2 -m-2 rounded-sm"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors rounded-sm"
         >
           <ArrowLeft className="w-5 h-5" />
         </UiButton>

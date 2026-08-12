@@ -157,7 +157,7 @@ function HealthRow({
           title={`${reason} — restart this connector`}
           controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
-          <AlertTriangle className="w-3 h-3 shrink-0" />
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{reason} · Restart</span>
         </UiButton>
       )}
@@ -545,7 +545,7 @@ export function ConnectorManager() {
             onClick={() => setModal({ kind: "onboard" })}
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
-            <Plus className="w-6 h-6" />
+            <Plus className="h-5 w-5" />
             <span className="text-regular font-medium">Set up on this Mac</span>
             <span className="text-compact text-zinc-500">Create or attach a bot, then verify it starts</span>
           </UiButton>
@@ -561,7 +561,7 @@ export function ConnectorManager() {
             onClick={() => setModal({ kind: "redeem" })}
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
-            <Ticket className="w-6 h-6" />
+            <Ticket className="h-5 w-5" />
             <span className="text-regular font-medium">I have a code</span>
             <span className="text-compact text-zinc-500">Set up a bot made elsewhere</span>
           </UiButton>

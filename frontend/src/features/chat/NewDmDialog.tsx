@@ -91,12 +91,14 @@ export function NewDmDialog({
           {q && (
             <UiButton variant="plain"
               type="button"
+              square
+              controlSize="compact"
               aria-label="Clear search"
               onClick={() => {
                 setQ("");
                 inputRef.current?.focus();
               }}
-              className="p-1 rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
+              className="rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
             >
               <X className="w-4 h-4" />
             </UiButton>

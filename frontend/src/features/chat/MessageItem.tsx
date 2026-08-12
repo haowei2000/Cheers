@@ -204,14 +204,14 @@ function SendStatus({
   if (message._status === "sending") {
     return (
       <div className={cn("mt-0.5 flex items-center gap-1 text-zinc-400", controlTextClasses.compact)}>
-        <Loader2 className="w-3 h-3 animate-spin" />
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Sending…
       </div>
     );
   }
   return (
     <div role="alert" className={cn("mt-0.5 flex items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
-      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
         <UiButton variant="plain"
@@ -219,7 +219,7 @@ function SendStatus({
           onClick={() => onRetry(message)}
           className="inline-flex items-center gap-0.5 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
         >
-          <RotateCw className="w-3 h-3" />
+          <RotateCw className="w-3.5 h-3.5" />
           Retry
         </UiButton>
       )}
@@ -331,7 +331,7 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
         className
       )}
     >
-      {selected && <Check className="w-3 h-3 text-white" />}
+      {selected && <Check className="w-3.5 h-3.5 text-white" />}
     </span>
   );
 }
@@ -727,7 +727,7 @@ export const MessageItem = memo(function MessageItem({
   const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {detailsMeta.hasFailure && (
-        <div role="alert" className={cn("flex min-h-8 items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
+        <div role="alert" className={cn("flex min-h-7 items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
           <UiButton variant="plain"
@@ -939,7 +939,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
       controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80 text-compact text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
-      <Square className="w-3 h-3" fill="currentColor" />
+      <Square className="w-3.5 h-3.5" fill="currentColor" />
       {stopping ? "Stopping…" : "Stop"}
     </UiButton>
   );

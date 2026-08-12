@@ -347,32 +347,35 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       <span className="flex items-center gap-2">
         <UiButton variant="plain"
           type="button"
+          square controlSize="compact"
           aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
-          className="p-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <Check className="w-3 h-3 text-red-400 hover:text-red-300" />
+          <Check className="w-3.5 h-3.5 text-red-400 hover:text-red-300" />
         </UiButton>
         <UiButton variant="plain"
           type="button"
+          square controlSize="compact"
           aria-label="Cancel delete"
           title="Cancel"
           onClick={() => setConfirmDel(null)}
-          className="p-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <X className="w-3 h-3 text-zinc-500 hover:text-zinc-300" />
+          <X className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
         </UiButton>
       </span>
     ) : (
       <UiButton variant="plain"
         type="button"
+        square controlSize="compact"
         aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
         onClick={() => setConfirmDel(path)}
-        className="p-1.5 rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
-        <Trash2 className="w-3 h-3 text-zinc-500 hover:text-red-400" />
+        <Trash2 className="w-3.5 h-3.5 text-zinc-500 hover:text-red-400" />
       </UiButton>
     );
 
@@ -391,22 +394,23 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 onClick={() => toggleCollapse(node.path)}
                 expanded={!isCollapsed}
                 disclosure={isCollapsed ? (
-                  <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-500" />
+                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
                 ) : (
-                  <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
+                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
                 )}
                 leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />}
                 actions={<><UiButton variant="plain"
                 type="button"
+                square controlSize="compact"
                 aria-label="New file in this folder"
                 title="New file in this folder"
                 onClick={() => {
                   if (isCollapsed) toggleCollapse(node.path);
                   beginCreate(node.path);
                 }}
-                className="p-1.5 rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
-                <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                <Plus className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
               </UiButton>
               {deleteControl(node.path, true)}
               </>}
@@ -443,30 +447,33 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           : "w-52 flex-shrink-0"
       )}
     >
-      <div className="mx-1 mt-1 flex h-8 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
+      <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
         <UiButton variant="plain"
           type="button"
           onClick={() => beginCreate("")}
-          className="flex items-center gap-1 rounded-sm p-1 -ml-1 text-compact text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          controlSize="regular"
+          className="flex items-center gap-1 rounded-sm text-compact text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Plus className="w-3.5 h-3.5" /> New
         </UiButton>
         <div className="flex-1" />
         <UiButton variant="plain"
           type="button"
+          square controlSize="compact"
           onClick={() => void refresh()}
           aria-label="Refresh file tree"
           title="Refresh"
-          className="rounded-sm p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <RefreshCw className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
         </UiButton>
         <UiButton variant="plain"
           type="button"
+          square controlSize="compact"
           onClick={() => setTreeOpenUser(false)}
           aria-label="Hide file tree"
           title="Hide file tree"
-          className="rounded-sm p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <PanelLeftClose className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
         </UiButton>
@@ -536,7 +543,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     setMoreOpen(false);
                   }}
                   title="Download this file (export)"
-                  className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                  square controlSize="compact"
+                  className="text-zinc-500 hover:text-zinc-300"
                 >
                   <Download className="w-3.5 h-3.5" />
                 </UiButton>
@@ -556,6 +564,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 />
                 <UiButton variant="plain"
                   type="button"
+                  square controlSize="compact"
                   disabled={pinned.includes(selected)}
                   title={
                     pinned.includes(selected)
@@ -576,7 +585,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
                     setMoreOpen(false);
                   }}
-                  className="rounded-sm p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
+                  className="rounded-sm text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
                 >
                   <TextQuote className="w-3.5 h-3.5" />
                 </UiButton>
@@ -588,7 +597,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 <div
                   className={cn(
                     "mx-1 mt-1 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3",
-                    tight ? "min-h-8 flex-wrap py-1" : "h-8"
+                    tight ? "min-h-9 flex-wrap py-1" : "h-9"
                   )}
                 >
                   <span className="text-compact text-zinc-300 truncate min-w-0" title={selected}>
@@ -662,11 +671,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <div className="relative flex-shrink-0" ref={moreRef}>
                       <UiButton variant="plain"
                         type="button"
+                        square controlSize="compact"
                         onClick={() => setMoreOpen((o) => !o)}
                         aria-expanded={moreOpen}
                         aria-label="More file actions"
                         title="More"
-                        className="rounded-sm p-0.5 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        className="rounded-sm text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </UiButton>

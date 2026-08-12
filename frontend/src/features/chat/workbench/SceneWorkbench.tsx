@@ -364,7 +364,7 @@ export function SceneWorkbench({
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-zinc-400">
-                <FileQuestion className="h-6 w-6 text-zinc-600" />
+                <FileQuestion className="h-5 w-5 text-zinc-600" />
                 <span>No native items in this scene.</span>
                 <span className="max-w-xs text-compact leading-4 text-zinc-500">Unsupported files stay hidden here and remain available from Raw.</span>
               </div>

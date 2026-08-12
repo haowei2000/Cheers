@@ -302,7 +302,7 @@ export function DiscussionView({
           <ErrorState title="Couldn't load discussions" description={topicError} action={{ label: "Retry", onClick: refreshTopics }} />
         ) : topics.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <MessageCircle className="h-8 w-8 text-zinc-600" />
+            <MessageCircle className="h-5 w-5 text-zinc-600" />
             <div><p className="text-regular font-medium text-zinc-200">No discussions yet</p><p className="mt-1 text-compact text-zinc-500">Start a topic for the channel.</p></div>
             <UiButton variant="plain" type="button" onClick={startDiscussion} className="text-regular font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
           </div>
@@ -368,7 +368,7 @@ export function DiscussionView({
       <div className="flex min-h-0 flex-1 flex-col">
       {creating ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
-          <div className="max-w-sm"><MessageCircle className="mx-auto h-10 w-10 text-indigo-400" /><h2 className="mt-4 text-comfortable font-semibold text-zinc-100">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-zinc-400">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
+          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-indigo-400" /><h2 className="mt-4 text-comfortable font-semibold text-zinc-100">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-zinc-400">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
         </div>
       ) : loadingDetail ? (
         <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-zinc-500" /></div>

@@ -30,6 +30,10 @@
     "sharedHorizontalPaddingOverride": 0,
     "sharedControlWidthOverride": 0,
     "sharedContentSizeOverride": 0,
+    "sharedPaddingOverride": 0,
+    "nonStandardRowHeight": 0,
+    "nonStandardIdentitySize": 0,
+    "nonStandardIconSize": 0,
     "nonStandardTypographySize": 0,
     "legacyControlSizeProp": 0
   },

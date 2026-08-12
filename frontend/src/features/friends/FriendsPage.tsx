@@ -55,7 +55,7 @@ export default function FriendsPage() {
 
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="flex items-center gap-3 px-4 h-14 border-b border-zinc-800 flex-shrink-0">
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
         <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"
@@ -279,7 +279,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
               avatar={u.avatar_url}
             >
               <span className="text-compact text-zinc-400 flex items-center gap-1">
-                <Clock className="w-3 h-3" />
+                <Clock className="w-3.5 h-3.5" />
                 Pending
               </span>
               <IconBtn title="Cancel request" onClick={() => decline(u, false)} danger>

@@ -73,7 +73,7 @@ export function MessageContextChips({
     return (
       <ItemChip
         key={`${it.kind}:${it.label}:${i}`}
-        leading={<Icon className="w-3 h-3" />}
+        leading={<Icon className="w-3.5 h-3.5" />}
         label={it.label}
         className="max-w-[14rem]"
       />
@@ -85,7 +85,7 @@ export function MessageContextChips({
         className={`flex items-center flex-wrap gap-1.5 rounded-sm bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
       >
         <span className="inline-flex items-center gap-1 text-compact font-medium text-indigo-300">
-          <CornerDownRight className="w-3 h-3" />
+          <CornerDownRight className="w-3.5 h-3.5" />
           Received handoff
         </span>
         {chips}
@@ -153,12 +153,14 @@ export function AttachContextButton({
   return (
     <UiButton variant="plain"
       type="button"
+      square
+      controlSize="compact"
       disabled={disabled || added}
       onClick={() => add(channelId, item)}
       title={disabled ? disabledTitle ?? "Unavailable" : added ? ADDED_TO_CONTEXT_TITLE : title}
       className={
  className ??
- "rounded-sm p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"}
+ "rounded-sm text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"}
     >
       {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
     </UiButton>
@@ -211,9 +213,9 @@ export function ContextPickBar({
               title={`Suggested: add "${sg.label}" as context`}
               controlSize="compact" className="min-w-0 flex-1 hover:text-indigo-300"
             >
-              <Icon className="w-3 h-3" />
+              <Icon className="w-3.5 h-3.5" />
               <span className="max-w-[12rem] truncate">{sg.label}</span>
-              <MessageSquarePlus className="w-3 h-3" />
+              <MessageSquarePlus className="w-3.5 h-3.5" />
             </UiButton>
             <IconButton
               onClick={() => dismissSuggestion(channelId, sg.id)}
@@ -222,7 +224,7 @@ export function ContextPickBar({
               controlSize="compact"
               className="text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </IconButton>
           </span>
         );

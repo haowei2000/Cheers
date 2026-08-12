@@ -191,9 +191,9 @@ function FileSectionView({ section }: { section: FileSection }) {
         title={section.title}
       >
         {open ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-zinc-500" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-zinc-500" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
         )}
         <span className="truncate font-mono text-zinc-200">{section.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">

@@ -43,7 +43,7 @@ export function GlanceRow({
         <span className="text-compact font-medium tabular-nums text-zinc-100 truncate max-w-[55%] text-right">
           {value}
         </span>
-        <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100" />
+        <ChevronRight className="w-3.5 h-3.5 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       {bar != null && (
         <div data-design-system-exempt="progress" className="ml-[22px] h-1 overflow-hidden rounded-full bg-zinc-800">

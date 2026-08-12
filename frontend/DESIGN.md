@@ -176,6 +176,13 @@ control. Label length never determines peer-control width. Business call sites
 must not add `px-*`, `pl-*`, or `pr-*` to shared controls; horizontal padding
 is owned by the primitive or a registered variant.
 
+Business call sites must not add any local `p-*` to shared controls. Icon actions
+use `square` plus a registered `ControlSize`; text actions use the primitive's
+registered padding. Flex rows and headers that participate in the control rhythm
+resolve to 28/36/44px rather than introducing 32/40/48/56px variants. Semantic
+icons resolve to 14/16/20px, and identity marks to 20/28/36px, through the shared
+size maps. CI rejects each of these violations with a zero ceiling.
+
 For contexts the component doesn't fit (dense workbench panels), the soft
 recipes are:
 

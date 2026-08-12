@@ -15,6 +15,7 @@ import { EntityItem } from "@/components/ui/item";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
+import { avatarSizeClasses } from "@/components/ui/content-size";
 
 /** One row of the master bot list (left column). */
 function BotRow({
@@ -32,7 +33,7 @@ function BotRow({
       selected={active}
       title={bot.display_name || bot.username}
       subtitle={`@${bot.username}`}
-      leading={<div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50">
+      leading={<div className={`flex flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
         <Bot className="w-4 h-4 text-indigo-300" />
       </div>}
       criticalStatus={bot.is_disabled ? (
@@ -43,13 +44,13 @@ function BotRow({
         />
       ) : bot.is_online ? (
         <Circle
-          className="w-3 h-3 flex-shrink-0 fill-emerald-400 text-emerald-400"
+          className="w-3.5 h-3.5 flex-shrink-0 fill-emerald-400 text-emerald-400"
           role="img"
           aria-label="Online"
         />
       ) : (
         <CircleDot
-          className="w-3 h-3 flex-shrink-0 text-zinc-500"
+          className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500"
           role="img"
           aria-label="Offline"
         />

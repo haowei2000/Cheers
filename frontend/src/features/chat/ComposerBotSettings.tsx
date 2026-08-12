@@ -147,7 +147,7 @@ function BotInlineSettings({
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-zinc-800/60 px-2 py-1">
       <span className="inline-flex items-center gap-1">
-        <SlidersHorizontal className="w-3 h-3 text-zinc-500" />
+        <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-500" />
         <span className="text-compact font-medium text-zinc-300">@{bot.name}</span>
       </span>
 

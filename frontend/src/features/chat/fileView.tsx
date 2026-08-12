@@ -138,7 +138,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   if (requested || status === "pending") {
     return (
       <span className="inline-flex items-center gap-1 text-compact text-zinc-400">
-        <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Transcribing…
       </span>
     );
   }
@@ -159,7 +159,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
       title="Transcribe this audio to text"
       className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
     >
-      <Captions className="h-3 w-3" />
+      <Captions className="h-3.5 w-3.5" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
     </UiButton>
   );

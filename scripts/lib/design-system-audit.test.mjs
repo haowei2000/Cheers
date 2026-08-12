@@ -22,6 +22,10 @@ const policy = {
     sharedHorizontalPaddingOverride: 0,
     sharedControlWidthOverride: 0,
     sharedContentSizeOverride: 0,
+    sharedPaddingOverride: 0,
+    nonStandardRowHeight: 0,
+    nonStandardIdentitySize: 0,
+    nonStandardIconSize: 0,
     nonStandardTypographySize: 0,
     legacyControlSizeProp: 0,
   },
@@ -96,4 +100,25 @@ test("accepts only the four registered typography sizes", () => {
 test("rejects the legacy shared-control size prop", () => {
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source: `<Button size="sm"/>` }], ts, policy);
   assert.equal(result.violations.legacyControlSizeProp, 1);
+});
+
+test("rejects business padding overrides on shared controls", () => {
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source: `<><Button className="p-1"/><UiTextarea className="p-3"/></>` }], ts, policy);
+  assert.equal(result.violations.sharedPaddingOverride, 2);
+});
+
+test("rejects nonstandard row, identity, and icon sizes", () => {
+  const source = `<><header className="flex h-14 items-center"/><span data-design-system-exempt="identity" className="h-8 w-8 rounded-full"/><Search className="h-3 w-3"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRowHeight, 1);
+  assert.equal(result.violations.nonStandardIdentitySize, 1);
+  assert.equal(result.violations.nonStandardIconSize, 1);
+});
+
+test("accepts registered row, identity, and icon sizes", () => {
+  const source = `<><header className="flex h-11 items-center"/><Avatar size="regular"/><Search className="h-3.5 w-3.5"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Good.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonStandardRowHeight, 0);
+  assert.equal(result.violations.nonStandardIdentitySize, 0);
+  assert.equal(result.violations.nonStandardIconSize, 0);
 });

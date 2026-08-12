@@ -251,6 +251,6 @@ if (!process.exitCode) {
     `web unexempted business native: button=${webAudit.unexemptedBusinessNative.button}, input=${webAudit.unexemptedBusinessNative.input}, select=${webAudit.unexemptedBusinessNative.select}, textarea=${webAudit.unexemptedBusinessNative.textarea}`
   );
   console.log(
-    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-size=${violations.sharedControlSizeOverride}, shared-padding=${violations.sharedHorizontalPaddingOverride}, shared-width=${violations.sharedControlWidthOverride}, shared-content=${violations.sharedContentSizeOverride}, typography=${violations.nonStandardTypographySize}, legacy-size=${violations.legacyControlSizeProp}`
+    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-size=${violations.sharedControlSizeOverride}, shared-padding=${violations.sharedHorizontalPaddingOverride}, local-padding=${violations.sharedPaddingOverride}, shared-width=${violations.sharedControlWidthOverride}, shared-content=${violations.sharedContentSizeOverride}, row-height=${violations.nonStandardRowHeight}, identity-size=${violations.nonStandardIdentitySize}, icon-size=${violations.nonStandardIconSize}, typography=${violations.nonStandardTypographySize}, legacy-size=${violations.legacyControlSizeProp}`
   );
 }

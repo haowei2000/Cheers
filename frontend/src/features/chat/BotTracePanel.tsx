@@ -629,7 +629,7 @@ function TraceItem({
             </span>
           )}
           <span className={cn("shrink-0 text-minimal", statusTone)}>{statusText}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 text-amber-400/70" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-amber-400/70" />
         </div>
         <PermissionCard
           message={pendingApproval}
@@ -671,7 +671,7 @@ function TraceItem({
         )}
         <ChevronRight
           className={cn(
-            "h-3 w-3 shrink-0 text-zinc-500 transition-transform",
+            "h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform",
             active && "rotate-90 text-zinc-300",
           )}
         />
@@ -921,9 +921,9 @@ export function BotTracePanel({
           className="flex items-center gap-1.5 text-compact text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           {expanded ? (
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="w-3.5 h-3.5" />
           ) : (
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3.5 h-3.5" />
           )}
           <span>
             Agent steps
@@ -935,22 +935,22 @@ export function BotTracePanel({
           </span>
           {pendingCount > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-amber-400/80">
-              <ShieldCheck className="w-3 h-3" />
+              <ShieldCheck className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
           ) : approvalCount > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-zinc-400">
-              <ShieldCheck className="w-3 h-3" />
+              <ShieldCheck className="w-3.5 h-3.5" />
               {approvalCount}
             </span>
           ) : null}
-          {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+          {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
         </UiButton>
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
         <div className="flex items-center gap-1.5 text-compact text-zinc-500">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading steps…
         </div>
       )}

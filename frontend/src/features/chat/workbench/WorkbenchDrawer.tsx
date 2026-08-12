@@ -534,7 +534,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       >
         <div
           {...(float ? drag.handleProps : {})}
-          className="mx-2 mt-2 flex h-12 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
+          className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
         >
           {minimized ? (
             // Collapsed: the whole title is the expand target (bigger than the
@@ -640,7 +640,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <UiButton variant="plain"
             onClick={toggleCollapsed}
             title={minimized ? "Expand" : "Minimize"}
-            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
+            square controlSize="compact"
+            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
           >
             {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
@@ -653,7 +654,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-1.5 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
             <UiButton variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </UiButton>
           </div>
         )}

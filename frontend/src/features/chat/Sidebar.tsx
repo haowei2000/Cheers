@@ -157,7 +157,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
     <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar flex flex-col flex-shrink-0">
       {/* Workspace header. No rule under it: the `mb-1` moat sits outside the
           scrolling list, so the gap persists at any scroll offset. */}
-      <div className="flex h-12 flex-shrink-0 items-center px-3">
+      <div className="flex h-11 flex-shrink-0 items-center px-3">
         {onOpenNav && (
           <UiButton variant="plain"
             onClick={onOpenNav}

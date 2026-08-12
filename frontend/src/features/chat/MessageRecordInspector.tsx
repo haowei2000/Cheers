@@ -160,7 +160,7 @@ export function MessageRecordInspector({
                   Agent record
                 </h3>
                 <span className="inline-flex items-center gap-1 text-minimal tabular-nums text-zinc-500">
-                  <ListTree className="h-3 w-3" />
+                  <ListTree className="h-3.5 w-3.5" />
                   {String(meta.traceCount).padStart(2, "0")}
                 </span>
               </div>

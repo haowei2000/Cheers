@@ -4,6 +4,7 @@ import { Download, Loader2, Terminal, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 import { agentIconFor, AgentGlyph } from "@/components/ui/agentIcons";
 import { invokeDesktop } from "@/lib/desktop";
+import { avatarSizeClasses } from "@/components/ui/content-size";
 
 /** Mirror of the Rust `DetectedAgent` (connector.rs). */
 export interface DetectedAgent {
@@ -76,7 +77,7 @@ export function AgentPicker({
             >
               <span
                 data-design-system-exempt="identity"
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                className={`${avatarSizeClasses.regular} flex shrink-0 items-center justify-center rounded-full`}
                 style={{ backgroundColor: icon?.bg ?? "#3f3f46", color: icon?.fg ?? "#e4e4e7" }}
               >
                 {icon ? (
@@ -101,9 +102,9 @@ export function AgentPicker({
                 square controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
               >
                 {installing === a.key ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Download className="w-3 h-3" />
+                  <Download className="w-3.5 h-3.5" />
                 )}
               </UiButton>
             )}
@@ -120,7 +121,7 @@ export function AgentPicker({
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
-        <span data-design-system-exempt="identity" className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 flex items-center justify-center">
+        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-zinc-300`}>
           <Wrench className="w-4 h-4" />
         </span>
         <span className="text-compact text-zinc-300">Custom</span>

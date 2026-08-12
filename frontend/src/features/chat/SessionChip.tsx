@@ -339,7 +339,7 @@ export function SessionChip({
         <span className="min-w-0 flex-1 truncate">
           {selected ? `@${selected.bot_name} · ${tagOf(selected)}` : "Auto"}
         </span>
-        <ChevronDown className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
       </ComposerToolbarButton>
 
       {open && (

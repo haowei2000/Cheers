@@ -170,7 +170,7 @@ export function ViewBoardShell({
 }) {
   return (
     <div className="flex flex-col h-full text-regular">
-      <div className="mx-3 mt-1 flex h-8 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
+      <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
         {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
         <span className="text-compact text-zinc-300">{title}</span>
         <div className="flex-1" />
@@ -209,7 +209,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
 
     return (
       <div className="flex flex-col h-full text-regular">
-        <div className="mx-3 mt-1 flex h-8 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
+        <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
           {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
           <span className="text-compact text-zinc-300">{def.title}</span>
           <div className="flex-1" />

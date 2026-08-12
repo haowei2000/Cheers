@@ -394,9 +394,9 @@ export function VoiceRoomPanel({
                     }`}
                   >
                     {speaking ? (
-                      <Radio className="h-3 w-3 shrink-0 animate-pulse" />
+                      <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse" />
                     ) : (
-                      <Users className="h-3 w-3 shrink-0 text-zinc-500" />
+                      <Users className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                     )}
                     <span className="truncate">{name}</span>
                   </div>
@@ -456,7 +456,7 @@ export function VoiceRoomPanel({
         )}
       </div>
 
-      <div className="flex min-h-8 items-center gap-2 border-t border-zinc-800/80 px-3 py-1.5 text-compact">
+      <div className="flex min-h-7 items-center gap-2 border-t border-zinc-800/80 px-3 py-1.5 text-compact">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-zinc-500">
           <Captions
             className={`h-3.5 w-3.5 shrink-0 ${
@@ -493,9 +493,9 @@ export function VoiceRoomPanel({
             controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {changingTranscription ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Captions className="h-3 w-3" />
+              <Captions className="h-3.5 w-3.5" />
             )}
             {transcriptionStatus === "active" ? "Stop captions" : "Start captions"}
           </UiButton>
@@ -513,7 +513,7 @@ export function VoiceRoomPanel({
             onClick={() => void grantConsent()}
             controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-60"
           >
-            {consenting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
+            {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
             Accept &amp; speak
           </UiButton>
           <UiButton variant="plain"

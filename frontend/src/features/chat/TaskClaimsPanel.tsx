@@ -94,7 +94,7 @@ export function TaskClaimsPanel({
                   disabled={busy === c.claim_id}
                   onClick={() => void cancel(c)}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3.5 w-3.5" />
                   Cancel
                 </Button>
                 <Button
@@ -103,7 +103,7 @@ export function TaskClaimsPanel({
                   disabled={busy === c.claim_id}
                   onClick={() => void resolve(c, "reject")}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3.5 w-3.5" />
                   Reject
                 </Button>
                 <Button
@@ -111,7 +111,7 @@ export function TaskClaimsPanel({
                   loading={busy === c.claim_id}
                   onClick={() => void resolve(c, "accept")}
                 >
-                  <Check className="h-3 w-3" />
+                  <Check className="h-3.5 w-3.5" />
                   Approve &amp; run
                 </Button>
               </> : undefined}

@@ -86,6 +86,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   业务组件不能通过局部 `width` 制造新槽位。
 - Button、Input、Select、Item 等共享 primitive 的水平 padding 由 primitive 固定，业务调用点禁止
   使用 `px/pl/pr` 覆盖。布局差异进入共享 variant 或父容器，不进入单个调用点。
+- 业务调用点也禁止给共享控件添加任意 `p-*`。纯图标动作必须使用 `square + ControlSize`，文本动作
+  使用 primitive 的固定 padding。参与控件节奏的 flex row/header 只能使用 28/36/44px，不得产生
+  32/40/48/56px 等第四尺寸。语义图标只能是 14/16/20px，身份标识只能是 20/28/36px，并通过
+  共享 size map 获取；这些规则在 Web CI 中 ceiling 均为 0。
 - 响应式规则只能选择未显式设置时的环境默认值，不能覆盖业务显式设置。
 - 触控命中区域 Web/iOS 至少 44px/pt，Android 至少 48dp；视觉 glyph 可以更小。
 - 页面 header、画布、图片和纯图标 glyph 不机械套用 ControlSize，但其中的交互控件必须套用。

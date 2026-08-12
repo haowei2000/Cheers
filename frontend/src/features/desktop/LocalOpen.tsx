@@ -148,7 +148,7 @@ export function LocalOpen({
           aria-label="Choose an app to open in"
           controlSize="compact" className="flex items-center rounded-r text-zinc-400 hover:text-zinc-200"
         >
-          <ChevronDown className="w-3 h-3" />
+          <ChevronDown className="w-3.5 h-3.5" />
         </UiButton>
       </div>
       {menuOpen && (

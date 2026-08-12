@@ -101,7 +101,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
               rel="noreferrer"
               className="mt-2 inline-flex items-center gap-1 text-compact text-indigo-300 hover:text-indigo-200"
             >
-              Open login page <ExternalLink className="h-3 w-3" />
+              Open login page <ExternalLink className="h-3.5 w-3.5" />
             </a>
           ) : (
             <div className="mt-2 rounded-sm bg-zinc-950/40 px-2.5 py-2 text-compact leading-relaxed text-zinc-400">
@@ -136,7 +136,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 onClick={() => void ack("retry")}
                 controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-600 text-compact font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >
-                {busy === "retry" && <Loader2 className="h-3 w-3 animate-spin" />}
+                {busy === "retry" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {link ? "I've signed in" : "Credentials set — retry"}
               </UiButton>
               <UiButton variant="plain"

@@ -146,7 +146,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         id={lead ?? ep.id}
         size="small"
       />
-      {shown.length > 0 && <ArrowRight className="w-3 h-3 text-zinc-600 flex-shrink-0" />}
+      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />}
       {shown.map((id, i) => {
         const mem = memberOf(id);
         return (
@@ -274,7 +274,7 @@ function MessageRow({
       >
         {fmtTime(n.ts)}
       </span>}
-      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3 w-3 flex-shrink-0 text-indigo-300 group-hover/item:block" /> : undefined}
+      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3.5 w-3.5 flex-shrink-0 text-indigo-300 group-hover/item:block" /> : undefined}
       className="border-b-0"
     />
   );
@@ -307,9 +307,9 @@ function EpisodeDetail({
                 )}
               >
                 {failed ? (
-                  <AlertCircle className="mt-0.5 h-3 w-3 flex-shrink-0 text-red-400" />
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                 ) : (
-                  <Activity className="mt-0.5 h-3 w-3 flex-shrink-0 text-indigo-300" />
+                  <Activity className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-indigo-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
                 <span className="flex-shrink-0 text-minimal text-zinc-500">{fmtTime(row.n.ts)}</span>
@@ -320,7 +320,7 @@ function EpisodeDetail({
             const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
               <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-1.5 py-[3px]">
-                <Icon className="w-3 h-3 text-zinc-500 self-center flex-shrink-0" />
+                <Icon className="w-3.5 h-3.5 text-zinc-500 self-center flex-shrink-0" />
                 <span className="min-w-0 truncate text-minimal text-zinc-400">
                   {row.items.map((it, j) => (
                     <span key={j}>
@@ -693,7 +693,7 @@ function MemberFilter({
       >
         <Filter className="w-3.5 h-3.5" />
         <span>{selected.size ? `${selected.size}` : "Filter"}</span>
-        <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", open && "rotate-180")} />
       </UiButton>
 
       {open && (

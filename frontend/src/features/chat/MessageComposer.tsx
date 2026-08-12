@@ -1061,7 +1061,7 @@ function MessageComposerImpl({
                 aria-label="Remove attachment"
                 title="Remove attachment"
               >
-                <X className="w-3 h-3" />
+                <X className="w-3.5 h-3.5" />
               </UiButton>
             </span>
           ))}
@@ -1109,7 +1109,7 @@ function MessageComposerImpl({
               disabled={transcribing}
               controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-600/80 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
             >
-              {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
+              {transcribing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {transcribing ? "Transcribing…" : "Transcribe, then send"}
             </UiButton>
             <UiButton variant="plain"

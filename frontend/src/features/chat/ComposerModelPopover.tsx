@@ -95,7 +95,7 @@ export function ComposerModelPopover({
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <ChevronDown
-          className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")}
+          className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")}
         />
       </ComposerToolbarButton>
 

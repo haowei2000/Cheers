@@ -275,7 +275,7 @@ export default function FleetPage() {
 
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="flex items-center gap-3 px-4 h-14 border-b border-zinc-800 flex-shrink-0">
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
         <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"

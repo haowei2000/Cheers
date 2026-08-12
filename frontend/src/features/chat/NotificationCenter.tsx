@@ -219,7 +219,7 @@ export function ActivityCenter() {
                 presentationLevel="medium"
                 controlSize="regular"
                 label={<span className="flex items-center gap-1.5">
-                  <Shield className="w-3 h-3 text-amber-400" />
+                  <Shield className="w-3.5 h-3.5 text-amber-400" />
                   Needs approval
                 </span>}
               >

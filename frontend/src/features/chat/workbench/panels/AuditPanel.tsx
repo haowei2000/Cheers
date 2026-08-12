@@ -245,7 +245,7 @@ function AuditRow({
                 className={`inline-flex items-center gap-1 text-compact font-medium ${t.text}`}
                 title={t.raw || undefined}
               >
-                <t.Icon className="w-3 h-3" />
+                <t.Icon className="w-3.5 h-3.5" />
                 {t.label}
               </span>
               {e.actor_id && (
@@ -274,7 +274,7 @@ function AuditRow({
             onClick={() => setOpen((v) => !v)}
             className="inline-flex items-center gap-0.5 text-minimal text-zinc-400 hover:text-zinc-200 transition-colors"
           >
-            <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
+            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
           </UiButton>
           )}

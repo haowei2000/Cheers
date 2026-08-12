@@ -91,7 +91,7 @@ export function ExistingFilePicker({
                     (checked ? "border-indigo-500 bg-indigo-600 text-white" : "border-zinc-600")
                   }
                 >
-                  {checked && <Check className="w-3 h-3" />}
+                  {checked && <Check className="w-3.5 h-3.5" />}
                 </span>
                 <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
                 <span

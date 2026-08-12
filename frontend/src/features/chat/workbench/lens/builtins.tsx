@@ -104,7 +104,7 @@ function TableLens({ data, config, onChange }: LensProps) {
               ))}
               <td className="p-1">
                 <UiButton variant="plain" onClick={() => del(i)} title="Delete row">
-                  <Trash2 className="w-3 h-3 text-zinc-600 hover:text-red-400" />
+                  <Trash2 className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
                 </UiButton>
               </td>
             </tr>
@@ -169,13 +169,13 @@ function KanbanLens({ data, onChange }: LensProps) {
                 title={it}
                 actions={<>
                 <UiButton variant="plain" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
-                  <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                  <ChevronLeft className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
                 </UiButton>
                 <UiButton variant="plain" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
-                  <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
                 </UiButton>
                 <UiButton variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
-                  <X className="w-3 h-3 text-zinc-600 hover:text-red-400" />
+                  <X className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
                 </UiButton>
                 </>}
                 className="border-b-0 bg-zinc-800/70 text-zinc-200"
@@ -190,7 +190,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
               />
               <UiButton variant="plain" onClick={() => addItem(ci)} title="Add task">
-                <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
+                <Plus className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
               </UiButton>
             </div>
           </div>
@@ -210,7 +210,7 @@ function MarkdownLens({ data, onChange }: LensProps) {
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"
-      className="h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-compact p-3 outline-none"
+      className="h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-compact outline-none"
     />
   );
 }
@@ -591,7 +591,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
           <p className="mt-0.5 text-compact capitalize text-zinc-500">{node.kind}</p>
         </div>
         {onClose && (
-          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
+          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" square controlSize="compact" className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
             <X className="h-4 w-4" />
           </UiButton>
         )}
@@ -726,9 +726,9 @@ function CodemapLens({ data }: LensProps) {
         </div>
 
         <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-sm  border-zinc-800 bg-zinc-900/95 px-3 py-2 text-minimal text-zinc-400">
-          <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Explored</span>
-          <span className="flex items-center gap-1"><CircleDotDashed className="h-3 w-3 text-amber-400" /> Partial</span>
-          <span className="flex items-center gap-1"><TriangleAlert className="h-3 w-3 text-orange-400" /> Stale</span>
+          <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Explored</span>
+          <span className="flex items-center gap-1"><CircleDotDashed className="h-3.5 w-3.5 text-amber-400" /> Partial</span>
+          <span className="flex items-center gap-1"><TriangleAlert className="h-3.5 w-3.5 text-orange-400" /> Stale</span>
         </div>
         <div className="absolute bottom-3 right-3 flex items-center rounded-sm  border-zinc-800 bg-zinc-900/95 p-1">
           <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
