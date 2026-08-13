@@ -15,6 +15,7 @@ impl RuntimeContext {
     ) -> anyhow::Result<()> {
         let run = self
             .shared
+            .runs
             .lock()
             .await
             .by_acp_session
@@ -109,6 +110,7 @@ impl RuntimeContext {
         // the adapter would deadlock the turn until timeout.
         let options = crate::acp_semantics::permission_options_from_params(&params);
         self.shared
+            .interactions
             .lock()
             .await
             .pending_permissions
@@ -169,6 +171,7 @@ impl RuntimeContext {
                 });
                 let pending = self
                     .shared
+                    .interactions
                     .lock()
                     .await
                     .pending_permissions
@@ -193,6 +196,7 @@ impl RuntimeContext {
             Err(err) => {
                 let pending = self
                     .shared
+                    .interactions
                     .lock()
                     .await
                     .pending_permissions
@@ -221,6 +225,7 @@ impl RuntimeContext {
     async fn handle_permission_timeout(&self, request_id: String) {
         let pending = self
             .shared
+            .interactions
             .lock()
             .await
             .pending_permissions
@@ -259,6 +264,7 @@ impl RuntimeContext {
     ) -> anyhow::Result<()> {
         let pending = self
             .shared
+            .interactions
             .lock()
             .await
             .pending_permissions

@@ -69,6 +69,16 @@ Gateway 创建卡片前会重新验证：原始消息存在于同一频道、sen
 
 Delta frame 在 `ActiveRun` 锁内完成状态计算和 frame 构造，释放锁后才等待 Bridge I/O。网络背压不再长期占用 run lock，因此 permission、elicitation 和终态处理不会被慢连接阻塞。
 
+后续性能加固进一步实现：
+
+- 相邻 Delta 在 12ms/8KiB 边界内合并，减少 JSON 序列化和 WebSocket frame；
+- priority 与 streaming 使用独立有界队列，交互事件不再被满 Delta 队列阻塞；
+- `SharedRuntimeState` 拆成 run、interaction、resource、session lock、channel name、watch 六个锁域；
+- 高频 `session/update` 移动 JSON subtree，不再为了 relay 深拷贝整个 payload；
+- official runtime 将 prompt 与 control 分为独立有界并发池，队列饱和时明确失败而不是无限创建 Tokio task。
+
+详细约束与调优指标见 `docs/arch/ACP_CONNECTOR_PERFORMANCE.md`。
+
 ## MCP 边界
 
 - 当前产品继续注入 `cheers-mcp-server` stdio sidecar，loopback token、membership/role 校验和 capability signing 不变。
@@ -94,7 +104,7 @@ Delta frame 在 `ActiveRun` 锁内完成状态计算和 frame 构造，释放锁
 ## 验证结果
 
 - Connector `cargo fmt --check`：通过。
-- Connector `cargo test --workspace --locked`：133 个测试通过。
+- Connector `cargo test --workspace --locked`：137 个测试通过。
 - Connector `cargo check --workspace --locked`：通过。
 - Connector `cargo build --release --locked`：通过。
 - Gateway `cargo fmt --check`：通过。
@@ -117,6 +127,7 @@ Delta frame 在 `ActiveRun` 锁内完成状态计算和 frame 构造，释放锁
 - `frontend/src/features/chat/ElicitationCard.tsx`
 - `frontend/src/types/index.ts`
 - `docs/arch/ACP_ELICITATION.md`
+- `docs/arch/ACP_CONNECTOR_PERFORMANCE.md`
 - `docs/arch/MCP_STREAMABLE_HTTP_SPIKE.md`
 
 ## 发布与后续

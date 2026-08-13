@@ -57,6 +57,7 @@ impl RuntimeContext {
         let route = if let Some(acp_session_id) = acp_session_id.as_deref() {
             let run = self
                 .shared
+                .runs
                 .lock()
                 .await
                 .by_acp_session
@@ -88,7 +89,15 @@ impl RuntimeContext {
                 }
             }
         };
-        if params.get("mode").and_then(Value::as_str) == Some("form")
+        let mode = match params.get("mode").and_then(Value::as_str) {
+            Some("form") => ElicitationMode::Form,
+            Some("url") => ElicitationMode::Url,
+            _ => {
+                let _ = respond_to.send(cancel_response());
+                return Ok(());
+            }
+        };
+        if mode == ElicitationMode::Form
             && params
                 .get("requestedSchema")
                 .is_some_and(schema_requests_sensitive_data)
@@ -100,13 +109,12 @@ impl RuntimeContext {
 
         let request_id = Uuid::new_v4().to_string();
         let acp_request_id = params.get("requestId").cloned();
-        self.shared.lock().await.pending_elicitations.insert(
-            request_id.clone(),
-            PendingElicitation {
-                params: params.clone(),
-                respond_to,
-            },
-        );
+        self.shared
+            .interactions
+            .lock()
+            .await
+            .pending_elicitations
+            .insert(request_id.clone(), PendingElicitation { mode, respond_to });
 
         let timeout_runtime = self.clone();
         let timeout_request_id = request_id.clone();
@@ -154,6 +162,7 @@ impl RuntimeContext {
     async fn cancel_elicitation(&self, request_id: &str, reason: &str) {
         if let Some(pending) = self
             .shared
+            .interactions
             .lock()
             .await
             .pending_elicitations
@@ -178,6 +187,7 @@ impl RuntimeContext {
     ) -> anyhow::Result<()> {
         let pending = self
             .shared
+            .interactions
             .lock()
             .await
             .pending_elicitations
@@ -185,13 +195,12 @@ impl RuntimeContext {
         let Some(pending) = pending else {
             return Ok(());
         };
-        let mode = pending.params.get("mode").and_then(Value::as_str);
         let response = match resolution.action.as_str() {
-            "accept" if mode == Some("form") => match resolution.content {
+            "accept" if pending.mode == ElicitationMode::Form => match resolution.content {
                 Some(Value::Object(content)) => json!({"action":"accept", "content":content}),
                 _ => cancel_response(),
             },
-            "accept" if mode == Some("url") => json!({"action":"accept"}),
+            "accept" if pending.mode == ElicitationMode::Url => json!({"action":"accept"}),
             "decline" => json!({"action":"decline"}),
             "cancel" => cancel_response(),
             _ => cancel_response(),

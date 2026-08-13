@@ -31,10 +31,10 @@ use agent_client_protocol::{
 };
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::process::Command as TokioCommand;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -51,6 +51,10 @@ use crate::runtime_adapter::{
 };
 
 type RequestRoutes = std::sync::Arc<Mutex<HashMap<String, RequestRoute>>>;
+const PROMPT_IN_FLIGHT_LIMIT: usize = 16;
+const CONTROL_IN_FLIGHT_LIMIT: usize = 32;
+const PROMPT_WORK_QUEUE_CAPACITY: usize = 32;
+const CONTROL_WORK_QUEUE_CAPACITY: usize = 64;
 
 /// A unit of work sent from the adapter handle to the connection actor.
 enum Command {
@@ -526,13 +530,17 @@ fn runtime_serves_request(method: &str) -> bool {
 /// The `update` value is forwarded to the backend **verbatim** (opaque relay) —
 /// no field is dropped, renamed, or normalized. Returns `None` when there is no
 /// usable sessionId (nothing to relay).
-fn session_update_parts(params: &Value) -> Option<(String, Value)> {
+fn session_update_parts(mut params: Value) -> Option<(String, Value)> {
     let session_id = params.get("sessionId").and_then(|v| v.as_str())?;
     if session_id.is_empty() {
         return None;
     }
-    let update = params.get("update").cloned().unwrap_or(Value::Null);
-    Some((session_id.to_string(), update))
+    let session_id = session_id.to_string();
+    let update = params
+        .get_mut("update")
+        .map(Value::take)
+        .unwrap_or(Value::Null);
+    Some((session_id, update))
 }
 
 /// Serialize a stable-v1 SDK request type into the params object consumed by
@@ -677,7 +685,7 @@ async fn run_actor(
                     }
                     return Ok(Handled::Yes);
                 }
-                if let Some((acp_session_id, update)) = session_update_parts(&msg.params) {
+                if let Some((acp_session_id, update)) = session_update_parts(msg.params) {
                     let _ = event_notif
                         .send(RuntimeEvent::SessionUpdate {
                             acp_session_id,
@@ -703,9 +711,7 @@ async fn run_actor(
                     });
                 }
                 if msg.method == CLIENT_METHOD_NAMES.elicitation_create {
-                    let parsed = serde_json::from_value::<CreateElicitationRequest>(
-                        msg.params.clone(),
-                    );
+                    let parsed = CreateElicitationRequest::deserialize(&msg.params);
                     let response = match parsed {
                         Ok(_request) => {
                             let acp_session_id = msg
@@ -734,7 +740,7 @@ async fn run_actor(
                                     .send(RuntimeEvent::ElicitationRequest {
                                         acp_session_id,
                                         request_route,
-                                        params: msg.params.clone(),
+                                        params: msg.params,
                                         respond_to: tx,
                                     })
                                     .await
@@ -787,7 +793,7 @@ async fn run_actor(
                     if event_req
                         .send(RuntimeEvent::PermissionRequest {
                             acp_session_id,
-                            params: msg.params.clone(),
+                            params: msg.params,
                             respond_to: tx,
                         })
                         .await
@@ -823,6 +829,20 @@ async fn command_loop(
     mut cmd_rx: mpsc::Receiver<Command>,
     request_routes: RequestRoutes,
 ) {
+    let (prompt_tx, prompt_rx) = mpsc::channel(PROMPT_WORK_QUEUE_CAPACITY);
+    let (control_tx, control_rx) = mpsc::channel(CONTROL_WORK_QUEUE_CAPACITY);
+    let prompt_worker = tokio::spawn(request_worker(
+        cx.clone(),
+        prompt_rx,
+        request_routes.clone(),
+        PROMPT_IN_FLIGHT_LIMIT,
+    ));
+    let control_worker = tokio::spawn(request_worker(
+        cx.clone(),
+        control_rx,
+        request_routes,
+        CONTROL_IN_FLIGHT_LIMIT,
+    ));
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             Command::Request {
@@ -832,20 +852,18 @@ async fn command_loop(
                 request_route,
                 reply,
             } => {
-                let cx = cx.clone();
-                let request_routes = request_routes.clone();
-                tokio::spawn(async move {
-                    let result = send_request(
-                        &cx,
-                        &method,
-                        params,
-                        timeout_ms,
-                        request_route,
-                        &request_routes,
-                    )
-                    .await;
-                    let _ = reply.send(result);
-                });
+                let is_prompt = is_prompt_request(&method);
+                let command = Command::Request {
+                    method,
+                    params,
+                    timeout_ms,
+                    request_route,
+                    reply,
+                };
+                let target = if is_prompt { &prompt_tx } else { &control_tx };
+                if let Err(err) = target.try_send(command) {
+                    reject_overloaded_command(err.into_inner());
+                }
             }
             Command::Notify { method, params } => match UntypedMessage::new(&method, params) {
                 Ok(notification) => {
@@ -858,6 +876,71 @@ async fn command_loop(
                 }
             },
         }
+    }
+    drop(prompt_tx);
+    drop(control_tx);
+    let _ = prompt_worker.await;
+    let _ = control_worker.await;
+}
+
+/// Classifies the only long-running request into its reserved concurrency lane.
+fn is_prompt_request(method: &str) -> bool {
+    method == AGENT_METHOD_NAMES.session_prompt
+}
+
+/// Runs a bounded class of ACP requests; queue + semaphore cap tasks and SDK work.
+async fn request_worker(
+    cx: ConnectionTo<Agent>,
+    mut rx: mpsc::Receiver<Command>,
+    request_routes: RequestRoutes,
+    in_flight_limit: usize,
+) {
+    let permits = std::sync::Arc::new(Semaphore::new(in_flight_limit));
+    let mut tasks = tokio::task::JoinSet::new();
+    while let Some(command) = rx.recv().await {
+        let permit = match permits.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                reject_overloaded_command(command);
+                continue;
+            }
+        };
+        let Command::Request {
+            method,
+            params,
+            timeout_ms,
+            request_route,
+            reply,
+        } = command
+        else {
+            continue;
+        };
+        let cx = cx.clone();
+        let request_routes = request_routes.clone();
+        tasks.spawn(async move {
+            let _permit = permit;
+            let result = send_request(
+                &cx,
+                &method,
+                params,
+                timeout_ms,
+                request_route,
+                &request_routes,
+            )
+            .await;
+            let _ = reply.send(result);
+        });
+        while tasks.try_join_next().is_some() {}
+    }
+    while tasks.join_next().await.is_some() {}
+}
+
+/// Fails a saturated request immediately instead of spawning an unbounded waiter.
+fn reject_overloaded_command(command: Command) {
+    if let Command::Request { method, reply, .. } = command {
+        let _ = reply.send(Err(anyhow!(
+            "ACP runtime request queue is saturated method={method}"
+        )));
     }
 }
 
@@ -1131,6 +1214,25 @@ mod tests {
         assert_eq!(request_id_key(&Value::Null), None);
     }
 
+    #[tokio::test]
+    async fn saturated_runtime_request_fails_without_spawning_a_waiter() {
+        let (reply, response) = oneshot::channel();
+        reject_overloaded_command(Command::Request {
+            method: AGENT_METHOD_NAMES.session_prompt.to_string(),
+            params: Value::Null,
+            timeout_ms: 1,
+            request_route: None,
+            reply,
+        });
+        let error = response
+            .await
+            .expect("overload response")
+            .expect_err("error");
+        assert!(error.to_string().contains("queue is saturated"));
+        assert!(is_prompt_request(AGENT_METHOD_NAMES.session_prompt));
+        assert!(!is_prompt_request(AGENT_METHOD_NAMES.session_new));
+    }
+
     // ── ② per-method decline ─────────────────────────────────────────────────
     #[test]
     fn only_session_update_notification_is_served() {
@@ -1195,13 +1297,13 @@ mod tests {
             }}}
         });
         let params = json!({ "sessionId": "s1", "update": update });
-        let (session_id, relayed) = session_update_parts(&params).expect("relayed");
+        let (session_id, relayed) = session_update_parts(params).expect("relayed");
         assert_eq!(session_id, "s1");
         assert_eq!(relayed, update); // verbatim — the whole nested _meta survives
 
         // No usable sessionId → nothing to relay (handler still returns Handled::Yes).
-        assert!(session_update_parts(&json!({ "sessionId": "", "update": update })).is_none());
-        assert!(session_update_parts(&json!({ "update": update })).is_none());
+        assert!(session_update_parts(json!({ "sessionId": "", "update": update })).is_none());
+        assert!(session_update_parts(json!({ "update": update })).is_none());
     }
 
     // ── ① opaque relay: request_permission option passthrough ────────────────

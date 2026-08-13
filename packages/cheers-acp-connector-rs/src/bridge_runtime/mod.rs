@@ -18,7 +18,7 @@ use chrono::Utc;
 use ed25519_dalek::{pkcs8::DecodePrivateKey, Signature, Signer, SigningKey};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -35,6 +35,7 @@ const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
 /// Max changed paths carried in a single `workspace_event`.
 const WATCH_PATHS_CAP: usize = 50;
+
 use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
@@ -117,9 +118,7 @@ impl AccountRuntime {
             adapter_tx,
         );
         let initialize_response = adapter.start().await?;
-        if !adapter.supports_mcp_http() {
-            // Capability rejection happens after spawning and initializing the
-            // child, so stop it explicitly before failing the account runtime.
+        if !adapter.capabilities().mcp_http {
             let _ = adapter.stop().await;
             return Err(anyhow!(
                 "ACP agent is incompatible with Cheers: native HTTP MCP capability is required; upgrade the agent adapter (stdio fallback is not supported)"
@@ -206,9 +205,7 @@ impl AccountRuntime {
                 }
             });
         }
-        let mut shared = SharedRuntimeState::default();
-        shared.channel_names = channel_names;
-        let shared = Arc::new(Mutex::new(shared));
+        let shared = Arc::new(SharedRuntimeState::new(channel_names));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
@@ -522,14 +519,12 @@ struct RuntimeContext {
     /// Who this connector is signed in as (from the control hello); injected
     /// into every prompt so the agent knows its own @-handle.
     identity: BotIdentity,
-    /// Gateway-owned canonical Cheers HTTP MCP endpoint from the authenticated
-    /// control hello. It is injected verbatim; the connector never derives an
-    /// OAuth audience from WebSocket URLs or proxy headers.
+    /// Canonical native HTTP MCP endpoint advertised by the authenticated Gateway.
     mcp_url: String,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
-    shared: Arc<Mutex<SharedRuntimeState>>,
+    shared: Arc<SharedRuntimeState>,
     /// Sender into the main event loop — used to enqueue fence events (EnableStreaming)
     /// that must be ordered after history-replay notifications already in the queue.
     runtime_tx: mpsc::Sender<RuntimeInput>,
@@ -554,11 +549,11 @@ impl RuntimeContext {
                 RuntimeInput::SocketClosed(stream) => {
                     // Drop every fs watcher: the data WS they'd emit workspace_event
                     // over is gone. Clearing aborts each watch_loop task (AbortOnDrop).
-                    self.shared.lock().await.watches.clear();
+                    self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream closed"));
                 }
                 RuntimeInput::SocketError { stream, error } => {
-                    self.shared.lock().await.watches.clear();
+                    self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
                 }
             }
@@ -718,22 +713,20 @@ impl RuntimeContext {
             ControlInbound::ChannelJoined { channel, .. } => {
                 if let Some(name) = &channel.channel_name {
                     self.shared
-                        .lock()
-                        .await
                         .channel_names
+                        .write()
+                        .await
                         .insert(channel.channel_id.clone(), name.clone());
                 }
             }
             ControlInbound::ChannelLeft { channel_id, .. } => {
-                self.shared.lock().await.channel_names.remove(&channel_id);
+                self.shared.channel_names.write().await.remove(&channel_id);
             }
             ControlInbound::Hello { memberships, .. } => {
-                let mut guard = self.shared.lock().await;
+                let mut guard = self.shared.channel_names.write().await;
                 for ch in memberships {
                     if let Some(name) = &ch.channel_name {
-                        guard
-                            .channel_names
-                            .insert(ch.channel_id.clone(), name.clone());
+                        guard.insert(ch.channel_id.clone(), name.clone());
                     }
                 }
             }
@@ -831,12 +824,18 @@ impl RuntimeContext {
     /// The effective filesystem roots for a request. `session_roots` is a session's
     /// ACP root set (`cwd` + `additionalDirectories`). When it is non-empty, the
     /// effective set is those entries that lie within `allowed_roots` (the hard
-    /// clamp) — i.e. `session_roots ∩ allowed_roots`, a strict narrowing. An empty
-    /// session root set falls back to all bot-wide `allowed_roots` for browsing.
-    fn effective_roots(&self, session_roots: &[String]) -> Vec<PathBuf> {
+    /// clamp) — i.e. `session_roots ∩ allowed_roots`, a strict narrowing. When it is
+    /// empty, `fallback_all` decides the implicit root: browse falls back to ALL
+    /// `allowed_roots` (bot-wide browse), realize falls back to `[default_cwd]`
+    /// (always confined to the session's implicit cwd).
+    fn effective_roots(&self, session_roots: &[String], fallback_all: bool) -> Vec<PathBuf> {
         let ws = &self.config.policy.workspace;
         if session_roots.is_empty() {
-            return ws.allowed_roots.clone();
+            return if fallback_all {
+                ws.allowed_roots.clone()
+            } else {
+                ws.default_cwd.clone().into_iter().collect()
+            };
         }
         session_roots
             .iter()
@@ -891,7 +890,7 @@ impl RuntimeContext {
         // an already-gone id is a no-op that still replies `{ok:true}`.
         if op == "unwatch" {
             let id = watch_id.ok_or_else(|| err("E_INVALID", "watch_id required".into()))?;
-            self.shared.lock().await.watches.remove(id);
+            self.shared.watches.lock().await.remove(id);
             return Ok(json!({ "ok": true }));
         }
 
@@ -908,7 +907,7 @@ impl RuntimeContext {
                     .map(|p| canonical_path(p).to_string_lossy().to_string())
                     .collect()
             };
-            let effective = self.effective_roots(session_roots);
+            let effective = self.effective_roots(session_roots, true);
             return Ok(json!({
                 "allowed_roots": to_strings(&ws.allowed_roots),
                 "effective_roots": to_strings(&effective),
@@ -925,7 +924,7 @@ impl RuntimeContext {
 
         // Effective roots: narrow to the session's root set when provided, else the
         // full allowed_roots (bot-wide browse). allowed_roots remains the hard clamp.
-        let effective = self.effective_roots(session_roots);
+        let effective = self.effective_roots(session_roots, true);
         let roots = &effective;
         if roots.is_empty() {
             return Err(err("E_NO_ROOT", "no workspace roots configured".into()));
@@ -1482,15 +1481,15 @@ impl RuntimeContext {
         root_canon: &Path,
     ) -> Result<Value, (String, String, Option<Value>)> {
         let err = |c: &str, m: String| (c.to_string(), m, None::<Value>);
-        let mut guard = self.shared.lock().await;
+        let mut guard = self.shared.watches.lock().await;
 
         // Renew an existing watch on the same dir instead of stacking a new one.
-        if let Some((id, handle)) = guard.watches.iter().find(|(_, h)| h.dir == dir) {
+        if let Some((id, handle)) = guard.iter().find(|(_, h)| h.dir == dir) {
             let id = id.clone();
             let _ = handle.renew_tx.send(());
             return Ok(json!({ "watch_id": id, "ttl_secs": WATCH_TTL_SECS }));
         }
-        if guard.watches.len() >= MAX_WATCHES {
+        if guard.len() >= MAX_WATCHES {
             return Err(err(
                 "E_TOO_MANY_WATCHES",
                 format!("watch cap reached ({MAX_WATCHES} concurrent watches)"),
@@ -1526,7 +1525,7 @@ impl RuntimeContext {
             self.io.clone(),
             self.shared.clone(),
         ));
-        guard.watches.insert(
+        guard.insert(
             watch_id.clone(),
             WatchHandle {
                 dir,
@@ -1638,6 +1637,7 @@ impl RuntimeContext {
             RuntimeEvent::LoadSessionFence { acp_session_id } => {
                 if let Some(run) = self
                     .shared
+                    .runs
                     .lock()
                     .await
                     .by_acp_session
@@ -1737,12 +1737,13 @@ impl RuntimeContext {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
+            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
         }));
         {
-            let mut shared = self.shared.lock().await;
+            let mut shared = self.shared.runs.lock().await;
             shared.by_msg.insert(task.msg_id.clone(), run.clone());
             shared
                 .by_acp_session
@@ -1761,9 +1762,9 @@ impl RuntimeContext {
         .await?;
         let channel_name = self
             .shared
-            .lock()
-            .await
             .channel_names
+            .read()
+            .await
             .get(&task.channel_id)
             .cloned();
         // Only push image/audio content blocks when local policy allows it AND
@@ -1802,7 +1803,7 @@ impl RuntimeContext {
                     acp_capability: None,
                 })
                 .await?;
-            let mut shared = self.shared.lock().await;
+            let mut shared = self.shared.runs.lock().await;
             shared.by_msg.remove(&task.msg_id);
             shared.by_acp_session.remove(&acp_session_id);
             shared.by_provider_key.remove(&task.provider_session_key);
@@ -1854,12 +1855,15 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let final_text = {
+                let (final_text, file_ids) = {
                     let mut guard = run.lock().await;
                     // Move the accumulated text out (turn is over; the run is about
                     // to be dropped from the shared maps below) so the whole streamed
                     // response isn't deep-cloned just to hand it to the Done frame.
-                    std::mem::take(&mut guard.text)
+                    (
+                        std::mem::take(&mut guard.text),
+                        guard.created_file_ids.clone(),
+                    )
                 };
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
@@ -1877,9 +1881,7 @@ impl RuntimeContext {
                             v: BRIDGE_PROTOCOL_VERSION,
                             client_msg_id: Uuid::new_v4().to_string(),
                             msg_id: task.msg_id.clone(),
-                            // HTTP MCP uploads the attachment directly at the Gateway;
-                            // the Connector no longer mirrors tool results into Done.
-                            file_ids: Vec::new(),
+                            file_ids,
                             mention_ids: Vec::new(),
                             content: Some(final_text),
                             provider_session_key: Some(task.provider_session_key.clone()),
@@ -1947,7 +1949,7 @@ impl RuntimeContext {
             }
         }
 
-        let mut shared = self.shared.lock().await;
+        let mut shared = self.shared.runs.lock().await;
         shared.by_msg.remove(&task.msg_id);
         shared.by_acp_session.remove(&acp_session_id);
         shared.by_provider_key.remove(&task.provider_session_key);
@@ -2106,7 +2108,7 @@ impl RuntimeContext {
             );
             return Ok(());
         }
-        let run = self.shared.lock().await.by_msg.get(msg_id).cloned();
+        let run = self.shared.runs.lock().await.by_msg.get(msg_id).cloned();
         let Some(run) = run else {
             return Ok(());
         };
@@ -2246,9 +2248,10 @@ impl RuntimeContext {
         let kind = update
             .get("sessionUpdate")
             .and_then(Value::as_str)
-            .unwrap_or("unknown");
+            .unwrap_or("unknown")
+            .to_string();
         if matches!(
-            kind,
+            kind.as_str(),
             "config_option_update"
                 | "current_mode_update"
                 | "current_model_update"
@@ -2264,6 +2267,7 @@ impl RuntimeContext {
 
         let run = self
             .shared
+            .runs
             .lock()
             .await
             .by_acp_session
@@ -2278,15 +2282,19 @@ impl RuntimeContext {
         // Keep the tool-call detail before it scrolls past: the permission request
         // that follows carries only a delta and would otherwise render an approval
         // card with no title, no diff and no path. See `tool_call_snapshots`.
-        let trace_update = if matches!(kind, "tool_call" | "tool_call_update") {
+        let trace = if matches!(kind.as_str(), "tool_call" | "tool_call_update") {
             let mut guard = run.lock().await;
             guard.remember_tool_call(&update);
-            tool_call_id_from_update(&update)
+            let trace_source = tool_call_id_from_update(&update)
                 .and_then(|id| guard.tool_call_snapshot(id))
-                .cloned()
-                .unwrap_or_else(|| update.clone())
+                .unwrap_or(&update);
+            (!is_evaluation)
+                .then(|| describe_session_update(&kind, trace_source))
+                .flatten()
         } else {
-            update.clone()
+            (!is_evaluation)
+                .then(|| describe_session_update(&kind, &update))
+                .flatten()
         };
 
         // Generic complete-stream passthrough (docs/arch/ACP_EVENT_TAXONOMY.md):
@@ -2295,7 +2303,9 @@ impl RuntimeContext {
         // classifies + logs it). The text-token chunks already go out as Delta, so
         // skip them here. Best-effort — the log must never disrupt the turn. The
         // connector stays ACP-generic: it labels by the ACP subtype, never interprets.
-        if !is_evaluation && !matches!(kind, "agent_message_chunk" | "agent_thought_chunk") {
+        let generic_event = !is_evaluation
+            && !matches!(kind.as_str(), "agent_message_chunk" | "agent_thought_chunk");
+        if generic_event {
             let (channel_id, task_id, msg_id, session_id, psk) = {
                 let g = run.lock().await;
                 (
@@ -2316,12 +2326,10 @@ impl RuntimeContext {
                     msg_id: Some(msg_id),
                     session_id,
                     provider_session_key: Some(psk),
-                    payload: update.clone(),
+                    payload: update,
                 })
                 .await;
-        }
-
-        if kind == "agent_message_chunk" {
+        } else if kind == "agent_message_chunk" {
             if let Some(text) = text_from_content(update.get("content").unwrap_or(&Value::Null)) {
                 let frame = {
                     let mut guard = run.lock().await;
@@ -2347,30 +2355,28 @@ impl RuntimeContext {
                     self.io.send_data(frame).await?;
                 }
             }
-        } else if !is_evaluation {
-            if let Some(SessionUpdateTrace {
-                title,
-                status,
-                data,
-            }) = describe_session_update(kind, &trace_update)
-            {
-                // Structure the trace from the ACP update's OWN fields. tool_call /
-                // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
-                // per the ACP schema; we pass those through instead of a generic
-                // label. A `plan` update also carries structured `data` (its to-do
-                // entries) so the channel can render a live task panel. Noise
-                // (usage_update, mode/config) is filtered by the helper.
-                self.trace_with_data(&run, kind, &status, &title, None, data)
-                    .await?;
-            }
+        }
+        if let Some(SessionUpdateTrace {
+            title,
+            status,
+            data,
+        }) = trace
+        {
+            // Structure the trace from the ACP update's OWN fields. tool_call /
+            // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
+            // per the ACP schema; we pass those through instead of a generic
+            // label. A `plan` update also carries structured `data` (its to-do
+            // entries) so the channel can render a live task panel. Noise
+            // (usage_update, mode/config) is filtered by the helper.
+            self.trace_with_data(&run, &kind, &status, &title, None, data)
+                .await?;
         }
         Ok(())
     }
 
     async fn session_lock(&self, provider_session_key: &str) -> Arc<Mutex<()>> {
-        let mut shared = self.shared.lock().await;
+        let mut shared = self.shared.session_locks.lock().await;
         shared
-            .session_locks
             .entry(provider_session_key.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
@@ -2430,10 +2436,11 @@ impl RuntimeContext {
     }
 
     async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
-        // Cheers is always injected as native HTTP MCP with no static
-        // Authorization header. The Agent owns OAuth discovery, consent, token
-        // persistence and refresh. Startup already failed closed unless HTTP
-        // MCP was advertised, so there is deliberately no stdio fallback here.
+        // stdio MCP is the ACP baseline transport (always supported); only the
+        // optional http/sse transports are gated by mcpCapabilities. We drop a
+        // configured http/sse server the agent can't speak with a LOUD warning
+        // rather than injecting it silently — otherwise the fs-via-MCP virtual
+        // filesystem would just vanish with no signal.
         let (supports_http, supports_sse) = {
             let adapter = self.adapter.lock().await;
             let capabilities = adapter.capabilities();
@@ -2535,20 +2542,44 @@ impl RuntimeContext {
     }
 }
 
-#[derive(Default)]
 struct SharedRuntimeState {
+    /// Multi-index active-run registry; one lock preserves atomic insert/remove.
+    runs: Mutex<RunRegistry>,
+    /// Human interaction waiters are independent of streaming and workspace work.
+    interactions: Mutex<InteractionRegistry>,
+    /// Per-provider serialization locks are rarely touched after session startup.
+    session_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Channel names are read-heavy while building prompts.
+    channel_names: RwLock<HashMap<String, String>>,
+    /// Watch lifecycle has its own cap/insert/remove critical section.
+    watches: Mutex<HashMap<String, WatchHandle>>,
+}
+
+#[derive(Default)]
+struct RunRegistry {
     by_msg: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_acp_session: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
+}
+
+#[derive(Default)]
+struct InteractionRegistry {
     pending_permissions: HashMap<String, PendingPermission>,
     pending_elicitations: HashMap<String, PendingElicitation>,
     pending_auths: HashMap<String, PendingAuth>,
-    session_locks: HashMap<String, Arc<Mutex<()>>>,
-    channel_names: std::collections::HashMap<String, String>,
-    /// Active remote-workspace fs watchers, keyed by `watch_id`. Dropping an entry
-    /// aborts its `watch_loop` task (via `AbortOnDrop`), which drops the notify
-    /// watcher — so `unwatch`, TTL expiry, and data-WS teardown all stop cleanly.
-    watches: HashMap<String, WatchHandle>,
+}
+
+impl SharedRuntimeState {
+    /// Creates independent lock domains with the initial membership snapshot.
+    fn new(channel_names: HashMap<String, String>) -> Self {
+        Self {
+            runs: Mutex::new(RunRegistry::default()),
+            interactions: Mutex::new(InteractionRegistry::default()),
+            session_locks: Mutex::new(HashMap::new()),
+            channel_names: RwLock::new(channel_names),
+            watches: Mutex::new(HashMap::new()),
+        }
+    }
 }
 
 /// Registry entry for one active fs watch. Owns the abort handle for the watcher
@@ -2595,7 +2626,7 @@ async fn watch_loop(
     mut ev_rx: mpsc::UnboundedReceiver<PathBuf>,
     mut renew_rx: mpsc::UnboundedReceiver<()>,
     io: BridgeIoHandle,
-    shared: Arc<Mutex<SharedRuntimeState>>,
+    shared: Arc<SharedRuntimeState>,
 ) {
     let mut deadline = tokio::time::Instant::now() + WATCH_TTL;
     loop {
@@ -2638,7 +2669,7 @@ async fn watch_loop(
             }
         }
     }
-    shared.lock().await.watches.remove(&watch_id);
+    shared.watches.lock().await.remove(&watch_id);
 }
 
 struct PendingPermission {
@@ -2647,8 +2678,14 @@ struct PendingPermission {
 }
 
 struct PendingElicitation {
-    params: Value,
+    mode: ElicitationMode,
     respond_to: oneshot::Sender<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ElicitationMode {
+    Form,
+    Url,
 }
 
 struct PendingAuth {
@@ -2666,6 +2703,10 @@ struct ActiveRun {
     delta_seq: u64,
     trace_seq: u64,
     text: String,
+    /// File ids the agent created this turn via inbox_deliver / inbox_stage
+    /// (channel.files.create / .stage). Attached to the Done reply so they surface
+    /// as chat attachments — a staged file otherwise has no UI entry point to realize.
+    created_file_ids: Vec<String>,
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
@@ -2866,6 +2907,7 @@ mod tests {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
+            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: None,

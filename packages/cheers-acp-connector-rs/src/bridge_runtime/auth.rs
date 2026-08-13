@@ -75,7 +75,7 @@ impl RuntimeContext {
         };
         let request_id = Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
-        self.shared.lock().await.pending_auths.insert(
+        self.shared.interactions.lock().await.pending_auths.insert(
             request_id.clone(),
             PendingAuth {
                 respond_to: tx,
@@ -90,6 +90,7 @@ impl RuntimeContext {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(wait_ms)).await;
             let pending = shared
+                .interactions
                 .lock()
                 .await
                 .pending_auths
@@ -156,7 +157,12 @@ impl RuntimeContext {
             })
             .await
         {
-            self.shared.lock().await.pending_auths.remove(&request_id);
+            self.shared
+                .interactions
+                .lock()
+                .await
+                .pending_auths
+                .remove(&request_id);
             return Err(anyhow!("auth_required send failed: {err}"));
         }
         match rx.await {
@@ -171,7 +177,13 @@ impl RuntimeContext {
         request_id: String,
         action: String,
     ) -> anyhow::Result<()> {
-        let pending = self.shared.lock().await.pending_auths.remove(&request_id);
+        let pending = self
+            .shared
+            .interactions
+            .lock()
+            .await
+            .pending_auths
+            .remove(&request_id);
         let Some(pending) = pending else {
             return Ok(());
         };
