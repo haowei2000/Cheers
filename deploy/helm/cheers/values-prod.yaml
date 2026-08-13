@@ -14,6 +14,7 @@ gateway:
     pullPolicy: IfNotPresent
   replicaCount: 2
   corsAllowedOrigins: "https://cheers.example.com"
+  mcpPublicUrl: "https://cheers.example.com/mcp"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: "2", memory: 1Gi }

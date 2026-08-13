@@ -141,6 +141,8 @@ export default defineConfig({
     port: process.env.PORT ? Number(process.env.PORT) : 5173,
     proxy: {
       "/api": { target: API_PROXY_TARGET, changeOrigin: true },
+      "/mcp": { target: API_PROXY_TARGET, changeOrigin: true },
+      "/.well-known/oauth-protected-resource": { target: API_PROXY_TARGET, changeOrigin: true },
       "/ws": { target: WS_PROXY_TARGET, ws: true },
       "/docs": { target: API_PROXY_TARGET, changeOrigin: true },
       "/health": { target: API_PROXY_TARGET, changeOrigin: true },

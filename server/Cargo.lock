@@ -763,6 +763,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-mcp-server"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "percent-encoding",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3639,6 +3652,7 @@ dependencies = [
  "base64 0.22.1",
  "bcrypt",
  "cheers-bridge-protocol",
+ "cheers-mcp-server",
  "chrono",
  "dashmap",
  "dotenvy",

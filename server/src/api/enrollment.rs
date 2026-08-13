@@ -2,11 +2,11 @@
 //! onboarding modes (manual / install-script / agent-self-connect).
 //!
 //! Flow: an owner MINTS a short-lived, single-use code bound to a bot (not to a
-//! user). A host REDEEMS it once, anonymously, over TLS, to receive a freshly
-//! rotated bot token + a ready-to-run connector config. The code's plaintext is
-//! never stored (only its SHA-256), never put in a URL/log, and a redeem rotates
-//! the bot token through the single mint path (`bots::mint_bot_token`) so one
-//! code == one issuance; N hosts need N codes.
+//! user). A host REDEEMS it once, anonymously, over TLS, to create one terminal
+//! installation and receive that installation's credential + connector config.
+//! The code and credential plaintexts are never stored. Redeeming a new terminal
+//! makes it the bot's sole active installation; older installations remain
+//! registered as standby and can be reactivated by the owner.
 //!
 //! Public surface is intentionally tiny: only `redeem` is unauthenticated (it
 //! authenticates by the code itself). Mint / revoke / config all sit behind JWT
@@ -26,14 +26,17 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    api::bots::{ensure_bot_owner_or_admin, mint_bot_token},
+    api::bots::ensure_bot_owner_or_admin,
     api::middleware::Claims,
     app_state::AppState,
     domain::connector_config::{
         self, control_url, data_url, RenderParams, TokenRef, DEFAULT_PUBLIC_BASE,
     },
     errors::AppError,
-    infra::crypto::{generate_enrollment_code, hash_enrollment_code},
+    infra::crypto::{
+        generate_enrollment_code, generate_installation_credential, hash_enrollment_code,
+        hash_installation_credential,
+    },
 };
 
 /// How long a freshly minted code stays redeemable (15 minutes). Short by
@@ -50,7 +53,7 @@ const MAX_LIVE_CODES_PER_BOT: i64 = 5;
 const MAX_LIVE_CODES_PER_OWNER: i64 = 20;
 
 /// Sidecar path (relative to the connector config dir) the generated config
-/// reads the bot token from. The install script / manual steps write the
+/// reads the installation credential from. The install script writes the
 /// plaintext here with 0600.
 fn token_file_path(account_id: &str) -> String {
     format!("secrets/{account_id}.token")
@@ -92,6 +95,10 @@ pub struct MintRequest {
     /// claude | codex | opencode | generic | ACP registry id (drives adapter.command).
     #[serde(default)]
     pub agent_type: Option<String>,
+    /// Optional label known before the terminal redeems the code. The terminal
+    /// may replace the placeholder with its local hostname during redemption.
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
 
 /// POST /api/v1/bots/{bot_id}/enrollment — mint a one-time enrollment code.
@@ -112,6 +119,8 @@ pub async fn mint_enrollment_code(
     let code = generate_enrollment_code();
     let code_hash = hash_enrollment_code(&code);
     let code_id = Uuid::new_v4().to_string();
+    let installation_id = Uuid::new_v4().to_string();
+    let device_name = normalize_device_name(body.as_ref().and_then(|b| b.device_name.as_deref()))?;
 
     // Cap check + insert run in one transaction guarded by a per-owner advisory
     // lock (audit follow-up L1): previously the two COUNT(*)s and the INSERT were
@@ -152,10 +161,22 @@ pub async fn mint_enrollment_code(
         )));
     }
 
+    sqlx::query(
+        "INSERT INTO terminal_installations
+           (installation_id, bot_id, device_name, agent_type, status)
+         VALUES ($1, $2, $3, $4, 'pending')",
+    )
+    .bind(&installation_id)
+    .bind(&bot_id)
+    .bind(&device_name)
+    .bind(&agent_type)
+    .execute(&mut *tx)
+    .await?;
+
     let row = sqlx::query(
         "INSERT INTO enrollment_codes
-            (code_id, bot_id, code_hash, created_by, agent_type, expires_at)
-         VALUES ($1, $2, $3, $4, $5, NOW() + make_interval(secs => $6))
+            (code_id, bot_id, code_hash, created_by, agent_type, installation_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(secs => $7))
          RETURNING expires_at",
     )
     .bind(&code_id)
@@ -163,6 +184,7 @@ pub async fn mint_enrollment_code(
     .bind(&code_hash)
     .bind(&claims.sub)
     .bind(&agent_type)
+    .bind(&installation_id)
     .bind(ENROLLMENT_TTL_SECS)
     .fetch_one(&mut *tx)
     .await?;
@@ -184,6 +206,8 @@ pub async fn mint_enrollment_code(
         "code": code,
         "code_id": code_id,
         "bot_id": bot_id,
+        "installation_id": installation_id,
+        "device_name": device_name,
         "agent_type": agent_type,
         "expires_at": expires_at.to_rfc3339(),
         "ttl_secs": ENROLLMENT_TTL_SECS as i64,
@@ -206,14 +230,36 @@ pub async fn revoke_enrollment_codes(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let mut tx = state.db.begin().await?;
+    let pending_ids = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT installation_id FROM enrollment_codes
+         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked",
+    )
+    .bind(&bot_id)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     let revoked = sqlx::query(
         "UPDATE enrollment_codes SET revoked = TRUE
          WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked",
     )
     .bind(&bot_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
+    if !pending_ids.is_empty() {
+        sqlx::query(
+            "UPDATE terminal_installations
+             SET revoked_at = COALESCE(revoked_at, NOW()), updated_at = NOW()
+             WHERE installation_id = ANY($1) AND status = 'pending'",
+        )
+        .bind(&pending_ids)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     tracing::info!(%bot_id, revoked, owner = %claims.sub, "enrollment codes revoked");
     Ok(Json(json!({ "bot_id": bot_id, "revoked": revoked })))
 }
@@ -221,11 +267,26 @@ pub async fn revoke_enrollment_codes(
 #[derive(Deserialize)]
 pub struct RedeemRequest {
     pub code: String,
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+fn normalize_device_name(raw: Option<&str>) -> Result<String, AppError> {
+    let name = raw
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("Unnamed terminal");
+    if name.chars().count() > 128 || name.chars().any(char::is_control) {
+        return Err(AppError::BadRequest(
+            "device_name must be 1-128 printable characters".into(),
+        ));
+    }
+    Ok(name.to_string())
 }
 
 /// POST /api/v1/enrollment/redeem — PUBLIC. Authenticated by the code itself.
-/// Atomically claims the code (single-use), rotates the bot token, and returns
-/// the token + a ready-to-run connector config. Every failure mode (unknown /
+/// Atomically claims the code (single-use), creates an active installation, and
+/// returns its credential + a ready-to-run connector config. Every failure mode (unknown /
 /// expired / already-redeemed / revoked) returns the SAME opaque 400 so it isn't
 /// an existence/状态 oracle.
 pub async fn redeem_enrollment_code(
@@ -251,6 +312,12 @@ pub async fn redeem_enrollment_code(
         return Err(opaque());
     }
     let code_hash = hash_enrollment_code(code);
+    let device_name = normalize_device_name(body.device_name.as_deref())?;
+
+    let credential = generate_installation_credential();
+    let credential_hash = hash_installation_credential(&credential);
+    let credential_prefix = credential[..credential.len().min(13)].to_string();
+    let mut tx = state.db.begin().await?;
 
     // Atomic single-redemption: the WHERE clause guarantees exactly one caller
     // can flip redeemed_at; a replay sees zero rows. Same predicate as the table
@@ -258,10 +325,10 @@ pub async fn redeem_enrollment_code(
     let claimed = sqlx::query(
         "UPDATE enrollment_codes SET redeemed_at = NOW()
          WHERE code_hash = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()
-         RETURNING bot_id, agent_type",
+         RETURNING bot_id, agent_type, installation_id",
     )
     .bind(&code_hash)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?;
 
     let Some(row) = claimed else {
@@ -269,6 +336,11 @@ pub async fn redeem_enrollment_code(
         return Err(opaque());
     };
     let bot_id: String = row.try_get("bot_id").map_err(|_| opaque())?;
+    let installation_id: String = row
+        .try_get::<Option<String>, _>("installation_id")
+        .ok()
+        .flatten()
+        .ok_or_else(opaque)?;
     let agent_type = normalize_agent_type(
         row.try_get::<Option<String>, _>("agent_type")
             .ok()
@@ -279,9 +351,13 @@ pub async fn redeem_enrollment_code(
     // Fetch the bot's name for the TOML account id. If the bot vanished between
     // claim and here (CASCADE would have deleted the code, so this is rare), the
     // code is already spent — fail opaque rather than leak.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
     let bot_row = sqlx::query("SELECT username FROM bot_accounts WHERE bot_id = $1")
         .bind(&bot_id)
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(opaque)?;
     let username: String = bot_row
@@ -289,8 +365,39 @@ pub async fn redeem_enrollment_code(
         .unwrap_or_else(|_| bot_id.clone());
     let account_id = connector_config::sanitize_account_id(&username);
 
-    // Single mint path — identical to a manual token rotate.
-    let (token, token_prefix) = mint_bot_token(&state, &bot_id).await?;
+    // Active/passive v1: enrollment is an owner-authorized takeover. Preserve
+    // old installations for audit/reactivation, but only the new one may connect.
+    sqlx::query(
+        "UPDATE terminal_installations SET status = 'standby', updated_at = NOW()
+         WHERE bot_id = $1 AND status = 'active' AND revoked_at IS NULL",
+    )
+    .bind(&bot_id)
+    .execute(&mut *tx)
+    .await?;
+    let activated = sqlx::query(
+        "UPDATE terminal_installations
+         SET device_name = $1, credential_hash = $2, credential_prefix = $3,
+             status = 'active', credential_rotated_at = NOW(), updated_at = NOW()
+         WHERE installation_id = $4 AND bot_id = $5
+           AND status = 'pending' AND revoked_at IS NULL",
+    )
+    .bind(&device_name)
+    .bind(&credential_hash)
+    .bind(&credential_prefix)
+    .bind(&installation_id)
+    .bind(&bot_id)
+    .execute(&mut *tx)
+    .await?;
+    if activated.rows_affected() != 1 {
+        return Err(opaque());
+    }
+    tx.commit().await?;
+
+    // Disconnect the previously active installation immediately. Its secret is
+    // still independently valid but standby and therefore cannot reconnect.
+    if let Ok(id) = Uuid::parse_str(&bot_id) {
+        state.bot_registry.kick(id);
+    }
 
     let (public_base, configured) = resolve_public_base(&state);
     let token_file = token_file_path(&account_id);
@@ -298,19 +405,21 @@ pub async fn redeem_enrollment_code(
         account_id: &username,
         agent_type: &agent_type,
         public_base: &public_base,
-        token_ref: TokenRef::File(token_file.clone()),
+        token_ref: TokenRef::InstallationFile(token_file.clone()),
     });
 
     limiter.reset(&rl_key);
-    tracing::info!(%bot_id, %account_id, %agent_type, token_prefix = %token_prefix, "enrollment code redeemed");
+    tracing::info!(%bot_id, %installation_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "enrollment code redeemed");
 
     Ok(Json(json!({
         "bot_id": bot_id,
+        "installation_id": installation_id,
+        "device_name": device_name,
         "account_id": account_id,
         "agent_type": agent_type,
-        "token": token,
-        "token_prefix": token_prefix,
-        "token_file": token_file,
+        "credential": credential,
+        "credential_prefix": credential_prefix,
+        "credential_file": token_file,
         "control_url": control_url(&public_base),
         "data_url": data_url(&public_base),
         "config_toml": config_toml,
@@ -318,7 +427,7 @@ pub async fn redeem_enrollment_code(
             "public_base": public_base,
             "configured": configured,
         },
-        "note": "Write `token` to <config_dir>/<token_file> (chmod 600), save config_toml, then start the connector. The token replaces any previous one for this bot.",
+        "note": "Write `credential` to <config_dir>/<token_file> (chmod 600), save config_toml, then start the connector. This credential belongs only to the returned installation.",
     })))
 }
 
@@ -328,10 +437,9 @@ pub struct ConnectorConfigQuery {
     pub agent_type: Option<String>,
 }
 
-/// GET /api/v1/bots/{bot_id}/connector-config — owner/admin. Manual-mode (mode 3)
-/// helper: returns a ready-to-run config that reads the token from a sidecar
-/// file. The token itself is issued separately via `POST /bots/{id}/token` so a
-/// single page never juggles two secrets (config + code).
+/// GET /api/v1/bots/{bot_id}/connector-config — owner/admin config preview.
+/// The rendered file references an installation credential sidecar, but no
+/// credential is issued here; a terminal must still redeem its bound enrollment.
 pub async fn get_connector_config(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -358,14 +466,14 @@ pub async fn get_connector_config(
         account_id: &username,
         agent_type: &agent_type,
         public_base: &public_base,
-        token_ref: TokenRef::File(token_file.clone()),
+        token_ref: TokenRef::InstallationFile(token_file.clone()),
     });
 
     Ok(Json(json!({
         "bot_id": bot_id,
         "account_id": account_id,
         "agent_type": agent_type,
-        "token_file": token_file,
+        "credential_file": token_file,
         "control_url": control_url(&public_base),
         "data_url": data_url(&public_base),
         "config_toml": config_toml,
@@ -375,7 +483,7 @@ pub async fn get_connector_config(
         },
         // Scheduled self-status: when enabled, the connector should, every
         // `interval_minutes`, run `prompt` through its agent and POST the answer to
-        // /api/v1/bots/{bot_id}/self-status (Bearer = bot token). The gateway owns
+        // /api/v1/bots/{bot_id}/self-status (Bearer = installation credential). The gateway owns
         // the config; the connector owns the timer + the write-back.
         "status_schedule": {
             "enabled": row.try_get::<bool, _>("status_auto_update").unwrap_or(false),
@@ -386,7 +494,7 @@ pub async fn get_connector_config(
                 .flatten(),
             "self_status_path": format!("/api/v1/bots/{bot_id}/self-status"),
         },
-        "note": "Issue the bot token separately (POST /api/v1/bots/{bot_id}/token) and write it to <config_dir>/<token_file> (chmod 600).",
+        "note": "Redeem an enrollment code for this bot, then write the returned installation credential to <config_dir>/<credential_file> (chmod 600).",
     })))
 }
 
@@ -528,6 +636,21 @@ pub async fn connector_download(
     }
     resp.body(axum::body::Body::from_stream(upstream.bytes_stream()))
         .map_err(|e| AppError::Internal(format!("stream response: {e}")))
+}
+
+#[cfg(test)]
+mod installation_tests {
+    use super::normalize_device_name;
+
+    #[test]
+    fn device_name_is_bounded_and_rejects_controls() {
+        assert_eq!(
+            normalize_device_name(Some("  build host  ")).unwrap(),
+            "build host"
+        );
+        assert!(normalize_device_name(Some("bad\nname")).is_err());
+        assert!(normalize_device_name(Some(&"x".repeat(129))).is_err());
+    }
 }
 
 /// Pick `https://github.com/{repo}/releases/download/connector-vX.Y.Z/{asset}`

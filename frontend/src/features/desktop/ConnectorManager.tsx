@@ -379,7 +379,7 @@ export function ConnectorManager() {
     }
     setOnboarding(true);
     try {
-      const redeemed = await redeemEnrollmentCode(code);
+      const redeemed = await redeemEnrollmentCode(code, "Cheers Desktop");
       if (isAgentType(redeemed.agent_type) && !(await ensureAdapterReady(redeemed.agent_type))) {
         // The code is spent by now — redeeming is what rotates the token, and
         // it can't be undone. Say so plainly instead of a bare "not installed",
@@ -392,8 +392,8 @@ export function ConnectorManager() {
       const configPath = await invokeDesktop<string>("connector_write_onboarded", {
         accountId: redeemed.account_id,
         configToml: redeemed.config_toml,
-        token: redeemed.token,
-        tokenFile: redeemed.token_file,
+        token: redeemed.credential,
+        tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
       toast.success(`Connector "${redeemed.account_id}" set up and started`);
@@ -438,12 +438,12 @@ export function ConnectorManager() {
         return;
       }
       const { code } = await mintEnrollmentCode(botId, agentType);
-      const redeemed = await redeemEnrollmentCode(code);
+      const redeemed = await redeemEnrollmentCode(code, "Cheers Desktop");
       const configPath = await invokeDesktop<string>("connector_write_onboarded", {
         accountId: redeemed.account_id,
         configToml: redeemed.config_toml,
-        token: redeemed.token,
-        tokenFile: redeemed.token_file,
+        token: redeemed.credential,
+        tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
       toast.success(`Connector "${redeemed.account_id}" set up and started`);

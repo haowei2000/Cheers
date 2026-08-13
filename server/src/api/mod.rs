@@ -14,6 +14,7 @@ pub mod external_identities;
 pub mod files;
 pub mod fleet;
 pub mod friends;
+pub mod installations;
 pub mod invite_links;
 pub mod mcp;
 pub mod messages;

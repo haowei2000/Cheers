@@ -105,6 +105,12 @@ pub struct Config {
     pub s3_region: String,
     pub cors_allowed_origins: Option<String>,
 
+    /// Canonical externally visible MCP protected-resource URL, including
+    /// `/mcp`. Token audience binding and RFC 9728 metadata use this exact URL.
+    pub mcp_public_url: Option<String>,
+    /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
+    pub mcp_authorization_server_issuer: Option<String>,
+
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
     /// `wss://cheers.example.com` for prod. Surfaced by GET /ops/connector-discovery
@@ -336,6 +342,16 @@ impl Config {
             cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
+            mcp_public_url: optional("MCP_PUBLIC_URL").map(|value| {
+                validate_mcp_url("MCP_PUBLIC_URL", &value, true);
+                value.trim_end_matches('/').to_string()
+            }),
+            mcp_authorization_server_issuer: optional("MCP_AUTHORIZATION_SERVER_ISSUER").map(
+                |value| {
+                    validate_mcp_url("MCP_AUTHORIZATION_SERVER_ISSUER", &value, false);
+                    value.trim_end_matches('/').to_string()
+                },
+            ),
             connector_public_base: env::var("CHEERS_CONNECTOR_PUBLIC_BASE")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
@@ -519,6 +535,44 @@ impl Config {
             _ => DEV_DEFAULT_ORIGINS.iter().map(|s| s.to_string()).collect(),
         }
     }
+
+    /// Canonical MCP resource identifier. The localhost fallback is only for
+    /// development; production must set MCP_PUBLIC_URL so untrusted proxy/Host
+    /// headers can never influence token audience or discovery metadata.
+    pub fn mcp_resource_url(&self) -> String {
+        self.mcp_public_url
+            .clone()
+            .unwrap_or_else(|| format!("http://localhost:{}/mcp", self.port))
+    }
+
+    pub fn mcp_resource_metadata_url(&self) -> String {
+        let resource = self.mcp_resource_url();
+        let parsed = url::Url::parse(&resource).expect("validated MCP resource URL");
+        format!(
+            "{}/.well-known/oauth-protected-resource",
+            parsed.origin().ascii_serialization()
+        )
+    }
+}
+
+fn validate_mcp_url(name: &str, value: &str, require_mcp_path: bool) {
+    let parsed = url::Url::parse(value)
+        .unwrap_or_else(|error| panic!("{name} must be an absolute URL: {error}"));
+    let localhost = matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && localhost) {
+        panic!("{name} must use https (http is allowed only for loopback development)");
+    }
+    if parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        panic!("{name} must not contain userinfo, query, or fragment components");
+    }
+    if require_mcp_path && parsed.path().trim_end_matches('/') != "/mcp" {
+        panic!("MCP_PUBLIC_URL must identify the /mcp endpoint");
+    }
 }
 
 /// Read a required env var. Empty/whitespace-only values count as MISSING so a
@@ -558,4 +612,31 @@ fn require_any(keys: &[&str]) -> String {
     }
 
     panic!("missing required env var, set one of: {}", keys.join(", "));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_mcp_url;
+
+    #[test]
+    fn mcp_public_url_requires_exact_endpoint_and_safe_scheme() {
+        validate_mcp_url("MCP_PUBLIC_URL", "https://cheers.example/mcp", true);
+        validate_mcp_url("MCP_PUBLIC_URL", "http://localhost:8000/mcp", true);
+        assert!(std::panic::catch_unwind(|| {
+            validate_mcp_url("MCP_PUBLIC_URL", "http://cheers.example/mcp", true)
+        })
+        .is_err());
+        assert!(std::panic::catch_unwind(|| {
+            validate_mcp_url("MCP_PUBLIC_URL", "https://cheers.example/api", true)
+        })
+        .is_err());
+        assert!(std::panic::catch_unwind(|| {
+            validate_mcp_url(
+                "MCP_PUBLIC_URL",
+                "https://cheers.example/mcp?tenant=x",
+                true,
+            )
+        })
+        .is_err());
+    }
 }

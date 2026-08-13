@@ -15,6 +15,19 @@ pub fn hash_bot_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Installation-bound Agent Bridge credential. Unlike the legacy `agb_`
+/// token, this secret identifies one concrete connector device, not the bot
+/// identity itself. Only its SHA-256 is persisted.
+pub const INSTALLATION_CREDENTIAL_PREFIX: &str = "agbi_";
+
+pub fn generate_installation_credential() -> String {
+    generate_prefixed_secret(INSTALLATION_CREDENTIAL_PREFIX)
+}
+
+pub fn hash_installation_credential(credential: &str) -> String {
+    hash_bot_token(credential)
+}
+
 /// 生成新的 botToken：`agb_<256-bit hex>`。明文仅在签发时返回一次，
 /// 服务端只持久化其 SHA-256（见 [`hash_bot_token`]）。
 pub fn generate_bot_token() -> String {

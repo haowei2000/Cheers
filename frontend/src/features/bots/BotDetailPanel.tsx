@@ -14,6 +14,8 @@ import {
   Trash2,
   Pencil,
   Save,
+  Laptop,
+  RotateCw,
 } from "lucide-react";
 import {
   disableBot,
@@ -22,6 +24,12 @@ import {
   updateBotProfile,
   refreshBotStatus,
   getBotStatus,
+  listTerminalInstallations,
+  activateTerminalInstallation,
+  rotateTerminalCredential,
+  revokeTerminalInstallation,
+  reconnectTerminalInstallation,
+  type TerminalInstallation,
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { Avatar } from "@/components/ui/avatar";
@@ -56,7 +64,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           setDone(true);
           setTimeout(() => setDone(false), 1500);
         } catch {
-          // The Agent Bridge token is shown only once — never let a copy failure
+          // One-time credentials are shown only once — never let a copy failure
           // be silent, or the value is lost. Point the user at the manual path.
           toast.error("Clipboard unavailable — select and copy manually");
         }
@@ -69,10 +77,11 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
   );
 }
 
-type Tab = "overview" | "permissions" | "events";
+type Tab = "overview" | "terminals" | "permissions" | "events";
 
 const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
   { id: "overview", label: "Overview", icon: Info },
+  { id: "terminals", label: "Terminals", icon: Laptop },
   { id: "permissions", label: "Permissions", icon: ShieldCheck },
   { id: "events", label: "Events", icon: Activity },
 ];
@@ -233,6 +242,13 @@ export function BotDetailPanel({
             <BotToBotGrantsSection botId={bot.bot_id} />
           </div>
         )}
+        {tab === "terminals" && (
+          bot.can_manage ? (
+            <BotTerminalsSection botId={bot.bot_id} onError={onError} />
+          ) : (
+            <p className="text-compact text-zinc-400">Only the bot owner or an administrator can view terminal installations.</p>
+          )
+        )}
         {tab === "events" && (
           <div className="space-y-4">
             <BotConnectionHistorySection botId={bot.bot_id} />
@@ -241,6 +257,115 @@ export function BotDetailPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg: string) => void }) {
+  const [items, setItems] = useState<TerminalInstallation[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ id: string; credential: string } | null>(null);
+
+  const load = async () => {
+    try {
+      setItems(await listTerminalInstallations(botId));
+    } catch (e) {
+      onError(String(e));
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    const id = window.setInterval(() => void load(), 20_000);
+    return () => clearInterval(id);
+  }, [botId]);
+
+  const run = async (id: string, action: () => Promise<void>) => {
+    setBusy(id);
+    try {
+      await action();
+      await load();
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <SectionHead>Terminal installations</SectionHead>
+        <p className="mt-1 text-compact text-zinc-400">
+          Each connector has an independent credential. Only the active terminal may connect in v1.
+        </p>
+      </div>
+      {items.length === 0 && (
+        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-zinc-400">
+          No terminal enrolled yet. Create an enrollment code to connect one.
+        </p>
+      )}
+      {items.map((item) => (
+        <div key={item.installation_id} className="space-y-2 rounded-sm border border-zinc-800 bg-zinc-950/40 p-3">
+          <div className="flex items-start gap-3">
+            <Laptop className="mt-0.5 h-4 w-4 text-zinc-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-zinc-100">{item.device_name}</span>
+                <span className={cn("text-compact", item.online ? "text-emerald-400" : "text-zinc-400")}>
+                  {item.revoked_at ? "revoked" : item.online ? "online" : item.status}
+                </span>
+              </div>
+              <p className="text-compact text-zinc-400">
+                {item.agent_type} · {item.connector_version ?? "version unknown"} · {item.credential_prefix}
+              </p>
+              <p className="text-compact text-zinc-500">
+                Last seen {item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}
+              </p>
+            </div>
+          </div>
+          {!item.revoked_at && (
+            <div className="flex flex-wrap gap-2 pl-7">
+              {item.status === "standby" && (
+                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
+                  onClick={() => run(item.installation_id, () => activateTerminalInstallation(botId, item.installation_id))}>
+                  <Power className="h-3.5 w-3.5" /> Activate
+                </Button>
+              )}
+              {item.status !== "pending" && (
+                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
+                  onClick={() => run(item.installation_id, async () => {
+                    const result = await rotateTerminalCredential(botId, item.installation_id);
+                    setIssued({ id: item.installation_id, credential: result.credential });
+                  })}>
+                  <RotateCw className="h-3.5 w-3.5" /> Rotate credential
+                </Button>
+              )}
+              {item.status === "active" && (
+                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
+                  onClick={() => run(item.installation_id, () => reconnectTerminalInstallation(botId, item.installation_id))}>
+                  <RotateCw className="h-3.5 w-3.5" /> Reconnect
+                </Button>
+              )}
+              <Button variant="danger" controlSize="compact" disabled={busy === item.installation_id}
+                onClick={() => {
+                  if (window.confirm(`Revoke terminal “${item.device_name}”? It will no longer be able to connect.`)) {
+                    void run(item.installation_id, () => revokeTerminalInstallation(botId, item.installation_id));
+                  }
+                }}>
+                <Trash2 className="h-3.5 w-3.5" /> Revoke
+              </Button>
+            </div>
+          )}
+          {issued?.id === item.installation_id && (
+            <div className="ml-7 rounded-sm bg-amber-950/40 p-2 text-compact text-amber-100">
+              <p>This credential is shown once. Replace the installation credential file before reconnecting.</p>
+              <code className="mt-1 block break-all select-all">{issued.credential}</code>
+              <CopyButton value={issued.credential} />
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -329,7 +454,7 @@ function BotOverview({
 
       {bot.can_manage && <div className="border-t border-zinc-800" />}
 
-      {/* Details — Bot ID / Bridge token / Channels, one row form (§2.13) */}
+      {/* Details — Bot ID / transitional MCP bootstrap / Channels. */}
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
@@ -339,11 +464,11 @@ function BotOverview({
           <CopyButton value={bot.bot_id} label="" />
         </MetaRow>
         {bot.can_manage && (
-          <MetaRow label="Bridge token">
-            <Tip content="Shown once when issued — copy it right away.">
+          <MetaRow label="Legacy MCP bootstrap">
+            <Tip content="Temporary compatibility credential for the remote MCP token exchange. It cannot connect a terminal.">
               <Button action="issue" content="iconText" controlSize="compact" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
                 <KeyRound className="w-3.5 h-3.5" />
-                Issue token
+                Issue legacy token
               </Button>
             </Tip>
           </MetaRow>

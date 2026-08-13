@@ -34,6 +34,18 @@ spec:
               service:
                 name: {{ include "cheers.gateway.fullname" . }}
                 port: { number: {{ .Values.gateway.port }} }
+          - path: /mcp
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "cheers.gateway.fullname" . }}
+                port: { number: {{ .Values.gateway.port }} }
+          - path: /.well-known/oauth-protected-resource
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "cheers.gateway.fullname" . }}
+                port: { number: {{ .Values.gateway.port }} }
           # Everything else is the SPA.
           - path: /
             pathType: Prefix
