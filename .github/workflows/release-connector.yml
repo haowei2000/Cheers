@@ -47,7 +47,7 @@ jobs:
             asset_mcp: cheers-mcp-server-linux-arm64
             use_cross: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust + target
         run: |
