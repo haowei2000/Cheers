@@ -1426,7 +1426,7 @@ mod tests {
         ];
         let mut output = input.to_string();
         for op in ops {
-            output = apply_structured_ops("board.yaml", &output, &[op.clone()])
+            output = apply_structured_ops("board.yaml", &output, std::slice::from_ref(&op))
                 .unwrap_or_else(|error| panic!("op {op} failed against:\n{output}\n{error:?}"));
         }
         assert!(output.contains("# board"));

@@ -1086,6 +1086,10 @@ async fn bind_bot_to_channel(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "transactional membership write keeps the audited actor and connector scope explicit"
+)]
 async fn bind_bot_to_channel_tx(
     tx: &mut Transaction<'_, Postgres>,
     channel_id: &str,
@@ -1757,6 +1761,10 @@ pub async fn decline_bot_channel_invite(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    reason = "contract tests stay beside invite helpers while membership handlers continue below"
+)]
 mod tests {
     use super::*;
 

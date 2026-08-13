@@ -5,7 +5,7 @@
 //! Homes:
 //! - `Agent`     — the agent's own mechanic (when it asks); nothing for Cheers to do.
 //! - `Connector` — host firewall (`fs/*`, `terminal/*`) or session plumbing
-//!                 (`initialize`/`session/new`…); gated host-side, observed by Cheers.
+//!   (`initialize`/`session/new`…); gated host-side, observed by Cheers.
 //! - `Cheers`    — governed by the per-user event-access matrix (INITIATE/SEE/RESPOND).
 //! - `Observe`   — agent push notifications Cheers records/surfaces (optionally SEE-gated).
 //!

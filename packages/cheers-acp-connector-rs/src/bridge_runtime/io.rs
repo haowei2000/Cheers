@@ -310,7 +310,11 @@ pub(super) fn spawn_control_socket(
                 msg = socket.next_json() => match msg {
                     Ok(Some(value)) => match serde_json::from_value::<ControlInbound>(value) {
                         Ok(frame) => {
-                            if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
+                            if runtime_tx
+                                .send(RuntimeInput::Control(Box::new(frame)))
+                                .await
+                                .is_err()
+                            {
                                 return;
                             }
                         }
@@ -398,7 +402,11 @@ pub(super) fn spawn_data_socket(
                 msg = socket.next_json() => match msg {
                     Ok(Some(value)) => match serde_json::from_value::<DataInbound>(value) {
                         Ok(frame) => {
-                            if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
+                            if runtime_tx
+                                .send(RuntimeInput::Data(Box::new(frame)))
+                                .await
+                                .is_err()
+                            {
                                 return;
                             }
                         }

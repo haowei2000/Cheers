@@ -264,7 +264,7 @@ async fn handle_resource_read(client: &CheersClient, params: &Value) -> Result<V
     let call = build_uri_resource_call(uri)
         .map_err(|err| json_rpc_error_with_data(-32602, &err.message, &err.code))?;
     let data = client
-        .call(&call.resource, call.params)
+        .call(call.resource, call.params)
         .await
         .map_err(|err| json_rpc_error_with_data(-32002, &err.message, &err.code))?;
     Ok(json!({ "contents": [resource_content(uri, &data)] }))
@@ -504,7 +504,7 @@ async fn handle_tool_call(client: &CheersClient, params: &Value) -> Result<Value
         .map_err(|err| tool_error_result(&err.code, &err.message))?;
 
     match client
-        .call(&resource_call.resource, resource_call.params)
+        .call(resource_call.resource, resource_call.params)
         .await
     {
         Ok(data) => Ok(tool_text_result(
