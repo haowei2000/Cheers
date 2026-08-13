@@ -105,21 +105,27 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           {methods.length > 1 && isOwner && (
             <div className="mt-3 grid gap-2">
               {methods.map((method) => (
-                <button
+                <UiButton
                   key={method.method_id}
+                  action="choose"
+                  variant="plain"
+                  controlSize="regular"
+                  controlWidth="fill"
                   type="button"
                   disabled={busy !== null}
                   onClick={() => setSelectedMethodId(method.method_id)}
-                  className={`rounded-sm border px-3 py-2 text-left text-compact transition-colors ${
+                  className={`justify-start text-left whitespace-normal ring-1 ring-inset ${
                     selectedMethodId === method.method_id
-                      ? "border-indigo-400/60 bg-indigo-500/10 text-zinc-100"
-                      : "border-zinc-700 bg-zinc-950/30 text-zinc-400 hover:border-zinc-600"
+                      ? "bg-indigo-500/10 text-zinc-100 ring-indigo-400/60"
+                      : "bg-zinc-950/30 text-zinc-400 ring-zinc-700 hover:ring-zinc-600"
                   }`}
                 >
-                  <span className="font-medium">{method.name?.trim() || method.method_id}</span>
-                  {method.recommended && <span className="ml-2 text-minimal text-indigo-300">Recommended</span>}
-                  {method.description && <span className="mt-1 block text-zinc-500">{method.description}</span>}
-                </button>
+                  <span aria-label={method.name?.trim() || method.method_id}>
+                    <span className="font-medium">{method.name?.trim() || method.method_id}</span>
+                    {method.recommended && <span className="ml-2 text-minimal text-indigo-300">Recommended</span>}
+                    {method.description && <span className="mt-1 block text-zinc-500">{method.description}</span>}
+                  </span>
+                </UiButton>
               ))}
             </div>
           )}
