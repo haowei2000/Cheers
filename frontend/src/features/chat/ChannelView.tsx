@@ -1717,7 +1717,7 @@ export function ChannelView({
         {sidebarToggle && (
           <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
         )}
-        <Hash className="h-5 w-5 text-zinc-700" />
+        <Hash className="h-5 w-5 text-zinc-600" />
         <span>Select a channel to start chatting</span>
       </div>
     );
@@ -1759,7 +1759,7 @@ export function ChannelView({
           </span>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <Hash className="h-5 w-5 text-zinc-700" />
+          <Hash className="h-5 w-5 text-zinc-600" />
           <div className="text-zinc-100 font-semibold text-comfortable">
             #{channel.name}
           </div>

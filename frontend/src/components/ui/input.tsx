@@ -15,10 +15,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     <input
       ref={ref}
       className={cn(
-        // Borderless filled field (DESIGN.md §2.3): the fill is the affordance,
-        // Rings are states (neutral focus, semantic error red).
+        // Filled field with an inset neutral boundary (DESIGN.md §2.3).
+        // Focus and error replace the neutral ring with semantic state colors.
         // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-        "w-full rounded-sm px-3 bg-zinc-800 text-zinc-100 placeholder-zinc-400 transition-shadow",
+        "w-full rounded-sm px-3 bg-zinc-800 text-zinc-100 placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
         inset === "leading" && "pl-9",
         controlHeightClasses[size],
         "text-comfortable md:text-regular",

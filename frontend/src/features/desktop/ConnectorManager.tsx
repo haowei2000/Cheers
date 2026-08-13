@@ -544,7 +544,7 @@ export function ConnectorManager() {
           <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "onboard" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="h-5 w-5" />
             <span className="text-regular font-medium">Set up on this Mac</span>
@@ -560,7 +560,7 @@ export function ConnectorManager() {
           <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "redeem" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Ticket className="h-5 w-5" />
             <span className="text-regular font-medium">I have a code</span>

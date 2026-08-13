@@ -118,17 +118,20 @@ meaningful text → `zinc-400`.
 | Workspace rail | `bg-rail` (`#0f0f11`) |
 | Sidebar | `bg-sidebar` (`#18181b`) |
 | Cards, dialogs, popovers | `bg-zinc-900` — no border; separation comes from surface contrast + shadow |
-| Fields, chips, soft buttons | `bg-zinc-800` (or `/60` for chips) |
+| Fields | `bg-zinc-800 ring-1 ring-inset ring-zinc-600` |
+| Chips, soft buttons | `bg-zinc-800` (or `/60` for chips) |
 | Inset fields inside dialogs | `bg-zinc-950` |
 | Hover on soft surfaces | `bg-zinc-700` |
 
 **Elevation principle — borderless everywhere.** Layers separate by surface
-contrast, shadow, and deliberate spacing, never by box outlines: `border
-border-*` is banned on buttons, fields, cards, chips and popovers alike. Use
+contrast, shadow, and deliberate spacing, never by layout-affecting box outlines: `border
+border-*` is banned on buttons, fields, cards, chips and popovers alike. Filled
+form fields use a neutral inset ring so their boundary keeps at least 3:1 contrast. Use
 vertical and horizontal gaps as the default way to group stacked regions.
 Reserve 1px rules only for dense, data-heavy surfaces where adjacent rows must
 be scanned as a table; underline *indicators* remain for tabs. Rings appear
-only as **states**: focus (`ring-indigo-500`) and error (`ring-red-500`).
+as field boundaries and **states**: neutral (`ring-zinc-600`), focus
+(`ring-indigo-500`), and error (`ring-red-500`).
 
 ### Typography
 
@@ -172,7 +175,7 @@ dividers, not disclosure buttons: do not add a chevron, collapsed state, or
   from the utility name alone. `rounded-full` is reserved for avatars,
   presence, unread dots, progress, and platform-native controls whose shape
   carries meaning.
-- Separation: resting controls stay borderless. Use spacing and surface contrast first; use hairline rules only for editorial sections or dense rows that must scan as a register.
+- Separation: resting controls stay free of layout-affecting borders. Form fields use `ring-1 ring-inset ring-zinc-600`; other controls use spacing and surface contrast first. Use hairline rules only for editorial sections or dense rows that must scan as a register.
 - Focus: `focus:ring-2 focus:ring-indigo-500` (buttons use `focus-visible:`) — **never** a bare `focus:border-indigo-*` substitute
 - Error: `ring-1 ring-red-500/70` on the field — a state ring, not a resting border
 - Disabled: `disabled:opacity-50` everywhere
@@ -263,13 +266,15 @@ standalone on a `zinc-950` page it is `bg-zinc-900`.
 
 ### 2.3 Text fields
 
-Use `<Input>` for single-line text. Fields are **borderless filled boxes** —
-the fill is the affordance, the ring is the state. Selects/textareas mirror
+Use `<Input>` for single-line text. Fields are **filled boxes with a neutral
+inset boundary** — the fill is the affordance and the ring preserves a 3:1
+boundary against adjacent dark surfaces. Focus/error replace that neutral ring. Selects/textareas mirror
 the same recipe until a shared component exists:
 
 ```tsx
-// field canon (input / select / textarea) — no border
-className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-zinc-100 placeholder:text-zinc-600
+// field canon (input / select / textarea) — no layout-affecting border
+className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-zinc-100 placeholder:text-zinc-400
+           ring-1 ring-inset ring-zinc-600
            focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
 // error state: add ring-1 ring-red-500/70

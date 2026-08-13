@@ -250,7 +250,7 @@ function AppUpdateCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-regular font-medium text-zinc-200">App updates</p>
@@ -332,7 +332,7 @@ function PushNotificationsCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
@@ -531,7 +531,7 @@ function ExternalIdentitiesCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
         <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
       </p>
@@ -719,7 +719,7 @@ function DevicesSessionsCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Laptop className="w-4 h-4 text-zinc-400" />
         <p className="text-regular font-medium text-zinc-200">Devices and sessions</p>
@@ -789,7 +789,7 @@ function ExternalAIPermissionsCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Shield className="w-4 h-4 text-zinc-400" />
         <p className="text-regular font-medium text-zinc-200">External AI permissions</p>
@@ -974,7 +974,7 @@ function ProfileEditCard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex min-w-0 items-center gap-3 border-b border-zinc-800 pb-4">
+      <div className="flex min-w-0 items-center gap-3 border-b border-zinc-600/70 pb-4">
         <AvatarUpload
           name={displayName || user?.username}
           id={user?.user_id}
@@ -1219,7 +1219,7 @@ export default function SettingsPage() {
 
                 <PushNotificationsCard />
 
-                <section className="border-t border-zinc-800 py-5">
+                <section className="border-t border-zinc-600/70 py-5">
                   <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-regular font-medium text-zinc-200">Sign out</p>

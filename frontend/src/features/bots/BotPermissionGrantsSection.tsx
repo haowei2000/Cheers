@@ -343,14 +343,14 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                               )}
                             </span>
                           ) : (
-                            <span className="text-zinc-700">—</span>
+                            <span className="text-zinc-400">—</span>
                           )}
                         </td>
                         {MATRIX_ROLES.map((role) => {
                           const d = c.roles[role];
                           if (!d) {
                             return (
-                              <td key={role} className="px-2 py-1 text-center text-zinc-700">
+                              <td key={role} className="px-2 py-1 text-center text-zinc-400">
                                 —
                               </td>
                             );
