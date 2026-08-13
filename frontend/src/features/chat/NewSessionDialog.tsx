@@ -126,7 +126,7 @@ export function NewSessionDialog({
                   type="button"
                   disabled={busy}
                   onClick={() => setCwd(r)}
-                  className="font-mono text-zinc-400 hover:text-indigo-300 underline decoration-dotted"
+                  className="font-mono text-zinc-100 hover:text-indigo-300 underline decoration-dotted"
                 >
                   {r}
                   {i < meta.allowed_roots.length - 1 ? ", " : ""}

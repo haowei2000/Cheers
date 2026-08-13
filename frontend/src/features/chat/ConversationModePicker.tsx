@@ -47,7 +47,7 @@ export function ConversationModePicker({
           <TabOption
             key={option.value}
             label={option.title}
-            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-500")} />}
+            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-400")} />}
             selected={selected}
             disabled={disabled}
             aria-disabled={disabled}

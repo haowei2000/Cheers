@@ -92,7 +92,7 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
           /* clipboard blocked */
         }
       }}
-      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50 transition-colors"
     >
       {done ? (
         <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -346,7 +346,7 @@ export function BotOnboardingWizard({
                 onClick={() => setPick("create")}
                 controlSize="regular" className={`rounded-sm ${
  pick === "create"? "bg-indigo-600 text-white"
- : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+ : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
  }`}
               >
                 New bot
@@ -355,9 +355,9 @@ export function BotOnboardingWizard({
                 type="button"
                 disabled={!bots.length}
                 onClick={() => setPick("existing")}
-                controlSize="regular" className={`rounded-sm disabled:opacity-40 ${
+                controlSize="regular" className={`rounded-sm disabled:opacity-50 ${
  pick === "existing"? "bg-indigo-600 text-white"
- : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+ : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
  }`}
               >
                 Existing bot
@@ -446,7 +446,7 @@ export function BotOnboardingWizard({
           <div className="space-y-3">
             <p className="text-compact text-zinc-400">
               Connecting{" "}
-              <span className="text-zinc-300">
+              <span className="text-zinc-200">
                 @{bot?.username ?? username.trim()}
               </span>
               . Choose how the host machine will receive its secure pairing code.
@@ -472,7 +472,7 @@ export function BotOnboardingWizard({
               <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </UiButton>
@@ -497,7 +497,7 @@ export function BotOnboardingWizard({
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
               </UiButton>
@@ -625,7 +625,7 @@ function ManualPanel({
   return (
     <div className="space-y-3">
       <p className="text-compact text-zinc-400">
-        Manual setup for <span className="text-zinc-300">@{bot.username}</span>{" "}
+        Manual setup for <span className="text-zinc-200">@{bot.username}</span>{" "}
         ({agentType}). Two pieces: a settings file (safe to keep) and a token
         (a password — save it so only you can read it, and never commit it).
       </p>
@@ -633,14 +633,14 @@ function ManualPanel({
       {/* 1. config */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             1. Connector config
           </span>
           <UiButton action="create" variant="plain"
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -664,7 +664,7 @@ function ManualPanel({
                     config.config_toml
                   )
                 }
-                className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200"
+                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </UiButton>
@@ -679,7 +679,7 @@ function ManualPanel({
       {/* 2. token */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             2. One-time token
           </span>
           <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
@@ -709,7 +709,7 @@ function ManualPanel({
 
       {/* 3. run */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <span className="text-compact font-semibold text-zinc-300">3. Start it</span>
+        <span className="text-compact font-semibold text-zinc-200">3. Start it</span>
         <div className="rounded-sm bg-zinc-950 p-3">
           <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
@@ -808,14 +808,14 @@ function ScriptPanel({
     <div className="space-y-3">
       <p className="text-compact text-zinc-400">
         One command on the agent's machine for{" "}
-        <span className="text-zinc-300">@{bot.username}</span> ({agentType}). It
+        <span className="text-zinc-200">@{bot.username}</span> ({agentType}). It
         trades the code below for a token, saves both files, and installs the
         connector so it restarts on its own after a reboot.
       </p>
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
@@ -824,7 +824,7 @@ function ScriptPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
@@ -849,7 +849,7 @@ function ScriptPanel({
 
       {code && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             2. Run on the agent's machine
           </span>
           <div className="rounded-sm bg-zinc-950 p-3">
@@ -877,7 +877,7 @@ function ScriptPanel({
           )}
           <p className="text-compact text-zinc-400">
             No terminal handy? If that machine has the Cheers desktop app, open{" "}
-            <span className="text-zinc-300">Settings → Connector → I have a code</span>{" "}
+            <span className="text-zinc-200">Settings → Connector → I have a code</span>{" "}
             and paste the code there instead.
           </p>
           <div className="flex items-center justify-between">
@@ -952,7 +952,7 @@ function AgentPanel({
         Hand your own agent a prompt and it runs the installer for you. Honest
         framing: this is the install script (mode 2), driven by your agent — so
         it must leave a background service running, or{" "}
-        <span className="text-zinc-300">@{bot.username}</span> goes offline when
+        <span className="text-zinc-200">@{bot.username}</span> goes offline when
         the agent's turn ends.
       </p>
       {guidanceError && (
@@ -963,7 +963,7 @@ function AgentPanel({
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
@@ -972,7 +972,7 @@ function AgentPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
@@ -996,11 +996,11 @@ function AgentPanel({
 
       {code && guidance && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-compact font-semibold text-zinc-300">
+          <span className="text-compact font-semibold text-zinc-200">
             2. Paste this to your agent
           </span>
           <div className="rounded-sm bg-zinc-950 p-3 max-h-56 overflow-y-auto">
-            <pre className="text-compact leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
+            <pre className="text-compact leading-relaxed text-zinc-200 whitespace-pre-wrap break-words">
               {prompt}
             </pre>
           </div>

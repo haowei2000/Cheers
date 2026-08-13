@@ -562,7 +562,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             controlSize="regular" className={cn(
  "flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
- ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+ ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
  )}
           >
             {rawMode ? <LayoutGrid className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
@@ -572,7 +572,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <UiButton action="upload" content="iconText" variant="plain"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+            className="flex items-center gap-1 text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
           >
             <Clock className="w-3.5 h-3.5" /> Load
           </UiButton>
@@ -594,7 +594,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 onClick={() => void startWatch()}
                 disabled={busy}
                 aria-label="Watch an extension file on disk"
-                className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+                className="flex items-center gap-1 text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
               >
                 <Eye className="w-3.5 h-3.5" /> Watch
               </UiButton>
@@ -622,7 +622,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                       actions={<UiButton action="unpin" content="icon" variant="plain" aria-label={`Unpin ${p}`}
                         onClick={() => togglePin(p)}
                         title="Unpin"
-                        className="text-zinc-500 hover:text-red-400 flex-shrink-0"
+                        className="text-zinc-100 hover:text-red-400 flex-shrink-0"
                       >
                         <X className="w-3.5 h-3.5" />
                       </UiButton>}
@@ -648,19 +648,19 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             onClick={toggleCollapsed}
             title={minimized ? "Expand" : "Minimize"}
             content="icon" controlSize="compact"
-            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
+            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
           >
             {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
           <UiButton action="close" variant="plain" onClick={onClose} title="Close">
-            <X className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
+            <X className="w-4 h-4 text-zinc-400 hover:text-zinc-200" />
           </UiButton>
         </div>
 
         {!minimized && notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
-            <UiButton action="dismiss" variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
+            <UiButton action="dismiss" variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-100 hover:text-zinc-50">
               <X className="w-3.5 h-3.5" />
             </UiButton>
           </div>
@@ -668,13 +668,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
           <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-zinc-400">
-            <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
+            <Package className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
             <span className="flex-1">
               No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
             </span>
             <UiButton action="create" variant="plain"
               onClick={() => loadTemporary(JSON.stringify(researchExample))}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex-shrink-0"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 flex-shrink-0"
             >
               Try it now: Research
             </UiButton>

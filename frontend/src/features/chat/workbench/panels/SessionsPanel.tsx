@@ -185,7 +185,7 @@ function SessionCard({
       <OperationsItem
         presentationLevel="medium"
         selected={Boolean(isSelected)}
-        leading={<Folder className="h-3.5 w-3.5 text-zinc-500" />}
+        leading={<Folder className="h-3.5 w-3.5 text-zinc-400" />}
         title={<span
           className="block truncate font-mono text-compact"
           style={{ direction: "rtl" }}
@@ -215,7 +215,7 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-indigo-300": "text-zinc-500 hover:text-zinc-200"}`}
+          className={`shrink-0 ${open ? "text-indigo-300": "text-zinc-100 hover:text-zinc-50"}`}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>
@@ -225,7 +225,7 @@ function SessionCard({
             disabled={actionBusy}
             title="Close this session"
             onClick={() => run(() => closeChannelBotSession(channelId, s.bot_id, s.session_id))}
-            className="text-zinc-500 hover:text-red-300 disabled:opacity-40 shrink-0"
+            className="text-zinc-100 hover:text-red-300 disabled:opacity-50 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </UiButton>
@@ -334,7 +334,7 @@ function SessionCard({
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
-                    className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-40 shrink-0"
+                    className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-50 shrink-0"
                   >
                     edit
                   </UiButton>
@@ -481,10 +481,10 @@ function BotGroup({
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1">
         <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-compact font-medium text-zinc-300 truncate" title={botId}>
+        <span className="text-compact font-medium text-zinc-200 truncate" title={botId}>
           {label}
         </span>
-        <span className="text-minimal text-zinc-500">
+        <span className="text-minimal text-zinc-400">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
       </div>

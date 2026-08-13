@@ -94,7 +94,6 @@ export function CollectionManagerDemo() {
       title={kind === "add" ? "Add managed item" : "Edit managed item"}
       onCancel={cancel}
       onSave={save}
-      saveLabel={kind === "add" ? "Add item" : "Save changes"}
       saveDisabled={!draftTitle.trim() || !draftScope.trim()}
     >
       <Field label="Name" htmlFor={`collection-${kind}-name`}>
@@ -139,7 +138,6 @@ export function CollectionManagerDemo() {
             title="Edit managed item"
             onCancel={cancel}
             onSave={save}
-            saveLabel="Save changes"
             saveDisabled={!draftTitle.trim() || !draftScope.trim()}
           >
             <Field label="Name" htmlFor="collection-edit-name">
@@ -184,7 +182,7 @@ export function CollectionManagerDemo() {
             )}
             title={record.title}
             status={(
-              <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-500">
+              <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-400">
                 {record.type}
               </span>
             )}

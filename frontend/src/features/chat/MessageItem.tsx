@@ -135,7 +135,7 @@ function ActionBar({
   mentionLabel?: string;
 }) {
   const actionClass =
-    "text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:ring-indigo-500/70";
+    "text-zinc-100 hover:bg-zinc-700/70 hover:text-zinc-50 focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
@@ -273,7 +273,7 @@ function ReplyPreview({
           <span className="truncate font-semibold">@{who}</span>
         </span>
       )}
-      <span className="truncate text-zinc-500 group-hover/reply:text-zinc-400">
+      <span className="truncate text-zinc-400 group-hover/reply:text-zinc-400">
         {excerpt}
       </span>
     </span>
@@ -637,7 +637,7 @@ export const MessageItem = memo(function MessageItem({
       </UiButton>
       <span
         className={cn(
-          "block w-full truncate text-center font-medium leading-4 text-zinc-300",
+          "block w-full truncate text-center font-medium leading-4 text-zinc-200",
           controlTextClasses.regular,
         )}
         title={name}
@@ -681,7 +681,7 @@ export const MessageItem = memo(function MessageItem({
           setAvatarMenuOpen(false);
           if (anchor) openProfile(anchor);
         }}
-        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-zinc-100 transition-colors hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <UserRound className="h-4 w-4" />
         View profile
@@ -723,7 +723,7 @@ export const MessageItem = memo(function MessageItem({
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       content="icon" controlSize="compact" className={cn(
-        "relative inline-flex items-center justify-center self-start text-zinc-500 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
+        "relative inline-flex items-center justify-center self-start text-zinc-100 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-50 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
         isOwnAlignedRight && "self-end",
       )}
     >
@@ -944,7 +944,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-zinc-100 transition-colors hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3.5 h-3.5" fill="currentColor" />

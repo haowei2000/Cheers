@@ -152,7 +152,6 @@ export function InviteLinksSection({
             title="Add invite link"
             onCancel={cancel}
             onSave={() => void create()}
-            saveLabel="Create link"
             saving={saving}
           >
             <Field label="Expiry">
@@ -194,7 +193,7 @@ export function InviteLinksSection({
               leading={<Link2 className={controlIconClasses.regular} />}
               title={linkTitle(link, Boolean(channelId))}
               status={inactive ? undefined : (
-                <span className="font-utility text-compact uppercase tracking-wide text-zinc-500">Active</span>
+                <span className="font-utility text-compact uppercase tracking-wide text-zinc-400">Active</span>
               )}
               criticalStatus={inactive ? (
                 <span className="font-utility text-compact font-semibold uppercase tracking-wide text-amber-400">

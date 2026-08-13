@@ -5,6 +5,13 @@
   "defaultControlSize": "regular",
   "defaultContentSize": "regular",
   "defaultTypographySize": "regular",
+  "neutralForegroundLevels": {
+    "primary": ["zinc-50", "zinc-100"],
+    "secondary": "zinc-200",
+    "metadata": "zinc-400",
+    "disabled": "enabled foreground plus opacity-50",
+    "inverseExceptions": ["white", "zinc-950"]
+  },
   "visualLanguage": {
     "name": "Editorial Correspondence",
     "principles": [
@@ -109,6 +116,14 @@
     "danger": "trash",
     "approve": "check",
     "reject": "x"
+  },
+  "commonActionPresentations": {
+    "windowChrome": { "back": "icon", "close": "icon", "more": "icon", "refresh": "icon" },
+    "disclosure": { "collapse": "icon", "expand": "icon" },
+    "inlineEdit": { "cancel": "icon", "delete": "icon", "edit": "icon", "remove": "icon", "save": "icon" },
+    "form": { "back": "text", "cancel": "text", "create": "iconText", "save": "iconText" },
+    "dialog": { "back": "text", "cancel": "text" },
+    "confirmation": { "cancel": "text", "delete": "iconText", "remove": "iconText" }
   },
   "legacyBaselines": {
     "iosDirectButtonCalls": 186,

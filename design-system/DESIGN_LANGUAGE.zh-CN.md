@@ -35,6 +35,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
    版面关系，不得退化成每个组件的四周边框。
 7. **关键状态不可被密度隐藏**：error、approval、unread、mention、online、disabled 等在任意
    PresentationLevel 下都必须可感知。
+8. **四级中性前景**：Web 主正文、标题、普通按钮与功能图标使用 `zinc-50/100`；次要正文使用
+   `zinc-200`；元数据与辅助说明使用 `zinc-400`；禁用状态沿用启用态前景并增加 `opacity-50`。
+   禁止将 `zinc-300/500/600/700` 用作前景色。语义填充表面的正反色和语法分类色不计入该灰阶层级。
 
 ## 3. 三级字体体系
 
@@ -102,6 +105,12 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   共享 size map 获取；这些规则在 Web CI 中 ceiling 均为 0。
 - 编辑已有对象必须使用就地编辑模式：默认对象旁显示 Edit IconButton；编辑态在同一位置替换为
   Cancel 与 Save IconButton。保存动作不得漂到 section 底部或远离被编辑对象；整页首次创建/提交表单除外。
+- 常用动作的呈现由“动作 + 场景”唯一决定，并由 Web `ActionButton` 注册表实现：窗口栏的
+  Back / Close / More / Refresh、disclosure 的 Expand / Collapse、行内编辑的
+  Edit / Save / Cancel / Delete / Remove 使用纯图标；完整表单 Create / Save 使用图标加文字，
+  Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性确认使用文字 Cancel 加
+  图标文字 Delete / Remove。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
+  trigger 时使用 `ControlTrigger` 并保留对象标题，不得用通用动作标签覆盖内容。
 - 产品布局间距只能使用 4px 网格对应的整数 Tailwind 档位，禁止 `0.5/1.5/2.5/3.5` 等半档；
   Loading Spinner 使用 ContentSize，不接受任意数字尺寸。
 - 响应式规则只能选择未显式设置时的环境默认值，不能覆盖业务显式设置。

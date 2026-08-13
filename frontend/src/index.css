@@ -203,11 +203,11 @@ button:not(:disabled) {
 }
 
 .prose em {
-  color: #d4d4d8;
+  color: #e4e4e7;
 }
 
 .prose a {
-  color: #d4d4d8;
+  color: #e4e4e7;
   text-decoration: underline;
   text-underline-offset: 2px;
 }

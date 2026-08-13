@@ -146,7 +146,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         id={lead ?? ep.id}
         size="small"
       />
-      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />}
+      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
       {shown.map((id, i) => {
         const mem = memberOf(id);
         return (
@@ -254,7 +254,7 @@ function MessageRow({
       presentationLevel="minimal"
       onClick={clickable ? () => n.msgId && onJump?.(n.msgId) : undefined}
       leading={<span
-        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-zinc-300")}
+        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-zinc-200")}
         style={brand ? { color: brand } : undefined}
       >
         {name}
@@ -312,7 +312,7 @@ function EpisodeDetail({
                   <Activity className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-indigo-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
-                <span className="flex-shrink-0 text-minimal text-zinc-500">{fmtTime(row.n.ts)}</span>
+                <span className="flex-shrink-0 text-minimal text-zinc-400">{fmtTime(row.n.ts)}</span>
               </div>
             );
           }
@@ -320,12 +320,12 @@ function EpisodeDetail({
             const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
               <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-2 py-[3px]">
-                <Icon className="w-3.5 h-3.5 text-zinc-500 self-center flex-shrink-0" />
+                <Icon className="w-3.5 h-3.5 text-zinc-400 self-center flex-shrink-0" />
                 <span className="min-w-0 truncate text-minimal text-zinc-400">
                   {row.items.map((it, j) => (
                     <span key={j}>
                       {j > 0 && " · "}
-                      <span className="text-zinc-300">{nameOf(memberOf(it.actorId), it.actorId)}</span>{" "}
+                      <span className="text-zinc-200">{nameOf(memberOf(it.actorId), it.actorId)}</span>{" "}
                       {it.kind === "write"
                         ? `wrote ${it.count} file${it.count > 1 ? "s" : ""}`
                         : `approved${it.count > 1 ? ` ×${it.count}` : ""}`}
@@ -599,7 +599,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
                 onClick={() => setLens(l)}
                 controlSize="regular" className={cn(
  "rounded-sm  capitalize transition-colors",
- lens === l ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:text-zinc-200"
+ lens === l ? "bg-zinc-800 text-zinc-100": "text-zinc-100 hover:text-zinc-50"
  )}
               >
                 {l}
@@ -639,7 +639,7 @@ function FilterChip({
       controlSize="regular" className={cn(
  "flex items-center gap-1 rounded-sm  whitespace-nowrap flex-shrink-0 transition-colors",
  active
- ? "border-zinc-600 bg-zinc-800 text-zinc-200": "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
+ ? "border-zinc-600 bg-zinc-800 text-zinc-100": "border-transparent bg-zinc-900/60 text-zinc-100 hover:text-zinc-50"
  )}
     >
       {children}
@@ -688,7 +688,7 @@ function MemberFilter({
         controlSize="regular" className={cn(
  "inline-flex items-center gap-2 rounded-sm  transition-colors",
  open || selected.size
- ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
+ ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-100 hover:text-zinc-50"
  )}
       >
         <Filter className="w-3.5 h-3.5" />
@@ -699,7 +699,7 @@ function MemberFilter({
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
           <div className="m-1 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
-            <Search className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+            <Search className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
             <UiInput
               autoFocus
               value={q}
@@ -736,7 +736,7 @@ function MemberFilter({
                       online={mem.is_online ?? undefined}
                       size="small"
                     />
-                    <span className="flex-1 truncate text-compact text-zinc-300">
+                    <span className="flex-1 truncate text-compact text-zinc-200">
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
@@ -764,7 +764,7 @@ function MemberFilter({
               <UiButton action="clear" variant="plain"
                 type="button"
                 onClick={onClear}
-                className=" text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
+                className=" text-zinc-100 hover:text-zinc-50 transition-colors flex-shrink-0"
               >
                 Clear
               </UiButton>

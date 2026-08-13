@@ -299,7 +299,7 @@ export function WorkspaceSettingsDialog({
                       title={candidate.display_name || candidate.username}
                       leading={<Avatar name={candidate.display_name || candidate.username} id={candidate.user_id} size="regular" />}
                       status={candidate.membership ? (
-                        <span className="font-utility text-compact uppercase text-zinc-500">
+                        <span className="font-utility text-compact uppercase text-zinc-400">
                           {candidate.membership === "pending" ? "Invited" : "Member"}
                         </span>
                       ) : undefined}
@@ -327,7 +327,7 @@ export function WorkspaceSettingsDialog({
                     key={member.user_id}
                     title={member.display_name || member.username}
                     leading={<Avatar name={member.display_name || member.username} id={member.user_id} size="regular" />}
-                    status={isSelf ? <span className="font-utility text-compact uppercase text-zinc-500">{member.role}</span> : undefined}
+                    status={isSelf ? <span className="font-utility text-compact uppercase text-zinc-400">{member.role}</span> : undefined}
                     criticalStatus={member.status === "pending" ? <span className="font-utility text-compact uppercase text-amber-400">Pending</span> : undefined}
                     actions={!isSelf ? (
                       <>
@@ -426,7 +426,7 @@ export function WorkspaceSettingsDialog({
         }}
         maxWidth="max-w-sm"
       >
-        <p className="text-regular text-zinc-300">{confirmState.message}</p>
+        <p className="text-regular text-zinc-200">{confirmState.message}</p>
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel"
             variant="secondary"

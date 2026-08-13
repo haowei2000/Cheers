@@ -56,7 +56,7 @@ export function ErrorState({
             <button
               type="button"
               onClick={secondaryAction.onClick}
-              className="text-compact text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
+              className="text-compact text-zinc-100 hover:text-zinc-50 hover:underline transition-colors"
             >
               {secondaryAction.label}
             </button>

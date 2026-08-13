@@ -49,7 +49,7 @@ function BotRow({
         />
       ) : (
         <CircleDot
-          className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500"
+          className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400"
           role="img"
           aria-label="Offline"
         />
@@ -131,7 +131,7 @@ export function BotsManager() {
         <IconButton
           label="Refresh bots"
           onClick={() => void refresh()}
-          className="text-zinc-500 hover:text-zinc-300"
+          className="text-zinc-100 hover:text-zinc-50"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />

@@ -50,7 +50,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
             controlSize="regular" className={cn(
  "flex items-center gap-2 text-left ",
  i === activeIndex
- ? "bg-indigo-600/30 text-zinc-100": "text-zinc-300 hover:bg-zinc-800"
+ ? "bg-indigo-600/30 text-zinc-100": "text-zinc-100 hover:bg-zinc-800"
  )}
           >
             <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />

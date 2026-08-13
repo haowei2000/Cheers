@@ -67,7 +67,7 @@ export default function McpAuthorizePage() {
       description="Choose the Agent installation whose existing Cheers permissions will bound this connection."
     >
       <div className={`${publicPanelClass} space-y-4`}>
-        {!preview && !error && <Spinner contentSize="large" className="mx-auto text-zinc-500" />}
+        {!preview && !error && <Spinner contentSize="large" className="mx-auto text-zinc-400" />}
         {error && <p role="alert" className="text-regular text-red-300">{error}</p>}
         {preview && (
           <>
@@ -75,7 +75,7 @@ export default function McpAuthorizePage() {
               <ShieldCheck className="h-5 w-5 text-indigo-300" />
               <div className="min-w-0">
                 <p className="text-regular font-medium text-zinc-100">{preview.client.client_name}</p>
-                <p className="truncate text-compact text-zinc-500">{preview.client.client_id}</p>
+                <p className="truncate text-compact text-zinc-400">{preview.client.client_id}</p>
               </div>
             </div>
             <label className="block space-y-1 text-compact text-zinc-400">
@@ -89,12 +89,12 @@ export default function McpAuthorizePage() {
               </Select>
             </label>
             <div>
-              <p className="mb-2 text-compact font-medium text-zinc-300">Requested access</p>
+              <p className="mb-2 text-compact font-medium text-zinc-200">Requested access</p>
               <ul className="space-y-1 text-compact text-zinc-400">
                 {preview.scopes.map((scope) => <li key={scope}>• {scopeLabels[scope] ?? scope}</li>)}
               </ul>
             </div>
-            <p className="text-compact text-zinc-500">
+            <p className="text-compact text-zinc-400">
               OAuth scopes only reduce access. Channel membership, roles, approvals, installation revocation and audit policy still apply to every operation.
             </p>
             <div className="flex justify-end gap-2">

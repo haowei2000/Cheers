@@ -243,7 +243,7 @@ export function SandboxRenderer({
             type="button"
             onClick={() => setDevOpen((v) => !v)}
             title="Protocol inspector (session-loaded plugins only)"
-            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-zinc-300 ring-1 ring-zinc-700 hover:text-white"
+            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-zinc-100 ring-1 ring-zinc-700 hover:text-white"
           >
             {devOpen ? "Hide" : "Dev"} · {devEvents.length}
           </UiButton>
@@ -257,7 +257,7 @@ export function SandboxRenderer({
               </div>
               <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-compact leading-relaxed">
                 {devEvents.length === 0 ? (
-                  <div className="text-zinc-500">
+                  <div className="text-zinc-400">
                     No messages yet. The plugin posts cheers:ready when it boots.
                   </div>
                 ) : (
@@ -268,7 +268,7 @@ export function SandboxRenderer({
                         {ev.dir === "in" ? "←" : "→"}
                       </span>
                       <span className="text-zinc-200">{ev.type}</span>
-                      <span className="text-zinc-500">{ev.detail}</span>
+                      <span className="text-zinc-400">{ev.detail}</span>
                     </div>
                   ))
                 )}

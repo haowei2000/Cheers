@@ -34,6 +34,11 @@
 | 灰阶 | 只用 `zinc` | 禁用 `gray`、`slate`、`neutral`、`stone` |
 | 分类编码色 | 任意着色 | 编码**身份**而非状态的徽标——如权限能力标签（sky/violet）、按 bot 区分的活动圆点、头像调色板、语法高亮。只允许用在着色徽标/标记上；禁止用于交互元素、focus ring 或按钮。 |
 
+中性前景严格收敛为四个语义层级：主正文、标题、普通按钮与功能图标使用 `zinc-50/100`；
+次要正文使用 `zinc-200`；元数据、提示、placeholder、分组标签和辅助说明使用 `zinc-400`；
+禁用状态沿用启用态前景并统一增加 `opacity-50`。`zinc-300/500/600/700` 不得作为 Web 前景色。
+语义填充表面上的 `white` / `zinc-950` 和代码语法分类色属于明确例外。
+
 ### 表面层级（深色主题，由后到前）
 
 | 层 | 值 |
@@ -61,10 +66,10 @@
 | 页面 H1 | `text-lg font-semibold` |
 | 弹窗 / 面板标题 | `text-sm font-semibold text-zinc-100` |
 | 正文 | `text-sm text-zinc-200/300` |
-| 表单 label | `text-xs font-medium text-zinc-500 uppercase tracking-wide` |
-| 区块标题 | `text-xs font-semibold text-zinc-500 uppercase tracking-wider` |
-| 面板内分组标签 | `text-[10px] uppercase tracking-wide text-zinc-500` |
-| 提示 / 帮助文字 | `text-xs text-zinc-500`（更暗用 `zinc-600`） |
+| 表单 label | `text-xs font-medium text-zinc-400 uppercase tracking-wide` |
+| 区块标题 | `text-xs font-semibold text-zinc-400 uppercase tracking-wider` |
+| 面板内分组标签 | `text-[10px] uppercase tracking-wide text-zinc-400` |
+| 提示 / 帮助文字 | `text-xs text-zinc-400`（更暗用 `zinc-600`） |
 | 密集面板 mini 阶 | `text-[11px]` / `text-[10px]` —— 下限 10px |
 
 ### 形状与状态
@@ -90,11 +95,19 @@
 `ControlSize`：compact 28px、regular 36px、comfortable 44px。纯图标按钮使用同一档位，
 不能另建 32px 第四档。
 
+关闭、展开、保存等常用动作必须用 `<ActionButton action context>`；业务调用点不得自行指定
+`content` 或 `variant`。窗口栏的 Back / Close / More / Refresh、展开收起、已有对象的行内
+Edit / Save / Cancel / Delete / Remove 使用纯图标；完整表单的 Create / Save 使用图标加文字，
+Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性确认使用文字 Cancel 加
+图标文字 Delete / Remove。若整行内容本身就是展开目标（例如 diff 文件标题），使用
+`ControlTrigger`，不要把对象标题替换成通用的 Expand / Collapse 标签。纯图标动作在邻近上下文
+不足时必须提供对象化的 `accessibleLabel`。
+
 组件不适用的场景（密集 workbench 面板），软底写法：
 
 | 类型 | 写法 |
 |---|---|
-| 中性软底 | `rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100` |
+| 中性软底 | `rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100` |
 | indigo 软底 | `rounded-lg bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30` |
 | 危险软底 | `rounded-lg bg-red-950/40 text-red-300 hover:bg-red-950/70` |
 | 警告软底 | `rounded bg-amber-900/40 text-amber-200 hover:bg-amber-900/60` |
@@ -106,7 +119,7 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 ### 2.2 搜索 / 过滤框 —— 三种形态
 
 同一套视觉语言，三种放置方式。图标统一用 lucide `Search`（或语境图标），
-`w-3.5`–`w-4 text-zinc-500`，内部 input 透明。
+`w-3.5`–`w-4 text-zinc-400`，内部 input 透明。
 
 **A. 弹窗内选择器搜索** —— 样式在 wrapper 上，input 裸写。
 用于 NewChannelDialog、NewDmDialog、频道设置的成员搜索：
@@ -114,9 +127,9 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 ```tsx
 <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
                 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-  <Search className="w-4 h-4 text-zinc-500" />
+  <Search className="w-4 h-4 text-zinc-400" />
   <input className="flex-1 bg-transparent text-sm text-zinc-200 outline-none
-                    placeholder:text-zinc-600" placeholder="…" />
+                    placeholder:text-zinc-400" placeholder="…" />
 </div>
 ```
 
@@ -125,9 +138,9 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 
 ```tsx
 <div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
   <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-base md:text-sm text-zinc-100 placeholder:text-zinc-600
+                    text-base md:text-sm text-zinc-100 placeholder:text-zinc-400
                     focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
 </div>
 ```
@@ -137,7 +150,7 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 
 ```tsx
 <input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-xs text-zinc-200 outline-none placeholder:text-zinc-600
+                  text-xs text-zinc-200 outline-none placeholder:text-zinc-400
                   focus:border-indigo-500/60" />
 ```
 
@@ -186,7 +199,7 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 | BOT 标签 | `text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
 | 未读计数 | `text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
 | 提及计数 | 同上形状，`bg-rose-600` |
-| 角色 / 状态标签 | 名字旁纯文字 `text-[10px] text-zinc-500`（不做 pill） |
+| 角色 / 状态标签 | 名字旁纯文字 `text-[10px] text-zinc-400`（不做 pill） |
 
 ### 2.7 在线状态点
 
@@ -200,10 +213,10 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
   容器 `flex gap-1 border-b border-zinc-800`；项
   `px-3 py-2 text-sm border-b-2 -mb-px transition-colors`，激活
   `border-indigo-500 text-zinc-100`，未激活
-  `border-transparent text-zinc-500 hover:text-zinc-300`。
+  `border-transparent text-zinc-400 hover:text-zinc-200`。
 - **胶囊 Tab**（密集面板工具栏——ViewBoard）：
   `rounded-md px-2 py-1 text-xs`，激活 `bg-zinc-800 text-zinc-100`，
-  未激活 `text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300`。
+  未激活 `text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200`。
 
 不要引入第三种；分段控件（segmented control）复用胶囊写法放进 `bg-zinc-800` 容器。
 
@@ -213,24 +226,24 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
-  <SomeIcon className="w-5 h-5 text-zinc-600 mb-2" />
-  <p className="text-xs text-zinc-500">Nothing here yet</p>
-  <p className="text-[11px] text-zinc-600 mt-0.5">It appears when …</p>
+  <SomeIcon className="w-5 h-5 text-zinc-400 mb-2" />
+  <p className="text-xs text-zinc-400">Nothing here yet</p>
+  <p className="text-[11px] text-zinc-400 mt-0.5">It appears when …</p>
 </div>
 ```
 
-紧凑列表可用单行版：`text-xs text-zinc-600 py-4 text-center`。
+紧凑列表可用单行版：`text-xs text-zinc-400 py-4 text-center`。
 
 ### 2.10 加载态
 
 - 行内 / 操作中：`Loader2` 图标 + `animate-spin`，颜色继承 `currentColor`。
-- 整面加载：`Loader2 w-5 h-5 text-zinc-600 animate-spin` 居中。
+- 整面加载：`Loader2 w-5 h-5 text-zinc-400 animate-spin` 居中。
 - 按钮：用 `<Button>` 自带的 `loading` prop。
 - 禁止手写 CSS border 圆环 spinner；等待不长时不要 spinner + "Loading…" 双重表达。
 
 ### 2.11 关闭按钮
 
-`text-zinc-500 hover:text-zinc-300`，`X w-4 h-4`，右上角。抽屉和浮动面板可加
+`text-zinc-400 hover:text-zinc-200`，`X w-4 h-4`，右上角。抽屉和浮动面板可加
 `rounded p-0.5 hover:bg-zinc-800`。hover 目标色是 `zinc-300`——不是 `zinc-200`。
 
 ### 2.12 列表行

@@ -30,7 +30,7 @@ const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: s
 };
 
 function metaFor(id: string) {
-  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-zinc-300" };
+  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-zinc-200" };
 }
 
 function basename(path: string) {
@@ -237,7 +237,7 @@ export function SceneWorkbench({
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <LayoutGrid className="h-5 w-5 text-zinc-600" />
+        <LayoutGrid className="h-5 w-5 text-zinc-400" />
         <div>
           <div className="text-regular font-medium text-zinc-200">Choose a scene</div>
           <p className="mt-1 max-w-sm text-compact leading-5 text-zinc-400">
@@ -275,7 +275,7 @@ export function SceneWorkbench({
               onClick={() => setActiveScene(id)}
               controlSize="regular" className={cn(
  "flex flex-shrink-0 items-center gap-2 rounded-sm  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- activeScene === id ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ activeScene === id ? "bg-indigo-500/15 text-indigo-200": "text-zinc-100 hover:bg-zinc-800/60 hover:text-zinc-50"
  )}
             >
               <Icon className="h-4 w-4" />
@@ -286,7 +286,7 @@ export function SceneWorkbench({
       </div>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
-          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-[0.12em] text-zinc-500">Scenes</div>
+          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-[0.12em] text-zinc-400">Scenes</div>
           <div className="space-y-1">
             {sceneIds.map((id) => {
               const meta = metaFor(id);
@@ -300,7 +300,7 @@ export function SceneWorkbench({
                   aria-pressed={selected}
                   controlSize="comfortable" className={cn(
  "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- selected ? "bg-indigo-500/15 text-indigo-200": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+ selected ? "bg-indigo-500/15 text-indigo-200": "text-zinc-100 hover:bg-zinc-800/60 hover:text-zinc-50"
  )}
                 >
                   <Icon className={cn("h-4 w-4 flex-shrink-0", selected && meta.color)} />
@@ -312,7 +312,7 @@ export function SceneWorkbench({
           <div className="mt-auto pt-2">
             {available.length > 0 && (
               <label className="relative block">
-                <FolderPlus className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <FolderPlus className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
                 <UiSelect
                   aria-label="Add scene"
                   defaultValue=""
@@ -344,7 +344,7 @@ export function SceneWorkbench({
                     aria-current={selected ? "page" : undefined}
                     controlSize="comfortable" className={cn(
  "relative flex-shrink-0  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
- selected ? "text-indigo-300": "text-zinc-400 hover:text-zinc-200"
+ selected ? "text-indigo-300": "text-zinc-100 hover:text-zinc-50"
  )}
                   >
                     {itemTitle(activeScene, path, templates)}
@@ -364,9 +364,9 @@ export function SceneWorkbench({
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-zinc-400">
-                <FileQuestion className="h-5 w-5 text-zinc-600" />
+                <FileQuestion className="h-5 w-5 text-zinc-400" />
                 <span>No native items in this scene.</span>
-                <span className="max-w-xs text-compact leading-4 text-zinc-500">Unsupported files stay hidden here and remain available from Raw.</span>
+                <span className="max-w-xs text-compact leading-4 text-zinc-400">Unsupported files stay hidden here and remain available from Raw.</span>
               </div>
             )}
           </div>

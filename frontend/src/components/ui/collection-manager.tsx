@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, Plus, Search } from "lucide-react";
 import { Button } from "./button";
+import { ActionButton } from "./action-button";
 import { controlIconClasses, controlMinHeightClasses } from "./control-size";
 import { Input } from "./input";
 import { ItemList, OperationsItem } from "./item";
@@ -61,7 +62,7 @@ export function CollectionManager({
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {headerAction}
         {typeof count === "number" && (
-          <span className="font-normal tabular-nums text-zinc-500">{count}</span>
+          <span className="font-normal tabular-nums text-zinc-400">{count}</span>
         )}
       </header>
 
@@ -72,7 +73,7 @@ export function CollectionManager({
             aria-hidden
             className={cn(
               controlIconClasses[controlSize],
-              "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500",
+              "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400",
             )}
           />
           <Input
@@ -125,13 +126,13 @@ export function CollectionPickerItem({
     <div role="listitem" data-collection-mode="add" className="rounded-sm bg-zinc-900/80 px-2 py-2">
       <div className={cn("flex items-center gap-2", controlMinHeightClasses.compact)}>
         <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">{title}</span>
-        <Button type="button" variant="ghost" controlSize="compact" onClick={onCancel}>Cancel</Button>
+        <ActionButton action="cancel" context="form" controlSize="compact" onClick={onCancel} />
       </div>
       <label className="relative mt-1 block min-w-0">
         <span className="sr-only">{placeholder}</span>
         <Search
           aria-hidden
-          className={cn(controlIconClasses.regular, "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500")}
+          className={cn(controlIconClasses.regular, "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400")}
         />
         <Input
           controlSize="regular"
@@ -155,7 +156,6 @@ export function CollectionEditorItem({
   children,
   onCancel,
   onSave,
-  saveLabel = "Save",
   saving,
   saveDisabled,
 }: {
@@ -164,7 +164,6 @@ export function CollectionEditorItem({
   children: ReactNode;
   onCancel: () => void;
   onSave: () => void;
-  saveLabel?: string;
   saving?: boolean;
   saveDisabled?: boolean;
 }) {
@@ -178,24 +177,23 @@ export function CollectionEditorItem({
         <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">
           {title}
         </span>
-        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-500">
+        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-400">
           {mode}
         </span>
       </div>
       <div className="grid min-w-0 gap-2 py-1 sm:grid-cols-2">{children}</div>
       <div className="flex justify-end gap-1 pt-1">
-        <Button type="button" variant="ghost" controlSize="compact" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          controlSize="compact"
-          loading={saving}
-          disabled={saveDisabled}
-          onClick={onSave}
-        >
-          {saveLabel}
-        </Button>
+        {mode === "edit" ? (
+          <>
+            <ActionButton action="cancel" context="inlineEdit" accessibleLabel="Cancel editing item" controlSize="compact" onClick={onCancel} disabled={saving} />
+            <ActionButton action="save" context="inlineEdit" accessibleLabel="Save item" controlSize="compact" loading={saving} disabled={saveDisabled} onClick={onSave} />
+          </>
+        ) : (
+          <>
+            <ActionButton action="cancel" context="form" controlSize="compact" onClick={onCancel} disabled={saving} />
+            <ActionButton action="create" context="form" controlSize="compact" loading={saving} disabled={saveDisabled} onClick={onSave} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -228,18 +226,8 @@ export function CollectionDeleteItem({
       )}
       actions={(
         <>
-          <Button type="button" variant="ghost" controlSize="compact" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            controlSize="compact"
-            loading={deleting}
-            onClick={onConfirm}
-          >
-            Delete
-          </Button>
+          <ActionButton action="cancel" context="confirmation" controlSize="compact" onClick={onCancel} disabled={deleting} />
+          <ActionButton action="delete" context="confirmation" controlSize="compact" loading={deleting} onClick={onConfirm} />
         </>
       )}
     />
@@ -260,9 +248,7 @@ export function CollectionEmptyItem({
       controlSize="regular"
       title={searching ? "No matching items" : "No items yet"}
       actions={searching && onClear ? (
-          <Button type="button" variant="ghost" controlSize="compact" onClick={onClear}>
-            Clear search
-          </Button>
+          <Button action="clear" type="button" variant="ghost" controlSize="compact" onClick={onClear} />
         ) : undefined}
     />
   );

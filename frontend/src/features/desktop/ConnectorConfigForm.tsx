@@ -1,9 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { FolderPlus, Save, Settings2 } from "lucide-react";
+import { FolderPlus, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
@@ -109,13 +110,13 @@ export function ConnectorConfigForm({
   }
 
   if (!f) {
-    return <p className="text-compact text-zinc-500 mt-3">Loading config…</p>;
+    return <p className="text-compact text-zinc-400 mt-3">Loading config…</p>;
   }
 
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-compact text-zinc-500">Raw TOML — full control.</p>
+        <p className="text-compact text-zinc-400">Raw TOML — full control.</p>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
@@ -135,7 +136,7 @@ export function ConnectorConfigForm({
           >
             Save &amp; restart
           </Button>
-          <IconButton label="Save connector config"
+          <ActionButton action="save" context="form" accessibleLabel="Save connector config"
             controlSize="compact"
             disabled={busy}
             onClick={() =>
@@ -143,12 +144,8 @@ export function ConnectorConfigForm({
                 invokeDesktop("connector_write_config", { path: configPath, content: raw })
               )
             }
-          >
-            <Save className="h-3.5 w-3.5" />
-          </IconButton>
-          <Button action="back" variant="secondary" controlSize="compact" onClick={() => setRawMode(false)}>
-            Back to form
-          </Button>
+          />
+          <ActionButton action="back" context="form" controlSize="compact" onClick={() => setRawMode(false)} />
         </div>
       </div>
     );
@@ -173,7 +170,7 @@ export function ConnectorConfigForm({
 
   return (
     <div className="mt-3 space-y-4">
-      <p className="text-compact text-zinc-500">
+      <p className="text-compact text-zinc-400">
         Editing <b>{name}</b> — account <code className="bg-zinc-800 rounded-sm px-1">{f.account_id}</code>.
       </p>
 
@@ -209,7 +206,7 @@ export function ConnectorConfigForm({
             onClick={() => setArgsOpen((o) => !o)}
             controlSize="regular" className={`shrink-0 rounded-sm  flex items-center gap-1 ${
  argsOpen || f.adapter_args.length
- ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-100 hover:text-zinc-50"
  }`}
           >
             <Settings2 className="w-3.5 h-3.5" /> Args
@@ -297,7 +294,7 @@ export function ConnectorConfigForm({
       <div>
         <UiButton action="more" variant="plain"
           type="button"
-          className=" text-zinc-400 hover:text-zinc-200"
+          className=" text-zinc-100 hover:text-zinc-50"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
@@ -375,12 +372,8 @@ export function ConnectorConfigForm({
         <Button action="restart" controlSize="compact" disabled={busy} onClick={() => onSave(true, apply)}>
           Save &amp; restart
         </Button>
-        <IconButton label="Save connector settings" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)}>
-          <Save className="h-3.5 w-3.5" />
-        </IconButton>
-        <Button action="cancel" variant="secondary" controlSize="compact" onClick={onClose}>
-          Cancel
-        </Button>
+        <ActionButton action="save" context="form" accessibleLabel="Save connector settings" controlSize="compact" disabled={busy} onClick={() => onSave(false, apply)} />
+        <ActionButton action="cancel" context="form" controlSize="compact" onClick={onClose} />
       </div>
     </div>
   );

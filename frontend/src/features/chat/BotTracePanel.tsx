@@ -71,23 +71,23 @@ type EventVisual = { Icon: LucideIcon; tone: string; label: string };
 // The Gateway event type is the only tool-display routing input. Adding a new
 // visual treatment requires a new backend event type and an explicit entry here.
 const TOOL_EVENT_META: Record<ToolEventType, EventVisual> = {
-  file_read: { Icon: FileSearch, tone: "text-zinc-500", label: "Read" },
-  file_edit: { Icon: Pencil, tone: "text-zinc-500", label: "Edit" },
-  file_write: { Icon: FilePlus2, tone: "text-zinc-500", label: "Write" },
+  file_read: { Icon: FileSearch, tone: "text-zinc-400", label: "Read" },
+  file_edit: { Icon: Pencil, tone: "text-zinc-400", label: "Edit" },
+  file_write: { Icon: FilePlus2, tone: "text-zinc-400", label: "Write" },
   file_delete: { Icon: XCircle, tone: "text-red-400/70", label: "Delete" },
-  file_move: { Icon: Wrench, tone: "text-zinc-500", label: "Move" },
-  file_access: { Icon: FileSearch, tone: "text-zinc-500", label: "File" },
-  shell_command: { Icon: Terminal, tone: "text-zinc-500", label: "Run" },
-  web_search: { Icon: Search, tone: "text-zinc-500", label: "Web search" },
-  web_fetch: { Icon: Search, tone: "text-zinc-500", label: "Web fetch" },
-  search_results: { Icon: Search, tone: "text-zinc-500", label: "Search" },
-  git_status: { Icon: GitBranch, tone: "text-zinc-500", label: "Git status" },
-  git_diff: { Icon: GitBranch, tone: "text-zinc-500", label: "Git diff" },
-  git_show: { Icon: GitCommit, tone: "text-zinc-500", label: "Git show" },
-  git_log: { Icon: GitCommit, tone: "text-zinc-500", label: "Git log" },
-  git_commit: { Icon: GitCommit, tone: "text-zinc-500", label: "Git commit" },
-  git_remote: { Icon: GitBranch, tone: "text-zinc-500", label: "Git remote" },
-  git_command: { Icon: GitBranch, tone: "text-zinc-500", label: "Git command" },
+  file_move: { Icon: Wrench, tone: "text-zinc-400", label: "Move" },
+  file_access: { Icon: FileSearch, tone: "text-zinc-400", label: "File" },
+  shell_command: { Icon: Terminal, tone: "text-zinc-400", label: "Run" },
+  web_search: { Icon: Search, tone: "text-zinc-400", label: "Web search" },
+  web_fetch: { Icon: Search, tone: "text-zinc-400", label: "Web fetch" },
+  search_results: { Icon: Search, tone: "text-zinc-400", label: "Search" },
+  git_status: { Icon: GitBranch, tone: "text-zinc-400", label: "Git status" },
+  git_diff: { Icon: GitBranch, tone: "text-zinc-400", label: "Git diff" },
+  git_show: { Icon: GitCommit, tone: "text-zinc-400", label: "Git show" },
+  git_log: { Icon: GitCommit, tone: "text-zinc-400", label: "Git log" },
+  git_commit: { Icon: GitCommit, tone: "text-zinc-400", label: "Git commit" },
+  git_remote: { Icon: GitBranch, tone: "text-zinc-400", label: "Git remote" },
+  git_command: { Icon: GitBranch, tone: "text-zinc-400", label: "Git command" },
 };
 
 const GIT_EVENT_TYPES = new Set<ToolEventType>([
@@ -106,14 +106,14 @@ function eventMeta(e: TraceEvent): EventVisual {
     if (ak === "resolved") {
       const ok = (e.decision ?? "").startsWith("allow");
       return ok
-        ? { Icon: Check, tone: "text-zinc-500", label: "Approved" }
+        ? { Icon: Check, tone: "text-zinc-400", label: "Approved" }
         : { Icon: X, tone: "text-red-400/70", label: "Denied" };
     }
     if (ak === "expired" || ak === "rejected") {
-      return { Icon: X, tone: "text-zinc-600", label: ak === "expired" ? "Expired" : "Rejected" };
+      return { Icon: X, tone: "text-zinc-400", label: ak === "expired" ? "Expired" : "Rejected" };
     }
     if (ak === "auto_allowed") {
-      return { Icon: Check, tone: "text-zinc-500", label: "Auto-allowed" };
+      return { Icon: Check, tone: "text-zinc-400", label: "Auto-allowed" };
     }
     return { Icon: ShieldCheck, tone: "text-amber-400/70", label: "Approval" };
   }
@@ -122,18 +122,18 @@ function eventMeta(e: TraceEvent): EventVisual {
   switch (e.phase) {
     case "tool_call":
     case "tool_call_update":
-      return { Icon: Wrench, tone: "text-zinc-500", label: "Tool" };
+      return { Icon: Wrench, tone: "text-zinc-400", label: "Tool" };
     case "plan":
-      return { Icon: ListTodo, tone: "text-zinc-500", label: "Plan" };
+      return { Icon: ListTodo, tone: "text-zinc-400", label: "Plan" };
     case "prompt_finished":
-      return { Icon: Check, tone: "text-zinc-500", label: "Done" };
+      return { Icon: Check, tone: "text-zinc-400", label: "Done" };
     case "prompt_started":
-      return { Icon: Zap, tone: "text-zinc-500", label: "Start" };
+      return { Icon: Zap, tone: "text-zinc-400", label: "Start" };
     case "prompt_failed":
     case "terminal_ack_failed":
       return { Icon: XCircle, tone: "text-red-400/70", label: "Failed" };
     default:
-      return { Icon: Clock, tone: "text-zinc-600", label: e.phase || "Event" };
+      return { Icon: Clock, tone: "text-zinc-400", label: e.phase || "Event" };
   }
 }
 
@@ -185,9 +185,9 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
               <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-sm px-1 py-2 hover:bg-zinc-900/60">
                 <span className={cn(
                   "w-4 shrink-0 font-mono text-minimal",
-                  file.state === "conflicted" ? "text-red-300/80" : file.state === "untracked" ? "text-emerald-400/80" : "text-zinc-500",
+                  file.state === "conflicted" ? "text-red-300/80" : file.state === "untracked" ? "text-emerald-400/80" : "text-zinc-400",
                 )}>{marker}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-compact text-zinc-300" title={file.path}>{file.path}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-compact text-zinc-200" title={file.path}>{file.path}</span>
               </div>
             );
           })}
@@ -272,7 +272,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-        <span className="min-w-0 truncate font-mono text-compact text-zinc-300" title={selected.path}>
+        <span className="min-w-0 truncate font-mono text-compact text-zinc-200" title={selected.path}>
           {pathBasename(selected.path)}
         </span>
         <DiffDelta stats={diffs.length === 1 ? selectedStats : total} />
@@ -289,7 +289,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular" className={cn(
  "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-800",
- active ? "bg-indigo-600/15 text-indigo-200": "text-zinc-400 hover:text-zinc-200",
+ active ? "bg-indigo-600/15 text-indigo-200": "text-zinc-100 hover:text-zinc-50",
  )}
                 title={diff.path}
               >
@@ -310,7 +310,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
 function FileEditEmptyState({ path }: { path: string | null }) {
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
-      <div className="text-compact text-zinc-300">No file changes</div>
+      <div className="text-compact text-zinc-200">No file changes</div>
       {path && (
         <div className="mt-1 truncate font-mono text-compact text-zinc-400" title={path}>
           {path}
@@ -403,7 +403,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
               {TOOL_EVENT_META[presentation.event_type].label}
             </span>
             {presentation.risk && (
-              <span className="text-minimal text-zinc-500">
+              <span className="text-minimal text-zinc-400">
                 {presentation.risk.replace(/_/g, " ")}
               </span>
             )}
@@ -414,10 +414,10 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
             )}
           </div>
           {presentation.command && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-zinc-300">{presentation.command}</pre>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-zinc-200">{presentation.command}</pre>
           )}
           {!presentation.command && presentation.target && (
-            <div className="mt-2 break-all font-mono text-zinc-300">{presentation.target}</div>
+            <div className="mt-2 break-all font-mono text-zinc-200">{presentation.target}</div>
           )}
         </div>
       )}
@@ -441,9 +441,9 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                 const status = typeof item?.status === "string" ? item.status : null;
                 return (
                   <li key={`${index}-${content}`} className="break-words">
-                    <span className="text-zinc-300">{content}</span>
+                    <span className="text-zinc-200">{content}</span>
                     {status && (
-                      <span className="ml-2 text-zinc-500">
+                      <span className="ml-2 text-zinc-400">
                         {statusLabel(status)}
                       </span>
                     )}
@@ -472,7 +472,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
         <div>
           <div className="mb-1 text-minimal font-medium uppercase tracking-wide text-zinc-400">Output</div>
-          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-zinc-300"><DetailValue value={output} /></div>
+          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-zinc-200"><DetailValue value={output} /></div>
         </div>
       )}
       <RawEventData metadata={metadata} data={data} />
@@ -533,11 +533,11 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       {command && (
         <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-3">
           <p className="mb-2 text-minimal uppercase tracking-wide text-zinc-400">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-zinc-300">
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-zinc-200">
             {command}
           </pre>
           {cwd && (
-            <p className="mt-2 truncate font-mono text-compact text-zinc-500" title={cwd}>
+            <p className="mt-2 truncate font-mono text-compact text-zinc-400" title={cwd}>
               {cwd}
             </p>
           )}
@@ -545,7 +545,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       )}
       {!pending && decision && (
         <div className="px-3 py-3 text-compact text-zinc-400">
-          Decision: <span className="font-mono text-zinc-300">{decision}</span>
+          Decision: <span className="font-mono text-zinc-200">{decision}</span>
         </div>
       )}
     </div>
@@ -639,7 +639,7 @@ function TraceItem({
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
- "justify-start gap-2 text-left text-zinc-400 transition-colors hover:bg-zinc-900/70",
+ "justify-start gap-2 text-left text-zinc-100 transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
  )}
       >
@@ -659,8 +659,8 @@ function TraceItem({
         )}
         <ChevronRight
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform",
-            active && "rotate-90 text-zinc-300",
+            "h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform",
+            active && "rotate-90 text-zinc-200",
           )}
         />
       </ControlTrigger>
@@ -922,7 +922,7 @@ export function BotTracePanel({
           aria-expanded={expanded}
           aria-label={expanded ? "Hide agent steps" : "Show agent steps"}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="w-auto justify-start text-zinc-400 transition-colors hover:bg-zinc-900/70 hover:text-zinc-200"
+          className="w-auto justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -953,7 +953,7 @@ export function BotTracePanel({
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
-        <div className="flex items-center gap-2 text-compact text-zinc-500">
+        <div className="flex items-center gap-2 text-compact text-zinc-400">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading steps…
         </div>
@@ -989,7 +989,7 @@ export function BotTracePanel({
               type="button"
               onClick={() => setShowAll(true)}
               aria-label={`Show all ${timeline.length} agent steps`}
-              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
+              className="mt-1 w-auto self-start justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
             >
               Show all {timeline.length} steps
             </ControlTrigger>
@@ -999,7 +999,7 @@ export function BotTracePanel({
               type="button"
               onClick={() => setShowAll(false)}
               aria-label="Show the latest agent step only"
-              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
+              className="mt-1 w-auto self-start justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
             >
               Show latest only
             </ControlTrigger>
@@ -1019,7 +1019,7 @@ export function BotTracePanel({
           <UiButton action="retry" variant="plain"
             type="button"
             onClick={() => void load()}
-            className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
+            className="text-zinc-100 hover:text-zinc-50 underline underline-offset-2"
           >
             Retry
           </UiButton>

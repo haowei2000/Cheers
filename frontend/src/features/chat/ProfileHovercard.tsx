@@ -199,7 +199,7 @@ function ProfileCard({
           </div>
           {handle && <p className="text-compact text-zinc-400 truncate">{handle}</p>}
           {(member.status_emoji || member.status_text) && (
-            <p className="mt-1 text-compact text-zinc-300 truncate">
+            <p className="mt-1 text-compact text-zinc-200 truncate">
               {member.status_emoji && <span className="mr-1">{member.status_emoji}</span>}
               {member.status_text}
             </p>

@@ -86,10 +86,10 @@ export function AgentPicker({
                   <Terminal className="w-4 h-4" />
                 )}
               </span>
-              <span className="text-compact text-zinc-300 truncate w-full text-center">
+              <span className="text-compact text-zinc-200 truncate w-full text-center">
                 {a.label}
               </span>
-              <span className="text-minimal text-zinc-500">
+              <span className="text-minimal text-zinc-400">
                 {a.installed ? "installed" : a.installable ? "not installed" : "unavailable"}
               </span>
             </UiButton>
@@ -121,11 +121,11 @@ export function AgentPicker({
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
-        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-zinc-300`}>
+        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-zinc-200`}>
           <Wrench className="w-4 h-4" />
         </span>
-        <span className="text-compact text-zinc-300">Custom</span>
-        <span className="text-minimal text-zinc-500">command</span>
+        <span className="text-compact text-zinc-200">Custom</span>
+        <span className="text-minimal text-zinc-400">command</span>
       </UiButton>
       </div>
     </div>

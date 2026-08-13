@@ -147,7 +147,7 @@ function HealthRow({
           : "";
   return (
     <div className="flex items-center gap-2 text-compact min-w-0">
-      <span className="text-zinc-500 tabular-nums shrink-0">
+      <span className="text-zinc-400 tabular-nums shrink-0">
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
       {reason && (
@@ -187,10 +187,10 @@ function IconBtn({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      content="icon" controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
+      content="icon" controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-50 ${
  danger
  ? "text-rose-400 hover:bg-rose-950/50"
- : "text-zinc-300 hover:bg-zinc-700"
+ : "text-zinc-100 hover:bg-zinc-700"
  }`}
     >
       {icon}
@@ -544,11 +544,11 @@ export function ConnectorManager() {
           <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "onboard" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-100 hover:text-zinc-50 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="h-5 w-5" />
             <span className="text-regular font-medium">Set up on this Mac</span>
-            <span className="text-compact text-zinc-500">Create or attach a bot, then verify it starts</span>
+            <span className="text-compact text-zinc-400">Create or attach a bot, then verify it starts</span>
           </UiButton>
 
           {/* The other direction: a bot created somewhere else (the phone, the
@@ -560,11 +560,11 @@ export function ConnectorManager() {
           <UiButton action="setup" variant="plain"
             type="button"
             onClick={() => setModal({ kind: "redeem" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-100 hover:text-zinc-50 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Ticket className="h-5 w-5" />
             <span className="text-regular font-medium">I have a code</span>
-            <span className="text-compact text-zinc-500">Set up a bot made elsewhere</span>
+            <span className="text-compact text-zinc-400">Set up a bot made elsewhere</span>
           </UiButton>
 
           {instances.map((inst) => (
@@ -725,9 +725,9 @@ export function ConnectorManager() {
               placeholder="agbenr_…"
               autoFocus
               spellCheck={false}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-zinc-100 placeholder:text-zinc-400 outline-none focus:ring-1 focus:ring-indigo-500"
             />
-            <p className="text-compact text-zinc-500">
+            <p className="text-compact text-zinc-400">
               Codes are single-use and expire after about 15 minutes. Using one
               replaces the bot's token, so any connector already running it
               elsewhere will stop.
@@ -792,13 +792,13 @@ export function ConnectorManager() {
           <div className="flex justify-end mb-1">
             <UiButton action="refresh" variant="plain"
               type="button"
-              className=" text-zinc-400 hover:text-zinc-200"
+              className=" text-zinc-100 hover:text-zinc-50"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
             </UiButton>
           </div>
-          <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-300">
+          <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-200">
             {logs}
           </pre>
         </Dialog>
@@ -806,14 +806,14 @@ export function ConnectorManager() {
 
       {modal?.kind === "workspace" && (
         <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <p className="text-compact text-zinc-500 mb-3">
+          <p className="text-compact text-zinc-400 mb-3">
             Open the agent's own directories in a local editor or Finder — only
             this desktop app can reach your disk.
           </p>
           {roots === null ? (
-            <p className="text-compact text-zinc-500">Loading…</p>
+            <p className="text-compact text-zinc-400">Loading…</p>
           ) : wsDirs.length === 0 ? (
-            <p className="text-compact text-zinc-500">
+            <p className="text-compact text-zinc-400">
               No workspace roots on disk (check the config's{" "}
               <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
             </p>
@@ -823,9 +823,9 @@ export function ConnectorManager() {
               {wsDirs.map((dir) => (
                 <div key={dir}>
                   <div className="flex items-center gap-2 mb-1">
-                    <FolderOpen className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
                     <span
-                      className="truncate text-compact text-zinc-300 min-w-0"
+                      className="truncate text-compact text-zinc-200 min-w-0"
                       dir="rtl"
                       style={{ unicodeBidi: "plaintext" }}
                       title={dir}
@@ -833,7 +833,7 @@ export function ConnectorManager() {
                       {dir}
                     </span>
                     {dir === roots?.cwd && (
-                      <span className="text-minimal text-zinc-500 shrink-0">cwd</span>
+                      <span className="text-minimal text-zinc-400 shrink-0">cwd</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 pl-5">
@@ -842,7 +842,7 @@ export function ConnectorManager() {
                       <UiButton variant="plain" role="menuitem"
                         key={op.key}
                         type="button"
-                        controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                        controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
@@ -892,7 +892,7 @@ export function ConnectorManager() {
 
       {modal?.kind === "delete" && (
         <Dialog title="Remove connector" onClose={() => setModal(null)} maxWidth="max-w-md">
-          <p className="text-regular text-zinc-300">
+          <p className="text-regular text-zinc-200">
             Remove the local connector <b>{modal.inst.name}</b> (stops it and
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
@@ -963,7 +963,7 @@ function AuditTimeline({
   onRefresh: () => void;
 }) {
   const [hidden, setHidden] = useState<Set<AuditEvent["kind"]>>(new Set());
-  if (events === null) return <p className="text-compact text-zinc-500">Loading…</p>;
+  if (events === null) return <p className="text-compact text-zinc-400">Loading…</p>;
   const kinds = Array.from(new Set(events.map((e) => e.kind)));
   const shown = events.filter((e) => !hidden.has(e.kind));
   const toggle = (k: AuditEvent["kind"]) =>
@@ -983,7 +983,7 @@ function AuditTimeline({
             type="button"
             onClick={() => toggle(k)}
             controlSize="regular" className={` rounded-sm transition-colors ${
- hidden.has(k) ? "bg-zinc-800 text-zinc-500": "bg-zinc-700 text-zinc-100"
+ hidden.has(k) ? "bg-zinc-800 text-zinc-100": "bg-zinc-700 text-zinc-100"
  }`}
           >
             <PresenceDot contentSize="small" className={`mr-1 align-middle ${AUDIT_META[k].dot}`} />
@@ -993,13 +993,13 @@ function AuditTimeline({
         <UiButton action="refresh" variant="plain"
           type="button"
           onClick={onRefresh}
-          className=" text-zinc-400 hover:text-zinc-200 ml-auto"
+          className=" text-zinc-100 hover:text-zinc-50 ml-auto"
         >
           Refresh
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <p className="text-compact text-zinc-500">
+        <p className="text-compact text-zinc-400">
           No audit events yet. Per-command / file detail needs the connector running with{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
@@ -1078,7 +1078,7 @@ function OnboardForm(props: {
             onClick={() => p.setMode(m)}
             controlSize="regular" className={` rounded-sm transition-colors ${
  p.mode === m
- ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-100 hover:text-zinc-50"
  }`}
           >
             {m === "existing" ? "Existing bot" : "New bot"}
@@ -1151,7 +1151,7 @@ function OnboardForm(props: {
       <div>
         <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
           type="button"
-          className=" text-zinc-500 hover:text-zinc-300"
+          className=" text-zinc-100 hover:text-zinc-50"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml

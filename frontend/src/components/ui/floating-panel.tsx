@@ -1,12 +1,12 @@
 import { useContext, useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Maximize2, Minimize2, X, type LucideIcon } from "lucide-react";
+import { type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
-import { IconButton } from "@/components/ui/icon-button";
-import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import type { AnchorPlacement } from "@/components/ui/floating-layer";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
@@ -141,15 +141,15 @@ export function FloatingPanel({
     </>
   );
   const titleEl = collapsed ? (
-    <Button
-      variant="ghost"
+    <ControlTrigger
       controlSize="compact"
+      controlWidth="fill"
       onClick={toggleCollapsed}
       title="Expand"
       className="min-w-0 -mx-1 px-1"
     >
       {titleLabel}
-    </Button>
+    </ControlTrigger>
   ) : (
     titleLabel
   );
@@ -195,22 +195,22 @@ export function FloatingPanel({
         {titleEl}
         <div className="flex-1" />
         {!collapsed && headerExtra}
-        <IconButton
+        <ActionButton
+          action={collapsed ? "expand" : "collapse"}
+          context="disclosure"
           onClick={toggleCollapsed}
-          label={collapsed ? "Expand" : "Minimize"}
+          accessibleLabel={collapsed ? "Expand panel" : "Minimize panel"}
           controlSize="compact"
-          className="text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
-        >
-          {collapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-        </IconButton>
-        <IconButton
+          className="text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
+        />
+        <ActionButton
+          action="close"
+          context="windowChrome"
           onClick={onClose}
-          label="Close"
+          accessibleLabel="Close panel"
           controlSize="compact"
-          className="text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-        >
-          <X className="w-4 h-4" />
-        </IconButton>
+          className="text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+        />
       </div>
       {collapsed && !isMobile ? (
         summaryEl
