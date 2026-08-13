@@ -101,7 +101,7 @@ export function ItemRow({
           <span className={cn("mt-1 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{metadata}</span>
         )}
         {level === "max" && preview && (
-          <span className={cn("mt-1 block line-clamp-2 font-reading leading-relaxed text-zinc-300", controlSupportingTextClasses[size])}>
+          <span className={cn("mt-1 block line-clamp-2 font-reading leading-relaxed text-zinc-200", controlSupportingTextClasses[size])}>
             {preview}
           </span>
         )}
@@ -249,7 +249,7 @@ export function ItemSection({
         {action}
       </header>
       {description && (
-        <p className="px-1 font-utility text-compact leading-relaxed text-zinc-500">{description}</p>
+        <p className="px-1 font-utility text-compact leading-relaxed text-zinc-400">{description}</p>
       )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
@@ -334,7 +334,7 @@ export function DiffLineItem({
         tone === "context" && "text-zinc-400"
       )}
     >
-      {lineNumber && <span className="mr-2 w-10 select-none text-right text-zinc-600">{lineNumber}</span>}
+      {lineNumber && <span className="mr-2 w-10 select-none text-right text-zinc-400">{lineNumber}</span>}
       {marker && <span className="mr-2 flex-shrink-0 select-none">{marker}</span>}
       <span>{content}</span>
     </div>

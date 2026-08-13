@@ -308,7 +308,7 @@ export function SessionChip({
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
       "flex w-full items-center gap-2 px-3 py-2 rounded-sm text-regular text-left transition-colors",
-      i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:bg-zinc-800",
+      i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-200 hover:bg-zinc-800",
       isSelected && "text-indigo-200"
     );
 
@@ -335,7 +335,7 @@ export function SessionChip({
         {selected ? (
           <ArrowRight className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
         ) : (
-          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-indigo-400" : "text-zinc-500")} />
+          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-indigo-400" : "text-zinc-400")} />
         )}
         <span>{selected ? "Session" : "Auto"}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
@@ -348,7 +348,7 @@ export function SessionChip({
             return (
               <NavigationItem
                 title="Auto · @mention → primary"
-                leading={<Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />}
+                leading={<Layers className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
                 trailing={!value ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
                 selected={!value}
                 role="option"
@@ -418,7 +418,7 @@ export function SessionChip({
                   onMouseEnter={() => setActiveIndex(idx)}
                   className={rowCls(idx, false)}
                 >
-                  <Plus className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                  <Plus className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
                   New session…
                 </UiButton>
               );
@@ -436,7 +436,7 @@ export function SessionChip({
                 onMouseEnter={() => setActiveIndex(idx)}
                 className={rowCls(idx, false)}
               >
-                <LayoutDashboard className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                <LayoutDashboard className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
                 Manage sessions…
               </UiButton>
             );

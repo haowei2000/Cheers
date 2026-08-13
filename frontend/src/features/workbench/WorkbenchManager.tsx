@@ -234,7 +234,7 @@ export function WorkbenchManager() {
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-500 hover:text-red-400"
+                  className="text-zinc-100 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
@@ -289,7 +289,7 @@ export function WorkbenchManager() {
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-500 hover:text-red-400"
+                  className="text-zinc-100 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
@@ -343,7 +343,7 @@ export function WorkbenchManager() {
                       await reloadPersonal();
                     }}
                     title="Uninstall from this Mac"
-                    className="text-zinc-500 hover:text-red-400"
+                    className="text-zinc-100 hover:text-red-400"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </UiButton>}

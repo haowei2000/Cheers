@@ -55,7 +55,7 @@ const theme = EditorView.theme(
     ".cm-content": { padding: "12px 0", caretColor: "#d4d4d8" /* editorial ink */ },
     ".cm-gutters": {
       backgroundColor: "#09090b",
-      color: "#52525b", // zinc-600
+      color: "#a1a1aa", // zinc-400 metadata
       border: "none",
     },
     ".cm-activeLineGutter": { backgroundColor: "transparent", color: "#a1a1aa" /* zinc-400 */ },
@@ -77,7 +77,7 @@ const highlight = HighlightStyle.define([
   { tag: [t.string, t.special(t.string)], color: "#a8b5a2" }, // muted sage
   { tag: [t.number, t.bool, t.null, t.atom], color: "#c4a484" }, // muted ochre
   { tag: [t.propertyName], color: "#aab5c4" }, // muted blue-grey (json keys)
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "#71717a", fontStyle: "italic" }, // zinc-500
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "#a1a1aa", fontStyle: "italic" }, // zinc-400 metadata
   { tag: [t.heading], color: "#e4e4e7", fontWeight: "bold" },
   { tag: [t.link, t.url], color: "#b8bec7", textDecoration: "underline" },
   { tag: [t.emphasis], fontStyle: "italic" },

@@ -13,7 +13,6 @@ import {
   Info,
   Trash2,
   Pencil,
-  Save,
   Laptop,
   RotateCw,
 } from "lucide-react";
@@ -36,6 +35,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -70,7 +70,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           toast.error("Clipboard unavailable — select and copy manually");
         }
       }}
-      className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
+      className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50 transition-colors"
     >
       {done ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
@@ -215,7 +215,7 @@ export function BotDetailPanel({
               controlSize="regular" className={cn(
  "inline-flex items-center gap-2  font-medium border-b-2 -mb-px transition-colors",
  active
- ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
+ ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-100 hover:text-zinc-50"
  )}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -516,9 +516,9 @@ function BotOverview({
                   onClick={toggleDisabled}
                   disabled={toggling}
                   controlSize="regular" className={cn(
- "inline-flex items-center gap-2 rounded-sm  transition-colors disabled:opacity-40",
+ "inline-flex items-center gap-2 rounded-sm  transition-colors disabled:opacity-50",
  bot.is_disabled
- ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
+ ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
  )}
                 >
                   {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
@@ -533,7 +533,7 @@ function BotOverview({
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-red-300 hover:bg-red-950/70 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
@@ -804,9 +804,7 @@ function BotStatusEditor({
       {promptError && <p className="text-compact text-red-400">{promptError}</p>}
 
       <div className="flex items-center gap-2">
-        <IconButton label="Save bot profile" controlSize="compact" onClick={() => void save()} disabled={busy}>
-          <Save className="h-3.5 w-3.5" />
-        </IconButton>
+        <ActionButton action="save" context="form" accessibleLabel="Save bot profile" controlSize="compact" onClick={() => void save()} disabled={busy} />
         <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
           <Button action="update"
             controlSize="compact"

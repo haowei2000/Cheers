@@ -23,7 +23,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
       <label
         htmlFor={id}
         className={cn(
-          "flex min-w-0 items-start gap-2 rounded-sm px-1 font-utility text-regular text-zinc-300",
+          "flex min-w-0 items-start gap-2 rounded-sm px-1 font-utility text-regular text-zinc-200",
           controlMinHeightClasses[size],
           "max-md:items-center",
           props.disabled && "cursor-not-allowed opacity-50",
@@ -40,7 +40,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
         />
         <span className="min-w-0 py-2 max-md:py-0">
           <span className="block">{label}</span>
-          {hint && <span className="mt-1 block text-compact text-zinc-500">{hint}</span>}
+          {hint && <span className="mt-1 block text-compact text-zinc-400">{hint}</span>}
           {error && <span className="mt-1 block text-compact text-red-400" role="alert">{error}</span>}
         </span>
       </label>

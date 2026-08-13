@@ -170,7 +170,7 @@ function ApprovalsGlance({
                   <UiButton controlWidth="fill" variant="plain" role="option"
                     type="button"
                     onClick={() => jumpTo(m)}
-                    className="mb-2 block truncate text-left  text-zinc-300 hover:text-indigo-300"
+                    className="mb-2 block truncate text-left  text-zinc-100 hover:text-indigo-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
@@ -186,7 +186,7 @@ function ApprovalsGlance({
                     <UiButton action="open" variant="plain"
                       type="button"
                       onClick={() => jumpTo(m)}
-                      className="mt-1  text-zinc-500 hover:text-zinc-300"
+                      className="mt-1  text-zinc-100 hover:text-zinc-50"
                     >
                       Open in chat
                     </UiButton>
@@ -201,7 +201,7 @@ function ApprovalsGlance({
               setOpen(false);
               onExpandAudit();
             }}
-            controlSize="regular" className="mt-2 rounded-sm text-left  text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            controlSize="regular" className="mt-2 rounded-sm text-left  text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
           >
             Open full Audit board…
           </UiButton>

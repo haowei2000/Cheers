@@ -90,7 +90,7 @@ function TableLens({ data, config, onChange }: LensProps) {
                   {!isPlainRow(r) ? (
                     // null/scalar row: read-only placeholder — an input would promise an
                     // edit that update() must refuse. Delete (index-based) still works.
-                    <span className="text-zinc-500">—</span>
+                    <span className="text-zinc-400">—</span>
                   ) : c.options ? (
                     <UiSelect value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded-sm outline-none">
                       {c.options.map((o) => (
@@ -104,7 +104,7 @@ function TableLens({ data, config, onChange }: LensProps) {
               ))}
               <td className="p-1">
                 <UiButton action="delete" variant="plain" onClick={() => del(i)} title="Delete row">
-                  <Trash2 className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
+                  <Trash2 className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
                 </UiButton>
               </td>
             </tr>
@@ -116,7 +116,7 @@ function TableLens({ data, config, onChange }: LensProps) {
           )}
         </tbody>
       </table>
-      <UiButton action="add" content="iconText" variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
+      <UiButton action="add" content="iconText" variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-100 hover:text-zinc-50">
         <Plus className="w-3.5 h-3.5" /> Add row
       </UiButton>
     </div>
@@ -158,7 +158,7 @@ function KanbanLens({ data, onChange }: LensProps) {
       {cols.length === 0 && <div className="p-3 text-zinc-400">Empty board</div>}
       {cols.map((c, ci) => (
         <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded-sm ">
-          <div className="mx-1 mt-1 rounded-sm bg-zinc-800/50 px-2 py-1 text-zinc-300">
+          <div className="mx-1 mt-1 rounded-sm bg-zinc-800/50 px-2 py-1 text-zinc-200">
             {c.name} <span className="text-zinc-400">{c.items.length}</span>
           </div>
           <div className="p-1 space-y-1">
@@ -169,13 +169,13 @@ function KanbanLens({ data, onChange }: LensProps) {
                 title={it}
                 actions={<>
                 <UiButton content="icon" variant="plain" aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
-                  <ChevronLeft className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
+                  <ChevronLeft className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
                 </UiButton>
                 <UiButton content="icon" variant="plain" aria-label="Move right" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
-                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
                 </UiButton>
                 <UiButton action="delete" variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
-                  <X className="w-3.5 h-3.5 text-zinc-600 hover:text-red-400" />
+                  <X className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
                 </UiButton>
                 </>}
                 className="border-b-0 bg-zinc-800/70 text-zinc-200"
@@ -187,10 +187,10 @@ function KanbanLens({ data, onChange }: LensProps) {
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
                 placeholder="+ Task"
-                className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
+                className="bg-transparent flex-1 text-zinc-200 outline-none placeholder:text-zinc-400"
               />
               <UiButton action="add" variant="plain" onClick={() => addItem(ci)} title="Add task">
-                <Plus className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-200" />
+                <Plus className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
               </UiButton>
             </div>
           </div>
@@ -368,7 +368,7 @@ function ChartLens({ data }: LensProps) {
       {series.length >= 2 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-1">
           {series.map((s, i) => (
-            <span key={`${s.name}${i}`} className="flex items-center gap-2 text-zinc-300">
+            <span key={`${s.name}${i}`} className="flex items-center gap-2 text-zinc-200">
               <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color(i) }} />
               {s.name}
             </span>
@@ -417,7 +417,7 @@ function ChartLens({ data }: LensProps) {
           )
         )}
         {endLabels.map((l) => (
-          <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="var(--type-minimal)" fill="#d4d4d8">
+          <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="var(--type-minimal)" fill="#e4e4e7">
             {l.name}
           </text>
         ))}
@@ -435,7 +435,7 @@ function ChartLens({ data }: LensProps) {
               {hoverRows.map((r, j) => (
                 <g key={`t${r.i}`} transform={`translate(8, ${26 + j * 14})`}>
                   <rect width="8" height="8" y="-8" rx="2" fill={color(r.i)} />
-                  <text x="12" fontSize="var(--type-minimal)" fill="#d4d4d8" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <text x="12" fontSize="var(--type-minimal)" fill="#e4e4e7" style={{ fontVariantNumeric: "tabular-nums" }}>
                     {r.name} {fmtNum(r.p.y)}
                   </text>
                 </g>
@@ -588,35 +588,35 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-regular font-semibold text-zinc-100">{node.label}</h3>
-          <p className="mt-1 text-compact capitalize text-zinc-500">{node.kind}</p>
+          <p className="mt-1 text-compact capitalize text-zinc-400">{node.kind}</p>
         </div>
         {onClose && (
-          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" content="icon" controlSize="compact" className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200">
+          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" content="icon" controlSize="compact" className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50">
             <X className="h-4 w-4" />
           </UiButton>
         )}
       </div>
       <dl className="mt-5 space-y-5">
         <div>
-          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Summary</dt>
-          <dd className="mt-2 whitespace-pre-wrap leading-5 text-zinc-300">{node.summary || "No summary yet."}</dd>
+          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-400">Summary</dt>
+          <dd className="mt-2 whitespace-pre-wrap leading-5 text-zinc-200">{node.summary || "No summary yet."}</dd>
         </div>
         <div className="border-t border-zinc-800 pt-4">
-          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Status</dt>
+          <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-400">Status</dt>
           <dd className="mt-2 flex items-center gap-2 capitalize text-zinc-200"><CodemapStatus status={node.status} />{node.status}</dd>
         </div>
         {node.tags.length > 0 && (
           <div className="border-t border-zinc-800 pt-4">
-            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Tags</dt>
+            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-400">Tags</dt>
             <dd className="mt-2 flex flex-wrap gap-2">
-              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-300">{tag}</span>)}
+              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-compact text-zinc-200">{tag}</span>)}
             </dd>
           </div>
         )}
         {node.loc && (
           <div className="border-t border-zinc-800 pt-4">
-            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-500">Source locator</dt>
-            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-4 text-zinc-300">{node.loc}</dd>
+            <dt className="text-minimal font-medium uppercase tracking-wider text-zinc-400">Source locator</dt>
+            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-4 text-zinc-200">{node.loc}</dd>
           </div>
         )}
       </dl>
@@ -654,7 +654,7 @@ function CodemapLens({ data }: LensProps) {
   if (!document || document.nodes.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <Boxes className="h-5 w-5 text-zinc-600" />
+        <Boxes className="h-5 w-5 text-zinc-400" />
         <div className="text-regular font-medium text-zinc-200">Codemap is empty</div>
         <p className="max-w-md text-compact leading-5 text-zinc-400">Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</p>
       </div>
@@ -697,7 +697,7 @@ function CodemapLens({ data }: LensProps) {
               return (
                 <g key={`${edge.from}:${edge.to}:${index}`}>
                   <path d={`M ${x1} ${y1} C ${x1} ${y1 + 36}, ${x2} ${y2 - 36}, ${x2} ${y2}`} fill="none" stroke="#52525b" strokeWidth="1.25" strokeDasharray={edge.kind === "data" ? "4 4" : undefined} />
-                  {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle" fontSize="var(--type-minimal)" fill="#71717a">{edge.label}</text>}
+                  {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle" fontSize="var(--type-minimal)" fill="#a1a1aa">{edge.label}</text>}
                 </g>
               );
             })}
@@ -715,7 +715,7 @@ function CodemapLens({ data }: LensProps) {
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-zinc-300"><CodemapKindIcon kind={node.kind} /></span>
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-zinc-200"><CodemapKindIcon kind={node.kind} /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-compact font-medium text-zinc-100">{node.label}</span>
                   <span className="mt-1 flex items-center gap-1 text-minimal capitalize text-zinc-400"><CodemapStatus status={node.status} />{node.status}</span>
@@ -731,11 +731,11 @@ function CodemapLens({ data }: LensProps) {
           <span className="flex items-center gap-1"><TriangleAlert className="h-3.5 w-3.5 text-orange-400" /> Stale</span>
         </div>
         <div className="absolute bottom-3 right-3 flex items-center rounded-sm  border-zinc-800 bg-zinc-900/95 p-1">
-          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
           <span className="w-12 text-center text-minimal tabular-nums text-zinc-400">{Math.round(scale * 100)}%</span>
-          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
+          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
         </div>
       </div>
       {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} /></div>}

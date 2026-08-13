@@ -70,7 +70,7 @@ export function PopoverPanel({
         anchorRef={anchorRef}
         placement={placement}
         align={align}
-        className={cn("rounded-sm bg-zinc-900 shadow-xl shadow-black/40", className)}
+        className={cn("rounded-concentric [--concentric-inset:0.5rem] bg-zinc-900 shadow-xl shadow-black/40", className)}
       >
         {children}
       </FloatingLayer>

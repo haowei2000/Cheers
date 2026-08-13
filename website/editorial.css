@@ -45,7 +45,7 @@
   --code-bg: #050506;
   --code-ink: #dedee4;
   --shadow: none;
-  --radius: 4px;
+  --radius: 10px;
   --maxw: 1120px;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Charter, Georgia, serif;

@@ -244,12 +244,12 @@ function AuditRow({
         subtitle={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
           <span className={`flex-shrink-0 font-medium ${t.text}`}>{t.label}</span>
           {e.actor_id && <MemberChip id={e.actor_id} member={approver} />}
-          {target && <><span className="text-zinc-700">·</span><MemberChip id={e.target_user_id} member={target} /></>}
+          {target && <><span className="text-zinc-400">·</span><MemberChip id={e.target_user_id} member={target} /></>}
         </span>}
         trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-zinc-400 hover:text-indigo-300">
+            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-zinc-100 hover:text-indigo-300">
               <MessageSquareText className="h-3.5 w-3.5" />
             </UiButton>
           )}
@@ -260,7 +260,7 @@ function AuditRow({
             title={open ? "Hide audit details" : "Show audit details"}
             aria-expanded={open}
             onClick={onToggleDetails}
-            className="text-zinc-400 hover:text-zinc-200"
+            className="text-zinc-100 hover:text-zinc-50"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
           </UiButton>
@@ -284,7 +284,7 @@ function AuditRow({
             )}
             {command && (
               <DetailRow label="Command">
-                <span className="font-mono text-zinc-300 whitespace-pre-wrap">{command}</span>
+                <span className="font-mono text-zinc-200 whitespace-pre-wrap">{command}</span>
               </DetailRow>
             )}
             {paths.length > 0 && (

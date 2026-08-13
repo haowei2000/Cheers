@@ -78,6 +78,7 @@ export default {
       },
       borderRadius: {
         sm: "var(--radius-control)",
+        concentric: "calc(var(--radius-control) + var(--concentric-inset, 0px))",
       },
       keyframes: {
         "fade-in": {

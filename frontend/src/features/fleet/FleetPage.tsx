@@ -46,7 +46,7 @@ function channelLabel(name: string): string {
 
 function StatusChip({ bot }: { bot: FleetBot }) {
   if (!bot.online) {
-    return <span className="text-zinc-500">Offline</span>;
+    return <span className="text-zinc-400">Offline</span>;
   }
   if (bot.pending_count > 0) {
     return <span className="text-amber-300">Waiting approval</span>;
@@ -355,7 +355,7 @@ export default function FleetPage() {
               ) : (
                 <div className="space-y-5">
                   <h2 className="px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400">
-                    Bots <span className="font-normal text-zinc-500">{bots.length}</span>
+                    Bots <span className="font-normal text-zinc-400">{bots.length}</span>
                   </h2>
                     {botsByChannel.map(([channelId, g]) => (
                       <ItemSection

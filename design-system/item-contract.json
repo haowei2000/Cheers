@@ -5,12 +5,19 @@
   "defaultControlSize": "regular",
   "defaultContentSize": "regular",
   "defaultTypographySize": "regular",
+  "neutralForegroundLevels": {
+    "primary": ["zinc-50", "zinc-100"],
+    "secondary": "zinc-200",
+    "metadata": "zinc-400",
+    "disabled": "enabled foreground plus opacity-50",
+    "inverseExceptions": ["white", "zinc-950"]
+  },
   "visualLanguage": {
     "name": "Editorial Correspondence",
     "principles": [
       "Use editorial rhythm, alignment, and hairline rules before containers or decoration.",
       "Keep resting surfaces borderless; rules separate dense rows and state rings communicate focus or error.",
-      "Use near-square four-pixel corners. Circles are reserved for identity, presence, and unread state.",
+      "Use one ten-pixel Web corner system with concentric nested surfaces. Native platforms retain their platform-owned shape behavior. Circles are reserved for identity, presence, and unread state.",
       "Keep layouts compact while preserving a minimum 44pt iOS and 48dp Android touch target.",
       "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
     ],
@@ -26,7 +33,7 @@
       "comfortable": "16px"
     },
     "shape": {
-      "cornerRadius": "4px/pt/dp",
+      "cornerRadius": "10px Web base with concentric inset; platform-owned on iOS and Android",
       "restingBorder": "none",
       "separator": "hairline rules for editorial or dense scanning surfaces",
       "minimumTouchTarget": { "web": "44px on touch viewports", "ios": "44pt", "android": "48dp" }
@@ -109,6 +116,14 @@
     "danger": "trash",
     "approve": "check",
     "reject": "x"
+  },
+  "commonActionPresentations": {
+    "windowChrome": { "back": "icon", "close": "icon", "more": "icon", "refresh": "icon" },
+    "disclosure": { "collapse": "icon", "expand": "icon" },
+    "inlineEdit": { "cancel": "icon", "delete": "icon", "edit": "icon", "remove": "icon", "save": "icon" },
+    "form": { "back": "text", "cancel": "text", "create": "iconText", "save": "iconText" },
+    "dialog": { "back": "text", "cancel": "text" },
+    "confirmation": { "cancel": "text", "delete": "iconText", "remove": "iconText" }
   },
   "legacyBaselines": {
     "iosDirectButtonCalls": 186,

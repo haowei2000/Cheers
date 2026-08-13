@@ -146,7 +146,7 @@ export function LocalOpen({
           onClick={() => setMenuOpen((o) => !o)}
           title="Open in another app"
           aria-label="Choose an app to open in"
-          controlSize="compact" className="flex items-center rounded-r text-zinc-400 hover:text-zinc-200"
+          controlSize="compact" className="flex items-center rounded-r text-zinc-100 hover:text-zinc-50"
         >
           <ChevronDown className="w-3.5 h-3.5" />
         </UiButton>
@@ -154,7 +154,7 @@ export function LocalOpen({
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-[9.5rem]">
           {hintLocal === false && (
-            <p className="px-3 py-1 text-minimal text-zinc-500 border-b border-zinc-800">
+            <p className="px-3 py-1 text-minimal text-zinc-400 border-b border-zinc-800">
               Remote file — opens a downloaded copy
             </p>
           )}
@@ -163,7 +163,7 @@ export function LocalOpen({
             <UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
               key={op.key}
               onClick={() => void open(op.key)}
-              controlSize="regular" className="flex items-center gap-2  text-zinc-200 hover:bg-zinc-800"
+              controlSize="regular" className="flex items-center gap-2  text-zinc-100 hover:bg-zinc-800"
             >
               <OpenerGlyph k={op.key} className="w-4 h-4" />
               {op.label}

@@ -98,7 +98,7 @@ export function ForwardDialog({
       onClose={onClose}
     >
       <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-        <Search className="w-3.5 h-3.5 text-zinc-500" />
+        <Search className="w-3.5 h-3.5 text-zinc-400" />
         <UiInput
           autoFocus
           value={q}
@@ -123,9 +123,9 @@ export function ForwardDialog({
               onClick={() => void forwardTo(c)}
               title={labelOf(c)}
               leading={c.type === "dm" ? (
-                <MessageCircle className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                <MessageCircle className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               ) : (
-                <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                <Hash className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               )}
               trailing={sending === c.channel_id ? <span className="text-compact text-zinc-400">Sending…</span> : undefined}
               className="border-0"

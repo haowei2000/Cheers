@@ -89,7 +89,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
             {description}
           </p>
           {data.method_id && (
-            <p className="mt-1 font-mono text-minimal text-zinc-500">
+            <p className="mt-1 font-mono text-minimal text-zinc-400">
               method: {data.method_id}
               {data.auth_type ? ` · ${data.auth_type}` : ""}
             </p>
@@ -108,20 +108,20 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
               {envAuth ? (
                 <>
                   No login URL for this method — set{" "}
-                  <code className="text-zinc-300">ANTHROPIC_API_KEY</code> /{" "}
-                  <code className="text-zinc-300">CLAUDE_CODE_OAUTH_TOKEN</code>{" "}
+                  <code className="text-zinc-200">ANTHROPIC_API_KEY</code> /{" "}
+                  <code className="text-zinc-200">CLAUDE_CODE_OAUTH_TOKEN</code>{" "}
                   (or Codex{" "}
-                  <code className="text-zinc-300">OPENAI_API_KEY</code>) in the{" "}
-                  <span className="text-zinc-300">connector service</span> env on
+                  <code className="text-zinc-200">OPENAI_API_KEY</code>) in the{" "}
+                  <span className="text-zinc-200">connector service</span> env on
                   the agent host (systemd{" "}
-                  <code className="text-zinc-300">EnvironmentFile</code>, not
+                  <code className="text-zinc-200">EnvironmentFile</code>, not
                   just your shell), restart the connector, then confirm below.
                 </>
               ) : (
                 <>
                   No login URL from the agent. Finish auth on the connector host
                   (CLI login under the same{" "}
-                  <code className="text-zinc-300">HOME</code>, or vendor API key
+                  <code className="text-zinc-200">HOME</code>, or vendor API key
                   in the connector service env), restart if needed, then confirm
                   below.
                 </>
@@ -143,13 +143,13 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("cancel")}
-                controlSize="regular" className="rounded-sm bg-zinc-800  text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                controlSize="regular" className="rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
               >
                 Cancel
               </UiButton>
             </div>
           ) : (
-            <p className="mt-2 text-compact text-zinc-500">
+            <p className="mt-2 text-compact text-zinc-400">
               Waiting for the bot owner to finish agent authentication.
             </p>
           )}

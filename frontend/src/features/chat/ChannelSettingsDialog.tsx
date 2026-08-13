@@ -401,9 +401,9 @@ export function ChannelSettingsDialog({
                   onClick={() => void addMember(it)}
                   title={it.display_name || it.username || it.member_id.slice(0, 8)}
                   leading={<Avatar name={it.display_name || it.username} src={it.avatar_url} id={it.member_id} size="regular" />}
-                  status={it.member_type === "bot" ? <span className="font-utility text-compact uppercase text-zinc-500">Bot</span> : undefined}
+                  status={it.member_type === "bot" ? <span className="font-utility text-compact uppercase text-zinc-400">Bot</span> : undefined}
                   criticalStatus={it.requires_workspace_acceptance ? <span className="font-utility text-compact uppercase text-amber-400">Workspace first</span> : undefined}
-                  trailing={it.already_member ? <span className="font-utility text-compact text-zinc-500">Already in</span> : undefined}
+                  trailing={it.already_member ? <span className="font-utility text-compact text-zinc-400">Already in</span> : undefined}
                 />
               ))}
             </CollectionPickerItem>
@@ -438,11 +438,11 @@ export function ChannelSettingsDialog({
                   />
                 )}
                 status={!canChangeRole ? (
-                  <span className="font-utility text-compact uppercase text-zinc-500">
+                  <span className="font-utility text-compact uppercase text-zinc-400">
                     {m.member_type === "bot" ? `Bot · ${roleLabel}` : roleLabel}
                   </span>
                 ) : m.member_type === "bot" ? (
-                  <span className="font-utility text-compact uppercase text-zinc-500">Bot</span>
+                  <span className="font-utility text-compact uppercase text-zinc-400">Bot</span>
                 ) : undefined}
                 criticalStatus={m.status && m.status !== "active" ? (
                   <span className="font-utility text-compact uppercase text-amber-400">

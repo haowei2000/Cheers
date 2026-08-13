@@ -40,7 +40,13 @@
     "sharedButtonTypographyOverride": 0,
     "detachedEditActionButton": 0,
     "actionButtonWithoutKey": 0,
-    "legacyControlSizeProp": 0
+    "legacyControlSizeProp": 0,
+    "commonActionPresentationOverride": 0,
+    "unregisteredFormAction": 0,
+    "nonStandardNeutralTextShade": 0,
+    "nonStandardDisabledOpacity": 0,
+    "nonPrimaryButtonNeutralText": 0,
+    "nonStandardNeutralForegroundLiteral": 0
   },
   "allowedNativeReasons": [
     "checkbox",

@@ -67,7 +67,7 @@ ItemList:
 ## 7. 三档与视觉规则
 
 - Toolbar：`regular`；Item：固定 `regular = 36px`；尾部图标动作：桌面 `compact`、触屏自动 44px。
-- 字号只使用 12 / 14 / 16px；通用圆角 4px；静止状态无四周边框。
+- 字号只使用 12 / 14 / 16px；Web 通用圆角 10px；静止状态无四周边框。
 - 关键状态在 `max / medium / minimal` 下均不可隐藏。
 - Avatar、Presence、Unread 等语义形状继续使用圆形。
 

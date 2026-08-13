@@ -74,7 +74,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
       {posture && (
         <div className="rounded-sm bg-zinc-950/40 p-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-compact font-medium text-zinc-300">Agent posture</span>
+            <span className="text-compact font-medium text-zinc-200">Agent posture</span>
             {posture.allowed_modes.length > 0 ? (
               <UiSelect
                 value={posture.permission_mode ?? ""}
@@ -117,7 +117,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
 
       {/* Session config options (model / reasoning level / …) the agent advertised. */}
       <div className="rounded-sm bg-zinc-950/40 p-3">
-        <p className="text-compact font-medium text-zinc-300">Session config options</p>
+        <p className="text-compact font-medium text-zinc-200">Session config options</p>
         {configOptions && configOptions.advertised.length > 0 ? (
           <div className="mt-2 space-y-2">
             {configOptions.advertised.map((opt) => {
@@ -191,7 +191,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
                 onClick={submitManualConfig}
                 title="Apply this config override"
-                controlSize="regular" className="rounded-sm bg-indigo-500/15  text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                controlSize="regular" className="rounded-sm bg-indigo-500/15  text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Set
               </UiButton>

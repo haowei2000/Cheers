@@ -1,10 +1,10 @@
 import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import toast from "react-hot-toast";
-import { AudioLines, FlaskConical, Loader2, Save } from "lucide-react";
-import { IconButton } from "@/components/ui/icon-button";
+import { AudioLines, FlaskConical, Loader2 } from "lucide-react";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   getSttSettings,
@@ -148,7 +148,7 @@ export function AdminSttSettings() {
                   : "sk-… (leave blank if the service needs no auth)"
               }
               autoComplete="off"
-              className={`${inputCls} disabled:opacity-40`}
+              className={`${inputCls} disabled:opacity-50`}
             />
             {loaded?.api_key_set && (
               <CheckboxField
@@ -162,9 +162,7 @@ export function AdminSttSettings() {
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <IconButton label="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null}>
-              {busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            </IconButton>
+            <ActionButton action="save" context="form" accessibleLabel="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null} loading={busy === "save"} />
             <Button action="test"
               variant="secondary"
               onClick={() => void test()}

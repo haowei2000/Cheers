@@ -339,12 +339,12 @@ function AddTab() {
   return (
     <div>
       <p className="text-compact text-zinc-400 mb-2 leading-relaxed">
-        Add a friend by their exact <span className="text-zinc-300">user ID</span>. Ask them
-        to copy it from <span className="text-zinc-300">Settings → Profile → User ID</span>.
+        Add a friend by their exact <span className="text-zinc-200">user ID</span>. Ask them
+        to copy it from <span className="text-zinc-200">Settings → Profile → User ID</span>.
       </p>
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
-          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
           <UiInput
             value={id}
             onChange={(e) => {
