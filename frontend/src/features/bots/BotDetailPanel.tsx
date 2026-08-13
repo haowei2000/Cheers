@@ -44,6 +44,7 @@ import { Field, SectionHead, MetaRow } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { IconButton } from "@/components/ui/icon-button";
+import { ItemGroup, ItemList, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
@@ -304,67 +305,69 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
           No terminal enrolled yet. Create an enrollment code to connect one.
         </p>
       )}
-      {items.map((item) => (
-        <div key={item.installation_id} className="space-y-2 rounded-sm border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="flex items-start gap-3">
-            <Laptop className="mt-0.5 h-4 w-4 text-zinc-400" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-zinc-100">{item.device_name}</span>
+      <ItemList presentationLevel="max" controlSize="regular" className="space-y-2">
+        {items.map((item) => (
+          <ItemGroup key={item.installation_id} className="rounded-sm bg-zinc-950/40">
+            <OperationsItem
+              containerRole="presentation"
+              title={item.device_name}
+              leading={<Laptop className="h-4 w-4 text-zinc-400" />}
+              subtitle={`${item.agent_type} · ${item.connector_version ?? "version unknown"} · ${item.credential_prefix}`}
+              metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
+              status={(
                 <span className={cn("text-compact", item.online ? "text-emerald-400" : "text-zinc-400")}>
                   {item.revoked_at ? "revoked" : item.online ? "online" : item.status}
                 </span>
+              )}
+            />
+            {!item.revoked_at && (
+              <div className="flex flex-wrap gap-2 px-2 py-2">
+                {item.status === "standby" && (
+                  <Button action="activate" content="iconText" variant="secondary" controlSize="compact"
+                    disabled={busy === item.installation_id}
+                    onClick={() => run(item.installation_id, () => activateTerminalInstallation(botId, item.installation_id))}>
+                    <Power className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {item.status !== "pending" && (
+                  <Button action="rotate" content="iconText" variant="secondary" controlSize="compact"
+                    disabled={busy === item.installation_id}
+                    onClick={() => run(item.installation_id, async () => {
+                      const result = await rotateTerminalCredential(botId, item.installation_id);
+                      setIssued({ id: item.installation_id, credential: result.credential });
+                    })}>
+                    <RotateCw className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {item.status === "active" && (
+                  <Button action="connect" content="iconText" variant="secondary" controlSize="compact"
+                    aria-label="Reconnect terminal"
+                    disabled={busy === item.installation_id}
+                    onClick={() => run(item.installation_id, () => reconnectTerminalInstallation(botId, item.installation_id))}>
+                    <RotateCw className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button action="revoke" content="iconText" variant="danger" controlSize="compact"
+                  disabled={busy === item.installation_id}
+                  onClick={() => {
+                    if (window.confirm(`Revoke terminal “${item.device_name}”? It will no longer be able to connect.`)) {
+                      void run(item.installation_id, () => revokeTerminalInstallation(botId, item.installation_id));
+                    }
+                  }}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
-              <p className="text-compact text-zinc-400">
-                {item.agent_type} · {item.connector_version ?? "version unknown"} · {item.credential_prefix}
-              </p>
-              <p className="text-compact text-zinc-500">
-                Last seen {item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}
-              </p>
-            </div>
-          </div>
-          {!item.revoked_at && (
-            <div className="flex flex-wrap gap-2 pl-7">
-              {item.status === "standby" && (
-                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
-                  onClick={() => run(item.installation_id, () => activateTerminalInstallation(botId, item.installation_id))}>
-                  <Power className="h-3.5 w-3.5" /> Activate
-                </Button>
-              )}
-              {item.status !== "pending" && (
-                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
-                  onClick={() => run(item.installation_id, async () => {
-                    const result = await rotateTerminalCredential(botId, item.installation_id);
-                    setIssued({ id: item.installation_id, credential: result.credential });
-                  })}>
-                  <RotateCw className="h-3.5 w-3.5" /> Rotate credential
-                </Button>
-              )}
-              {item.status === "active" && (
-                <Button variant="secondary" controlSize="compact" disabled={busy === item.installation_id}
-                  onClick={() => run(item.installation_id, () => reconnectTerminalInstallation(botId, item.installation_id))}>
-                  <RotateCw className="h-3.5 w-3.5" /> Reconnect
-                </Button>
-              )}
-              <Button variant="danger" controlSize="compact" disabled={busy === item.installation_id}
-                onClick={() => {
-                  if (window.confirm(`Revoke terminal “${item.device_name}”? It will no longer be able to connect.`)) {
-                    void run(item.installation_id, () => revokeTerminalInstallation(botId, item.installation_id));
-                  }
-                }}>
-                <Trash2 className="h-3.5 w-3.5" /> Revoke
-              </Button>
-            </div>
-          )}
-          {issued?.id === item.installation_id && (
-            <div className="ml-7 rounded-sm bg-amber-950/40 p-2 text-compact text-amber-100">
-              <p>This credential is shown once. Replace the installation credential file before reconnecting.</p>
-              <code className="mt-1 block break-all select-all">{issued.credential}</code>
-              <CopyButton value={issued.credential} />
-            </div>
-          )}
-        </div>
-      ))}
+            )}
+            {issued?.id === item.installation_id && (
+              <div className="mx-2 mb-2 rounded-sm bg-amber-950/40 p-2 text-compact text-amber-100">
+                <p>This credential is shown once. Replace the installation credential file before reconnecting.</p>
+                <code className="mt-1 block break-all select-all">{issued.credential}</code>
+                <CopyButton value={issued.credential} />
+              </div>
+            )}
+          </ItemGroup>
+        ))}
+      </ItemList>
     </section>
   );
 }

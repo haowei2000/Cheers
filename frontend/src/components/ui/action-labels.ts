@@ -1,5 +1,6 @@
 export const actionLabels = {
   accept: "Accept",
+  activate: "Activate",
   add: "Add",
   approve: "Approve",
   cancel: "Cancel",
@@ -41,6 +42,7 @@ export const actionLabels = {
   resolve: "Resolve",
   restart: "Restart",
   retry: "Retry",
+  rotate: "Rotate",
   request: "Request",
   review: "Review",
   revoke: "Revoke",
