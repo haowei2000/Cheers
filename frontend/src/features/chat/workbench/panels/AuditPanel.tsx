@@ -7,14 +7,12 @@ import { Button as UiButton } from "@/components/ui/button";
 // resource verb): re-fetches on the "audit" board tick, which ChannelView bumps
 // when a permission resolves. All ids/values render as inert text.
 //
-// Each row is a card whose LEFT EDGE encodes the outcome (emerald = approved,
-// rose = denied, amber = pending, zinc = timed out). The headline is the
-// concrete thing being approved (the tool command / file), NOT the generic
-// "ACP permission request" title the connector hard-codes — that content lives
-// nested in `detail.tool`, which we dig into here. A "Details" toggle expands
-// the full choice (decision + option) and tool detail (command / paths / cwd).
+// Each row is a compact timeline record. Its outcome icon is the sole color
+// signal; the headline is the concrete command/file, never the connector's
+// generic "ACP permission request". The drawer owns expansion, so only one
+// record reveals its raw choice and tool detail at a time.
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ShieldCheck, Check, X, Clock, ShieldQuestion, ChevronRight } from "lucide-react";
+import { ShieldCheck, Check, X, Clock, ShieldQuestion, ChevronRight, MessageSquareText } from "lucide-react";
 import { listApprovalAudit, type AuditEvent } from "@/api/approval";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
@@ -55,6 +53,16 @@ function toolOf(detail: unknown): Record<string, unknown> | null {
 const str = (o: Record<string, unknown> | null, k: string): string | null =>
   o && typeof o[k] === "string" && (o[k] as string).trim() ? (o[k] as string).trim() : null;
 
+/** Connector fallbacks such as "ACP permission request" describe the protocol,
+ * not the operation. They must never occupy an audit row's scarce title slot. */
+function concreteText(value: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "acp permission request" || normalized === "permission request" || normalized === "approval request"
+    ? null
+    : value;
+}
+
 function rawInputOf(tool: Record<string, unknown> | null): Record<string, unknown> | null {
   const ri = tool?.raw_input;
   return ri && typeof ri === "object" ? (ri as Record<string, unknown>) : null;
@@ -85,12 +93,12 @@ function contentLine(detail: unknown): string | null {
   if (tool) {
     const ri = rawInputOf(tool);
     return (
-      str(tool, "summary") ||
+      concreteText(str(tool, "summary")) ||
       str(tool, "command") ||
       str(ri, "command") ||
       str(ri, "file_path") ||
       str(ri, "path") ||
-      str(tool, "title") ||
+      concreteText(str(tool, "title")) ||
       locationPaths(tool)[0] ||
       null
     );
@@ -129,15 +137,13 @@ const humanize = (id: string) => id.replaceAll("_", " ");
 
 type Tone = {
   Icon: typeof Check;
-  text: string; // text/icon color for the status chip
-  border: string; // LEFT-edge color: emerald=approved, rose=denied, amber=pending, zinc=done
+  text: string;
   label: string;
   raw: string;
 };
 
-// Decision/event → icon + tone + Cheers label + card edge. Accept reads emerald
-// (green edge), deny/reject reads rose (red edge), timeout muted zinc, a bare
-// request (no decision yet) gets the amber shield.
+// Decision/event → one semantic outcome icon and a concise label. The list does
+// not repeat that signal as an avatar, card edge, and colored text at once.
 function tone(e: AuditEvent): Tone {
   const d = (e.decision ?? "").toLowerCase();
   const et = (e.event_type ?? "").toLowerCase();
@@ -146,7 +152,6 @@ function tone(e: AuditEvent): Tone {
     return {
       Icon: Check,
       text: "text-emerald-400",
-      border: "border-l-emerald-500",
       label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Approved",
       raw,
     };
@@ -154,7 +159,6 @@ function tone(e: AuditEvent): Tone {
     return {
       Icon: X,
       text: "text-red-400",
-      border: "border-l-red-500",
       label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Denied",
       raw,
     };
@@ -162,14 +166,12 @@ function tone(e: AuditEvent): Tone {
     return {
       Icon: Clock,
       text: "text-zinc-400",
-      border: "border-l-zinc-600",
       label: EVENT_TYPE_LABEL[et] ?? "Expired",
       raw,
     };
   return {
     Icon: ShieldQuestion,
     text: "text-amber-400",
-    border: "border-l-amber-500",
     label: e.event_type ? EVENT_TYPE_LABEL[et] ?? humanize(e.event_type) : "Request",
     raw,
   };
@@ -203,12 +205,15 @@ function AuditRow({
   e,
   memberOf,
   onJump,
+  open,
+  onToggleDetails,
 }: {
   e: AuditEvent;
   memberOf: MemberLookup;
   onJump?: (msgId: string, requestId?: string | null) => void;
+  open: boolean;
+  onToggleDetails: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const t = tone(e);
   const content = contentLine(e.detail);
   const tool = toolOf(e.detail);
@@ -216,10 +221,9 @@ function AuditRow({
   const command = str(tool, "command") || str(rawInputOf(tool), "command");
   const cwd = str(tool, "cwd");
   const kind = str(tool, "kind");
-  const toolTitle = str(tool, "title");
+  const toolTitle = concreteText(str(tool, "title"));
   const decisionLabel = e.decision ? DECISION_LABEL[e.decision.toLowerCase()] ?? humanize(e.decision) : null;
 
-  const bot = memberOf(e.bot_id);
   const approver = memberOf(e.actor_id);
   const target =
     e.target_user_id && e.target_user_id !== e.actor_id ? memberOf(e.target_user_id) : undefined;
@@ -230,56 +234,39 @@ function AuditRow({
   );
 
   return (
-    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-2`}>
+    <li className="mb-1 rounded-sm bg-zinc-900/30">
       <WorkbenchItem
         presentationLevel="medium"
-        title={content || t.label}
-        leading={e.bot_id ? <Avatar
-              name={bot?.display_name || bot?.username || short(e.bot_id)}
-              src={bot?.avatar_url ?? undefined}
-              id={e.bot_id}
-              size="small"
-            /> : undefined}
-        status={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
-              <span
-                className={`inline-flex items-center gap-1 text-compact font-medium ${t.text}`}
-                title={t.raw || undefined}
-              >
-                <t.Icon className="w-3.5 h-3.5" />
-                {t.label}
-              </span>
-              {e.actor_id && (
-                <>
-                  <span className="text-zinc-700">·</span>
-                  <MemberChip id={e.actor_id} member={approver} />
-                </>
-              )}
-              {target && (
-                <>
-                  <span className="text-minimal text-zinc-400">for</span>
-                  <MemberChip id={e.target_user_id} member={target} />
-                </>
-              )}
-            </span>}
+        title={content || toolTitle || "Permission decision"}
+        leading={<span className={`inline-flex h-7 w-7 flex-shrink-0 items-center justify-center ${t.text}`} title={t.raw || undefined}>
+          <t.Icon className="h-4 w-4" aria-label={t.label} />
+        </span>}
+        subtitle={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
+          <span className={`flex-shrink-0 font-medium ${t.text}`}>{t.label}</span>
+          {e.actor_id && <MemberChip id={e.actor_id} member={approver} />}
+          {target && <><span className="text-zinc-700">·</span><MemberChip id={e.target_user_id} member={target} /></>}
+        </span>}
         trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton action="open" variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className=" text-zinc-400 hover:text-indigo-300">
-              Jump
+            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-zinc-400 hover:text-indigo-300">
+              <MessageSquareText className="h-3.5 w-3.5" />
             </UiButton>
           )}
           {hasDetails && (
-          <UiButton action={open ? "collapse" : "expand"} content="iconText" variant="plain"
+          <UiButton action={open ? "collapse" : "expand"} content="icon" variant="plain"
             type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="inline-flex items-center gap-1  text-zinc-400 hover:text-zinc-200 transition-colors"
+            aria-label={open ? "Hide audit details" : "Show audit details"}
+            title={open ? "Hide audit details" : "Show audit details"}
+            aria-expanded={open}
+            onClick={onToggleDetails}
+            className="text-zinc-400 hover:text-zinc-200"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
-            Details
           </UiButton>
           )}
         </>}
-        className="border-b-0 border-l-0 bg-transparent"
+        className="border-0 bg-transparent"
       />
 
         {open && (
@@ -326,6 +313,7 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [openEventKey, setOpenEventKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -363,15 +351,18 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
           No permission decisions yet
         </div>
       ) : (
-        <ul className="px-2 py-2">
-          {events.map((e, i) => (
-            <AuditRow
-              key={`${e.request_id ?? e.event_type}-${e.created_at}-${i}`}
+        <ul className="px-2 py-2" aria-label="Permission audit log">
+          {events.map((e, i) => {
+            const eventKey = `${e.request_id ?? e.event_type}-${e.created_at}-${i}`;
+            return <AuditRow
+              key={eventKey}
               e={e}
               memberOf={memberOf}
               onJump={ctx.onJumpToMessage}
+              open={openEventKey === eventKey}
+              onToggleDetails={() => setOpenEventKey((current) => current === eventKey ? null : eventKey)}
             />
-          ))}
+          })}
         </ul>
       )}
     </ViewBoardShell>
