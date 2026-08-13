@@ -246,34 +246,30 @@ ACP Connector 适合把本机 stdio ACP agent 接到 Cheers。它本身负责：
 
 推荐直接下载 [GitHub Releases](https://github.com/haowei2000/Cheers/releases)
 上的预编译二进制（无需 Rust 工具链；`release-connector` workflow 会按平台发布
-`cce-acp-connector-{darwin,linux}-{arm64,amd64}` 以及配套的 `cheers-mcp-server-*`）：
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}`）：
 
 ```bash
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
 ~/.cheers/bin/cce-acp-connector --help   # 建议把 ~/.cheers/bin 加进 PATH
 ```
 
-> 换版本时把 `connector-v0.1.36` 换成其他 `connector-v*` tag
+> 换版本时把 `connector-v0.1.37` 换成其他 `connector-v*` tag
 > （**不要**用 `releases/latest`——那指向桌面端）。
 >
 > 仓库还是**私有**时，匿名 curl 会 404 —— 有仓库权限的用户请改用
 > GitHub CLI 认证下载（先 `gh auth login`）：
 >
 > ```bash
-> gh release download connector-v0.1.36 -R haowei2000/Cheers \
+> gh release download connector-v0.1.37 -R haowei2000/Cheers \
 >   -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector
-> gh release download connector-v0.1.36 -R haowei2000/Cheers \
->   -p "cheers-mcp-server-$os-$arch" -O ~/.cheers/bin/cheers-mcp-server
-> chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+> chmod +x ~/.cheers/bin/cce-acp-connector
 > ```
 >
-> MCP 伴生二进制必须放在连接器同目录——默认 `inject_cheers = true` 会在那里解析它。
+> Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生二进制，也没有 stdio 回退。
 
 也可以从当前仓库源码安装（需要 Rust）：
 
@@ -348,12 +344,8 @@ wait_timeout_ms = 900000
 on_timeout = "cancel"
 
 [accounts."opencode-acp".policy.mcp]
-inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
-
-[accounts."opencode-acp".policy.loopback]
-request_timeout_ms = 600000
 ```
 
 注意：

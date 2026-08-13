@@ -1,9 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Captions, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiFetch } from "@/api/client";
-import { realizeFile, pollFileStatus, transcribeFile } from "@/api/files";
+import { transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
@@ -165,83 +165,34 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   );
 }
 
-// Staged file tile: click → realize → poll → auto-download when ready.
-function StagedFileTile({ file }: { file: FileInfo }) {
-  const [phase, setPhase] = useState<"idle" | "realizing" | "error">("idle");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-
-  useEffect(() => () => stopPoll(), []);
-
-  const handleClick = useCallback(async () => {
-    if (phase === "realizing") return;
-    setPhase("realizing");
-    try {
-      await realizeFile(file.file_id);
-    } catch {
-      setPhase("error");
-      return;
-    }
-
-    // Poll until uploaded (2 s interval, 60 s ceiling)
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts++;
-      try {
-        const status = await pollFileStatus(file.file_id);
-        if (status === "uploaded") {
-          stopPoll();
-          setPhase("idle");
-          await downloadFile({ ...file, status: "uploaded" });
-        } else if (status === "expired" || attempts > 30) {
-          stopPoll();
-          setPhase("error");
-        }
-      } catch {
-        stopPoll();
-        setPhase("error");
-      }
-    }, 2000);
-  }, [file, phase]);
-
-  const label =
-    phase === "realizing"
-      ? "Loading…"
-      : phase === "error"
-        ? "Failed to load — click to retry"
-        : file.original_filename || "Remote file";
-
+// Historical staged attachments have no durable object after the Connector-side
+// realization path was retired. Keep the record visible, but never offer an action
+// that can no longer succeed.
+function UnavailableFileTile({ file }: { file: FileInfo }) {
   return (
     /* design-system-exempt: drop-zone */
-    <UiButton content="iconText" variant="plain" role="option"
-      type="button"
-      onClick={handleClick}
-      disabled={phase === "realizing"}
+    <div
+      role="status"
       title={file.original_filename || file.file_id}
-      controlSize="regular" className="inline-flex items-center gap-2 rounded-sm border border-dashed border-zinc-600 bg-zinc-800/40  text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 transition-colors max-w-[240px] disabled:cursor-wait"
+      className="inline-flex max-w-[240px] items-center gap-2 rounded-sm border border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-zinc-400"
       data-design-system-exempt="drop-zone"
     >
-      {phase === "realizing" ? (
-        <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
-      ) : (
-        <FileText className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
-      )}
-      <span className="truncate">{label}</span>
-    </UiButton>
+      <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+      <span className="min-w-0">
+        <span className="block truncate">{file.original_filename || "Remote file"}</span>
+        <span className="block text-minimal">Attachment unavailable</span>
+      </span>
+    </div>
   );
 }
 
-// One file: an image thumbnail or a typed chip. Clicking either opens the preview modal
-// (staged files keep their realize-then-download behavior instead).
+// One durable file: an image thumbnail or a typed chip. Historical non-uploaded
+// records remain visible as unavailable metadata and cannot trigger realization.
 export function FileTile({ file }: { file: FileInfo }) {
   const [open, setOpen] = useState(false);
-  if (file.status === "staged") return <StagedFileTile file={file} />;
+  if (file.status && !["uploaded", "converted"].includes(file.status)) {
+    return <UnavailableFileTile file={file} />;
+  }
 
   const isImage = (file.content_type ?? "").startsWith("image/");
   if (isAudioFile(file)) return <AudioTile file={file} />;

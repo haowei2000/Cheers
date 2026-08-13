@@ -221,7 +221,7 @@ impl AvailableUpdate {
         } else {
             let get = match self.download_url() {
                 Some(url) => {
-                    format!("download {url} (and the matching cheers-mcp-server)")
+                    format!("download {url}")
                 }
                 None => "install the new release binaries".to_string(),
             };
@@ -536,20 +536,9 @@ impl SelfUpdater {
 
         let suffix = platform_asset_suffix().expect("checked in disabled_reason");
         let exe = std::env::current_exe()?;
-        let exe_dir = exe
-            .parent()
-            .ok_or_else(|| anyhow!("current exe has no parent dir"))?
-            .to_path_buf();
 
-        // The MCP server ships in lockstep and is resolved next to the connector
-        // executable, so when that sibling exists it must be swapped in the same
-        // generation — a version-skewed pair is not a supported state.
-        let mut wanted: Vec<(String, PathBuf)> =
+        let wanted: Vec<(String, PathBuf)> =
             vec![(format!("cce-acp-connector-{suffix}"), exe.clone())];
-        let mcp_sibling = exe_dir.join("cheers-mcp-server");
-        if mcp_sibling.exists() {
-            wanted.push((format!("cheers-mcp-server-{suffix}"), mcp_sibling));
-        }
 
         let staging = self
             .state_dir

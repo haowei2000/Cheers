@@ -15,30 +15,23 @@ server** 进入频道操作的，以及大家最关心的一点——**在 Cheer
 
 ## 1. 什么是「MCP Cheers」
 
-`cheers-mcp-server` 是一个本地的 **stdio MCP server**（单个 Rust 二进制）。它**不**与你 agent 的
-模型对话，也**不**是 bot 通过网络连接的对象。真正的关系是：**ACP 连接器守护进程**
-（`cce-acp-connector`）把它作为子进程拉起，并注入几个环境变量，让它知道自己在哪个频道里行动：
-
-| 环境变量 | 含义 |
-|---|---|
-| `CHEERS_RESOURCE_URL` | 回到连接器的 loopback 端点 |
-| `CHEERS_RESOURCE_TOKEN` | 该 loopback 的可选 bearer |
-| `CHEERS_CHANNEL_ID` | 工具默认作用的频道 |
-| `CHEERS_BOT_ID` | 当前以哪个 bot 身份行动 |
-| `CHEERS_SESSION_ID` | 当前 bridge 会话 |
-| `CHEERS_REQUEST_TIMEOUT_MS` | 单次调用超时 |
+Cheers 通过认证后的 Gateway hello 通告 canonical **HTTP MCP 端点**。
+Connector 会把不带静态 header 的 URL 注入每个 ACP session；Agent 负责
+OAuth discovery、consent、token 保存、刷新与撤销处理。不再有本地 stdio MCP
+进程，也不提供 Connector OAuth proxy。
 
 完整链路如下：
 
 ```
 外部 ACP agent（Claude / Codex / OpenCode）
-        ↕  ACP（stdio）
+        ↕  HTTPS MCP + 原生 OAuth
+Rust Gateway /mcp
+
+外部 ACP agent
+        ↕  ACP（本地 stdio）
 ACP 连接器守护进程（cce-acp-connector）
         ↕  Agent Bridge WebSocket（control + data）
 Rust 网关（唯一后端）
-        ↑
-        └── 连接器同时拉起 cheers-mcp-server（stdio），
-            它通过连接器的 loopback 把频道资源取回给 agent
 ```
 
 一句话：MCP 是 agent「看到并操作频道」的**读/写工具面**；**Agent Bridge WebSocket** 才是传输通道，
@@ -48,11 +41,11 @@ Rust 网关（唯一后端）
 
 ## 2. MCP 工具面
 
-每个工具都接受一个可选的 `channel_id`（缺省回退到 `CHEERS_CHANNEL_ID`）。每次调用**服务端的频道成员
+每个频道类工具都要求 `channel_id`。每次调用**服务端的频道成员
 角色校验依然生效**——MCP server 不会赋予 bot 任何它的频道角色本来就没有的权力。
 
 > 包 README 里那份旧工具清单（`list_files` / `read_file` / `fs_*`）**已过时**。
-> 权威清单以源码为准（`packages/cheers-mcp-server/src/main.rs`）。
+> 权威清单以共享 catalog 为准（`packages/cheers-mcp-server/src/tools.rs`）。
 
 **只读类**
 
@@ -76,7 +69,6 @@ Rust 网关（唯一后端）
 | `post_message` | 发消息；支持 `mention_ids` / `mention_names` 来 @ 提及成员 |
 | `leave_channel` | 把自己移出频道（等同于人退出）；DM 不允许 |
 | `inbox_deliver` | 以附件形式投递一个新文件（base64，≤ 8MB）到频道 |
-| `inbox_stage` | 注册一个本地路径，作为延迟投递的暂存附件 |
 | `desk_write` / `desk_edit` / `desk_append` | 创建 / 编辑 / 追加 desk 文件（用 `if_version` 做乐观锁） |
 | `desk_rm` / `desk_mv` | 删除 / 移动 desk 文件或子树 |
 
@@ -89,7 +81,9 @@ Rust 网关（唯一后端）
 
 ## 3. bot 如何鉴权
 
-鉴权**不**发生在 MCP server，而是在 **Agent Bridge WebSocket** 上。token 模型：
+Prompt 传输在 **Agent Bridge WebSocket** 上鉴权。MCP 调用使用 Agent 原生
+OAuth 生命周期取得的 installation-bound access token；Gateway 每次都校验
+installation 状态、scope、audience 和频道成员资格。Bridge credential 模型仍为：
 
 1. **签发。** `generate_bot_token()` 生成 `agb_<hex>` token。明文**只返回一次**；库里只存它的
    **SHA-256**，落在 `bot_accounts.bot_token_hash`（外加一个仅用于展示的 `bot_token_prefix`）。
@@ -153,7 +147,7 @@ bot 永远**归属**于某个用户（`bot_accounts.created_by`），是一个*�
 
 > 一个 **bot** 是*频道的一等成员*（它发消息、被提及、有在线状态、可被邀请、也能退出——全部走与人相同的
 > 表），但同时是*平台的二等主体*（归属某用户、无平台角色、频道权限封顶在 member/readonly、随时可被停用）。
-> 而 **MCP server** 只是那层工具面，让 owner 的外部 agent 得以在它的 bot 所属的频道里查看与操作。
+> 而 **Gateway HTTP MCP 端点** 是那层工具面，让 owner 的外部 agent 得以在它的 bot 所属的频道里查看与操作。
 
 ---
 

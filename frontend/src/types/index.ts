@@ -116,7 +116,7 @@ export interface FileInfo {
   size_bytes?: number;
   preview_url?: string | null;
   download_url?: string | null;
-  /** "staged" = lazy (remote, not yet on S3); "uploaded" = available; "expired" = gone. */
+  /** "uploaded" = available; "expired" = unavailable or past retention. */
   status?: string;
   /** Short derived text when a server pipeline produced one — today the audio
    *  transcript snippet; shown under the inline audio player. */
@@ -188,6 +188,7 @@ export interface AuthRequiredContentData {
   kind?: "agent_bridge_auth_required";
   request_id?: string;
   method_id?: string;
+  methods?: AuthMethodPresentation[];
   name?: string;
   description?: string;
   link?: string | null;
@@ -198,6 +199,54 @@ export interface AuthRequiredContentData {
   resolved_at?: string;
   resolved_kind?: string;
   chosen_action?: "retry" | "cancel" | string;
+  chosen_method_id?: string;
+  agent_profile?: {
+    id: string;
+    display_name: string;
+    login_hint: string;
+    verified_version_range?: string | null;
+  };
+}
+
+/** Vendor-neutral presentation of an ACP Agent-advertised auth method. */
+export interface AuthMethodPresentation {
+  method_id: string;
+  name?: string | null;
+  description?: string | null;
+  link?: string | null;
+  auth_type?: string | null;
+  recommended?: boolean;
+}
+
+/** ACP v1 form or URL elicitation rendered as an interactive channel card. */
+export interface ElicitationContentData {
+  kind?: "agent_bridge_elicitation";
+  /** Product presentation hint derived by Gateway; ACP params remain authoritative. */
+  interaction_kind?: "general" | "mcp_oauth" | string;
+  request_id?: string;
+  /** Original ACP request ID, retained for diagnostics but never used as authorization. */
+  acp_request_id?: string | number;
+  initiating_user_id?: string | null;
+  mode?: "form" | "url" | string;
+  message?: string;
+  requested_schema?: {
+    type?: string;
+    properties?: Record<string, {
+      type?: "string" | "number" | "integer" | "boolean" | "array";
+      title?: string;
+      description?: string;
+      enum?: Array<string | number>;
+      items?: { enum?: Array<string | number> };
+      default?: unknown;
+    }>;
+    required?: string[];
+  } | null;
+  url?: string | null;
+  elicitation_id?: string | null;
+  resolved?: boolean;
+  status?: string;
+  resolved_by?: string;
+  resolved_at?: string;
 }
 
 /** Canonical agent lifecycle event shared by REST trace reads and live bot_trace frames. */
@@ -241,6 +290,7 @@ export interface Message {
     | "announcement"
     | "routing"
     | "permission"
+    | "elicitation"
     | "auth_required"
     | "task_claim_confirmation"
     | "notification";
@@ -261,6 +311,7 @@ export interface Message {
   content_data?:
     | PermissionContentData
     | AuthRequiredContentData
+    | ElicitationContentData
     | Record<string, unknown>
     | null;
   /** Resource-context bundle the sender attached (docs/design/RESOURCE_CONTEXT.md).

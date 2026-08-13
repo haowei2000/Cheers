@@ -612,6 +612,20 @@ pub async fn revoke_approver(
 pub struct AuthAckRequest {
     /// `"retry"` (I've signed in — re-run authenticate) or `"cancel"`.
     pub action: String,
+    /// Agent-advertised method selected in Web. Required for `retry`.
+    pub method_id: Option<String>,
+}
+
+/// Returns true only for a method persisted from the Agent's initialize response.
+fn auth_method_is_advertised(content_data: &Value, selected: &str) -> bool {
+    content_data
+        .get("methods")
+        .and_then(Value::as_array)
+        .is_some_and(|methods| {
+            methods
+                .iter()
+                .any(|method| method.get("method_id").and_then(Value::as_str) == Some(selected))
+        })
 }
 
 /// Acknowledge an ACP agent re-auth card. Only the bot owner may ack.
@@ -654,12 +668,28 @@ pub async fn ack_auth_required(
     {
         return Err(AppError::Conflict("auth request already resolved".into()));
     }
+    let method_id = body
+        .method_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if action == "retry" {
+        let selected = method_id.ok_or_else(|| {
+            AppError::BadRequest("method_id is required when retrying agent auth".into())
+        })?;
+        if !auth_method_is_advertised(&pending.content_data, selected) {
+            return Err(AppError::BadRequest(
+                "method_id was not advertised by the agent".into(),
+            ));
+        }
+    }
     let now = chrono::Utc::now().to_rfc3339();
     let patch = json!({
         "resolved": true,
         "resolved_by": uid.to_string(),
         "resolved_at": now,
         "chosen_action": action,
+        "chosen_method_id": method_id,
     });
     if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
     {
@@ -670,6 +700,7 @@ pub async fn ack_auth_required(
         &request_id,
         &pending.msg_id.to_string(),
         &action,
+        method_id.map(str::to_string),
         &uid.to_string(),
         &now,
     );
@@ -708,4 +739,261 @@ pub async fn ack_auth_required(
         "delivered": delivered,
         "action": action,
     })))
+}
+
+#[derive(Deserialize)]
+pub struct ResolveElicitationRequest {
+    /// `accept`, `decline`, or `cancel`.
+    pub action: String,
+    /// Form values for `accept`; omitted for URL mode and terminal actions.
+    pub content: Option<Value>,
+}
+
+/// Validates the restricted ACP form schema subset without executing arbitrary JSON Schema.
+fn validate_elicitation_content(schema: &Value, content: &Value) -> Result<(), AppError> {
+    let properties = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .ok_or_else(|| AppError::BadRequest("invalid elicitation form schema".into()))?;
+    let values = content
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("elicitation content must be an object".into()))?;
+    let required = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for name in required.iter().filter_map(Value::as_str) {
+        if !values.contains_key(name) {
+            return Err(AppError::BadRequest(format!(
+                "missing required field: {name}"
+            )));
+        }
+    }
+    for (name, value) in values {
+        let field = properties
+            .get(name)
+            .ok_or_else(|| AppError::BadRequest(format!("unknown form field: {name}")))?;
+        let valid_type = match field.get("type").and_then(Value::as_str) {
+            Some("string") => value.is_string(),
+            Some("number") => value.is_number(),
+            Some("integer") => value.as_i64().is_some() || value.as_u64().is_some(),
+            Some("boolean") => value.is_boolean(),
+            Some("array") => value.is_array(),
+            _ => false,
+        };
+        if !valid_type {
+            return Err(AppError::BadRequest(format!(
+                "invalid value for field: {name}"
+            )));
+        }
+        if let Some(allowed) = field.get("enum").and_then(Value::as_array) {
+            if !allowed.contains(value) {
+                return Err(AppError::BadRequest(format!(
+                    "value not allowed for field: {name}"
+                )));
+            }
+        }
+        if let (Some(items), Some(values)) = (
+            field
+                .get("items")
+                .and_then(|item| item.get("enum"))
+                .and_then(Value::as_array),
+            value.as_array(),
+        ) {
+            if values.iter().any(|value| !items.contains(value)) {
+                return Err(AppError::BadRequest(format!(
+                    "value not allowed for field: {name}"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolves a pending ACP v1 elicitation as the authenticated channel member.
+pub async fn resolve_elicitation(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, request_id)): Path<(Uuid, String)>,
+    Json(body): Json<ResolveElicitationRequest>,
+) -> Result<Json<Value>, AppError> {
+    let uid = user_id(&claims)?;
+    ensure_member(&state, channel_id, uid, &claims.role).await?;
+    let pending = approval::find_pending_of_type(&state.db, channel_id, &request_id, "elicitation")
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if let Some(initiating_user_id) = pending
+        .content_data
+        .get("initiating_user_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        if initiating_user_id != uid.to_string() {
+            return Err(AppError::Forbidden(
+                "only the user who initiated this agent request may answer it".into(),
+            ));
+        }
+    }
+    let role = channel_role(&state, channel_id, uid).await;
+    let may_respond = approval::is_approver(&state.db, pending.bot_id, channel_id, uid, "*")
+        .await?
+        || crate::domain::acp_policy::allows(
+            &state.db,
+            &pending.bot_id.to_string(),
+            &channel_id.to_string(),
+            &uid.to_string(),
+            &role,
+            "session/request_permission",
+            Capability::Respond,
+        )
+        .await
+        .unwrap_or(false);
+    if !may_respond {
+        return Err(AppError::Forbidden(
+            "not authorized to answer this agent interaction".into(),
+        ));
+    }
+    let action = body.action.trim().to_ascii_lowercase();
+    if !matches!(action.as_str(), "accept" | "decline" | "cancel") {
+        return Err(AppError::BadRequest(
+            "action must be accept, decline, or cancel".into(),
+        ));
+    }
+    let mode = pending
+        .content_data
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if action == "accept" && mode == "form" && !matches!(body.content, Some(Value::Object(_))) {
+        return Err(AppError::BadRequest(
+            "accepted form elicitation requires object content".into(),
+        ));
+    }
+    if action == "accept" && mode == "form" {
+        let schema = pending
+            .content_data
+            .get("requested_schema")
+            .ok_or_else(|| AppError::BadRequest("missing elicitation form schema".into()))?;
+        validate_elicitation_content(
+            schema,
+            body.content.as_ref().expect("form content checked above"),
+        )?;
+    }
+    if mode == "url" && body.content.is_some() {
+        return Err(AppError::BadRequest(
+            "URL elicitation does not accept form content".into(),
+        ));
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    let patch = json!({
+        "resolved": true,
+        "status": action,
+        "resolved_by": uid.to_string(),
+        "resolved_at": now,
+        "content": body.content.clone(),
+    });
+    if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
+    {
+        return Err(AppError::Conflict("elicitation already resolved".into()));
+    }
+    if pending
+        .content_data
+        .get("interaction_kind")
+        .and_then(Value::as_str)
+        == Some("mcp_oauth")
+    {
+        if let Some(installation_id) = pending
+            .content_data
+            .get("installation_id")
+            .and_then(Value::as_str)
+        {
+            let next_state = if action == "accept" {
+                "authorizing"
+            } else {
+                "unconfigured"
+            };
+            sqlx::query(
+                "UPDATE terminal_installations
+                 SET mcp_connection_state = $1, mcp_state_updated_at = NOW()
+                 WHERE installation_id = $2 AND revoked_at IS NULL
+                   AND mcp_connection_state <> 'connected'",
+            )
+            .bind(next_state)
+            .bind(installation_id)
+            .execute(&state.db)
+            .await?;
+        }
+    }
+    let frame = crate::gateway::bridge_frames::elicitation_resolution_frame(
+        &request_id,
+        &pending.msg_id.to_string(),
+        &action,
+        body.content,
+        &uid.to_string(),
+        &now,
+    );
+    let delivered = state.bot_locator.dispatch_task(pending.bot_id, frame).await;
+    let mut content_data = pending.content_data.clone();
+    if let (Value::Object(target), Value::Object(source)) = (&mut content_data, patch) {
+        target.extend(source);
+    }
+    state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
+        "v": MESSAGE_SCHEMA_VERSION, "msg_id":pending.msg_id, "channel_id":channel_id,
+        "channel_seq":pending.channel_seq, "sender_type":"bot", "sender_id":pending.bot_id,
+        "content":pending.content, "msg_type":"elicitation", "is_partial":false,
+        "reply_to_msg_id":null, "file_ids":[], "mentions":[], "files":[],
+        "content_data":content_data,
+    }))).await;
+    Ok(Json(
+        json!({"ok":true, "delivered":delivered, "action":action}),
+    ))
+}
+
+#[cfg(test)]
+mod elicitation_tests {
+    use super::*;
+
+    #[test]
+    fn auth_method_selection_accepts_only_agent_advertised_ids() {
+        let content = json!({
+            "methods": [
+                {"method_id": "chat-gpt-device-code"},
+                {"method_id": "api-key"}
+            ]
+        });
+        assert!(auth_method_is_advertised(&content, "api-key"));
+        assert!(!auth_method_is_advertised(&content, "chat-gpt"));
+        assert!(!auth_method_is_advertised(&json!({}), "api-key"));
+    }
+
+    #[test]
+    fn restricted_form_validation_accepts_typed_known_fields() {
+        let schema = json!({
+            "properties": {
+                "name": {"type":"string"},
+                "count": {"type":"integer"},
+                "targets": {"type":"array", "items":{"enum":["a","b"]}}
+            },
+            "required": ["name"]
+        });
+        assert!(validate_elicitation_content(
+            &schema,
+            &json!({"name":"demo", "count":2, "targets":["a"]})
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn restricted_form_validation_rejects_unknown_and_missing_fields() {
+        let schema = json!({
+            "properties": {"name": {"type":"string"}},
+            "required": ["name"]
+        });
+        assert!(validate_elicitation_content(&schema, &json!({})).is_err());
+        assert!(
+            validate_elicitation_content(&schema, &json!({"name":"demo", "secret_extra":"x"}))
+                .is_err()
+        );
+    }
 }

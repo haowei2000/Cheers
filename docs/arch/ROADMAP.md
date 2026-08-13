@@ -2,7 +2,8 @@
 
 > **Status:** 🛠 Planning — actively-maintained engineering execution plan, **not** the current-state reference. For the current architecture see [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md); for the public product roadmap see [docs/ROADMAP.md](../ROADMAP.md).
 
-> 版本：v1.8（2026-06-26）—— M3.5：ACP 协议库采用 R14（Tier A typed schema 已落地 / Tier B 全量 runtime 规划）
+> 版本：v1.10（2026-08-13）—— ACP v1 Elicitation 已接通 Connector / Bridge / Gateway / Web UI
+> 版本：v1.9（2026-08-13）—— M3.5：ACP 官方 runtime 0.1.37 已切换，legacy 删除等待验收
 > 版本：v1.7（2026-06-25）—— M3 收口：R8 错误上下文 · R9 session 解析合并 · R10 sqlx 样板 · R11 拆 bridge_runtime(+impl) · 孤儿占位回收器 · R13 文档对齐（R12 长期搁置）
 > 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
 > 性质：**执行路线图** —— 把架构现状转成可落地的里程碑序列。
@@ -77,7 +78,7 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 
 - **后端补齐**：用核心闭环对照现有 ~32 条路由，补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口。大部分已存在 —— 是补洞，不是新建。
 - **前端（本里程碑真正的工作量）**：打通 `useChatRealtime` 重连 → REST 补齐；流式 bot 回复渲染；mention 选择器（`<@bot>`/`<@user>`）；文件上传/附件 + `<#file>` token；presence；**bot 管理 UI**（注册外接 bot、签发 botToken、查看 config/status）。
-- **connector 通路验证**：一条文档化的 happy-path —— 经 `cheers-mcp-server` *或* `cheers-acp-connector-rs` 接入 Claude/Codex，@提及、流式、断线重连。
+- **connector 通路验证**：一条文档化的 happy-path —— 经 `cheers-acp-connector-rs` 接入 Claude/Codex，Agent 使用 Gateway 原生 HTTP MCP + OAuth，覆盖 @提及、流式与断线重连。
 - 可选：R6 delta 热路径优化（M0 测试就位后才安全）—— 非性能瓶颈则延后。
 
 **验收门**：新用户能 建工作区/频道 → 邀请 → 发带 mention+文件的消息 → 接入外接 agent → @它 → 看它流式回复 → 刷新后看到完整历史。这就是可交付切片。
@@ -120,10 +121,10 @@ R13 文档对齐（§2.6 差异表）。R12（UUID 列迁移）长期 / 可选�
 
 ## M3.5 — ACP 协议库采用（R14：typed schema → 官方 runtime）
 
-connector ↔ ACP agent 这一侧原为**手写 JSON-RPC**（`acp_adapter.rs`）。分两档迁到官方 Rust 库，接缝 `RuntimeAdapter` trait 不变，blast radius = 单文件。详见 [ACP_RUST_SDK_ADOPTION.md](./ACP_RUST_SDK_ADOPTION.md)。
+connector ↔ ACP agent 的默认 transport 已迁到官方 Rust SDK。详见 [ACP_RUST_SDK_ADOPTION.md](./ACP_RUST_SDK_ADOPTION.md)。
 
-- **Tier A（已落地，2026-06-26）**：依赖 `agent-client-protocol-schema = "1.1"`（稳定 wire v1，无 `unstable` feature）。仅在安全敏感边界 typed —— `initialize` 能力宣告（`ClientCapabilities::default()` == 锁定姿态，类型断言）、`initialize` 响应解析、权限响应（wire-identical）。纯透传 payload（mcpServers / prompt content / session_update / tool_call）有意保持 `Value`。加 2 条回归测试钉住安全姿态与 wire 形态。
-- **Tier B（规划，未启动）**：全量采用 `agent-client-protocol` runtime（1.0.0，2026-06-24 发布），删手写传输层（JSON-RPC + framing + 子进程），把 `RuntimeEvent` 重塑为 builder/callback/responder 模型。**触发门**：1.x 出 ≥1 patch 且无 API 破坏 · Send/线程模型确认可嵌入多线程 runtime · 重跑 `/security-review` 确认 fs/terminal 锁定不被库默认重开。
+- **0.1.37（已实现，2026-08-13）**：`agent-client-protocol = "2.0.0"`、stable wire v1；official 默认，legacy 作为一个版本的环境变量回滚路径；ACP Agent 仍是本地 stdio 子进程，但 Cheers 工具面已强制切换为 Gateway 原生 HTTP MCP + OAuth，stdio MCP sidecar 不再注入。
+- **0.1.38（验收门后）**：至少观察 7 天并通过 Codex/Claude × macOS/Linux smoke matrix、无未解决 P0/P1 后，删除手写 JSON-RPC/framing/pending map 和 legacy selector。
 
 ---
 
@@ -169,6 +170,6 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] R13 文档对齐：§2.6 差异表逐条处置（GATEWAY_CODE_ARCH 重写目录树、AGENT_BRIDGE_RESOURCE 刷新词表、BOT_PERMISSION 现状标注；commit `157d7087`）
   - [ ] R12 UUID 列迁移：长期 / 可选，未启动
 - [ ] **M3.5** ACP 协议库采用（R14）—— 见 [ACP_RUST_SDK_ADOPTION.md](./ACP_RUST_SDK_ADOPTION.md)
-  - [x] **Tier A** typed schema：`agent-client-protocol-schema = "1.1"`，安全敏感边界 typed（能力宣告 / init 响应 / 权限响应），纯透传 payload 保持 `Value`，+2 回归测试（2026-06-26）
-  - [ ] **Tier B** 全量 runtime（`agent-client-protocol` 1.x）：待触发门（1.x 稳定 · Send 模型可嵌入 · security-review 复跑）
+  - [x] **0.1.37** official runtime 默认 + legacy 回滚（SDK 2.0.0 / stable wire v1，2026-08-13）
+  - [ ] **0.1.38** 验收门后删除 legacy transport（7 天观察 + smoke matrix + 无 P0/P1）
 - [ ] **M4** 扩容（HA 触发）

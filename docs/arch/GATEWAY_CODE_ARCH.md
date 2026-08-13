@@ -72,7 +72,7 @@ gateway/
     ├── resource/               ── 【resource_req 分发】（旧文档置于 acp_bridge/resource/）──
     │   ├── mod.rs              ← 入口分发（match resource 字段，鉴权=channel role）
     │   ├── channel_info.rs / members.rs / messages.rs
-    │   ├── files.rs           ← channel.files* + stage/realize
+    │   ├── files.rs           ← channel.files read/list + durable create
     │   ├── fs.rs              ← fs.ls/read/write/edit/append/rm/mv（取代旧 memory.rs）
     │   ├── activity.rs        ← channel.activity.read / channel.messages.index
     │   └── context.rs         ← 聚合查询

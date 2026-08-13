@@ -7,9 +7,19 @@ This binary owns daemon lifecycle commands: `start`, `stop`, `restart`,
 config, starts the Rust BridgeRuntime, and connects Agent Bridge to a local ACP
 agent through the configured adapter.
 
+Every session receives the canonical Gateway HTTP MCP URL from the authenticated
+Bridge hello. The Connector requires `mcpCapabilities.http=true` and injects the
+URL without a static Authorization header so the Agent performs native OAuth.
+There is no stdio MCP or Connector OAuth-proxy fallback.
+
 The Agent Bridge WebSocket protocol helpers formerly published as the
 standalone `@haowei0520/bridge-client` package now live in this Rust crate under
 `src/bridge.rs`.
+
+Version 0.1.37 uses the official `agent-client-protocol` 2.0 runtime with stable
+ACP wire v1 by default. For the one-release rollback window, set
+`CHEERS_ACP_TRANSPORT=legacy`; `official` is the default. The deprecated
+`CHEERS_ACP_RUNTIME` switch is read for 0.1.37 only and logs a warning.
 
 ## Config
 
@@ -39,7 +49,7 @@ log_dir = "logs"
 # the connector downloads the ed25519-signed sha256 manifest through the
 # gateway's release proxy, verifies it against the release key compiled into the
 # binary, verifies each binary hash, waits until no prompt is in flight, swaps
-# itself (and the sibling cheers-mcp-server) in place, and re-execs. The
+# itself in place and re-execs. The
 # previous binary is kept as <exe>.old and restored automatically if the new one
 # fails to connect 3 boots in a row. Containers never self-update (image
 # rebuilds own that), and CHEERS_ACP_NO_SELF_UPDATE=1 force-disables it.
@@ -121,13 +131,8 @@ allow = true
 include_metadata = true
 
 [accounts.haowei_claude.policy.mcp]
-# Deprecated compatibility fallback. Prefer the remote Cheers HTTP MCP endpoint.
-inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
-
-[accounts.haowei_claude.policy.loopback]
-request_timeout_ms = 600000
 
 [accounts.haowei_claude.security.acp_capability]
 delegation_id = "capability-id-from-backend"
@@ -141,6 +146,17 @@ The connector advertises ACP `clientCapabilities.fs` and
 `clientCapabilities.terminal` as `false`. If the local agent needs to read or
 write files or run commands, grant those abilities to the agent process through
 its runtime environment rather than through connector resource policy.
+
+ACP v1 Elicitation is enabled for session-scoped `form` and `url` requests.
+`elicitation/create` is relayed through the Bridge into a durable channel card;
+the authenticated member's `accept`, `decline`, or `cancel` response is returned
+to the agent. Form requests that appear to collect secrets are cancelled. URL
+requests are never prefetched and require an explicit click before navigation.
+Request-scoped elicitation is supported while a human-originated `session/new`,
+`session/load`, or `authenticate` request is outstanding. The connector maps the
+actual ACP JSON-RPC `requestId` to the originating Cheers user/channel/task only
+for that request's lifetime; unmatched, expired, bot-originated, and startup
+initialization requests fail closed.
 
 Do not put `permissionMode = "ask"` in local config. ACP permission requests are
 forwarded to the Backend as Agent Bridge `permission_request` frames, and the

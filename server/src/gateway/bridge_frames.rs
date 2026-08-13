@@ -11,7 +11,7 @@
 //! `CHEERS_REGEN_FIXTURES=1 cargo test` and prove wire-safety in the PR.
 //!
 //! Wire-compat notes (do NOT "normalize" without a fleet version floor):
-//! - `cancel` / `realize_file` / `workspace_req` / `pong` carry no `v` field.
+//! - `cancel` / `workspace_req` / `pong` carry no `v` field.
 //! - `hello` carries both `v` and `bridge_protocol_version` (same value), and
 //!   `session_id` == `connection_id`.
 //! - `config_update.settings` keys are camelCase — that IS the contract
@@ -48,6 +48,7 @@ pub(crate) fn control_hello_frame(
     memberships: Value,
     connector_config: Option<&Value>,
     server_capabilities: Value,
+    mcp_url: &str,
     acp_security: Option<&Value>,
 ) -> Value {
     let mut hello = json!({
@@ -64,6 +65,7 @@ pub(crate) fn control_hello_frame(
         "memberships": memberships,
         "connector_config": connector_config,
         "server_capabilities": server_capabilities,
+        "mcp_url": mcp_url,
     });
     if let Some(acp_security) = acp_security {
         hello["acp_security"] = acp_security.clone();
@@ -194,34 +196,6 @@ pub(crate) fn bridge_error(code: &str, detail: &str) -> Value {
     })
 }
 
-/// `resource_res` success reply, correlated by `req_id`.
-pub(crate) fn resource_res_ok(req_id: &str, data: Value) -> Value {
-    frame_value(&proto::DataInbound::ResourceRes {
-        response: proto::ResourceResponse {
-            v: BRIDGE_PROTOCOL_VERSION,
-            req_id: req_id.to_string(),
-            ok: true,
-            data: Some(data),
-            error: None,
-            code: None,
-        },
-    })
-}
-
-/// `resource_res` failure reply.
-pub(crate) fn resource_res_err(req_id: &str, code: &str, msg: &str) -> Value {
-    frame_value(&proto::DataInbound::ResourceRes {
-        response: proto::ResourceResponse {
-            v: BRIDGE_PROTOCOL_VERSION,
-            req_id: req_id.to_string(),
-            ok: false,
-            data: None,
-            error: Some(msg.to_string()),
-            code: Some(code.to_string()),
-        },
-    })
-}
-
 /// Interrupt an in-flight turn (⏹). Version-less by contract.
 pub(crate) fn cancel_frame(placeholder_msg_id: Uuid, reason: &str) -> Value {
     frame_value(&proto::ControlInbound::Cancel {
@@ -285,11 +259,35 @@ pub(crate) fn permission_resolution_frame(
     })
 }
 
+/// Authenticated user response to an ACP v1 elicitation.
+pub(crate) fn elicitation_resolution_frame(
+    request_id: &str,
+    message_id: &str,
+    action: &str,
+    content: Option<Value>,
+    resolved_by: &str,
+    resolved_at: &str,
+) -> Value {
+    frame_value(&proto::ControlInbound::ElicitationResolution {
+        v: BRIDGE_PROTOCOL_VERSION,
+        resolution: proto::ElicitationResolution {
+            request_id: request_id.to_string(),
+            action: action.to_string(),
+            content,
+            message_id: Some(message_id.to_string()),
+            resolved_by: Some(resolved_by.to_string()),
+            resolved_at: Some(resolved_at.to_string()),
+            extra: Default::default(),
+        },
+    })
+}
+
 /// Human acknowledgment of a forwarded `auth_required` card.
 pub(crate) fn auth_acknowledged_frame(
     request_id: &str,
     message_id: &str,
     action: &str,
+    method_id: Option<String>,
     resolved_by: &str,
     resolved_at: &str,
 ) -> Value {
@@ -297,25 +295,10 @@ pub(crate) fn auth_acknowledged_frame(
         v: BRIDGE_PROTOCOL_VERSION,
         request_id: request_id.to_string(),
         action: action.to_string(),
+        method_id,
         message_id: Some(message_id.to_string()),
         resolved_by: Some(resolved_by.to_string()),
         resolved_at: Some(resolved_at.to_string()),
-    })
-}
-
-/// Ask the connector to upload a staged workspace file to S3. Version-less by
-/// contract.
-pub(crate) fn realize_file_frame(
-    file_id: &str,
-    remote_ref: &str,
-    channel_id: &str,
-    roots: &[String],
-) -> Value {
-    frame_value(&proto::DataInbound::RealizeFile {
-        file_id: file_id.to_string(),
-        remote_ref: remote_ref.to_string(),
-        channel_id: channel_id.to_string(),
-        roots: roots.to_vec(),
     })
 }
 
@@ -504,7 +487,6 @@ mod tests {
                 "auth": ["authorization_bearer", "auth_frame"],
                 "task_stream": "control",
                 "runtime_session_control": true,
-                "resource_req": true,
                 "send_ack": true,
                 "terminal_ack": true,
                 "resume": "ack_only",
@@ -512,6 +494,7 @@ mod tests {
                 "acp_security": true,
                 "latest_connector_version": "0.1.27",
             }),
+            "https://cheers.example/mcp",
             None,
         );
         assert_matches_fixture(&frame, "control/to_connector/hello.json", &[]);
@@ -527,7 +510,6 @@ mod tests {
                 "auth": ["authorization_bearer", "auth_frame"],
                 "task_stream": "control",
                 "runtime_session_control": true,
-                "resource_req": true,
                 "send_ack": true,
                 "terminal_ack": true,
                 "resume": "ack_only",
@@ -594,18 +576,6 @@ mod tests {
     }
 
     #[test]
-    fn resource_res_ok_matches_fixture() {
-        let frame = resource_res_ok("req-1", json!({"messages": []}));
-        assert_matches_fixture(&frame, "data/to_connector/resource_res_ok.json", &[]);
-    }
-
-    #[test]
-    fn resource_res_err_matches_fixture() {
-        let frame = resource_res_err("req-1", "E_FORBIDDEN", "SEE denied for this event");
-        assert_matches_fixture(&frame, "data/to_connector/resource_res_err.json", &[]);
-    }
-
-    #[test]
     fn cancel_matches_fixture() {
         let frame = cancel_frame(conn_id(), "user_cancelled");
         assert_matches_fixture(&frame, "control/to_connector/cancel.json", &[]);
@@ -647,17 +617,6 @@ mod tests {
             "control/to_connector/permission_resolution.json",
             &[],
         );
-    }
-
-    #[test]
-    fn realize_file_matches_fixture() {
-        let frame = realize_file_frame(
-            "file-1",
-            "/workspace/report.pdf",
-            "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
-            &["/workspace".to_string()],
-        );
-        assert_matches_fixture(&frame, "data/to_connector/realize_file.json", &[]);
     }
 
     /// Regression: read/git callers pass the documented `Value::Null` for

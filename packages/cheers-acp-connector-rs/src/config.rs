@@ -1,3 +1,9 @@
+//! TOML configuration parsing, normalization, and local-policy validation.
+//!
+//! This module is the security boundary between operator-owned configuration
+//! and settings received from the remote gateway. Secrets are resolved from
+//! approved environment variables rather than accepted inline.
+
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -78,6 +84,8 @@ pub struct StdioAgentConfig {
     pub env: BTreeMap<String, String>,
     pub inherit_env: bool,
     pub request_timeout_ms: u64,
+    /// Upper bound for authenticate flows that wait on a human interaction.
+    pub auth_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
     pub agent_native_permission_mode: Option<String>,
     /// Backend-desired ACP config options (`{configId: value}`), applied per
@@ -112,7 +120,6 @@ pub struct LocalPolicy {
     pub trace: TracePolicy,
     pub session_update: SessionUpdatePolicy,
     pub mcp: McpPolicy,
-    pub loopback: LoopbackPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -253,18 +260,9 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
-    /// Deprecated compatibility switch for injecting the connector-owned
-    /// `cheers-mcp-server` stdio child process. Keep enabled only until the
-    /// configured ACP agent supports the remote Cheers HTTP MCP endpoint.
-    pub inject_cheers: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoopbackPolicy {
-    pub request_timeout_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,6 +387,8 @@ struct RawPolicy {
     #[serde(default)]
     mcp: RawMcpPolicy,
     #[serde(default)]
+    /// Accepted for one-way config compatibility, but ignored. Native HTTP MCP
+    /// removed the Connector's Agent-facing loopback server in 0.1.37.
     loopback: RawLoopbackPolicy,
 }
 
@@ -606,11 +606,11 @@ impl Default for RawSessionUpdatePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
-    /// Deprecated: use the remote Cheers HTTP MCP endpoint instead. This
-    /// remains default-on during the compatibility window so existing agents
-    /// do not silently lose their Cheers tools.
-    #[serde(default = "default_true")]
-    inject_cheers: bool,
+    /// Retired and ignored. Kept parseable so an existing TOML does not fail
+    /// before the connector can report the native-HTTP migration requirement.
+    #[serde(default)]
+    #[serde(rename = "inject_cheers")]
+    _inject_cheers: bool,
     #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
@@ -622,7 +622,7 @@ struct RawMcpPolicy {
 impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
-            inject_cheers: true,
+            _inject_cheers: false,
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -633,14 +633,14 @@ impl Default for RawMcpPolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
-    #[serde(default = "default_loopback_timeout_ms")]
-    request_timeout_ms: u64,
+    #[serde(default, rename = "request_timeout_ms")]
+    _request_timeout_ms: Option<u64>,
 }
 
 impl Default for RawLoopbackPolicy {
     fn default() -> Self {
         Self {
-            request_timeout_ms: default_loopback_timeout_ms(),
+            _request_timeout_ms: None,
         }
     }
 }
@@ -787,6 +787,10 @@ async fn normalize_account(
             env,
             inherit_env: policy.env.inherit,
             request_timeout_ms: policy.sessions.request_timeout_ms,
+            auth_timeout_ms: policy
+                .sessions
+                .request_timeout_ms
+                .max(policy.permission.wait_timeout_ms),
             prompt_timeout_ms: policy.prompt.max_duration_ms,
             agent_native_permission_mode: raw.adapter.permission_mode,
             config_options: None,
@@ -892,13 +896,9 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
-            inject_cheers: raw.mcp.inject_cheers,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
-        },
-        loopback: LoopbackPolicy {
-            request_timeout_ms: raw.loopback.request_timeout_ms,
         },
     })
 }
@@ -1087,7 +1087,7 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
 fn client_capabilities() -> Value {
     // Single source of truth lives in the ACP protocol layer so the configured
     // value and the adapter's in-code fallback can never diverge.
-    crate::acp_adapter::default_client_capabilities()
+    crate::acp_semantics::default_client_capabilities()
 }
 
 fn toml_values_to_json_array(values: Vec<TomlValue>) -> anyhow::Result<Value> {
@@ -1213,10 +1213,6 @@ fn default_heartbeat_interval_ms() -> u64 {
 }
 
 fn default_send_ack_timeout_ms() -> u64 {
-    10 * 60_000
-}
-
-fn default_loopback_timeout_ms() -> u64 {
     10 * 60_000
 }
 
@@ -1362,6 +1358,7 @@ request_timeout_ms = 666000
         assert_eq!(account.advanced.reconnect_base_ms, 250);
         assert_eq!(account.agent.args, vec!["--flag"]);
         assert_eq!(account.agent.request_timeout_ms, 333000);
+        assert_eq!(account.agent.auth_timeout_ms, 555000);
         assert_eq!(account.agent.prompt_timeout_ms, 444000);
         assert_eq!(account.policy.prompt.max_prompt_bytes, 12345);
         assert!(!account.agent.inherit_env);
@@ -1385,9 +1382,8 @@ request_timeout_ms = 666000
         // layer's single source of truth, never a divergent literal.
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap(),
-            &crate::acp_adapter::default_client_capabilities()
+            &crate::acp_semantics::default_client_capabilities()
         );
-        assert_eq!(account.policy.loopback.request_timeout_ms, 666000);
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);
         assert!(matches!(
             account.policy.permission.on_timeout,

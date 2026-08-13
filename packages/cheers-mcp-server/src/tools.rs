@@ -8,8 +8,8 @@ pub struct ToolCallError {
     pub message: String,
 }
 
-/// Remote v1 catalog. Terminal-local `inbox_stage` and live `read_workspace`
-/// are intentionally withheld until installation routing is available.
+/// Remote v1 catalog. Terminal-local `inbox_stage` is intentionally absent;
+/// live `read_workspace` is routed through the owner Connector by the Gateway.
 pub fn definitions() -> Vec<Value> {
     vec![
         channel_read(
@@ -136,6 +136,21 @@ pub fn definitions() -> Vec<Value> {
                 ("as_base64", "boolean"),
             ]),
             &["channel_id", "file_id"],
+            true,
+            false,
+        ),
+        tool(
+            "read_workspace",
+            "Read another Bot's workspace file",
+            "Resolve a shared workspace reference through the owner Bot's live Connector.",
+            props(&[
+                ("channel_id", "string"),
+                ("bot_id", "string"),
+                ("path", "string"),
+                ("session_id", "string"),
+                ("root", "string"),
+            ]),
+            &["channel_id", "bot_id", "path"],
             true,
             false,
         ),
@@ -362,6 +377,13 @@ pub fn build_resource_call(
             required(args, &mut params, "file_id", "file_id")?;
             optional(args, &mut params, "as_base64", "as_base64");
             "channel.files.read"
+        }
+        "read_workspace" => {
+            add_channel(args, &mut params)?;
+            required(args, &mut params, "bot_id", "bot_id")?;
+            required(args, &mut params, "path", "path")?;
+            optionals(args, &mut params, &["session_id", "root"]);
+            "workspace.read"
         }
         "post_message" => {
             add_channel(args, &mut params)?;
@@ -602,13 +624,34 @@ mod tests {
     }
 
     #[test]
+    fn maps_live_workspace_read_for_remote_http() {
+        let call = build_resource_call(
+            "read_workspace",
+            &json!({
+                "channel_id": "channel",
+                "bot_id": "owner",
+                "path": "src/lib.rs",
+                "root": "/workspace"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+        assert_eq!(call.resource, "workspace.read");
+        assert_eq!(call.params["bot_id"], "owner");
+        assert_eq!(call.params["path"], "src/lib.rs");
+        assert_eq!(call.params["root"], "/workspace");
+    }
+
+    #[test]
     fn terminal_local_tools_are_not_exposed() {
         let names = definitions()
             .into_iter()
             .map(|v| v["name"].as_str().unwrap().to_string())
             .collect::<Vec<_>>();
         assert!(!names.contains(&"inbox_stage".to_string()));
-        assert!(!names.contains(&"read_workspace".to_string()));
+        assert!(names.contains(&"read_workspace".to_string()));
         assert!(build_resource_call("inbox_stage", &Map::new()).is_err());
     }
 

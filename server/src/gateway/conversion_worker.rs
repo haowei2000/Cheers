@@ -12,8 +12,8 @@
 //! downloadable) so a poison document can't hot-loop the worker.
 //!
 //! The worker is path-agnostic: it keys off content-type/extension, so office files
-//! arriving via gateway upload, MCP `inbox_deliver`, or connector `realize` are all
-//! picked up. Candidates are ordered `conversion_attempts ASC` so fresh files are never
+//! arriving via gateway upload or MCP `inbox_deliver` are both picked up. Candidates
+//! are ordered `conversion_attempts ASC` so fresh files are never
 //! starved behind ones that keep failing.
 
 use std::sync::Arc;

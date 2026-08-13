@@ -756,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-bridge-protocol"
-version = "0.1.27"
+version = "0.1.37"
 dependencies = [
  "serde",
  "serde_json",
@@ -766,12 +766,9 @@ dependencies = [
 name = "cheers-mcp-server"
 version = "0.1.2"
 dependencies = [
- "anyhow",
  "percent-encoding",
- "reqwest",
  "serde",
  "serde_json",
- "tokio",
  "url",
 ]
 

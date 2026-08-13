@@ -487,12 +487,9 @@ max_text_bytes = 200000
 max_files      = 10
 
 [accounts.{id}.policy.mcp]
-inject_cheers                    = true
 backend_may_inject_extra_servers = false
 allowed_servers                  = ["cheers"]
 
-[accounts.{id}.policy.loopback]
-request_timeout_ms = 30000
 "#,
         id = id,
         id_str = toml_str(&id),
@@ -612,6 +609,8 @@ mod tests {
         // codex has no permission_mode override.
         assert!(!toml.contains("permission_mode"));
         assert!(toml.contains("ws://localhost:30080/ws/agent-bridge/control"));
+        assert!(!toml.contains("inject_cheers"));
+        assert!(!toml.contains("policy.loopback"));
         // The token plaintext must never be inlined.
         assert!(!toml.contains("agb_"));
     }

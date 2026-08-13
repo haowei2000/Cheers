@@ -42,28 +42,24 @@ Three rules:
 Download the platform binaries from the project's
 [GitHub Releases](https://github.com/haowei2000/Cheers/releases) — no Rust
 toolchain needed (`release-connector` publishes
-`cce-acp-connector-{darwin,linux}-{arm64,amd64}` and matching
-`cheers-mcp-server-*` assets per `connector-v*` tag):
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}` per `connector-v*` tag):
 
 ```bash
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   # add to your shell profile to keep it
 cce-acp-connector --help
 ```
 
-Pin a different version by swapping `connector-v0.1.36` for another `connector-v*` tag
+Pin a different version by swapping `connector-v0.1.37` for another `connector-v*` tag
 (do **not** use `releases/latest` — that points at the desktop app). While the repository is
 **private**, plain curl returns 404 — download with the authenticated GitHub CLI instead:
-`gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`
-and
-`gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cheers-mcp-server-$os-$arch" -O ~/.cheers/bin/cheers-mcp-server`.
-The MCP companion must sit next to the connector — default `inject_cheers = true` resolves it there.
+`gh release download connector-v0.1.37 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`.
+Cheers tools are supplied by the Gateway's native HTTP MCP endpoint. The Agent
+must support HTTP MCP OAuth; no companion binary or stdio fallback is installed.
 Developers hacking on the connector itself can
 keep using the source build (`cargo build` → `target/debug/cce-acp-connector`);
 the commands below assume `cce-acp-connector` is on `PATH` either way.
@@ -77,8 +73,7 @@ Keep **runtime config + secrets outside the repo** (`~/.cheers/`); treat the rep
 ```
 ~/.cheers/
 ├─ bin/
-│   ├─ cce-acp-connector
-│   └─ cheers-mcp-server         # sibling required by inject_cheers
+│   └─ cce-acp-connector
 ├─ cheers-daemon.codex.toml      # bot: codex (one file = one bot)
 ├─ cheers-daemon.claude.toml     # bot: claude
 ├─ secrets/
@@ -158,9 +153,10 @@ wait_timeout_ms    = 900000
 on_timeout         = "cancel"        # only "cancel" or "deny"
 auto_allow         = false           # true = auto-approve locally, never reaches the channel
 
-[accounts.codex.policy.mcp]
-inject_cheers = true                 # inject the cheers stdio MCP (virtual filesystem, etc.)
 ```
+
+The Connector always injects the authenticated Gateway hello's canonical HTTP
+MCP URL as `cheers`; this is not configurable and carries no static bearer header.
 
 > This is the **minimal** form (omitted fields have sensible defaults). For a full template, copy
 > `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` and switch the token source to `bot_token_file`.
@@ -323,13 +319,9 @@ max_text_bytes = 200000
 max_files = 10
 
 [accounts.codex.policy.mcp]
-inject_cheers = true                 # inject the cheers stdio MCP (baseline transport, no capability needed)
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
 # servers = [ ... ]                   # optional: extra MCP servers (http/sse require the agent's matching mcpCapabilities)
-
-[accounts.codex.policy.loopback]
-request_timeout_ms = 30000
 
 # ── optional / advanced: capability signing ──
 # [accounts.codex.security.acp_capability]
@@ -358,7 +350,7 @@ Opt in per host with `[update] auto = true` (§6). When the gateway advertises a
 newer connector release, the connector downloads that release's **signed
 manifest** through the gateway, verifies its **ed25519 signature** against the
 release key compiled into the binary, verifies each binary's **sha256**, waits
-until no prompt is in flight, atomically swaps itself + `cheers-mcp-server`,
+until no prompt is in flight, atomically swaps the connector,
 and restarts in place (same PID — launchd/systemd keep tracking it). The
 previous binary is kept as `<exe>.old`; after 3 boots without a healthy
 connection it is restored automatically and that version is never retried.

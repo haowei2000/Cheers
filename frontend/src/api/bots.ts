@@ -150,6 +150,16 @@ export interface TerminalInstallation {
   credential_rotated_at: string;
   created_at: string;
   revoked_at?: string | null;
+  mcp_connection_state: "unconfigured" | "action_required" | "authorizing" | "connected" | "refresh_failed" | "revoked";
+  mcp_state_updated_at?: string | null;
+  mcp_connected_at?: string | null;
+  mcp_last_seen_at?: string | null;
+  agent_profile?: {
+    id: string;
+    display_name: string;
+    login_hint: string;
+    verified_version_range?: string | null;
+  };
 }
 
 export async function listTerminalInstallations(botId: string): Promise<TerminalInstallation[]> {

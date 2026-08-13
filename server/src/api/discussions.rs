@@ -193,7 +193,7 @@ pub async fn list_discussions(
                    ) AS last_activity_at,
                    COUNT(reply.msg_id) FILTER (
                        WHERE reply.is_deleted = FALSE
-                         AND reply.msg_type NOT IN ('permission', 'auth_required')
+                         AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
                    )::bigint AS reply_count
             FROM messages root
             LEFT JOIN messages reply
@@ -202,13 +202,13 @@ pub async fn list_discussions(
              AND reply.is_partial = FALSE
              AND reply.is_secret = FALSE
              AND reply.is_deleted = FALSE
-             AND reply.msg_type NOT IN ('permission', 'auth_required')
+             AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
             WHERE root.channel_id = $1
               AND root.thread_root_msg_id IS NULL
               AND root.is_partial = FALSE
               AND root.is_secret = FALSE
               AND root.sender_type IN ('user', 'bot')
-              AND root.msg_type NOT IN ('permission', 'auth_required')
+              AND root.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
               AND (
                   $2::text IS NULL
                   OR EXISTS (
@@ -219,7 +219,7 @@ pub async fn list_discussions(
                         AND hit.is_partial = FALSE
                         AND hit.is_secret = FALSE
                         AND hit.is_deleted = FALSE
-                        AND hit.msg_type NOT IN ('permission', 'auth_required')
+                        AND hit.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
                         AND hit.content ILIKE '%' || $2 || '%'
                   )
               )
@@ -282,7 +282,7 @@ pub async fn list_discussions(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.is_deleted = FALSE
-           AND m.msg_type NOT IN ('permission', 'auth_required')
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
          ORDER BY m.thread_root_msg_id, m.channel_seq DESC NULLS LAST, m.created_at DESC",
     )
     .bind(channel_id.to_string())
@@ -323,7 +323,7 @@ pub async fn list_discussions(
               AND m.is_partial = FALSE
               AND m.is_secret = FALSE
               AND m.is_deleted = FALSE
-              AND m.msg_type NOT IN ('permission', 'auth_required')
+              AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
               AND m.sender_type IN ('user', 'bot')
             GROUP BY COALESCE(m.thread_root_msg_id, m.msg_id), m.sender_id,
                      m.sender_type, u.display_name, u.username, b.display_name,
@@ -420,7 +420,7 @@ pub async fn get_discussion(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.sender_type IN ('user', 'bot')
-           AND m.msg_type NOT IN ('permission', 'auth_required')"
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')"
     ))
     .bind(channel_id.to_string())
     .bind(root_msg_id.to_string())
@@ -450,7 +450,7 @@ pub async fn get_discussion(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.is_deleted = FALSE
-           AND m.msg_type NOT IN ('permission', 'auth_required')
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
            AND ($3::bigint IS NULL OR m.channel_seq < $3)
          ORDER BY m.channel_seq DESC NULLS LAST, m.created_at DESC
          LIMIT $4"

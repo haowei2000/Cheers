@@ -660,6 +660,8 @@ pub async fn issue_mcp_access_token(
     };
     let scope = scopes.join(" ");
 
+    let _ = mark_mcp_authorizing(&state, &installation_id).await;
+
     mint_mcp_access_token(
         &state,
         bot_id,
@@ -806,6 +808,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     if tx.commit().await.is_err() {
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
+    let _ = mark_mcp_authorizing(state, &installation_id).await;
     mint_mcp_access_token(
         state,
         installation.0,
@@ -868,7 +871,21 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             .bind(state.config.mcp_resource_url())
             .execute(&mut *tx)
             .await;
+            let known_installation = sqlx::query_scalar::<_, String>(
+                "SELECT installation_id FROM mcp_oauth_refresh_tokens
+                 WHERE token_hash=$1 AND client_id=$2 AND resource=$3 LIMIT 1",
+            )
+            .bind(hash_oauth_secret(refresh_token))
+            .bind(client_id)
+            .bind(state.config.mcp_resource_url())
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
             let _ = tx.commit().await;
+            if let Some(installation_id) = known_installation {
+                let _ = mark_mcp_refresh_failed(state, &installation_id).await;
+            }
             return oauth_token_error("invalid_grant", "refresh token is invalid or expired");
         }
         Err(error) => {
@@ -974,6 +991,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     if tx.commit().await.is_err() {
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
+    let _ = mark_mcp_authorizing(state, &installation_id).await;
     mint_mcp_access_token(
         state,
         installation.0,
@@ -1271,6 +1289,12 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     };
 
+    // This is the only transition that establishes connected: the Gateway has
+    // validated an installation-bound token and handled a recognized MCP method.
+    if let Err(error) = mark_mcp_connected(&state, identity.installation_id).await {
+        tracing::warn!(%error, installation_id=%identity.installation_id, "MCP connection-state update failed");
+    }
+
     let final_response = json!({"jsonrpc": "2.0", "id": id, "result": result});
     if method == "tools/call" {
         if let Some(progress_token) = params
@@ -1287,6 +1311,58 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     }
     private_json_response(StatusCode::OK, final_response)
+}
+
+/// Records a successfully authenticated and handled MCP method as connectivity evidence.
+async fn mark_mcp_connected(state: &AppState, installation_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE terminal_installations
+         SET mcp_connection_state = $2,
+             mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
+                                         THEN mcp_state_updated_at ELSE NOW() END,
+             mcp_connected_at = COALESCE(mcp_connected_at, NOW()),
+             mcp_last_seen_at = NOW()
+         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+    )
+    .bind(installation_id.to_string())
+    .bind(mcp_state_for_evidence(
+        McpConnectionEvidence::AuthenticatedRequest,
+    ))
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// Records successful OAuth token issuance without claiming MCP connectivity.
+async fn mark_mcp_authorizing(state: &AppState, installation_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE terminal_installations
+         SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
+         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL
+           AND mcp_connection_state <> 'connected'",
+    )
+    .bind(installation_id)
+    .bind(mcp_state_for_evidence(McpConnectionEvidence::TokenIssued))
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// Records a known installation's rejected refresh token.
+async fn mark_mcp_refresh_failed(
+    state: &AppState,
+    installation_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE terminal_installations
+         SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
+         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+    )
+    .bind(installation_id)
+    .bind(mcp_state_for_evidence(McpConnectionEvidence::RefreshFailed))
+    .execute(&state.db)
+    .await?;
+    Ok(())
 }
 
 fn complete_tool_result(data: Value) -> Value {
@@ -1966,6 +2042,22 @@ struct McpIdentity {
     scopes: HashSet<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpConnectionEvidence {
+    TokenIssued,
+    AuthenticatedRequest,
+    RefreshFailed,
+}
+
+/// Maps server-side evidence to an installation state.
+fn mcp_state_for_evidence(evidence: McpConnectionEvidence) -> &'static str {
+    match evidence {
+        McpConnectionEvidence::TokenIssued => "authorizing",
+        McpConnectionEvidence::AuthenticatedRequest => "connected",
+        McpConnectionEvidence::RefreshFailed => "refresh_failed",
+    }
+}
+
 fn parse_requested_scopes(raw: &str) -> Option<Vec<&str>> {
     let mut scopes = Vec::new();
     let mut seen = HashSet::new();
@@ -2578,6 +2670,22 @@ pub async fn parse_claude_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_authenticated_mcp_request_is_connected_evidence() {
+        assert_eq!(
+            mcp_state_for_evidence(McpConnectionEvidence::TokenIssued),
+            "authorizing"
+        );
+        assert_eq!(
+            mcp_state_for_evidence(McpConnectionEvidence::AuthenticatedRequest),
+            "connected"
+        );
+        assert_eq!(
+            mcp_state_for_evidence(McpConnectionEvidence::RefreshFailed),
+            "refresh_failed"
+        );
+    }
 
     fn modern_headers(method: &'static str) -> HeaderMap {
         let mut headers = HeaderMap::new();

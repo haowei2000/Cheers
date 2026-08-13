@@ -1,7 +1,12 @@
+//! Per-account orchestration between an ACP runtime and the Cheers Agent Bridge.
+//!
+//! This module coordinates sessions, prompts, streaming output, workspace
+//! operations, permissions, tracing, and MCP injection. Transport-specific ACP
+//! behavior is accessed only through [`RuntimeAdapter`].
+
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -13,7 +18,7 @@ use chrono::Utc;
 use ed25519_dalek::{pkcs8::DecodePrivateKey, Signature, Signer, SigningKey};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -31,12 +36,12 @@ const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
 /// Max changed paths carried in a single `workspace_event`.
 const WATCH_PATHS_CAP: usize = 50;
 
-use crate::acp_runtime::AcpAdapterKind;
+use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
-    PermissionResolution, RuntimeSessionAckSession, RuntimeSessionControlSession,
-    ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
+    ElicitationResolution, PermissionResolution, RuntimeSessionAckSession,
+    RuntimeSessionControlSession, ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -46,8 +51,9 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
-use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
+use crate::runtime_adapter::{
+    PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
+};
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
 
@@ -106,15 +112,20 @@ impl AccountRuntime {
     async fn run(self) -> anyhow::Result<()> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = AcpAdapterKind::new(
+        let mut adapter = create_runtime(
             self.account_id.clone(),
             self.config.agent.clone(),
             adapter_tx,
         );
         let initialize_response = adapter.start().await?;
+        if !adapter.capabilities().mcp_http {
+            let _ = adapter.stop().await;
+            return Err(anyhow!(
+                "ACP agent is incompatible with Cheers: native HTTP MCP capability is required; upgrade the agent adapter (stdio fallback is not supported)"
+            ));
+        }
         let adapter = Arc::new(Mutex::new(adapter));
 
-        let (loopback, mut loopback_rx) = start_loopback().await?;
         let bridge_ready = bridge_ready_from_initialize(&initialize_response, &self.config.policy);
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
@@ -143,6 +154,17 @@ impl AccountRuntime {
                 .maybe_start(latest, self.config.control_url.clone());
         }
         let initial_connector_config = bridge.control_hello().connector_config.clone();
+        let mcp_url = bridge
+            .control_hello()
+            .mcp_url
+            .clone()
+            .filter(|value| !value.trim().is_empty());
+        let Some(mcp_url) = mcp_url else {
+            let _ = adapter.lock().await.stop().await;
+            return Err(anyhow!(
+                "Gateway did not advertise a canonical Cheers HTTP MCP URL; refusing to derive one or fall back to stdio"
+            ));
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -183,34 +205,15 @@ impl AccountRuntime {
                 }
             });
         }
-        {
-            let runtime_tx = runtime_tx.clone();
-            tokio::spawn(async move {
-                while let Some(request) = loopback_rx.recv().await {
-                    if runtime_tx
-                        .send(RuntimeInput::Loopback(request))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            });
-        }
-
-        let shared = SharedRuntimeState {
-            channel_names,
-            ..SharedRuntimeState::default()
-        };
-        let shared = Arc::new(Mutex::new(shared));
+        let shared = Arc::new(SharedRuntimeState::new(channel_names));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
             config: self.config,
             identity,
+            mcp_url,
             state: self.state,
             adapter,
-            loopback,
             io,
             shared,
             runtime_tx: runtime_tx.clone(),
@@ -532,11 +535,12 @@ struct RuntimeContext {
     /// Who this connector is signed in as (from the control hello); injected
     /// into every prompt so the agent knows its own @-handle.
     identity: BotIdentity,
+    /// Canonical native HTTP MCP endpoint advertised by the authenticated Gateway.
+    mcp_url: String,
     state: Arc<Mutex<SessionStateStore>>,
-    adapter: Arc<Mutex<AcpAdapterKind>>,
-    loopback: LoopbackHandle,
+    adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
-    shared: Arc<Mutex<SharedRuntimeState>>,
+    shared: Arc<SharedRuntimeState>,
     /// Sender into the main event loop — used to enqueue fence events (EnableStreaming)
     /// that must be ordered after history-replay notifications already in the queue.
     runtime_tx: mpsc::Sender<RuntimeInput>,
@@ -558,44 +562,15 @@ impl RuntimeContext {
                 RuntimeInput::Adapter(event) => {
                     self.clone().handle_adapter_event(event).await?;
                 }
-                RuntimeInput::Loopback(request) => {
-                    let runtime = self.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = runtime.handle_loopback_request(request).await {
-                            tracing::warn!("loopback request failed: {err}");
-                        }
-                    });
-                }
                 RuntimeInput::SocketClosed(stream) => {
-                    // Fail all pending loopback requests immediately so their tasks don't
-                    // block until the timeout when the data WS is gone.
-                    let _ = self
-                        .runtime_tx
-                        .send(RuntimeInput::AbortPendingResources)
-                        .await;
                     // Drop every fs watcher: the data WS they'd emit workspace_event
                     // over is gone. Clearing aborts each watch_loop task (AbortOnDrop).
-                    self.shared.lock().await.watches.clear();
+                    self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream closed"));
                 }
                 RuntimeInput::SocketError { stream, error } => {
-                    let _ = self
-                        .runtime_tx
-                        .send(RuntimeInput::AbortPendingResources)
-                        .await;
-                    self.shared.lock().await.watches.clear();
+                    self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
-                }
-                RuntimeInput::AbortPendingResources => {
-                    let mut shared = self.shared.lock().await;
-                    for tx in shared.pending_resources.drain().map(|(_, tx)| tx) {
-                        let _ = tx.send(LoopbackResponse {
-                            ok: false,
-                            data: None,
-                            error: Some("data stream closed before resource response".to_string()),
-                            code: Some("DATA_STREAM_CLOSED".to_string()),
-                        });
-                    }
                 }
             }
         }
@@ -743,30 +718,35 @@ impl RuntimeContext {
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
             }
+            ControlInbound::ElicitationResolution { resolution, .. } => {
+                self.handle_elicitation_resolution(resolution).await?;
+            }
             ControlInbound::AuthAcknowledged {
-                request_id, action, ..
+                request_id,
+                action,
+                method_id,
+                ..
             } => {
-                self.handle_auth_acknowledged(request_id, action).await?;
+                self.handle_auth_acknowledged(request_id, action, method_id)
+                    .await?;
             }
             ControlInbound::ChannelJoined { channel, .. } => {
                 if let Some(name) = &channel.channel_name {
                     self.shared
-                        .lock()
-                        .await
                         .channel_names
+                        .write()
+                        .await
                         .insert(channel.channel_id.clone(), name.clone());
                 }
             }
             ControlInbound::ChannelLeft { channel_id, .. } => {
-                self.shared.lock().await.channel_names.remove(&channel_id);
+                self.shared.channel_names.write().await.remove(&channel_id);
             }
             ControlInbound::Hello { memberships, .. } => {
-                let mut guard = self.shared.lock().await;
+                let mut guard = self.shared.channel_names.write().await;
                 for ch in memberships {
                     if let Some(name) = &ch.channel_name {
-                        guard
-                            .channel_names
-                            .insert(ch.channel_id.clone(), name.clone());
+                        guard.insert(ch.channel_id.clone(), name.clone());
                     }
                 }
             }
@@ -779,32 +759,6 @@ impl RuntimeContext {
     async fn handle_data(self: Arc<Self>, frame: DataInbound) -> anyhow::Result<()> {
         let ack_was_pending = self.io.resolve_data_ack(&frame).await;
         match frame {
-            DataInbound::ResourceRes { response } => {
-                let matched = {
-                    let maybe_tx = self
-                        .shared
-                        .lock()
-                        .await
-                        .pending_resources
-                        .remove(&response.req_id);
-                    if let Some(tx) = maybe_tx {
-                        let _ = tx.send(LoopbackResponse {
-                            ok: response.ok,
-                            data: response.data,
-                            error: response.error,
-                            code: response.code,
-                        });
-                        true
-                    } else {
-                        false
-                    }
-                };
-                tracing::debug!(
-                    req_id = %response.req_id,
-                    matched,
-                    "loopback resource_res received"
-                );
-            }
             DataInbound::SendAck {
                 permission_resolution,
                 ..
@@ -818,22 +772,6 @@ impl RuntimeContext {
                         }
                     }
                 }
-            }
-            DataInbound::RealizeFile {
-                file_id,
-                remote_ref,
-                channel_id,
-                roots,
-            } => {
-                let runtime = self.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = runtime
-                        .handle_realize_file(file_id, remote_ref, channel_id, &roots)
-                        .await
-                    {
-                        tracing::warn!("realize_file failed: {err}");
-                    }
-                });
             }
             DataInbound::WorkspaceReq {
                 req_id,
@@ -899,129 +837,6 @@ impl RuntimeContext {
             | DataInbound::Unknown
             | DataInbound::Hello { .. }
             | DataInbound::Error { .. } => {}
-        }
-        Ok(())
-    }
-
-    async fn handle_realize_file(
-        &self,
-        file_id: String,
-        remote_ref: String,
-        channel_id: String,
-        session_roots: &[String],
-    ) -> anyhow::Result<()> {
-        // Confine the local read to the owning session's effective root set
-        // (`session_roots ∩ allowed_roots`, or `[default_cwd]` when unpinned).
-        // Defense-in-depth: the agent already has native fs access, but the
-        // gateway-driven realize must not read outside the session's roots.
-        let effective = self.effective_roots(session_roots, false);
-        let canonical = tokio::fs::canonicalize(&remote_ref)
-            .await
-            .with_context(|| format!("realize_file: cannot resolve local file '{remote_ref}'"))?;
-        if effective.is_empty()
-            || !effective
-                .iter()
-                .any(|root| canonical.starts_with(canonical_path(root)))
-        {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' is outside the session's workspace root set"
-            );
-        }
-
-        // Cap the realize size BEFORE reading: mirrors the gateway's MAX_DELIVER_BYTES
-        // (server/src/resource/files.rs). Without this, an oversized artifact is read into
-        // memory, base64-expanded (~1.33x), and shipped as one giant frame that both
-        // balloons connector memory and stalls every other stream sharing the data socket
-        // — only for the gateway to reject it anyway.
-        const MAX_REALIZE_BYTES: u64 = 8 * 1024 * 1024;
-        let md = tokio::fs::metadata(&canonical)
-            .await
-            .with_context(|| format!("realize_file: cannot stat local file '{remote_ref}'"))?;
-        if md.len() > MAX_REALIZE_BYTES {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' is {} bytes, exceeds the {}MB realize limit",
-                md.len(),
-                MAX_REALIZE_BYTES / (1024 * 1024)
-            );
-        }
-
-        let bytes = tokio::fs::read(&canonical)
-            .await
-            .with_context(|| format!("realize_file: cannot read local file '{remote_ref}'"))?;
-        // TOCTOU: the file may have grown between the stat and the read.
-        if bytes.len() as u64 > MAX_REALIZE_BYTES {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' grew past the {}MB realize limit during read",
-                MAX_REALIZE_BYTES / (1024 * 1024)
-            );
-        }
-
-        let filename = std::path::Path::new(&remote_ref)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("file")
-            .to_string();
-
-        let content_type = mime_guess::from_path(&filename)
-            .first_raw()
-            .unwrap_or("application/octet-stream")
-            .to_string();
-
-        // Encode then drop the raw bytes so both copies don't live across the response
-        // await, and MOVE the (large) base64 string into the params map instead of letting
-        // json!() clone it through to_value(&data_b64).
-        let data_b64 = BASE64.encode(&bytes);
-        drop(bytes);
-
-        let mut param_map = serde_json::Map::new();
-        param_map.insert("file_id".to_string(), Value::String(file_id.clone()));
-        param_map.insert("channel_id".to_string(), Value::String(channel_id));
-        param_map.insert("data_b64".to_string(), Value::String(data_b64));
-        param_map.insert("content_type".to_string(), Value::String(content_type));
-        param_map.insert("filename".to_string(), Value::String(filename));
-
-        let req_id = uuid::Uuid::new_v4().to_string();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.shared
-            .lock()
-            .await
-            .pending_resources
-            .insert(req_id.clone(), tx);
-
-        self.io
-            .send_data(DataOutbound::ResourceReq {
-                v: BRIDGE_PROTOCOL_VERSION,
-                req_id: req_id.clone(),
-                resource: "channel.files.realize".to_string(),
-                params: Some(Value::Object(param_map)),
-                encrypted: None,
-                encrypted_payload: None,
-                acp_capability: None,
-            })
-            .await?;
-
-        let response = tokio::time::timeout(
-            std::time::Duration::from_millis(self.config.policy.loopback.request_timeout_ms),
-            rx,
-        )
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_else(|| LoopbackResponse {
-            ok: false,
-            data: None,
-            error: Some("realize resource response timed out".to_string()),
-            code: Some("RESOURCE_TIMEOUT".to_string()),
-        });
-
-        if response.ok {
-            tracing::info!(%file_id, "realize_file: uploaded to S3");
-        } else {
-            tracing::warn!(
-                %file_id,
-                error = response.error.as_deref().unwrap_or(""),
-                "realize_file: gateway returned error"
-            );
         }
         Ok(())
     }
@@ -1108,7 +923,7 @@ impl RuntimeContext {
         // an already-gone id is a no-op that still replies `{ok:true}`.
         if op == "unwatch" {
             let id = watch_id.ok_or_else(|| err("E_INVALID", "watch_id required".into()))?;
-            self.shared.lock().await.watches.remove(id);
+            self.shared.watches.lock().await.remove(id);
             return Ok(json!({ "ok": true }));
         }
 
@@ -1700,15 +1515,15 @@ impl RuntimeContext {
         root_canon: &Path,
     ) -> Result<Value, (String, String, Option<Value>)> {
         let err = |c: &str, m: String| (c.to_string(), m, None::<Value>);
-        let mut guard = self.shared.lock().await;
+        let mut guard = self.shared.watches.lock().await;
 
         // Renew an existing watch on the same dir instead of stacking a new one.
-        if let Some((id, handle)) = guard.watches.iter().find(|(_, h)| h.dir == dir) {
+        if let Some((id, handle)) = guard.iter().find(|(_, h)| h.dir == dir) {
             let id = id.clone();
             let _ = handle.renew_tx.send(());
             return Ok(json!({ "watch_id": id, "ttl_secs": WATCH_TTL_SECS }));
         }
-        if guard.watches.len() >= MAX_WATCHES {
+        if guard.len() >= MAX_WATCHES {
             return Err(err(
                 "E_TOO_MANY_WATCHES",
                 format!("watch cap reached ({MAX_WATCHES} concurrent watches)"),
@@ -1744,7 +1559,7 @@ impl RuntimeContext {
             self.io.clone(),
             self.shared.clone(),
         ));
-        guard.watches.insert(
+        guard.insert(
             watch_id.clone(),
             WatchHandle {
                 dir,
@@ -1821,12 +1636,42 @@ impl RuntimeContext {
                     }
                 });
             }
+            RuntimeEvent::ElicitationRequest {
+                acp_session_id,
+                request_route,
+                params,
+                respond_to,
+            } => {
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = runtime
+                        .handle_elicitation_request(
+                            acp_session_id,
+                            request_route,
+                            params,
+                            respond_to,
+                        )
+                        .await
+                    {
+                        tracing::warn!("elicitation request failed: {err}");
+                    }
+                });
+            }
+            RuntimeEvent::ElicitationComplete { elicitation_id } => {
+                self.io
+                    .send_data(DataOutbound::ElicitationComplete {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        elicitation_id,
+                    })
+                    .await?;
+            }
             RuntimeEvent::AdapterError { message } => {
                 tracing::warn!(account = %self.account_id, "ACP adapter error: {message}");
             }
             RuntimeEvent::LoadSessionFence { acp_session_id } => {
                 if let Some(run) = self
                     .shared
+                    .runs
                     .lock()
                     .await
                     .by_acp_session
@@ -1837,91 +1682,6 @@ impl RuntimeContext {
                 }
             }
         }
-        Ok(())
-    }
-
-    async fn handle_loopback_request(
-        self: Arc<Self>,
-        request: LoopbackRequest,
-    ) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        let req_id = request.req_id.clone();
-        let resource = request.resource.clone();
-        // Captured before request.params is moved into the ResourceReq frame below;
-        // used to attach files the agent creates this turn to its reply (see end).
-        let attach_channel_id = request
-            .params
-            .as_ref()
-            .and_then(|p| p.get("channel_id"))
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        self.shared
-            .lock()
-            .await
-            .pending_resources
-            .insert(request.req_id.clone(), tx);
-        // Perf instrumentation: wall-clock of the connector→gateway→connector round-trip
-        // for one resource call (the WS hop). Compare with the gateway-side
-        // `messages.create db-path complete` span to see which hop dominates latency.
-        let started = std::time::Instant::now();
-        tracing::debug!(%req_id, %resource, "loopback resource_req sent");
-        self.io
-            .send_data(DataOutbound::ResourceReq {
-                v: BRIDGE_PROTOCOL_VERSION,
-                req_id: request.req_id.clone(),
-                resource: request.resource,
-                params: request.params,
-                encrypted: None,
-                encrypted_payload: None,
-                acp_capability: None,
-            })
-            .await?;
-        let response = timeout(
-            Duration::from_millis(self.config.policy.loopback.request_timeout_ms),
-            rx,
-        )
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_else(|| LoopbackResponse {
-            ok: false,
-            data: None,
-            error: Some("resource response timed out".to_string()),
-            code: Some("RESOURCE_TIMEOUT".to_string()),
-        });
-        tracing::debug!(
-            %req_id,
-            %resource,
-            ok = response.ok,
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "loopback resource round-trip complete"
-        );
-        // inbox_deliver / inbox_stage create a channel file; record its id on the
-        // active run so the Done reply attaches it as a chat attachment.
-        if response.ok && (resource == "channel.files.create" || resource == "channel.files.stage")
-        {
-            if let Some(file_id) = response
-                .data
-                .as_ref()
-                .and_then(|d| d.get("file_id"))
-                .and_then(Value::as_str)
-            {
-                let runs: Vec<Arc<Mutex<ActiveRun>>> =
-                    self.shared.lock().await.by_msg.values().cloned().collect();
-                for run in runs {
-                    let mut guard = run.lock().await;
-                    let matches = match attach_channel_id.as_deref() {
-                        Some(c) => c == guard.channel_id,
-                        None => true,
-                    };
-                    if matches {
-                        guard.created_file_ids.push(file_id.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-        let _ = request.respond_to.send(response);
         Ok(())
     }
 
@@ -2008,16 +1768,28 @@ impl RuntimeContext {
             provider_session_key: task.provider_session_key.clone(),
             acp_session_id: acp_session_id.clone(),
             session_id: task.session_id.clone(),
+            origin_msg_id: task
+                .trigger_message
+                .as_ref()
+                .and_then(|message| message.get("msg_id"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+            initiating_user_id: task
+                .trigger_message
+                .as_ref()
+                .filter(|_| task.trigger.as_deref() == Some("user_message"))
+                .and_then(|message| message.get("user"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
         }));
         {
-            let mut shared = self.shared.lock().await;
+            let mut shared = self.shared.runs.lock().await;
             shared.by_msg.insert(task.msg_id.clone(), run.clone());
             shared
                 .by_acp_session
@@ -2036,9 +1808,9 @@ impl RuntimeContext {
         .await?;
         let channel_name = self
             .shared
-            .lock()
-            .await
             .channel_names
+            .read()
+            .await
             .get(&task.channel_id)
             .cloned();
         // Only push image/audio content blocks when local policy allows it AND
@@ -2046,9 +1818,10 @@ impl RuntimeContext {
         // that modality degrades to a text summary inside build_prompt.
         let (send_images, send_audio) = {
             let adapter = self.adapter.lock().await;
+            let capabilities = adapter.capabilities();
             (
-                self.config.policy.prompt.allow_images && adapter.supports_prompt_image(),
-                self.config.policy.prompt.allow_audio && adapter.supports_prompt_audio(),
+                self.config.policy.prompt.allow_images && capabilities.prompt_image,
+                self.config.policy.prompt.allow_audio && capabilities.prompt_audio,
             )
         };
         let prompt = build_prompt(
@@ -2076,7 +1849,7 @@ impl RuntimeContext {
                     acp_capability: None,
                 })
                 .await?;
-            let mut shared = self.shared.lock().await;
+            let mut shared = self.shared.runs.lock().await;
             shared.by_msg.remove(&task.msg_id);
             shared.by_acp_session.remove(&acp_session_id);
             shared.by_provider_key.remove(&task.provider_session_key);
@@ -2097,7 +1870,7 @@ impl RuntimeContext {
         // would freeze every other session's turn on this bot. Per-session
         // ordering is still guaranteed by `session_lock` above; the pending-id
         // map routes each session's response independently.
-        let requester = self.adapter.lock().await.requester();
+        let requester = self.adapter.lock().await.prompt_client();
         let prompt_result = match requester
             .prompt(
                 &acp_session_id,
@@ -2109,7 +1882,7 @@ impl RuntimeContext {
             Ok(result) => Ok(result),
             Err(err) => match self.recover_agent_auth(&task, &err).await {
                 Ok(()) => {
-                    let requester = self.adapter.lock().await.requester();
+                    let requester = self.adapter.lock().await.prompt_client();
                     requester
                         .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
                         .await
@@ -2128,15 +1901,12 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let (final_text, file_ids) = {
+                let final_text = {
                     let mut guard = run.lock().await;
                     // Move the accumulated text out (turn is over; the run is about
                     // to be dropped from the shared maps below) so the whole streamed
                     // response isn't deep-cloned just to hand it to the Done frame.
-                    (
-                        std::mem::take(&mut guard.text),
-                        guard.created_file_ids.clone(),
-                    )
+                    std::mem::take(&mut guard.text)
                 };
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
@@ -2154,7 +1924,7 @@ impl RuntimeContext {
                             v: BRIDGE_PROTOCOL_VERSION,
                             client_msg_id: Uuid::new_v4().to_string(),
                             msg_id: task.msg_id.clone(),
-                            file_ids,
+                            file_ids: Vec::new(),
                             mention_ids: Vec::new(),
                             content: Some(final_text),
                             provider_session_key: Some(task.provider_session_key.clone()),
@@ -2222,7 +1992,7 @@ impl RuntimeContext {
             }
         }
 
-        let mut shared = self.shared.lock().await;
+        let mut shared = self.shared.runs.lock().await;
         shared.by_msg.remove(&task.msg_id);
         shared.by_acp_session.remove(&acp_session_id);
         shared.by_provider_key.remove(&task.provider_session_key);
@@ -2240,7 +2010,7 @@ impl RuntimeContext {
             .await
             .get(&self.account_id, &task.provider_session_key);
         if let Some(session_id) = existing {
-            let supports_load = self.adapter.lock().await.supports_load_session();
+            let supports_load = self.adapter.lock().await.capabilities().load_session;
             if supports_load && self.config.policy.sessions.load {
                 let load_result = {
                     let mut adapter = self.adapter.lock().await;
@@ -2381,7 +2151,7 @@ impl RuntimeContext {
             );
             return Ok(());
         }
-        let run = self.shared.lock().await.by_msg.get(msg_id).cloned();
+        let run = self.shared.runs.lock().await.by_msg.get(msg_id).cloned();
         let Some(run) = run else {
             return Ok(());
         };
@@ -2521,9 +2291,10 @@ impl RuntimeContext {
         let kind = update
             .get("sessionUpdate")
             .and_then(Value::as_str)
-            .unwrap_or("unknown");
+            .unwrap_or("unknown")
+            .to_string();
         if matches!(
-            kind,
+            kind.as_str(),
             "config_option_update"
                 | "current_mode_update"
                 | "current_model_update"
@@ -2539,6 +2310,7 @@ impl RuntimeContext {
 
         let run = self
             .shared
+            .runs
             .lock()
             .await
             .by_acp_session
@@ -2553,15 +2325,19 @@ impl RuntimeContext {
         // Keep the tool-call detail before it scrolls past: the permission request
         // that follows carries only a delta and would otherwise render an approval
         // card with no title, no diff and no path. See `tool_call_snapshots`.
-        let trace_update = if matches!(kind, "tool_call" | "tool_call_update") {
+        let trace = if matches!(kind.as_str(), "tool_call" | "tool_call_update") {
             let mut guard = run.lock().await;
             guard.remember_tool_call(&update);
-            tool_call_id_from_update(&update)
+            let trace_source = tool_call_id_from_update(&update)
                 .and_then(|id| guard.tool_call_snapshot(id))
-                .cloned()
-                .unwrap_or_else(|| update.clone())
+                .unwrap_or(&update);
+            (!is_evaluation)
+                .then(|| describe_session_update(&kind, trace_source))
+                .flatten()
         } else {
-            update.clone()
+            (!is_evaluation)
+                .then(|| describe_session_update(&kind, &update))
+                .flatten()
         };
 
         // Generic complete-stream passthrough (docs/arch/ACP_EVENT_TAXONOMY.md):
@@ -2570,7 +2346,9 @@ impl RuntimeContext {
         // classifies + logs it). The text-token chunks already go out as Delta, so
         // skip them here. Best-effort — the log must never disrupt the turn. The
         // connector stays ACP-generic: it labels by the ACP subtype, never interprets.
-        if !is_evaluation && !matches!(kind, "agent_message_chunk" | "agent_thought_chunk") {
+        let generic_event = !is_evaluation
+            && !matches!(kind.as_str(), "agent_message_chunk" | "agent_thought_chunk");
+        if generic_event {
             let (channel_id, task_id, msg_id, session_id, psk) = {
                 let g = run.lock().await;
                 (
@@ -2591,60 +2369,57 @@ impl RuntimeContext {
                     msg_id: Some(msg_id),
                     session_id,
                     provider_session_key: Some(psk),
-                    payload: update.clone(),
+                    payload: update,
                 })
                 .await;
-        }
-
-        if kind == "agent_message_chunk" {
+        } else if kind == "agent_message_chunk" {
             if let Some(text) = text_from_content(update.get("content").unwrap_or(&Value::Null)) {
-                let mut guard = run.lock().await;
-                // Discard history-replay chunks emitted by codex-acp's streamThreadHistory
-                // during load_session, before our prompt has started streaming.
-                if !guard.streaming_started {
-                    return Ok(());
-                }
-                guard.delta_seq += 1;
-                guard.text.push_str(&text);
-                if !is_evaluation {
-                    self.io
-                        .send_data(DataOutbound::Delta {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            msg_id: guard.msg_id.clone(),
-                            seq: guard.delta_seq,
-                            delta: text,
-                            provider_session_key: Some(guard.provider_session_key.clone()),
-                            provider_session_id: Some(guard.acp_session_id.clone()),
-                            session_id: guard.session_id.clone(),
-                            acp_capability: None,
-                        })
-                        .await?;
+                let frame = {
+                    let mut guard = run.lock().await;
+                    // Discard history-replay chunks emitted by codex-acp's streamThreadHistory
+                    // during load_session, before our prompt has started streaming.
+                    if !guard.streaming_started {
+                        return Ok(());
+                    }
+                    guard.delta_seq += 1;
+                    guard.text.push_str(&text);
+                    (!is_evaluation).then(|| DataOutbound::Delta {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        msg_id: guard.msg_id.clone(),
+                        seq: guard.delta_seq,
+                        delta: text,
+                        provider_session_key: Some(guard.provider_session_key.clone()),
+                        provider_session_id: Some(guard.acp_session_id.clone()),
+                        session_id: guard.session_id.clone(),
+                        acp_capability: None,
+                    })
+                };
+                if let Some(frame) = frame {
+                    self.io.send_data(frame).await?;
                 }
             }
-        } else if !is_evaluation {
-            if let Some(SessionUpdateTrace {
-                title,
-                status,
-                data,
-            }) = describe_session_update(kind, &trace_update)
-            {
-                // Structure the trace from the ACP update's OWN fields. tool_call /
-                // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
-                // per the ACP schema; we pass those through instead of a generic
-                // label. A `plan` update also carries structured `data` (its to-do
-                // entries) so the channel can render a live task panel. Noise
-                // (usage_update, mode/config) is filtered by the helper.
-                self.trace_with_data(&run, kind, &status, &title, None, data)
-                    .await?;
-            }
+        }
+        if let Some(SessionUpdateTrace {
+            title,
+            status,
+            data,
+        }) = trace
+        {
+            // Structure the trace from the ACP update's OWN fields. tool_call /
+            // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
+            // per the ACP schema; we pass those through instead of a generic
+            // label. A `plan` update also carries structured `data` (its to-do
+            // entries) so the channel can render a live task panel. Noise
+            // (usage_update, mode/config) is filtered by the helper.
+            self.trace_with_data(&run, &kind, &status, &title, None, data)
+                .await?;
         }
         Ok(())
     }
 
     async fn session_lock(&self, provider_session_key: &str) -> Arc<Mutex<()>> {
-        let mut shared = self.shared.lock().await;
+        let mut shared = self.shared.session_locks.lock().await;
         shared
-            .session_locks
             .entry(provider_session_key.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
@@ -2699,6 +2474,7 @@ impl RuntimeContext {
             cwd,
             additional_dirs,
             mcp_servers: self.mcp_servers_for_task(task).await,
+            request_route: request_route_for_task(task),
         }
     }
 
@@ -2710,7 +2486,8 @@ impl RuntimeContext {
         // filesystem would just vanish with no signal.
         let (supports_http, supports_sse) = {
             let adapter = self.adapter.lock().await;
-            (adapter.supports_mcp_http(), adapter.supports_mcp_sse())
+            let capabilities = adapter.capabilities();
+            (capabilities.mcp_http, capabilities.mcp_sse)
         };
         let configured = self
             .config
@@ -2721,6 +2498,13 @@ impl RuntimeContext {
             .unwrap_or_default();
         let mut servers: Vec<Value> = Vec::with_capacity(configured.len() + 1);
         for server in configured {
+            if server.get("name").and_then(Value::as_str) == Some("cheers") {
+                tracing::warn!(
+                    account = %self.account_id,
+                    "ignoring configured MCP server named 'cheers'; the Gateway canonical native HTTP endpoint is mandatory"
+                );
+                continue;
+            }
             if mcp_server_supported(&server, supports_http, supports_sse) {
                 servers.push(server);
             } else {
@@ -2738,36 +2522,7 @@ impl RuntimeContext {
                 );
             }
         }
-        if self.config.policy.mcp.inject_cheers {
-            // Deprecated compatibility path. The Cheers-owned stdio child is
-            // retained until ACP agents can consume the stateless remote HTTP
-            // endpoint directly. Do not add new capabilities to this path.
-            tracing::warn!(
-                account = %self.account_id,
-                replacement = "POST /mcp (MCP 2026-07-28)",
-                "deprecated Cheers stdio MCP child-process injection is enabled"
-            );
-            // The legacy cheers server is command-based stdio, so it needs no
-            // optional HTTP/SSE capability gate.
-            // Single shared MCP server process across all sessions.
-            // CHANNEL_ID is not set via env — the ACP agent must pass
-            // channel_id explicitly in every tool call (it knows the
-            // channel context from the task trigger).
-            // This avoids spawning one process per channel.
-            servers.push(json!({
-                "name": "cheers",
-                "command": resolve_mcp_server_command(),
-                "args": [],
-                // ACP (claude-agent-acp >=0.36) requires env as an array of
-                // {name, value} entries, not a map. See session/new schema.
-                "env": [
-                    {"name": "CHEERS_RESOURCE_URL", "value": self.loopback.url.clone()},
-                    {"name": "CHEERS_RESOURCE_TOKEN", "value": self.loopback.token.clone()},
-                    {"name": "CHEERS_BOT_ID", "value": self.account_id.clone()},
-                    {"name": "CHEERS_REQUEST_TIMEOUT_MS", "value": self.config.policy.loopback.request_timeout_ms.to_string()}
-                ]
-            }));
-        }
+        servers.push(native_cheers_mcp_server(&self.mcp_url));
         Value::Array(servers)
     }
 
@@ -2783,7 +2538,7 @@ impl RuntimeContext {
             .await
     }
 
-    /// Like [`trace`], but also carries a structured `data` payload (e.g. an
+    /// Like [`Self::trace`], but also carries a structured `data` payload (e.g. an
     /// agent plan's to-do entries) so a remote observer gets more than a label.
     async fn trace_with_data(
         &self,
@@ -2802,10 +2557,10 @@ impl RuntimeContext {
         }
         let message = message
             .map(|value| limit_text_bytes(value, self.config.policy.trace.max_message_bytes));
-        let mut guard = run.lock().await;
-        guard.trace_seq += 1;
-        self.io
-            .send_data(DataOutbound::Trace {
+        let frame = {
+            let mut guard = run.lock().await;
+            guard.trace_seq += 1;
+            DataOutbound::Trace {
                 v: BRIDGE_PROTOCOL_VERSION,
                 msg_id: guard.msg_id.clone(),
                 task_id: Some(guard.task_id.clone()),
@@ -2824,25 +2579,50 @@ impl RuntimeContext {
                 message,
                 data,
                 acp_capability: None,
-            })
-            .await
+            }
+        };
+        self.io.send_data(frame).await
     }
 }
 
-#[derive(Default)]
 struct SharedRuntimeState {
+    /// Multi-index active-run registry; one lock preserves atomic insert/remove.
+    runs: Mutex<RunRegistry>,
+    /// Human interaction waiters are independent of streaming and workspace work.
+    interactions: Mutex<InteractionRegistry>,
+    /// Per-provider serialization locks are rarely touched after session startup.
+    session_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Channel names are read-heavy while building prompts.
+    channel_names: RwLock<HashMap<String, String>>,
+    /// Watch lifecycle has its own cap/insert/remove critical section.
+    watches: Mutex<HashMap<String, WatchHandle>>,
+}
+
+#[derive(Default)]
+struct RunRegistry {
     by_msg: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_acp_session: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
+}
+
+#[derive(Default)]
+struct InteractionRegistry {
     pending_permissions: HashMap<String, PendingPermission>,
+    pending_elicitations: HashMap<String, PendingElicitation>,
     pending_auths: HashMap<String, PendingAuth>,
-    pending_resources: HashMap<String, oneshot::Sender<LoopbackResponse>>,
-    session_locks: HashMap<String, Arc<Mutex<()>>>,
-    channel_names: std::collections::HashMap<String, String>,
-    /// Active remote-workspace fs watchers, keyed by `watch_id`. Dropping an entry
-    /// aborts its `watch_loop` task (via `AbortOnDrop`), which drops the notify
-    /// watcher — so `unwatch`, TTL expiry, and data-WS teardown all stop cleanly.
-    watches: HashMap<String, WatchHandle>,
+}
+
+impl SharedRuntimeState {
+    /// Creates independent lock domains with the initial membership snapshot.
+    fn new(channel_names: HashMap<String, String>) -> Self {
+        Self {
+            runs: Mutex::new(RunRegistry::default()),
+            interactions: Mutex::new(InteractionRegistry::default()),
+            session_locks: Mutex::new(HashMap::new()),
+            channel_names: RwLock::new(channel_names),
+            watches: Mutex::new(HashMap::new()),
+        }
+    }
 }
 
 /// Registry entry for one active fs watch. Owns the abort handle for the watcher
@@ -2889,7 +2669,7 @@ async fn watch_loop(
     mut ev_rx: mpsc::UnboundedReceiver<PathBuf>,
     mut renew_rx: mpsc::UnboundedReceiver<()>,
     io: BridgeIoHandle,
-    shared: Arc<Mutex<SharedRuntimeState>>,
+    shared: Arc<SharedRuntimeState>,
 ) {
     let mut deadline = tokio::time::Instant::now() + WATCH_TTL;
     loop {
@@ -2932,7 +2712,7 @@ async fn watch_loop(
             }
         }
     }
-    shared.lock().await.watches.remove(&watch_id);
+    shared.watches.lock().await.remove(&watch_id);
 }
 
 struct PendingPermission {
@@ -2940,9 +2720,20 @@ struct PendingPermission {
     respond_to: oneshot::Sender<PermissionOutcome>,
 }
 
+struct PendingElicitation {
+    mode: ElicitationMode,
+    respond_to: oneshot::Sender<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ElicitationMode {
+    Form,
+    Url,
+}
+
 struct PendingAuth {
     respond_to: oneshot::Sender<auth::AuthAckAction>,
-    method_id: String,
+    allowed_method_ids: HashSet<String>,
 }
 
 struct ActiveRun {
@@ -2952,13 +2743,13 @@ struct ActiveRun {
     provider_session_key: String,
     acp_session_id: String,
     session_id: Option<String>,
+    /// Trusted human message that initiated this run, used to bind session-scoped elicitation.
+    origin_msg_id: Option<String>,
+    /// Verified human sender of `origin_msg_id`; absent for bot/system initiated work.
+    initiating_user_id: Option<String>,
     delta_seq: u64,
     trace_seq: u64,
     text: String,
-    /// File ids the agent created this turn via inbox_deliver / inbox_stage
-    /// (channel.files.create / .stage). Attached to the Done reply so they surface
-    /// as chat attachments — a staged file otherwise has no UI entry point to realize.
-    created_file_ids: Vec<String>,
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
@@ -3070,6 +2861,34 @@ struct TaskCommand {
     context_bundle: Option<Value>,
 }
 
+/// Builds a trusted route only for a human-originated task. Bot/system work has
+/// no verified human identity and therefore cannot host request-scoped elicitation.
+fn request_route_for_task(task: &TaskCommand) -> Option<RequestRoute> {
+    if task.trigger.as_deref() != Some("user_message") {
+        return None;
+    }
+    let initiating_user_id = task
+        .trigger_message
+        .as_ref()
+        .and_then(|message| message.get("user"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    Some(RequestRoute {
+        channel_id: task.channel_id.clone(),
+        task_id: task.task_id.clone(),
+        msg_id: task.msg_id.clone(),
+        origin_msg_id: task
+            .trigger_message
+            .as_ref()
+            .and_then(|message| message.get("msg_id"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        session_id: task.session_id.clone(),
+        initiating_user_id: Some(initiating_user_id),
+    })
+}
+
 /// The bot this connector is authenticated as, learned from the control `hello`
 /// frame. Threaded into every prompt so the agent knows which @-handle it
 /// answers to — the gateway advertised it all along, the connector just dropped
@@ -3098,18 +2917,13 @@ enum RuntimeInput {
     Control(Box<ControlInbound>),
     Data(Box<DataInbound>),
     Adapter(RuntimeEvent),
-    Loopback(LoopbackRequest),
     SocketClosed(&'static str),
-    SocketError {
-        stream: &'static str,
-        error: String,
-    },
-    /// Broadcast to all pending loopback requests when the data WS closes mid-flight.
-    AbortPendingResources,
+    SocketError { stream: &'static str, error: String },
 }
 
 mod auth;
 mod config;
+mod elicitation;
 mod frames;
 mod io;
 mod permission;
@@ -3133,10 +2947,11 @@ mod tests {
             provider_session_key: "p".to_string(),
             acp_session_id: "s".to_string(),
             session_id: None,
+            origin_msg_id: None,
+            initiating_user_id: None,
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: None,
@@ -3524,28 +3339,6 @@ mod tests {
     }
 
     #[test]
-    fn resource_req_serializes_without_session_id() {
-        let req = DataOutbound::ResourceReq {
-            v: BRIDGE_PROTOCOL_VERSION,
-            req_id: "req-1".to_string(),
-            resource: "channel.info".to_string(),
-            params: Some(json!({"channel_id": "ch-1"})),
-            encrypted: None,
-            encrypted_payload: None,
-            acp_capability: None,
-        };
-        let json = serde_json::to_value(&req).expect("serialize");
-        assert_eq!(json["type"], "resource_req");
-        assert_eq!(json["req_id"], "req-1");
-        assert_eq!(json["resource"], "channel.info");
-        // session_id must NOT appear in the wire format
-        assert!(
-            json.get("session_id").is_none(),
-            "session_id is dead metadata and must not be serialized"
-        );
-    }
-
-    #[test]
     fn prompt_includes_channel_id_and_name() {
         let task = TaskCommand {
             task_id: "task-1".to_string(),
@@ -3635,6 +3428,39 @@ mod tests {
             additional_dirs: Vec::new(),
             context_bundle: None,
         }
+    }
+
+    #[test]
+    fn request_route_requires_a_verified_human_origin() {
+        let human = identity_task(
+            Some("user_message"),
+            Some(json!({"msg_id":"origin-1", "user":"user-1"})),
+        );
+        let route = request_route_for_task(&human).expect("human route");
+        assert_eq!(route.initiating_user_id.as_deref(), Some("user-1"));
+        assert_eq!(route.origin_msg_id.as_deref(), Some("origin-1"));
+
+        let bot = identity_task(
+            Some("bot_message"),
+            Some(json!({"msg_id":"origin-2", "user":"bot-1"})),
+        );
+        assert!(request_route_for_task(&bot).is_none());
+    }
+
+    #[test]
+    fn active_run_keeps_human_origin_for_session_scoped_elicitation() {
+        let task = identity_task(
+            Some("user_message"),
+            Some(json!({"msg_id":"origin-1", "user":"user-1"})),
+        );
+        let route = request_route_for_task(&task).expect("trusted human route");
+        let run = ActiveRun {
+            origin_msg_id: route.origin_msg_id.clone(),
+            initiating_user_id: route.initiating_user_id.clone(),
+            ..empty_run()
+        };
+        assert_eq!(run.origin_msg_id.as_deref(), Some("origin-1"));
+        assert_eq!(run.initiating_user_id.as_deref(), Some("user-1"));
     }
 
     #[test]

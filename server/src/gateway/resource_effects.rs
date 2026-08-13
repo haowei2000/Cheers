@@ -20,9 +20,9 @@
 //! resource frames through here and gets the complete semantics of each verb. Adding a
 //! new effect means adding it once, here, rather than in every boundary.
 //!
-//! Not covered: `workspace.read`, which is an alternate *dispatch* (brokering a read of
-//! another bot's machine) rather than a post-dispatch effect, and stays at the bot-bridge
-//! boundary. It fails loudly (`UNKNOWN_RESOURCE`) elsewhere rather than silently.
+//! `workspace.read` is an alternate dispatch rather than a post-dispatch effect.
+//! It is brokered here as well, so Agent Bridge and HTTP MCP share the same live
+//! owner-Connector routing and authorization semantics.
 
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -47,6 +47,9 @@ fn direct_message_notification_payload(channel_id: Uuid, sender_name: &str) -> V
 /// resource layer can't. Returns the `resource_res` frame verbatim from
 /// [`resource::dispatch`] — effects never change the reply, and never fail it.
 pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame: &Value) -> Value {
+    if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
+        return broker_workspace_read(state, principal, frame).await;
+    }
     let resp = resource::dispatch(&state.db, principal, frame).await;
 
     // Effects run only for a write that actually landed.
@@ -168,6 +171,64 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         _ => {}
     }
     resp
+}
+
+/// Resolve another Bot's live workspace reference under the requesting Bot's
+/// own membership and workspace-read grant. The owner Connector remains the
+/// filesystem authority; no Gateway-local path fallback exists.
+async fn broker_workspace_read(state: &AppState, principal: Principal, frame: &Value) -> Value {
+    let req_id = frame.get("req_id").and_then(Value::as_str).unwrap_or("");
+    if principal.principal_type != crate::resource::PrincipalType::Bot {
+        return resource::err_res(
+            req_id,
+            "PERMISSION_DENIED",
+            "workspace.read requires a Bot principal",
+        );
+    }
+    let params = frame.get("params").cloned().unwrap_or(Value::Null);
+    let str_param = |key: &str| params.get(key).and_then(Value::as_str).map(str::to_string);
+    let uuid_param = |key: &str| str_param(key).and_then(|value| Uuid::parse_str(&value).ok());
+    let Some(owner_bot_id) = uuid_param("bot_id") else {
+        return resource::err_res(req_id, "INVALID_PARAMS", "bot_id required");
+    };
+    let Some(channel_id) = uuid_param("channel_id") else {
+        return resource::err_res(req_id, "INVALID_PARAMS", "channel_id required");
+    };
+    let Some(path) = str_param("path") else {
+        return resource::err_res(req_id, "INVALID_PARAMS", "path required");
+    };
+    let session_id = uuid_param("session_id");
+    let root = str_param("root");
+    match crate::api::workspace::read_workspace_file_as_bot(
+        state,
+        owner_bot_id,
+        principal.principal_id,
+        channel_id,
+        &path,
+        root.as_deref(),
+        session_id,
+    )
+    .await
+    {
+        Ok(data) => resource::ok_res(req_id, data),
+        Err(error) => {
+            let (code, message) = workspace_error(&error);
+            resource::err_res(req_id, code, &message)
+        }
+    }
+}
+
+/// Preserve the established resource error vocabulary while hiding internals.
+fn workspace_error(error: &crate::errors::AppError) -> (&'static str, String) {
+    use crate::errors::AppError;
+    match error {
+        AppError::Forbidden(message) => ("PERMISSION_DENIED", message.clone()),
+        AppError::NotFound => ("NOT_FOUND", "not found".to_string()),
+        AppError::BadRequest(message) => ("INVALID_PARAMS", message.clone()),
+        AppError::Conflict(message) => ("E_CONFLICT", message.clone()),
+        AppError::PayloadTooLarge(message) => ("E_TOO_LARGE", message.clone()),
+        _ => ("INTERNAL_ERROR", "internal error".to_string()),
+    }
 }
 
 /// Broadcast the new message and trigger any @mentioned bots — **off the caller's

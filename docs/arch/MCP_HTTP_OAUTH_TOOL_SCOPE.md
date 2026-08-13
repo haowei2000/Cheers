@@ -115,9 +115,9 @@ file on a particular terminal and therefore requires installation routing plus
 an explicit local-file approval contract; a stateless gateway request cannot
 safely infer that installation.
 
-`read_workspace` remains read-scoped but is exposed remotely only after its live
-owner-installation routing is transport-neutral. It must not silently fall back
-to the gateway's filesystem.
+`read_workspace` remains read-scoped. Its live owner-installation routing is
+transport-neutral: both Agent Bridge and HTTP MCP dispatch through the owner
+Connector. It never falls back to the gateway's filesystem.
 
 ## 5. Stateless Tools behavior
 

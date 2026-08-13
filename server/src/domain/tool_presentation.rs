@@ -184,11 +184,8 @@ fn tool_name(data: &Value) -> Option<&str> {
                 .and_then(|tool| non_empty_string(tool, &["name", "tool_name", "toolName", "kind"]))
         })
         .or_else(|| {
-            data.pointer("/_meta/claudeCode/toolName")
-                .or_else(|| data.pointer("/_meta/codex/toolName"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+            data.get("normalized_presentation")
+                .and_then(|value| non_empty_string(value, &["tool_name"]))
         })
 }
 
@@ -243,8 +240,8 @@ fn command_from(data: &Value) -> Option<&str> {
     non_empty_string(input(data), &["command", "cmd"])
         .or_else(|| non_empty_string(data, &["command", "cmd"]))
         .or_else(|| {
-            data.pointer("/_meta/codex/params")
-                .and_then(|params| non_empty_string(params, &["command", "cmd"]))
+            data.get("normalized_presentation")
+                .and_then(|value| non_empty_string(value, &["command"]))
         })
 }
 
@@ -257,9 +254,8 @@ fn cwd_from(data: &Value) -> Option<&str> {
     non_empty_string(input(data), &["cwd", "working_directory", "workdir"])
         .or_else(|| non_empty_string(data, &["cwd", "working_directory", "workdir"]))
         .or_else(|| {
-            data.pointer("/_meta/codex/params").and_then(|params| {
-                non_empty_string(params, &["cwd", "working_directory", "workdir"])
-            })
+            data.get("normalized_presentation")
+                .and_then(|value| non_empty_string(value, &["cwd"]))
         })
 }
 
@@ -625,9 +621,9 @@ mod tests {
     }
 
     #[test]
-    fn accepts_claude_camel_case_tool_payloads() {
+    fn accepts_normalized_tool_name_with_camel_case_input() {
         let result = classify(&json!({
-            "_meta": {"claudeCode": {"toolName": "Write"}},
+            "normalized_presentation": {"tool_name": "Write"},
             "rawInput": {"file_path": "/work/notes.md", "content": "hello"}
         }))
         .unwrap();
@@ -638,13 +634,13 @@ mod tests {
     }
 
     #[test]
-    fn reads_codex_command_metadata_before_shell_fallback() {
+    fn reads_connector_normalized_presentation_without_vendor_metadata() {
         let result = classify(&json!({
             "toolName": "Bash",
-            "_meta": {"codex": {"params": {
+            "normalized_presentation": {
                 "command": "git status --short --branch",
                 "cwd": "/work/Cheers"
-            }}},
+            },
             "rawOutput": "## main\n M frontend/src/App.tsx\n"
         }))
         .unwrap();

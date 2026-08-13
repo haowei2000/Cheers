@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ExternalLink, KeyRound, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { ackAuthRequired } from "@/api/approval";
-import type { AuthRequiredContentData, Message } from "@/types";
+import type { AuthMethodPresentation, AuthRequiredContentData, Message } from "@/types";
 
 interface Props {
   message: Message;
@@ -11,9 +11,9 @@ interface Props {
   currentUserId?: string;
 }
 
-function isEnvAuthMethod(data: AuthRequiredContentData): boolean {
-  const id = (data.method_id ?? "").toLowerCase();
-  const typ = (data.auth_type ?? "").toLowerCase();
+function isEnvAuthMethod(method: AuthMethodPresentation): boolean {
+  const id = method.method_id.toLowerCase();
+  const typ = (method.auth_type ?? "").toLowerCase();
   return (
     typ === "env" ||
     typ === "envvar" ||
@@ -36,6 +36,14 @@ function isEnvAuthMethod(data: AuthRequiredContentData): boolean {
 export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
   const data = (message.content_data ?? {}) as AuthRequiredContentData;
   const [busy, setBusy] = useState<"retry" | "cancel" | null>(null);
+  const methods = data.methods?.length
+    ? data.methods
+    : data.method_id
+      ? [{ method_id: data.method_id, name: data.name, description: data.description, link: data.link, auth_type: data.auth_type, recommended: true }]
+      : [];
+  const defaultMethod = methods.find((method) => method.recommended) ?? methods[0];
+  const [selectedMethodId, setSelectedMethodId] = useState(defaultMethod?.method_id ?? "");
+  const selectedMethod = methods.find((method) => method.method_id === selectedMethodId) ?? defaultMethod;
   const resolved = data.resolved === true;
   const isOwner =
     !!currentUserId &&
@@ -43,17 +51,23 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
     currentUserId === data.bot_owner_id;
   const title = data.name?.trim() || "Sign in required";
   const description =
+    (methods.length > 1 ? selectedMethod?.description?.trim() : data.description?.trim()) ||
     data.description?.trim() ||
     "This agent needs authentication before it can continue.";
-  const link = data.link?.trim() || null;
+  const link = selectedMethod?.link?.trim() || null;
   const action = data.chosen_action;
-  const envAuth = isEnvAuthMethod(data);
+  const envAuth = selectedMethod ? isEnvAuthMethod(selectedMethod) : false;
 
   async function ack(next: "retry" | "cancel") {
     if (!channelId || !data.request_id || busy) return;
     setBusy(next);
     try {
-      await ackAuthRequired(channelId, data.request_id, next);
+      await ackAuthRequired(
+        channelId,
+        data.request_id,
+        next,
+        next === "retry" ? selectedMethodId : undefined
+      );
       toast.success(next === "retry" ? "Retrying agent auth…" : "Auth cancelled");
     } catch (e) {
       toast.error(typeof e === "string" ? e : e instanceof Error ? e.message : "failed");
@@ -88,10 +102,41 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           <p className="mt-1 whitespace-pre-wrap text-compact leading-relaxed text-zinc-400">
             {description}
           </p>
-          {data.method_id && (
+          {methods.length > 1 && isOwner && (
+            <div className="mt-3 grid gap-2">
+              {methods.map((method) => (
+                /* design-system-exempt: form-field — Agent-advertised auth method choice. */
+                <div
+                  data-design-system-exempt="form-field"
+                  key={method.method_id}
+                  className={`flex items-center gap-3 rounded-sm px-3 py-2 ring-1 ring-inset ${
+                    selectedMethodId === method.method_id
+                      ? "bg-indigo-500/10 text-zinc-100 ring-indigo-400/60"
+                      : "bg-zinc-950/30 ring-zinc-700 hover:ring-zinc-600"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium">{method.name?.trim() || method.method_id}</span>
+                    {method.recommended && <span className="ml-2 text-minimal text-indigo-300">Recommended</span>}
+                    {method.description && <span className="mt-1 block text-zinc-400">{method.description}</span>}
+                  </span>
+                  <UiButton
+                    action="choose"
+                    variant={selectedMethodId === method.method_id ? "primary" : "secondary"}
+                    controlSize="regular"
+                    type="button"
+                    disabled={busy !== null}
+                    aria-label={`Choose ${method.name?.trim() || method.method_id}`}
+                    onClick={() => setSelectedMethodId(method.method_id)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedMethod?.method_id && (
             <p className="mt-1 font-mono text-minimal text-zinc-400">
-              method: {data.method_id}
-              {data.auth_type ? ` · ${data.auth_type}` : ""}
+              method: {selectedMethod.method_id}
+              {selectedMethod.auth_type ? ` · ${selectedMethod.auth_type}` : ""}
             </p>
           )}
           {link ? (
@@ -105,7 +150,14 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
             </a>
           ) : (
             <div className="mt-2 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact leading-relaxed text-zinc-400">
-              {envAuth ? (
+              {data.agent_profile?.login_hint ? (
+                <>
+                  <p>{data.agent_profile.login_hint}</p>
+                  {data.agent_profile.verified_version_range && (
+                    <p className="mt-1 text-zinc-400">Verified with {data.agent_profile.verified_version_range}.</p>
+                  )}
+                </>
+              ) : envAuth ? (
                 <>
                   No login URL for this method — set{" "}
                   <code className="text-zinc-200">ANTHROPIC_API_KEY</code> /{" "}
@@ -130,9 +182,9 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           )}
           {isOwner ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <UiButton action="link" variant="plain"
+              <UiButton action="retry" variant="plain"
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || !selectedMethodId}
                 onClick={() => void ack("retry")}
                 controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600  font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >

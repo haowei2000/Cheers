@@ -21,7 +21,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
-import { AuthRequiredCard } from "./AuthRequiredCard";
+import { AgentInteractionCard } from "./AgentInteractionCard";
 import { TaskClaimConfirmationCard } from "./TaskClaimConfirmationCard";
 import { BotTracePanel } from "./BotTracePanel";
 import { stopTurn } from "./stopTurn";
@@ -384,16 +384,12 @@ export const MessageItem = memo(function MessageItem({
     );
   }
 
-  if (message.msg_type === "auth_required") {
+  if (message.msg_type === "auth_required" || message.msg_type === "elicitation") {
     return (
       <div className="flex items-start gap-3 px-4 py-1">
         <div className="w-9 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <AuthRequiredCard
-            message={message}
-            channelId={channelId}
-            currentUserId={currentUserId}
-          />
+          <AgentInteractionCard message={message} channelId={channelId} currentUserId={currentUserId} />
         </div>
       </div>
     );

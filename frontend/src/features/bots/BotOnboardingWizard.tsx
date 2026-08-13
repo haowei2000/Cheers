@@ -50,11 +50,10 @@ type Mode = "script" | "agent";
  * Keep in sync with the default in server/assets/install.sh. */
 const CONNECTOR_RELEASES_REPO = "haowei2000/Cheers";
 /** Pin GitHub fallbacks to a connector-v* tag — releases/latest is the desktop app. */
-const CONNECTOR_RELEASE_TAG = "connector-v0.1.36";
+const CONNECTOR_RELEASE_TAG = "connector-v0.1.37";
 /** Same-origin download (gateway proxies the GitHub release): works from hosts
  * that can reach this server but not GitHub. GitHub stays the fallback.
- * Stages the deprecated cheers-mcp-server compatibility sidecar beside the
- * connector — inject_cheers resolves it there for agents without HTTP MCP. */
+ * Native HTTP MCP is mandatory; only the connector binary is installed. */
 // serverOrigin(), not window.location.origin: the snippet must name the
 // GATEWAY the target host can reach — in the desktop shell the window origin
 // is tauri://localhost, useless in a curl command.
@@ -64,11 +63,7 @@ curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
   "${serverOrigin()}/api/v1/connector/download/cce-acp-connector-$os-$arch" \\
   || curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
   "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/download/${CONNECTOR_RELEASE_TAG}/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \\
-  "${serverOrigin()}/api/v1/connector/download/cheers-mcp-server-$os-$arch" \\
-  || curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \\
-  "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/download/${CONNECTOR_RELEASE_TAG}/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"`;
 
 const FALLBACK_AGENTS: AcpAgentInfo[] = [
@@ -720,10 +715,8 @@ cce-acp-connector status --name ${accountId}`}
         </div>
         <div className="space-y-2 pt-1">
           <p className="text-compact text-zinc-400">
-            Need the connector binary? The compatibility download also includes the deprecated{" "}
-            <code className="text-zinc-400">cheers-mcp-server</code> stdio sidecar. It remains
-            available for agents without remote HTTP MCP support; new integrations should use the
-            Cheers <code className="text-zinc-400">POST /mcp</code> endpoint.
+            Need the connector binary? Cheers requires an Agent adapter with native HTTP MCP OAuth
+            support. Unsupported adapters fail closed; no stdio sidecar is installed.
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
             <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">

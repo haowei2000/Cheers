@@ -16,7 +16,7 @@
 #   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
 #                        prebuilt release binary is downloaded for this platform)
 #   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default haowei2000/Cheers)
-#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.36 (default: newest
+#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.37 (default: newest
 #                        connector-v* GitHub release — NOT releases/latest, which
 #                        points at the desktop app)
 #   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
@@ -234,32 +234,6 @@ PYUP
   fi
 fi
 
-# ── 4b. install deprecated stdio MCP compatibility sidecar ───────────────────
-# DEPRECATED: new integrations use the remote stateless POST /mcp endpoint.
-# The connector can inject this stdio MCP server into agent sessions and
-# resolves it from the directory of its own executable, so it must live next to
-# the connector binary. Best-effort: the bot works without it, but agents lose
-# their cheers platform tools (send message / fetch resources).
-if [ -n "$BIN" ] && [ -n "${os:-}" ] && [ -n "${arch:-}" ]; then
-  MCP_DEST="$(dirname "$BIN")/cheers-mcp-server"
-  if [ ! -x "$MCP_DEST" ]; then
-    MCP_ASSET="cheers-mcp-server-$os-$arch"
-    MCP_SOURCES="$API_BASE/connector/download/$MCP_ASSET"
-    if [ -n "${VER:-}" ] && [ "$VER" != "latest" ]; then
-      MCP_SOURCES="$MCP_SOURCES https://github.com/$REPO/releases/download/connector-v$VER/$MCP_ASSET"
-    fi
-    for MCP_SRC in $MCP_SOURCES; do
-      info "downloading cheers MCP server ($os/$arch) from $MCP_SRC …"
-      if curl -fsSL "$MCP_SRC" -o "$MCP_DEST" && [ -s "$MCP_DEST" ]; then
-        chmod +x "$MCP_DEST"
-        info "installed deprecated stdio MCP compatibility server → $MCP_DEST"
-        break
-      fi
-      rm -f "$MCP_DEST"
-    done
-    [ -x "$MCP_DEST" ] || info "WARNING: no prebuilt cheers-mcp-server for $os/$arch — agent sessions will lack cheers MCP tools (set CHEERS_MCP_SERVER_BIN to a locally built binary to fix)"
-  fi
-fi
 if [ -z "$BIN" ]; then
   cat >&2 <<EOF
 

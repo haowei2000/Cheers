@@ -1,5 +1,12 @@
 # Agent Bridge 资源访问协议 (Resource Protocol v1)
 
+> **Retired (2026-08-13).** Connector↔Gateway `resource_req/resource_res` was removed
+> when Cheers MCP became native Streamable HTTP. This document is retained only as a
+> historical design record. Agents now use Gateway `/mcp`; `inbox_deliver` is the only
+> attachment delivery path. Browser WS still uses a same-shaped internal resource RPC
+> for Workbench, but that is not part of Agent Bridge. `workspace_req/workspace_res`
+> remains active because the owner Connector is still authoritative for local files.
+
 > 版本：v1.1（2026-06-25，R13 词表刷新 —— §3.4 权威清单以代码为准）
 > 分支：`break/rust-gateway-arch`
 > 适用范围：Bot（内置/外置）通过 Agent Bridge data channel 访问平台资源

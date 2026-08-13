@@ -40,27 +40,23 @@
 
 直接从项目的 [GitHub Releases](https://github.com/haowei2000/Cheers/releases)
 下载对应平台的二进制，无需 Rust 工具链（`release-connector` workflow 按 `connector-v*` tag 发布
-`cce-acp-connector-{darwin,linux}-{arm64,amd64}` 以及配套的 `cheers-mcp-server-*`）：
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}`）：
 
 ```bash
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   # 写进 shell profile 长期生效
 cce-acp-connector --help
 ```
 
-换版本时把 `connector-v0.1.36` 换成其他 `connector-v*` tag
+换版本时把 `connector-v0.1.37` 换成其他 `connector-v*` tag
 （**不要**用 `releases/latest`——那指向桌面端）。仓库还是**私有**时匿名 curl 会 404，
 有权限的用户改用 GitHub CLI 认证下载：
-`gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`
-以及
-`gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cheers-mcp-server-$os-$arch" -O ~/.cheers/bin/cheers-mcp-server`。
-MCP 伴生二进制必须放在连接器同目录——默认 `inject_cheers = true` 会在那里解析它。
+`gh release download connector-v0.1.37 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`。
+Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生二进制，也没有 stdio 回退。
 开发连接器本身的同学仍可用源码构建
 （`cargo build` → `target/debug/cce-acp-connector`）；下文命令默认
 `cce-acp-connector` 已在 `PATH` 上，两种方式均可。
@@ -74,8 +70,7 @@ MCP 伴生二进制必须放在连接器同目录——默认 `inject_cheers = t
 ```
 ~/.cheers/
 ├─ bin/
-│   ├─ cce-acp-connector
-│   └─ cheers-mcp-server         # inject_cheers 需要的同目录伴生二进制
+│   └─ cce-acp-connector
 ├─ cheers-daemon.codex.toml      # bot：codex（一个文件一个 bot）
 ├─ cheers-daemon.claude.toml     # bot：claude
 ├─ secrets/
@@ -158,8 +153,6 @@ wait_timeout_ms    = 900000
 on_timeout         = "cancel"        # 仅 "cancel" 或 "deny"
 auto_allow         = false           # true=本地自动放行、不进频道
 
-[accounts.codex.policy.mcp]
-inject_cheers = true                 # 注入 cheers stdio MCP（虚拟文件系统等）
 ```
 
 > 上面是**精简版**（省略的字段都有合理默认）。要全字段模板，复制
@@ -319,13 +312,9 @@ max_text_bytes = 200000
 max_files = 10
 
 [accounts.codex.policy.mcp]
-inject_cheers = true                 # 注入 cheers stdio MCP（baseline 传输，无需 capability）
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
 # servers = [ ... ]                   # 可选：额外 MCP server（http/sse 需 Agent 支持对应 mcpCapabilities）
-
-[accounts.codex.policy.loopback]
-request_timeout_ms = 30000
 
 # ── 可选 / 进阶：能力签名 ──
 # [accounts.codex.security.acp_capability]
@@ -353,7 +342,7 @@ $BIN run     --config <file>     # 前台运行（调试用，不守护）
 在配置里显式开启（§6）：`[update] auto = true`。当网关通告更新的连接器版本时，
 连接器会经网关下载该版本的**签名清单**，用**编译进二进制的 ed25519 公钥**验签，
 再逐个校验二进制的 **sha256**，等到没有进行中的对话轮次后，原子替换自身 +
-`cheers-mcp-server` 并原地重启（PID 不变，launchd/systemd 无感知）。旧二进制保留为
+连接器并原地重启（PID 不变，launchd/systemd 无感知）。旧二进制保留为
 `<exe>.old`；新版本连续 3 次启动都连不上网关会自动回滚，且该版本不再重试。
 
 - **默认关闭**——更新本质是执行从网络下载的代码，必须由宿主机所有者显式开启。

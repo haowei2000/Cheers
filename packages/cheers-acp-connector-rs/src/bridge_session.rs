@@ -1,3 +1,8 @@
+//! Authenticated dual-channel Agent Bridge session establishment.
+//!
+//! A session owns the control and data WebSockets, validates that both were
+//! accepted for the same bot, and maintains the gateway membership snapshot.
+
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,7 +93,6 @@ impl BridgeReady {
                 "runtime_session_control": true,
                 "streaming": true,
                 "files": true,
-                "resource_req": true,
                 "permission_request": true,
                 "config_options": true,
                 "trace": true,
@@ -110,6 +114,7 @@ pub struct ControlHelloState {
     pub acp_security: Option<AcpSecurityHello>,
     pub connector_config: Option<ConnectorControlConfig>,
     pub server_capabilities: Option<ServerCapabilities>,
+    pub mcp_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -353,6 +358,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
             acp_security,
             connector_config,
             server_capabilities,
+            mcp_url,
             ..
         } => {
             ensure_supported_version(v, bridge_protocol_version, "control")?;
@@ -367,6 +373,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
                 acp_security,
                 connector_config,
                 server_capabilities: server_capabilities.map(|capabilities| *capabilities),
+                mcp_url,
             })
         }
         other => Err(anyhow!("expected control hello, got {other:?}")),
@@ -465,6 +472,7 @@ mod tests {
                     "joined_at": "2026-06-01T10:15:30Z"
                 }
             ],
+            "mcp_url": "https://cheers.example/mcp",
             "server_capabilities": {
                 "task_stream": "control",
                 "runtime_session_control": true
@@ -475,6 +483,7 @@ mod tests {
         assert_eq!(hello.bot_id, "bot-1");
         assert_eq!(hello.memberships.len(), 1);
         assert_eq!(hello.memberships[0].channel_id, "channel-1");
+        assert_eq!(hello.mcp_url.as_deref(), Some("https://cheers.example/mcp"));
     }
 
     #[test]
@@ -489,7 +498,6 @@ mod tests {
             "session_id": "data-conn-1",
             "last_event_seq": 12,
             "server_capabilities": {
-                "resource_req": true,
                 "terminal_ack": true,
                 "resume": "ack_only"
             }
@@ -513,6 +521,7 @@ mod tests {
             acp_security: None,
             connector_config: None,
             server_capabilities: None,
+            mcp_url: Some("https://cheers.example/mcp".to_string()),
         };
         let data = DataHelloState {
             bot_id: "bot-data".to_string(),

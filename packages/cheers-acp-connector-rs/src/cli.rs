@@ -1,3 +1,5 @@
+//! Command-line interface for foreground runs and daemon lifecycle operations.
+
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};

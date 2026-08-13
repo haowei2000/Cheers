@@ -68,8 +68,7 @@ release (`server_capabilities.latest_connector_version`, i.e. the gateway's
 `connector-manifest.json` + `.sig` through the gateway's download proxy, verifies
 the manifest's **ed25519 signature** against the release key compiled into the
 binary, verifies each binary's **sha256** against the manifest, waits until no
-prompt turn is in flight, atomically swaps itself (and the sibling
-`cheers-mcp-server`, which ships in lockstep) and re-execs with the same argv/PID.
+prompt turn is in flight, atomically swaps itself and re-execs with the same argv/PID.
 The replaced binary is kept as `<exe>.old`; if the new binary fails to reach a
 healthy bridge connection 3 boots in a row it is rolled back automatically and
 that version is blocked from retry. Never active inside containers (update the
@@ -230,20 +229,13 @@ All policy tables are optional; each key falls back to the default below.
 | `allow`            | bool | `true`  | Forward ACP `session/update` notifications (streaming). |
 | `include_metadata` | bool | `true`  | Include the update's metadata block. |
 
-#### `.policy.mcp` — MCP server injection
+#### `.policy.mcp` — extra MCP servers
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
-| `inject_cheers`                    | bool     | `true`  | Inject the `cheers` MCP server (desk/inbox/channel tools). Keep `true` or the bot has no Cheers tools. |
 | `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? |
 | `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject (e.g. `["cheers"]`). |
 | `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. |
-
-#### `.policy.loopback`
-
-| Key                  | Type | Default  | Meaning |
-|----------------------|------|----------|---------|
-| `request_timeout_ms` | int  | `600000` | Timeout for the connector's loopback resource IPC (the `cheers` MCP server calls this). |
 
 ### `[accounts.<id>.security.acp_capability]` — signed capability (optional)
 
@@ -321,4 +313,4 @@ cce-acp-connector stop   --name haowei_codex
 | Can't set a **config option** from the UI | option not in `allowed_config_options`, or bot offline | add the id to `allowed_config_options`; bring the bot online |
 | Can't set a **mode** | mode not in `allowed_modes`, or `backend_may_set_mode = false` | add the mode id (or `[]` for any); enable `backend_may_set_mode` |
 | Agent can't read an uploaded file | it tried to HTTP the gateway | agents read attachments via the `cheers` MCP `inbox_open` tool, never HTTP |
-| Bot has no Cheers tools | `inject_cheers = false` | set `inject_cheers = true` |
+| Bot has no Cheers tools | Agent lacks native HTTP MCP OAuth or Gateway omitted `mcp_url` | upgrade the Agent adapter; verify `MCP_PUBLIC_URL`; stdio fallback is not supported |
