@@ -299,7 +299,7 @@ function ViewBoardDrawerImpl({
         </div>
       ) : (
         <>
-          <div className="mx-3 mb-2 flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-0 border-b border-zinc-800 px-0 py-1">
+          <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1" role="tablist" aria-label="ViewBoard sections">
             {boards.map((b) => {
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
@@ -307,7 +307,7 @@ function ViewBoardDrawerImpl({
                 <UiButton variant="plain" role="tab" aria-selected={isActive}
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b  whitespace-nowrap transition-colors ${
+                  controlSize="regular" className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
  isActive
  ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
  }`}

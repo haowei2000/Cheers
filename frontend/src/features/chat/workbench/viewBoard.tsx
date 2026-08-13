@@ -176,7 +176,7 @@ export function ViewBoardShell({
         <div className="flex-1" />
         {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
         {onRefresh && (
-          <UiButton action="refresh" variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
+          <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${title}`} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
             />
@@ -214,7 +214,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
           <span className="text-compact text-zinc-300">{def.title}</span>
           <div className="flex-1" />
           {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
-          <UiButton action="refresh" variant="plain" onClick={onRefresh} title="Refresh" disabled={loading}>
+          <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${def.title}`} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
             />
