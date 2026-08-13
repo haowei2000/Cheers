@@ -791,7 +791,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_FOUND", "删后再读应 NOT_FOUND: {r}");
+    assert_eq!(r["error"]["code"], "NOT_FOUND", "删后再读应 NOT_FOUND: {r}");
 }
 
 /// 非频道成员的 bot：读写都应 NOT_MEMBER（channel-role 是唯一授权事实源）。
@@ -813,7 +813,10 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER", "非成员读应 NOT_MEMBER: {r}");
+    assert_eq!(
+        r["error"]["code"], "NOT_MEMBER",
+        "非成员读应 NOT_MEMBER: {r}"
+    );
 
     let r = dispatch(
         &db,
@@ -825,7 +828,10 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER", "非成员写应 NOT_MEMBER: {r}");
+    assert_eq!(
+        r["error"]["code"], "NOT_MEMBER",
+        "非成员写应 NOT_MEMBER: {r}"
+    );
 }
 
 /// pin：`.workbench.json` 的 `pinned` 列表 + 文件内容 → load_pinned_context 格式化块。
@@ -877,7 +883,7 @@ async fn m2_dispatch_unknown_resource(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "UNKNOWN_RESOURCE",
+        r["error"]["code"], "UNKNOWN_RESOURCE",
         "未知 verb 应 UNKNOWN_RESOURCE: {r}"
     );
 }
@@ -916,7 +922,7 @@ async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "PERMISSION_DENIED",
+        r["error"]["code"], "PERMISSION_DENIED",
         "member 破坏性 rm 应被拒: {r}"
     );
 }
@@ -965,7 +971,7 @@ async fn m2_user_non_member_rejected(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "NOT_MEMBER",
+        r["error"]["code"], "NOT_MEMBER",
         "非成员经 user 桥应 NOT_MEMBER: {r}"
     );
 }
@@ -995,7 +1001,10 @@ async fn m2_fs_write_size_cap(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "超限写入应被拒: {r}");
+    assert_eq!(
+        r["error"]["code"], "CONTENT_TOO_LARGE",
+        "超限写入应被拒: {r}"
+    );
 
     // 接近上限的文件 + append 推过上限 → 也被拒（enforce_file_size 在 update_content）
     let near = "y".repeat(256 * 1024 - 10);
@@ -1013,7 +1022,10 @@ async fn m2_fs_write_size_cap(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "append 推过上限应被拒: {r}");
+    assert_eq!(
+        r["error"]["code"], "CONTENT_TOO_LARGE",
+        "append 推过上限应被拒: {r}"
+    );
 
     // 正常小写入仍通过
     let r = dispatch(
@@ -1930,7 +1942,7 @@ async fn phasea_usage_read_requires_membership(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false, "非成员应被拒: {r}");
-    assert_eq!(r["code"].as_str(), Some("NOT_MEMBER"));
+    assert_eq!(r["error"]["code"].as_str(), Some("NOT_MEMBER"));
 }
 
 #[sqlx::test]
@@ -2165,7 +2177,7 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     )
     .await;
     assert_eq!(denied["ok"], false);
-    assert_eq!(denied["code"].as_str(), Some("NOT_MEMBER"));
+    assert_eq!(denied["error"]["code"].as_str(), Some("NOT_MEMBER"));
 }
 
 // Regression: promote an "other" session to primary, then close it. The
@@ -2488,7 +2500,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER");
+    assert_eq!(r["error"]["code"], "NOT_MEMBER");
 
     // 空 query 报参数错误。
     let r = dispatch(
@@ -2501,7 +2513,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "INVALID_PARAMS");
+    assert_eq!(r["error"]["code"], "INVALID_PARAMS");
 }
 
 // ── bots-as-members：邀请候选搜索 / readonly 不派发 / bot 自退频道 ─────────────
@@ -2777,7 +2789,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "PERMISSION_DENIED");
+    assert_eq!(r["error"]["code"], "PERMISSION_DENIED");
 
     // bot 正常退出。
     let r = dispatch(
@@ -2808,7 +2820,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER");
+    assert_eq!(r["error"]["code"], "NOT_MEMBER");
 
     // DM 不可退出。
     let dm = Uuid::new_v4();
@@ -2831,7 +2843,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false, "DM 不可退出: {r}");
-    assert_eq!(r["code"], "INVALID_PARAMS");
+    assert_eq!(r["error"]["code"], "INVALID_PARAMS");
 }
 
 // ── 多 agent 协作：is_self / 群体 @ 展开 / @me 反查 ────────────────────────────
