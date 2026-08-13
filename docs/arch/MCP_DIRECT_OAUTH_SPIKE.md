@@ -4,6 +4,9 @@ Status: **implemented harness; macOS matrix pending interactive execution**
 Baseline: `origin/develop@0bc173ce` (merged PR #504)  
 Decision gate: all four Agents and both OAuth modes must pass before Cheers MCP
 may switch from the local stdio sidecar to mandatory direct HTTP.
+Target architecture: **Native HTTP MCP OAuth only**. The product will not ship a
+Connector OAuth proxy, local MCP compatibility mode, static-Bearer workaround,
+or automatic transport downgrade.
 
 ## Question and security boundary
 
@@ -24,6 +27,11 @@ clients must publish a real public HTTPS Client ID Metadata Document. A localhos
 client id, Dynamic Client Registration attempt, missing user-facing authorization
 URL, or private adapter patch is an incompatibility result—not a reason to add a
 test bypass.
+
+After the mandatory HTTP cutover, an incompatible Agent or adapter version is
+rejected with a precise remediation message. It does not fall back to the local
+stdio MCP sidecar. Compatibility must be restored in the Agent's public native
+HTTP OAuth lifecycle before that version can be supported by Cheers.
 
 ## Pinned matrix
 
@@ -166,6 +174,11 @@ running `session/new` alone is not a pass.
 
 If all eight cases pass, open a separate implementation change for mandatory
 HTTP Cheers MCP, trusted canonical endpoint advertisement, remote
-`read_workspace`, and removal of `inbox_stage`/the stdio sidecar. If any case
-fails, keep stdio as default and decide from the evidence whether to add a public
-OAuth lifecycle to that ACP adapter or design a Connector-owned OAuth proxy.
+`read_workspace`, and removal of `inbox_stage`/the stdio sidecar. That cutover
+must fail closed when HTTP capability or OAuth lifecycle requirements are not
+met and must not retain a runtime fallback.
+
+If any case fails before cutover, keep the existing production release unchanged
+while the failing Agent adapter gains a public native HTTP OAuth lifecycle. Do
+not implement a Connector-owned OAuth proxy or productize stdio compatibility.
+After cutover, unsupported Agent versions are refused rather than downgraded.
