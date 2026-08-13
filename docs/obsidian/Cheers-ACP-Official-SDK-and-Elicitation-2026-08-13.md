@@ -81,10 +81,12 @@ Delta frame 在 `ActiveRun` 锁内完成状态计算和 frame 构造，释放锁
 
 ## MCP 边界
 
-- 当前产品继续注入 `cheers-mcp-server` stdio sidecar，loopback token、membership/role 校验和 capability signing 不变。
+- 当前产品只注入 Gateway 提供的 canonical、headerless HTTP MCP URL；Agent 自行完成 OAuth discovery、登录、token 保存和刷新。
+- Connector 的 stdio Cheers MCP sidecar、loopback resource server 和 Agent Bridge `resource_req/resource_res` 已从活跃 runtime 删除；无 OAuth proxy、静态 Bearer 或自动回退。
+- `workspace_req/workspace_res` 继续保留为远程 `read_workspace` 读取 owner Connector 本机文件的最后一跳。
 - `agent-client-protocol-http` 是远程 ACP agent transport，不是 MCP Web transport。
-- MCP Streamable HTTP 是独立技术验证，优先考虑 gateway + `rmcp`，不在本次迁移中启用 `unstable_mcp_over_acp`。
-- 后续验证方案见 [[MCP_STREAMABLE_HTTP_SPIKE]]。
+- 不启用 `unstable_mcp_over_acp`；本地 Connector→Agent 仍使用 ACP stdio。
+- 原生 OAuth 兼容证据与限制见 [[Cheers-Native-HTTP-MCP-ACP-Completion-2026-08-13]]。
 
 ## Web 交互
 

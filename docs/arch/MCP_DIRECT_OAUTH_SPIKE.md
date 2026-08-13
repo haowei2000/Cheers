@@ -1,6 +1,6 @@
 # Direct HTTP MCP OAuth Spike
 
-Status: **implemented harness; macOS matrix pending interactive execution**  
+Status: **native HTTP cutover implemented; lifecycle acceptance matrix incomplete**
 Baseline: `origin/develop@0bc173ce` (merged PR #504)  
 Decision gate: all four Agents and both OAuth modes must pass before Cheers MCP
 may switch from the local stdio sidecar to mandatory direct HTTP.
@@ -160,9 +160,10 @@ running `session/new` alone is not a pass.
   snapshot is in
   [`evidence/MCP_DIRECT_OAUTH_CAPABILITIES_2026-08-13.json`](evidence/MCP_DIRECT_OAUTH_CAPABILITIES_2026-08-13.json).
 - A real isolated Codex 1.2.0 `session/new` accepted the headerless Cheers HTTP
-  `McpServerHttp` and returned a session ID. No OAuth discovery occurred during
-  session creation; that is expected to be evaluated by the full prompt/tool
-  phase and is not an OAuth pass.
+  `McpServerHttp` and returned a session ID. Its startup update then explicitly
+  reported that the user must run `codex mcp login cheers`; it did not surface
+  OAuth discovery through ACP session creation. This is evidence for an explicit,
+  Agent-owned login path, not an OAuth lifecycle pass.
 - A sandboxed Codex ACP 1.1.9 capability attempt could not initialize its SQLite
   state under `~/.codex`; this is classified as `harness_environment_failure`,
   not an OAuth compatibility result. The real matrix needs normal access to each
@@ -173,7 +174,7 @@ running `session/new` alone is not a pass.
 
 ## Decision
 
-The implementation cutover is now in progress: mandatory HTTP Cheers MCP,
+The implementation cutover is complete: mandatory HTTP Cheers MCP,
 trusted canonical endpoint advertisement, transport-neutral remote
 `read_workspace`, and removal of `inbox_stage`/the stdio sidecar. The Connector
 fails closed when the HTTP capability or canonical MCP URL is absent and retains

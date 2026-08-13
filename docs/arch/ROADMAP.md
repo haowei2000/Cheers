@@ -78,7 +78,7 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 
 - **后端补齐**：用核心闭环对照现有 ~32 条路由，补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口。大部分已存在 —— 是补洞，不是新建。
 - **前端（本里程碑真正的工作量）**：打通 `useChatRealtime` 重连 → REST 补齐；流式 bot 回复渲染；mention 选择器（`<@bot>`/`<@user>`）；文件上传/附件 + `<#file>` token；presence；**bot 管理 UI**（注册外接 bot、签发 botToken、查看 config/status）。
-- **connector 通路验证**：一条文档化的 happy-path —— 经 `cheers-mcp-server` *或* `cheers-acp-connector-rs` 接入 Claude/Codex，@提及、流式、断线重连。
+- **connector 通路验证**：一条文档化的 happy-path —— 经 `cheers-acp-connector-rs` 接入 Claude/Codex，Agent 使用 Gateway 原生 HTTP MCP + OAuth，覆盖 @提及、流式与断线重连。
 - 可选：R6 delta 热路径优化（M0 测试就位后才安全）—— 非性能瓶颈则延后。
 
 **验收门**：新用户能 建工作区/频道 → 邀请 → 发带 mention+文件的消息 → 接入外接 agent → @它 → 看它流式回复 → 刷新后看到完整历史。这就是可交付切片。
@@ -123,7 +123,7 @@ R13 文档对齐（§2.6 差异表）。R12（UUID 列迁移）长期 / 可选�
 
 connector ↔ ACP agent 的默认 transport 已迁到官方 Rust SDK。详见 [ACP_RUST_SDK_ADOPTION.md](./ACP_RUST_SDK_ADOPTION.md)。
 
-- **0.1.37（已实现，2026-08-13）**：`agent-client-protocol = "2.0.0"`、stable wire v1；official 默认，legacy 作为一个版本的环境变量回滚路径；stdio agent 和 Cheers MCP sidecar 保持不变。
+- **0.1.37（已实现，2026-08-13）**：`agent-client-protocol = "2.0.0"`、stable wire v1；official 默认，legacy 作为一个版本的环境变量回滚路径；ACP Agent 仍是本地 stdio 子进程，但 Cheers 工具面已强制切换为 Gateway 原生 HTTP MCP + OAuth，stdio MCP sidecar 不再注入。
 - **0.1.38（验收门后）**：至少观察 7 天并通过 Codex/Claude × macOS/Linux smoke matrix、无未解决 P0/P1 后，删除手写 JSON-RPC/framing/pending map 和 legacy selector。
 
 ---

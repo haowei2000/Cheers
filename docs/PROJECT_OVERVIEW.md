@@ -13,10 +13,11 @@ conversation in real time alongside everyone else's messages.
   external AI agents collaborate in the same space. Every bot reply carries an
   expandable *Agent steps* trace.
 - **External-agent-first** — there is no built-in LLM runtime. Connect an
-  ACP-capable agent (OpenCode, Claude, Codex) through the standard bridge
-  (`packages/cheers-mcp-server` or `packages/cheers-acp-connector-rs`) and
-  `@`-mention it. The agent keeps its own context; the platform never owns the
-  agent runtime.
+  ACP-capable agent (OpenCode, Claude, Codex) through the Rust connector
+  (`packages/cheers-acp-connector-rs`) and `@`-mention it. The local Connector
+  speaks ACP over stdio; the Agent reaches Cheers tools through the Gateway's
+  native HTTP MCP endpoint and OAuth. The agent keeps its own context; the
+  platform never owns the agent runtime.
 - **Per-message model & reasoning controls** — the composer steers each individual
   message: agent mode, model, reasoning effort, and fast mode.
 - **File-aware conversations** — office documents (docx / pdf / xlsx) are converted

@@ -1737,7 +1737,6 @@ impl RuntimeContext {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
@@ -1855,15 +1854,12 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let (final_text, file_ids) = {
+                let final_text = {
                     let mut guard = run.lock().await;
                     // Move the accumulated text out (turn is over; the run is about
                     // to be dropped from the shared maps below) so the whole streamed
                     // response isn't deep-cloned just to hand it to the Done frame.
-                    (
-                        std::mem::take(&mut guard.text),
-                        guard.created_file_ids.clone(),
-                    )
+                    std::mem::take(&mut guard.text)
                 };
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
@@ -1881,7 +1877,7 @@ impl RuntimeContext {
                             v: BRIDGE_PROTOCOL_VERSION,
                             client_msg_id: Uuid::new_v4().to_string(),
                             msg_id: task.msg_id.clone(),
-                            file_ids,
+                            file_ids: Vec::new(),
                             mention_ids: Vec::new(),
                             content: Some(final_text),
                             provider_session_key: Some(task.provider_session_key.clone()),
@@ -2703,10 +2699,6 @@ struct ActiveRun {
     delta_seq: u64,
     trace_seq: u64,
     text: String,
-    /// File ids the agent created this turn via inbox_deliver / inbox_stage
-    /// (channel.files.create / .stage). Attached to the Done reply so they surface
-    /// as chat attachments — a staged file otherwise has no UI entry point to realize.
-    created_file_ids: Vec<String>,
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
@@ -2907,7 +2899,6 @@ mod tests {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: None,
