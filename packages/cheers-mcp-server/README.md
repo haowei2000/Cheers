@@ -85,27 +85,27 @@ to the remote HTTP MCP endpoint rather than this connector-owned stdio process.
 ## Remote HTTP endpoint
 
 The Cheers gateway exposes the modern stateless endpoint at `POST /mcp` for
-protocol `2026-07-28`. It implements `server/discover`, Resources, and the
-remote-safe Tools catalog/call path; every successful result has `resultType`,
-`ttlMs`, and `cacheScope`. There is no `initialize` handshake or server-side MCP
-session. The frozen OAuth scope and Tool mapping is documented in
+protocol `2026-07-28`. It implements `server/discover`, Resources, Tools,
+Prompts, Completion, request-scoped Progress, and multimodal content; every
+successful result has `resultType`, `ttlMs`, and `cacheScope`. There is no
+`initialize` handshake or server-side MCP session. The frozen OAuth scope and
+Tool mapping is documented in
 `docs/arch/MCP_HTTP_OAUTH_TOOL_SCOPE.md`.
 
-During migration, first-party callers can exchange their Bot credential at
-`POST /api/v1/mcp/token` for a ten-minute, explicitly scoped access token. The
-long-lived Bot token is not accepted by `/mcp`. Access-token validation also
-checks the current Bot credential hash and disabled state, so Bot-token rotation
-or disabling the Bot invalidates an outstanding MCP token immediately. This
-exchange is transitional and is not a substitute for the frozen OAuth 2.1
-protected-resource flow.
+Unattended Agent terminals authenticate at `POST /oauth/token` with their
+installation id and installation credential. Interactive public clients use
+Authorization Code + PKCE S256 and Client ID Metadata Documents. Every MCP
+request revalidates the active installation and current credential hash, so
+rotation, revocation, or disabling the Bot invalidates outstanding access tokens
+immediately. Bot credentials are not accepted by either `/oauth/token` or `/mcp`.
 
 RFC 9728 metadata is available at
 `/.well-known/oauth-protected-resource` (and the path-derived `/mcp` alias).
 Production must set `MCP_PUBLIC_URL=https://<public-host>/mcp`; this exact value
 is returned as `resource` and enforced as the access-token audience.
 
-`CHEERS_MCP_CONFORMANCE_FIXTURES=1` enables the exact `test://` fixtures used by
-the official Resources conformance runner. This switch is test-only and must
+`CHEERS_MCP_CONFORMANCE_FIXTURES=1` enables the exact fixtures used by the
+official full server conformance runner. This switch is test-only and must
 remain unset in production. The endpoint remains authenticated when it is on.
 
 ## Security boundary

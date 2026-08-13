@@ -553,6 +553,19 @@ impl Config {
             parsed.origin().ascii_serialization()
         )
     }
+
+    /// Canonical OAuth issuer used for MCP tokens. Cheers is the authorization
+    /// server by default; deployments may advertise a separate issuer only
+    /// when that issuer is also configured to mint Cheers-audience tokens.
+    pub fn mcp_authorization_issuer(&self) -> String {
+        self.mcp_authorization_server_issuer
+            .clone()
+            .unwrap_or_else(|| {
+                let parsed =
+                    url::Url::parse(&self.mcp_resource_url()).expect("validated MCP resource URL");
+                parsed.origin().ascii_serialization()
+            })
+    }
 }
 
 fn validate_mcp_url(name: &str, value: &str, require_mcp_path: bool) {
