@@ -96,6 +96,68 @@ Delta frame 在 `ActiveRun` 锁内完成状态计算和 frame 构造，释放锁
 - URL card 在用户点击 Continue 后先记录 consent，再导航到完整目标 URL。
 - `elicitation/complete`、timeout 和 connector cancellation 会把卡片更新为终态。
 
+## Agent 私有扩展隔离与 Web 认证选择
+
+提交 `b6edff79` 将 Codex/Claude 私有行为从 Gateway 和主 runtime 中移到 Connector 的编译期扩展层，目标不是消灭厂商差异，而是把差异限制在一个只读、不可越权的边界内。
+
+### PresentationDecoder 与 normalized DTO
+
+- Bridge protocol 定义共享的 `NormalizedPresentation` DTO，只包含 `reason`、`command`、`cwd`、`tool_name` 等展示字段。
+- Connector 的 `PresentationDecoder` 读取可选的 Agent 私有 metadata：目前处理 Codex `_meta.codex.params`、Codex tool name 和 Claude tool name。
+- 多个 decoder 的结果按字段合并，扩展只能增加展示信息，不能改变 ACP payload、权限判定、工具执行或 session 状态。
+- Connector 在 permission/tool trace 跨越 Bridge 前生成 `normalized_presentation`。
+- Gateway 的 `tool_presentation` 只消费协议通用字段和 normalized DTO；已经删除 Codex/Claude metadata fallback。因此新增 Agent 适配只修改 Connector extension registry，不再把厂商判断扩散到 Gateway。
+
+该边界可概括为：
+
+```text
+Agent vendor metadata
+        ↓
+Connector PresentationDecoder
+        ↓
+NormalizedPresentation (Bridge DTO)
+        ↓
+Gateway generic presentation
+        ↓
+Web
+```
+
+### AuthMethodPolicy 不再替用户做决定
+
+- `AuthMethodPolicy` 只对 Agent `initialize.authMethods` 排序并标记推荐项。
+- Codex policy 在存在 `CODEX_API_KEY` / `OPENAI_API_KEY` 时推荐 API key，否则推荐 device code，再考虑 browser login。
+- 其他 Agent 没有专用 policy 时保持其 wire order，不再套用 Connector 中的通用猜测。
+- policy 不拥有 credential，不调用 `authenticate`，也不能修改 Agent 声明的方法。
+
+最终选择权已经移到 Web：
+
+1. Connector 将 Agent 声明的全部 auth methods 写入 `auth_required` Bridge frame。
+2. Gateway 持久化方法列表；Web 由 bot owner 明确选择一种方法。
+3. ACK DTO 返回 `method_id`。Gateway 根据已持久化列表校验一次，Connector 根据本次 pending request 的 allowlist 再校验一次。
+4. official/legacy runtime 的 `authenticate` 都要求显式 `method_id`；不再静默选择第一个方法，也不接受未声明的方法。
+5. 若 Agent 没有声明 `authMethods`，流程明确失败，不伪造 `default` 登录方式。
+6. 所选方法如果在认证期间发出 URL Elicitation，仍通过既有可信 request route 返回发起用户；provider token 和 authorization code 不进入 Gateway。
+
+这样区分了三个职责：Agent 声明“能怎么登录”，Connector policy 提供“推荐顺序”，用户在 Web 决定“本次用哪一种”。
+
+### 本轮验证
+
+- Connector：`cargo fmt --check`、134 个单元测试、`cargo check` 通过。
+- Gateway：完整 `cargo test` 通过；normalized presentation 定向测试与 auth method allowlist 测试通过。
+- Frontend：TypeScript typecheck、`AgentInteractionCard` 测试和 production/PWA build 通过。
+- Gateway domain/gateway 源码中不再出现 Codex/Claude 私有 metadata 解析。
+- 本轮继续属于尚未发布的 Connector `0.1.37`，没有提前占用计划中删除 legacy transport 的 `0.1.38`。
+
+### 关键文件
+
+- `packages/cheers-acp-connector-rs/src/extensions/mod.rs`
+- `packages/cheers-acp-connector-rs/bridge-protocol/src/lib.rs`
+- `packages/cheers-acp-connector-rs/src/bridge_runtime/prompt.rs`
+- `packages/cheers-acp-connector-rs/src/bridge_runtime/auth.rs`
+- `server/src/domain/tool_presentation.rs`
+- `server/src/api/approval.rs`
+- `frontend/src/features/chat/AuthRequiredCard.tsx`
+
 ## 文档与代码注释
 
 - Rust 模块使用 `//!` 描述模块职责、边界和安全假设。
