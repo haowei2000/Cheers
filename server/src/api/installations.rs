@@ -29,7 +29,9 @@ pub async fn list_installations(
     let rows = sqlx::query(
         "SELECT installation_id, device_name, agent_type, credential_prefix, status,
                 connector_version, capabilities, last_seen_at, connected_at,
-                credential_rotated_at, created_at, updated_at, revoked_at
+                credential_rotated_at, created_at, updated_at, revoked_at,
+                mcp_connection_state, mcp_state_updated_at, mcp_connected_at,
+                mcp_last_seen_at
          FROM terminal_installations
          WHERE bot_id = $1
          ORDER BY created_at DESC",
@@ -41,10 +43,12 @@ pub async fn list_installations(
     let installations = rows.into_iter().map(|row| {
         let status: String = row.try_get("status").unwrap_or_else(|_| "standby".into());
         let revoked_at = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at").ok().flatten();
+        let agent_type = row.try_get::<String, _>("agent_type").unwrap_or_else(|_| "generic".into());
         json!({
             "installation_id": row.try_get::<String, _>("installation_id").unwrap_or_default(),
             "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
-            "agent_type": row.try_get::<String, _>("agent_type").unwrap_or_else(|_| "generic".into()),
+            "agent_type": agent_type,
+            "agent_profile": crate::domain::agent_profile::profile(&agent_type),
             "credential_prefix": row.try_get::<String, _>("credential_prefix").unwrap_or_default(),
             "status": status,
             "online": bot_online && status == "active" && revoked_at.is_none(),
@@ -56,6 +60,10 @@ pub async fn list_installations(
             "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
             "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").ok(),
             "revoked_at": revoked_at,
+            "mcp_connection_state": if revoked_at.is_some() { "revoked".to_string() } else { row.try_get::<String, _>("mcp_connection_state").unwrap_or_else(|_| "unconfigured".into()) },
+            "mcp_state_updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("mcp_state_updated_at").ok(),
+            "mcp_connected_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_connected_at").ok().flatten(),
+            "mcp_last_seen_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_last_seen_at").ok().flatten(),
         })
     }).collect::<Vec<_>>();
     Ok(Json(
@@ -121,7 +129,9 @@ pub async fn rotate_installation_credential(
     let row = sqlx::query(
         "UPDATE terminal_installations
          SET credential_hash = $1, credential_prefix = $2,
-             credential_rotated_at = NOW(), updated_at = NOW()
+             credential_rotated_at = NOW(), updated_at = NOW(),
+             mcp_connection_state = 'unconfigured', mcp_state_updated_at = NOW(),
+             mcp_connected_at = NULL, mcp_last_seen_at = NULL
          WHERE installation_id = $3 AND bot_id = $4 AND revoked_at IS NULL
            AND status IN ('active', 'standby') AND credential_hash IS NOT NULL
          RETURNING status",
@@ -197,7 +207,8 @@ pub async fn revoke_installation(
     };
     sqlx::query(
         "UPDATE terminal_installations
-         SET revoked_at = COALESCE(revoked_at, NOW()), status = 'standby', updated_at = NOW()
+         SET revoked_at = COALESCE(revoked_at, NOW()), status = 'standby',
+             mcp_connection_state = 'revoked', mcp_state_updated_at = NOW(), updated_at = NOW()
          WHERE installation_id = $1 AND bot_id = $2",
     )
     .bind(&installation_id)

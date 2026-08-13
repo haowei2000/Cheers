@@ -320,6 +320,21 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
                 </span>
               )}
             />
+            <div className="mx-2 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-minimal text-zinc-500">
+              <span className={cn(
+                item.mcp_connection_state === "connected" ? "text-emerald-400" :
+                  item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed" ? "text-amber-400" : "text-zinc-400"
+              )}>MCP: {item.mcp_connection_state.replaceAll("_", " ")}</span>
+              {item.mcp_last_seen_at && <span>Last MCP request {new Date(item.mcp_last_seen_at).toLocaleString()}</span>}
+              {item.agent_profile?.verified_version_range && (
+                <span>Verified: {item.agent_profile.verified_version_range}</span>
+              )}
+            </div>
+            {item.mcp_connection_state !== "connected" && item.agent_profile?.login_hint && (
+              <p className="mx-2 mb-2 rounded-sm bg-zinc-950/50 px-2 py-1.5 text-compact text-zinc-400">
+                {item.agent_profile.login_hint}
+              </p>
+            )}
             {!item.revoked_at && (
               <div className="flex flex-wrap gap-2 px-2 py-2">
                 {item.status === "standby" && (

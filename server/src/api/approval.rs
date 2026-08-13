@@ -866,6 +866,34 @@ pub async fn resolve_elicitation(
     {
         return Err(AppError::Conflict("elicitation already resolved".into()));
     }
+    if pending
+        .content_data
+        .get("interaction_kind")
+        .and_then(Value::as_str)
+        == Some("mcp_oauth")
+    {
+        if let Some(installation_id) = pending
+            .content_data
+            .get("installation_id")
+            .and_then(Value::as_str)
+        {
+            let next_state = if action == "accept" {
+                "authorizing"
+            } else {
+                "unconfigured"
+            };
+            sqlx::query(
+                "UPDATE terminal_installations
+                 SET mcp_connection_state = $1, mcp_state_updated_at = NOW()
+                 WHERE installation_id = $2 AND revoked_at IS NULL
+                   AND mcp_connection_state <> 'connected'",
+            )
+            .bind(next_state)
+            .bind(installation_id)
+            .execute(&state.db)
+            .await?;
+        }
+    }
     let frame = crate::gateway::bridge_frames::elicitation_resolution_frame(
         &request_id,
         &pending.msg_id.to_string(),

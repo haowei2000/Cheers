@@ -1981,6 +1981,7 @@ async fn handle_elicitation_request_frame(
     let content_data = json!({
         "kind": "agent_bridge_elicitation",
         "interaction_kind": interaction_kind,
+        "installation_id": bot.installation_id,
         "request_id": request_id,
         "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
         "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
@@ -2026,6 +2027,21 @@ async fn handle_elicitation_request_frame(
     tx.commit()
         .await
         .map_err(crate::gateway::log_db_err("elicitation: commit"))?;
+
+    if interaction_kind == "mcp_oauth" {
+        sqlx::query(
+            "UPDATE terminal_installations
+             SET mcp_connection_state = 'action_required', mcp_state_updated_at = NOW()
+             WHERE installation_id = $1 AND revoked_at IS NULL
+               AND mcp_connection_state <> 'connected'",
+        )
+        .bind(bot.installation_id.to_string())
+        .execute(&state.db)
+        .await
+        .map_err(crate::gateway::log_db_err(
+            "elicitation: mark MCP action required",
+        ))?;
+    }
 
     state
         .fanout
@@ -2126,6 +2142,17 @@ async fn handle_auth_required_frame(
         .and_then(|raw| raw.parse().ok())
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
+    let agent_type = sqlx::query_scalar::<_, String>(
+        "SELECT agent_type FROM terminal_installations WHERE installation_id = $1",
+    )
+    .bind(bot.installation_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .map_err(crate::gateway::log_db_err(
+        "auth_required: load agent profile",
+    ))?
+    .unwrap_or_else(|| "generic".to_string());
+    let agent_profile = crate::domain::agent_profile::profile(&agent_type);
 
     let method_id = frame
         .get("method_id")
@@ -2164,6 +2191,7 @@ async fn handle_auth_required_frame(
         "description": description,
         "link": frame.get("link").cloned().unwrap_or(Value::Null),
         "auth_type": frame.get("auth_type").cloned().unwrap_or(Value::Null),
+        "agent_profile": agent_profile,
         "resolved": false,
         "bot_owner_id": bot.owner_id.clone(),
     });

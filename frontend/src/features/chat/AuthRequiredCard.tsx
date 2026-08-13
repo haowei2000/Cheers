@@ -105,7 +105,14 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
             </a>
           ) : (
             <div className="mt-2 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact leading-relaxed text-zinc-400">
-              {envAuth ? (
+              {data.agent_profile?.login_hint ? (
+                <>
+                  <p>{data.agent_profile.login_hint}</p>
+                  {data.agent_profile.verified_version_range && (
+                    <p className="mt-1 text-zinc-500">Verified with {data.agent_profile.verified_version_range}.</p>
+                  )}
+                </>
+              ) : envAuth ? (
                 <>
                   No login URL for this method — set{" "}
                   <code className="text-zinc-300">ANTHROPIC_API_KEY</code> /{" "}

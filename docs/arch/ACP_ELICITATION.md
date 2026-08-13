@@ -54,4 +54,25 @@ change the negotiated `ProtocolVersion::V1` or enable ACP v2.
   Connector. Their native CLI login requirement remains an `auth_required`
   diagnostic card with explicit retry/cancel controls.
 
+## Web interaction and MCP connection state
+
+The Web client renders both `elicitation` and `auth_required` through the
+single `AgentInteractionCard` boundary. Their wire DTOs and resolution APIs stay
+separate: elicitation is a resolvable ACP request, while `auth_required` is a
+runtime diagnostic. This keeps one visual integration point without pretending
+the protocols are interchangeable.
+
+Native HTTP MCP connectivity belongs to `terminal_installations`, not to a chat
+card. Its state progresses through `unconfigured`, `action_required`,
+`authorizing`, `connected`, `refresh_failed`, or `revoked`. An accepted card or
+issued token can reach only `authorizing`; only a recognized MCP method handled
+by Gateway after installation-bound token validation establishes `connected`.
+Gateway records first connection and last successful request timestamps.
+
+Agent profiles are presentation metadata only. They may provide a native login
+hint and, once the lifecycle matrix is complete, a verified version range. They
+are returned to Web surfaces but never select Connector or `BridgeRuntime`
+behavior. Unknown and not-yet-verified versions therefore remain explicit
+instead of acquiring an optimistic compatibility claim.
+
 Reference: [ACP v1 Elicitation](https://agentclientprotocol.com/protocol/v1/elicitation).

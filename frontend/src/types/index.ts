@@ -198,6 +198,12 @@ export interface AuthRequiredContentData {
   resolved_at?: string;
   resolved_kind?: string;
   chosen_action?: "retry" | "cancel" | string;
+  agent_profile?: {
+    id: string;
+    display_name: string;
+    login_hint: string;
+    verified_version_range?: string | null;
+  };
 }
 
 /** ACP v1 form or URL elicitation rendered as an interactive channel card. */
