@@ -1,3 +1,9 @@
+/** @file
+ * TypeScript-AST audit for use of shared Cheers design-system primitives.
+ * Separates production, primitive, and development-only findings so CI can
+ * enforce policy without treating approved native controls as regressions.
+ */
+
 import path from "node:path";
 
 const RAW_TAGS = ["button", "input", "select", "textarea"];
@@ -30,6 +36,7 @@ const NON_STANDARD_RADIUS = new Set([
   "rounded-2xl",
 ]);
 
+/** Create a zeroed count record for each audited native form-control tag. */
 export function emptyNativeCounts() {
   return Object.fromEntries(RAW_TAGS.map((tag) => [tag, 0]));
 }
@@ -115,6 +122,7 @@ function isPrimitiveFile(file) {
   return file.includes(`${path.sep}components${path.sep}ui${path.sep}`);
 }
 
+/** Audit TSX source files and return counts plus source-located violations. */
 export function auditSources(files, ts, policy) {
   const result = {
     native: {
@@ -338,6 +346,7 @@ export function auditSources(files, ts, policy) {
   return result;
 }
 
+/** Convert an audit result into policy failures suitable for CI reporting. */
 export function enforceAudit(result, policy) {
   const errors = [];
   for (const scope of ["production", "business"]) {

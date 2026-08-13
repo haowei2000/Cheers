@@ -1,3 +1,5 @@
+/** @file Group reply relationships and decide when adjacent messages may share chrome. */
+
 import type { Message, PermissionContentData } from "@/types";
 
 /** Keep compact message grouping local to a short, uninterrupted exchange.
@@ -6,6 +8,7 @@ import type { Message, PermissionContentData } from "@/types";
 export const CONSECUTIVE_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
 export const DISCUSSION_CONSECUTIVE_WINDOW_MS = 30 * 60 * 1000;
 
+/** Return whether adjacent chat messages can visually share one author header. */
 export function isVisuallyConsecutive(
   previous: Message,
   current: Message,
@@ -68,12 +71,14 @@ export function isFoldedPermission(m: Message): boolean {
   return typeof source === "string" && source.length > 0;
 }
 
+/** Return the message ID whose agent steps own a folded permission card. */
 export function permissionSourceId(m: Message): string | null {
   const source = (m.content_data as PermissionContentData | null | undefined)
     ?.source_msg_id;
   return typeof source === "string" && source.length > 0 ? source : null;
 }
 
+/** Read the originating agent session ID from a message's structured payload. */
 export function messageSessionId(m: Message): string | null {
   const data = m.content_data as Record<string, unknown> | null | undefined;
   const sid = data?.session_id;

@@ -1,3 +1,6 @@
+/** @file Helpers for inserting mention tokens into composer drafts. */
+
+/** Escape user-visible mention labels before placing them in a regular expression. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

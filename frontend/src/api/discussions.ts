@@ -1,3 +1,5 @@
+/** @file Typed API client for listing discussion roots and loading thread replies. */
+
 import { apiJson } from "./client";
 import type { Message } from "@/types";
 
@@ -37,6 +39,7 @@ export interface DiscussionDetailResponse {
   meta: { has_more_before: boolean; limit: number };
 }
 
+/** List discussion roots, optionally filtering text and continuing from a cursor. */
 export async function listDiscussions(
   channelId: string,
   opts: { cursor?: string; limit?: number; q?: string } = {},
@@ -49,6 +52,7 @@ export async function listDiscussions(
   return apiJson(`/channels/${channelId}/discussions${suffix}`);
 }
 
+/** Load a discussion root and a backwards-paginated window of its replies. */
 export async function getDiscussion(
   channelId: string,
   rootMessageId: string,
