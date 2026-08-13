@@ -191,6 +191,10 @@ pub async fn consume_login_2fa_email_code(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    reason = "email masking tests stay beside the helper while passkey persistence follows"
+)]
 mod email_hint_tests {
     use super::mask_email;
 

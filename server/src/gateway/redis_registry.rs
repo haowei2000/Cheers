@@ -333,8 +333,7 @@ async fn do_forward(
     subject: String,
     tx: mpsc::Sender<Value>,
 ) -> anyhow::Result<()> {
-    let conn = client.get_async_connection().await?;
-    let mut pubsub = conn.into_pubsub();
+    let mut pubsub = client.get_async_pubsub().await?;
     pubsub.subscribe(&subject).await?;
 
     let mut stream = pubsub.on_message();

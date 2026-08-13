@@ -566,10 +566,7 @@ pub async fn authorize(
     }
     let user_id = Uuid::new_v4().to_string();
     let identity_id = Uuid::new_v4().to_string();
-    let username = format!(
-        "apple_{}",
-        Uuid::new_v4().simple().to_string()[..12].to_string()
-    );
+    let username = format!("apple_{}", &Uuid::new_v4().simple().to_string()[..12]);
     let name = display_name(&request);
     let mut tx = state.db.begin().await?;
     sqlx::query(

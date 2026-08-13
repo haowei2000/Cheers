@@ -557,7 +557,7 @@ fn legacy_event_type(presentation: &serde_json::Map<String, Value>) -> Option<To
     let renderer = presentation.get("renderer")?.as_str()?;
     let family = presentation.get("family").and_then(Value::as_str);
     let operation = presentation.get("operation").and_then(Value::as_str);
-    ToolEventType::from_wire_name(renderer).or_else(|| match (renderer, family, operation) {
+    ToolEventType::from_wire_name(renderer).or(match (renderer, family, operation) {
         ("diff", Some("file"), _) => Some(ToolEventType::FileEdit),
         ("diff", Some("git"), _) => Some(ToolEventType::GitDiff),
         ("terminal", _, _) => Some(ToolEventType::ShellCommand),

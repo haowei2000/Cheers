@@ -13,10 +13,11 @@ use sqlx::PgPool;
 use crate::errors::AppError;
 
 /// What the transcriber does in this channel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TranscriptionMode {
     /// No transcription is produced. Rooms are audio-only.
+    #[default]
     Off,
     /// Transcription is on but requires each participant's explicit consent
     /// before their mic feeds the STT worker.
@@ -27,27 +28,16 @@ pub enum TranscriptionMode {
 }
 
 /// How participant consent for transcription is collected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConsentMode {
     /// Consent is not collected (transcription forced off or always-on without
     /// gating). Join proceeds directly to mic publish.
+    #[default]
     None,
     /// Each participant must accept a disclosure before their mic publishes;
     /// until they do, join completes listen-only. Withdrawing later mutes them.
     Explicit,
-}
-
-impl Default for TranscriptionMode {
-    fn default() -> Self {
-        TranscriptionMode::Off
-    }
-}
-
-impl Default for ConsentMode {
-    fn default() -> Self {
-        ConsentMode::None
-    }
 }
 
 /// The full, typed shape of `channels.voice_config`. Defaults are chosen so a
@@ -162,8 +152,10 @@ mod tests {
 
     #[test]
     fn rejects_unbounded_operational_limits() {
-        let mut config = VoiceConfig::default();
-        config.participant_cap = Some(501);
+        let mut config = VoiceConfig {
+            participant_cap: Some(501),
+            ..VoiceConfig::default()
+        };
         assert!(config.validate().is_err());
 
         config.participant_cap = Some(50);
