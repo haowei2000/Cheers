@@ -558,7 +558,7 @@ pub async fn install_script(
 }
 
 /// Allowlisted release-asset names the gateway will proxy — exactly the
-/// 2 products × 2 OS × 2 arches the release-connector workflow publishes,
+/// connector binary for 2 OS × 2 arches published by the release workflow,
 /// plus the ed25519-signed sha256 manifest pair the connector self-updater
 /// verifies before swapping binaries. Anything else 404s, so the endpoint
 /// can't be used as an open proxy.
@@ -569,16 +569,27 @@ fn is_known_connector_asset(name: &str) -> bool {
     ) {
         return true;
     }
-    let Some(rest) = name
-        .strip_prefix("cce-acp-connector-")
-        .or_else(|| name.strip_prefix("cheers-mcp-server-"))
-    else {
+    let Some(rest) = name.strip_prefix("cce-acp-connector-") else {
         return false;
     };
     matches!(
         rest,
         "darwin-amd64" | "darwin-arm64" | "linux-amd64" | "linux-arm64"
     )
+}
+
+#[cfg(test)]
+mod connector_asset_tests {
+    use super::is_known_connector_asset;
+
+    /// Release proxy exposes only the four Connector targets and signed
+    /// manifests; the retired stdio MCP companion must stay unreachable.
+    #[test]
+    fn allowlist_excludes_retired_mcp_sidecar() {
+        assert!(is_known_connector_asset("cce-acp-connector-darwin-arm64"));
+        assert!(is_known_connector_asset("connector-manifest.json"));
+        assert!(!is_known_connector_asset("cheers-mcp-server-darwin-arm64"));
+    }
 }
 
 static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();

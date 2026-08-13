@@ -12,7 +12,6 @@
     ],
     "file_upload": false,
     "latest_connector_version": "0.1.27",
-    "resource_req": true,
     "resume": "ack_only",
     "runtime_session_control": true,
     "send_ack": true,

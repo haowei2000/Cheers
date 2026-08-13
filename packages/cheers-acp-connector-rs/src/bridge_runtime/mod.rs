@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -30,7 +29,6 @@ const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
 /// Max changed paths carried in a single `workspace_event`.
 const WATCH_PATHS_CAP: usize = 50;
-
 use crate::acp_runtime::AcpAdapterKind;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
@@ -46,7 +44,6 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
 use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
@@ -112,9 +109,16 @@ impl AccountRuntime {
             adapter_tx,
         );
         let initialize_response = adapter.start().await?;
+        if !adapter.supports_mcp_http() {
+            // Capability rejection happens after spawning and initializing the
+            // child, so stop it explicitly before failing the account runtime.
+            let _ = adapter.stop().await;
+            return Err(anyhow!(
+                "ACP agent is incompatible with Cheers: native HTTP MCP capability is required; upgrade the agent adapter (stdio fallback is not supported)"
+            ));
+        }
         let adapter = Arc::new(Mutex::new(adapter));
 
-        let (loopback, mut loopback_rx) = start_loopback().await?;
         let bridge_ready = bridge_ready_from_initialize(&initialize_response, &self.config.policy);
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
@@ -143,6 +147,17 @@ impl AccountRuntime {
                 .maybe_start(latest, self.config.control_url.clone());
         }
         let initial_connector_config = bridge.control_hello().connector_config.clone();
+        let mcp_url = bridge
+            .control_hello()
+            .mcp_url
+            .clone()
+            .filter(|value| !value.trim().is_empty());
+        let Some(mcp_url) = mcp_url else {
+            let _ = adapter.lock().await.stop().await;
+            return Err(anyhow!(
+                "Gateway did not advertise a canonical Cheers HTTP MCP URL; refusing to derive one or fall back to stdio"
+            ));
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -183,21 +198,6 @@ impl AccountRuntime {
                 }
             });
         }
-        {
-            let runtime_tx = runtime_tx.clone();
-            tokio::spawn(async move {
-                while let Some(request) = loopback_rx.recv().await {
-                    if runtime_tx
-                        .send(RuntimeInput::Loopback(request))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            });
-        }
-
         let mut shared = SharedRuntimeState::default();
         shared.channel_names = channel_names;
         let shared = Arc::new(Mutex::new(shared));
@@ -206,9 +206,9 @@ impl AccountRuntime {
             account_id: self.account_id,
             config: self.config,
             identity,
+            mcp_url,
             state: self.state,
             adapter,
-            loopback,
             io,
             shared,
             runtime_tx: runtime_tx.clone(),
@@ -514,9 +514,12 @@ struct RuntimeContext {
     /// Who this connector is signed in as (from the control hello); injected
     /// into every prompt so the agent knows its own @-handle.
     identity: BotIdentity,
+    /// Gateway-owned canonical Cheers HTTP MCP endpoint from the authenticated
+    /// control hello. It is injected verbatim; the connector never derives an
+    /// OAuth audience from WebSocket URLs or proxy headers.
+    mcp_url: String,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<AcpAdapterKind>>,
-    loopback: LoopbackHandle,
     io: BridgeIoHandle,
     shared: Arc<Mutex<SharedRuntimeState>>,
     /// Sender into the main event loop — used to enqueue fence events (EnableStreaming)
@@ -540,44 +543,15 @@ impl RuntimeContext {
                 RuntimeInput::Adapter(event) => {
                     self.clone().handle_adapter_event(event).await?;
                 }
-                RuntimeInput::Loopback(request) => {
-                    let runtime = self.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = runtime.handle_loopback_request(request).await {
-                            tracing::warn!("loopback request failed: {err}");
-                        }
-                    });
-                }
                 RuntimeInput::SocketClosed(stream) => {
-                    // Fail all pending loopback requests immediately so their tasks don't
-                    // block until the timeout when the data WS is gone.
-                    let _ = self
-                        .runtime_tx
-                        .send(RuntimeInput::AbortPendingResources)
-                        .await;
                     // Drop every fs watcher: the data WS they'd emit workspace_event
                     // over is gone. Clearing aborts each watch_loop task (AbortOnDrop).
                     self.shared.lock().await.watches.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream closed"));
                 }
                 RuntimeInput::SocketError { stream, error } => {
-                    let _ = self
-                        .runtime_tx
-                        .send(RuntimeInput::AbortPendingResources)
-                        .await;
                     self.shared.lock().await.watches.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
-                }
-                RuntimeInput::AbortPendingResources => {
-                    let mut shared = self.shared.lock().await;
-                    for tx in shared.pending_resources.drain().map(|(_, tx)| tx) {
-                        let _ = tx.send(LoopbackResponse {
-                            ok: false,
-                            data: None,
-                            error: Some("data stream closed before resource response".to_string()),
-                            code: Some("DATA_STREAM_CLOSED".to_string()),
-                        });
-                    }
                 }
             }
         }
@@ -761,32 +735,6 @@ impl RuntimeContext {
     async fn handle_data(self: Arc<Self>, frame: DataInbound) -> anyhow::Result<()> {
         let ack_was_pending = self.io.resolve_data_ack(&frame).await;
         match frame {
-            DataInbound::ResourceRes { response } => {
-                let matched = {
-                    let maybe_tx = self
-                        .shared
-                        .lock()
-                        .await
-                        .pending_resources
-                        .remove(&response.req_id);
-                    if let Some(tx) = maybe_tx {
-                        let _ = tx.send(LoopbackResponse {
-                            ok: response.ok,
-                            data: response.data,
-                            error: response.error,
-                            code: response.code,
-                        });
-                        true
-                    } else {
-                        false
-                    }
-                };
-                tracing::debug!(
-                    req_id = %response.req_id,
-                    matched,
-                    "loopback resource_res received"
-                );
-            }
             DataInbound::SendAck {
                 permission_resolution,
                 ..
@@ -800,22 +748,6 @@ impl RuntimeContext {
                         }
                     }
                 }
-            }
-            DataInbound::RealizeFile {
-                file_id,
-                remote_ref,
-                channel_id,
-                roots,
-            } => {
-                let runtime = self.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = runtime
-                        .handle_realize_file(file_id, remote_ref, channel_id, &roots)
-                        .await
-                    {
-                        tracing::warn!("realize_file failed: {err}");
-                    }
-                });
             }
             DataInbound::WorkspaceReq {
                 req_id,
@@ -885,144 +817,15 @@ impl RuntimeContext {
         Ok(())
     }
 
-    async fn handle_realize_file(
-        &self,
-        file_id: String,
-        remote_ref: String,
-        channel_id: String,
-        session_roots: &[String],
-    ) -> anyhow::Result<()> {
-        // Confine the local read to the owning session's effective root set
-        // (`session_roots ∩ allowed_roots`, or `[default_cwd]` when unpinned).
-        // Defense-in-depth: the agent already has native fs access, but the
-        // gateway-driven realize must not read outside the session's roots.
-        let effective = self.effective_roots(session_roots, false);
-        let canonical = tokio::fs::canonicalize(&remote_ref)
-            .await
-            .with_context(|| format!("realize_file: cannot resolve local file '{remote_ref}'"))?;
-        if effective.is_empty()
-            || !effective
-                .iter()
-                .any(|root| canonical.starts_with(canonical_path(root)))
-        {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' is outside the session's workspace root set"
-            );
-        }
-
-        // Cap the realize size BEFORE reading: mirrors the gateway's MAX_DELIVER_BYTES
-        // (server/src/resource/files.rs). Without this, an oversized artifact is read into
-        // memory, base64-expanded (~1.33x), and shipped as one giant frame that both
-        // balloons connector memory and stalls every other stream sharing the data socket
-        // — only for the gateway to reject it anyway.
-        const MAX_REALIZE_BYTES: u64 = 8 * 1024 * 1024;
-        let md = tokio::fs::metadata(&canonical)
-            .await
-            .with_context(|| format!("realize_file: cannot stat local file '{remote_ref}'"))?;
-        if md.len() > MAX_REALIZE_BYTES {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' is {} bytes, exceeds the {}MB realize limit",
-                md.len(),
-                MAX_REALIZE_BYTES / (1024 * 1024)
-            );
-        }
-
-        let bytes = tokio::fs::read(&canonical)
-            .await
-            .with_context(|| format!("realize_file: cannot read local file '{remote_ref}'"))?;
-        // TOCTOU: the file may have grown between the stat and the read.
-        if bytes.len() as u64 > MAX_REALIZE_BYTES {
-            anyhow::bail!(
-                "realize_file: '{remote_ref}' grew past the {}MB realize limit during read",
-                MAX_REALIZE_BYTES / (1024 * 1024)
-            );
-        }
-
-        let filename = std::path::Path::new(&remote_ref)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("file")
-            .to_string();
-
-        let content_type = mime_guess::from_path(&filename)
-            .first_raw()
-            .unwrap_or("application/octet-stream")
-            .to_string();
-
-        // Encode then drop the raw bytes so both copies don't live across the response
-        // await, and MOVE the (large) base64 string into the params map instead of letting
-        // json!() clone it through to_value(&data_b64).
-        let data_b64 = BASE64.encode(&bytes);
-        drop(bytes);
-
-        let mut param_map = serde_json::Map::new();
-        param_map.insert("file_id".to_string(), Value::String(file_id.clone()));
-        param_map.insert("channel_id".to_string(), Value::String(channel_id));
-        param_map.insert("data_b64".to_string(), Value::String(data_b64));
-        param_map.insert("content_type".to_string(), Value::String(content_type));
-        param_map.insert("filename".to_string(), Value::String(filename));
-
-        let req_id = uuid::Uuid::new_v4().to_string();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.shared
-            .lock()
-            .await
-            .pending_resources
-            .insert(req_id.clone(), tx);
-
-        self.io
-            .send_data(DataOutbound::ResourceReq {
-                v: BRIDGE_PROTOCOL_VERSION,
-                req_id: req_id.clone(),
-                resource: "channel.files.realize".to_string(),
-                params: Some(Value::Object(param_map)),
-                encrypted: None,
-                encrypted_payload: None,
-                acp_capability: None,
-            })
-            .await?;
-
-        let response = tokio::time::timeout(
-            std::time::Duration::from_millis(self.config.policy.loopback.request_timeout_ms),
-            rx,
-        )
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_else(|| LoopbackResponse {
-            ok: false,
-            data: None,
-            error: Some("realize resource response timed out".to_string()),
-            code: Some("RESOURCE_TIMEOUT".to_string()),
-        });
-
-        if response.ok {
-            tracing::info!(%file_id, "realize_file: uploaded to S3");
-        } else {
-            tracing::warn!(
-                %file_id,
-                error = response.error.as_deref().unwrap_or(""),
-                "realize_file: gateway returned error"
-            );
-        }
-        Ok(())
-    }
-
     /// The effective filesystem roots for a request. `session_roots` is a session's
     /// ACP root set (`cwd` + `additionalDirectories`). When it is non-empty, the
     /// effective set is those entries that lie within `allowed_roots` (the hard
-    /// clamp) — i.e. `session_roots ∩ allowed_roots`, a strict narrowing. When it is
-    /// empty, `fallback_all` decides the implicit root: browse falls back to ALL
-    /// `allowed_roots` (bot-wide browse), realize falls back to `[default_cwd]`
-    /// (always confined to the session's implicit cwd).
-    fn effective_roots(&self, session_roots: &[String], fallback_all: bool) -> Vec<PathBuf> {
+    /// clamp) — i.e. `session_roots ∩ allowed_roots`, a strict narrowing. An empty
+    /// session root set falls back to all bot-wide `allowed_roots` for browsing.
+    fn effective_roots(&self, session_roots: &[String]) -> Vec<PathBuf> {
         let ws = &self.config.policy.workspace;
         if session_roots.is_empty() {
-            return if fallback_all {
-                ws.allowed_roots.clone()
-            } else {
-                ws.default_cwd.clone().into_iter().collect()
-            };
+            return ws.allowed_roots.clone();
         }
         session_roots
             .iter()
@@ -1094,7 +897,7 @@ impl RuntimeContext {
                     .map(|p| canonical_path(p).to_string_lossy().to_string())
                     .collect()
             };
-            let effective = self.effective_roots(session_roots, true);
+            let effective = self.effective_roots(session_roots);
             return Ok(json!({
                 "allowed_roots": to_strings(&ws.allowed_roots),
                 "effective_roots": to_strings(&effective),
@@ -1111,7 +914,7 @@ impl RuntimeContext {
 
         // Effective roots: narrow to the session's root set when provided, else the
         // full allowed_roots (bot-wide browse). allowed_roots remains the hard clamp.
-        let effective = self.effective_roots(session_roots, true);
+        let effective = self.effective_roots(session_roots);
         let roots = &effective;
         if roots.is_empty() {
             return Err(err("E_NO_ROOT", "no workspace roots configured".into()));
@@ -1808,91 +1611,6 @@ impl RuntimeContext {
         Ok(())
     }
 
-    async fn handle_loopback_request(
-        self: Arc<Self>,
-        request: LoopbackRequest,
-    ) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        let req_id = request.req_id.clone();
-        let resource = request.resource.clone();
-        // Captured before request.params is moved into the ResourceReq frame below;
-        // used to attach files the agent creates this turn to its reply (see end).
-        let attach_channel_id = request
-            .params
-            .as_ref()
-            .and_then(|p| p.get("channel_id"))
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        self.shared
-            .lock()
-            .await
-            .pending_resources
-            .insert(request.req_id.clone(), tx);
-        // Perf instrumentation: wall-clock of the connector→gateway→connector round-trip
-        // for one resource call (the WS hop). Compare with the gateway-side
-        // `messages.create db-path complete` span to see which hop dominates latency.
-        let started = std::time::Instant::now();
-        tracing::debug!(%req_id, %resource, "loopback resource_req sent");
-        self.io
-            .send_data(DataOutbound::ResourceReq {
-                v: BRIDGE_PROTOCOL_VERSION,
-                req_id: request.req_id.clone(),
-                resource: request.resource,
-                params: request.params,
-                encrypted: None,
-                encrypted_payload: None,
-                acp_capability: None,
-            })
-            .await?;
-        let response = timeout(
-            Duration::from_millis(self.config.policy.loopback.request_timeout_ms),
-            rx,
-        )
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_else(|| LoopbackResponse {
-            ok: false,
-            data: None,
-            error: Some("resource response timed out".to_string()),
-            code: Some("RESOURCE_TIMEOUT".to_string()),
-        });
-        tracing::debug!(
-            %req_id,
-            %resource,
-            ok = response.ok,
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "loopback resource round-trip complete"
-        );
-        // inbox_deliver / inbox_stage create a channel file; record its id on the
-        // active run so the Done reply attaches it as a chat attachment.
-        if response.ok && (resource == "channel.files.create" || resource == "channel.files.stage")
-        {
-            if let Some(file_id) = response
-                .data
-                .as_ref()
-                .and_then(|d| d.get("file_id"))
-                .and_then(Value::as_str)
-            {
-                let runs: Vec<Arc<Mutex<ActiveRun>>> =
-                    self.shared.lock().await.by_msg.values().cloned().collect();
-                for run in runs {
-                    let mut guard = run.lock().await;
-                    let matches = match attach_channel_id.as_deref() {
-                        Some(c) => c == guard.channel_id,
-                        None => true,
-                    };
-                    if matches {
-                        guard.created_file_ids.push(file_id.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-        let _ = request.respond_to.send(response);
-        Ok(())
-    }
-
     async fn run_task(
         self: Arc<Self>,
         task: TaskCommand,
@@ -1979,7 +1697,6 @@ impl RuntimeContext {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
@@ -2096,15 +1813,12 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let (final_text, file_ids) = {
+                let final_text = {
                     let mut guard = run.lock().await;
                     // Move the accumulated text out (turn is over; the run is about
                     // to be dropped from the shared maps below) so the whole streamed
                     // response isn't deep-cloned just to hand it to the Done frame.
-                    (
-                        std::mem::take(&mut guard.text),
-                        guard.created_file_ids.clone(),
-                    )
+                    std::mem::take(&mut guard.text)
                 };
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
@@ -2122,7 +1836,9 @@ impl RuntimeContext {
                             v: BRIDGE_PROTOCOL_VERSION,
                             client_msg_id: Uuid::new_v4().to_string(),
                             msg_id: task.msg_id.clone(),
-                            file_ids,
+                            // HTTP MCP uploads the attachment directly at the Gateway;
+                            // the Connector no longer mirrors tool results into Done.
+                            file_ids: Vec::new(),
                             mention_ids: Vec::new(),
                             content: Some(final_text),
                             provider_session_key: Some(task.provider_session_key.clone()),
@@ -2671,11 +2387,10 @@ impl RuntimeContext {
     }
 
     async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
-        // stdio MCP is the ACP baseline transport (always supported); only the
-        // optional http/sse transports are gated by mcpCapabilities. We drop a
-        // configured http/sse server the agent can't speak with a LOUD warning
-        // rather than injecting it silently — otherwise the fs-via-MCP virtual
-        // filesystem would just vanish with no signal.
+        // Cheers is always injected as native HTTP MCP with no static
+        // Authorization header. The Agent owns OAuth discovery, consent, token
+        // persistence and refresh. Startup already failed closed unless HTTP
+        // MCP was advertised, so there is deliberately no stdio fallback here.
         let (supports_http, supports_sse) = {
             let adapter = self.adapter.lock().await;
             (adapter.supports_mcp_http(), adapter.supports_mcp_sse())
@@ -2689,6 +2404,13 @@ impl RuntimeContext {
             .unwrap_or_default();
         let mut servers: Vec<Value> = Vec::with_capacity(configured.len() + 1);
         for server in configured {
+            if server.get("name").and_then(Value::as_str) == Some("cheers") {
+                tracing::warn!(
+                    account = %self.account_id,
+                    "ignoring configured MCP server named 'cheers'; the Gateway canonical native HTTP endpoint is mandatory"
+                );
+                continue;
+            }
             if mcp_server_supported(&server, supports_http, supports_sse) {
                 servers.push(server);
             } else {
@@ -2706,36 +2428,7 @@ impl RuntimeContext {
                 );
             }
         }
-        if self.config.policy.mcp.inject_cheers {
-            // Deprecated compatibility path. The Cheers-owned stdio child is
-            // retained until ACP agents can consume the stateless remote HTTP
-            // endpoint directly. Do not add new capabilities to this path.
-            tracing::warn!(
-                account = %self.account_id,
-                replacement = "POST /mcp (MCP 2026-07-28)",
-                "deprecated Cheers stdio MCP child-process injection is enabled"
-            );
-            // The legacy cheers server is command-based stdio, so it needs no
-            // optional HTTP/SSE capability gate.
-            // Single shared MCP server process across all sessions.
-            // CHANNEL_ID is not set via env — the ACP agent must pass
-            // channel_id explicitly in every tool call (it knows the
-            // channel context from the task trigger).
-            // This avoids spawning one process per channel.
-            servers.push(json!({
-                "name": "cheers",
-                "command": resolve_mcp_server_command(),
-                "args": [],
-                // ACP (claude-agent-acp >=0.36) requires env as an array of
-                // {name, value} entries, not a map. See session/new schema.
-                "env": [
-                    {"name": "CHEERS_RESOURCE_URL", "value": self.loopback.url.clone()},
-                    {"name": "CHEERS_RESOURCE_TOKEN", "value": self.loopback.token.clone()},
-                    {"name": "CHEERS_BOT_ID", "value": self.account_id.clone()},
-                    {"name": "CHEERS_REQUEST_TIMEOUT_MS", "value": self.config.policy.loopback.request_timeout_ms.to_string()}
-                ]
-            }));
-        }
+        servers.push(native_cheers_mcp_server(&self.mcp_url));
         Value::Array(servers)
     }
 
@@ -2804,7 +2497,6 @@ struct SharedRuntimeState {
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
     pending_permissions: HashMap<String, PendingPermission>,
     pending_auths: HashMap<String, PendingAuth>,
-    pending_resources: HashMap<String, oneshot::Sender<LoopbackResponse>>,
     session_locks: HashMap<String, Arc<Mutex<()>>>,
     channel_names: std::collections::HashMap<String, String>,
     /// Active remote-workspace fs watchers, keyed by `watch_id`. Dropping an entry
@@ -2923,10 +2615,6 @@ struct ActiveRun {
     delta_seq: u64,
     trace_seq: u64,
     text: String,
-    /// File ids the agent created this turn via inbox_deliver / inbox_stage
-    /// (channel.files.create / .stage). Attached to the Done reply so they surface
-    /// as chat attachments — a staged file otherwise has no UI entry point to realize.
-    created_file_ids: Vec<String>,
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
@@ -3066,14 +2754,8 @@ enum RuntimeInput {
     Control(ControlInbound),
     Data(DataInbound),
     Adapter(RuntimeEvent),
-    Loopback(LoopbackRequest),
     SocketClosed(&'static str),
-    SocketError {
-        stream: &'static str,
-        error: String,
-    },
-    /// Broadcast to all pending loopback requests when the data WS closes mid-flight.
-    AbortPendingResources,
+    SocketError { stream: &'static str, error: String },
 }
 
 mod auth;
@@ -3104,7 +2786,6 @@ mod tests {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
-            created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: None,
@@ -3489,28 +3170,6 @@ mod tests {
             data_b64: "cmVwb3J0".to_string(),
         };
         assert_eq!(file_upload_ack_client_file_id(&upload), Some("file-1"));
-    }
-
-    #[test]
-    fn resource_req_serializes_without_session_id() {
-        let req = DataOutbound::ResourceReq {
-            v: BRIDGE_PROTOCOL_VERSION,
-            req_id: "req-1".to_string(),
-            resource: "channel.info".to_string(),
-            params: Some(json!({"channel_id": "ch-1"})),
-            encrypted: None,
-            encrypted_payload: None,
-            acp_capability: None,
-        };
-        let json = serde_json::to_value(&req).expect("serialize");
-        assert_eq!(json["type"], "resource_req");
-        assert_eq!(json["req_id"], "req-1");
-        assert_eq!(json["resource"], "channel.info");
-        // session_id must NOT appear in the wire format
-        assert!(
-            json.get("session_id").is_none(),
-            "session_id is dead metadata and must not be serialized"
-        );
     }
 
     #[test]

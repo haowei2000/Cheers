@@ -14,7 +14,7 @@
 //! fields, dropping an explicit `null` for an absent Option, key order. NOT
 //! safe without a fleet version floor: removing the `task` frame's duplicated
 //! `msg_id`/session identifiers, dropping one of hello's two version fields,
-//! adding `v` to the version-less frames (`cancel`, `realize_file`,
+//! adding `v` to the version-less frames (`cancel`,
 //! `workspace_req`, `pong`), or renaming `config_update.settings`' camelCase
 //! keys (that casing IS the contract). `fixtures/compat/*` may only change
 //! together with an explicit version gate.
@@ -220,8 +220,6 @@ pub struct ServerCapabilities {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub membership_events: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resource_req: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_upload: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send: Option<bool>,
@@ -401,20 +399,6 @@ pub struct ConfigStatusRejectedField {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceResponse {
-    #[serde(default = "default_bridge_protocol_version")]
-    pub v: u32,
-    pub req_id: String,
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeErrorFrame {
     #[serde(default = "default_bridge_protocol_version")]
     pub v: u32,
@@ -457,6 +441,11 @@ pub enum ControlInbound {
         connector_config: Option<ConnectorControlConfig>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         server_capabilities: Option<ServerCapabilities>,
+        /// Gateway-owned canonical HTTP MCP resource URL. Connectors must use
+        /// this value verbatim instead of deriving it from WebSocket URLs or
+        /// untrusted proxy headers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mcp_url: Option<String>,
     },
     #[serde(rename = "runtime_session_control")]
     RuntimeSessionControl {
@@ -818,28 +807,10 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
-    #[serde(rename = "resource_res")]
-    ResourceRes {
-        #[serde(flatten)]
-        response: ResourceResponse,
-    },
     #[serde(rename = "error")]
     Error {
         #[serde(flatten)]
         error: BridgeErrorFrame,
-    },
-    /// Gateway → connector: realize a staged file. Connector reads the local path,
-    /// base64-encodes it, and calls channel.files.realize to upload to S3.
-    #[serde(rename = "realize_file")]
-    RealizeFile {
-        file_id: String,
-        remote_ref: String,
-        channel_id: String,
-        /// The owning session's ACP root set (`cwd` + `additionalDirectories`). The
-        /// connector confines `remote_ref` to these (∩ `allowed_roots`); empty ⇒
-        /// the session's implicit root is the connector `default_cwd`.
-        #[serde(default)]
-        roots: Vec<String>,
     },
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
@@ -1022,21 +993,6 @@ pub enum DataOutbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content_type: Option<String>,
         data_b64: String,
-    },
-    #[serde(rename = "resource_req")]
-    ResourceReq {
-        #[serde(default = "default_bridge_protocol_version")]
-        v: u32,
-        req_id: String,
-        resource: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        params: Option<Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        encrypted: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        encrypted_payload: Option<Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        acp_capability: Option<AcpCapabilityEnvelope>,
     },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]

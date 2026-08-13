@@ -70,7 +70,7 @@ struct BotSession {
     connection_id: Uuid,
     /// control WS 的发送端（发 task 帧）
     control_tx: mpsc::Sender<Value>,
-    /// data WS 的发送端（发 resource_res 等）+ 其连接标识（防旧连接误清）
+    /// data WS 的发送端（发 permission/workspace 等帧）+ 其连接标识（防旧连接误清）
     data_tx: Option<(Uuid, mpsc::Sender<Value>)>,
     /// 当新连接 supersede 此 session 时，向旧 WS 发取消信号
     supersede_tx: oneshot::Sender<()>,

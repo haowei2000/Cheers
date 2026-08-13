@@ -14,7 +14,7 @@ pub mod task_claims;
 pub mod usage;
 pub mod voice;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -118,8 +118,6 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "dm.open" => dms::handle_open(db, &principal, &params).await,
         "channel.leave" => members::handle_leave(db, &principal, &params).await,
         "channel.files.create" => files::handle_create(db, &principal, &params).await,
-        "channel.files.stage" => files::handle_stage(db, &principal, &params).await,
-        "channel.files.realize" => files::handle_realize(db, &principal, &params).await,
 
         // ── mesh step 6：新增写操作（fs.*）───────────────────────────────
         "fs.write" => fs::handle_write(db, &principal, &params).await,
@@ -179,9 +177,23 @@ async fn require_channel_admin(
     }
 }
 
-use crate::gateway::bridge_frames::{resource_res_err as err_res, resource_res_ok as ok_res};
-
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
+
+/// Build the transport-neutral response envelope used by Browser WS and HTTP MCP.
+pub(crate) fn ok_res(req_id: &str, data: Value) -> Value {
+    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": true, "data": data })
+}
+
+/// Build a failed transport-neutral response envelope used by Browser WS and HTTP MCP.
+pub(crate) fn err_res(req_id: &str, code: &str, message: &str) -> Value {
+    json!({
+        "type": "resource_res",
+        "v": 1,
+        "req_id": req_id,
+        "ok": false,
+        "error": { "code": code, "message": message }
+    })
+}
 
 pub type ResourceResult = Result<Value, (String, String)>;
 

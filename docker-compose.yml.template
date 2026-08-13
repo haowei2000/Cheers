@@ -75,6 +75,11 @@ services:
       - GOOGLE_WEB_CLIENT_SECRET=${GOOGLE_WEB_CLIENT_SECRET:-}
       - GOOGLE_WEB_REDIRECT_URI=${GOOGLE_WEB_REDIRECT_URI:-}
       - OAUTH_WEB_RETURN_URL=${OAUTH_WEB_RETURN_URL:-}
+      # Canonical externally reachable HTTP MCP resource and optional separate
+      # authorization issuer. Native Agent OAuth binds tokens to this exact URL;
+      # never derive it from proxy headers.
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-}
+      - MCP_AUTHORIZATION_SERVER_ISSUER=${MCP_AUTHORIZATION_SERVER_ISSUER:-}
       # Connector self-update: the release version this gateway advertises in
       # its hello + serves via /api/v1/connector/download. Unset ⇒ no update
       # signal (download proxy then tracks the latest GitHub release).

@@ -74,9 +74,5 @@ allow = true
 include_metadata = true
 
 [accounts.local_acp.policy.mcp]
-inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
-
-[accounts.local_acp.policy.loopback]
-request_timeout_ms = 600000

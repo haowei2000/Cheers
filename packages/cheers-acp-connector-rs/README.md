@@ -7,6 +7,11 @@ This binary owns daemon lifecycle commands: `start`, `stop`, `restart`,
 config, starts the Rust BridgeRuntime, and connects Agent Bridge to a local ACP
 agent through the configured adapter.
 
+Every session receives the canonical Gateway HTTP MCP URL from the authenticated
+Bridge hello. The Connector requires `mcpCapabilities.http=true` and injects the
+URL without a static Authorization header so the Agent performs native OAuth.
+There is no stdio MCP or Connector OAuth-proxy fallback.
+
 The Agent Bridge WebSocket protocol helpers formerly published as the
 standalone `@haowei0520/bridge-client` package now live in this Rust crate under
 `src/bridge.rs`.
@@ -39,7 +44,7 @@ log_dir = "logs"
 # the connector downloads the ed25519-signed sha256 manifest through the
 # gateway's release proxy, verifies it against the release key compiled into the
 # binary, verifies each binary hash, waits until no prompt is in flight, swaps
-# itself (and the sibling cheers-mcp-server) in place, and re-execs. The
+# itself in place and re-execs. The
 # previous binary is kept as <exe>.old and restored automatically if the new one
 # fails to connect 3 boots in a row. Containers never self-update (image
 # rebuilds own that), and CHEERS_ACP_NO_SELF_UPDATE=1 force-disables it.
@@ -121,13 +126,8 @@ allow = true
 include_metadata = true
 
 [accounts.haowei_claude.policy.mcp]
-# Deprecated compatibility fallback. Prefer the remote Cheers HTTP MCP endpoint.
-inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
-
-[accounts.haowei_claude.policy.loopback]
-request_timeout_ms = 600000
 
 [accounts.haowei_claude.security.acp_capability]
 delegation_id = "capability-id-from-backend"

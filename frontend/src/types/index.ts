@@ -116,7 +116,7 @@ export interface FileInfo {
   size_bytes?: number;
   preview_url?: string | null;
   download_url?: string | null;
-  /** "staged" = lazy (remote, not yet on S3); "uploaded" = available; "expired" = gone. */
+  /** "uploaded" = available; "expired" = unavailable or past retention. */
   status?: string;
   /** Short derived text when a server pipeline produced one — today the audio
    *  transcript snippet; shown under the inline audio player. */

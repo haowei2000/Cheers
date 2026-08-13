@@ -65,11 +65,11 @@ Browser / Mobile
            │ Agent Bridge WS (control + data)
     ┌──────┴──────────────────────────────────┐
     ▼                                         ▼
-┌───────────────────────┐     ┌───────────────────────────────┐
-│  外置 ACP Agent        │     │  cheers-mcp-server (stdio) │
-│  OpenCode / Codex /   │     │  MCP ↔ Agent Bridge 桥         │
-│  任何 ACP connector   │     │  (Claude / Codex / Cursor 等)   │
-└───────────────────────┘     └───────────────────────────────┘
+┌───────────────────────────────┐
+│  外置 ACP Agent + Connector     │
+│  ACP stdio ↔ Agent Bridge WS       │
+│  Agent ↔ Gateway HTTP MCP + OAuth  │
+└───────────────────────────────┘
 ```
 
 **关键决策**：
@@ -77,7 +77,7 @@ Browser / Mobile
 - **没有 NATS**：WS 直连，不需要消息总线（单实例前提，见下文部署模型）
 - **没有 Python REST API**：所有 REST 端点迁移到 Rust
 - **没有内置 Python Agent Service**：平台不提供内置 runtime；bot 全部来自外部连接
-- **`cheers-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
+- **Gateway `/mcp`** 是唯一 Cheers MCP 工具面；Agent 必须原生支持 HTTP MCP OAuth
 
 > **外置 ACP bot 的本地形态**：外置 bot 通过本地 **Daemon（事件网关）** 接入——Daemon 负责本地事件过滤、设备认证、本地文件白名单（见 [BOT_PERMISSION](./BOT_PERMISSION.md) / [SECURITY](./SECURITY.md)）。
 
@@ -85,10 +85,9 @@ Browser / Mobile
 （外置 agent 完整接入形态）
 ┌─ 用户本地 ──────────────────────────┐     ┌─ 平台云端 ──────────────┐
 │  Claude / Codex / OpenCode          │     │  Rust Backend（单实例）  │
-│    │ MCP stdio                       │     │  transport/domain/       │
-│    ▼                                │     │  realtime/agent_bridge   │
-│  cheers-mcp-server              │     │                          │
-│    │ 或直接 ACP connector + Daemon   │─WSS▶│                          │
+│    │ ACP stdio                       │     │  Agent Bridge WS          │
+│  ACP connector + Daemon          │─WSS▶│  Gateway /mcp + OAuth     │
+│    └── native HTTP MCP + OAuth ──────HTTPS▶│                          │
 └────────────────────────────────────┘     └──────────────────────────┘
 ```
 
@@ -134,8 +133,7 @@ Browser / Mobile
 | 浏览器鉴权 | 首帧 `{type:auth,token}` + RS256 | WIRE §6.1 |
 | 浏览器顺序 | 流式帧带 `seq`，客户端去重排序 | WIRE §5 |
 | bot 接入 | Agent Bridge WS（control + data） | ACP_INTEGRATION |
-| bot 资源访问（读） | `resource_req/res`，仅需频道成员 | AGENT_BRIDGE_RESOURCE §3.4 |
-| bot 资源访问（写） | `resource_req/res`，频道成员 **+ Grant**（按 trust_level）<br>⚠️ 历史设计，已废弃 — Grant/trust_level 细粒度授权在 R13 退场，channel-role 是唯一授权事实源，见 CURRENT MODEL | AGENT_BRIDGE_RESOURCE §3.4 / BOT_PERMISSION §5.3 |
+| bot 资源访问（读/写） | Gateway `/mcp` Streamable HTTP + OAuth；Connector 不中继 resource RPC | MCP_HTTP_OAUTH_TOOL_SCOPE |
 | bot 权限 | ACP RBAC（Grant + 覆盖 + 审批）；trust_level 枚举 `system>trusted>standard>untrusted`<br>⚠️ 历史设计，已废弃 — 授权唯 channel-role，见 CURRENT MODEL | BOT_PERMISSION |
 | **写后投递（Write-Before-Deliver）** | **终态帧必须先落 PG，再 fan-out**；流式帧（delta）直接 fan-out 不落库，靠 `message_done` 全量自愈 | WIRE §4.2 |
 | 实时传输模型 | 单实例进程内 fan-out（无 NATS）；fan-out/locator 抽象为 trait | WIRE §8 / 部署模型 |

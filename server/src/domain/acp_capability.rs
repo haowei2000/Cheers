@@ -272,13 +272,7 @@ fn extract_frame_type(frame: &Value) -> &str {
 fn frame_needs_capability(frame_type: &str) -> bool {
     matches!(
         frame_type,
-        "send"
-            | "delta"
-            | "done"
-            | "resource_req"
-            | "session_update"
-            | "permission_request"
-            | "trace"
+        "send" | "delta" | "done" | "session_update" | "permission_request" | "trace"
     )
 }
 
@@ -287,7 +281,6 @@ fn frame_action(frame_type: &str) -> Option<&str> {
         "send" => Some("send"),
         "delta" => Some("stream"),
         "done" => Some("stream"),
-        "resource_req" => Some("resource_req"),
         "session_update" => Some("session_update"),
         "permission_request" => Some("permission_request"),
         "trace" => Some("trace"),
@@ -358,26 +351,6 @@ fn action_allowed(allowed: &[String], action: &str) -> bool {
         return true;
     }
     false
-}
-
-fn resource_matches(grant_resource: &str, requested: &str) -> bool {
-    if grant_resource == CAPABILITY_ACTION_WILDCARD {
-        return true;
-    }
-    if let Some(prefix) = grant_resource.strip_suffix(":*") {
-        return requested.starts_with(&format!("{prefix}:")) || requested == prefix;
-    }
-    if let Some(prefix) = grant_resource.strip_suffix(".*") {
-        return requested.starts_with(&format!("{prefix}.")) || requested == prefix;
-    }
-    grant_resource == requested
-}
-
-fn resource_allowed(resources: &[String], resource: &str) -> bool {
-    resources.is_empty()
-        || resources
-            .iter()
-            .any(|value| resource_matches(value, resource))
 }
 
 fn extract_channel_id(frame: &Value) -> Option<String> {
@@ -512,15 +485,6 @@ async fn resolve_active_session(
     })
 }
 
-fn extract_resource(frame: &Value) -> Option<String> {
-    frame
-        .get("resource")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
-}
-
 fn verify_scope_with_context(
     delegation: &DelegationRecord,
     frame_type: &str,
@@ -588,16 +552,6 @@ fn verify_scope_with_context(
                     "user-scoped delegation has no target",
                     context,
                 ));
-            }
-            if action == "resource_req" {
-                if let Some(res) = resource {
-                    if !resource_allowed(&delegation.allowed_resources, res) {
-                        return Err(denied_with_context(
-                            "resource denied by user-scoped delegation",
-                            context,
-                        ));
-                    }
-                }
             }
             Ok(())
         }
@@ -933,8 +887,6 @@ pub async fn authorize_data_frame(
     let delegation_id = Uuid::parse_str(&envelope.delegation_id)
         .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?;
     let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
-    let resource = extract_resource(frame);
-
     validate_public_key(&delegation.algorithm, &delegation.public_key)?;
     verify_signature(&delegation, frame_type, &envelope, frame)?;
     verify_scope(
@@ -944,7 +896,7 @@ pub async fn authorize_data_frame(
         &delegation,
         frame,
         action,
-        resource.as_deref(),
+        None,
         request_id,
     )
     .await?;
@@ -957,23 +909,7 @@ pub async fn authorize_data_frame(
         )));
     }
 
-    if action == "resource_req" {
-        let resource = resource
-            .clone()
-            .ok_or_else(|| CapabilityError::Denied("missing resource".into()))?;
-        if !resource_allowed(&delegation.allowed_resources, &resource) {
-            return Err(CapabilityError::Denied("resource not allowed".into()));
-        }
-    }
-
-    consume_nonce_and_bump(
-        db,
-        &delegation_id,
-        &envelope,
-        frame_type,
-        resource.as_deref(),
-    )
-    .await?;
+    consume_nonce_and_bump(db, &delegation_id, &envelope, frame_type, None).await?;
     Ok(())
 }
 
@@ -988,7 +924,6 @@ pub fn build_action_map() -> BTreeMap<&'static str, Vec<&'static str>> {
     BTreeMap::from([
         ("send", vec!["send"]),
         ("stream", vec!["delta", "done"]),
-        ("resource_req", vec!["resource_req"]),
         ("session_update", vec!["session_update"]),
         ("permission_request", vec!["permission_request"]),
         ("trace", vec!["trace"]),
@@ -1021,11 +956,7 @@ mod tests {
             scope_type: scope_type.to_string(),
             scope_id: scope_id.map(str::to_string),
             session_id: session_id.map(str::to_string),
-            allowed_actions: vec![
-                "send".to_string(),
-                "stream".to_string(),
-                "resource_req".to_string(),
-            ],
+            allowed_actions: vec!["send".to_string(), "stream".to_string()],
             allowed_resources: allowed_resources.into_iter().map(str::to_string).collect(),
             max_uses: None,
             use_count: 0,
@@ -1222,51 +1153,6 @@ mod tests {
                     Some("ws-2"),
                 )),
                 expected_err: Some("workspace scope mismatch"),
-            },
-            VerifyScopeCase {
-                name: "user scope denied without target",
-                delegation: make_delegation(CAPABILITY_SCOPE_USER, None, None, None, vec![]),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.list"}),
-                resource: Some("channel.files.list"),
-                locator: None,
-                session_context: None,
-                expected_err: Some("user-scoped delegation has no target"),
-            },
-            VerifyScopeCase {
-                name: "user scope resource denied",
-                delegation: make_delegation(
-                    CAPABILITY_SCOPE_USER,
-                    None,
-                    None,
-                    Some("user-b"),
-                    vec!["channel.files.read:*"],
-                ),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.write"}),
-                resource: Some("channel.files.write"),
-                locator: None,
-                session_context: None,
-                expected_err: Some("resource denied by user-scoped delegation"),
-            },
-            VerifyScopeCase {
-                name: "user scope resource allowed",
-                delegation: make_delegation(
-                    CAPABILITY_SCOPE_USER,
-                    None,
-                    None,
-                    Some("user-b"),
-                    vec!["channel.files.*"],
-                ),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.write"}),
-                resource: Some("channel.files.write"),
-                locator: None,
-                session_context: None,
-                expected_err: None,
             },
         ];
 

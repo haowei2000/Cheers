@@ -367,7 +367,7 @@ pub async fn ensure_primary_session_workspace_tx(
 }
 
 /// A session's ACP root set as a flat list `[cwd?, ...additional_dirs]` — for
-/// passing to the connector to scope a browse or a realize to the session's roots.
+/// passing to the connector to scope remote workspace operations to the session's roots.
 /// Empty when the session has no pinned workspace (the connector then falls back to
 /// its `default_cwd`). Best-effort: a DB error yields an empty list.
 pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<String> {

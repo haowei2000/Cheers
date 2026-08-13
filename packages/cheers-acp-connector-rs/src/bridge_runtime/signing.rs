@@ -100,7 +100,6 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         DataOutbound::Done { .. } => Some("done"),
         DataOutbound::Error { .. } => Some("error"),
         DataOutbound::Send { .. } => Some("send"),
-        DataOutbound::ResourceReq { .. } => Some("resource_req"),
         DataOutbound::PermissionRequest { .. } => Some("permission_request"),
         DataOutbound::AuthRequired { .. } => Some("auth_required"),
         DataOutbound::SessionUpdate { .. } => Some("session_update"),
@@ -125,7 +124,6 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::Done { acp_capability, .. }
         | DataOutbound::Error { acp_capability, .. }
         | DataOutbound::Send { acp_capability, .. }
-        | DataOutbound::ResourceReq { acp_capability, .. }
         | DataOutbound::PermissionRequest { acp_capability, .. }
         | DataOutbound::AuthRequired { acp_capability, .. }
         | DataOutbound::SessionUpdate { acp_capability, .. }

@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cce-acp-connector"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-bridge-protocol"
-version = "0.1.27"
+version = "0.1.37"
 dependencies = [
  "serde",
  "serde_json",

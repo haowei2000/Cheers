@@ -167,18 +167,20 @@ running `session/new` alone is not a pass.
   state under `~/.codex`; this is classified as `harness_environment_failure`,
   not an OAuth compatibility result. The real matrix needs normal access to each
   Agent's existing local configuration directory.
-- No default Connector transport has changed. `inject_cheers=true` remains the
-  production behavior until the complete matrix passes.
+- Connector 0.1.37 implements the target transport: the authenticated Gateway
+  hello supplies canonical `mcp_url`, and every ACP session receives a
+  headerless native HTTP Cheers MCP server. Unsupported Agents fail closed.
 
 ## Decision
 
-If all eight cases pass, open a separate implementation change for mandatory
-HTTP Cheers MCP, trusted canonical endpoint advertisement, remote
-`read_workspace`, and removal of `inbox_stage`/the stdio sidecar. That cutover
-must fail closed when HTTP capability or OAuth lifecycle requirements are not
-met and must not retain a runtime fallback.
+The implementation cutover is now in progress: mandatory HTTP Cheers MCP,
+trusted canonical endpoint advertisement, transport-neutral remote
+`read_workspace`, and removal of `inbox_stage`/the stdio sidecar. The Connector
+fails closed when the HTTP capability or canonical MCP URL is absent and retains
+no runtime transport fallback.
 
-If any case fails before cutover, keep the existing production release unchanged
-while the failing Agent adapter gains a public native HTTP OAuth lifecycle. Do
-not implement a Connector-owned OAuth proxy or productize stdio compatibility.
-After cutover, unsupported Agent versions are refused rather than downgraded.
+The eight lifecycle rows remain release acceptance evidence, not a switch that
+re-enables compatibility code. A failing Agent must gain a public native HTTP
+OAuth lifecycle before it can be supported. Do not implement a Connector-owned
+OAuth proxy or productize stdio compatibility; unsupported Agent versions are
+refused rather than downgraded.

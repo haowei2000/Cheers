@@ -16,46 +16,40 @@ If you are wiring up an agent for the first time, read
 
 ## 1. What "MCP Cheers" is
 
-`cheers-mcp-server` is a small local **stdio MCP server** (a single Rust binary). It does
-**not** talk to your agent's model and is **not** something a bot connects to over the
-network. Instead, the **ACP connector daemon** (`cce-acp-connector`) spawns it as a child
-process and hands it a few environment variables so it knows which channel it is acting in:
-
-| Env var | Meaning |
-|---|---|
-| `CHEERS_RESOURCE_URL` | Loopback endpoint back into the connector |
-| `CHEERS_RESOURCE_TOKEN` | Optional bearer for that loopback |
-| `CHEERS_CHANNEL_ID` | Default channel the tools act on |
-| `CHEERS_BOT_ID` | Which bot identity is acting |
-| `CHEERS_SESSION_ID` | Current bridge session |
-| `CHEERS_REQUEST_TIMEOUT_MS` | Per-call timeout |
+Cheers exposes a **native HTTP MCP endpoint** at the canonical URL advertised
+by the authenticated Gateway hello. The Connector injects that URL into every
+ACP session with empty headers; the Agent owns OAuth discovery, consent, token
+storage, refresh, and revocation handling. There is no local stdio MCP process
+or Connector OAuth proxy.
 
 The full chain looks like this:
 
 ```
 External ACP agent (Claude / Codex / OpenCode)
-        ↕  ACP (stdio)
+        ↕  HTTPS MCP + native OAuth
+Rust gateway /mcp
+
+External ACP agent
+        ↕  ACP (local stdio)
 ACP connector daemon  (cce-acp-connector)
         ↕  Agent Bridge WebSocket  (control + data)
 Rust gateway  (the only backend)
-        ↑
-        └── connector also spawns cheers-mcp-server (stdio),
-            which pulls channel resources back through the connector's loopback
 ```
 
 So MCP is the **read/act surface** the agent uses to see and touch a channel; the **Agent
-Bridge WebSocket** is the transport and the place where the bot actually authenticates.
+Bridge WebSocket** transports prompts and streaming. MCP uses a separate OAuth
+installation identity and the Gateway rechecks channel authorization per call.
 
 ---
 
 ## 2. The MCP tool surface
 
-Every tool takes an optional `channel_id` (it falls back to `CHEERS_CHANNEL_ID`). Server-side
+Every channel-scoped tool takes a `channel_id`. Server-side
 channel-membership **role checks still apply** to every call — the MCP server does not grant
 any power the bot's channel role does not already have.
 
-> The package README's older tool list (`list_files` / `read_file` / `fs_*`) is **stale**.
-> The authoritative surface is the source (`packages/cheers-mcp-server/src/main.rs`).
+> The authoritative surface is the shared catalog in
+> `packages/cheers-mcp-server/src/tools.rs`.
 
 **Read-only**
 
@@ -79,7 +73,6 @@ any power the bot's channel role does not already have.
 | `post_message` | Send a message; supports `mention_ids` / `mention_names` to @-mention members |
 | `leave_channel` | Remove self from a channel (like a human leaving); not allowed in DMs |
 | `inbox_deliver` | Post a new file (base64, ≤ 8 MB) into the channel as an attachment |
-| `inbox_stage` | Register a local path as a lazily-delivered staged attachment |
 | `desk_write` / `desk_edit` / `desk_append` | Create / edit / append a desk file (optimistic lock via `if_version`) |
 | `desk_rm` / `desk_mv` | Remove / move a desk file or subtree |
 
@@ -92,8 +85,10 @@ Two file spaces to keep straight (baked into the MCP initialize prompt):
 
 ## 3. How a bot authenticates
 
-Authentication does **not** happen through the MCP server — it happens on the **Agent Bridge
-WebSocket**. The token model:
+Prompt transport authenticates on the **Agent Bridge WebSocket**. MCP calls use
+the Agent's native OAuth lifecycle and an installation-bound access token; the
+Gateway validates installation state, scopes, audience, and channel membership
+on every call. The Bridge credential model remains:
 
 1. **Minting.** `generate_bot_token()` mints an `agb_<hex>` token. The plaintext is returned
    **once**; only its **SHA-256** is stored, in `bot_accounts.bot_token_hash` (plus a
@@ -170,7 +165,7 @@ Above the two identity tables, everything relational is shared and keyed by
 > A **bot** is a *first-class member of a channel* (it posts, is mentioned, has presence, can
 > be invited and can leave — all through the same tables as a person) but a *second-class
 > principal of the platform* (owned by a user, no platform role, channel authority capped at
-> member/readonly, and killable at any time). The **MCP server** is simply the tool surface
+> member/readonly, and killable at any time). The **Gateway HTTP MCP endpoint** is the tool surface
 > that lets the owner's external agent see and act inside the channels its bot belongs to.
 
 ---

@@ -112,7 +112,6 @@ pub struct LocalPolicy {
     pub trace: TracePolicy,
     pub session_update: SessionUpdatePolicy,
     pub mcp: McpPolicy,
-    pub loopback: LoopbackPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -253,18 +252,9 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
-    /// Deprecated compatibility switch for injecting the connector-owned
-    /// `cheers-mcp-server` stdio child process. Keep enabled only until the
-    /// configured ACP agent supports the remote Cheers HTTP MCP endpoint.
-    pub inject_cheers: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoopbackPolicy {
-    pub request_timeout_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,6 +379,8 @@ struct RawPolicy {
     #[serde(default)]
     mcp: RawMcpPolicy,
     #[serde(default)]
+    /// Accepted for one-way config compatibility, but ignored. Native HTTP MCP
+    /// removed the Connector's Agent-facing loopback server in 0.1.37.
     loopback: RawLoopbackPolicy,
 }
 
@@ -625,11 +617,11 @@ impl Default for RawSessionUpdatePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
-    /// Deprecated: use the remote Cheers HTTP MCP endpoint instead. This
-    /// remains default-on during the compatibility window so existing agents
-    /// do not silently lose their Cheers tools.
-    #[serde(default = "default_true")]
-    inject_cheers: bool,
+    /// Retired and ignored. Kept parseable so an existing TOML does not fail
+    /// before the connector can report the native-HTTP migration requirement.
+    #[serde(default)]
+    #[serde(rename = "inject_cheers")]
+    _inject_cheers: bool,
     #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
@@ -641,7 +633,7 @@ struct RawMcpPolicy {
 impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
-            inject_cheers: true,
+            _inject_cheers: false,
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -652,14 +644,14 @@ impl Default for RawMcpPolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
-    #[serde(default = "default_loopback_timeout_ms")]
-    request_timeout_ms: u64,
+    #[serde(default, rename = "request_timeout_ms")]
+    _request_timeout_ms: Option<u64>,
 }
 
 impl Default for RawLoopbackPolicy {
     fn default() -> Self {
         Self {
-            request_timeout_ms: default_loopback_timeout_ms(),
+            _request_timeout_ms: None,
         }
     }
 }
@@ -911,13 +903,9 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
-            inject_cheers: raw.mcp.inject_cheers,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
-        },
-        loopback: LoopbackPolicy {
-            request_timeout_ms: raw.loopback.request_timeout_ms,
         },
     })
 }
@@ -1235,10 +1223,6 @@ fn default_send_ack_timeout_ms() -> u64 {
     10 * 60_000
 }
 
-fn default_loopback_timeout_ms() -> u64 {
-    10 * 60_000
-}
-
 fn default_permission_wait_timeout_ms() -> u64 {
     15 * 60_000
 }
@@ -1406,7 +1390,6 @@ request_timeout_ms = 666000
             account.agent.client_capabilities.as_ref().unwrap(),
             &crate::acp_adapter::default_client_capabilities()
         );
-        assert_eq!(account.policy.loopback.request_timeout_ms, 666000);
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);
         assert!(matches!(
             account.policy.permission.on_timeout,
