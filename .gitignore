@@ -45,6 +45,8 @@ coverage/
 *.tsbuildinfo
 frontend/.env
 frontend/.env.local
+# Local visual-audit captures; Gallery assets intended for review use explicit names.
+frontend/dev/channel-settings-audit-*.png
 
 # IDE
 .idea/

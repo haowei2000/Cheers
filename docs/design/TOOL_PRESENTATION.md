@@ -5,6 +5,10 @@
 
 ## Selected direction
 
+Global control, typography, and message-surface rules are defined in
+[Web Editorial Item System](WEB_EDITORIAL_ITEM_SYSTEM.md). This document owns
+only tool classification and detail presentation.
+
 The tool row is one quiet, continuous surface. It does not use timelines,
 connectors, table grids, row separators, nested outlines, or decorative badges.
 Hierarchy comes from spacing, typography, opacity, and alignment.
@@ -43,8 +47,9 @@ The wire-level contract is documented in
 Use a compact chat summary, then progressive disclosure inside the existing
 native trace presentation:
 
-1. The bot message owns one 44-point `Git status · 4 files changed` activity
-   row. It remains quiet and never expands a long file list in the conversation.
+1. The bot message owns only the current live `Git status · 4 files changed`
+   activity row. It remains quiet and disappears after completion; durable
+   history belongs to Message Record.
 2. Tapping the row opens the existing resizable activity sheet. If Git is the
    only meaningful event, open its detail directly; otherwise keep the agent
    activity list as the first level.
