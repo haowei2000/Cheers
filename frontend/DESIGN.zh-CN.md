@@ -69,8 +69,11 @@
 
 ### 形状与状态
 
-- 圆角：普通矩形统一 4px；使用当前解析为 4px 的项目 token/utility，不根据 utility 名称
-  猜测实际弧度。`rounded-full` 只用于 Avatar、Presence、Unread、Progress 等形状携带语义的对象。
+- 圆角：Web 普通矩形统一 10px。嵌套浮层使用同一规则的同心计算：外层圆角 = 10px +
+  实际内容 inset。普通表面使用 `rounded-sm`，浮层使用 `rounded-concentric` 并设置
+  `--concentric-inset`；禁止再引入另一固定圆角。支持的浏览器用 `corner-shape: squircle`
+  增强连续曲线，其余浏览器回退到标准 `border-radius`。`rounded-full` 只用于 Avatar、
+  Presence、Unread、Progress 等形状携带语义的对象。
 - Focus：`focus:ring-2 focus:ring-indigo-500`（按钮用 `focus-visible:`）——**禁止**用 `focus:border-indigo-*` 替代
 - 错误：字段上加 `ring-1 ring-red-500/70` —— 是状态 ring，不是常驻边框
 - Disabled：统一 `disabled:opacity-50`

@@ -10,7 +10,7 @@
     "principles": [
       "Use editorial rhythm, alignment, and hairline rules before containers or decoration.",
       "Keep resting surfaces borderless; rules separate dense rows and state rings communicate focus or error.",
-      "Use near-square four-pixel corners. Circles are reserved for identity, presence, and unread state.",
+      "Use one ten-pixel Web corner system with concentric nested surfaces. Native platforms retain their platform-owned shape behavior. Circles are reserved for identity, presence, and unread state.",
       "Keep layouts compact while preserving a minimum 44pt iOS and 48dp Android touch target.",
       "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
     ],
@@ -26,7 +26,7 @@
       "comfortable": "16px"
     },
     "shape": {
-      "cornerRadius": "4px/pt/dp",
+      "cornerRadius": "10px Web base with concentric inset; platform-owned on iOS and Android",
       "restingBorder": "none",
       "separator": "hairline rules for editorial or dense scanning surfaces",
       "minimumTouchTarget": { "web": "44px on touch viewports", "ios": "44pt", "android": "48dp" }

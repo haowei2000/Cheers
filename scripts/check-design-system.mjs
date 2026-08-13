@@ -62,8 +62,8 @@ if (contract.defaultTypographySize !== "regular") fail("defaultTypographySize mu
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typographySizes ?? {}).sort()) !== JSON.stringify([...expectedTypographySizes].sort())) {
   fail("visualLanguage.typographySizes must contain exactly minimal, compact, regular, and comfortable");
 }
-if (contract.visualLanguage?.shape?.cornerRadius !== "4px/pt/dp") {
-  fail("visualLanguage.shape.cornerRadius must remain the shared 4px/pt/dp editorial radius");
+if (contract.visualLanguage?.shape?.cornerRadius !== "10px Web base with concentric inset; platform-owned on iOS and Android") {
+  fail("visualLanguage.shape.cornerRadius must keep the registered Web concentric and native platform-owned shape contract");
 }
 
 const ids = contract.itemKinds.map((item) => item.id);

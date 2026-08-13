@@ -169,10 +169,13 @@ dividers, not disclosure buttons: do not add a chevron, collapsed state, or
 
 ### Shape & states
 
-- Radius: the shared ordinary rectangle radius is 4px for product items,
-  controls, fields, overlays, and composer surfaces. Use the project token or
-  Tailwind utility that currently resolves to 4px; never infer the contract
-  from the utility name alone. `rounded-full` is reserved for avatars,
+- Radius: the shared ordinary Web rectangle radius is 10px for product items,
+  controls, fields, cards, and composer surfaces. Nested overlays use the same
+  rule concentrically: outer radius = 10px + the actual content inset. Use
+  `rounded-sm` for ordinary surfaces and `rounded-concentric` with
+  `--concentric-inset` for an overlay; never introduce another fixed radius.
+  Supporting browsers enhance both with `corner-shape: squircle`; standard
+  `border-radius` is the fallback. `rounded-full` is reserved for avatars,
   presence, unread dots, progress, and platform-native controls whose shape
   carries meaning.
 - Separation: resting controls stay free of layout-affecting borders. Form fields use `ring-1 ring-inset ring-zinc-600`; other controls use spacing and surface contrast first. Use hairline rules only for editorial sections or dense rows that must scan as a register.
@@ -330,7 +333,7 @@ while open. Three states: resting (soft zinc),
 open/targeted (`bg-indigo-600/15 text-indigo-200`, icon `text-indigo-400`),
 mobile touch target via the regular ControlSize mapping. Focus comes from the
 shared Button primitive. The composer card itself
-is the canonical borderless field with the shared 4px radius and
+is the canonical borderless field with the shared 10px Web radius and
 `bg-zinc-800/80` plus
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 

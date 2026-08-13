@@ -344,7 +344,7 @@ export function ItemGallery() {
           <h2 id="specialized-register" className="mb-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400">Specialized diff</h2>
           <ItemList className="overflow-x-auto bg-zinc-950">
             <DiffLineItem controlSize="compact" tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
-            <DiffLineItem controlSize="regular" tone="add" lineNumber="18" marker="+" content="border-radius: 4px;" />
+            <DiffLineItem controlSize="regular" tone="add" lineNumber="18" marker="+" content="border-radius: 10px;" />
             <DiffLineItem controlSize="comfortable" lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
           </ItemList>
         </div>

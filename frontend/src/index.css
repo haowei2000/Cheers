@@ -70,7 +70,18 @@
   --type-regular: 0.875rem;
   --type-comfortable: 1rem;
   color-scheme: dark;
-  --radius-control: 4px;
+  /* One Web shape system: 10px ordinary corners; nested surfaces add their
+     actual inset so parent and child arcs remain concentric. */
+  --radius-control: 10px;
+}
+
+/* Progressive enhancement: browsers without CSS corner-shape keep the same
+   radii with the standard quarter-circle curve. */
+@supports (corner-shape: squircle) {
+  .rounded-sm,
+  .rounded-concentric {
+    corner-shape: squircle;
+  }
 }
 
 * {

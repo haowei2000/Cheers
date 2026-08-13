@@ -22,8 +22,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 
 1. **静止无框**：Button、Input、Item、Card、Dialog、Popover、Composer 等 resting surface
    不使用四周装饰性 border。先使用留白、背景层级、对齐与方向性 hairline。
-2. **统一圆角**：普通矩形容器统一 `4px / 4pt / 4dp`。不使用 `rounded-xl/2xl` 形成卡片墙；
-   圆形只用于 Avatar、Presence、Unread、进度或其他形状本身携带语义的对象。
+2. **统一圆角**：Web 普通矩形统一以 `10px` 为基础；嵌套表面按“10px + 实际 inset”计算
+   外层同心圆角，不再使用其他固定 Web 圆角。iOS / Android 保留平台原生形状。圆形只用于
+   Avatar、Presence、Unread、进度或其他形状本身携带语义的对象。
 3. **不使用霓虹**：禁止彩色外发光、装饰性渐变和高饱和彩色阴影。中性阴影只用于表达浮层
    空间关系；焦点、选中、主操作和状态通过 fill、ring、文字或标记表达。
 4. **颜色只表达含义**：普通层级使用中性墨色；accent、online、unread、warning、error、
@@ -238,7 +239,7 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 ## 12. 今日固定决策摘要
 
 - 设计方向固定为正式、克制的 Editorial Correspondence；撤销全部霓虹风格。
-- 普通全局圆角从过硬的 2px 提高到统一 4px，仍保持无框和非卡片墙。
+- Web 普通全局圆角统一为 10px；嵌套浮层由 inset 动态计算同心外圆角，仍保持无框和非卡片墙。
 - 字体固定为 display / reading / utility 三角色，并补齐免费开源的中文衬线支持。
 - 正文 reading 字号降低为正文尺度；所有实体名称回到 utility sans。
 - 信息档位固定 max / medium / minimal；物理尺寸固定 comfortable / regular / compact。

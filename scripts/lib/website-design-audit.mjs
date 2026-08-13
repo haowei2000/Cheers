@@ -57,7 +57,7 @@ export function auditWebsiteSources(sources) {
 
     for (const match of entry.source.matchAll(/border-radius\s*:\s*([^;}"`]+)/g)) {
       const value = match[1].trim();
-      if (/^(?:4px|0\s*!important|var\(--radius\)(?:\s*!important)?)$/.test(value)) continue;
+      if (/^(?:10px|0\s*!important|var\(--radius\)(?:\s*!important)?)$/.test(value)) continue;
       if (value === "999px" && isSemanticCircle(selectorBefore(entry.source, match.index))) continue;
       add(entry, match, "nonStandardRadius", value);
     }

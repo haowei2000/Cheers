@@ -4,13 +4,13 @@ import { auditWebsiteSources } from "./website-design-audit.mjs";
 
 const audit = (source) => auditWebsiteSources([{ file: "fixture.html", source }]);
 
-test("accepts the four typography tiers and borderless four-pixel surfaces", () => {
+test("accepts the four typography tiers and borderless ten-pixel surfaces", () => {
   const result = audit(`
     <style>
       h1 { font-size: 16px; font-weight: 720; }
       p { font-size: 14px; }
       code { font: 12px monospace; }
-      .surface { border: 0; border-radius: 4px; }
+      .surface { border: 0; border-radius: 10px; }
       .rule { border-bottom: 1px solid currentColor; }
       .dot { border-radius: 999px; }
       .avatar { border-radius: 999px; }

@@ -175,7 +175,7 @@ export function FloatingPanel({
         // Absolute inside the lane, fixed over the viewport (drag.style sets the
         // matching `position` so this only decides the fallback box).
         drag.bounded ? "absolute" : "fixed",
-        "flex flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
+        "flex flex-col overflow-hidden rounded-concentric [--concentric-inset:1rem] bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
         // Cap to the box, leaving a 2rem inset in the lane so a default-spawned
         // window (and its bottom-right resize grip) always fits inside the
         // overflow-clip; or short of the composer over the viewport.

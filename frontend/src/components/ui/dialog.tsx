@@ -119,7 +119,7 @@ export function Dialog({
         tabIndex={-1}
         className={cn(
           // Borderless (DESIGN.md §2.4): the dimmed backdrop provides the separation.
-          `w-full ${maxWidth} rounded-sm bg-zinc-900 p-4 space-y-3 outline-none`,
+          `w-full ${maxWidth} rounded-concentric [--concentric-inset:1rem] bg-zinc-900 p-4 space-y-3 outline-none`,
           "max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain",
           "max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
           fullScreenOnMobile
