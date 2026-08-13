@@ -259,6 +259,29 @@ pub(crate) fn permission_resolution_frame(
     })
 }
 
+/// Authenticated user response to an ACP v1 elicitation.
+pub(crate) fn elicitation_resolution_frame(
+    request_id: &str,
+    message_id: &str,
+    action: &str,
+    content: Option<Value>,
+    resolved_by: &str,
+    resolved_at: &str,
+) -> Value {
+    frame_value(&proto::ControlInbound::ElicitationResolution {
+        v: BRIDGE_PROTOCOL_VERSION,
+        resolution: proto::ElicitationResolution {
+            request_id: request_id.to_string(),
+            action: action.to_string(),
+            content,
+            message_id: Some(message_id.to_string()),
+            resolved_by: Some(resolved_by.to_string()),
+            resolved_at: Some(resolved_at.to_string()),
+            extra: Default::default(),
+        },
+    })
+}
+
 /// Human acknowledgment of a forwarded `auth_required` card.
 pub(crate) fn auth_acknowledged_frame(
     request_id: &str,

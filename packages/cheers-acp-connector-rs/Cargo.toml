@@ -15,16 +15,15 @@ name = "cce-acp-connector"
 path = "src/main.rs"
 
 [dependencies]
-# Official ACP protocol types (schema crate). Tier A: the connector keeps its
-# own JSON-RPC transport but builds the security-sensitive ACP messages (client
-# capabilities advertisement + permission decisions) from these typed structs
-# instead of hand-written JSON. Stable wire protocol v1 only — no `unstable` features.
-agent-client-protocol-schema = "1.1"
-# Tier B (in progress): official ACP runtime crate. Replaces the hand-rolled
-# JSON-RPC transport, wrapped in an actor so the RuntimeAdapter trait seam is
-# unchanged. Inbound session/update + request_permission relay via `UntypedMessage`
-# raw hooks (zero-loss opaque relay; see ACP_RUST_SDK_ADOPTION.md §3).
-agent-client-protocol = "1"
+# Official ACP runtime and protocol types, consumed through the main crate's
+# schema re-export. The connector remains on stable wire protocol
+# v1; only the SDK's v1 `unstable_elicitation` API surface is enabled so Cheers
+# can implement structured form and URL interactions. Protocol v2 and native
+# MCP-over-ACP remain disabled.
+# The official runtime is the default in 0.1.37; the hand-written transport is
+# retained only as the one-release rollback. Raw hooks preserve opaque update,
+# permission, and elicitation extensions (see ACP_RUST_SDK_ADOPTION.md).
+agent-client-protocol = { version = "2.0.0", features = ["unstable_elicitation"] }
 # Tier B: adapt tokio ChildStdin/ChildStdout (tokio::io) to the futures_io
 # AsyncRead/AsyncWrite that the runtime crate's `ByteStreams` transport expects.
 tokio-util = { version = "0.7", features = ["compat"] }

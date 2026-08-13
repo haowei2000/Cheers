@@ -1,3 +1,8 @@
+//! Concurrent Agent Bridge control/data I/O and acknowledgement correlation.
+//!
+//! Network waits happen outside session/run locks. Pending acknowledgements are
+//! keyed by protocol identifiers and failed when their channel disconnects.
+
 use super::*;
 
 #[derive(Clone)]

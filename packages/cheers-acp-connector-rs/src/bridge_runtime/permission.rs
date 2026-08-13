@@ -107,7 +107,7 @@ impl RuntimeContext {
         // `prompt()` holds the adapter Mutex for the whole turn and is blocked
         // waiting for the very permission answer this handler produces, so locking
         // the adapter would deadlock the turn until timeout.
-        let options = crate::acp_adapter::permission_options_from_params(&params);
+        let options = crate::acp_semantics::permission_options_from_params(&params);
         self.shared
             .lock()
             .await

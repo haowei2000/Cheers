@@ -1,3 +1,9 @@
+//! TOML configuration parsing, normalization, and local-policy validation.
+//!
+//! This module is the security boundary between operator-owned configuration
+//! and settings received from the remote gateway. Secrets are resolved from
+//! approved environment variables rather than accepted inline.
+
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -1094,7 +1100,7 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
 fn client_capabilities() -> Value {
     // Single source of truth lives in the ACP protocol layer so the configured
     // value and the adapter's in-code fallback can never diverge.
-    crate::acp_adapter::default_client_capabilities()
+    crate::acp_semantics::default_client_capabilities()
 }
 
 fn toml_values_to_json_array(values: Vec<TomlValue>) -> anyhow::Result<Value> {
@@ -1388,7 +1394,7 @@ request_timeout_ms = 666000
         // layer's single source of truth, never a divergent literal.
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap(),
-            &crate::acp_adapter::default_client_capabilities()
+            &crate::acp_semantics::default_client_capabilities()
         );
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);
         assert!(matches!(

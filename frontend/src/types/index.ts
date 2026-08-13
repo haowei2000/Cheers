@@ -200,6 +200,35 @@ export interface AuthRequiredContentData {
   chosen_action?: "retry" | "cancel" | string;
 }
 
+/** ACP v1 form or URL elicitation rendered as an interactive channel card. */
+export interface ElicitationContentData {
+  kind?: "agent_bridge_elicitation";
+  request_id?: string;
+  /** Original ACP request ID, retained for diagnostics but never used as authorization. */
+  acp_request_id?: string | number;
+  initiating_user_id?: string | null;
+  mode?: "form" | "url" | string;
+  message?: string;
+  requested_schema?: {
+    type?: string;
+    properties?: Record<string, {
+      type?: "string" | "number" | "integer" | "boolean" | "array";
+      title?: string;
+      description?: string;
+      enum?: Array<string | number>;
+      items?: { enum?: Array<string | number> };
+      default?: unknown;
+    }>;
+    required?: string[];
+  } | null;
+  url?: string | null;
+  elicitation_id?: string | null;
+  resolved?: boolean;
+  status?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+}
+
 /** Canonical agent lifecycle event shared by REST trace reads and live bot_trace frames. */
 export interface TraceEvent {
   v: number;
@@ -241,6 +270,7 @@ export interface Message {
     | "announcement"
     | "routing"
     | "permission"
+    | "elicitation"
     | "auth_required"
     | "task_claim_confirmation"
     | "notification";
@@ -261,6 +291,7 @@ export interface Message {
   content_data?:
     | PermissionContentData
     | AuthRequiredContentData
+    | ElicitationContentData
     | Record<string, unknown>
     | null;
   /** Resource-context bundle the sender attached (docs/design/RESOURCE_CONTEXT.md).

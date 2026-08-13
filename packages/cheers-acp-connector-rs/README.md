@@ -16,6 +16,11 @@ The Agent Bridge WebSocket protocol helpers formerly published as the
 standalone `@haowei0520/bridge-client` package now live in this Rust crate under
 `src/bridge.rs`.
 
+Version 0.1.37 uses the official `agent-client-protocol` 2.0 runtime with stable
+ACP wire v1 by default. For the one-release rollback window, set
+`CHEERS_ACP_TRANSPORT=legacy`; `official` is the default. The deprecated
+`CHEERS_ACP_RUNTIME` switch is read for 0.1.37 only and logs a warning.
+
 ## Config
 
 > 📖 **Full field-by-field reference:**
@@ -141,6 +146,17 @@ The connector advertises ACP `clientCapabilities.fs` and
 `clientCapabilities.terminal` as `false`. If the local agent needs to read or
 write files or run commands, grant those abilities to the agent process through
 its runtime environment rather than through connector resource policy.
+
+ACP v1 Elicitation is enabled for session-scoped `form` and `url` requests.
+`elicitation/create` is relayed through the Bridge into a durable channel card;
+the authenticated member's `accept`, `decline`, or `cancel` response is returned
+to the agent. Form requests that appear to collect secrets are cancelled. URL
+requests are never prefetched and require an explicit click before navigation.
+Request-scoped elicitation is supported while a human-originated `session/new`,
+`session/load`, or `authenticate` request is outstanding. The connector maps the
+actual ACP JSON-RPC `requestId` to the originating Cheers user/channel/task only
+for that request's lifetime; unmatched, expired, bot-originated, and startup
+initialization requests fail closed.
 
 Do not put `permissionMode = "ask"` in local config. ACP permission requests are
 forwarded to the Backend as Agent Bridge `permission_request` frames, and the

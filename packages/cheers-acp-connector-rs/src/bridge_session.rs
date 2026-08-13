@@ -1,3 +1,8 @@
+//! Authenticated dual-channel Agent Bridge session establishment.
+//!
+//! A session owns the control and data WebSockets, validates that both were
+//! accepted for the same bot, and maintains the gateway membership snapshot.
+
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};

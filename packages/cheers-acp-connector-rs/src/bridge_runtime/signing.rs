@@ -1,3 +1,8 @@
+//! Ed25519 capability-envelope signing for privileged Agent Bridge operations.
+//!
+//! Private keys remain connector-local. Each signed request receives a fresh
+//! timestamp, nonce, and monotonic request identifier before canonicalization.
+
 use super::*;
 
 pub(super) struct CapabilitySigner {
@@ -101,6 +106,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         DataOutbound::Error { .. } => Some("error"),
         DataOutbound::Send { .. } => Some("send"),
         DataOutbound::PermissionRequest { .. } => Some("permission_request"),
+        DataOutbound::ElicitationRequest { .. } => Some("elicitation_request"),
         DataOutbound::AuthRequired { .. } => Some("auth_required"),
         DataOutbound::SessionUpdate { .. } => Some("session_update"),
         DataOutbound::Trace { .. } => Some("trace"),
@@ -111,6 +117,8 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::ElicitationCancel { .. }
+        | DataOutbound::ElicitationComplete { .. }
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
@@ -125,6 +133,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::Error { acp_capability, .. }
         | DataOutbound::Send { acp_capability, .. }
         | DataOutbound::PermissionRequest { acp_capability, .. }
+        | DataOutbound::ElicitationRequest { acp_capability, .. }
         | DataOutbound::AuthRequired { acp_capability, .. }
         | DataOutbound::SessionUpdate { acp_capability, .. }
         | DataOutbound::Trace { acp_capability, .. } => {
@@ -137,6 +146,8 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::ElicitationCancel { .. }
+        | DataOutbound::ElicitationComplete { .. }
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }

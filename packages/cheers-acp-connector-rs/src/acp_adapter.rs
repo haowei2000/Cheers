@@ -1,15 +1,20 @@
+//! Legacy hand-written ACP stdio transport retained for the 0.1.37 rollback window.
+//!
+//! New code should target [`crate::runtime_adapter::RuntimeAdapter`] and the
+//! official runtime in [`crate::acp_runtime`]. This module is scheduled for
+//! deletion after the 0.1.38 production acceptance gate.
+
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashMap};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use agent_client_protocol_schema::v1::{
-    ClientCapabilities, Implementation, RequestPermissionOutcome, RequestPermissionResponse,
-    SelectedPermissionOutcome,
+use agent_client_protocol::schema::v1::{
+    CreateElicitationRequest, CreateElicitationResponse, ElicitationAction, Implementation,
+    RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
 };
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
@@ -19,198 +24,23 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 
+#[cfg(test)]
+use crate::acp_semantics::preferred_auth_method_id;
+use crate::acp_semantics::{
+    apply_settings_to_config, auth_failure_hint, default_client_capabilities,
+    permission_options_from_params, preferred_auth_method, ACP_PROTOCOL_VERSION,
+};
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    ConfigApplyResult, PermissionOutcome, PromptResult, RuntimeAdapter, RuntimeEvent,
-    SessionLoadResult, SessionStartOptions, SessionStartResult,
+    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
+    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
+    SessionStartResult,
 };
 
 type PendingMap = Arc<Mutex<BTreeMap<u64, oneshot::Sender<JsonRpcReply>>>>;
 type SharedWriter = Arc<Mutex<Option<ChildStdin>>>;
-
-/// ACP major protocol version this connector implements. Per the ACP
-/// initialization spec the version is bumped only on breaking changes;
-/// non-breaking additions are negotiated through capabilities, so a single
-/// supported major is all we advertise.
-/// <https://agentclientprotocol.com/protocol/v1/initialization>
-pub(crate) const ACP_PROTOCOL_VERSION: u16 = 1;
-
-/// One advertised ACP auth method, parsed from an `initialize` response.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AuthMethodInfo {
-    pub id: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub link: Option<String>,
-    /// ACP method type when present (`agent` / `env_var` / `terminal`).
-    pub auth_type: Option<String>,
-}
-
-fn auth_method_id(m: &Value) -> Option<&str> {
-    m.get("id")
-        .or_else(|| m.get("methodId"))
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-}
-
-fn auth_method_info(m: &Value) -> Option<AuthMethodInfo> {
-    Some(AuthMethodInfo {
-        id: auth_method_id(m)?.to_string(),
-        name: m.get("name").and_then(Value::as_str).map(str::to_string),
-        description: m
-            .get("description")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        link: m.get("link").and_then(Value::as_str).map(str::to_string),
-        auth_type: m.get("type").and_then(Value::as_str).map(str::to_string),
-    })
-}
-
-fn is_api_key_auth_method(method: &AuthMethodInfo) -> bool {
-    let id = method.id.to_ascii_lowercase();
-    matches!(
-        id.as_str(),
-        "api-key" | "api_key" | "apikey" | "env" | "envvar" | "env_var"
-    ) || id.contains("api-key")
-        || id.contains("api_key")
-        || method.auth_type.as_deref().is_some_and(|t| {
-            matches!(
-                t.to_ascii_lowercase().as_str(),
-                "env" | "envvar" | "env_var"
-            )
-        })
-}
-
-fn is_chatgpt_auth_method(method: &AuthMethodInfo) -> bool {
-    matches!(method.id.as_str(), "chat-gpt" | "chatgpt" | "chat_gpt")
-}
-
-/// True when the agent child env already has a vendor API / OAuth token that
-/// can satisfy an EnvVar / api-key auth method (Codex, Claude, …).
-fn agent_env_has_api_credentials(agent_env: &BTreeMap<String, String>) -> bool {
-    [
-        "CODEX_API_KEY",
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-    ]
-    .iter()
-    .any(|name| {
-        agent_env
-            .get(*name)
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false)
-    })
-}
-
-/// Pick an ACP `authenticate` method from the agent's initialize response.
-///
-/// Wire shape uses `id` or `methodId`. When several methods exist, agents may
-/// list `api-key` first (Codex does) even though a ChatGPT / session method is
-/// also advertised. Prefer `api-key` / EnvVar only when a matching credential
-/// (`CODEX_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
-/// `CLAUDE_CODE_OAUTH_TOKEN`) is actually present in the agent child env;
-/// otherwise prefer `chat-gpt` (or any non-api-key method) so subscription
-/// login via `HOME`/`~/.codex` / `~/.claude` works.
-pub(crate) fn preferred_auth_method(
-    initialize: &Value,
-    agent_env: &BTreeMap<String, String>,
-) -> Option<AuthMethodInfo> {
-    let methods: Vec<AuthMethodInfo> = initialize
-        .get("authMethods")?
-        .as_array()?
-        .iter()
-        .filter_map(auth_method_info)
-        .collect();
-    if methods.is_empty() {
-        return None;
-    }
-
-    let has_api_key = agent_env_has_api_credentials(agent_env);
-    if has_api_key {
-        if let Some(method) = methods.iter().find(|m| is_api_key_auth_method(m)) {
-            return Some(method.clone());
-        }
-    }
-    if let Some(method) = methods.iter().find(|m| is_chatgpt_auth_method(m)) {
-        return Some(method.clone());
-    }
-    if !has_api_key {
-        if let Some(method) = methods.iter().find(|m| !is_api_key_auth_method(m)) {
-            return Some(method.clone());
-        }
-    }
-    methods.into_iter().next()
-}
-
-pub(crate) fn preferred_auth_method_id(
-    initialize: &Value,
-    agent_env: &BTreeMap<String, String>,
-) -> Option<String> {
-    preferred_auth_method(initialize, agent_env).map(|m| m.id)
-}
-
-/// Heuristic: agent/session errors that mean "need (re)authenticate".
-pub(crate) fn looks_like_auth_error(err: &str) -> bool {
-    let lower = err.to_ascii_lowercase();
-    lower.contains("authentication required")
-        || lower.contains("authenticate(")
-        || lower.contains("not logged in")
-        || lower.contains("auth required")
-        || lower.contains("please log in")
-        || lower.contains("please sign in")
-        || lower.contains("not authenticated")
-        || lower.contains("missing api key")
-        || lower.contains("invalid api key")
-        || lower.contains("api key required")
-        || (lower.contains("unauthorized") && lower.contains("auth"))
-}
-
-pub(crate) fn auth_failure_hint(method: &AuthMethodInfo) -> String {
-    let label = method
-        .name
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(method.id.as_str());
-    match method.description.as_deref().filter(|s| !s.is_empty()) {
-        Some(desc) => format!("Complete agent auth ({label}): {desc}"),
-        None => format!(
-            "Complete agent auth ({label}), then restart the connector. \
-             EnvVar methods need the advertised keys in the connector env; \
-             Agent methods usually open a browser/CLI login when authenticate runs."
-        ),
-    }
-}
-
-/// Extra operator guidance when the agent auth method has no browser/login URL.
-/// Headless Claude/Codex API-key flows typically advertise EnvVar methods without
-/// `link` — Cheers must tell the owner how to fix credentials on the connector host.
-pub(crate) fn no_link_auth_operator_hint(
-    method: &AuthMethodInfo,
-    agent_env: &BTreeMap<String, String>,
-) -> String {
-    let has_creds = agent_env_has_api_credentials(agent_env);
-    if has_creds {
-        return "Credentials are present in the connector→agent env, but auth still failed. \
-                Check the key/token is valid, restart the connector if you just rotated it, \
-                then tap \"I've signed in\" to retry."
-            .into();
-    }
-    if is_api_key_auth_method(method) {
-        return "This auth method has no login URL. On the machine running the connector, put \
-                ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN (Claude) or OPENAI_API_KEY / \
-                CODEX_API_KEY (Codex) into the *connector service* environment — e.g. systemd \
-                `--user` EnvironmentFile=~/.cheers/secrets/<bot>.env, or re-run install.sh with \
-                that variable exported — then restart the connector and tap \"I've signed in\". \
-                Interactive shell exports alone do not reach launchd/systemd."
-            .into();
-    }
-    "This auth method has no login URL. Complete login on the connector host (e.g. `claude` / \
-     `codex` CLI under the same HOME the connector uses), or set the vendor API key in the \
-     connector service environment, restart the connector, then tap \"I've signed in\"."
-        .into()
-}
+type RequestRoutes = Arc<Mutex<HashMap<String, RequestRoute>>>;
 
 /// The outcome of ACP protocol-version negotiation given the version the agent
 /// echoed in its `initialize` response.
@@ -237,23 +67,6 @@ fn negotiate_protocol_version(returned: Option<u64>) -> VersionDecision {
     }
 }
 
-/// The single source of truth for the `clientCapabilities` Cheers advertises in
-/// `initialize`. Cheers is a headless relay: the only agent→client method it
-/// serves is `session/request_permission` (see `peer_method_supported`), so
-/// every `fs/*` and `terminal` capability is advertised as `false`. `config.rs`
-/// reuses THIS function so the configured value and the in-code fallback can
-/// never silently diverge.
-pub(crate) fn default_client_capabilities() -> Value {
-    // The locked-down posture (no fs, no terminal) IS the official
-    // `ClientCapabilities::default()` — a type-asserted invariant rather than
-    // hand-written JSON, so it cannot silently drift across a crate upgrade.
-    // Both `ClientCapabilities` and `FileSystemCapabilities` are
-    // `#[skip_serializing_none]`, so this serializes to exactly
-    // `{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}`.
-    serde_json::to_value(ClientCapabilities::default())
-        .expect("serializing default ACP client capabilities is infallible")
-}
-
 #[derive(Debug)]
 enum JsonRpcReply {
     Result(Value),
@@ -276,6 +89,7 @@ pub struct AcpAdapter {
     pending: PendingMap,
     next_id: Arc<AtomicU64>,
     initialize_response: Option<Value>,
+    request_routes: RequestRoutes,
 }
 
 impl AcpAdapter {
@@ -293,6 +107,7 @@ impl AcpAdapter {
             pending: Arc::new(Mutex::new(BTreeMap::new())),
             next_id: Arc::new(AtomicU64::new(1)),
             initialize_response: None,
+            request_routes: Default::default(),
         }
     }
 
@@ -413,6 +228,7 @@ impl AcpAdapter {
             stdout,
             self.writer.clone(),
             self.pending.clone(),
+            self.request_routes.clone(),
             self.event_tx.clone(),
         );
         if let Some(stderr) = stderr {
@@ -429,6 +245,17 @@ impl AcpAdapter {
         params: Value,
         timeout_ms: u64,
     ) -> anyhow::Result<Value> {
+        self.request_with_route(method, params, timeout_ms, None)
+            .await
+    }
+
+    async fn request_with_route(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout_ms: u64,
+        request_route: Option<RequestRoute>,
+    ) -> anyhow::Result<Value> {
         self.ensure_peer_alive()
             .await
             .with_context(|| format!("ACP peer is not running before request method={method}"))?;
@@ -442,8 +269,17 @@ impl AcpAdapter {
         tracing::debug!(account = %self.account_id, method, id, "ACP client→peer request");
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id, tx);
+        let route_key =
+            request_id_key(&Value::from(id)).expect("legacy ACP request IDs are JSON numbers");
+        if let Some(route) = request_route {
+            self.request_routes
+                .lock()
+                .await
+                .insert(route_key.clone(), route);
+        }
         if let Err(err) = write_json_line(&self.writer, &request).await {
             self.pending.lock().await.remove(&id);
+            self.request_routes.lock().await.remove(&route_key);
             return Err(err);
         }
 
@@ -451,15 +287,18 @@ impl AcpAdapter {
             Ok(Ok(reply)) => reply,
             Ok(Err(_)) => {
                 self.pending.lock().await.remove(&id);
+                self.request_routes.lock().await.remove(&route_key);
                 return Err(anyhow!(
                     "ACP peer closed before response method={method} id={id}"
                 ));
             }
             Err(_) => {
                 self.pending.lock().await.remove(&id);
+                self.request_routes.lock().await.remove(&route_key);
                 return Err(anyhow!("ACP request timeout method={method} id={id}"));
             }
         };
+        self.request_routes.lock().await.remove(&route_key);
         match reply {
             JsonRpcReply::Result(value) => Ok(value),
             JsonRpcReply::Error(error) => Err(anyhow!(
@@ -557,7 +396,7 @@ impl AcpAdapter {
 
     /// Pushes the backend-desired ACP config options to the agent via
     /// `session/set_config_option` (best-effort), the `set_config_option`
-    /// analogue of [`apply_permission_mode`]. Values are opaque strings
+    /// analogue of [`Self::apply_permission_mode`]. Values are opaque strings
     /// (ACP-generic); the map was already clamped to `allowed_config_options`
     /// at the `config_update` boundary.
     async fn apply_config_options(&mut self, session_id: &str) {
@@ -723,6 +562,18 @@ impl AcpRequester {
 }
 
 #[async_trait]
+impl PromptClient for AcpRequester {
+    async fn prompt(
+        &self,
+        session_id: &str,
+        prompt: Vec<Value>,
+        timeout_ms: u64,
+    ) -> anyhow::Result<PromptResult> {
+        AcpRequester::prompt(self, session_id, prompt, timeout_ms).await
+    }
+}
+
+#[async_trait]
 impl RuntimeAdapter for AcpAdapter {
     async fn start(&mut self) -> anyhow::Result<Value> {
         self.spawn_peer().await?;
@@ -801,7 +652,7 @@ impl RuntimeAdapter for AcpAdapter {
         self.start().await
     }
 
-    async fn authenticate(&mut self) -> anyhow::Result<()> {
+    async fn authenticate(&mut self, request_route: Option<RequestRoute>) -> anyhow::Result<()> {
         let Some(init) = self.initialize_response.clone() else {
             return Err(anyhow!("ACP authenticate called before initialize"));
         };
@@ -813,10 +664,11 @@ impl RuntimeAdapter for AcpAdapter {
             method_id = %method.id,
             "ACP re-authenticate"
         );
-        self.request(
+        self.request_with_route(
             "authenticate",
             json!({ "methodId": method.id }),
             self.request_timeout_ms(),
+            request_route,
         )
         .await
         .map(|_| ())
@@ -830,8 +682,9 @@ impl RuntimeAdapter for AcpAdapter {
         &mut self,
         options: SessionStartOptions,
     ) -> anyhow::Result<SessionStartResult> {
+        let request_route = options.request_route.clone();
         let result = self
-            .request(
+            .request_with_route(
                 "session/new",
                 json!({
                     "cwd": options.cwd,
@@ -839,6 +692,7 @@ impl RuntimeAdapter for AcpAdapter {
                     "mcpServers": options.mcp_servers,
                 }),
                 self.request_timeout_ms(),
+                request_route,
             )
             .await?;
         let session_id = result
@@ -871,8 +725,9 @@ impl RuntimeAdapter for AcpAdapter {
         session_id: &str,
         options: SessionStartOptions,
     ) -> anyhow::Result<SessionLoadResult> {
+        let request_route = options.request_route.clone();
         let result = self
-            .request(
+            .request_with_route(
                 "session/load",
                 json!({
                     "sessionId": session_id,
@@ -881,35 +736,12 @@ impl RuntimeAdapter for AcpAdapter {
                     "mcpServers": options.mcp_servers,
                 }),
                 self.request_timeout_ms(),
+                request_route,
             )
             .await?;
         self.apply_permission_mode(session_id).await;
         self.apply_config_options(session_id).await;
         Ok(SessionLoadResult { metadata: result })
-    }
-
-    async fn prompt(
-        &mut self,
-        session_id: &str,
-        prompt: Vec<Value>,
-        timeout_ms: u64,
-    ) -> anyhow::Result<PromptResult> {
-        let result = self
-            .request(
-                "session/prompt",
-                json!({
-                    "sessionId": session_id,
-                    "prompt": prompt,
-                }),
-                timeout_ms,
-            )
-            .await?;
-        Ok(PromptResult {
-            stop_reason: result
-                .get("stopReason")
-                .and_then(Value::as_str)
-                .map(ToString::to_string),
-        })
     }
 
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
@@ -959,46 +791,11 @@ impl RuntimeAdapter for AcpAdapter {
         &mut self,
         settings: &ConnectorControlSettings,
     ) -> anyhow::Result<ConfigApplyResult> {
-        let mut applied = Vec::new();
-        let mut rejected = Vec::new();
         let previous = self.config.clone();
-        let mut restart_fields = Vec::new();
-
-        if settings.permission_mode.is_some() {
-            rejected.push(ConfigStatusRejectedField {
-                field: "permissionMode".to_string(),
-                reason: "channel resource permission is resolved by Backend membership role; ACP permission prompts use permission_resolution".to_string(),
-            });
-        }
-
-        if let Some(mode) = &settings.agent_native_permission_mode {
-            self.config.agent_native_permission_mode = Some(mode.clone());
-            applied.push("agentNativePermissionMode".to_string());
-        }
-        if let Some(value) = settings.request_timeout_ms {
-            self.config.request_timeout_ms = value;
-            applied.push("requestTimeoutMs".to_string());
-        }
-        if let Some(value) = settings.prompt_timeout_ms {
-            self.config.prompt_timeout_ms = value;
-            applied.push("promptTimeoutMs".to_string());
-        }
-        if let Some(cwd) = &settings.cwd {
-            self.config.cwd = Some(PathBuf::from(cwd));
-            applied.push("cwd".to_string());
-            restart_fields.push("cwd".to_string());
-        }
-        if let Some(model) = &settings.model {
-            self.config.model = Some(model.clone());
-            applied.push("model".to_string());
-            restart_fields.push("model".to_string());
-        }
-        if let Some(config_options) = &settings.config_options {
-            // Stored (already L0-clamped); applied per-session via
-            // session/set_config_option at session start — no restart needed.
-            self.config.config_options = Some(config_options.clone());
-            applied.push("configOptions".to_string());
-        }
+        let application = apply_settings_to_config(&mut self.config, settings);
+        let mut applied = application.applied;
+        let mut rejected = application.rejected;
+        let restart_fields = application.restart_fields;
         if !restart_fields.is_empty() {
             if let Err(err) = self.restart().await {
                 self.config = previous;
@@ -1020,52 +817,22 @@ impl RuntimeAdapter for AcpAdapter {
         // `permission_options_from_params`).
         permission_options_from_params(params)
     }
-}
 
-/// Parse the ACP `session/request_permission` params' `options` array into the
-/// connector's [`PermissionOption`] shape.
-///
-/// Deliberately a free function, NOT an `AcpAdapter` method: the permission
-/// handler runs in a task spawned mid-turn while `prompt()` holds the adapter
-/// `Mutex` for the whole turn. If building the options required `adapter.lock()`,
-/// the handler would block on that lock while `prompt()` blocks waiting for the
-/// permission answer the handler is trying to produce — a deadlock that hangs
-/// the turn until the permission timeout. Keeping this stateless lets the card
-/// be built without touching the adapter. (See `bridge_runtime/permission.rs`.)
-pub(crate) fn permission_options_from_params(params: &Value) -> Vec<PermissionOption> {
-    params
-        .get("options")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    let obj = item.as_object()?;
-                    Some(PermissionOption {
-                        option_id: obj
-                            .get("optionId")
-                            .or_else(|| obj.get("option_id"))
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        kind: obj
-                            .get("kind")
-                            .and_then(Value::as_str)
-                            .map(ToString::to_string),
-                        name: obj
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .map(ToString::to_string),
-                        description: obj
-                            .get("description")
-                            .and_then(Value::as_str)
-                            .map(ToString::to_string),
-                    })
-                })
-                .filter(|option| !option.option_id.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+    fn prompt_client(&self) -> Arc<dyn PromptClient> {
+        Arc::new(self.requester())
+    }
+
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
+    }
+
+    fn initialize_response(&self) -> Option<Value> {
+        self.initialize_response.clone()
+    }
+
+    async fn inject_fence(&self, acp_session_id: String) {
+        AcpAdapter::inject_fence(self, acp_session_id).await;
+    }
 }
 
 fn spawn_stdout_reader(
@@ -1073,6 +840,7 @@ fn spawn_stdout_reader(
     stdout: tokio::process::ChildStdout,
     writer: SharedWriter,
     pending: PendingMap,
+    request_routes: RequestRoutes,
     event_tx: mpsc::Sender<RuntimeEvent>,
 ) {
     tokio::spawn(async move {
@@ -1081,9 +849,15 @@ fn spawn_stdout_reader(
             match read_acp_message(&mut reader).await {
                 Ok(Some(message)) => match serde_json::from_str::<Value>(&message) {
                     Ok(value) => {
-                        if let Err(err) =
-                            handle_peer_message(&account_id, &writer, &pending, &event_tx, value)
-                                .await
+                        if let Err(err) = handle_peer_message(
+                            &account_id,
+                            &writer,
+                            &pending,
+                            &request_routes,
+                            &event_tx,
+                            value,
+                        )
+                        .await
                         {
                             let _ = event_tx
                                 .send(RuntimeEvent::AdapterError {
@@ -1130,6 +904,7 @@ async fn handle_peer_message(
     account_id: &str,
     writer: &SharedWriter,
     pending: &PendingMap,
+    request_routes: &RequestRoutes,
     event_tx: &mpsc::Sender<RuntimeEvent>,
     value: Value,
 ) -> anyhow::Result<()> {
@@ -1144,9 +919,11 @@ async fn handle_peer_message(
             let account_id = account_id.to_string();
             let writer = writer.clone();
             let event_tx = event_tx.clone();
+            let request_routes = request_routes.clone();
             tokio::spawn(async move {
                 if let Err(err) =
-                    handle_peer_request(&account_id, &writer, &event_tx, id, value).await
+                    handle_peer_request(&account_id, &writer, &event_tx, &request_routes, id, value)
+                        .await
                 {
                     let _ = event_tx
                         .send(RuntimeEvent::AdapterError {
@@ -1188,6 +965,22 @@ async fn handle_peer_notification(
     mut value: Value,
 ) -> anyhow::Result<()> {
     let method = value.get("method").and_then(Value::as_str).unwrap_or("");
+    if method == "elicitation/complete" {
+        if let Some(elicitation_id) = value
+            .get("params")
+            .and_then(|params| params.get("elicitationId"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            event_tx
+                .send(RuntimeEvent::ElicitationComplete {
+                    elicitation_id: elicitation_id.to_string(),
+                })
+                .await
+                .context("failed to forward elicitation/complete")?;
+        }
+        return Ok(());
+    }
     if method != "session/update" {
         tracing::debug!(account = %account_id, method, "ACP peer notification (not session/update; ignored)");
         return Ok(());
@@ -1233,21 +1026,22 @@ async fn handle_peer_notification(
 /// `clientCapabilities.fs.*` and `terminal` as `false`
 /// (`default_client_capabilities()`),
 /// so a spec-compliant agent never calls `fs/read_text_file`, `fs/write_text_file`,
-/// or any `terminal/*`. The ONLY agent→client method we implement is
-/// `session/request_permission`; everything else is answered with JSON-RPC
+/// or any `terminal/*`. The implemented agent→client requests are
+/// `session/request_permission` and ACP v1 `elicitation/create`; everything else is answered with JSON-RPC
 /// `-32601`. This is intentional, not an oversight — see
 /// docs/arch/ACP_FS_PROXY.md (why ACP fs is not proxied) and
 /// docs/arch/ACP_APPROVAL_FLOW.md §0.5 (the permission model). Do NOT flip a
 /// capability to `true` without first implementing the corresponding handler
 /// here, or the connector would advertise a capability it cannot serve.
 fn peer_method_supported(method: &str) -> bool {
-    matches!(method, "session/request_permission")
+    matches!(method, "session/request_permission" | "elicitation/create")
 }
 
 async fn handle_peer_request(
     account_id: &str,
     writer: &SharedWriter,
     event_tx: &mpsc::Sender<RuntimeEvent>,
+    request_routes: &RequestRoutes,
     id: u64,
     value: Value,
 ) -> anyhow::Result<()> {
@@ -1278,6 +1072,50 @@ async fn handle_peer_request(
     }
 
     let params = value.get("params").cloned().unwrap_or(Value::Null);
+    if method == "elicitation/create" {
+        let acp_session_id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
+        let request_route = match params.get("requestId").and_then(request_id_key) {
+            Some(key) => request_routes.lock().await.get(&key).cloned(),
+            None => None,
+        };
+        let valid = serde_json::from_value::<CreateElicitationRequest>(params.clone()).is_ok();
+        let response = if valid && (acp_session_id.is_some() || request_route.is_some()) {
+            let (tx, rx) = oneshot::channel();
+            if event_tx
+                .send(RuntimeEvent::ElicitationRequest {
+                    acp_session_id,
+                    request_route,
+                    params,
+                    respond_to: tx,
+                })
+                .await
+                .is_ok()
+            {
+                rx.await.unwrap_or_else(|_| {
+                    serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                        .expect("elicitation cancel serializes")
+                })
+            } else {
+                serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                    .expect("elicitation cancel serializes")
+            }
+        } else {
+            serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                .expect("elicitation cancel serializes")
+        };
+        let response = serde_json::from_value::<CreateElicitationResponse>(response)
+            .unwrap_or_else(|_| CreateElicitationResponse::new(ElicitationAction::Cancel));
+        write_json_line(
+            writer,
+            &json!({"jsonrpc":"2.0", "id":id, "result":response}),
+        )
+        .await?;
+        return Ok(());
+    }
     let acp_session_id = params
         .get("sessionId")
         .and_then(Value::as_str)
@@ -1329,6 +1167,13 @@ async fn handle_peer_request(
     };
     write_permission_response(writer, id, acp_outcome).await?;
     Ok(())
+}
+
+/// Canonicalizes JSON-RPC request IDs without conflating strings and numbers.
+fn request_id_key(value: &Value) -> Option<String> {
+    matches!(value, Value::String(_) | Value::Number(_))
+        .then(|| serde_json::to_string(value).ok())
+        .flatten()
 }
 
 /// Writes a JSON-RPC success reply carrying an ACP `RequestPermissionResponse`.
@@ -1614,11 +1459,16 @@ mod tests {
         assert_eq!(caps["fs"]["readTextFile"], false);
         assert_eq!(caps["fs"]["writeTextFile"], false);
         assert_eq!(caps["terminal"], false);
-        // The typed default must serialize to exactly the locked-down wire shape
-        // config.rs exact-compares against (no stray `_meta`/extra keys).
+        assert_eq!(caps["elicitation"]["form"], json!({}));
+        assert_eq!(caps["elicitation"]["url"], json!({}));
+        // Elicitation is deliberately advertised while fs/terminal stay locked down.
         assert_eq!(
             caps,
-            json!({"fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false})
+            json!({
+                "fs": {"readTextFile": false, "writeTextFile": false},
+                "terminal": false,
+                "elicitation": {"form": {}, "url": {}}
+            })
         );
     }
 
@@ -1657,6 +1507,13 @@ mod tests {
         assert_eq!(options.len(), 2);
         assert_eq!(options[0].option_id, "allow-1");
         assert_eq!(options[1].option_id, "deny-1");
+    }
+
+    #[test]
+    fn request_id_keys_preserve_json_rpc_id_type() {
+        assert_eq!(request_id_key(&json!(12)).as_deref(), Some("12"));
+        assert_eq!(request_id_key(&json!("12")).as_deref(), Some("\"12\""));
+        assert_eq!(request_id_key(&Value::Null), None);
     }
 
     #[tokio::test]

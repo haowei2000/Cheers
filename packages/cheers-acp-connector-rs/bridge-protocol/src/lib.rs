@@ -376,6 +376,24 @@ pub struct PermissionResolution {
     pub extra: serde_json::Map<String, Value>,
 }
 
+/// Authenticated user response to an ACP v1 elicitation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElicitationResolution {
+    pub request_id: String,
+    /// `accept`, `decline`, or `cancel`.
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
 /// Human acknowledgment of a forwarded `auth_required` card.
 /// `action` is `"retry"` (re-run ACP authenticate) or `"cancel"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -592,6 +610,13 @@ pub enum ControlInbound {
         v: u32,
         #[serde(flatten)]
         resolution: PermissionResolution,
+    },
+    #[serde(rename = "elicitation_resolution")]
+    ElicitationResolution {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        #[serde(flatten)]
+        resolution: ElicitationResolution,
     },
     /// Human acknowledged an `auth_required` card — connector should retry
     /// ACP `authenticate` (action=`retry`) or abort the waiting turn (`cancel`).
@@ -1064,6 +1089,48 @@ pub enum DataOutbound {
         request_id: String,
         /// "timeout" | "cancelled"
         reason: String,
+    },
+    /// ACP v1 `elicitation/create` forwarded to the channel UI without reshaping.
+    #[serde(rename = "elicitation_request")]
+    ElicitationRequest {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        client_msg_id: String,
+        channel_id: String,
+        request_id: String,
+        task_id: String,
+        msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_msg_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_session_id: Option<String>,
+        /// Original ACP JSON-RPC request ID for request-scoped correlation/audit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_request_id: Option<Value>,
+        /// Verified human who initiated the originating client→agent request.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        initiating_user_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        /// Raw ACP params; preserves `_meta` and future extensions.
+        params: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
+    },
+    /// Finalize an unresolved elicitation after timeout or local cancellation.
+    #[serde(rename = "elicitation_cancel")]
+    ElicitationCancel {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        reason: String,
+    },
+    /// ACP URL flow completed externally after a prior accept response.
+    #[serde(rename = "elicitation_complete")]
+    ElicitationComplete {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        elicitation_id: String,
     },
     /// ACP agent authentication expired / failed mid-turn. Surfaces as a channel
     /// card so the bot owner can complete login (or set env credentials) and ack.

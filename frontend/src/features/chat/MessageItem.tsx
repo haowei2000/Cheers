@@ -22,6 +22,7 @@ import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { AuthRequiredCard } from "./AuthRequiredCard";
+import { ElicitationCard } from "./ElicitationCard";
 import { TaskClaimConfirmationCard } from "./TaskClaimConfirmationCard";
 import { BotTracePanel } from "./BotTracePanel";
 import { stopTurn } from "./stopTurn";
@@ -394,6 +395,17 @@ export const MessageItem = memo(function MessageItem({
             channelId={channelId}
             currentUserId={currentUserId}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (message.msg_type === "elicitation") {
+    return (
+      <div className="flex items-start gap-3 px-4 py-1">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <ElicitationCard message={message} channelId={channelId} />
         </div>
       </div>
     );

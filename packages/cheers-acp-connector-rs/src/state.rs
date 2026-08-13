@@ -1,3 +1,8 @@
+//! Durable mapping between Cheers provider keys and ACP session identifiers.
+//!
+//! State writes use an atomic replacement strategy so a daemon interruption
+//! cannot leave a partially serialized session database.
+
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;

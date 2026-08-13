@@ -1,47 +1,56 @@
-//! Tier B (in progress): a `RuntimeAdapter` backed by the official
-//! `agent-client-protocol` runtime crate instead of the hand-rolled JSON-RPC
-//! transport in [`crate::acp_adapter`].
+//! The default `RuntimeAdapter`, backed by the official
+//! `agent-client-protocol` runtime crate. The hand-rolled adapter remains only
+//! as the 0.1.37 rollback transport.
 //!
 //! Design (see docs/arch/ACP_RUST_SDK_ADOPTION.md §3): a long-lived **actor**
 //! task runs `Client.builder()…connect_with(transport, |cx| command_loop)`. The
 //! `RuntimeAdapter` surface (Value in / Value out) is unchanged — methods send
 //! `Command`s to the actor and await replies. Inbound `session/update` and
 //! `session/request_permission` are relayed to the backend **raw** via the
-//! `UntypedMessage` hooks (zero-loss opaque relay); every other agent→client
+//! `UntypedMessage` hooks (zero-loss opaque relay). ACP v1 elicitation is also
+//! served through those hooks and validated with the official typed schema;
+//! every other agent→client
 //! method is declined (`Handled::No`) so the runtime answers it with `-32601`,
 //! preserving the connector's headless-relay posture.
 //!
-//! Selected at startup by [`AcpAdapterKind`] when `CHEERS_ACP_RUNTIME=1`; the
-//! default stays the hand-rolled transport until the runtime path reaches parity.
-#![allow(dead_code)]
-
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
+use agent_client_protocol::schema::v1::{
+    AuthenticateRequest, CancelNotification, CreateElicitationRequest, CreateElicitationResponse,
+    ElicitationAction, Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest,
+    PromptRequest, RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModeRequest, AGENT_METHOD_NAMES,
+    CLIENT_METHOD_NAMES,
+};
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectionTo, Handled, Responder, UntypedMessage,
 };
-use agent_client_protocol_schema::v1::{
-    RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
-};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::process::Command as TokioCommand;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::acp_adapter::{
-    default_client_capabilities, preferred_auth_method, ACP_PROTOCOL_VERSION,
+use crate::acp_semantics::{
+    apply_settings_to_config, default_client_capabilities, preferred_auth_method,
 };
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    ConfigApplyResult, PermissionOutcome, PromptResult, RuntimeAdapter, RuntimeEvent,
-    SessionLoadResult, SessionStartOptions, SessionStartResult,
+    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
+    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
+    SessionStartResult,
 };
+
+type RequestRoutes = std::sync::Arc<Mutex<HashMap<String, RequestRoute>>>;
 
 /// A unit of work sent from the adapter handle to the connection actor.
 enum Command {
@@ -49,6 +58,7 @@ enum Command {
         method: String,
         params: Value,
         timeout_ms: u64,
+        request_route: Option<RequestRoute>,
         reply: oneshot::Sender<anyhow::Result<Value>>,
     },
     Notify {
@@ -66,6 +76,7 @@ pub struct RuntimeAcpAdapter {
     cmd_tx: Option<mpsc::Sender<Command>>,
     actor: Option<JoinHandle<anyhow::Result<()>>>,
     initialize_response: Option<Value>,
+    request_routes: RequestRoutes,
 }
 
 impl RuntimeAcpAdapter {
@@ -81,11 +92,8 @@ impl RuntimeAcpAdapter {
             cmd_tx: None,
             actor: None,
             initialize_response: None,
+            request_routes: Default::default(),
         }
-    }
-
-    pub fn initialize_response(&self) -> Option<&Value> {
-        self.initialize_response.as_ref()
     }
 
     fn request_timeout_ms(&self) -> u64 {
@@ -93,11 +101,22 @@ impl RuntimeAcpAdapter {
     }
 
     async fn request(&self, method: &str, params: Value, timeout_ms: u64) -> anyhow::Result<Value> {
+        self.request_with_route(method, params, timeout_ms, None)
+            .await
+    }
+
+    async fn request_with_route(
+        &self,
+        method: &str,
+        params: Value,
+        timeout_ms: u64,
+        request_route: Option<RequestRoute>,
+    ) -> anyhow::Result<Value> {
         let cmd_tx = self
             .cmd_tx
             .as_ref()
             .ok_or_else(|| anyhow!("ACP runtime adapter is not started (method={method})"))?;
-        request_via(cmd_tx, method, params, timeout_ms).await
+        request_via(cmd_tx, method, params, timeout_ms, request_route).await
     }
 
     async fn notify(&self, method: &str, params: Value) -> anyhow::Result<()> {
@@ -127,8 +146,11 @@ impl RuntimeAcpAdapter {
         }
         match self
             .request(
-                "session/set_mode",
-                json!({ "sessionId": session_id, "modeId": mode }),
+                AGENT_METHOD_NAMES.session_set_mode,
+                typed_params(SetSessionModeRequest::new(
+                    session_id.to_string(),
+                    mode.clone(),
+                )),
                 self.request_timeout_ms(),
             )
             .await
@@ -149,7 +171,7 @@ impl RuntimeAcpAdapter {
 
     /// Pushes the backend-desired ACP config options to the agent via
     /// `session/set_config_option` (best-effort), one id at a time — the
-    /// `set_config_option` analogue of [`apply_permission_mode`]. Values are
+    /// `set_config_option` analogue of [`Self::apply_permission_mode`]. Values are
     /// opaque strings (ACP-generic); the map was already clamped to
     /// `allowed_config_options` at the `config_update` boundary.
     async fn apply_config_options(&self, session_id: &str) {
@@ -167,8 +189,12 @@ impl RuntimeAcpAdapter {
             };
             match self
                 .request(
-                    "session/set_config_option",
-                    json!({ "sessionId": session_id, "configId": config_id, "value": value }),
+                    AGENT_METHOD_NAMES.session_set_config_option,
+                    typed_params(SetSessionConfigOptionRequest::new(
+                        session_id.to_string(),
+                        config_id.to_string(),
+                        SessionConfigValueId::new(value.to_string()),
+                    )),
                     self.request_timeout_ms(),
                 )
                 .await
@@ -213,10 +239,6 @@ impl RuntimeAcpAdapter {
         }
     }
 
-    // --- Concrete API `bridge_runtime::run` needs beyond the RuntimeAdapter
-    // trait (mirrors `AcpAdapter`), so the runtime adapter is a structural
-    // drop-in behind `AcpAdapterKind`. ---
-
     /// A cheap, clone-able issuer for the lock-free concurrent-prompt path
     /// (the runtime-backed equivalent of `AcpAdapter::requester`).
     pub fn requester(&self) -> RuntimeRequester {
@@ -235,46 +257,6 @@ impl RuntimeAcpAdapter {
             })
             .await;
     }
-
-    fn agent_capabilities(&self) -> Option<&Value> {
-        self.initialize_response
-            .as_ref()
-            .and_then(|value| value.get("agentCapabilities"))
-    }
-
-    pub fn supports_load_session(&self) -> bool {
-        self.agent_capability_bool(&["loadSession"])
-    }
-
-    pub fn supports_prompt_image(&self) -> bool {
-        self.agent_capability_bool(&["promptCapabilities", "image"])
-    }
-
-    pub fn supports_prompt_audio(&self) -> bool {
-        self.agent_capability_bool(&["promptCapabilities", "audio"])
-    }
-
-    pub fn supports_mcp_http(&self) -> bool {
-        self.agent_capability_bool(&["mcpCapabilities", "http"])
-    }
-
-    pub fn supports_mcp_sse(&self) -> bool {
-        self.agent_capability_bool(&["mcpCapabilities", "sse"])
-    }
-
-    fn agent_capability_bool(&self, path: &[&str]) -> bool {
-        let mut node = match self.agent_capabilities() {
-            Some(node) => node,
-            None => return false,
-        };
-        for key in path {
-            node = match node.get(key) {
-                Some(child) => child,
-                None => return false,
-            };
-        }
-        node.as_bool().unwrap_or(false)
-    }
 }
 
 #[async_trait]
@@ -290,6 +272,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             self.account_id.clone(),
             self.config.clone(),
             self.event_tx.clone(),
+            self.request_routes.clone(),
             cmd_rx,
         ));
         self.cmd_tx = Some(cmd_tx);
@@ -302,18 +285,19 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             .client_capabilities
             .clone()
             .unwrap_or_else(default_client_capabilities);
+        let mut initialize = typed_params(
+            InitializeRequest::new(ProtocolVersion::V1).client_info(
+                Implementation::new("cce-acp-connector", env!("CARGO_PKG_VERSION"))
+                    .title("Cheers ACP Connector"),
+            ),
+        );
+        // Operator capability extensions are intentionally opaque; the default
+        // remains the SDK's false/empty capabilities (no fs or terminal).
+        initialize["clientCapabilities"] = client_capabilities;
         let response = self
             .request(
-                "initialize",
-                json!({
-                    "protocolVersion": ACP_PROTOCOL_VERSION,
-                    "clientCapabilities": client_capabilities,
-                    "clientInfo": {
-                        "name": "cce-acp-connector",
-                        "title": "Cheers ACP Connector",
-                        "version": env!("CARGO_PKG_VERSION"),
-                    },
-                }),
+                AGENT_METHOD_NAMES.initialize,
+                initialize,
                 self.request_timeout_ms(),
             )
             .await?;
@@ -351,7 +335,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         self.start().await
     }
 
-    async fn authenticate(&mut self) -> anyhow::Result<()> {
+    async fn authenticate(&mut self, request_route: Option<RequestRoute>) -> anyhow::Result<()> {
         let Some(init) = self.initialize_response.clone() else {
             return Err(anyhow::anyhow!("ACP authenticate called before initialize"));
         };
@@ -363,10 +347,11 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             method_id = %method.id,
             "ACP re-authenticate (runtime transport)"
         );
-        self.request(
-            "authenticate",
-            json!({ "methodId": method.id }),
+        self.request_with_route(
+            AGENT_METHOD_NAMES.authenticate,
+            typed_params(AuthenticateRequest::new(method.id.clone())),
             self.request_timeout_ms(),
+            request_route,
         )
         .await
         .map(|_| ())
@@ -387,11 +372,14 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         &mut self,
         options: SessionStartOptions,
     ) -> anyhow::Result<SessionStartResult> {
+        let request_route = options.request_route.clone();
+        let params = session_request_params(None, options)?;
         let result = self
-            .request(
-                "session/new",
-                json!({ "cwd": options.cwd, "additionalDirectories": options.additional_dirs, "mcpServers": options.mcp_servers }),
+            .request_with_route(
+                AGENT_METHOD_NAMES.session_new,
+                params,
                 self.request_timeout_ms(),
+                request_route,
             )
             .await?;
         let session_id = result
@@ -412,11 +400,14 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         session_id: &str,
         options: SessionStartOptions,
     ) -> anyhow::Result<SessionLoadResult> {
+        let request_route = options.request_route.clone();
+        let params = session_request_params(Some(session_id), options)?;
         let result = self
-            .request(
-                "session/load",
-                json!({ "sessionId": session_id, "cwd": options.cwd, "additionalDirectories": options.additional_dirs, "mcpServers": options.mcp_servers }),
+            .request_with_route(
+                AGENT_METHOD_NAMES.session_load,
+                params,
                 self.request_timeout_ms(),
+                request_route,
             )
             .await?;
         self.apply_permission_mode(session_id).await;
@@ -424,30 +415,12 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         Ok(SessionLoadResult { metadata: result })
     }
 
-    async fn prompt(
-        &mut self,
-        session_id: &str,
-        prompt: Vec<Value>,
-        timeout_ms: u64,
-    ) -> anyhow::Result<PromptResult> {
-        let result = self
-            .request(
-                "session/prompt",
-                json!({ "sessionId": session_id, "prompt": prompt }),
-                timeout_ms,
-            )
-            .await?;
-        Ok(PromptResult {
-            stop_reason: result
-                .get("stopReason")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string),
-        })
-    }
-
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
-        self.notify("session/cancel", json!({ "sessionId": session_id }))
-            .await
+        self.notify(
+            AGENT_METHOD_NAMES.session_cancel,
+            typed_params(CancelNotification::new(session_id.to_string())),
+        )
+        .await
     }
 
     async fn set_config_option(
@@ -457,8 +430,12 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         value: &str,
     ) -> anyhow::Result<Value> {
         self.request(
-            "session/set_config_option",
-            json!({ "sessionId": session_id, "configId": config_id, "value": value }),
+            AGENT_METHOD_NAMES.session_set_config_option,
+            typed_params(SetSessionConfigOptionRequest::new(
+                session_id.to_string(),
+                config_id.to_string(),
+                SessionConfigValueId::new(value.to_string()),
+            )),
             self.request_timeout_ms(),
         )
         .await
@@ -466,8 +443,11 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
 
     async fn set_mode(&mut self, session_id: &str, mode: &str) -> anyhow::Result<()> {
         self.request(
-            "session/set_mode",
-            json!({ "sessionId": session_id, "modeId": mode }),
+            AGENT_METHOD_NAMES.session_set_mode,
+            typed_params(SetSessionModeRequest::new(
+                session_id.to_string(),
+                mode.to_string(),
+            )),
             self.request_timeout_ms(),
         )
         .await
@@ -488,45 +468,11 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         &mut self,
         settings: &ConnectorControlSettings,
     ) -> anyhow::Result<ConfigApplyResult> {
-        let mut applied = Vec::new();
-        let mut rejected = Vec::new();
         let previous = self.config.clone();
-        let mut restart_fields = Vec::new();
-
-        if settings.permission_mode.is_some() {
-            rejected.push(ConfigStatusRejectedField {
-                field: "permissionMode".to_string(),
-                reason: "channel resource permission is resolved by Backend membership role; ACP permission prompts use permission_resolution".to_string(),
-            });
-        }
-        if let Some(mode) = &settings.agent_native_permission_mode {
-            self.config.agent_native_permission_mode = Some(mode.clone());
-            applied.push("agentNativePermissionMode".to_string());
-        }
-        if let Some(value) = settings.request_timeout_ms {
-            self.config.request_timeout_ms = value;
-            applied.push("requestTimeoutMs".to_string());
-        }
-        if let Some(value) = settings.prompt_timeout_ms {
-            self.config.prompt_timeout_ms = value;
-            applied.push("promptTimeoutMs".to_string());
-        }
-        if let Some(cwd) = &settings.cwd {
-            self.config.cwd = Some(std::path::PathBuf::from(cwd));
-            applied.push("cwd".to_string());
-            restart_fields.push("cwd".to_string());
-        }
-        if let Some(model) = &settings.model {
-            self.config.model = Some(model.clone());
-            applied.push("model".to_string());
-            restart_fields.push("model".to_string());
-        }
-        if let Some(config_options) = &settings.config_options {
-            // Stored (already L0-clamped); applied per-session via
-            // session/set_config_option at session start — no restart needed.
-            self.config.config_options = Some(config_options.clone());
-            applied.push("configOptions".to_string());
-        }
+        let application = apply_settings_to_config(&mut self.config, settings);
+        let mut applied = application.applied;
+        let mut rejected = application.rejected;
+        let restart_fields = application.restart_fields;
         if !restart_fields.is_empty() {
             if let Err(err) = self.restart().await {
                 self.config = previous;
@@ -542,22 +488,38 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
     }
 
     fn permission_options(&self, params: &Value) -> Vec<PermissionOption> {
-        crate::acp_adapter::permission_options_from_params(params)
+        crate::acp_semantics::permission_options_from_params(params)
+    }
+
+    fn prompt_client(&self) -> std::sync::Arc<dyn PromptClient> {
+        std::sync::Arc::new(self.requester())
+    }
+
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
+    }
+
+    fn initialize_response(&self) -> Option<Value> {
+        self.initialize_response.clone()
+    }
+
+    async fn inject_fence(&self, acp_session_id: String) {
+        RuntimeAcpAdapter::inject_fence(self, acp_session_id).await;
     }
 }
 
-/// The only agent→client *notification* the headless relay serves; every other
+/// Agent→client notifications the headless relay serves; every other
 /// notification is declined (`Handled::No`) so the runtime applies its default
 /// handling. Pure so the opaque-relay routing is unit-testable.
 fn runtime_serves_notification(method: &str) -> bool {
-    method == "session/update"
+    matches!(method, "session/update" | "elicitation/complete")
 }
 
-/// The only agent→client *request* the headless relay serves; every other
+/// Agent→client requests the headless relay serves; every other
 /// request is declined so the runtime answers JSON-RPC `-32601` (Cheers
 /// advertises no fs/* or terminal capabilities — docs/arch/ACP_FS_PROXY.md).
 fn runtime_serves_request(method: &str) -> bool {
-    method == "session/request_permission"
+    matches!(method, "session/request_permission" | "elicitation/create")
 }
 
 /// Extract `(sessionId, update)` from a `session/update` notification's params.
@@ -571,6 +533,53 @@ fn session_update_parts(params: &Value) -> Option<(String, Value)> {
     }
     let update = params.get("update").cloned().unwrap_or(Value::Null);
     Some((session_id.to_string(), update))
+}
+
+/// Serialize a stable-v1 SDK request type into the params object consumed by
+/// the runtime's batch-aware untyped dispatcher. Typed construction pins the
+/// standard ACP field names while the raw dispatcher lets responses and
+/// extension metadata remain lossless.
+fn typed_params(request: impl Serialize) -> Value {
+    serde_json::to_value(request).expect("official ACP schema request must serialize")
+}
+
+/// Use the official prompt request envelope, then restore opaque content blocks
+/// verbatim. This preserves unknown future block variants and vendor `_meta`
+/// while still deriving the stable request shape from the SDK.
+fn prompt_params(session_id: &str, prompt: Vec<Value>) -> Value {
+    let mut params = typed_params(PromptRequest::new(session_id.to_string(), Vec::new()));
+    params["prompt"] = Value::Array(prompt);
+    params
+}
+
+fn session_request_params(
+    session_id: Option<&str>,
+    options: SessionStartOptions,
+) -> anyhow::Result<Value> {
+    let cwd = match options.cwd {
+        Some(cwd) => PathBuf::from(cwd),
+        None => std::env::current_dir().context(
+            "ACP stable-v1 requires an absolute session cwd and the connector cwd is unavailable",
+        )?,
+    };
+    let additional_directories = options
+        .additional_dirs
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    let mut params = match session_id {
+        Some(session_id) => typed_params(
+            LoadSessionRequest::new(session_id.to_string(), cwd)
+                .additional_directories(additional_directories),
+        ),
+        None => {
+            typed_params(NewSessionRequest::new(cwd).additional_directories(additional_directories))
+        }
+    };
+    // MCP definitions may contain agent-specific extension fields. Keep the
+    // official typed envelope while overlaying the opaque list unchanged.
+    params["mcpServers"] = options.mcp_servers;
+    Ok(params)
 }
 
 /// Serialize a resolved [`PermissionOutcome`] into the exact ACP
@@ -597,6 +606,7 @@ async fn run_actor(
     account_id: String,
     config: StdioAgentConfig,
     event_tx: mpsc::Sender<RuntimeEvent>,
+    request_routes: RequestRoutes,
     cmd_rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     let mut command = TokioCommand::new(&config.command);
@@ -636,6 +646,7 @@ async fn run_actor(
 
     let event_notif = event_tx.clone();
     let event_req = event_tx;
+    let event_request_routes = request_routes.clone();
     let account_req = account_id.clone();
 
     let result = Client
@@ -643,13 +654,28 @@ async fn run_actor(
         .name("cce-acp-connector")
         .on_receive_notification(
             async move |msg: UntypedMessage, cx: ConnectionTo<Agent>| {
-                // Only session/update is relayed; decline everything else so it
+                // Relay session/update and elicitation completion; decline everything else so it
                 // falls through to the runtime's default handling.
                 if !runtime_serves_notification(&msg.method) {
                     return Ok(Handled::No {
                         message: (msg, cx),
                         retry: false,
                     });
+                }
+                if msg.method == CLIENT_METHOD_NAMES.elicitation_complete {
+                    if let Some(elicitation_id) = msg
+                        .params
+                        .get("elicitationId")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.is_empty())
+                    {
+                        let _ = event_notif
+                            .send(RuntimeEvent::ElicitationComplete {
+                                elicitation_id: elicitation_id.to_string(),
+                            })
+                            .await;
+                    }
+                    return Ok(Handled::Yes);
                 }
                 if let Some((acp_session_id, update)) = session_update_parts(&msg.params) {
                     let _ = event_notif
@@ -667,7 +693,7 @@ async fn run_actor(
             async move |msg: UntypedMessage,
                         responder: Responder<Value>,
                         _cx: ConnectionTo<Agent>| {
-                // Only session/request_permission is served; decline everything
+                // Serve permission and elicitation requests; decline everything
                 // else so the runtime answers with JSON-RPC -32601 (the headless
                 // relay advertises no fs/terminal capabilities).
                 if !runtime_serves_request(&msg.method) {
@@ -675,6 +701,70 @@ async fn run_actor(
                         message: (msg, responder),
                         retry: false,
                     });
+                }
+                if msg.method == CLIENT_METHOD_NAMES.elicitation_create {
+                    let parsed = serde_json::from_value::<CreateElicitationRequest>(
+                        msg.params.clone(),
+                    );
+                    let response = match parsed {
+                        Ok(_request) => {
+                            let acp_session_id = msg
+                                .params
+                                .get("sessionId")
+                                .and_then(Value::as_str)
+                                .filter(|value| !value.is_empty())
+                                .map(ToString::to_string);
+                            let request_route = match msg
+                                .params
+                                .get("requestId")
+                                .and_then(request_id_key)
+                            {
+                                Some(key) => {
+                                    event_request_routes.lock().await.get(&key).cloned()
+                                }
+                                None => None,
+                            };
+                            if acp_session_id.is_none() && request_route.is_none() {
+                                typed_params(CreateElicitationResponse::new(
+                                    ElicitationAction::Cancel,
+                                ))
+                            } else {
+                                let (tx, rx) = oneshot::channel();
+                                if event_req
+                                    .send(RuntimeEvent::ElicitationRequest {
+                                        acp_session_id,
+                                        request_route,
+                                        params: msg.params.clone(),
+                                        respond_to: tx,
+                                    })
+                                    .await
+                                    .is_err()
+                                {
+                                    typed_params(CreateElicitationResponse::new(
+                                        ElicitationAction::Cancel,
+                                    ))
+                                } else {
+                                    rx.await.unwrap_or_else(|_| {
+                                        typed_params(CreateElicitationResponse::new(
+                                            ElicitationAction::Cancel,
+                                        ))
+                                    })
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(account = %account_req, "invalid elicitation/create: {err}");
+                            typed_params(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                        }
+                    };
+                    // Validate the bridge response against the SDK before it reaches the agent.
+                    let response = serde_json::from_value::<CreateElicitationResponse>(response)
+                        .map(typed_params)
+                        .unwrap_or_else(|_| {
+                            typed_params(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                        });
+                    responder.respond(response)?;
+                    return Ok(Handled::Yes);
                 }
                 // Observability (mirrors the hand-rolled path): the raw params are
                 // exactly what the backend approval card is built from, so log them
@@ -715,7 +805,7 @@ async fn run_actor(
             agent_client_protocol::on_receive_request!(),
         )
         .connect_with(transport, move |cx: ConnectionTo<Agent>| async move {
-            command_loop(cx, cmd_rx).await;
+            command_loop(cx, cmd_rx, request_routes).await;
             Ok(())
         })
         .await;
@@ -728,18 +818,32 @@ async fn run_actor(
 /// Drains outbound `Command`s onto the connection. Each request runs in its own
 /// task (cloning the cheap, lock-free `ConnectionTo`) so concurrent sessions
 /// never block one another — and `block_task()` never runs inside a handler.
-async fn command_loop(cx: ConnectionTo<Agent>, mut cmd_rx: mpsc::Receiver<Command>) {
+async fn command_loop(
+    cx: ConnectionTo<Agent>,
+    mut cmd_rx: mpsc::Receiver<Command>,
+    request_routes: RequestRoutes,
+) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             Command::Request {
                 method,
                 params,
                 timeout_ms,
+                request_route,
                 reply,
             } => {
                 let cx = cx.clone();
+                let request_routes = request_routes.clone();
                 tokio::spawn(async move {
-                    let result = send_request(&cx, &method, params, timeout_ms).await;
+                    let result = send_request(
+                        &cx,
+                        &method,
+                        params,
+                        timeout_ms,
+                        request_route,
+                        &request_routes,
+                    )
+                    .await;
                     let _ = reply.send(result);
                 });
             }
@@ -762,15 +866,42 @@ async fn send_request(
     method: &str,
     params: Value,
     timeout_ms: u64,
+    request_route: Option<RequestRoute>,
+    request_routes: &RequestRoutes,
 ) -> anyhow::Result<Value> {
     let request = UntypedMessage::new(method, params)
         .map_err(|err| anyhow!("ACP request serialize failed method={method}: {err}"))?;
-    let pending = cx.send_request(request).block_task();
-    match timeout(Duration::from_millis(timeout_ms), pending).await {
+    let sent = cx.send_request(request);
+    let route_key = request_route.map(|route| {
+        let key = serde_json::to_value(sent.id())
+            .ok()
+            .as_ref()
+            .and_then(request_id_key)
+            .expect("SDK request IDs serialize as strings or numbers");
+        (key, route)
+    });
+    if let Some((key, route)) = &route_key {
+        request_routes
+            .lock()
+            .await
+            .insert(key.clone(), route.clone());
+    }
+    let result = match timeout(Duration::from_millis(timeout_ms), sent.block_task()).await {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(err)) => Err(anyhow!("ACP request failed method={method}: {err}")),
         Err(_) => Err(anyhow!("ACP request timeout method={method}")),
+    };
+    if let Some((key, _)) = route_key {
+        request_routes.lock().await.remove(&key);
     }
+    result
+}
+
+/// Canonical map key for ACP request IDs while preserving string/number distinction.
+fn request_id_key(value: &Value) -> Option<String> {
+    matches!(value, Value::String(_) | Value::Number(_))
+        .then(|| serde_json::to_string(value).ok())
+        .flatten()
 }
 
 fn spawn_stderr_reader(account_id: String, stderr: tokio::process::ChildStderr) {
@@ -790,6 +921,7 @@ async fn request_via(
     method: &str,
     params: Value,
     timeout_ms: u64,
+    request_route: Option<RequestRoute>,
 ) -> anyhow::Result<Value> {
     let (reply_tx, reply_rx) = oneshot::channel();
     cmd_tx
@@ -797,6 +929,7 @@ async fn request_via(
             method: method.to_string(),
             params,
             timeout_ms,
+            request_route,
             reply: reply_tx,
         })
         .await
@@ -827,9 +960,10 @@ impl RuntimeRequester {
             .ok_or_else(|| anyhow!("ACP runtime adapter is not started (prompt)"))?;
         let result = request_via(
             cmd_tx,
-            "session/prompt",
-            json!({ "sessionId": session_id, "prompt": prompt }),
+            AGENT_METHOD_NAMES.session_prompt,
+            prompt_params(session_id, prompt),
             timeout_ms,
+            None,
         )
         .await?;
         Ok(PromptResult {
@@ -841,209 +975,65 @@ impl RuntimeRequester {
     }
 }
 
-/// Whether the official runtime transport (Tier B) is selected. Default off;
-/// `CHEERS_ACP_RUNTIME=1` (or `true`) opts in. This is the dev cutover switch
-/// while the runtime path reaches parity with the hand-rolled transport.
-fn runtime_transport_enabled() -> bool {
-    std::env::var("CHEERS_ACP_RUNTIME")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
-
-/// Startup-selected ACP transport. Both variants share the `RuntimeEvent`
-/// channel and expose the same surface, so `bridge_runtime::run` is agnostic to
-/// which one backs it.
-pub enum AcpAdapterKind {
-    HandRolled(crate::acp_adapter::AcpAdapter),
-    Runtime(RuntimeAcpAdapter),
-}
-
-/// The requester counterpart of [`AcpAdapterKind`].
-pub enum AcpRequesterKind {
-    HandRolled(crate::acp_adapter::AcpRequester),
-    Runtime(RuntimeRequester),
-}
-
-impl AcpAdapterKind {
-    /// Builds the transport selected by `CHEERS_ACP_RUNTIME` (default: hand-rolled).
-    pub fn new(
-        account_id: impl Into<String>,
-        config: StdioAgentConfig,
-        event_tx: mpsc::Sender<RuntimeEvent>,
-    ) -> Self {
-        let account_id = account_id.into();
-        if runtime_transport_enabled() {
-            tracing::info!(
-                account = %account_id,
-                "ACP transport: official runtime crate (CHEERS_ACP_RUNTIME)"
-            );
-            Self::Runtime(RuntimeAcpAdapter::new(account_id, config, event_tx))
-        } else {
-            Self::HandRolled(crate::acp_adapter::AcpAdapter::new(
-                account_id, config, event_tx,
-            ))
-        }
-    }
-
-    pub async fn start(&mut self) -> anyhow::Result<Value> {
-        match self {
-            Self::HandRolled(a) => a.start().await,
-            Self::Runtime(a) => a.start().await,
-        }
-    }
-
-    pub async fn stop(&mut self) -> anyhow::Result<()> {
-        match self {
-            Self::HandRolled(a) => a.stop().await,
-            Self::Runtime(a) => a.stop().await,
-        }
-    }
-
-    pub async fn new_session(
-        &mut self,
-        options: SessionStartOptions,
-    ) -> anyhow::Result<SessionStartResult> {
-        match self {
-            Self::HandRolled(a) => a.new_session(options).await,
-            Self::Runtime(a) => a.new_session(options).await,
-        }
-    }
-
-    pub async fn load_session(
-        &mut self,
-        session_id: &str,
-        options: SessionStartOptions,
-    ) -> anyhow::Result<SessionLoadResult> {
-        match self {
-            Self::HandRolled(a) => a.load_session(session_id, options).await,
-            Self::Runtime(a) => a.load_session(session_id, options).await,
-        }
-    }
-
-    pub async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
-        match self {
-            Self::HandRolled(a) => a.cancel(session_id).await,
-            Self::Runtime(a) => a.cancel(session_id).await,
-        }
-    }
-
-    pub async fn set_config_option(
-        &mut self,
-        session_id: &str,
-        config_id: &str,
-        value: &str,
-    ) -> anyhow::Result<Value> {
-        match self {
-            Self::HandRolled(a) => a.set_config_option(session_id, config_id, value).await,
-            Self::Runtime(a) => a.set_config_option(session_id, config_id, value).await,
-        }
-    }
-
-    pub async fn set_mode(&mut self, session_id: &str, mode: &str) -> anyhow::Result<()> {
-        match self {
-            Self::HandRolled(a) => a.set_mode(session_id, mode).await,
-            Self::Runtime(a) => a.set_mode(session_id, mode).await,
-        }
-    }
-
-    pub async fn set_model(&mut self, session_id: &str, model_id: &str) -> anyhow::Result<()> {
-        match self {
-            Self::HandRolled(a) => a.set_model(session_id, model_id).await,
-            Self::Runtime(a) => a.set_model(session_id, model_id).await,
-        }
-    }
-
-    pub async fn apply_settings(
-        &mut self,
-        settings: &ConnectorControlSettings,
-    ) -> anyhow::Result<ConfigApplyResult> {
-        match self {
-            Self::HandRolled(a) => a.apply_settings(settings).await,
-            Self::Runtime(a) => a.apply_settings(settings).await,
-        }
-    }
-
-    pub async fn authenticate(&mut self) -> anyhow::Result<()> {
-        match self {
-            Self::HandRolled(a) => a.authenticate().await,
-            Self::Runtime(a) => a.authenticate().await,
-        }
-    }
-
-    pub fn permission_options(&self, params: &Value) -> Vec<PermissionOption> {
-        match self {
-            Self::HandRolled(a) => a.permission_options(params),
-            Self::Runtime(a) => a.permission_options(params),
-        }
-    }
-
-    pub fn requester(&self) -> AcpRequesterKind {
-        match self {
-            Self::HandRolled(a) => AcpRequesterKind::HandRolled(a.requester()),
-            Self::Runtime(a) => AcpRequesterKind::Runtime(a.requester()),
-        }
-    }
-
-    pub async fn inject_fence(&self, acp_session_id: impl Into<String>) {
-        match self {
-            Self::HandRolled(a) => a.inject_fence(acp_session_id).await,
-            Self::Runtime(a) => a.inject_fence(acp_session_id).await,
-        }
-    }
-
-    pub fn supports_load_session(&self) -> bool {
-        match self {
-            Self::HandRolled(a) => a.supports_load_session(),
-            Self::Runtime(a) => a.supports_load_session(),
-        }
-    }
-
-    pub fn supports_prompt_image(&self) -> bool {
-        match self {
-            Self::HandRolled(a) => a.supports_prompt_image(),
-            Self::Runtime(a) => a.supports_prompt_image(),
-        }
-    }
-
-    pub fn supports_prompt_audio(&self) -> bool {
-        match self {
-            Self::HandRolled(a) => a.supports_prompt_audio(),
-            Self::Runtime(a) => a.supports_prompt_audio(),
-        }
-    }
-
-    pub fn supports_mcp_http(&self) -> bool {
-        match self {
-            Self::HandRolled(a) => a.supports_mcp_http(),
-            Self::Runtime(a) => a.supports_mcp_http(),
-        }
-    }
-
-    pub fn supports_mcp_sse(&self) -> bool {
-        match self {
-            Self::HandRolled(a) => a.supports_mcp_sse(),
-            Self::Runtime(a) => a.supports_mcp_sse(),
-        }
-    }
-
-    pub fn initialize_response(&self) -> Option<&Value> {
-        match self {
-            Self::HandRolled(a) => a.initialize_response(),
-            Self::Runtime(a) => a.initialize_response(),
-        }
-    }
-}
-
-impl AcpRequesterKind {
-    pub async fn prompt(
+#[async_trait]
+impl PromptClient for RuntimeRequester {
+    async fn prompt(
         &self,
         session_id: &str,
         prompt: Vec<Value>,
         timeout_ms: u64,
     ) -> anyhow::Result<PromptResult> {
-        match self {
-            Self::HandRolled(r) => r.prompt(session_id, prompt, timeout_ms).await,
-            Self::Runtime(r) => r.prompt(session_id, prompt, timeout_ms).await,
+        RuntimeRequester::prompt(self, session_id, prompt, timeout_ms).await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportChoice {
+    Official,
+    Legacy,
+}
+
+fn transport_choice_from(current: Option<&str>, deprecated: Option<&str>) -> TransportChoice {
+    match current.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) if value.eq_ignore_ascii_case("legacy") => TransportChoice::Legacy,
+        Some(value) if value.eq_ignore_ascii_case("official") => TransportChoice::Official,
+        Some(value) => {
+            tracing::warn!(value, "invalid CHEERS_ACP_TRANSPORT; using official");
+            TransportChoice::Official
+        }
+        None => match deprecated.map(str::trim) {
+            Some("0") | Some("false") | Some("FALSE") => TransportChoice::Legacy,
+            Some(_) => TransportChoice::Official,
+            None => TransportChoice::Official,
+        },
+    }
+}
+
+/// Build the selected transport behind the real runtime interface. Official is
+/// the 0.1.37 default; legacy remains a one-release rollback rail.
+pub fn create_runtime(
+    account_id: impl Into<String>,
+    config: StdioAgentConfig,
+    event_tx: mpsc::Sender<RuntimeEvent>,
+) -> Box<dyn RuntimeAdapter> {
+    let account_id = account_id.into();
+    let current = std::env::var("CHEERS_ACP_TRANSPORT").ok();
+    let deprecated = std::env::var("CHEERS_ACP_RUNTIME").ok();
+    if deprecated.is_some() {
+        tracing::warn!(
+            "CHEERS_ACP_RUNTIME is deprecated; use CHEERS_ACP_TRANSPORT=official|legacy"
+        );
+    }
+    match transport_choice_from(current.as_deref(), deprecated.as_deref()) {
+        TransportChoice::Official => {
+            tracing::info!(account = %account_id, transport = "official", "ACP transport selected");
+            Box::new(RuntimeAcpAdapter::new(account_id, config, event_tx))
+        }
+        TransportChoice::Legacy => {
+            tracing::warn!(account = %account_id, transport = "legacy", "ACP legacy rollback transport selected");
+            Box::new(crate::acp_adapter::AcpAdapter::new(
+                account_id, config, event_tx,
+            ))
         }
     }
 }
@@ -1056,12 +1046,98 @@ mod tests {
     //! decline, ③ bare permission-response wire shape.
     use super::*;
 
+    #[test]
+    fn official_transport_is_default_with_one_release_legacy_rollback() {
+        assert_eq!(transport_choice_from(None, None), TransportChoice::Official);
+        assert_eq!(
+            transport_choice_from(Some("official"), Some("0")),
+            TransportChoice::Official
+        );
+        assert_eq!(
+            transport_choice_from(Some("legacy"), Some("1")),
+            TransportChoice::Legacy
+        );
+        assert_eq!(
+            transport_choice_from(None, Some("0")),
+            TransportChoice::Legacy
+        );
+        assert_eq!(
+            transport_choice_from(None, Some("1")),
+            TransportChoice::Official
+        );
+    }
+
+    #[test]
+    fn typed_prompt_envelope_preserves_unknown_blocks_and_meta() {
+        let prompt = vec![json!({
+            "type": "future_vendor_block",
+            "payload": {"answer": 42},
+            "_meta": {"codex": {"params": {"cwd": "/work"}}}
+        })];
+        let params = prompt_params("session-1", prompt.clone());
+        assert_eq!(params["sessionId"], "session-1");
+        assert_eq!(params["prompt"], Value::Array(prompt));
+    }
+
+    #[test]
+    fn typed_session_envelope_preserves_stdio_mcp_fields_verbatim() {
+        let mcp_servers = json!([{
+            "name": "cheers",
+            "command": "/opt/cheers-mcp-server",
+            "args": ["--stdio"],
+            "env": {"CHEERS_RESOURCE_URL": "http://127.0.0.1:9876/resource"},
+            "_meta": {"vendorExtension": true}
+        }]);
+        let params = session_request_params(
+            Some("s1"),
+            SessionStartOptions {
+                cwd: Some("/work".to_string()),
+                additional_dirs: vec!["/shared".to_string()],
+                mcp_servers: mcp_servers.clone(),
+                request_route: None,
+            },
+        )
+        .expect("typed session params");
+        assert_eq!(params["sessionId"], "s1");
+        assert_eq!(params["cwd"], "/work");
+        assert_eq!(params["additionalDirectories"], json!(["/shared"]));
+        assert_eq!(params["mcpServers"], mcp_servers);
+    }
+
+    #[test]
+    fn typed_stable_requests_keep_existing_wire_shapes() {
+        assert_eq!(
+            typed_params(SetSessionModeRequest::new("s1", "plan")),
+            json!({"sessionId": "s1", "modeId": "plan"})
+        );
+        assert_eq!(
+            typed_params(SetSessionConfigOptionRequest::new(
+                "s1",
+                "model",
+                SessionConfigValueId::new("gpt-5")
+            )),
+            json!({"sessionId": "s1", "configId": "model", "value": "gpt-5"})
+        );
+        assert_eq!(
+            typed_params(CancelNotification::new("s1")),
+            json!({"sessionId": "s1"})
+        );
+    }
+
+    #[test]
+    fn request_id_keys_preserve_json_rpc_id_type() {
+        assert_eq!(request_id_key(&json!(12)).as_deref(), Some("12"));
+        assert_eq!(request_id_key(&json!("12")).as_deref(), Some("\"12\""));
+        assert_eq!(request_id_key(&Value::Null), None);
+    }
+
     // ── ② per-method decline ─────────────────────────────────────────────────
     #[test]
     fn only_session_update_notification_is_served() {
         // session/update is the sole agent→client notification we relay; every
         // other one is declined so the runtime applies its default handling.
         assert!(runtime_serves_notification("session/update"));
+        assert!(runtime_serves_notification("elicitation/complete"));
         assert!(!runtime_serves_notification("session/request_permission"));
         assert!(!runtime_serves_notification("fs/read_text_file"));
         assert!(!runtime_serves_notification("terminal/output"));
@@ -1074,6 +1150,7 @@ mod tests {
         // as false, so these agent→client requests MUST stay declined (-32601) on
         // the runtime path too — flipping any to served needs a handler first.
         assert!(runtime_serves_request("session/request_permission"));
+        assert!(runtime_serves_request("elicitation/create"));
         assert!(!runtime_serves_request("fs/read_text_file"));
         assert!(!runtime_serves_request("fs/write_text_file"));
         assert!(!runtime_serves_request("terminal/create"));
@@ -1143,7 +1220,7 @@ mod tests {
                 {"optionId": "reject_once", "kind": "reject_once", "name": "Reject"}
             ]
         });
-        let options = crate::acp_adapter::permission_options_from_params(&params);
+        let options = crate::acp_semantics::permission_options_from_params(&params);
         assert_eq!(options.len(), 4);
         assert_eq!(options[0].option_id, "allow_once");
         assert_eq!(options[0].kind.as_deref(), Some("allow_once"));

@@ -1,3 +1,5 @@
+//! Pure Agent Bridge frame classification and acknowledgement-key helpers.
+
 use super::*;
 
 pub(super) fn is_fatal_bridge_error(err: &anyhow::Error) -> bool {
@@ -18,7 +20,8 @@ pub(super) fn capability_enabled(
 pub(super) fn send_ack_client_msg_id(frame: &DataOutbound) -> Option<&str> {
     match frame {
         DataOutbound::Send { client_msg_id, .. }
-        | DataOutbound::PermissionRequest { client_msg_id, .. } => Some(client_msg_id),
+        | DataOutbound::PermissionRequest { client_msg_id, .. }
+        | DataOutbound::ElicitationRequest { client_msg_id, .. } => Some(client_msg_id),
         _ => None,
     }
 }

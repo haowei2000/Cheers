@@ -913,6 +913,33 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         "permission_cancel" => {
             handle_permission_cancel_frame(frame, state, bot).await;
         }
+        "elicitation_request" => {
+            let client_msg_id = client_msg_id(frame);
+            match handle_elicitation_request_frame(frame, state, bot).await {
+                Ok(message_id) => {
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ =
+                            ws_send(socket, &send_ack_ok(&client_msg_id, message_id, false)).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(bot_id = %bot.bot_id, err = e, "elicitation_request rejected");
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ = ws_send(
+                            socket,
+                            &send_ack_err(&client_msg_id, "ELICITATION_REQUEST_FAILED", e),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+        "elicitation_cancel" => {
+            handle_elicitation_terminal_frame(frame, state, bot, false).await;
+        }
+        "elicitation_complete" => {
+            handle_elicitation_terminal_frame(frame, state, bot, true).await;
+        }
         // ── ACP agent auth expired / failed — channel card for human re-login ─
         "auth_required" => {
             let client_msg_id = client_msg_id(frame);
@@ -1803,6 +1830,269 @@ async fn handle_permission_request_frame(
     }
 
     Ok(msg_id)
+}
+
+/// Detects form fields that ACP requires clients to reject as sensitive input.
+fn elicitation_schema_is_sensitive(schema: &Value) -> bool {
+    const TERMS: &[&str] = &[
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "apikey",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "auth_token",
+        "recovery_code",
+        "credit_card",
+        "card_number",
+        "cvv",
+    ];
+    schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .is_some_and(|properties| {
+            properties.iter().any(|(name, field)| {
+                let normalized_name = name.to_ascii_lowercase().replace(['-', ' '], "_");
+                let prose = format!(
+                    "{} {}",
+                    field
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    field
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+                .to_ascii_lowercase();
+                TERMS
+                    .iter()
+                    .any(|term| normalized_name == *term || prose.contains(&term.replace('_', " ")))
+            })
+        })
+}
+
+/// Persists ACP v1 form/URL elicitation as an ordinary channel message card.
+async fn handle_elicitation_request_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+) -> Result<Uuid, &'static str> {
+    let channel_id: Uuid = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse().ok())
+        .ok_or("missing channel_id")?;
+    ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
+    let params = frame.get("params").cloned().ok_or("missing params")?;
+    let mode = params
+        .get("mode")
+        .and_then(Value::as_str)
+        .ok_or("missing mode")?;
+    if !matches!(mode, "form" | "url") {
+        return Err("unsupported elicitation mode");
+    }
+    if mode == "form"
+        && params
+            .get("requestedSchema")
+            .is_some_and(elicitation_schema_is_sensitive)
+    {
+        return Err("sensitive fields are not allowed in form elicitation");
+    }
+    let message = params
+        .get("message")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("missing message")?;
+    let initiating_user_id = frame
+        .get("initiating_user_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    if let Some(initiating_user_id) = initiating_user_id {
+        if !matches!(
+            frame.get("acp_request_id"),
+            Some(Value::String(_) | Value::Number(_))
+        ) {
+            return Err("request-scoped elicitation missing ACP request_id");
+        }
+        let origin_msg_id = frame
+            .get("origin_msg_id")
+            .and_then(Value::as_str)
+            .ok_or("request-scoped elicitation missing origin_msg_id")?;
+        let verified = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM messages AS m
+                INNER JOIN channel_memberships AS cm
+                    ON cm.channel_id = m.channel_id AND cm.member_id = m.sender_id
+                WHERE m.msg_id = $1 AND m.channel_id = $2
+                  AND m.sender_type = 'user' AND m.sender_id = $3
+                  AND cm.member_type = 'user'
+            )",
+        )
+        .bind(origin_msg_id)
+        .bind(channel_id.to_string())
+        .bind(initiating_user_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(crate::gateway::log_db_err(
+            "elicitation: verify initiating user",
+        ))?;
+        if !verified {
+            return Err("elicitation initiating user could not be verified");
+        }
+    }
+    if mode == "url" {
+        let raw_url = params
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or("missing url")?;
+        let url = url::Url::parse(raw_url).map_err(|_| "invalid elicitation URL")?;
+        let secure = url.scheme() == "https" && url.host_str().is_some();
+        let loopback = url.scheme() == "http"
+            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
+        if !(secure || loopback) {
+            return Err("elicitation URL must use HTTPS");
+        }
+    }
+
+    let msg_id = Uuid::new_v4();
+    let request_id = frame.get("request_id").cloned().unwrap_or(Value::Null);
+    let content_data = json!({
+        "kind": "agent_bridge_elicitation",
+        "request_id": request_id,
+        "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
+        "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
+        "origin_msg_id": frame.get("origin_msg_id").cloned().unwrap_or(Value::Null),
+        "acp_request_id": frame.get("acp_request_id").cloned().unwrap_or(Value::Null),
+        "initiating_user_id": frame.get("initiating_user_id").cloned().unwrap_or(Value::Null),
+        "session_id": frame.get("session_id").cloned().unwrap_or(Value::Null),
+        "mode": mode,
+        "message": message,
+        "requested_schema": params.get("requestedSchema").cloned().unwrap_or(Value::Null),
+        "url": params.get("url").cloned().unwrap_or(Value::Null),
+        "elicitation_id": params.get("elicitationId").cloned().unwrap_or(Value::Null),
+        "tool_call_id": params.get("toolCallId").cloned().unwrap_or(Value::Null),
+        "params": params,
+        "resolved": false,
+    });
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::gateway::log_db_err("elicitation: begin"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "elicitation: allocate channel_seq",
+            ))?;
+    sqlx::query(
+        "INSERT INTO messages
+         (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+          is_partial, content_data, file_ids, channel_seq)
+         VALUES ($1, $2, 'bot', $3, $4, 'elicitation', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+    )
+    .bind(msg_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(bot.bot_id.to_string())
+    .bind(message)
+    .bind(content_data.to_string())
+    .bind(channel_seq)
+    .execute(&mut *tx)
+    .await
+    .map_err(crate::gateway::log_db_err("elicitation: insert"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("elicitation: commit"))?;
+
+    state
+        .fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(
+                channel_id,
+                "message",
+                json!({
+                    "v": MESSAGE_SCHEMA_VERSION, "msg_id": msg_id, "channel_id": channel_id,
+                    "channel_seq": channel_seq, "sender_type":"bot", "sender_id":bot.bot_id,
+                    "content":message, "msg_type":"elicitation", "is_partial":false,
+                    "reply_to_msg_id":null, "file_ids":[], "mentions":[], "files":[],
+                    "content_data":content_data,
+                }),
+            ),
+        )
+        .await;
+    Ok(msg_id)
+}
+
+/// Finalizes a URL completion or connector-side timeout without racing a user response.
+async fn handle_elicitation_terminal_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    completed: bool,
+) {
+    let (field, value) = if completed {
+        (
+            "elicitation_id",
+            frame.get("elicitation_id").and_then(Value::as_str),
+        )
+    } else {
+        (
+            "request_id",
+            frame.get("request_id").and_then(Value::as_str),
+        )
+    };
+    let Some(value) = value else {
+        return;
+    };
+    let row = if completed {
+        sqlx::query(
+            "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'completed')
+             WHERE sender_id = $1 AND msg_type = 'elicitation'
+               AND content_data ->> 'elicitation_id' = $2
+               AND content_data ->> 'status' = 'accept'
+             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+        )
+        .bind(bot.bot_id.to_string())
+        .bind(value)
+        .fetch_optional(&state.db)
+        .await
+    } else {
+        sqlx::query(
+            "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'cancelled')
+             WHERE sender_id = $1 AND msg_type = 'elicitation' AND content_data ->> $2 = $3
+               AND COALESCE((content_data ->> 'resolved')::boolean, false) = false
+             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+        )
+        .bind(bot.bot_id.to_string())
+        .bind(field)
+        .bind(value)
+        .fetch_optional(&state.db)
+        .await
+    };
+    if let Ok(Some(row)) = row {
+        use sqlx::Row;
+        let channel_id = row
+            .try_get::<String, _>("channel_id")
+            .ok()
+            .and_then(|v| v.parse::<Uuid>().ok());
+        if let Some(channel_id) = channel_id {
+            state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": row.try_get::<String,_>("msg_id").unwrap_or_default(),
+                "channel_id": channel_id,
+                "channel_seq": row.try_get::<i64,_>("channel_seq").unwrap_or_default(),
+                "sender_type":"bot", "sender_id":bot.bot_id,
+                "content":row.try_get::<String,_>("content").unwrap_or_default(),
+                "msg_type":"elicitation", "is_partial":false, "file_ids":[], "mentions":[], "files":[],
+                "content_data":row.try_get::<Value,_>("content_data").unwrap_or(Value::Null),
+            }))).await;
+        }
+    }
 }
 
 /// Persist an ACP agent re-auth card and fan it out to the channel.

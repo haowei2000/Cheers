@@ -459,6 +459,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::approval::ack_auth_required),
         )
         .route(
+            "/api/v1/channels/:channel_id/elicitations/:request_id/resolve",
+            post(api::approval::resolve_elicitation),
+        )
+        .route(
             "/api/v1/channels/:channel_id/permissions/:request_id/request-access",
             post(api::approval::request_access),
         )

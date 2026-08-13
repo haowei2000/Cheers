@@ -51,6 +51,19 @@ export async function ackAuthRequired(
   );
 }
 
+/** Resolve an ACP v1 form/URL elicitation. */
+export async function resolveElicitation(
+  channelId: string,
+  requestId: string,
+  action: "accept" | "decline" | "cancel",
+  content?: Record<string, unknown>
+): Promise<{ ok: boolean; delivered: boolean; action: string }> {
+  return apiJson(
+    `/channels/${channelId}/elicitations/${encodeURIComponent(requestId)}/resolve`,
+    { method: "POST", body: JSON.stringify({ action, content }) }
+  );
+}
+
 /** Request approver rights for a pending permission (any channel member). */
 export async function requestApprovalAccess(
   channelId: string,

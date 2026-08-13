@@ -1,3 +1,8 @@
+//! Prompt construction and ACP-to-Bridge presentation transforms.
+//!
+//! Functions here preserve agent-specific metadata where useful while enforcing
+//! local attachment, capability, size, and permission-display policy.
+
 use super::*;
 
 pub(super) fn bridge_ready_from_initialize(

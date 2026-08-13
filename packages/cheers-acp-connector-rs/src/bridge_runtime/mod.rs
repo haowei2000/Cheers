@@ -1,3 +1,9 @@
+//! Per-account orchestration between an ACP runtime and the Cheers Agent Bridge.
+//!
+//! This module coordinates sessions, prompts, streaming output, workspace
+//! operations, permissions, tracing, and MCP injection. Transport-specific ACP
+//! behavior is accessed only through [`RuntimeAdapter`].
+
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -29,12 +35,12 @@ const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
 /// Max changed paths carried in a single `workspace_event`.
 const WATCH_PATHS_CAP: usize = 50;
-use crate::acp_runtime::AcpAdapterKind;
+use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
-    PermissionResolution, RuntimeSessionAckSession, RuntimeSessionControlSession,
-    ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
+    ElicitationResolution, PermissionResolution, RuntimeSessionAckSession,
+    RuntimeSessionControlSession, ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -44,7 +50,9 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
+use crate::runtime_adapter::{
+    PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
+};
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
 
@@ -103,7 +111,7 @@ impl AccountRuntime {
     async fn run(self) -> anyhow::Result<()> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = AcpAdapterKind::new(
+        let mut adapter = create_runtime(
             self.account_id.clone(),
             self.config.agent.clone(),
             adapter_tx,
@@ -519,7 +527,7 @@ struct RuntimeContext {
     /// OAuth audience from WebSocket URLs or proxy headers.
     mcp_url: String,
     state: Arc<Mutex<SessionStateStore>>,
-    adapter: Arc<Mutex<AcpAdapterKind>>,
+    adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
     shared: Arc<Mutex<SharedRuntimeState>>,
     /// Sender into the main event loop — used to enqueue fence events (EnableStreaming)
@@ -698,6 +706,9 @@ impl RuntimeContext {
             }
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
+            }
+            ControlInbound::ElicitationResolution { resolution, .. } => {
+                self.handle_elicitation_resolution(resolution).await?;
             }
             ControlInbound::AuthAcknowledged {
                 request_id, action, ..
@@ -1592,6 +1603,35 @@ impl RuntimeContext {
                     }
                 });
             }
+            RuntimeEvent::ElicitationRequest {
+                acp_session_id,
+                request_route,
+                params,
+                respond_to,
+            } => {
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = runtime
+                        .handle_elicitation_request(
+                            acp_session_id,
+                            request_route,
+                            params,
+                            respond_to,
+                        )
+                        .await
+                    {
+                        tracing::warn!("elicitation request failed: {err}");
+                    }
+                });
+            }
+            RuntimeEvent::ElicitationComplete { elicitation_id } => {
+                self.io
+                    .send_data(DataOutbound::ElicitationComplete {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        elicitation_id,
+                    })
+                    .await?;
+            }
             RuntimeEvent::AdapterError { message } => {
                 tracing::warn!(account = %self.account_id, "ACP adapter error: {message}");
             }
@@ -1731,9 +1771,10 @@ impl RuntimeContext {
         // that modality degrades to a text summary inside build_prompt.
         let (send_images, send_audio) = {
             let adapter = self.adapter.lock().await;
+            let capabilities = adapter.capabilities();
             (
-                self.config.policy.prompt.allow_images && adapter.supports_prompt_image(),
-                self.config.policy.prompt.allow_audio && adapter.supports_prompt_audio(),
+                self.config.policy.prompt.allow_images && capabilities.prompt_image,
+                self.config.policy.prompt.allow_audio && capabilities.prompt_audio,
             )
         };
         let prompt = build_prompt(
@@ -1782,7 +1823,7 @@ impl RuntimeContext {
         // would freeze every other session's turn on this bot. Per-session
         // ordering is still guaranteed by `session_lock` above; the pending-id
         // map routes each session's response independently.
-        let requester = self.adapter.lock().await.requester();
+        let requester = self.adapter.lock().await.prompt_client();
         let prompt_result = match requester
             .prompt(
                 &acp_session_id,
@@ -1794,7 +1835,7 @@ impl RuntimeContext {
             Ok(result) => Ok(result),
             Err(err) => match self.recover_agent_auth(&task, &err).await {
                 Ok(()) => {
-                    let requester = self.adapter.lock().await.requester();
+                    let requester = self.adapter.lock().await.prompt_client();
                     requester
                         .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
                         .await
@@ -1924,7 +1965,7 @@ impl RuntimeContext {
             .await
             .get(&self.account_id, &task.provider_session_key);
         if let Some(session_id) = existing {
-            let supports_load = self.adapter.lock().await.supports_load_session();
+            let supports_load = self.adapter.lock().await.capabilities().load_session;
             if supports_load && self.config.policy.sessions.load {
                 let load_result = {
                     let mut adapter = self.adapter.lock().await;
@@ -2282,27 +2323,28 @@ impl RuntimeContext {
 
         if kind == "agent_message_chunk" {
             if let Some(text) = text_from_content(update.get("content").unwrap_or(&Value::Null)) {
-                let mut guard = run.lock().await;
-                // Discard history-replay chunks emitted by codex-acp's streamThreadHistory
-                // during load_session, before our prompt has started streaming.
-                if !guard.streaming_started {
-                    return Ok(());
-                }
-                guard.delta_seq += 1;
-                guard.text.push_str(&text);
-                if !is_evaluation {
-                    self.io
-                        .send_data(DataOutbound::Delta {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            msg_id: guard.msg_id.clone(),
-                            seq: guard.delta_seq,
-                            delta: text,
-                            provider_session_key: Some(guard.provider_session_key.clone()),
-                            provider_session_id: Some(guard.acp_session_id.clone()),
-                            session_id: guard.session_id.clone(),
-                            acp_capability: None,
-                        })
-                        .await?;
+                let frame = {
+                    let mut guard = run.lock().await;
+                    // Discard history-replay chunks emitted by codex-acp's streamThreadHistory
+                    // during load_session, before our prompt has started streaming.
+                    if !guard.streaming_started {
+                        return Ok(());
+                    }
+                    guard.delta_seq += 1;
+                    guard.text.push_str(&text);
+                    (!is_evaluation).then(|| DataOutbound::Delta {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        msg_id: guard.msg_id.clone(),
+                        seq: guard.delta_seq,
+                        delta: text,
+                        provider_session_key: Some(guard.provider_session_key.clone()),
+                        provider_session_id: Some(guard.acp_session_id.clone()),
+                        session_id: guard.session_id.clone(),
+                        acp_capability: None,
+                    })
+                };
+                if let Some(frame) = frame {
+                    self.io.send_data(frame).await?;
                 }
             }
         } else if !is_evaluation {
@@ -2383,6 +2425,7 @@ impl RuntimeContext {
             cwd,
             additional_dirs,
             mcp_servers: self.mcp_servers_for_task(task).await,
+            request_route: request_route_for_task(task),
         }
     }
 
@@ -2393,7 +2436,8 @@ impl RuntimeContext {
         // MCP was advertised, so there is deliberately no stdio fallback here.
         let (supports_http, supports_sse) = {
             let adapter = self.adapter.lock().await;
-            (adapter.supports_mcp_http(), adapter.supports_mcp_sse())
+            let capabilities = adapter.capabilities();
+            (capabilities.mcp_http, capabilities.mcp_sse)
         };
         let configured = self
             .config
@@ -2444,7 +2488,7 @@ impl RuntimeContext {
             .await
     }
 
-    /// Like [`trace`], but also carries a structured `data` payload (e.g. an
+    /// Like [`Self::trace`], but also carries a structured `data` payload (e.g. an
     /// agent plan's to-do entries) so a remote observer gets more than a label.
     async fn trace_with_data(
         &self,
@@ -2463,10 +2507,10 @@ impl RuntimeContext {
         }
         let message = message
             .map(|value| limit_text_bytes(value, self.config.policy.trace.max_message_bytes));
-        let mut guard = run.lock().await;
-        guard.trace_seq += 1;
-        self.io
-            .send_data(DataOutbound::Trace {
+        let frame = {
+            let mut guard = run.lock().await;
+            guard.trace_seq += 1;
+            DataOutbound::Trace {
                 v: BRIDGE_PROTOCOL_VERSION,
                 msg_id: guard.msg_id.clone(),
                 task_id: Some(guard.task_id.clone()),
@@ -2485,8 +2529,9 @@ impl RuntimeContext {
                 message,
                 data,
                 acp_capability: None,
-            })
-            .await
+            }
+        };
+        self.io.send_data(frame).await
     }
 }
 
@@ -2496,6 +2541,7 @@ struct SharedRuntimeState {
     by_acp_session: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
     pending_permissions: HashMap<String, PendingPermission>,
+    pending_elicitations: HashMap<String, PendingElicitation>,
     pending_auths: HashMap<String, PendingAuth>,
     session_locks: HashMap<String, Arc<Mutex<()>>>,
     channel_names: std::collections::HashMap<String, String>,
@@ -2598,6 +2644,11 @@ async fn watch_loop(
 struct PendingPermission {
     params: Value,
     respond_to: oneshot::Sender<PermissionOutcome>,
+}
+
+struct PendingElicitation {
+    params: Value,
+    respond_to: oneshot::Sender<Value>,
 }
 
 struct PendingAuth {
@@ -2726,6 +2777,34 @@ struct TaskCommand {
     context_bundle: Option<Value>,
 }
 
+/// Builds a trusted route only for a human-originated task. Bot/system work has
+/// no verified human identity and therefore cannot host request-scoped elicitation.
+fn request_route_for_task(task: &TaskCommand) -> Option<RequestRoute> {
+    if task.trigger.as_deref() != Some("user_message") {
+        return None;
+    }
+    let initiating_user_id = task
+        .trigger_message
+        .as_ref()
+        .and_then(|message| message.get("user"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    Some(RequestRoute {
+        channel_id: task.channel_id.clone(),
+        task_id: task.task_id.clone(),
+        msg_id: task.msg_id.clone(),
+        origin_msg_id: task
+            .trigger_message
+            .as_ref()
+            .and_then(|message| message.get("msg_id"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        session_id: task.session_id.clone(),
+        initiating_user_id: Some(initiating_user_id),
+    })
+}
+
 /// The bot this connector is authenticated as, learned from the control `hello`
 /// frame. Threaded into every prompt so the agent knows which @-handle it
 /// answers to — the gateway advertised it all along, the connector just dropped
@@ -2760,6 +2839,7 @@ enum RuntimeInput {
 
 mod auth;
 mod config;
+mod elicitation;
 mod frames;
 mod io;
 mod permission;
@@ -3262,6 +3342,23 @@ mod tests {
             additional_dirs: Vec::new(),
             context_bundle: None,
         }
+    }
+
+    #[test]
+    fn request_route_requires_a_verified_human_origin() {
+        let human = identity_task(
+            Some("user_message"),
+            Some(json!({"msg_id":"origin-1", "user":"user-1"})),
+        );
+        let route = request_route_for_task(&human).expect("human route");
+        assert_eq!(route.initiating_user_id.as_deref(), Some("user-1"));
+        assert_eq!(route.origin_msg_id.as_deref(), Some("origin-1"));
+
+        let bot = identity_task(
+            Some("bot_message"),
+            Some(json!({"msg_id":"origin-2", "user":"bot-1"})),
+        );
+        assert!(request_route_for_task(&bot).is_none());
     }
 
     #[test]

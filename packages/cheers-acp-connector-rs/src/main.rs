@@ -1,5 +1,17 @@
+//! Cheers ACP Connector daemon.
+//!
+//! The binary supervises local stdio ACP agents, translates their sessions to
+//! the Cheers Agent Bridge, enforces the local TOML security policy, and owns
+//! daemon lifecycle and signed self-update behavior.
+//!
+//! ACP agent filesystem and terminal methods are deliberately not exposed by
+//! the connector. Platform resource access remains authorized by the gateway.
+
+#![warn(missing_docs)]
+
 mod acp_adapter;
 mod acp_runtime;
+mod acp_semantics;
 mod bridge;
 mod bridge_runtime;
 mod bridge_session;

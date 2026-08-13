@@ -1,3 +1,8 @@
+//! Cross-platform daemon process lifecycle and metadata management.
+//!
+//! Start, stop, restart, status, and log operations validate process identity
+//! before signalling so stale metadata cannot target an unrelated process.
+
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};

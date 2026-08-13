@@ -1,3 +1,8 @@
+//! Low-level Cheers Agent Bridge WebSocket frames and connection helpers.
+//!
+//! Wire DTOs are re-exported from `cheers-bridge-protocol`; this module adds
+//! connector-side authentication, reconnect timing, and WebSocket I/O.
+
 #![allow(dead_code)]
 
 use std::time::Duration;

@@ -7,7 +7,7 @@
 //! than `request_permission`.
 
 use super::*;
-use crate::acp_adapter::{
+use crate::acp_semantics::{
     looks_like_auth_error, no_link_auth_operator_hint, preferred_auth_method, AuthMethodInfo,
 };
 
@@ -39,7 +39,7 @@ impl RuntimeContext {
         );
         let silent = {
             let mut adapter = self.adapter.lock().await;
-            adapter.authenticate().await
+            adapter.authenticate(request_route_for_task(task)).await
         };
         if silent.is_ok() {
             return Ok(());
@@ -55,7 +55,7 @@ impl RuntimeContext {
         );
         self.request_human_auth(task, &detail).await?;
         let mut adapter = self.adapter.lock().await;
-        adapter.authenticate().await?;
+        adapter.authenticate(request_route_for_task(task)).await?;
         Ok(())
     }
 
@@ -64,7 +64,7 @@ impl RuntimeContext {
             let adapter = self.adapter.lock().await;
             adapter
                 .initialize_response()
-                .and_then(|init| preferred_auth_method(init, &self.config.agent.env))
+                .and_then(|init| preferred_auth_method(&init, &self.config.agent.env))
                 .unwrap_or_else(|| AuthMethodInfo {
                     id: "default".into(),
                     name: Some("Sign in".into()),
@@ -194,7 +194,7 @@ impl RuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::acp_adapter::looks_like_auth_error;
+    use crate::acp_semantics::looks_like_auth_error;
 
     #[test]
     fn detects_common_auth_error_strings() {

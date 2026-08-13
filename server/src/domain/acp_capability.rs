@@ -272,7 +272,13 @@ fn extract_frame_type(frame: &Value) -> &str {
 fn frame_needs_capability(frame_type: &str) -> bool {
     matches!(
         frame_type,
-        "send" | "delta" | "done" | "session_update" | "permission_request" | "trace"
+        "send"
+            | "delta"
+            | "done"
+            | "session_update"
+            | "permission_request"
+            | "elicitation_request"
+            | "trace"
     )
 }
 
@@ -283,6 +289,9 @@ fn frame_action(frame_type: &str) -> Option<&str> {
         "done" => Some("stream"),
         "session_update" => Some("session_update"),
         "permission_request" => Some("permission_request"),
+        // Elicitation is a user-response request and deliberately reuses the
+        // existing permission_request capability grant during this migration.
+        "elicitation_request" => Some("permission_request"),
         "trace" => Some("trace"),
         _ => None,
     }
@@ -925,7 +934,10 @@ pub fn build_action_map() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("send", vec!["send"]),
         ("stream", vec!["delta", "done"]),
         ("session_update", vec!["session_update"]),
-        ("permission_request", vec!["permission_request"]),
+        (
+            "permission_request",
+            vec!["permission_request", "elicitation_request"],
+        ),
         ("trace", vec!["trace"]),
     ])
 }
