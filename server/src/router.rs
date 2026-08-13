@@ -803,6 +803,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
+            "/api/v1/mcp/oauth/authorize",
+            get(api::mcp::authorize_inspect).post(api::mcp::authorize_approve),
+        )
+        .route(
             "/api/v1/mcp/parse-claude-config",
             post(api::mcp::parse_claude_config),
         )
@@ -823,6 +827,10 @@ fn build_public_routes() -> Router<AppState> {
             "/.well-known/oauth-protected-resource/mcp",
             get(api::mcp::protected_resource_metadata),
         )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(api::mcp::authorization_server_metadata),
+        )
         // MCP 2026-07-28 is stateless: every POST carries protocol metadata and
         // a short-lived, operation-scoped bearer token. 12 MiB accommodates the
         // existing 8 MiB binary attachment limit after base64 expansion while
@@ -832,9 +840,10 @@ fn build_public_routes() -> Router<AppState> {
             post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
         )
         .route(
-            "/api/v1/mcp/token",
+            "/oauth/token",
             post(api::mcp::issue_mcp_access_token).layer(DefaultBodyLimit::max(16 * 1024)),
         )
+        .route("/oauth/authorize", get(api::mcp::authorize_start))
         .route("/api/v1/auth/login", post(api::auth::login))
         .route("/api/v1/auth/refresh", post(api::auth::refresh))
         .route(
@@ -898,7 +907,7 @@ fn build_public_routes() -> Router<AppState> {
             post(api::auth::reset_password),
         )
         // Public, code-authenticated: a host redeems a one-time enrollment code
-        // for a freshly rotated bot token + connector config. No JWT — the code
+        // for a fresh installation credential + connector config. No JWT — the code
         // IS the credential (rate-limited + single-use + short TTL).
         .route(
             "/api/v1/enrollment/redeem",

@@ -143,6 +143,8 @@ export default defineConfig({
       "/api": { target: API_PROXY_TARGET, changeOrigin: true },
       "/mcp": { target: API_PROXY_TARGET, changeOrigin: true },
       "/.well-known/oauth-protected-resource": { target: API_PROXY_TARGET, changeOrigin: true },
+      "/.well-known/oauth-authorization-server": { target: API_PROXY_TARGET, changeOrigin: true },
+      "/oauth": { target: API_PROXY_TARGET, changeOrigin: true },
       "/ws": { target: WS_PROXY_TARGET, ws: true },
       "/docs": { target: API_PROXY_TARGET, changeOrigin: true },
       "/health": { target: API_PROXY_TARGET, changeOrigin: true },

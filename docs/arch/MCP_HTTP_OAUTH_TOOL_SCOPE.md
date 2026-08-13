@@ -50,10 +50,10 @@ server publishes RFC 8414 metadata and supports:
 - RFC 8707 `resource` in authorization and token requests.
 - Refresh tokens only when the authorization server elects to issue them.
 
-Dynamic Client Registration is compatibility-only and is not required for the
-first production release. A legacy Bot credential exchange may coexist during
-migration, but it is not advertised as the MCP authorization flow and must be
-removed after installation credentials ship.
+Client ID Metadata Documents are the public-client registration mechanism.
+Authorization codes are single-use and PKCE S256-bound; refresh tokens rotate
+on every use. Unattended connector clients authenticate only as an enrolled
+installation. The former Bot-credential token exchange has been removed.
 
 Cheers serves metadata at both the host-level path requested by MCP clients and
 the RFC 9728 path-derived alias:
@@ -64,8 +64,8 @@ the RFC 9728 path-derived alias:
 `MCP_PUBLIC_URL` is the sole production source of the returned `resource`, token
 audience, and challenge metadata URL. It must be an externally visible HTTPS URL
 ending in `/mcp`; request `Host` and forwarded headers are never trusted for this
-security decision. `MCP_AUTHORIZATION_SERVER_ISSUER` is advertised only when it
-is configured, so Cheers does not claim a nonexistent authorization server.
+security decision. Without an explicit authorization issuer, the MCP origin is
+the canonical Cheers issuer.
 
 Requests without a valid token return HTTP 401 with a Bearer challenge containing
 `resource_metadata`. A valid token lacking an operation scope returns HTTP 403:
@@ -94,8 +94,8 @@ interactive client can perform one bounded step-up authorization.
 Scopes do not imply one another except that a future documented aggregate scope
 may explicitly expand to this frozen set. There is no generic `tools:call` scope.
 
-`server/discover`, `resources/list`, `resources/templates/list`,
-`resources/read`, and `tools/list` require `cheers:read`. Tool catalog entries
+`server/discover`, Resources, Prompts, Completion, and `tools/list` require
+`cheers:read`. Tool catalog entries
 include `io.cheers/requiredScopes` so clients can request step-up before a call.
 
 ## 4. Frozen Tool scope mapping
@@ -121,7 +121,7 @@ to the gateway's filesystem.
 
 ## 5. Stateless Tools behavior
 
-- `server/discover` advertises `tools: { listChanged: false }` and `resources`.
+- `server/discover` advertises Resources, Tools, Prompts, and Completions.
 - `tools/list` is unpaginated in v1 and returns `resultType=complete`, a private
   cache scope, and a bounded catalog TTL.
 - `tools/call` requires `Mcp-Name` to equal `params.name`.
@@ -150,9 +150,15 @@ The stdio process may be removed only after all of these are true:
 
 1. Protected Resource Metadata and authorization-server discovery interoperate
    with the official conformance client.
-2. Installation credentials replace shared long-lived Bot credentials.
+2. Installation credentials replace shared long-lived Bot credentials. ✅
 3. Every remotely exposed Tool has parity tests against its stdio mapping.
 4. Scope challenge, revoked installation, removed membership and role downgrade
    tests pass.
 5. Connector uses the remote endpoint by default and retains no hidden
    privileged resource path.
+
+The official `@modelcontextprotocol/conformance@0.2.0-alpha.11` server command
+is a required CI gate with `--suite all --spec-version 2026-07-28`. It
+bootstraps a real terminal installation, obtains its OAuth token, executes the
+full suite, revokes the installation, and verifies the already-issued access
+token immediately returns HTTP 401.

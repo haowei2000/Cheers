@@ -84,6 +84,7 @@ hex     = "0.4"
 getrandom = "0.2"
 bcrypt  = "0.15"
 base64  = "0.22"
+serde_urlencoded = "0.7"
 ed25519-dalek = "1"
 aes-gcm = "0.10"
 

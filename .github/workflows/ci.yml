@@ -147,6 +147,45 @@ jobs:
       - name: Clippy (non-blocking)
         run: cargo clippy --all-targets --features integration || true
 
+  mcp-conformance:
+    name: MCP 2026-07-28 Conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true' || needs.changes.outputs.plugin == 'true' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cheers
+          POSTGRES_PASSWORD: cheers
+          POSTGRES_DB: cheers_mcp_conformance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cheers"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://cheers:cheers@localhost:5432/cheers_mcp_conformance
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          # The 2026-07-28 conformance CLI imports node:fs globSync, which is
+          # unavailable in Node 20. Keep this job on the CLI's supported LTS.
+          node-version: "24"
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Official server suite and installation OAuth path
+        run: bash scripts/run-mcp-conformance.sh
+
   # ─────────────────────────────────────────────
   # Frontend: type-check + build
   # ─────────────────────────────────────────────
