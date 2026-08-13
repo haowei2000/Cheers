@@ -15,11 +15,53 @@ gateway_pid=""
 proxy_pid=""
 
 cleanup() {
-  if [[ -n "$proxy_pid" ]]; then kill "$proxy_pid" 2>/dev/null || true; fi
-  if [[ -n "$gateway_pid" ]]; then kill "$gateway_pid" 2>/dev/null || true; fi
+  local exit_code=$?
+  set +e
+  if [[ "$exit_code" -ne 0 ]]; then
+    for log_file in "$tmp_dir/gateway.log" "$tmp_dir/proxy.log"; do
+      if [[ -s "$log_file" ]]; then
+        echo "--- $(basename "$log_file") (last 200 lines) ---" >&2
+        tail -n 200 "$log_file" >&2
+      fi
+    done
+  fi
+  if [[ -n "$proxy_pid" ]]; then
+    kill "$proxy_pid" 2>/dev/null || true
+    wait "$proxy_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$gateway_pid" ]]; then
+    kill "$gateway_pid" 2>/dev/null || true
+    wait "$gateway_pid" 2>/dev/null || true
+  fi
   rm -rf "$tmp_dir"
+  trap - EXIT
+  exit "$exit_code"
 }
 trap cleanup EXIT
+
+wait_for_http() {
+  local label=$1
+  local url=$2
+  local pid=$3
+  local timeout_seconds=$4
+  local deadline=$((SECONDS + timeout_seconds))
+
+  while ((SECONDS < deadline)); do
+    # Any HTTP response proves the listener is ready. Callers use a dedicated
+    # health URL where a successful status is also required by the next step.
+    if curl -sS --connect-timeout 1 -o /dev/null "$url" 2>/dev/null; then
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "$label exited before becoming ready" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  echo "$label did not become ready within ${timeout_seconds}s" >&2
+  return 1
+}
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 command -v curl >/dev/null
@@ -50,18 +92,15 @@ export S3_ACCESS_KEY="unused"
 export S3_SECRET_KEY="unused"
 export S3_REGION="us-east-1"
 
-cargo run --manifest-path "$repo_root/server/Cargo.toml" --bin server \
+cargo build --manifest-path "$repo_root/server/Cargo.toml" --bin server
+target_dir="$(cargo metadata --manifest-path "$repo_root/server/Cargo.toml" \
+  --format-version 1 --no-deps | jq -er .target_directory)"
+"$target_dir/debug/server" \
   >"$tmp_dir/gateway.log" 2>&1 &
 gateway_pid=$!
 
-for _ in $(seq 1 90); do
-  if curl -fsS "${gateway_origin}/health" >/dev/null 2>&1; then break; fi
-  if ! kill -0 "$gateway_pid" 2>/dev/null; then
-    cat "$tmp_dir/gateway.log"
-    exit 1
-  fi
-  sleep 1
-done
+wait_for_http "Cheers gateway" "${gateway_origin}/health" "$gateway_pid" \
+  "${CHEERS_MCP_STARTUP_TIMEOUT_SECONDS:-120}"
 curl -fsS "${gateway_origin}/health" >/dev/null
 
 admin_token="$(curl -fsS -X POST "${gateway_origin}/api/v1/auth/login" \
@@ -100,9 +139,8 @@ node "$repo_root/scripts/mcp-conformance-auth-proxy.mjs" \
   >"$tmp_dir/proxy.log" 2>&1 &
 proxy_pid=$!
 
-for _ in $(seq 1 20); do
-  if kill -0 "$proxy_pid" 2>/dev/null; then sleep 1; break; fi
-done
+wait_for_http "MCP auth proxy" "${proxy_origin}/mcp" "$proxy_pid" \
+  "${CHEERS_MCP_PROXY_TIMEOUT_SECONDS:-20}"
 
 npx -y @modelcontextprotocol/conformance@0.2.0-alpha.11 server \
   --url "${proxy_origin}/mcp" \
