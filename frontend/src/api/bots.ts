@@ -54,7 +54,7 @@ export interface IssuedToken {
   note?: string;
 }
 
-/** Issue/rotate the bot's Agent Bridge token. Plaintext is returned once. */
+/** Transitional remote-MCP bootstrap token. Not valid for Agent Bridge. */
 /** Admin/owner kill-switch: disable the bot + kick its live connector. */
 export async function disableBot(botId: string): Promise<void> {
   await apiJson(`/bots/${botId}/disable`, { method: "POST" });
@@ -136,6 +136,48 @@ export async function getBotStatus(botId: string): Promise<BotStatus> {
   return apiJson<BotStatus>(`/bots/${botId}/status`);
 }
 
+export interface TerminalInstallation {
+  installation_id: string;
+  device_name: string;
+  agent_type: string;
+  credential_prefix: string;
+  status: "pending" | "active" | "standby";
+  online: boolean;
+  connector_version?: string | null;
+  capabilities?: Record<string, unknown> | null;
+  last_seen_at?: string | null;
+  connected_at?: string | null;
+  credential_rotated_at: string;
+  created_at: string;
+  revoked_at?: string | null;
+}
+
+export async function listTerminalInstallations(botId: string): Promise<TerminalInstallation[]> {
+  const result = await apiJson<{ installations: TerminalInstallation[] }>(
+    `/bots/${botId}/installations`
+  );
+  return result.installations ?? [];
+}
+
+export async function activateTerminalInstallation(botId: string, installationId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/installations/${installationId}/activate`, { method: "POST" });
+}
+
+export async function rotateTerminalCredential(
+  botId: string,
+  installationId: string
+): Promise<{ credential: string; credential_prefix: string }> {
+  return apiJson(`/bots/${botId}/installations/${installationId}/credential`, { method: "POST" });
+}
+
+export async function reconnectTerminalInstallation(botId: string, installationId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/installations/${installationId}/reconnect`, { method: "POST" });
+}
+
+export async function revokeTerminalInstallation(botId: string, installationId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/installations/${installationId}`, { method: "DELETE" });
+}
+
 // ── Bot onboarding: enrollment codes + connector config ───────────────────────
 
 export interface Reachability {
@@ -147,7 +189,7 @@ export interface ConnectorConfig {
   bot_id: string;
   account_id: string;
   agent_type: string;
-  token_file: string;
+  credential_file: string;
   control_url: string;
   data_url: string;
   config_toml: string;
@@ -155,8 +197,8 @@ export interface ConnectorConfig {
   note?: string;
 }
 
-/** Manual-mode (mode 3) config: token is read from a sidecar file, never inlined.
- * Issue the token separately via {@link issueBotToken}. */
+/** Connector config skeleton. Enrollment is still required to obtain the
+ * installation-bound credential referenced by this file. */
 export async function getConnectorConfig(
   botId: string,
   agentType?: AgentType
@@ -198,14 +240,16 @@ export async function revokeEnrollmentCodes(
 }
 
 /** Result of redeeming an enrollment code: a ready-to-run config plus the
- * rotated token (once) and the relative token_file the config references. */
+ * one-time installation credential and its relative credential file. */
 export interface RedeemedEnrollment {
   bot_id: string;
+  installation_id: string;
+  device_name: string;
   account_id: string;
   agent_type: string;
-  token: string;
-  token_prefix: string;
-  token_file: string;
+  credential: string;
+  credential_prefix: string;
+  credential_file: string;
   control_url: string;
   data_url: string;
   config_toml: string;
@@ -216,11 +260,12 @@ export interface RedeemedEnrollment {
 /** Redeem an enrollment code (single-use; authenticated by the code itself, so
  * no bearer needed). Returns the generated config + token to write to disk. */
 export async function redeemEnrollmentCode(
-  code: string
+  code: string,
+  deviceName?: string
 ): Promise<RedeemedEnrollment> {
   return apiJson<RedeemedEnrollment>("/enrollment/redeem", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, device_name: deviceName }),
   });
 }
 

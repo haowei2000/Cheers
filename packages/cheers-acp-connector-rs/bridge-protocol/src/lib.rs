@@ -441,6 +441,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stream: Option<String>,
         bot_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        installation_id: Option<String>,
         bot_username: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_display_name: Option<String>,
@@ -737,6 +739,8 @@ pub enum DataInbound {
         bridge_protocol_version: u32,
         stream: String,
         bot_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        installation_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connection_id: Option<String>,
         session_id: String,

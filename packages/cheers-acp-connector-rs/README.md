@@ -54,7 +54,7 @@ auto = false
 [accounts.haowei_claude.bridge]
 control_url = "wss://cheers.example.com/ws/agent-bridge/control"
 data_url = "wss://cheers.example.com/ws/agent-bridge/data"
-bot_token_env = "CHEERS_CLAUDE_BOT_TOKEN"
+installation_credential_env = "CHEERS_CLAUDE_INSTALLATION_CREDENTIAL"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 
@@ -121,6 +121,7 @@ allow = true
 include_metadata = true
 
 [accounts.haowei_claude.policy.mcp]
+# Deprecated compatibility fallback. Prefer the remote Cheers HTTP MCP endpoint.
 inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]

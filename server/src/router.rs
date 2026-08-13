@@ -110,9 +110,15 @@ fn cors_layer(origins: Vec<HeaderValue>) -> CorsLayer {
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::ORIGIN,
+            HeaderName::from_static("mcp-protocol-version"),
+            HeaderName::from_static("mcp-method"),
+            HeaderName::from_static("mcp-name"),
             HeaderName::from_static("x-csrf-token"),
         ])
-        .expose_headers([HeaderName::from_static("x-request-id")])
+        .expose_headers([
+            HeaderName::from_static("x-request-id"),
+            header::WWW_AUTHENTICATE,
+        ])
         .allow_origin(AllowOrigin::list(origins))
         // Desktop API requests originate in WKWebView and use
         // `credentials: include`. Browsers reject even cookie-free responses
@@ -547,6 +553,26 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::enrollment::get_connector_config),
         )
         .route(
+            "/api/v1/bots/:bot_id/installations",
+            get(api::installations::list_installations),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id/activate",
+            post(api::installations::activate_installation),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id/credential",
+            post(api::installations::rotate_installation_credential),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id/reconnect",
+            post(api::installations::reconnect_installation),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id",
+            delete(api::installations::revoke_installation),
+        )
+        .route(
             "/api/v1/ops/connector-discovery",
             get(api::enrollment::connector_discovery),
         )
@@ -787,6 +813,28 @@ fn build_public_routes() -> Router<AppState> {
     // Public endpoints used before token acquisition.
     Router::new()
         .route("/health", get(health))
+        // RFC 9728 protected-resource metadata. Publish both the host-level
+        // location requested by MCP clients and the path-derived `/mcp` alias.
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(api::mcp::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(api::mcp::protected_resource_metadata),
+        )
+        // MCP 2026-07-28 is stateless: every POST carries protocol metadata and
+        // a short-lived, operation-scoped bearer token. 12 MiB accommodates the
+        // existing 8 MiB binary attachment limit after base64 expansion while
+        // retaining an endpoint-local hard cap.
+        .route(
+            "/mcp",
+            post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
+        )
+        .route(
+            "/api/v1/mcp/token",
+            post(api::mcp::issue_mcp_access_token).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route("/api/v1/auth/login", post(api::auth::login))
         .route("/api/v1/auth/refresh", post(api::auth::refresh))
         .route(
@@ -985,7 +1033,7 @@ mod tests {
             response
                 .headers()
                 .get(header::ACCESS_CONTROL_EXPOSE_HEADERS),
-            Some(&HeaderValue::from_static("x-request-id"))
+            Some(&HeaderValue::from_static("x-request-id,www-authenticate"))
         );
     }
 

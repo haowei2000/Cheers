@@ -41,6 +41,7 @@ pub(crate) use cheers_bridge_protocol::BRIDGE_PROTOCOL_VERSION;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn control_hello_frame(
     bot_id: Uuid,
+    installation_id: Uuid,
     bot_username: &str,
     bot_display_name: Option<&str>,
     connection_id: Uuid,
@@ -55,6 +56,7 @@ pub(crate) fn control_hello_frame(
         "bridge_protocol_version": BRIDGE_PROTOCOL_VERSION,
         "stream": "control",
         "bot_id": bot_id,
+        "installation_id": installation_id,
         "bot_username": bot_username,
         "bot_display_name": bot_display_name,
         "connection_id": connection_id,
@@ -73,6 +75,7 @@ pub(crate) fn control_hello_frame(
 /// exists (resume is ack-only, see `resume_ack_frame`).
 pub(crate) fn data_hello_frame(
     bot_id: Uuid,
+    installation_id: Uuid,
     connection_id: Uuid,
     server_capabilities: Value,
     acp_security: Option<&Value>,
@@ -83,6 +86,7 @@ pub(crate) fn data_hello_frame(
         "bridge_protocol_version": BRIDGE_PROTOCOL_VERSION,
         "stream": "data",
         "bot_id": bot_id,
+        "installation_id": installation_id,
         "connection_id": connection_id,
         "session_id": connection_id,
         "last_event_seq": 0,
@@ -484,6 +488,7 @@ mod tests {
     fn control_hello_matches_fixture() {
         let frame = control_hello_frame(
             bot_id(),
+            conn_id(),
             "helper",
             Some("Helper"),
             conn_id(),
@@ -516,6 +521,7 @@ mod tests {
     fn data_hello_matches_fixture() {
         let frame = data_hello_frame(
             bot_id(),
+            conn_id(),
             conn_id(),
             json!({
                 "auth": ["authorization_bearer", "auth_frame"],

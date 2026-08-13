@@ -3,8 +3,10 @@ use std::io::{self, BufRead, Write};
 use std::time::Duration;
 
 use anyhow::Context;
+use percent_encoding::percent_decode_str;
 use reqwest::Client;
 use serde_json::{json, Map, Value};
+use url::Url;
 
 #[derive(Debug, Clone)]
 struct ServerConfig {
@@ -35,6 +37,9 @@ async fn main() -> anyhow::Result<()> {
             .build()?,
         config,
     };
+    eprintln!(
+        "[cheers-mcp] DEPRECATED: the stdio MCP child process is a compatibility fallback; migrate to the stateless remote HTTP endpoint at POST /mcp"
+    );
     eprintln!(
         "[cheers-mcp] ready (bot={})",
         client.config.bot_id.as_deref().unwrap_or("?"),
@@ -106,11 +111,20 @@ async fn handle_request(client: &CheersClient, request: &Value) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
     let result = match method {
-        "initialize" => Ok(initialize_result()),
+        "initialize" => Ok(initialize_result(
+            request.get("params").unwrap_or(&Value::Null),
+        )),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tool_definitions() })),
         "tools/call" => {
             handle_tool_call(client, request.get("params").unwrap_or(&Value::Null)).await
+        }
+        "resources/list" => Ok(json!({ "resources": resource_definitions() })),
+        "resources/templates/list" => {
+            Ok(json!({ "resourceTemplates": resource_template_definitions() }))
+        }
+        "resources/read" => {
+            handle_resource_read(client, request.get("params").unwrap_or(&Value::Null)).await
         }
         _ => Err(json_rpc_error(
             -32601,
@@ -123,11 +137,26 @@ async fn handle_request(client: &CheersClient, request: &Value) -> Value {
     }
 }
 
-fn initialize_result() -> Value {
+fn initialize_result(params: &Value) -> Value {
+    const LATEST_LEGACY_VERSION: &str = "2025-11-25";
+    const SUPPORTED_LEGACY_VERSIONS: &[&str] = &[
+        "2024-11-05",
+        "2025-03-26",
+        "2025-06-18",
+        LATEST_LEGACY_VERSION,
+    ];
+    let requested = params.get("protocolVersion").and_then(Value::as_str);
+    let protocol_version = requested
+        .filter(|version| SUPPORTED_LEGACY_VERSIONS.contains(version))
+        .unwrap_or(LATEST_LEGACY_VERSION);
     json!({
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": protocol_version,
         "capabilities": {
-            "tools": {}
+            "tools": {},
+            "resources": {
+                "listChanged": false,
+                "subscribe": false
+            }
         },
         "serverInfo": {
             "name": "cheers",
@@ -140,6 +169,324 @@ fn initialize_result() -> Value {
             NEVER fetch the gateway HTTP API yourself. Attachments may carry a download_url / preview_url (e.g. /api/v1/files/.../download) — those are links for the HUMAN web UI only. You have NO gateway HTTP session, so curl/wget/HTTP requests to them return 401. The ONLY way to read an attachment's content is inbox_open (add as_base64:true for binaries like pdf/zip/images, then decode the base64 locally — e.g. write it to a file and unzip). Do not go looking for a gateway URL or token in the environment.\n\
             Rule of thumb: if you're thinking in a PATH it's the desk; if you're holding a FILE_ID it's the inbox. Never desk_write a file_id, and never inbox_open a path. To work on an uploaded file, inbox_open it, then desk_write its content into your workspace."
     })
+}
+
+fn resource_definitions() -> Vec<Value> {
+    vec![json!({
+        "uri": "cheers://help/resources",
+        "name": "Cheers resource guide",
+        "title": "Cheers resource guide",
+        "description": "Available channel resource URI templates and their permission boundary.",
+        "mimeType": "text/markdown"
+    })]
+}
+
+fn resource_template_definitions() -> Vec<Value> {
+    vec![
+        resource_template(
+            "cheers://channel/{channel_id}/info",
+            "Channel information",
+            "Channel metadata and membership count.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/members",
+            "Channel members",
+            "Users and agents in the channel.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/messages{?limit,since_seq,before,after}",
+            "Channel messages",
+            "Finalized channel messages with cursor-based pagination.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/context",
+            "Channel context",
+            "Condensed channel context bundle.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/plan",
+            "Channel plan",
+            "Live plan and progress board.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/sessions",
+            "Agent sessions",
+            "Agent sessions active in the channel.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/usage",
+            "Channel usage",
+            "Token usage and cost totals.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/files",
+            "Channel attachments",
+            "Files uploaded to the channel.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/files/{file_id}{?as_base64}",
+            "Channel attachment",
+            "One channel attachment, optionally returned as base64.",
+        ),
+        resource_template(
+            "cheers://channel/{channel_id}/desk/{+path}",
+            "Desk file",
+            "One file from the channel's shared agent workspace.",
+        ),
+    ]
+}
+
+fn resource_template(uri_template: &str, name: &str, description: &str) -> Value {
+    json!({
+        "uriTemplate": uri_template,
+        "name": name,
+        "title": name,
+        "description": description
+    })
+}
+
+async fn handle_resource_read(client: &CheersClient, params: &Value) -> Result<Value, Value> {
+    let uri = params
+        .get("uri")
+        .and_then(Value::as_str)
+        .ok_or_else(|| json_rpc_error(-32602, "resources/read requires params.uri"))?;
+
+    if uri == "cheers://help/resources" {
+        return Ok(json!({
+            "contents": [{
+                "uri": uri,
+                "mimeType": "text/markdown",
+                "text": resource_help_text()
+            }]
+        }));
+    }
+
+    let call = build_uri_resource_call(uri)
+        .map_err(|err| json_rpc_error_with_data(-32602, &err.message, &err.code))?;
+    let data = client
+        .call(&call.resource, call.params)
+        .await
+        .map_err(|err| json_rpc_error_with_data(-32002, &err.message, &err.code))?;
+    Ok(json!({ "contents": [resource_content(uri, &data)] }))
+}
+
+fn resource_help_text() -> &'static str {
+    "# Cheers MCP resources\n\nUse `resources/templates/list` to discover channel URI templates. Every channel resource is authorized by the gateway against the connected bot's channel membership and role. A URI never grants access by itself.\n"
+}
+
+fn build_uri_resource_call(uri: &str) -> Result<ResourceCall, ResourceError> {
+    if uri.len() > 4096 {
+        return Err(ResourceError {
+            code: "INVALID_URI".to_string(),
+            message: "resource URI exceeds the 4096-byte limit".to_string(),
+        });
+    }
+    let parsed = Url::parse(uri).map_err(|err| ResourceError {
+        code: "INVALID_URI".to_string(),
+        message: format!("invalid resource URI: {err}"),
+    })?;
+    if parsed.scheme() != "cheers" || parsed.host_str() != Some("channel") {
+        return Err(ResourceError {
+            code: "UNSUPPORTED_URI".to_string(),
+            message: "resource URI must start with cheers://channel/".to_string(),
+        });
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(ResourceError {
+            code: "INVALID_URI".to_string(),
+            message: "resource URI must not contain userinfo, a port, or a fragment".to_string(),
+        });
+    }
+
+    let segments = parsed
+        .path_segments()
+        .map(|items| items.filter(|item| !item.is_empty()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if segments.len() < 2 {
+        return Err(ResourceError {
+            code: "INVALID_URI".to_string(),
+            message: "resource URI requires a channel id and resource name".to_string(),
+        });
+    }
+
+    let mut params = Map::new();
+    params.insert(
+        "channel_id".to_string(),
+        Value::String(segments[0].to_string()),
+    );
+    let resource = match segments[1] {
+        "info" if segments.len() == 2 => no_query(&parsed, "channel.info")?,
+        "members" if segments.len() == 2 => no_query(&parsed, "channel.members")?,
+        "messages" if segments.len() == 2 => {
+            copy_uri_query(
+                &parsed,
+                &mut params,
+                &["limit", "since_seq"],
+                &["before", "after"],
+            )?;
+            "channel.messages"
+        }
+        "context" if segments.len() == 2 => no_query(&parsed, "channel.context")?,
+        "plan" if segments.len() == 2 => no_query(&parsed, "channel.plan.read")?,
+        "sessions" if segments.len() == 2 => no_query(&parsed, "channel.sessions.read")?,
+        "usage" if segments.len() == 2 => no_query(&parsed, "channel.usage.read")?,
+        "files" if segments.len() == 2 => no_query(&parsed, "channel.files")?,
+        "files" if segments.len() == 3 => {
+            params.insert(
+                "file_id".to_string(),
+                Value::String(segments[2].to_string()),
+            );
+            copy_uri_bool_query(&parsed, &mut params, "as_base64")?;
+            "channel.files.read"
+        }
+        "desk" if segments.len() >= 3 => {
+            no_query(&parsed, "fs.read")?;
+            let encoded_path = segments[2..].join("/");
+            let path = percent_decode_str(&encoded_path)
+                .decode_utf8()
+                .map_err(|_| ResourceError {
+                    code: "INVALID_URI".to_string(),
+                    message: "desk path is not valid UTF-8".to_string(),
+                })?;
+            params.insert("path".to_string(), Value::String(path.into_owned()));
+            "fs.read"
+        }
+        _ => {
+            return Err(ResourceError {
+                code: "UNSUPPORTED_URI".to_string(),
+                message: format!("unsupported Cheers resource URI: {uri}"),
+            })
+        }
+    };
+    Ok(ResourceCall { resource, params })
+}
+
+fn no_query(uri: &Url, resource: &'static str) -> Result<&'static str, ResourceError> {
+    if uri.query().is_some() {
+        return Err(ResourceError {
+            code: "INVALID_URI".to_string(),
+            message: "this resource URI does not accept query parameters".to_string(),
+        });
+    }
+    Ok(resource)
+}
+
+fn copy_uri_query(
+    uri: &Url,
+    params: &mut Map<String, Value>,
+    integers: &[&str],
+    strings: &[&str],
+) -> Result<(), ResourceError> {
+    for (name, value) in uri.query_pairs() {
+        if integers.contains(&name.as_ref()) {
+            reject_duplicate_query(params, &name)?;
+            let parsed = value.parse::<i64>().map_err(|_| ResourceError {
+                code: "INVALID_URI".to_string(),
+                message: format!("query parameter {name} must be an integer"),
+            })?;
+            if parsed < 0 {
+                return Err(ResourceError {
+                    code: "INVALID_URI".to_string(),
+                    message: format!("query parameter {name} must not be negative"),
+                });
+            }
+            params.insert(name.into_owned(), Value::Number(parsed.into()));
+        } else if strings.contains(&name.as_ref()) {
+            reject_duplicate_query(params, &name)?;
+            params.insert(name.into_owned(), Value::String(value.into_owned()));
+        } else {
+            return Err(ResourceError {
+                code: "INVALID_URI".to_string(),
+                message: format!("unknown query parameter: {name}"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn copy_uri_bool_query(
+    uri: &Url,
+    params: &mut Map<String, Value>,
+    expected: &str,
+) -> Result<(), ResourceError> {
+    for (name, value) in uri.query_pairs() {
+        if name == expected {
+            reject_duplicate_query(params, &name)?;
+            let parsed = value.parse::<bool>().map_err(|_| ResourceError {
+                code: "INVALID_URI".to_string(),
+                message: format!("query parameter {name} must be true or false"),
+            })?;
+            params.insert(name.into_owned(), Value::Bool(parsed));
+        } else {
+            return Err(ResourceError {
+                code: "INVALID_URI".to_string(),
+                message: format!("unknown query parameter: {name}"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn reject_duplicate_query(params: &Map<String, Value>, name: &str) -> Result<(), ResourceError> {
+    if params.contains_key(name) {
+        return Err(ResourceError {
+            code: "INVALID_URI".to_string(),
+            message: format!("duplicate query parameter: {name}"),
+        });
+    }
+    Ok(())
+}
+
+fn resource_content(uri: &str, data: &Value) -> Value {
+    let supplied_mime_type = data.get("content_type").and_then(Value::as_str);
+    if let Some(blob) = data.get("data_b64").and_then(Value::as_str) {
+        let mime_type = safe_resource_mime_type(
+            supplied_mime_type.unwrap_or("application/octet-stream"),
+            true,
+        );
+        return json!({ "uri": uri, "mimeType": mime_type, "blob": blob });
+    }
+    if let Some(text) = data.get("content").and_then(Value::as_str) {
+        let mime_type = safe_resource_mime_type(supplied_mime_type.unwrap_or("text/plain"), false);
+        return json!({ "uri": uri, "mimeType": mime_type, "text": text });
+    }
+    json!({
+        "uri": uri,
+        "mimeType": "application/json",
+        "text": serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string())
+    })
+}
+
+fn safe_resource_mime_type(supplied: &str, binary: bool) -> &'static str {
+    let normalized = supplied
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if binary {
+        return match normalized.as_str() {
+            "image/png" => "image/png",
+            "image/jpeg" | "image/jpg" => "image/jpeg",
+            "image/gif" => "image/gif",
+            "image/webp" => "image/webp",
+            "audio/mpeg" => "audio/mpeg",
+            "audio/ogg" => "audio/ogg",
+            "audio/wav" | "audio/x-wav" => "audio/wav",
+            _ => "application/octet-stream",
+        };
+    }
+    match normalized.as_str() {
+        "text/plain" => "text/plain",
+        "text/markdown" => "text/markdown",
+        "text/csv" => "text/csv",
+        "application/json" => "application/json",
+        _ => "text/plain",
+    }
 }
 
 async fn handle_tool_call(client: &CheersClient, params: &Value) -> Result<Value, Value> {
@@ -627,6 +974,14 @@ fn json_rpc_error(code: i64, message: &str) -> Value {
     json!({ "code": code, "message": message })
 }
 
+fn json_rpc_error_with_data(code: i64, message: &str, cheers_code: &str) -> Value {
+    json!({
+        "code": code,
+        "message": message,
+        "data": { "cheersCode": cheers_code }
+    })
+}
+
 fn tool_definitions() -> Vec<Value> {
     vec![
         tool("get_channel_info", "Get channel info", "Metadata for a channel: name, type, workspace.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
@@ -940,5 +1295,93 @@ mod tests {
             definition["inputSchema"]["required"],
             json!(["target_user_id"])
         );
+    }
+
+    #[test]
+    fn initialize_advertises_resources() {
+        let result = initialize_result(&json!({"protocolVersion": "2025-11-25"}));
+        assert_eq!(result["protocolVersion"], "2025-11-25");
+        assert_eq!(result["capabilities"]["resources"]["listChanged"], false);
+        assert_eq!(result["capabilities"]["resources"]["subscribe"], false);
+    }
+
+    #[test]
+    fn initialize_preserves_supported_legacy_version() {
+        let result = initialize_result(&json!({"protocolVersion": "2024-11-05"}));
+        assert_eq!(result["protocolVersion"], "2024-11-05");
+    }
+
+    #[test]
+    fn resource_templates_cover_priority_read_surfaces() {
+        let templates = resource_template_definitions();
+        assert!(templates.iter().any(|item| item["uriTemplate"]
+            == "cheers://channel/{channel_id}/messages{?limit,since_seq,before,after}"));
+        assert!(templates.iter().any(|item| item["uriTemplate"]
+            == "cheers://channel/{channel_id}/files/{file_id}{?as_base64}"));
+        assert!(templates
+            .iter()
+            .any(|item| item["uriTemplate"] == "cheers://channel/{channel_id}/desk/{+path}"));
+    }
+
+    #[test]
+    fn message_resource_uri_maps_query_parameters() {
+        let call = build_uri_resource_call(
+            "cheers://channel/channel-1/messages?limit=25&since_seq=8&after=msg-7",
+        )
+        .unwrap();
+        assert_eq!(call.resource, "channel.messages");
+        assert_eq!(call.params["channel_id"], json!("channel-1"));
+        assert_eq!(call.params["limit"], json!(25));
+        assert_eq!(call.params["since_seq"], json!(8));
+        assert_eq!(call.params["after"], json!("msg-7"));
+    }
+
+    #[test]
+    fn desk_resource_uri_decodes_path() {
+        let call =
+            build_uri_resource_call("cheers://channel/channel-1/desk/reports/weekly%20summary.md")
+                .unwrap();
+        assert_eq!(call.resource, "fs.read");
+        assert_eq!(call.params["path"], json!("reports/weekly summary.md"));
+    }
+
+    #[test]
+    fn binary_resource_content_uses_blob() {
+        let content = resource_content(
+            "cheers://channel/c/files/f",
+            &json!({"content_type": "image/png", "data_b64": "aGVsbG8="}),
+        );
+        assert_eq!(content["mimeType"], "image/png");
+        assert_eq!(content["blob"], "aGVsbG8=");
+        assert!(content.get("text").is_none());
+    }
+
+    #[test]
+    fn unsupported_resource_uri_is_rejected() {
+        let err = build_uri_resource_call("https://example.com/channel/c/info").unwrap_err();
+        assert_eq!(err.code, "UNSUPPORTED_URI");
+    }
+
+    #[test]
+    fn resource_uri_rejects_ambiguous_authority_and_query() {
+        assert!(build_uri_resource_call("cheers://user@channel/c/info").is_err());
+        assert!(build_uri_resource_call("cheers://channel:123/c/info").is_err());
+        assert!(build_uri_resource_call("cheers://channel/c/info?unused=1").is_err());
+        assert!(build_uri_resource_call("cheers://channel/c/messages?limit=1&limit=2").is_err());
+    }
+
+    #[test]
+    fn active_content_mime_types_are_downgraded() {
+        let html = resource_content(
+            "cheers://channel/c/files/f",
+            &json!({"content_type": "text/html", "content": "<script>alert(1)</script>"}),
+        );
+        assert_eq!(html["mimeType"], "text/plain");
+
+        let svg = resource_content(
+            "cheers://channel/c/files/f",
+            &json!({"content_type": "image/svg+xml", "data_b64": "PHN2Zz4="}),
+        );
+        assert_eq!(svg["mimeType"], "application/octet-stream");
     }
 }

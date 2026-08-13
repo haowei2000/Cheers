@@ -23,7 +23,7 @@ use crate::{
         realtime::frame::WireFrame,
         stream::{handle_delta, handle_done, handle_send, handle_session_update},
     },
-    infra::crypto::hash_bot_token,
+    infra::crypto::hash_installation_credential,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
     resource,
 };
@@ -59,6 +59,7 @@ const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 #[derive(Debug, Clone)]
 struct BotInfo {
     bot_id: Uuid,
+    installation_id: Uuid,
     provider_account_id: String,
     username: String,
     display_name: Option<String>,
@@ -102,6 +103,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
     let memberships = load_memberships(&state.db, bot.bot_id).await;
     let hello = bridge_frames::control_hello_frame(
         bot.bot_id,
+        bot.installation_id,
         &bot.username,
         bot.display_name.as_deref(),
         connection_id,
@@ -148,7 +150,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
-    tracing::info!(bot_id = %bot.bot_id, "control connected");
+    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, "control connected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -226,7 +228,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
     };
 
     let superseded = reason == "superseded";
-    tracing::info!(bot_id = %bot.bot_id, reason, "control disconnected");
+    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, reason, "control disconnected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -247,6 +249,13 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
 async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     let bot_id = bot.bot_id;
+    let _ = sqlx::query(
+        "UPDATE terminal_installations SET last_seen_at = NOW(), updated_at = NOW()
+         WHERE installation_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(bot.installation_id.to_string())
+    .execute(&state.db)
+    .await;
     // Typed parse — the shared enum is the single schema both ends compile
     // against, so a field rename can no longer silently read as None (the
     // plugin_version bug class). Handlers that persist or tolerate legacy
@@ -312,6 +321,22 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 .await;
                 if let Err(e) = result {
                     tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
+                }
+                let installation_result = sqlx::query(
+                    "UPDATE terminal_installations
+                     SET connector_version = COALESCE($2, connector_version),
+                         capabilities = CASE WHEN $3::jsonb = 'null'::jsonb
+                                             THEN capabilities ELSE $3::jsonb END,
+                         last_seen_at = NOW(), updated_at = NOW()
+                     WHERE installation_id = $1 AND revoked_at IS NULL",
+                )
+                .bind(bot.installation_id.to_string())
+                .bind(connector_version.as_deref())
+                .bind(&caps_str)
+                .execute(&state.db)
+                .await;
+                if let Err(e) = installation_result {
+                    tracing::warn!(installation_id = %bot.installation_id, err = %e, "installation capabilities persist failed");
                 }
             }
         }
@@ -511,6 +536,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
     let hello = bridge_frames::data_hello_frame(
         bot.bot_id,
+        bot.installation_id,
         connection_id,
         server_capabilities(&state),
         bot.acp_security.as_ref(),
@@ -2161,7 +2187,7 @@ async fn auth_bot(
     header_token: Option<String>,
 ) -> Option<BotInfo> {
     if let Some(token) = header_token {
-        return match resolve_bot(&state.db, &token).await {
+        return match resolve_installation(&state.db, &token, None).await {
             Ok(bot) => Some(bot),
             Err(AuthFailure::BotUnavailable) => {
                 close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2243,7 +2269,8 @@ async fn auth_bot(
                     }
                 };
 
-                match resolve_bot(&state.db, &token).await {
+                let connector = frame.get("connector");
+                match resolve_installation(&state.db, &token, connector).await {
                     Ok(bot) => return Some(bot),
                     Err(AuthFailure::BotUnavailable) => {
                         close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2259,15 +2286,25 @@ async fn auth_bot(
     }
 }
 
-/// 通过 botToken 查找并验证 bot。
-async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
-    let token_hash = hash_bot_token(token);
+/// Resolve one active, non-revoked terminal installation and its Bot identity.
+/// Bot tokens are intentionally not accepted: otherwise a legacy shared token
+/// could bypass per-installation revocation and active/standby enforcement.
+async fn resolve_installation(
+    db: &PgPool,
+    credential: &str,
+    connector: Option<&Value>,
+) -> Result<BotInfo, AuthFailure> {
+    let credential_hash = hash_installation_credential(credential);
 
     let row = sqlx::query(
-        "SELECT bot_id, username, display_name, is_disabled, binding_config, created_by
-         FROM bot_accounts WHERE bot_token_hash = $1",
+        "SELECT i.installation_id, i.status, i.revoked_at,
+                b.bot_id, b.username, b.display_name, b.is_disabled,
+                b.binding_config, b.created_by
+         FROM terminal_installations i
+         JOIN bot_accounts b ON b.bot_id = i.bot_id
+         WHERE i.credential_hash = $1",
     )
-    .bind(&token_hash)
+    .bind(&credential_hash)
     .fetch_optional(db)
     .await
     .ok()
@@ -2280,12 +2317,43 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     if is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
+    let status: String = row.try_get("status").unwrap_or_default();
+    let revoked = row
+        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at")
+        .ok()
+        .flatten()
+        .is_some();
+    if revoked || status != "active" {
+        return Err(AuthFailure::BotUnavailable);
+    }
 
     let bot_id: Uuid = row
         .try_get::<String, _>("bot_id")
         .ok()
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
+    let installation_id: Uuid = row
+        .try_get::<String, _>("installation_id")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .ok_or(AuthFailure::InvalidToken)?;
+    let connector_version = connector
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_str);
+    let touched = sqlx::query(
+        "UPDATE terminal_installations
+         SET connector_version = COALESCE($2, connector_version),
+             last_seen_at = NOW(), connected_at = NOW(), updated_at = NOW()
+         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+    )
+    .bind(installation_id.to_string())
+    .bind(connector_version)
+    .execute(db)
+    .await
+    .map_err(|_| AuthFailure::InvalidToken)?;
+    if touched.rows_affected() == 0 {
+        return Err(AuthFailure::BotUnavailable);
+    }
     let binding_config = row
         .try_get::<Option<Value>, _>("binding_config")
         .ok()
@@ -2301,6 +2369,7 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     };
     Ok(BotInfo {
         bot_id,
+        installation_id,
         provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),

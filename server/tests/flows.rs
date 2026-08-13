@@ -4026,3 +4026,68 @@ async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool)
         .await
         .expect("default restored after delete");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn terminal_installations_enforce_one_active_and_independent_credentials(db: PgPool) {
+    let bot = seed_bot(&db).await;
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-a', $3, 'agbi_first', 'active')",
+    )
+    .bind(first.to_string())
+    .bind(bot.to_string())
+    .bind("a".repeat(64))
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let duplicate_active = sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'active')",
+    )
+    .bind(second.to_string())
+    .bind(bot.to_string())
+    .bind("b".repeat(64))
+    .execute(&db)
+    .await;
+    assert!(
+        duplicate_active.is_err(),
+        "database must reject two active installations"
+    );
+
+    sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'standby')",
+    )
+    .bind(second.to_string())
+    .bind(bot.to_string())
+    .bind("b".repeat(64))
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE terminal_installations SET revoked_at = NOW()
+         WHERE installation_id = $1",
+    )
+    .bind(second.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    let first_still_active: bool = sqlx::query_scalar(
+        "SELECT status = 'active' AND revoked_at IS NULL
+         FROM terminal_installations WHERE installation_id = $1",
+    )
+    .bind(first.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(
+        first_still_active,
+        "revoking standby must not alter active installation"
+    );
+}

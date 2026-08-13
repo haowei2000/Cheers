@@ -442,7 +442,7 @@ pub fn compute_backoff(attempt: u32, opts: ReconnectOptions) -> Duration {
 
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
-    pub bot_token: String,
+    pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
     pub reconnect: ReconnectOptions,
@@ -455,7 +455,7 @@ pub struct BridgeWebSocket {
 }
 
 impl BridgeWebSocket {
-    pub async fn connect(url: &str, bot_token: &str) -> anyhow::Result<Self> {
+    pub async fn connect(url: &str, bridge_credential: &str) -> anyhow::Result<Self> {
         let request = url
             .into_client_request()
             .with_context(|| format!("invalid websocket URL: {url}"))?;
@@ -464,7 +464,10 @@ impl BridgeWebSocket {
             .with_context(|| format!("failed to connect websocket: {url}"))?;
         let mut socket = Self { stream };
         socket
-            .send_json(&AgentBridgeAuth::new(bot_token, local_connector_info()))
+            .send_json(&AgentBridgeAuth::new(
+                bridge_credential,
+                local_connector_info(),
+            ))
             .await?;
         Ok(socket)
     }

@@ -118,7 +118,7 @@ impl AccountRuntime {
         let bridge_ready = bridge_ready_from_initialize(&initialize_response, &self.config.policy);
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
-            self.config.bot_token.clone(),
+            self.config.bridge_credential.clone(),
             self.config.control_url.clone(),
             self.config.data_url.clone(),
         )
@@ -2707,10 +2707,16 @@ impl RuntimeContext {
             }
         }
         if self.config.policy.mcp.inject_cheers {
-            // The cheers server is stdio (command-based) — the ACP baseline
-            // transport, supported by every agent — so it needs no capability
-            // gate (mcpCapabilities only advertises the optional http/sse
-            // transports).
+            // Deprecated compatibility path. The Cheers-owned stdio child is
+            // retained until ACP agents can consume the stateless remote HTTP
+            // endpoint directly. Do not add new capabilities to this path.
+            tracing::warn!(
+                account = %self.account_id,
+                replacement = "POST /mcp (MCP 2026-07-28)",
+                "deprecated Cheers stdio MCP child-process injection is enabled"
+            );
+            // The legacy cheers server is command-based stdio, so it needs no
+            // optional HTTP/SSE capability gate.
             // Single shared MCP server process across all sessions.
             // CHANNEL_ID is not set via env — the ACP agent must pass
             // channel_id explicitly in every tool call (it knows the

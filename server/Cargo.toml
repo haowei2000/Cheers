@@ -18,6 +18,7 @@ integration = []
 # drift between the two ends is a compile error. Path dep: the gateway docker
 # build uses the repo-root context to include it (see server/Dockerfile).
 cheers-bridge-protocol = { path = "../packages/cheers-acp-connector-rs/bridge-protocol" }
+cheers-mcp-server = { path = "../packages/cheers-mcp-server" }
 # ── 运行时 ──────────────────────────────────────────────────────────────────
 tokio        = { version = "1",   features = ["full"] }
 axum         = { version = "0.7", features = ["ws", "macros"] }

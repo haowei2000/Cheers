@@ -10,7 +10,6 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   Bot,
   Terminal,
-  FileCode2,
   Sparkles,
   KeyRound,
   Copy,
@@ -26,9 +25,7 @@ import {
 } from "lucide-react";
 import {
   createBot,
-  issueBotToken,
   getBotStatus,
-  getConnectorConfig,
   getConnectorDiscovery,
   mintEnrollmentCode,
   revokeEnrollmentCodes,
@@ -36,10 +33,10 @@ import {
   listAcpAgents,
   type AgentType,
   type AcpAgentInfo,
-  type ConnectorConfig,
   type ConnectorDiscovery,
   type EnrollmentCode,
   type EnrollmentGuidance,
+  type ConnectorConfig,
   type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
@@ -47,7 +44,7 @@ import { NavigationItem } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
 
-type Mode = "manual" | "script" | "agent";
+type Mode = "script" | "agent";
 
 /** Where prebuilt connector binaries are published (release-connector workflow).
  * Keep in sync with the default in server/assets/install.sh. */
@@ -56,7 +53,8 @@ const CONNECTOR_RELEASES_REPO = "haowei2000/Cheers";
 const CONNECTOR_RELEASE_TAG = "connector-v0.1.36";
 /** Same-origin download (gateway proxies the GitHub release): works from hosts
  * that can reach this server but not GitHub. GitHub stays the fallback.
- * Stages cheers-mcp-server beside the connector — inject_cheers resolves it there. */
+ * Stages the deprecated cheers-mcp-server compatibility sidecar beside the
+ * connector — inject_cheers resolves it there for agents without HTTP MCP. */
 // serverOrigin(), not window.location.origin: the snippet must name the
 // GATEWAY the target host can reach — in the desktop shell the window origin
 // is tauri://localhost, useless in a curl command.
@@ -194,9 +192,6 @@ export function BotOnboardingWizard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Manual mode artifacts
-  const [config, setConfig] = useState<ConnectorConfig | null>(null);
-  const [token, setToken] = useState<IssuedToken | null>(null);
   const [discovery, setDiscovery] = useState<ConnectorDiscovery | null>(null);
 
   useEffect(() => {
@@ -289,30 +284,6 @@ export function BotOnboardingWizard({
       requestConnectorForBot(resolved.bot_id, agentTypeFor(resolved));
       onClose();
       navigate("/settings/connector");
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function genConfig() {
-    if (!bot) return;
-    setBusy(true);
-    try {
-      setConfig(await getConnectorConfig(bot.bot_id, agentType));
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function genToken() {
-    if (!bot) return;
-    setBusy(true);
-    try {
-      setToken(await issueBotToken(bot.bot_id));
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -496,13 +467,6 @@ export function BotOnboardingWizard({
                 onClick={() => pickMode("agent")}
                 disabled={busy}
               />
-              <ModeCard
-                icon={<FileCode2 className="w-5 h-5 text-indigo-300" />}
-                title="Configure the host manually"
-                desc="For operators who need to inspect every setting and start the connector themselves."
-                onClick={() => pickMode("manual")}
-                disabled={busy}
-              />
             </div>
             <div className="flex justify-start">
               <UiButton action="back" content="iconText" variant="plain"
@@ -519,17 +483,6 @@ export function BotOnboardingWizard({
         {/* ── Step 2: mode panel ────────────────────────────────────── */}
         {step === 2 && bot && (
           <div className="space-y-3">
-            {mode === "manual" && (
-              <ManualPanel
-                bot={bot}
-                agentType={agentType}
-                config={config}
-                token={token}
-                busy={busy}
-                onGenConfig={genConfig}
-                onGenToken={genToken}
-              />
-            )}
             {mode === "script" && (
               <ScriptPanel bot={bot} agentType={agentType} discovery={discovery} />
             )}
@@ -668,7 +621,7 @@ function ManualPanel({
 }) {
   const accountId = config?.account_id ?? bot.username;
   const configFile = `~/.cheers/cheers-daemon.${accountId}.toml`;
-  const tokenFile = config?.token_file ?? `secrets/${accountId}.token`;
+  const tokenFile = config?.credential_file ?? `secrets/${accountId}.token`;
   return (
     <div className="space-y-3">
       <p className="text-compact text-zinc-400">
@@ -767,10 +720,10 @@ cce-acp-connector status --name ${accountId}`}
         </div>
         <div className="space-y-2 pt-1">
           <p className="text-compact text-zinc-400">
-            Need the connector binary? Download the prebuilt release plus the sibling{" "}
-            <code className="text-zinc-400">cheers-mcp-server</code> (no Rust toolchain needed;
-            default <code className="text-zinc-400">inject_cheers</code> resolves the MCP companion
-            next to the connector):
+            Need the connector binary? The compatibility download also includes the deprecated{" "}
+            <code className="text-zinc-400">cheers-mcp-server</code> stdio sidecar. It remains
+            available for agents without remote HTTP MCP support; new integrations should use the
+            Cheers <code className="text-zinc-400">POST /mcp</code> endpoint.
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
             <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">

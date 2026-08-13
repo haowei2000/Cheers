@@ -24,6 +24,12 @@ gateway:
   # "tauri://localhost,http://tauri.localhost" for the macOS app to connect
   # (the same list also gates the WebSocket Origin check).
   corsAllowedOrigins: ""
+  # Canonical externally visible MCP endpoint used as the OAuth resource/audience.
+  # Production must use HTTPS; loopback HTTP is accepted only for local development.
+  mcpPublicUrl: ""
+  # OAuth issuer advertised in RFC 9728 metadata. Leave empty until the
+  # corresponding RFC 8414 authorization-server metadata is live.
+  mcpAuthorizationServerIssuer: ""
   # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
   # every client request passes the bundled frontend nginx (which sets
   # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if

@@ -39,7 +39,9 @@ pub struct DaemonFileConfig {
 
 #[derive(Debug, Clone)]
 pub struct AccountConfig {
-    pub bot_token: String,
+    /// Credential used only by the connector to authenticate Agent Bridge.
+    /// Enrollment supplies an installation-bound `agbi_…` secret.
+    pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
     pub advanced: AdvancedConfig,
@@ -251,6 +253,9 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
+    /// Deprecated compatibility switch for injecting the connector-owned
+    /// `cheers-mcp-server` stdio child process. Keep enabled only until the
+    /// configured ACP agent supports the remote Cheers HTTP MCP endpoint.
     pub inject_cheers: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
@@ -313,9 +318,9 @@ struct RawBridge {
     control_url: String,
     data_url: String,
     #[serde(default)]
-    bot_token_env: Option<String>,
+    installation_credential_env: Option<String>,
     #[serde(default)]
-    bot_token_file: Option<String>,
+    installation_credential_file: Option<String>,
     #[serde(default = "default_heartbeat_interval_ms")]
     heartbeat_interval_ms: u64,
     #[serde(default = "default_send_ack_timeout_ms")]
@@ -620,6 +625,9 @@ impl Default for RawSessionUpdatePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
+    /// Deprecated: use the remote Cheers HTTP MCP endpoint instead. This
+    /// remains default-on during the compatibility window so existing agents
+    /// do not silently lose their Cheers tools.
     #[serde(default = "default_true")]
     inject_cheers: bool,
     #[serde(default)]
@@ -773,7 +781,7 @@ async fn normalize_account(
             "accounts.{id}.adapter.type must be \"stdio\" for the ACP adapter"
         ));
     }
-    let bot_token = read_bot_token(id, &raw.bridge, base_dir).await?;
+    let bridge_credential = read_bridge_credential(id, &raw.bridge, base_dir).await?;
     let policy = normalize_policy(id, raw.policy, base_dir)?;
     let env = materialize_env_policy(&policy.env)?;
     let (command, args) =
@@ -781,7 +789,7 @@ async fn normalize_account(
     let acp_capability = normalize_acp_capability(id, raw.security.acp_capability, base_dir)?;
 
     Ok(AccountConfig {
-        bot_token,
+        bridge_credential,
         control_url: raw.bridge.control_url,
         data_url: raw.bridge.data_url,
         advanced: AdvancedConfig {
@@ -914,29 +922,48 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
     })
 }
 
-async fn read_bot_token(id: &str, bridge: &RawBridge, base_dir: &Path) -> anyhow::Result<String> {
-    match (&bridge.bot_token_env, &bridge.bot_token_file) {
-        (Some(env_name), None) => {
-            let token = env::var(env_name).with_context(|| {
-                format!("accounts.{id}.bridge.bot_token_env {env_name} is not set")
-            })?;
-            non_empty_secret(token, &format!("accounts.{id}.bridge.bot_token_env"))
-        }
-        (None, Some(path)) => {
-            let path = resolve_path(path, base_dir)
-                .with_context(|| format!("accounts.{id}.bridge.bot_token_file is invalid"))?;
-            let token = fs::read_to_string(&path)
-                .await
-                .with_context(|| format!("failed to read bot token file {}", path.display()))?;
-            non_empty_secret(token.trim().to_string(), "bot token file")
-        }
-        (None, None) => Err(anyhow!(
-            "accounts.{id}.bridge must set exactly one of bot_token_env or bot_token_file"
-        )),
-        (Some(_), Some(_)) => Err(anyhow!(
-            "accounts.{id}.bridge must not set both bot_token_env and bot_token_file"
-        )),
+async fn read_bridge_credential(
+    id: &str,
+    bridge: &RawBridge,
+    base_dir: &Path,
+) -> anyhow::Result<String> {
+    let sources = [
+        bridge.installation_credential_env.is_some(),
+        bridge.installation_credential_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if sources != 1 {
+        return Err(anyhow!(
+            "accounts.{id}.bridge must set exactly one of installation_credential_env or installation_credential_file"
+        ));
     }
+    if let Some(env_name) = &bridge.installation_credential_env {
+        let credential = env::var(env_name).with_context(|| {
+            format!("accounts.{id}.bridge.installation_credential_env {env_name} is not set")
+        })?;
+        return non_empty_secret(
+            credential,
+            &format!("accounts.{id}.bridge.installation_credential_env"),
+        );
+    }
+    if let Some(path) = &bridge.installation_credential_file {
+        let path = resolve_path(path, base_dir).with_context(|| {
+            format!("accounts.{id}.bridge.installation_credential_file is invalid")
+        })?;
+        let credential = fs::read_to_string(&path).await.with_context(|| {
+            format!(
+                "failed to read installation credential file {}",
+                path.display()
+            )
+        })?;
+        return non_empty_secret(
+            credential.trim().to_string(),
+            "installation credential file",
+        );
+    }
+    unreachable!("one installation credential source must have matched")
 }
 
 fn non_empty_secret(value: String, field: &str) -> anyhow::Result<String> {
@@ -1265,7 +1292,7 @@ log_dir = "logs"
 [accounts.local.bridge]
 control_url = "wss://example.test/control"
 data_url = "wss://example.test/data"
-bot_token_env = "CHEERS_TEST_TOKEN"
+installation_credential_env = "CHEERS_TEST_TOKEN"
 heartbeat_interval_ms = 10000
 ack_timeout_ms = 120000
 
@@ -1350,7 +1377,7 @@ request_timeout_ms = 666000
                 .join("logs")
         );
         let account = config.accounts.get("local").unwrap();
-        assert_eq!(account.bot_token, "token-1");
+        assert_eq!(account.bridge_credential, "token-1");
         assert_eq!(account.advanced.reconnect_base_ms, 250);
         assert_eq!(account.agent.args, vec!["--flag"]);
         assert_eq!(account.agent.request_timeout_ms, 333000);
@@ -1396,7 +1423,7 @@ request_timeout_ms = 666000
     }
 
     #[tokio::test]
-    async fn rejects_inline_or_missing_bot_token_source() {
+    async fn requires_installation_credential_and_rejects_legacy_bot_token() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("cheers-daemon.toml");
         std::fs::write(
@@ -1416,7 +1443,27 @@ command = "/bin/echo"
         .unwrap();
 
         let err = load_config(&config_path).await.unwrap_err().to_string();
-        assert!(err.contains("bot_token_env") || err.contains("bot_token_file"));
+        assert!(
+            err.contains("installation_credential_env")
+                || err.contains("installation_credential_file")
+        );
+
+        std::fs::write(
+            &config_path,
+            r#"
+version = 1
+[accounts.local.bridge]
+control_url = "wss://example.test/control"
+data_url = "wss://example.test/data"
+bot_token_env = "LEGACY_BOT_TOKEN"
+[accounts.local.adapter]
+type = "stdio"
+command = "/bin/echo"
+"#,
+        )
+        .unwrap();
+        let err = format!("{:#}", load_config(&config_path).await.unwrap_err());
+        assert!(err.contains("bot_token_env") || err.contains("unknown field"));
     }
 
     #[test]

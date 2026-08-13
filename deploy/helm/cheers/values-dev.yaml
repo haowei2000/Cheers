@@ -10,6 +10,7 @@ gateway:
     tag: dev
     pullPolicy: IfNotPresent
   corsAllowedOrigins: "" # allow all in dev
+  mcpPublicUrl: "http://localhost:30080/mcp"
   extraEnv:
     # Public WS base a host connector dials to reach the agent-bridge. The
     # frontend NodePort (30080) is host-mapped by kind and its nginx proxies

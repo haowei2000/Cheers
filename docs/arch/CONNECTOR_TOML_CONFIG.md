@@ -93,14 +93,14 @@ label (e.g. `haowei_codex`).
 |-------------------------|--------|----------|---------|
 | `control_url`           | string | required | Agent Bridge **control** WebSocket, e.g. `wss://cheers.example.com/ws/agent-bridge/control`. |
 | `data_url`              | string | required | Agent Bridge **data** WebSocket (`…/ws/agent-bridge/data`). |
-| `bot_token_env`         | string | —        | Name of the env var holding the bot token. |
-| `bot_token_file`        | string | —        | Path to a file holding the bot token (`chmod 600`). |
+| `installation_credential_env` | string | — | Name of the env var holding this terminal's credential. |
+| `installation_credential_file` | string | — | Path to this terminal's credential (`chmod 600`). |
 | `heartbeat_interval_ms` | int    | `25000`  | Control-WS heartbeat cadence. |
 | `ack_timeout_ms`        | int    | `600000` | How long to wait for the Backend to ack a data-frame before treating the send as failed. |
 
-**Provide exactly one of `bot_token_env` / `bot_token_file`.** The token is the
-credential the connector authenticates with (the same one you mint via
-`POST /api/v1/bots/{bot_id}/token`). Prefer `bot_token_file` for daemons, `…_env`
+**Provide exactly one of `installation_credential_env` /
+`installation_credential_file`.** Enrollment returns this installation-bound
+credential once. Prefer the file form for daemons and the env form
 for shells/containers.
 
 #### `[accounts.<id>.bridge.reconnect]`
@@ -279,7 +279,7 @@ log_dir    = "logs-codex"
 [accounts.haowei_codex.bridge]
 control_url    = "wss://www.structure.chat/ws/agent-bridge/control"
 data_url       = "wss://www.structure.chat/ws/agent-bridge/data"
-bot_token_file = "secrets/codex.token"   # chmod 600
+installation_credential_file = "secrets/codex.token"   # chmod 600
 
 [accounts.haowei_codex.adapter]
 type    = "stdio"
@@ -317,7 +317,7 @@ cce-acp-connector stop   --name haowei_codex
 |---------|--------------|-----|
 | Daemon won't start, "unknown field" | typo / stray key (`deny_unknown_fields`) | fix the exact key it names |
 | Daemon won't start, "unsupported config version" | `version` ≠ `1` | set `version = 1` |
-| Bot never goes **online** | `command` not found, or token missing/unwritten | `which <command>`; write the token to `bot_token_file`; check `logs` |
+| Bot never goes **online** | `command` not found, or credential missing/unwritten | `which <command>`; write the installation credential to `installation_credential_file`; check `logs` |
 | Can't set a **config option** from the UI | option not in `allowed_config_options`, or bot offline | add the id to `allowed_config_options`; bring the bot online |
 | Can't set a **mode** | mode not in `allowed_modes`, or `backend_may_set_mode = false` | add the mode id (or `[]` for any); enable `backend_may_set_mode` |
 | Agent can't read an uploaded file | it tried to HTTP the gateway | agents read attachments via the `cheers` MCP `inbox_open` tool, never HTTP |
