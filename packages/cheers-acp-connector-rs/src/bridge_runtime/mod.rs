@@ -706,9 +706,13 @@ impl RuntimeContext {
                 self.handle_elicitation_resolution(resolution).await?;
             }
             ControlInbound::AuthAcknowledged {
-                request_id, action, ..
+                request_id,
+                action,
+                method_id,
+                ..
             } => {
-                self.handle_auth_acknowledged(request_id, action).await?;
+                self.handle_auth_acknowledged(request_id, action, method_id)
+                    .await?;
             }
             ControlInbound::ChannelJoined { channel, .. } => {
                 if let Some(name) = &channel.channel_name {
@@ -2699,7 +2703,7 @@ enum ElicitationMode {
 
 struct PendingAuth {
     respond_to: oneshot::Sender<auth::AuthAckAction>,
-    method_id: String,
+    allowed_method_ids: HashSet<String>,
 }
 
 struct ActiveRun {

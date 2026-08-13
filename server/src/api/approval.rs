@@ -612,6 +612,20 @@ pub async fn revoke_approver(
 pub struct AuthAckRequest {
     /// `"retry"` (I've signed in — re-run authenticate) or `"cancel"`.
     pub action: String,
+    /// Agent-advertised method selected in Web. Required for `retry`.
+    pub method_id: Option<String>,
+}
+
+/// Returns true only for a method persisted from the Agent's initialize response.
+fn auth_method_is_advertised(content_data: &Value, selected: &str) -> bool {
+    content_data
+        .get("methods")
+        .and_then(Value::as_array)
+        .is_some_and(|methods| {
+            methods
+                .iter()
+                .any(|method| method.get("method_id").and_then(Value::as_str) == Some(selected))
+        })
 }
 
 /// Acknowledge an ACP agent re-auth card. Only the bot owner may ack.
@@ -654,12 +668,28 @@ pub async fn ack_auth_required(
     {
         return Err(AppError::Conflict("auth request already resolved".into()));
     }
+    let method_id = body
+        .method_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if action == "retry" {
+        let selected = method_id.ok_or_else(|| {
+            AppError::BadRequest("method_id is required when retrying agent auth".into())
+        })?;
+        if !auth_method_is_advertised(&pending.content_data, selected) {
+            return Err(AppError::BadRequest(
+                "method_id was not advertised by the agent".into(),
+            ));
+        }
+    }
     let now = chrono::Utc::now().to_rfc3339();
     let patch = json!({
         "resolved": true,
         "resolved_by": uid.to_string(),
         "resolved_at": now,
         "chosen_action": action,
+        "chosen_method_id": method_id,
     });
     if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
     {
@@ -670,6 +700,7 @@ pub async fn ack_auth_required(
         &request_id,
         &pending.msg_id.to_string(),
         &action,
+        method_id.map(str::to_string),
         &uid.to_string(),
         &now,
     );
@@ -922,6 +953,19 @@ pub async fn resolve_elicitation(
 #[cfg(test)]
 mod elicitation_tests {
     use super::*;
+
+    #[test]
+    fn auth_method_selection_accepts_only_agent_advertised_ids() {
+        let content = json!({
+            "methods": [
+                {"method_id": "chat-gpt-device-code"},
+                {"method_id": "api-key"}
+            ]
+        });
+        assert!(auth_method_is_advertised(&content, "api-key"));
+        assert!(!auth_method_is_advertised(&content, "chat-gpt"));
+        assert!(!auth_method_is_advertised(&json!({}), "api-key"));
+    }
 
     #[test]
     fn restricted_form_validation_accepts_typed_known_fields() {

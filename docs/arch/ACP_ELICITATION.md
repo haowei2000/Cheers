@@ -78,18 +78,23 @@ instead of acquiring an optimistic compatibility claim.
 ## Agent-provider authentication
 
 Provider authentication and Cheers MCP authentication remain separate security
-domains. When a task hits an Agent provider-auth error, the Connector invokes
-ACP `authenticate` with the verified human request route. An Agent may issue
-request-scoped URL elicitation while that call is pending; Cheers forwards the
-URL and instructions to the same initiating user, then returns only the ACP
-accept/decline result. Provider authorization codes and tokens never pass
-through Gateway or enter model context.
+domains. When a task hits an Agent provider-auth error, the Connector forwards
+every advertised ACP auth method to Web. The bot owner explicitly selects one;
+Gateway validates that choice against the persisted list and Connector validates
+it again before invoking ACP `authenticate` with the verified human request
+route. An Agent may then issue request-scoped URL elicitation while that call is
+pending. Provider authorization codes and tokens never pass through Gateway or
+enter model context.
 
-For Codex, Cheers prefers the advertised `chat-gpt-device-code` method when URL
-elicitation is available. This presents the verification URL and one-time code
-in Web instead of opening a browser on the Connector host. The older
-`chat-gpt` browser method remains a fallback when device-code authentication is
-not advertised. Human-waiting authenticate calls use the interaction timeout,
-not the shorter ordinary session-request timeout.
+Agent-specific convenience is isolated behind two extension interfaces.
+`AuthMethodPolicy` only orders methods and marks a recommendation; it cannot
+choose or execute authentication. `PresentationDecoder` converts optional
+vendor metadata (currently Codex params and Claude tool names) into the additive,
+vendor-neutral `normalized_presentation` DTO. Gateway presentation code consumes
+only canonical fields and that DTO—it has no Codex metadata fallback. For Codex,
+device code is recommended unless a configured Codex/OpenAI API key makes the
+API-key method more convenient, but Web remains the final decision point.
+Human-waiting authenticate calls use the interaction timeout, not the shorter
+ordinary session-request timeout.
 
 Reference: [ACP v1 Elicitation](https://agentclientprotocol.com/protocol/v1/elicitation).

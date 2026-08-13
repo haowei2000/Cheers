@@ -23,6 +23,19 @@ function interactionMessage(msgType: "elicitation" | "auth_required"): Message {
       : {
           request_id: "request-2",
           bot_owner_id: "user-1",
+          method_id: "chat-gpt-device-code",
+          methods: [
+            {
+              method_id: "chat-gpt-device-code",
+              name: "Device code",
+              recommended: true,
+            },
+            {
+              method_id: "api-key",
+              name: "API key",
+              auth_type: "env_var",
+            },
+          ],
           name: "Sign in required",
           agent_profile: {
             id: "codex",
@@ -57,6 +70,9 @@ describe("AgentInteractionCard", () => {
     );
 
     expect(markup).toContain("Sign in required");
+    expect(markup).toContain("Device code");
+    expect(markup).toContain("API key");
+    expect(markup).toContain("Recommended");
     expect(markup).toContain("Run the native login command.");
   });
 });

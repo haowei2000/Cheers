@@ -24,11 +24,9 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 
-#[cfg(test)]
-use crate::acp_semantics::preferred_auth_method_id;
 use crate::acp_semantics::{
     apply_settings_to_config, auth_failure_hint, default_client_capabilities,
-    permission_options_from_params, preferred_auth_method, ACP_PROTOCOL_VERSION,
+    permission_options_from_params, ACP_PROTOCOL_VERSION,
 };
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
@@ -652,13 +650,19 @@ impl RuntimeAdapter for AcpAdapter {
         self.start().await
     }
 
-    async fn authenticate(&mut self, request_route: Option<RequestRoute>) -> anyhow::Result<()> {
+    async fn authenticate(
+        &mut self,
+        method_id: &str,
+        request_route: Option<RequestRoute>,
+    ) -> anyhow::Result<()> {
         let Some(init) = self.initialize_response.clone() else {
             return Err(anyhow!("ACP authenticate called before initialize"));
         };
-        let Some(method) = preferred_auth_method(&init, &self.config.env) else {
-            return Ok(());
-        };
+        let methods = crate::acp_semantics::advertised_auth_methods(&init, &self.config.env);
+        let method = methods
+            .into_iter()
+            .find(|method| method.id == method_id)
+            .ok_or_else(|| anyhow!("ACP auth method was not advertised: {method_id}"))?;
         tracing::info!(
             account = %self.account_id,
             method_id = %method.id,
@@ -1277,6 +1281,7 @@ async fn fail_all_pending(pending: &PendingMap, reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::acp_semantics::advertised_auth_methods;
     use tokio::io::AsyncWriteExt;
 
     #[test]
@@ -1295,7 +1300,12 @@ mod tests {
     }
 
     #[test]
-    fn picks_url_device_code_before_host_browser_without_api_key_env() {
+    fn codex_policy_orders_methods_while_other_agents_keep_wire_order() {
+        let first_id = |initialize: &Value, env: &BTreeMap<String, String>| {
+            advertised_auth_methods(initialize, env)
+                .first()
+                .map(|method| method.id.clone())
+        };
         let init = json!({
             "authMethods": [
                 { "id": "api-key", "name": "API Key" },
@@ -1305,22 +1315,19 @@ mod tests {
         });
         let empty = BTreeMap::new();
         assert_eq!(
-            preferred_auth_method_id(&init, &empty).as_deref(),
+            first_id(&init, &empty).as_deref(),
             Some("chat-gpt-device-code")
         );
 
         let mut with_key = BTreeMap::new();
         with_key.insert("OPENAI_API_KEY".into(), "sk-test".into());
-        assert_eq!(
-            preferred_auth_method_id(&init, &with_key).as_deref(),
-            Some("api-key")
-        );
+        assert_eq!(first_id(&init, &with_key).as_deref(), Some("api-key"));
 
         let mut with_anthropic = BTreeMap::new();
         with_anthropic.insert("ANTHROPIC_API_KEY".into(), "sk-ant-test".into());
         assert_eq!(
-            preferred_auth_method_id(&init, &with_anthropic).as_deref(),
-            Some("api-key")
+            first_id(&init, &with_anthropic).as_deref(),
+            Some("chat-gpt-device-code")
         );
 
         let claude_init = json!({
@@ -1329,12 +1336,9 @@ mod tests {
                 { "methodId": "claude-login", "name": "Claude subscription" }
             ]
         });
+        assert_eq!(first_id(&claude_init, &empty).as_deref(), Some("env"));
         assert_eq!(
-            preferred_auth_method_id(&claude_init, &empty).as_deref(),
-            Some("claude-login")
-        );
-        assert_eq!(
-            preferred_auth_method_id(&claude_init, &with_anthropic).as_deref(),
+            first_id(&claude_init, &with_anthropic).as_deref(),
             Some("env")
         );
 
@@ -1346,21 +1350,20 @@ mod tests {
             ]
         });
         assert_eq!(
-            preferred_auth_method_id(&env_var_wire, &empty).as_deref(),
-            Some("claude-login")
+            first_id(&env_var_wire, &empty).as_deref(),
+            Some("anthropic-key")
         );
         assert_eq!(
-            preferred_auth_method_id(&env_var_wire, &with_anthropic).as_deref(),
+            first_id(&env_var_wire, &with_anthropic).as_deref(),
             Some("anthropic-key")
         );
 
-        assert_eq!(preferred_auth_method_id(&json!({}), &empty), None);
+        assert_eq!(first_id(&json!({}), &empty), None);
         assert_eq!(
-            preferred_auth_method_id(&json!({ "authMethods": [{ "methodId": "env" }] }), &empty)
-                .as_deref(),
+            first_id(&json!({ "authMethods": [{ "methodId": "env" }] }), &empty).as_deref(),
             Some("env")
         );
-        let with_desc = preferred_auth_method(
+        let with_desc = advertised_auth_methods(
             &json!({
                 "authMethods": [{
                     "id": "login",
@@ -1370,6 +1373,8 @@ mod tests {
             }),
             &empty,
         )
+        .into_iter()
+        .next()
         .expect("method");
         assert_eq!(with_desc.id, "login");
         assert_eq!(with_desc.name.as_deref(), Some("Sign in"));

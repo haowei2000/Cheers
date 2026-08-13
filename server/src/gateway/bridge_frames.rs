@@ -287,6 +287,7 @@ pub(crate) fn auth_acknowledged_frame(
     request_id: &str,
     message_id: &str,
     action: &str,
+    method_id: Option<String>,
     resolved_by: &str,
     resolved_at: &str,
 ) -> Value {
@@ -294,6 +295,7 @@ pub(crate) fn auth_acknowledged_frame(
         v: BRIDGE_PROTOCOL_VERSION,
         request_id: request_id.to_string(),
         action: action.to_string(),
+        method_id,
         message_id: Some(message_id.to_string()),
         resolved_by: Some(resolved_by.to_string()),
         resolved_at: Some(resolved_at.to_string()),

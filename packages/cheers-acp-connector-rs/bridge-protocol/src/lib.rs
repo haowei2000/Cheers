@@ -36,6 +36,33 @@ pub const WS_CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 /// retrying the same handshake can never succeed, the binary must be updated.
 pub const WS_CLOSE_UNSUPPORTED_PROTOCOL: u16 = 4400;
 
+/// Vendor-neutral, display-only fields decoded from optional Agent metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizedPresentation {
+    /// Human explanation for an interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Command suitable for display, never execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Working directory associated with the displayed command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Agent-provided normalized tool name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl NormalizedPresentation {
+    /// Returns true when a decoder did not contribute any field.
+    pub fn is_empty(&self) -> bool {
+        self.reason.is_none()
+            && self.command.is_none()
+            && self.cwd.is_none()
+            && self.tool_name.is_none()
+    }
+}
+
 pub fn is_fatal_close_code(code: u16) -> bool {
     matches!(
         code,
@@ -197,6 +224,22 @@ pub struct ConnectorControlConfig {
     pub last_status: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<Value>,
+}
+
+/// One Agent-advertised provider authentication method shown to the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthMethod {
+    pub method_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_type: Option<String>,
+    #[serde(default)]
+    pub recommended: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -627,6 +670,9 @@ pub enum ControlInbound {
         request_id: String,
         /// `"retry"` | `"cancel"`
         action: String,
+        /// User-selected Agent-advertised method for action=`retry`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        method_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1146,6 +1192,10 @@ pub enum DataOutbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         msg_id: Option<String>,
         method_id: String,
+        /// All Agent-advertised methods, ordered for display. The Web choice is
+        /// returned explicitly; Connector never trusts an arbitrary method id.
+        #[serde(default)]
+        methods: Vec<AuthMethod>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

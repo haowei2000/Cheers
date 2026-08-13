@@ -2160,6 +2160,17 @@ async fn handle_auth_required_frame(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or("missing method_id")?;
+    let methods = frame
+        .get("methods")
+        .and_then(Value::as_array)
+        .filter(|methods| !methods.is_empty())
+        .ok_or("missing auth methods")?;
+    if !methods
+        .iter()
+        .any(|method| method.get("method_id").and_then(Value::as_str) == Some(method_id))
+    {
+        return Err("recommended auth method was not advertised");
+    }
     let name = frame
         .get("name")
         .and_then(Value::as_str)
@@ -2187,6 +2198,7 @@ async fn handle_auth_required_frame(
         "provider_session_key": frame.get("provider_session_key").cloned().unwrap_or(Value::Null),
         "provider_session_id": frame.get("provider_session_id").cloned().unwrap_or(Value::Null),
         "method_id": method_id,
+        "methods": methods,
         "name": name,
         "description": description,
         "link": frame.get("link").cloned().unwrap_or(Value::Null),

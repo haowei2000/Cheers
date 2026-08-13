@@ -22,6 +22,19 @@ pub(crate) struct AuthMethodInfo {
     pub auth_type: Option<String>,
 }
 
+#[cfg(test)]
+impl AuthMethodInfo {
+    pub(crate) fn test(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: None,
+            description: None,
+            link: None,
+            auth_type: None,
+        }
+    }
+}
+
 fn auth_method_info(value: &Value) -> Option<AuthMethodInfo> {
     let id = value
         .get("id")
@@ -79,56 +92,19 @@ fn agent_env_has_api_credentials(agent_env: &BTreeMap<String, String>) -> bool {
     })
 }
 
-pub(crate) fn preferred_auth_method(
+/// Returns every valid Agent-advertised authentication method in display order.
+pub(crate) fn advertised_auth_methods(
     initialize: &Value,
     agent_env: &BTreeMap<String, String>,
-) -> Option<AuthMethodInfo> {
+) -> Vec<AuthMethodInfo> {
     let methods: Vec<_> = initialize
-        .get("authMethods")?
-        .as_array()?
-        .iter()
+        .get("authMethods")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
         .filter_map(auth_method_info)
         .collect();
-    let has_api_key = agent_env_has_api_credentials(agent_env);
-    if has_api_key {
-        if let Some(method) = methods.iter().find(|method| is_api_key_auth_method(method)) {
-            return Some(method.clone());
-        }
-    }
-    // Prefer an ACP-visible device-code flow over a browser opened on the
-    // Connector host. Codex advertises this method only when URL elicitation is
-    // available, so its verification URL and one-time code can reach Cheers Web.
-    if let Some(method) = methods.iter().find(|method| {
-        matches!(
-            method.id.as_str(),
-            "chat-gpt-device-code" | "chatgpt-device-code" | "chat_gpt_device_code"
-        )
-    }) {
-        return Some(method.clone());
-    }
-    if let Some(method) = methods
-        .iter()
-        .find(|method| matches!(method.id.as_str(), "chat-gpt" | "chatgpt" | "chat_gpt"))
-    {
-        return Some(method.clone());
-    }
-    if !has_api_key {
-        if let Some(method) = methods
-            .iter()
-            .find(|method| !is_api_key_auth_method(method))
-        {
-            return Some(method.clone());
-        }
-    }
-    methods.into_iter().next()
-}
-
-#[cfg(test)]
-pub(crate) fn preferred_auth_method_id(
-    initialize: &Value,
-    agent_env: &BTreeMap<String, String>,
-) -> Option<String> {
-    preferred_auth_method(initialize, agent_env).map(|method| method.id)
+    crate::extensions::rank_auth_methods(&methods, agent_env)
 }
 
 pub(crate) fn looks_like_auth_error(error: &str) -> bool {

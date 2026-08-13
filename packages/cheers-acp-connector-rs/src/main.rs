@@ -18,6 +18,7 @@ mod bridge_session;
 mod cli;
 mod config;
 mod daemon;
+mod extensions;
 mod runtime_adapter;
 mod self_update;
 mod state;

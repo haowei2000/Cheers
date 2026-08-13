@@ -43,11 +43,12 @@ export async function resolvePermission(
 export async function ackAuthRequired(
   channelId: string,
   requestId: string,
-  action: "retry" | "cancel"
+  action: "retry" | "cancel",
+  methodId?: string
 ): Promise<{ ok: boolean; delivered: boolean; action: string }> {
   return apiJson(
     `/channels/${channelId}/auth-required/${encodeURIComponent(requestId)}/ack`,
-    { method: "POST", body: JSON.stringify({ action }) }
+    { method: "POST", body: JSON.stringify({ action, method_id: methodId }) }
   );
 }
 

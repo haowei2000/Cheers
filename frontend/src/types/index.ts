@@ -188,6 +188,7 @@ export interface AuthRequiredContentData {
   kind?: "agent_bridge_auth_required";
   request_id?: string;
   method_id?: string;
+  methods?: AuthMethodPresentation[];
   name?: string;
   description?: string;
   link?: string | null;
@@ -198,12 +199,23 @@ export interface AuthRequiredContentData {
   resolved_at?: string;
   resolved_kind?: string;
   chosen_action?: "retry" | "cancel" | string;
+  chosen_method_id?: string;
   agent_profile?: {
     id: string;
     display_name: string;
     login_hint: string;
     verified_version_range?: string | null;
   };
+}
+
+/** Vendor-neutral presentation of an ACP Agent-advertised auth method. */
+export interface AuthMethodPresentation {
+  method_id: string;
+  name?: string | null;
+  description?: string | null;
+  link?: string | null;
+  auth_type?: string | null;
+  recommended?: boolean;
 }
 
 /** ACP v1 form or URL elicitation rendered as an interactive channel card. */

@@ -39,9 +39,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::acp_semantics::{
-    apply_settings_to_config, default_client_capabilities, preferred_auth_method,
-};
+use crate::acp_semantics::{apply_settings_to_config, default_client_capabilities};
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
@@ -339,13 +337,19 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         self.start().await
     }
 
-    async fn authenticate(&mut self, request_route: Option<RequestRoute>) -> anyhow::Result<()> {
+    async fn authenticate(
+        &mut self,
+        method_id: &str,
+        request_route: Option<RequestRoute>,
+    ) -> anyhow::Result<()> {
         let Some(init) = self.initialize_response.clone() else {
             return Err(anyhow::anyhow!("ACP authenticate called before initialize"));
         };
-        let Some(method) = preferred_auth_method(&init, &self.config.env) else {
-            return Ok(());
-        };
+        let methods = crate::acp_semantics::advertised_auth_methods(&init, &self.config.env);
+        let method = methods
+            .into_iter()
+            .find(|method| method.id == method_id)
+            .ok_or_else(|| anyhow::anyhow!("ACP auth method was not advertised: {method_id}"))?;
         tracing::info!(
             account = %self.account_id,
             method_id = %method.id,

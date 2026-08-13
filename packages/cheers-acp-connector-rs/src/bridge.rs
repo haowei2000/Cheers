@@ -991,6 +991,16 @@ mod fixture_tests {
                 task_id: Some("99999999-aaaa-4bbb-8ccc-dddddddddddd".into()),
                 msg_id: Some("33333333-4444-4555-8666-777777777777".into()),
                 method_id: "browser_login".into(),
+                methods: vec![cheers_bridge_protocol::AuthMethod {
+                    method_id: "browser_login".into(),
+                    name: Some("Sign in".into()),
+                    description: Some(
+                        "Complete agent auth in the browser, then tap I've signed in.".into(),
+                    ),
+                    link: Some("https://example.com/login".into()),
+                    auth_type: Some("agent".into()),
+                    recommended: true,
+                }],
                 name: Some("Sign in".into()),
                 description: Some(
                     "Complete agent auth in the browser, then tap I've signed in.".into(),

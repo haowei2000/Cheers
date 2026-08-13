@@ -659,6 +659,24 @@ fn describe_tool_call(update: &Value, status: String) -> Option<SessionUpdateTra
             }
         }
     }
+    if let Some(presentation) = crate::extensions::decode_presentation(update) {
+        if let Some(tool_name) = presentation.tool_name.as_ref() {
+            data.entry("tool_name".to_string())
+                .or_insert_with(|| Value::String(tool_name.clone()));
+        }
+        if let Some(command) = presentation.command.as_ref() {
+            data.entry("command".to_string())
+                .or_insert_with(|| Value::String(command.clone()));
+        }
+        if let Some(cwd) = presentation.cwd.as_ref() {
+            data.entry("cwd".to_string())
+                .or_insert_with(|| Value::String(cwd.clone()));
+        }
+        data.insert(
+            "normalized_presentation".to_string(),
+            serde_json::to_value(presentation).expect("presentation serialization"),
+        );
+    }
 
     Some(SessionUpdateTrace {
         title,
@@ -756,17 +774,6 @@ pub(super) fn normalize_session_snapshot_report(response: &Value) -> Value {
         }
     }
     report
-}
-
-/// Locate codex's `_meta.codex.params` blob, which carries the richest, most
-/// human-friendly view of a `session/request_permission` (a natural-language
-/// `reason`, the normalized `command`, `cwd`, decisions). Codex-specific and
-/// guarded: returns None for agents that don't populate it.
-fn codex_request_params(params: &Value) -> Option<&Value> {
-    params
-        .get("_meta")
-        .and_then(|m| m.get("codex"))
-        .and_then(|c| c.get("params"))
 }
 
 /// The `toolCallId` a `session/request_permission` is asking about, so the caller
@@ -902,25 +909,16 @@ fn diff_path_summary(paths: &[&str]) -> Option<String> {
 }
 
 pub(super) fn permission_body_from_params(params: &Value) -> String {
-    let codex = codex_request_params(params);
-    // Prefer codex's explicit human-readable reason (e.g. "Do you want to allow
-    // writing X to /tmp/y?") over the generic fallback — this is the single most
-    // useful line for a human approver.
-    if let Some(reason) = codex
-        .and_then(|p| p.get("reason"))
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
+    let presentation = crate::extensions::decode_presentation(params);
+    if let Some(reason) = presentation
+        .as_ref()
+        .and_then(|value| value.reason.as_deref())
     {
         return reason.to_string();
     }
-    // codex without a reason still hands us the normalized command — show that
-    // instead of the generic line so the approver sees *something* concrete. The
-    // card also renders the command in its own block, so the frontend dedupes
-    // when body == tool.command (impact line is hidden).
-    if let Some(command) = codex
-        .and_then(|p| p.get("command"))
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
+    if let Some(command) = presentation
+        .as_ref()
+        .and_then(|value| value.command.as_deref())
     {
         return command.to_string();
     }
@@ -987,13 +985,13 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
         .get("toolCallId")
         .or_else(|| tool.get("tool_call_id"))
         .and_then(Value::as_str);
-    // codex's normalized full command (e.g. "/bin/zsh -lc '…'") and cwd live in
-    // _meta; fall back to rawInput for the cwd when _meta is absent.
-    let codex = codex_request_params(params);
-    let command = codex.and_then(|p| p.get("command")).and_then(Value::as_str);
-    let cwd = codex
-        .and_then(|p| p.get("cwd"))
-        .and_then(Value::as_str)
+    let presentation = crate::extensions::decode_presentation(params);
+    let command = presentation
+        .as_ref()
+        .and_then(|value| value.command.as_deref());
+    let cwd = presentation
+        .as_ref()
+        .and_then(|value| value.cwd.as_deref())
         .or_else(|| raw_input.and_then(|r| r.get("cwd")).and_then(Value::as_str));
     Some(serde_json::json!({
         "title": title,
@@ -1005,6 +1003,7 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
         "tool_call_id": tool_call_id,
         "command": command,
         "cwd": cwd,
+        "normalized_presentation": presentation,
     }))
 }
 
