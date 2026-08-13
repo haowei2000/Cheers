@@ -70,7 +70,7 @@ export function NewChannelDialog({
     <Dialog title="New channel" onClose={onClose}>
       <div className="space-y-3">
         <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-          <Hash className="w-3.5 h-3.5 text-zinc-500" />
+          <Hash className="w-3.5 h-3.5 text-zinc-400" />
           <UiInput
             autoFocus
             value={name}
@@ -90,7 +90,7 @@ export function NewChannelDialog({
               controlSize="regular" className={cn(
  "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  type === t
- ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-100 hover:bg-zinc-800/60"
  )}
             >
               {t === "public" ? (
@@ -120,7 +120,7 @@ export function NewChannelDialog({
               controlSize="regular" className={cn(
  "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
  kind === value
- ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15": "border-zinc-800 text-zinc-100 hover:bg-zinc-800/60"
  )}
             >
               {value === "text" ? (

@@ -105,14 +105,10 @@ struct ProviderClaims {
     sub: String,
     #[serde(rename = "iss")]
     iss: String,
-    #[serde(rename = "aud")]
-    aud: String,
     nonce: Option<String>,
     email: Option<String>,
     email_verified: Option<Value>,
     name: Option<String>,
-    given_name: Option<String>,
-    family_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -938,7 +934,7 @@ async fn resolve_identity(
     let username = format!(
         "{}_{}",
         provider,
-        Uuid::new_v4().simple().to_string()[..12].to_string()
+        &Uuid::new_v4().simple().to_string()[..12]
     );
     let mut tx = state.db.begin().await?;
     sqlx::query("INSERT INTO users (user_id, username, email, password_hash, display_name, role) VALUES ($1, $2, $3, NULL, $4, 'member')")

@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 /**
  * Self-contained unified-diff renderer (no external highlighter).
  *
@@ -185,15 +186,17 @@ function FileSectionView({ section }: { section: FileSection }) {
 
   return (
     <div className="border-b border-zinc-900 last:border-b-0">
-      <UiButton action={open ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
+      <ControlTrigger controlWidth="fill"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} ${section.title}`}
         controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900/95 text-left  backdrop-blur-sm hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
         )}
         <span className="truncate font-mono text-zinc-200">{section.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
@@ -201,7 +204,7 @@ function FileSectionView({ section }: { section: FileSection }) {
           {section.adds > 0 && <span className="text-emerald-400">+{section.adds}</span>}
           {section.dels > 0 && <span className="text-rose-400">−{section.dels}</span>}
         </span>
-      </UiButton>
+      </ControlTrigger>
       {lines.map((l, i) => (
         <DiffLineItem key={i}
           controlSize="compact"
@@ -215,12 +218,12 @@ function FileSectionView({ section }: { section: FileSection }) {
         />
       ))}
       {open && hidden > 0 && (
-        <UiButton action="expand" controlWidth="fill" variant="plain"
+        <ControlTrigger controlWidth="fill"
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          controlSize="regular" className="block text-left  italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          controlSize="regular" className="block text-left  italic text-zinc-100 hover:bg-zinc-900 hover:text-zinc-50"
         >
           … show more ({hidden} hidden lines)
-        </UiButton>
+        </ControlTrigger>
       )}
     </div>
   );

@@ -1,3 +1,8 @@
+//! Cross-platform daemon process lifecycle and metadata management.
+//!
+//! Start, stop, restart, status, and log operations validate process identity
+//! before signalling so stale metadata cannot target an unrelated process.
+
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -349,7 +354,7 @@ fn pid_is_running(pid: u32) -> bool {
             return true;
         }
         let err = std::io::Error::last_os_error();
-        return err.raw_os_error() == Some(libc::EPERM);
+        err.raw_os_error() == Some(libc::EPERM)
     }
 
     #[cfg(not(unix))]

@@ -1,42 +1,41 @@
 # Message Trace Experience
 
-> Status: proposed. This document defines the mobile and macOS presentation of
+> Status: current data and interaction contract. The global visual contract is
+> [Web Editorial Item System](WEB_EDITORIAL_ITEM_SYSTEM.md). This document defines the mobile and macOS presentation of
 > per-message agent activity, including tool, edit, write, approval, and failure
 > events.
 
 ## Product decision
 
-Trace belongs to the bot message that owns the run. It is exposed through one
-persistent trace button directly below that message's content; it is not rendered
-as loose italic status text and it is not hidden in the message hover toolbar.
+Trace belongs to the bot message that owns the run, but durable history has one
+owner: Message Record. The message surface is an operational glance only.
 
-The same button is present while the message is running and after it completes:
+- Running: show only the latest live action.
+- Pending approval: show the actionable approval inline.
+- Completed, non-actionable history: hide it from the message and expose it in
+  Message Record.
+- Failure without a pending approval: show one compact failure state with a
+  Message Record icon action.
 
-- Running: spinner + current action + event count, for example
-  `Editing MessageItem.tsx · 4 steps`.
-- Completed: check + compact summary, for example `4 actions · 8.2s`.
-- Failed: error icon + failing action, for example `Write failed · 4 steps`.
-- No recorded activity: hide the button after completion.
-
-This makes the control discoverable on touch devices, keeps activity attached to
-the correct response, and avoids moving the user's target when the run finishes.
+This keeps activity attached to the correct response without repeating the same
+timeline in the conversation and inspector.
 
 ## Message layout
 
 ### Mobile
 
 - Use a single full-width message column with 12px horizontal page padding.
-- Keep avatar, sender, BOT badge, and timestamp on one compact header row.
+- Keep avatar and sender identity in the shared utility-type rail; do not repeat
+  a BOT badge or timestamp in that rail.
 - Bot content starts below the header and may use the full available width.
-- Place the trace button immediately after the response content and before files,
-  context chips, and message actions.
-- The trace button has a minimum 44px touch target, but visually remains a quiet,
-  borderless zinc surface consistent with the existing design system.
+- Place current operational state immediately after response content and before
+  files, context chips, and message actions.
+- Touch targets remain at least 44px when an action is touch-first; visual
+  density still follows the shared 28/36/44px control system.
 - Do not rely on hover. Reply, copy, forward, and select live in the existing
   long-press or overflow action surface.
-- While the bot has not emitted text yet, show the trace button in the normal body
-  position with `Thinking…`; do not show a separate bouncing-dots row plus a second
-  trace label.
+- While the bot has not emitted text yet, show only the current live action in
+  the normal body position; do not add a bouncing-dots row or a second trace label.
 
 Tapping the trace button opens a bottom sheet. The sheet uses 85vh maximum height,
 a sticky title (`Agent activity`), the running state or final duration, a scrollable
@@ -46,11 +45,10 @@ sheet so ownership is clear.
 ### macOS / desktop
 
 - Preserve the current avatar gutter and readable message width.
-- Place the same persistent trace button below the bot response. It must not be
-  part of the hover-only reply/copy/forward toolbar.
-- Clicking the button expands the timeline inline when the list is short (up to
-  six events). For longer traces, or when an event detail is opened, use a right
-  inspector panel so code and diffs retain useful width.
+- Place the current running step or pending approval below the bot response. It
+  must not be part of the hover-only reply/copy/forward toolbar.
+- Use Message Record for full timelines and trace detail so code and diffs retain
+  useful width. Do not expand completed history inline, even when it is short.
 - The inspector title links back to the owning message and remains open while the
   user compares events.
 - Keyboard: the button and every event row are focusable; Enter/Space opens,
@@ -157,12 +155,12 @@ the same timeline the user saw during execution.
 
 ## Acceptance criteria
 
-- A trace button appears on mobile before the first response token and updates
-  through completion without relocating.
+- A live operational state appears on mobile before the first response token and
+  clears after completion unless an actionable approval remains.
 - The button is associated with exactly one bot message and exposes that message's
   events only.
 - Tool, edit, write, command, plan, approval, and failure rows have distinct,
-  readable labels.
+  readable labels in Message Record.
 - Events with detail open on both mobile and macOS; events without detail are not
   styled as clickable.
 - Live and reloaded timelines preserve order and do not duplicate tool updates.

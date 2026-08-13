@@ -769,33 +769,10 @@ Connector 的协议错误帧。Backend 应返回 `terminal_ack`。
 
 ### 7.7 `resource_req` / `resource_res`
 
-资源协议独立定义在 [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)。Agent Bridge v1
-只规定它走 data stream：
-
-```jsonc
-{
-  "type": "resource_req",
-  "v": 1,
-  "req_id": "r1",
-  "resource": "channel.context",
-  "params": {
-    "channel_id": "<uuid>"
-  },
-  "acp_capability": {}
-}
-```
-
-```jsonc
-{
-  "type": "resource_res",
-  "v": 1,
-  "req_id": "r1",
-  "ok": true,
-  "data": {}
-}
-```
-
-`resource_res` 可以乱序返回，connector 必须按 `req_id` 关联。
+该帧对已退役。Agent 通过 Gateway `/mcp` 的 Streamable HTTP 访问 Cheers
+工具，Connector 不再中继资源请求。历史设计见
+[AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)。浏览器 Workbench 内部仍有同形的
+resource RPC，但不属于 Agent Bridge。
 
 ### 7.8 `permission_request`
 

@@ -60,7 +60,7 @@ version = 1
 `CHEERS_CONNECTOR_RELEASE_VERSION`），连接器会通过网关的下载代理拉取该版本的
 `connector-manifest.json` + `.sig`，用编译进二进制的发布公钥校验清单的
 **ed25519 签名**，再逐个校验二进制的 **sha256**，等到没有进行中的对话轮次后，
-原子替换自身（以及同目录配套发布的 `cheers-mcp-server`）并以相同 argv/PID
+原子替换自身并以相同 argv/PID
 重新 exec。被替换的旧二进制保留为 `<exe>.old`；新二进制若连续 3 次启动都无法
 建立健康的桥接连接，会自动回滚并拉黑该版本。容器内永不自更新（应更新镜像）；
 `CHEERS_ACP_NO_SELF_UPDATE=1` 可强制禁用。
@@ -217,16 +217,9 @@ version = 1
 
 | 键                                 | 类型     | 默认    | 含义 |
 |------------------------------------|----------|---------|------|
-| `inject_cheers`                    | bool     | `true`  | 注入 `cheers` MCP 服务器（desk/inbox/channel 工具）。保持 `true`，否则 bot 没有 Cheers 工具。 |
 | `backend_may_inject_extra_servers` | bool     | `false` | 后端能否在运行时追加 MCP 服务器？ |
 | `allowed_servers`                  | string[] | `[]`    | 后端可注入的服务器名白名单（如 `["cheers"]`）。 |
 | `servers`                          | 表数组   | `[]`    | 你在本地自定义的额外 MCP 服务器。 |
-
-#### `.policy.loopback`
-
-| 键                   | 类型 | 默认     | 含义 |
-|----------------------|------|----------|------|
-| `request_timeout_ms` | int  | `600000` | 连接器 loopback 资源 IPC 的超时（`cheers` MCP 服务器走这条）。 |
 
 ### `[accounts.<id>.security.acp_capability]` —— 签名能力（可选）
 
@@ -302,4 +295,4 @@ cce-acp-connector stop   --name haowei_codex
 | UI 里**设不上 config option** | 选项不在 `allowed_config_options`，或 bot 离线 | 把该 id 加进 `allowed_config_options`；让 bot 上线 |
 | **设不上 mode** | mode 不在 `allowed_modes`，或 `backend_may_set_mode = false` | 加上 mode id（或用 `[]` 表示任意）；开启 `backend_may_set_mode` |
 | agent 读不到上传的文件 | 它尝试 HTTP 网关 | agent 通过 `cheers` MCP 的 `inbox_open` 工具读附件，绝不 HTTP |
-| bot 没有 Cheers 工具 | `inject_cheers = false` | 设 `inject_cheers = true` |
+| bot 没有 Cheers 工具 | Agent 缺少原生 HTTP MCP OAuth，或 Gateway 未下发 `mcp_url` | 升级 Agent adapter 并检查 `MCP_PUBLIC_URL`；不支持 stdio 回退 |

@@ -413,7 +413,7 @@ pub async fn set_session_mode(
     // re-clamps via may_set_mode regardless; this is a friendly 400).
     let agent_type = bot_agent_type(&state, bot_id).await;
     let (_, allowed) = connector_config::posture_preset(&agent_type);
-    if !allowed.is_empty() && !allowed.iter().any(|m| *m == mode) {
+    if !allowed.is_empty() && !allowed.contains(&mode) {
         return Err(AppError::BadRequest(format!(
             "mode {mode:?} is not in the allowed modes {allowed:?}"
         )));

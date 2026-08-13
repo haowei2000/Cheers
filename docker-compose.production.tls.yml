@@ -10,6 +10,8 @@ services:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8000}:8000"
     environment:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-https://${APP_DOMAIN:-cheers.example.com}/mcp}
+      - MCP_AUTHORIZATION_SERVER_ISSUER=${MCP_AUTHORIZATION_SERVER_ISSUER:-}
       # Behind the Caddy TLS edge (+ frontend nginx) the proxy headers are set by
       # trusted hops, and the gateway/postgres/rustfs host ports are bound to
       # loopback — so keying the rate limiter on X-Real-IP/X-Forwarded-For is

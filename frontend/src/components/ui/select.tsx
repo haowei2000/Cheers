@@ -7,7 +7,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   controlWidth?: "slot" | "fill";
 }
 
-// Borderless filled select mirroring Input (DESIGN.md §2.3).
+// Filled select with the same accessible inset boundary as Input (DESIGN.md §2.3).
 export const Select = forwardRef<
   HTMLSelectElement,
   SelectProps
@@ -17,7 +17,7 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "rounded-sm bg-zinc-800 px-3 text-comfortable md:text-regular text-zinc-100 transition-shadow",
+      "rounded-sm bg-zinc-800 px-3 text-comfortable md:text-regular text-zinc-100 ring-1 ring-inset ring-zinc-600 transition-shadow",
       controlWidth === "fill" ? "w-full" : "w-32 max-w-full",
       controlHeightClasses[size],
       "focus:outline-none focus:ring-2 focus:ring-indigo-500",

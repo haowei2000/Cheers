@@ -46,8 +46,8 @@ export function MembersPopover({
     <>
       <PopoverPanel placement="down" align="end" className="w-72 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-950/60">
-          <Users className="w-3.5 h-3.5 text-zinc-500" />
-          <span className="text-compact font-medium text-zinc-300">
+          <Users className="w-3.5 h-3.5 text-zinc-400" />
+          <span className="text-compact font-medium text-zinc-200">
             Members{members ? ` · ${members.length}` : ""}
           </span>
         </div>
@@ -89,7 +89,7 @@ export function MembersPopover({
               onClose();
               onManage();
             }}
-            controlSize="regular" className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+            controlSize="regular" className="flex items-center gap-2  text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
             Manage members…

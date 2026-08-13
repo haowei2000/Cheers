@@ -1,3 +1,9 @@
+//! TOML configuration parsing, normalization, and local-policy validation.
+//!
+//! This module is the security boundary between operator-owned configuration
+//! and settings received from the remote gateway. Secrets are resolved from
+//! approved environment variables rather than accepted inline.
+
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -39,7 +45,9 @@ pub struct DaemonFileConfig {
 
 #[derive(Debug, Clone)]
 pub struct AccountConfig {
-    pub bot_token: String,
+    /// Credential used only by the connector to authenticate Agent Bridge.
+    /// Enrollment supplies an installation-bound `agbi_…` secret.
+    pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
     pub advanced: AdvancedConfig,
@@ -76,6 +84,8 @@ pub struct StdioAgentConfig {
     pub env: BTreeMap<String, String>,
     pub inherit_env: bool,
     pub request_timeout_ms: u64,
+    /// Upper bound for authenticate flows that wait on a human interaction.
+    pub auth_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
     pub agent_native_permission_mode: Option<String>,
     /// Backend-desired ACP config options (`{configId: value}`), applied per
@@ -110,7 +120,6 @@ pub struct LocalPolicy {
     pub trace: TracePolicy,
     pub session_update: SessionUpdatePolicy,
     pub mcp: McpPolicy,
-    pub loopback: LoopbackPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -251,15 +260,9 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
-    pub inject_cheers: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoopbackPolicy {
-    pub request_timeout_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -313,9 +316,9 @@ struct RawBridge {
     control_url: String,
     data_url: String,
     #[serde(default)]
-    bot_token_env: Option<String>,
+    installation_credential_env: Option<String>,
     #[serde(default)]
-    bot_token_file: Option<String>,
+    installation_credential_file: Option<String>,
     #[serde(default = "default_heartbeat_interval_ms")]
     heartbeat_interval_ms: u64,
     #[serde(default = "default_send_ack_timeout_ms")]
@@ -358,7 +361,7 @@ struct RawAdapter {
     permission_mode: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPolicy {
     #[serde(default)]
@@ -384,26 +387,9 @@ struct RawPolicy {
     #[serde(default)]
     mcp: RawMcpPolicy,
     #[serde(default)]
+    /// Accepted for one-way config compatibility, but ignored. Native HTTP MCP
+    /// removed the Connector's Agent-facing loopback server in 0.1.37.
     loopback: RawLoopbackPolicy,
-}
-
-impl Default for RawPolicy {
-    fn default() -> Self {
-        Self {
-            sessions: RawSessionsPolicy::default(),
-            prompt: RawPromptPolicy::default(),
-            workspace: RawWorkspacePolicy::default(),
-            env: RawEnvPolicy::default(),
-            config: RawRuntimeConfigPolicy::default(),
-            permission: RawPermissionPolicy::default(),
-            send: RawSendPolicy::default(),
-            file_upload: RawFileUploadPolicy::default(),
-            trace: RawTracePolicy::default(),
-            session_update: RawSessionUpdatePolicy::default(),
-            mcp: RawMcpPolicy::default(),
-            loopback: RawLoopbackPolicy::default(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -620,8 +606,11 @@ impl Default for RawSessionUpdatePolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
-    #[serde(default = "default_true")]
-    inject_cheers: bool,
+    /// Retired and ignored. Kept parseable so an existing TOML does not fail
+    /// before the connector can report the native-HTTP migration requirement.
+    #[serde(default)]
+    #[serde(rename = "inject_cheers")]
+    _inject_cheers: bool,
     #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
@@ -633,7 +622,7 @@ struct RawMcpPolicy {
 impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
-            inject_cheers: true,
+            _inject_cheers: false,
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -644,14 +633,14 @@ impl Default for RawMcpPolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
-    #[serde(default = "default_loopback_timeout_ms")]
-    request_timeout_ms: u64,
+    #[serde(default, rename = "request_timeout_ms")]
+    _request_timeout_ms: Option<u64>,
 }
 
 impl Default for RawLoopbackPolicy {
     fn default() -> Self {
         Self {
-            request_timeout_ms: default_loopback_timeout_ms(),
+            _request_timeout_ms: None,
         }
     }
 }
@@ -773,7 +762,7 @@ async fn normalize_account(
             "accounts.{id}.adapter.type must be \"stdio\" for the ACP adapter"
         ));
     }
-    let bot_token = read_bot_token(id, &raw.bridge, base_dir).await?;
+    let bridge_credential = read_bridge_credential(id, &raw.bridge, base_dir).await?;
     let policy = normalize_policy(id, raw.policy, base_dir)?;
     let env = materialize_env_policy(&policy.env)?;
     let (command, args) =
@@ -781,7 +770,7 @@ async fn normalize_account(
     let acp_capability = normalize_acp_capability(id, raw.security.acp_capability, base_dir)?;
 
     Ok(AccountConfig {
-        bot_token,
+        bridge_credential,
         control_url: raw.bridge.control_url,
         data_url: raw.bridge.data_url,
         advanced: AdvancedConfig {
@@ -798,6 +787,10 @@ async fn normalize_account(
             env,
             inherit_env: policy.env.inherit,
             request_timeout_ms: policy.sessions.request_timeout_ms,
+            auth_timeout_ms: policy
+                .sessions
+                .request_timeout_ms
+                .max(policy.permission.wait_timeout_ms),
             prompt_timeout_ms: policy.prompt.max_duration_ms,
             agent_native_permission_mode: raw.adapter.permission_mode,
             config_options: None,
@@ -903,40 +896,55 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
-            inject_cheers: raw.mcp.inject_cheers,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
         },
-        loopback: LoopbackPolicy {
-            request_timeout_ms: raw.loopback.request_timeout_ms,
-        },
     })
 }
 
-async fn read_bot_token(id: &str, bridge: &RawBridge, base_dir: &Path) -> anyhow::Result<String> {
-    match (&bridge.bot_token_env, &bridge.bot_token_file) {
-        (Some(env_name), None) => {
-            let token = env::var(env_name).with_context(|| {
-                format!("accounts.{id}.bridge.bot_token_env {env_name} is not set")
-            })?;
-            non_empty_secret(token, &format!("accounts.{id}.bridge.bot_token_env"))
-        }
-        (None, Some(path)) => {
-            let path = resolve_path(path, base_dir)
-                .with_context(|| format!("accounts.{id}.bridge.bot_token_file is invalid"))?;
-            let token = fs::read_to_string(&path)
-                .await
-                .with_context(|| format!("failed to read bot token file {}", path.display()))?;
-            non_empty_secret(token.trim().to_string(), "bot token file")
-        }
-        (None, None) => Err(anyhow!(
-            "accounts.{id}.bridge must set exactly one of bot_token_env or bot_token_file"
-        )),
-        (Some(_), Some(_)) => Err(anyhow!(
-            "accounts.{id}.bridge must not set both bot_token_env and bot_token_file"
-        )),
+async fn read_bridge_credential(
+    id: &str,
+    bridge: &RawBridge,
+    base_dir: &Path,
+) -> anyhow::Result<String> {
+    let sources = [
+        bridge.installation_credential_env.is_some(),
+        bridge.installation_credential_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if sources != 1 {
+        return Err(anyhow!(
+            "accounts.{id}.bridge must set exactly one of installation_credential_env or installation_credential_file"
+        ));
     }
+    if let Some(env_name) = &bridge.installation_credential_env {
+        let credential = env::var(env_name).with_context(|| {
+            format!("accounts.{id}.bridge.installation_credential_env {env_name} is not set")
+        })?;
+        return non_empty_secret(
+            credential,
+            &format!("accounts.{id}.bridge.installation_credential_env"),
+        );
+    }
+    if let Some(path) = &bridge.installation_credential_file {
+        let path = resolve_path(path, base_dir).with_context(|| {
+            format!("accounts.{id}.bridge.installation_credential_file is invalid")
+        })?;
+        let credential = fs::read_to_string(&path).await.with_context(|| {
+            format!(
+                "failed to read installation credential file {}",
+                path.display()
+            )
+        })?;
+        return non_empty_secret(
+            credential.trim().to_string(),
+            "installation credential file",
+        );
+    }
+    unreachable!("one installation credential source must have matched")
 }
 
 fn non_empty_secret(value: String, field: &str) -> anyhow::Result<String> {
@@ -1079,7 +1087,7 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
 fn client_capabilities() -> Value {
     // Single source of truth lives in the ACP protocol layer so the configured
     // value and the adapter's in-code fallback can never diverge.
-    crate::acp_adapter::default_client_capabilities()
+    crate::acp_semantics::default_client_capabilities()
 }
 
 fn toml_values_to_json_array(values: Vec<TomlValue>) -> anyhow::Result<Value> {
@@ -1208,10 +1216,6 @@ fn default_send_ack_timeout_ms() -> u64 {
     10 * 60_000
 }
 
-fn default_loopback_timeout_ms() -> u64 {
-    10 * 60_000
-}
-
 fn default_permission_wait_timeout_ms() -> u64 {
     15 * 60_000
 }
@@ -1265,7 +1269,7 @@ log_dir = "logs"
 [accounts.local.bridge]
 control_url = "wss://example.test/control"
 data_url = "wss://example.test/data"
-bot_token_env = "CHEERS_TEST_TOKEN"
+installation_credential_env = "CHEERS_TEST_TOKEN"
 heartbeat_interval_ms = 10000
 ack_timeout_ms = 120000
 
@@ -1350,10 +1354,11 @@ request_timeout_ms = 666000
                 .join("logs")
         );
         let account = config.accounts.get("local").unwrap();
-        assert_eq!(account.bot_token, "token-1");
+        assert_eq!(account.bridge_credential, "token-1");
         assert_eq!(account.advanced.reconnect_base_ms, 250);
         assert_eq!(account.agent.args, vec!["--flag"]);
         assert_eq!(account.agent.request_timeout_ms, 333000);
+        assert_eq!(account.agent.auth_timeout_ms, 555000);
         assert_eq!(account.agent.prompt_timeout_ms, 444000);
         assert_eq!(account.policy.prompt.max_prompt_bytes, 12345);
         assert!(!account.agent.inherit_env);
@@ -1377,9 +1382,8 @@ request_timeout_ms = 666000
         // layer's single source of truth, never a divergent literal.
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap(),
-            &crate::acp_adapter::default_client_capabilities()
+            &crate::acp_semantics::default_client_capabilities()
         );
-        assert_eq!(account.policy.loopback.request_timeout_ms, 666000);
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);
         assert!(matches!(
             account.policy.permission.on_timeout,
@@ -1396,7 +1400,7 @@ request_timeout_ms = 666000
     }
 
     #[tokio::test]
-    async fn rejects_inline_or_missing_bot_token_source() {
+    async fn requires_installation_credential_and_rejects_legacy_bot_token() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("cheers-daemon.toml");
         std::fs::write(
@@ -1416,7 +1420,27 @@ command = "/bin/echo"
         .unwrap();
 
         let err = load_config(&config_path).await.unwrap_err().to_string();
-        assert!(err.contains("bot_token_env") || err.contains("bot_token_file"));
+        assert!(
+            err.contains("installation_credential_env")
+                || err.contains("installation_credential_file")
+        );
+
+        std::fs::write(
+            &config_path,
+            r#"
+version = 1
+[accounts.local.bridge]
+control_url = "wss://example.test/control"
+data_url = "wss://example.test/data"
+bot_token_env = "LEGACY_BOT_TOKEN"
+[accounts.local.adapter]
+type = "stdio"
+command = "/bin/echo"
+"#,
+        )
+        .unwrap();
+        let err = format!("{:#}", load_config(&config_path).await.unwrap_err());
+        assert!(err.contains("bot_token_env") || err.contains("unknown field"));
     }
 
     #[test]

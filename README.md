@@ -144,7 +144,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 
 - Backend: Rust gateway (Axum + SQLx) — the only backend service
 - Frontend: React, TypeScript, Tailwind CSS, Vite
-- Agents: external ACP agents (OpenCode, Claude, Codex) via `cheers-mcp-server` and ACP connectors
+- Agents: external ACP agents (OpenCode, Claude, Codex) via the Rust ACP connector; channel tools use Gateway HTTP MCP with native Agent OAuth
 - Storage: PostgreSQL for business data and channel history, S3-compatible object storage for files
 - Preview: built into the gateway (`GET /files/:id/preview`); office→PDF conversion via optional Gotenberg
 - Voice: optional speech-to-text transcription of audio via an OpenAI-compatible (Whisper) endpoint, configured at runtime in admin settings
@@ -210,8 +210,9 @@ npm run dev
 
 The platform is **external-agent-first**: there is no built-in bot (the old
 `Coordinator` is gone — routing is a deterministic `@mention → bot` lookup). Connect an
-external ACP agent (OpenCode, Claude, Codex) via `packages/cheers-mcp-server` or an
-ACP connector, then `@` it in a channel. See
+external ACP agent (OpenCode, Claude, Codex) via the Rust ACP connector. The
+connector injects the Gateway's canonical HTTP MCP endpoint and requires the Agent's
+native OAuth lifecycle; there is no local stdio MCP fallback. Then `@` it in a channel. See
 [docs/arch/BUILTIN_AGENT.md](docs/arch/BUILTIN_AGENT.md) and
 [docs/arch/DECENTRALIZED_MESH.md](docs/arch/DECENTRALIZED_MESH.md). Default seed data for
 the gateway is being re-established.

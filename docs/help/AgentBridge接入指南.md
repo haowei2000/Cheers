@@ -78,21 +78,18 @@ ACP-capable agent; new deployments must not use the old OpenClaw package path.
 Install — download the prebuilt binaries from the project's
 [GitHub Releases](https://github.com/haowei2000/Cheers/releases)
 (no Rust toolchain needed; assets are published per platform as
-`cce-acp-connector-{darwin,linux}-{arm64,amd64}` plus matching
-`cheers-mcp-server-*` by the `release-connector` workflow):
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}` by the `release-connector` workflow):
 
 ```bash
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
 ~/.cheers/bin/cce-acp-connector --help   # add ~/.cheers/bin to PATH for convenience
 ```
 
-> Pin a different version by swapping `connector-v0.1.36` for another `connector-v*` tag
+> Pin a different version by swapping `connector-v0.1.37` for another `connector-v*` tag
 > (do **not** use `releases/latest` — that points at the desktop app).
 >
 > While the repository is **private**, the plain curl URL returns 404 for anyone
@@ -100,15 +97,13 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
 > (`gh auth login` once, and repo access required):
 >
 > ```bash
-> gh release download connector-v0.1.36 -R haowei2000/Cheers \
+> gh release download connector-v0.1.37 -R haowei2000/Cheers \
 >   -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector
-> gh release download connector-v0.1.36 -R haowei2000/Cheers \
->   -p "cheers-mcp-server-$os-$arch" -O ~/.cheers/bin/cheers-mcp-server
-> chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server
+> chmod +x ~/.cheers/bin/cce-acp-connector
 > ```
 >
-> The MCP companion must sit next to the connector — default `inject_cheers = true`
-> resolves it there.
+> Cheers tools use the Gateway's native HTTP MCP OAuth endpoint. There is no
+> companion binary or stdio fallback.
 
 Alternative (from source, needs Rust):
 

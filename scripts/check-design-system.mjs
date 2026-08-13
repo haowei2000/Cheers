@@ -1,3 +1,10 @@
+/** @file
+ * Repository-wide design-system contract check.
+ *
+ * Validates the shared JSON contract, scans web and native implementations,
+ * and exits non-zero when source code drifts from the registered primitives.
+ */
+
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -25,6 +32,21 @@ const expectedContentSizes = ["small", "regular", "large"];
 const expectedIdentityRails = { small: "64px", regular: "96px", large: "128px" };
 const expectedTypeRoles = ["display", "reading", "utility"];
 const expectedTypographySizes = ["minimal", "compact", "regular", "comfortable"];
+const expectedNeutralForegroundLevels = {
+  primary: ["zinc-50", "zinc-100"],
+  secondary: "zinc-200",
+  metadata: "zinc-400",
+  disabled: "enabled foreground plus opacity-50",
+  inverseExceptions: ["white", "zinc-950"],
+};
+const expectedCommonActionPresentations = {
+  windowChrome: { back: "icon", close: "icon", more: "icon", refresh: "icon" },
+  disclosure: { collapse: "icon", expand: "icon" },
+  inlineEdit: { cancel: "icon", delete: "icon", edit: "icon", remove: "icon", save: "icon" },
+  form: { back: "text", cancel: "text", create: "iconText", save: "iconText" },
+  dialog: { back: "text", cancel: "text" },
+  confirmation: { cancel: "text", delete: "iconText", remove: "iconText" },
+};
 if (contract.defaultPresentationLevel !== "medium") {
   fail("defaultPresentationLevel must remain medium");
 }
@@ -52,11 +74,17 @@ if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()
   fail("visualLanguage.typography must contain exactly display, reading, and utility");
 }
 if (contract.defaultTypographySize !== "regular") fail("defaultTypographySize must remain regular");
+if (JSON.stringify(contract.neutralForegroundLevels) !== JSON.stringify(expectedNeutralForegroundLevels)) {
+  fail("neutralForegroundLevels must keep the registered four-level Web foreground contract");
+}
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typographySizes ?? {}).sort()) !== JSON.stringify([...expectedTypographySizes].sort())) {
   fail("visualLanguage.typographySizes must contain exactly minimal, compact, regular, and comfortable");
 }
-if (contract.visualLanguage?.shape?.cornerRadius !== "4px/pt/dp") {
-  fail("visualLanguage.shape.cornerRadius must remain the shared 4px/pt/dp editorial radius");
+if (contract.visualLanguage?.shape?.cornerRadius !== "10px Web base with concentric inset; platform-owned on iOS and Android") {
+  fail("visualLanguage.shape.cornerRadius must keep the registered Web concentric and native platform-owned shape contract");
+}
+if (JSON.stringify(contract.commonActionPresentations) !== JSON.stringify(expectedCommonActionPresentations)) {
+  fail("commonActionPresentations must match the registered action + context mapping");
 }
 
 const ids = contract.itemKinds.map((item) => item.id);
@@ -74,6 +102,7 @@ const registryFiles = {
   android: "apps/android/app/src/main/java/com/cheers/android/ui/components/ItemSystem.kt"
 };
 
+/** Recursively concatenate files with an extension for cross-file assertions. */
 async function sourceText(directory, extension) {
   const entries = await readdir(directory, { withFileTypes: true });
   const chunks = await Promise.all(entries.map(async (entry) => {
@@ -84,6 +113,7 @@ async function sourceText(directory, extension) {
   return chunks.join("\n");
 }
 
+/** Recursively load files while preserving paths for source-located findings. */
 async function sourceFiles(directory, extension) {
   const entries = await readdir(directory, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
@@ -95,7 +125,10 @@ async function sourceFiles(directory, extension) {
 }
 
 const webSource = await sourceText(path.join(root, "frontend/src"), ".tsx");
-const webFiles = await sourceFiles(path.join(root, "frontend/src"), ".tsx");
+const webFiles = [
+  ...await sourceFiles(path.join(root, "frontend/src"), ".tsx"),
+  ...await sourceFiles(path.join(root, "frontend/src"), ".ts"),
+].filter(({ path: file }) => !file.endsWith(".d.ts"));
 const websiteFiles = [
   ...await sourceFiles(path.join(root, "website"), ".html"),
   {
@@ -122,6 +155,10 @@ for (const file of webFiles.filter(({ path: file }) => !/\.(?:test|preview)\.tsx
   }
 }
 const webCss = await readFile(path.join(root, "frontend/src/index.css"), "utf8");
+for (const match of webCss.matchAll(/^\s*color:\s*#(?:d4d4d8|71717a|52525b|3f3f46)\b/gm)) {
+  const line = webCss.slice(0, match.index).split("\n").length;
+  fail(`frontend/src/index.css:${line} uses a neutral foreground outside zinc-50/100/200/400`);
+}
 for (const match of webCss.matchAll(/font-size:\s*([^;]+);/g)) {
   if (/^var\(--type-(?:minimal|compact|regular|comfortable)\)$/.test(match[1].trim())) continue;
   const line = webCss.slice(0, match.index).split("\n").length;

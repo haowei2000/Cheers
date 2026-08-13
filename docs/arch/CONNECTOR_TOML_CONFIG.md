@@ -68,8 +68,7 @@ release (`server_capabilities.latest_connector_version`, i.e. the gateway's
 `connector-manifest.json` + `.sig` through the gateway's download proxy, verifies
 the manifest's **ed25519 signature** against the release key compiled into the
 binary, verifies each binary's **sha256** against the manifest, waits until no
-prompt turn is in flight, atomically swaps itself (and the sibling
-`cheers-mcp-server`, which ships in lockstep) and re-execs with the same argv/PID.
+prompt turn is in flight, atomically swaps itself and re-execs with the same argv/PID.
 The replaced binary is kept as `<exe>.old`; if the new binary fails to reach a
 healthy bridge connection 3 boots in a row it is rolled back automatically and
 that version is blocked from retry. Never active inside containers (update the
@@ -93,14 +92,14 @@ label (e.g. `haowei_codex`).
 |-------------------------|--------|----------|---------|
 | `control_url`           | string | required | Agent Bridge **control** WebSocket, e.g. `wss://cheers.example.com/ws/agent-bridge/control`. |
 | `data_url`              | string | required | Agent Bridge **data** WebSocket (`…/ws/agent-bridge/data`). |
-| `bot_token_env`         | string | —        | Name of the env var holding the bot token. |
-| `bot_token_file`        | string | —        | Path to a file holding the bot token (`chmod 600`). |
+| `installation_credential_env` | string | — | Name of the env var holding this terminal's credential. |
+| `installation_credential_file` | string | — | Path to this terminal's credential (`chmod 600`). |
 | `heartbeat_interval_ms` | int    | `25000`  | Control-WS heartbeat cadence. |
 | `ack_timeout_ms`        | int    | `600000` | How long to wait for the Backend to ack a data-frame before treating the send as failed. |
 
-**Provide exactly one of `bot_token_env` / `bot_token_file`.** The token is the
-credential the connector authenticates with (the same one you mint via
-`POST /api/v1/bots/{bot_id}/token`). Prefer `bot_token_file` for daemons, `…_env`
+**Provide exactly one of `installation_credential_env` /
+`installation_credential_file`.** Enrollment returns this installation-bound
+credential once. Prefer the file form for daemons and the env form
 for shells/containers.
 
 #### `[accounts.<id>.bridge.reconnect]`
@@ -230,20 +229,13 @@ All policy tables are optional; each key falls back to the default below.
 | `allow`            | bool | `true`  | Forward ACP `session/update` notifications (streaming). |
 | `include_metadata` | bool | `true`  | Include the update's metadata block. |
 
-#### `.policy.mcp` — MCP server injection
+#### `.policy.mcp` — extra MCP servers
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
-| `inject_cheers`                    | bool     | `true`  | Inject the `cheers` MCP server (desk/inbox/channel tools). Keep `true` or the bot has no Cheers tools. |
 | `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? |
 | `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject (e.g. `["cheers"]`). |
 | `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. |
-
-#### `.policy.loopback`
-
-| Key                  | Type | Default  | Meaning |
-|----------------------|------|----------|---------|
-| `request_timeout_ms` | int  | `600000` | Timeout for the connector's loopback resource IPC (the `cheers` MCP server calls this). |
 
 ### `[accounts.<id>.security.acp_capability]` — signed capability (optional)
 
@@ -279,7 +271,7 @@ log_dir    = "logs-codex"
 [accounts.haowei_codex.bridge]
 control_url    = "wss://www.structure.chat/ws/agent-bridge/control"
 data_url       = "wss://www.structure.chat/ws/agent-bridge/data"
-bot_token_file = "secrets/codex.token"   # chmod 600
+installation_credential_file = "secrets/codex.token"   # chmod 600
 
 [accounts.haowei_codex.adapter]
 type    = "stdio"
@@ -317,8 +309,8 @@ cce-acp-connector stop   --name haowei_codex
 |---------|--------------|-----|
 | Daemon won't start, "unknown field" | typo / stray key (`deny_unknown_fields`) | fix the exact key it names |
 | Daemon won't start, "unsupported config version" | `version` ≠ `1` | set `version = 1` |
-| Bot never goes **online** | `command` not found, or token missing/unwritten | `which <command>`; write the token to `bot_token_file`; check `logs` |
+| Bot never goes **online** | `command` not found, or credential missing/unwritten | `which <command>`; write the installation credential to `installation_credential_file`; check `logs` |
 | Can't set a **config option** from the UI | option not in `allowed_config_options`, or bot offline | add the id to `allowed_config_options`; bring the bot online |
 | Can't set a **mode** | mode not in `allowed_modes`, or `backend_may_set_mode = false` | add the mode id (or `[]` for any); enable `backend_may_set_mode` |
 | Agent can't read an uploaded file | it tried to HTTP the gateway | agents read attachments via the `cheers` MCP `inbox_open` tool, never HTTP |
-| Bot has no Cheers tools | `inject_cheers = false` | set `inject_cheers = true` |
+| Bot has no Cheers tools | Agent lacks native HTTP MCP OAuth or Gateway omitted `mcp_url` | upgrade the Agent adapter; verify `MCP_PUBLIC_URL`; stdio fallback is not supported |

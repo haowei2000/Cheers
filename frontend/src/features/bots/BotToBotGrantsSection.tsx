@@ -131,7 +131,6 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
       title={editorMode === "add" ? "Add bot-to-bot rule" : "Edit bot-to-bot rule"}
       onCancel={reset}
       onSave={() => void save()}
-      saveLabel={editorMode === "add" ? "Add rule" : "Save changes"}
       saving={busy}
       saveDisabled={!subjectId}
     >

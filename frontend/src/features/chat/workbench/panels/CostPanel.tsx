@@ -74,7 +74,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
         {bots.map((b) => (
           <tr
             key={`${b.bot_id}:${b.session_id ?? "—"}`}
-            className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-300"
+            className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-200"
           >
             {/* Bot reads as avatar + name (full id in the tooltip); session_id is an
                 opaque technical id: short mono form + tooltip. */}
@@ -107,7 +107,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
             {/* context window = latest snapshot; an at-a-glance pressure gauge */}
             <td className="px-2 py-2 text-right tabular-nums">
               <span className="inline-flex items-center gap-1 text-zinc-400">
-                <Gauge className="w-3.5 h-3.5 text-zinc-600" />
+                <Gauge className="w-3.5 h-3.5 text-zinc-400" />
                 {fmtInt(b.context_window)}
               </span>
             </td>

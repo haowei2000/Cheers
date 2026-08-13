@@ -1,3 +1,8 @@
+//! Prompt construction and ACP-to-Bridge presentation transforms.
+//!
+//! Functions here preserve agent-specific metadata where useful while enforcing
+//! local attachment, capability, size, and permission-display policy.
+
 use super::*;
 
 pub(super) fn bridge_ready_from_initialize(
@@ -36,7 +41,6 @@ pub(super) fn bridge_ready_from_initialize(
         "images": policy.prompt.allow_images && agent_supports_image,
         "audio": policy.prompt.allow_audio && agent_supports_audio,
         "send": policy.send.allow,
-        "resource_req": true,
         "permission_request": policy.permission.forward_to_backend,
         "config_options": true,
         "trace": policy.trace.allow,
@@ -432,6 +436,17 @@ pub(super) fn mcp_server_supported(
     }
 }
 
+/// Build the single authoritative Cheers MCP entry. OAuth headers are
+/// intentionally empty: discovery and token lifecycle belong to the Agent.
+pub(super) fn native_cheers_mcp_server(mcp_url: &str) -> Value {
+    json!({
+        "type": "http",
+        "name": "cheers",
+        "url": mcp_url,
+        "headers": []
+    })
+}
+
 /// Build an ACP image content block from an attachment, or `None` when it can't
 /// be sent as one. ACP image blocks are `{ type: "image", mimeType, data }` with
 /// base64 `data`. <https://agentclientprotocol.com/protocol/v1/schema>
@@ -644,6 +659,24 @@ fn describe_tool_call(update: &Value, status: String) -> Option<SessionUpdateTra
             }
         }
     }
+    if let Some(presentation) = crate::extensions::decode_presentation(update) {
+        if let Some(tool_name) = presentation.tool_name.as_ref() {
+            data.entry("tool_name".to_string())
+                .or_insert_with(|| Value::String(tool_name.clone()));
+        }
+        if let Some(command) = presentation.command.as_ref() {
+            data.entry("command".to_string())
+                .or_insert_with(|| Value::String(command.clone()));
+        }
+        if let Some(cwd) = presentation.cwd.as_ref() {
+            data.entry("cwd".to_string())
+                .or_insert_with(|| Value::String(cwd.clone()));
+        }
+        data.insert(
+            "normalized_presentation".to_string(),
+            serde_json::to_value(presentation).expect("presentation serialization"),
+        );
+    }
 
     Some(SessionUpdateTrace {
         title,
@@ -741,17 +774,6 @@ pub(super) fn normalize_session_snapshot_report(response: &Value) -> Value {
         }
     }
     report
-}
-
-/// Locate codex's `_meta.codex.params` blob, which carries the richest, most
-/// human-friendly view of a `session/request_permission` (a natural-language
-/// `reason`, the normalized `command`, `cwd`, decisions). Codex-specific and
-/// guarded: returns None for agents that don't populate it.
-fn codex_request_params(params: &Value) -> Option<&Value> {
-    params
-        .get("_meta")
-        .and_then(|m| m.get("codex"))
-        .and_then(|c| c.get("params"))
 }
 
 /// The `toolCallId` a `session/request_permission` is asking about, so the caller
@@ -887,25 +909,16 @@ fn diff_path_summary(paths: &[&str]) -> Option<String> {
 }
 
 pub(super) fn permission_body_from_params(params: &Value) -> String {
-    let codex = codex_request_params(params);
-    // Prefer codex's explicit human-readable reason (e.g. "Do you want to allow
-    // writing X to /tmp/y?") over the generic fallback — this is the single most
-    // useful line for a human approver.
-    if let Some(reason) = codex
-        .and_then(|p| p.get("reason"))
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
+    let presentation = crate::extensions::decode_presentation(params);
+    if let Some(reason) = presentation
+        .as_ref()
+        .and_then(|value| value.reason.as_deref())
     {
         return reason.to_string();
     }
-    // codex without a reason still hands us the normalized command — show that
-    // instead of the generic line so the approver sees *something* concrete. The
-    // card also renders the command in its own block, so the frontend dedupes
-    // when body == tool.command (impact line is hidden).
-    if let Some(command) = codex
-        .and_then(|p| p.get("command"))
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
+    if let Some(command) = presentation
+        .as_ref()
+        .and_then(|value| value.command.as_deref())
     {
         return command.to_string();
     }
@@ -972,13 +985,13 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
         .get("toolCallId")
         .or_else(|| tool.get("tool_call_id"))
         .and_then(Value::as_str);
-    // codex's normalized full command (e.g. "/bin/zsh -lc '…'") and cwd live in
-    // _meta; fall back to rawInput for the cwd when _meta is absent.
-    let codex = codex_request_params(params);
-    let command = codex.and_then(|p| p.get("command")).and_then(Value::as_str);
-    let cwd = codex
-        .and_then(|p| p.get("cwd"))
-        .and_then(Value::as_str)
+    let presentation = crate::extensions::decode_presentation(params);
+    let command = presentation
+        .as_ref()
+        .and_then(|value| value.command.as_deref());
+    let cwd = presentation
+        .as_ref()
+        .and_then(|value| value.cwd.as_deref())
         .or_else(|| raw_input.and_then(|r| r.get("cwd")).and_then(Value::as_str));
     Some(serde_json::json!({
         "title": title,
@@ -990,6 +1003,7 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
         "tool_call_id": tool_call_id,
         "command": command,
         "cwd": cwd,
+        "normalized_presentation": presentation,
     }))
 }
 
@@ -1034,87 +1048,10 @@ pub(super) fn canonical_path(p: &std::path::Path) -> std::path::PathBuf {
     std::fs::canonicalize(&expanded).unwrap_or(expanded)
 }
 
-pub(super) fn resolve_mcp_server_command() -> String {
-    let bin_name = if cfg!(windows) {
-        "cheers-mcp-server.exe"
-    } else {
-        "cheers-mcp-server"
-    };
-    if let Ok(path) = env::var("CHEERS_MCP_SERVER_BIN") {
-        if !path.trim().is_empty() {
-            return path;
-        }
-    }
-    // Installed deployments: install.sh drops cheers-mcp-server into the same
-    // directory as this connector binary (~/.cheers/bin). Prefer that over the
-    // dev-tree fallback so an installed pair never depends on a source checkout.
-    if let Ok(exe) = env::current_exe() {
-        if exe.parent().is_some() {
-            for sibling in mcp_sibling_candidates(&exe, bin_name) {
-                if sibling.exists() {
-                    return sibling.display().to_string();
-                }
-            }
-        }
-    }
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if let Some(packages_dir) = manifest_dir.parent() {
-        let candidate = packages_dir
-            .join("cheers-mcp-server")
-            .join("target")
-            .join("debug")
-            .join(if cfg!(windows) {
-                "cheers-mcp-server.exe"
-            } else {
-                "cheers-mcp-server"
-            });
-        if candidate.exists() {
-            return candidate.display().to_string();
-        }
-    }
-    "cheers-mcp-server".to_string()
-}
-
-/// Candidate MCP paths beside the connector executable. Tauri preserves its
-/// target-triple suffix when it bundles external binaries, so a sidecar named
-/// `cce-acp-connector-aarch64-apple-darwin` needs the correspondingly named
-/// `cheers-mcp-server-aarch64-apple-darwin`, rather than only the ordinary
-/// unsuffixed release-install name.
-fn mcp_sibling_candidates(connector_exe: &std::path::Path, bin_name: &str) -> Vec<PathBuf> {
-    let Some(dir) = connector_exe.parent() else {
-        return Vec::new();
-    };
-    let mut candidates = vec![dir.join(bin_name)];
-    let connector_name = connector_exe.file_name().and_then(|name| name.to_str());
-    if let Some(suffix) = connector_name.and_then(|name| name.strip_prefix("cce-acp-connector")) {
-        if !suffix.is_empty() {
-            candidates.push(dir.join(format!("{bin_name}{suffix}")));
-        }
-    }
-    candidates
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn finds_target_suffixed_tauri_mcp_sidecar() {
-        let connector = PathBuf::from(
-            "/Applications/Cheers.app/Contents/MacOS/cce-acp-connector-aarch64-apple-darwin",
-        );
-        let candidates = mcp_sibling_candidates(&connector, "cheers-mcp-server");
-        assert_eq!(
-            candidates,
-            vec![
-                PathBuf::from("/Applications/Cheers.app/Contents/MacOS/cheers-mcp-server"),
-                PathBuf::from(
-                    "/Applications/Cheers.app/Contents/MacOS/cheers-mcp-server-aarch64-apple-darwin"
-                ),
-            ]
-        );
-    }
 
     #[test]
     fn config_options_report_omits_absent_fields() {
@@ -1651,13 +1588,27 @@ mod tests {
         let stdio = json!({"name": "cheers", "command": "bin"});
         let http = json!({"type": "http", "name": "h", "url": "u"});
         let sse = json!({"type": "sse", "name": "s", "url": "u"});
-        // stdio (incl. the injected cheers server) is the ACP baseline: always kept.
+        // User-configured stdio remains an ACP baseline transport, although
+        // Cheers itself is always injected through native HTTP.
         assert!(mcp_server_supported(&stdio, false, false));
         // http/sse are kept only when the agent advertised the transport.
         assert!(!mcp_server_supported(&http, false, false));
         assert!(mcp_server_supported(&http, true, false));
         assert!(!mcp_server_supported(&sse, false, false));
         assert!(mcp_server_supported(&sse, false, true));
+    }
+
+    #[test]
+    fn native_cheers_mcp_is_headerless_http() {
+        assert_eq!(
+            native_cheers_mcp_server("https://cheers.example/mcp"),
+            json!({
+                "type": "http",
+                "name": "cheers",
+                "url": "https://cheers.example/mcp",
+                "headers": []
+            })
+        );
     }
 
     #[test]

@@ -1,3 +1,5 @@
+/** @file Derive the summary state used by the message-details disclosure UI. */
+
 import type { Message } from "@/types";
 
 export interface MessageDetailsMeta {

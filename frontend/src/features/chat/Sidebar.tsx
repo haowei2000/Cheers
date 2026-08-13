@@ -36,7 +36,7 @@ function Section({ label, children, onAdd, addLabel }: SectionProps) {
             onClick={onAdd}
             label={addLabel ?? "Add"}
             title={addLabel ?? "Add"}
-            className="text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+            className="text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50"
           >
             <Plus className={controlIconClasses.compact} />
           </IconButton>
@@ -166,7 +166,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
@@ -182,7 +182,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           {canOpenSettings && (
             // Gear, not a down-chevron: this opens the settings modal rather than
             // expanding a dropdown beneath the header, so a chevron would lie.
-            <Settings className={cn(controlIconClasses.regular, "text-zinc-500 flex-shrink-0")} />
+            <Settings className={cn(controlIconClasses.regular, "text-zinc-400 flex-shrink-0")} />
           )}
         </ControlTrigger>
       </div>

@@ -52,7 +52,6 @@ struct CapabilityEnvelope {
 #[derive(Debug)]
 struct DelegationRecord {
     delegation_id: Uuid,
-    bot_id: Uuid,
     scope_type: String,
     scope_id: Option<String>,
     session_id: Option<String>,
@@ -74,7 +73,6 @@ struct SessionContext {
     status: String,
     current_scope_type: Option<String>,
     current_scope_id: Option<String>,
-    provider_session_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -83,7 +81,7 @@ pub enum CapabilityError {
     Denied(String),
     DeniedWithContext {
         message: String,
-        context: CapabilityDecisionContext,
+        context: Box<CapabilityDecisionContext>,
     },
 }
 
@@ -100,7 +98,7 @@ impl std::fmt::Display for CapabilityError {
 impl CapabilityError {
     pub fn decision_context(&self) -> Option<&CapabilityDecisionContext> {
         match self {
-            Self::DeniedWithContext { context, .. } => Some(context),
+            Self::DeniedWithContext { context, .. } => Some(context.as_ref()),
             _ => None,
         }
     }
@@ -112,7 +110,7 @@ fn denied_with_context(
 ) -> CapabilityError {
     CapabilityError::DeniedWithContext {
         message: message.into(),
-        context,
+        context: Box::new(context),
     }
 }
 
@@ -275,9 +273,9 @@ fn frame_needs_capability(frame_type: &str) -> bool {
         "send"
             | "delta"
             | "done"
-            | "resource_req"
             | "session_update"
             | "permission_request"
+            | "elicitation_request"
             | "trace"
     )
 }
@@ -287,9 +285,11 @@ fn frame_action(frame_type: &str) -> Option<&str> {
         "send" => Some("send"),
         "delta" => Some("stream"),
         "done" => Some("stream"),
-        "resource_req" => Some("resource_req"),
         "session_update" => Some("session_update"),
         "permission_request" => Some("permission_request"),
+        // Elicitation is a user-response request and deliberately reuses the
+        // existing permission_request capability grant during this migration.
+        "elicitation_request" => Some("permission_request"),
         "trace" => Some("trace"),
         _ => None,
     }
@@ -303,18 +303,18 @@ fn canonical_json(value: &Value) -> String {
         Value::String(v) => serde_json::to_string(v).unwrap_or_else(|_| "\"\"".to_string()),
         Value::Array(values) => {
             let mut out = String::from("[");
-            for i in 0..values.len() {
+            for (i, value) in values.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                out.push_str(&canonical_json(&values[i]));
+                out.push_str(&canonical_json(value));
             }
             out.push(']');
             out
         }
         Value::Object(obj) => {
             let mut entries: Vec<_> = obj.iter().collect();
-            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            entries.sort_by_key(|(key, _)| *key);
 
             let mut out = String::from("{");
             let mut first = true;
@@ -358,26 +358,6 @@ fn action_allowed(allowed: &[String], action: &str) -> bool {
         return true;
     }
     false
-}
-
-fn resource_matches(grant_resource: &str, requested: &str) -> bool {
-    if grant_resource == CAPABILITY_ACTION_WILDCARD {
-        return true;
-    }
-    if let Some(prefix) = grant_resource.strip_suffix(":*") {
-        return requested.starts_with(&format!("{prefix}:")) || requested == prefix;
-    }
-    if let Some(prefix) = grant_resource.strip_suffix(".*") {
-        return requested.starts_with(&format!("{prefix}.")) || requested == prefix;
-    }
-    grant_resource == requested
-}
-
-fn resource_allowed(resources: &[String], resource: &str) -> bool {
-    resources.is_empty()
-        || resources
-            .iter()
-            .any(|value| resource_matches(value, resource))
 }
 
 fn extract_channel_id(frame: &Value) -> Option<String> {
@@ -456,21 +436,21 @@ async fn resolve_active_session(
 ) -> Result<SessionContext, CapabilityError> {
     let (query, value) = match locator {
         SessionLocator::SessionId(session_id) => (
-            "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
+            "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND session_id = $4
              LIMIT 1",
             session_id.to_string(),
         ),
         SessionLocator::ProviderSessionKey(provider_session_key) => (
-            "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
+            "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_key = $4
              LIMIT 1",
             provider_session_key,
         ),
         SessionLocator::ProviderSessionId(provider_session_id) => (
-            "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
+            "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_id = $4
              ORDER BY updated_at DESC
@@ -508,19 +488,13 @@ async fn resolve_active_session(
         status,
         current_scope_type: row.try_get("current_scope_type").ok(),
         current_scope_id: row.try_get("current_scope_id").ok(),
-        provider_session_key: row.try_get("provider_session_key").ok(),
     })
 }
 
-fn extract_resource(frame: &Value) -> Option<String> {
-    frame
-        .get("resource")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
-}
-
+#[allow(
+    clippy::too_many_arguments,
+    reason = "capability decisions keep every signed and resolved scope input explicit"
+)]
 fn verify_scope_with_context(
     delegation: &DelegationRecord,
     frame_type: &str,
@@ -589,16 +563,6 @@ fn verify_scope_with_context(
                     context,
                 ));
             }
-            if action == "resource_req" {
-                if let Some(res) = resource {
-                    if !resource_allowed(&delegation.allowed_resources, res) {
-                        return Err(denied_with_context(
-                            "resource denied by user-scoped delegation",
-                            context,
-                        ));
-                    }
-                }
-            }
             Ok(())
         }
         CAPABILITY_SCOPE_WORKSPACE => {
@@ -629,6 +593,10 @@ fn verify_scope_with_context(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "capability decisions keep every signed and resolved scope input explicit"
+)]
 async fn verify_scope(
     db: &PgPool,
     bot_id: &Uuid,
@@ -724,7 +692,7 @@ async fn load_delegation(
     delegation_id: &str,
 ) -> Result<DelegationRecord, CapabilityError> {
     let row = sqlx::query(
-        "SELECT delegation_id, bot_id, scope_type, scope_id, session_id, allowed_actions, allowed_resources,
+        "SELECT delegation_id, scope_type, scope_id, session_id, allowed_actions, allowed_resources,
                 max_uses, use_count, expires_at, public_key, algorithm, delegated_to, status, revoked
          FROM acp_capability_delegations
          WHERE bot_id = $1 AND delegation_id = $2",
@@ -742,9 +710,6 @@ async fn load_delegation(
     Ok(DelegationRecord {
         delegation_id: row
             .try_get("delegation_id")
-            .map_err(|_| CapabilityError::Denied("invalid delegation".into()))?,
-        bot_id: row
-            .try_get("bot_id")
             .map_err(|_| CapabilityError::Denied("invalid delegation".into()))?,
         scope_type: row
             .try_get("scope_type")
@@ -851,6 +816,10 @@ async fn consume_nonce_and_bump(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "security audit records keep actor, action, resource, and decision context explicit"
+)]
 pub async fn log_capability_reject(
     db: &PgPool,
     bot_id: &Uuid,
@@ -861,8 +830,8 @@ pub async fn log_capability_reject(
     resource: Option<&str>,
     context: Option<&CapabilityDecisionContext>,
 ) -> sqlx::Result<()> {
-    let delegation_id = context.and_then(|ctx| Some(ctx.delegation_id.as_str()));
-    let decision_scope_type = context.and_then(|ctx| Some(ctx.delegation_scope_type.as_str()));
+    let delegation_id = context.map(|ctx| ctx.delegation_id.as_str());
+    let decision_scope_type = context.map(|ctx| ctx.delegation_scope_type.as_str());
     let decision_scope_id = context.and_then(|ctx| ctx.delegation_scope_id.as_deref());
     let request_id = context.and_then(|ctx| ctx.request_id.as_deref());
     let action = action.or_else(|| context.map(|ctx| ctx.action.as_str()));
@@ -933,8 +902,6 @@ pub async fn authorize_data_frame(
     let delegation_id = Uuid::parse_str(&envelope.delegation_id)
         .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?;
     let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
-    let resource = extract_resource(frame);
-
     validate_public_key(&delegation.algorithm, &delegation.public_key)?;
     verify_signature(&delegation, frame_type, &envelope, frame)?;
     verify_scope(
@@ -944,7 +911,7 @@ pub async fn authorize_data_frame(
         &delegation,
         frame,
         action,
-        resource.as_deref(),
+        None,
         request_id,
     )
     .await?;
@@ -957,23 +924,7 @@ pub async fn authorize_data_frame(
         )));
     }
 
-    if action == "resource_req" {
-        let resource = resource
-            .clone()
-            .ok_or_else(|| CapabilityError::Denied("missing resource".into()))?;
-        if !resource_allowed(&delegation.allowed_resources, &resource) {
-            return Err(CapabilityError::Denied("resource not allowed".into()));
-        }
-    }
-
-    consume_nonce_and_bump(
-        db,
-        &delegation_id,
-        &envelope,
-        frame_type,
-        resource.as_deref(),
-    )
-    .await?;
+    consume_nonce_and_bump(db, &delegation_id, &envelope, frame_type, None).await?;
     Ok(())
 }
 
@@ -988,9 +939,11 @@ pub fn build_action_map() -> BTreeMap<&'static str, Vec<&'static str>> {
     BTreeMap::from([
         ("send", vec!["send"]),
         ("stream", vec!["delta", "done"]),
-        ("resource_req", vec!["resource_req"]),
         ("session_update", vec!["session_update"]),
-        ("permission_request", vec!["permission_request"]),
+        (
+            "permission_request",
+            vec!["permission_request", "elicitation_request"],
+        ),
         ("trace", vec!["trace"]),
     ])
 }
@@ -1017,15 +970,10 @@ mod tests {
     ) -> DelegationRecord {
         DelegationRecord {
             delegation_id: Uuid::new_v4(),
-            bot_id: Uuid::new_v4(),
             scope_type: scope_type.to_string(),
             scope_id: scope_id.map(str::to_string),
             session_id: session_id.map(str::to_string),
-            allowed_actions: vec![
-                "send".to_string(),
-                "stream".to_string(),
-                "resource_req".to_string(),
-            ],
+            allowed_actions: vec!["send".to_string(), "stream".to_string()],
             allowed_resources: allowed_resources.into_iter().map(str::to_string).collect(),
             max_uses: None,
             use_count: 0,
@@ -1049,7 +997,6 @@ mod tests {
             status: status.to_string(),
             current_scope_type: scope_type.map(str::to_string),
             current_scope_id: scope_id.map(str::to_string),
-            provider_session_key: Some("provider-session-key".into()),
         }
     }
 
@@ -1222,51 +1169,6 @@ mod tests {
                     Some("ws-2"),
                 )),
                 expected_err: Some("workspace scope mismatch"),
-            },
-            VerifyScopeCase {
-                name: "user scope denied without target",
-                delegation: make_delegation(CAPABILITY_SCOPE_USER, None, None, None, vec![]),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.list"}),
-                resource: Some("channel.files.list"),
-                locator: None,
-                session_context: None,
-                expected_err: Some("user-scoped delegation has no target"),
-            },
-            VerifyScopeCase {
-                name: "user scope resource denied",
-                delegation: make_delegation(
-                    CAPABILITY_SCOPE_USER,
-                    None,
-                    None,
-                    Some("user-b"),
-                    vec!["channel.files.read:*"],
-                ),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.write"}),
-                resource: Some("channel.files.write"),
-                locator: None,
-                session_context: None,
-                expected_err: Some("resource denied by user-scoped delegation"),
-            },
-            VerifyScopeCase {
-                name: "user scope resource allowed",
-                delegation: make_delegation(
-                    CAPABILITY_SCOPE_USER,
-                    None,
-                    None,
-                    Some("user-b"),
-                    vec!["channel.files.*"],
-                ),
-                frame_type: "resource_req",
-                action: "resource_req",
-                frame: json!({"resource":"channel.files.write"}),
-                resource: Some("channel.files.write"),
-                locator: None,
-                session_context: None,
-                expected_err: None,
             },
         ];
 

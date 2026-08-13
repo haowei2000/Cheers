@@ -1,3 +1,8 @@
+//! Authenticated dual-channel Agent Bridge session establishment.
+//!
+//! A session owns the control and data WebSockets, validates that both were
+//! accepted for the same bot, and maintains the gateway membership snapshot.
+
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,7 +23,7 @@ const DEFAULT_HELLO_TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Debug, Clone)]
 pub struct BridgeSessionConfig {
     pub account_id: String,
-    pub bot_token: String,
+    pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
     pub hello_timeout: Duration,
@@ -30,13 +35,13 @@ pub struct BridgeSessionConfig {
 impl BridgeSessionConfig {
     pub fn new(
         account_id: impl Into<String>,
-        bot_token: impl Into<String>,
+        bridge_credential: impl Into<String>,
         control_url: impl Into<String>,
         data_url: impl Into<String>,
     ) -> Self {
         Self {
             account_id: account_id.into(),
-            bot_token: bot_token.into(),
+            bridge_credential: bridge_credential.into(),
             control_url: control_url.into(),
             data_url: data_url.into(),
             hello_timeout: DEFAULT_HELLO_TIMEOUT,
@@ -88,7 +93,6 @@ impl BridgeReady {
                 "runtime_session_control": true,
                 "streaming": true,
                 "files": true,
-                "resource_req": true,
                 "permission_request": true,
                 "config_options": true,
                 "trace": true,
@@ -101,6 +105,7 @@ impl BridgeReady {
 #[derive(Debug, Clone)]
 pub struct ControlHelloState {
     pub bot_id: String,
+    pub installation_id: Option<String>,
     pub bot_username: String,
     pub bot_display_name: Option<String>,
     pub connection_id: Option<String>,
@@ -109,11 +114,13 @@ pub struct ControlHelloState {
     pub acp_security: Option<AcpSecurityHello>,
     pub connector_config: Option<ConnectorControlConfig>,
     pub server_capabilities: Option<ServerCapabilities>,
+    pub mcp_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DataHelloState {
     pub bot_id: String,
+    pub installation_id: Option<String>,
     pub connection_id: Option<String>,
     pub session_id: String,
     pub last_event_seq: u64,
@@ -275,7 +282,7 @@ pub async fn connect_control_stream(
     config: &BridgeSessionConfig,
     ready: &BridgeReady,
 ) -> anyhow::Result<(BridgeWebSocket, ControlHelloState)> {
-    let mut control = BridgeWebSocket::connect(&config.control_url, &config.bot_token)
+    let mut control = BridgeWebSocket::connect(&config.control_url, &config.bridge_credential)
         .await
         .with_context(|| {
             format!(
@@ -300,7 +307,7 @@ pub async fn connect_control_stream(
 pub async fn connect_data_stream(
     config: &BridgeSessionConfig,
 ) -> anyhow::Result<(BridgeWebSocket, DataHelloState)> {
-    let mut data = BridgeWebSocket::connect(&config.data_url, &config.bot_token)
+    let mut data = BridgeWebSocket::connect(&config.data_url, &config.bridge_credential)
         .await
         .with_context(|| {
             format!(
@@ -342,6 +349,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
             v,
             bridge_protocol_version,
             bot_id,
+            installation_id,
             bot_username,
             bot_display_name,
             connection_id,
@@ -350,11 +358,13 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
             acp_security,
             connector_config,
             server_capabilities,
+            mcp_url,
             ..
         } => {
             ensure_supported_version(v, bridge_protocol_version, "control")?;
             Ok(ControlHelloState {
                 bot_id,
+                installation_id,
                 bot_username,
                 bot_display_name,
                 connection_id,
@@ -362,7 +372,8 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
                 memberships,
                 acp_security,
                 connector_config,
-                server_capabilities,
+                server_capabilities: server_capabilities.map(|capabilities| *capabilities),
+                mcp_url,
             })
         }
         other => Err(anyhow!("expected control hello, got {other:?}")),
@@ -376,6 +387,7 @@ fn data_hello_from_value(value: Value) -> anyhow::Result<DataHelloState> {
             bridge_protocol_version,
             stream,
             bot_id,
+            installation_id,
             connection_id,
             session_id,
             last_event_seq,
@@ -388,11 +400,12 @@ fn data_hello_from_value(value: Value) -> anyhow::Result<DataHelloState> {
             ensure_supported_version(v, bridge_protocol_version, "data")?;
             Ok(DataHelloState {
                 bot_id,
+                installation_id,
                 connection_id,
                 session_id,
                 last_event_seq,
                 acp_security,
-                server_capabilities,
+                server_capabilities: server_capabilities.map(|capabilities| *capabilities),
             })
         }
         other => Err(anyhow!("expected data hello, got {other:?}")),
@@ -421,6 +434,13 @@ fn validate_hello_pair(control: &ControlHelloState, data: &DataHelloState) -> an
             "control/data hello bot mismatch control={} data={}",
             control.bot_id,
             data.bot_id
+        ));
+    }
+    if control.installation_id != data.installation_id {
+        return Err(anyhow!(
+            "control/data hello installation mismatch control={:?} data={:?}",
+            control.installation_id,
+            data.installation_id
         ));
     }
     Ok(())
@@ -452,6 +472,7 @@ mod tests {
                     "joined_at": "2026-06-01T10:15:30Z"
                 }
             ],
+            "mcp_url": "https://cheers.example/mcp",
             "server_capabilities": {
                 "task_stream": "control",
                 "runtime_session_control": true
@@ -462,6 +483,7 @@ mod tests {
         assert_eq!(hello.bot_id, "bot-1");
         assert_eq!(hello.memberships.len(), 1);
         assert_eq!(hello.memberships[0].channel_id, "channel-1");
+        assert_eq!(hello.mcp_url.as_deref(), Some("https://cheers.example/mcp"));
     }
 
     #[test]
@@ -476,7 +498,6 @@ mod tests {
             "session_id": "data-conn-1",
             "last_event_seq": 12,
             "server_capabilities": {
-                "resource_req": true,
                 "terminal_ack": true,
                 "resume": "ack_only"
             }
@@ -491,6 +512,7 @@ mod tests {
     fn rejects_mismatched_control_and_data_bot() {
         let control = ControlHelloState {
             bot_id: "bot-control".to_string(),
+            installation_id: Some("installation-control".to_string()),
             bot_username: "helper".to_string(),
             bot_display_name: None,
             connection_id: None,
@@ -499,9 +521,11 @@ mod tests {
             acp_security: None,
             connector_config: None,
             server_capabilities: None,
+            mcp_url: Some("https://cheers.example/mcp".to_string()),
         };
         let data = DataHelloState {
             bot_id: "bot-data".to_string(),
+            installation_id: Some("installation-data".to_string()),
             connection_id: None,
             session_id: "data-session".to_string(),
             last_event_seq: 0,

@@ -47,7 +47,7 @@ export function statusColor(s: string): string {
     case "busy":
       return "text-emerald-500";
     case "idle":
-      return "text-zinc-500";
+      return "text-zinc-400";
     case "paused":
       return "text-amber-400";
     case "error":
@@ -55,7 +55,7 @@ export function statusColor(s: string): string {
     case "expired":
       return "text-red-400";
     default:
-      return "text-zinc-500";
+      return "text-zinc-400";
   }
 }
 

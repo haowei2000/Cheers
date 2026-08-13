@@ -1701,7 +1701,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" />
@@ -1717,7 +1717,7 @@ export function ChannelView({
         {sidebarToggle && (
           <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
         )}
-        <Hash className="h-5 w-5 text-zinc-700" />
+        <Hash className="h-5 w-5 text-zinc-400" />
         <span>Select a channel to start chatting</span>
       </div>
     );
@@ -1748,18 +1748,18 @@ export function ChannelView({
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </UiButton>
           )}
-          <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+          <Hash className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
           <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
             {channel.name}
           </span>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <Hash className="h-5 w-5 text-zinc-700" />
+          <Hash className="h-5 w-5 text-zinc-400" />
           <div className="text-zinc-100 font-semibold text-comfortable">
             #{channel.name}
           </div>
@@ -1774,7 +1774,7 @@ export function ChannelView({
             type="button"
             onClick={() => void handleJoin()}
             disabled={joining}
-            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60  font-medium text-white"
+            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50  font-medium text-white"
           >
             {joining && <Loader2 className="w-4 h-4 animate-spin" />}
             Join channel
@@ -1813,15 +1813,15 @@ export function ChannelView({
               onClick={onBack}
               title="Back to channels"
               aria-label="Back to channels"
-              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </UiButton>
           )}
           {isDm ? (
-            <MessageSquare className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+            <MessageSquare className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
           ) : (
-            <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+            <Hash className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
           )}
           <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
             {channelTitle}
@@ -1842,7 +1842,7 @@ export function ChannelView({
                 onClick={() => setMembersOpen((v) => !v)}
                 title="Channel members"
                 aria-expanded={membersOpen}
-                controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+                controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-50 hover:bg-zinc-800 transition-colors ${
  membersOpen ? "text-zinc-100 bg-zinc-800": ""
  }`}
               >
@@ -1877,7 +1877,7 @@ export function ChannelView({
             title="Channel files"
             content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  filesOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
  }`}
           >
             <Paperclip className="w-4 h-4" />
@@ -1893,7 +1893,7 @@ export function ChannelView({
             title="Remote workspace"
             content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wsOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
  }`}
           >
             <FolderTree className="w-4 h-4" />
@@ -1908,7 +1908,7 @@ export function ChannelView({
             title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
             content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  vbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
  }`}
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -1924,7 +1924,7 @@ export function ChannelView({
             title="Workbench — file workspace"
             content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-500 hover:text-zinc-100"
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
  }`}
           >
             <PanelRight className="w-4 h-4" />
@@ -1934,7 +1934,7 @@ export function ChannelView({
               <UiButton variant="plain"
                 onClick={() => setSettingsOpen(true)}
                 title="Channel settings"
-                content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+                content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
               >
                 <Settings className="w-4 h-4" />
               </UiButton>
@@ -2051,7 +2051,7 @@ export function ChannelView({
                 </ResolveRefContext.Provider>
               ) : loading ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
+                  <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
                 </div>
               ) : loadError ? (
                 <ErrorState
@@ -2083,7 +2083,7 @@ export function ChannelView({
               {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
               {selectMode && (
                 <div className="mx-4 mt-2 flex items-center gap-2 rounded-sm bg-zinc-900/80 px-3 py-2 text-compact">
-                  <span className="text-zinc-300 font-medium">
+                  <span className="text-zinc-200 font-medium">
                     {selectedIds.size} selected
                   </span>
                   <span className="text-zinc-400">
@@ -2094,7 +2094,7 @@ export function ChannelView({
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Copy
@@ -2108,7 +2108,7 @@ export function ChannelView({
                         count: selectedMessages.length,
                       })
                     }
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
                   >
                     <Forward className="w-3.5 h-3.5" />
                     Forward
@@ -2116,7 +2116,7 @@ export function ChannelView({
                   <UiButton action="cancel" content="iconText" variant="plain"
                     type="button"
                     onClick={clearSelection}
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-zinc-400 hover:text-zinc-200"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-zinc-100 hover:text-zinc-50"
                   >
                     <X className="w-3.5 h-3.5" />
                     Cancel

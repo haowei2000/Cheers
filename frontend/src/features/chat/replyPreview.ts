@@ -1,7 +1,10 @@
+/** @file Build compact, plain-text previews for reply banners and quoted messages. */
+
 import type { Message } from "@/types";
 
 const FILE_TOKEN_RE = /<#file:[^>]+>/g;
 
+/** Strip rich-message syntax and return a stable sender label and short excerpt. */
 export function replyPreviewOf(message: Message, senderName?: string) {
   const content = (message.content ?? "")
     .replace(FILE_TOKEN_RE, "")

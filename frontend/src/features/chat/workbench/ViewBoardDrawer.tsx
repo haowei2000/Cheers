@@ -258,7 +258,7 @@ function ViewBoardDrawerImpl({
               });
             }}
             title={addToContextTitle("this board")}
-            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
+            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-indigo-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
@@ -268,7 +268,7 @@ function ViewBoardDrawerImpl({
             content="icon" controlSize="compact"
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
-            className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
@@ -277,7 +277,7 @@ function ViewBoardDrawerImpl({
           content="icon" controlSize="compact"
           onClick={onClose}
           title="Close"
-          className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
         >
           <X className="w-4 h-4" />
         </UiButton>
@@ -299,7 +299,7 @@ function ViewBoardDrawerImpl({
         </div>
       ) : (
         <>
-          <div className="mx-3 mb-2 flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-0 border-b border-zinc-800 px-0 py-1">
+          <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1" role="tablist" aria-label="ViewBoard sections">
             {boards.map((b) => {
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
@@ -307,9 +307,9 @@ function ViewBoardDrawerImpl({
                 <UiButton variant="plain" role="tab" aria-selected={isActive}
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex items-center gap-2 rounded-none border-b  whitespace-nowrap transition-colors ${
+                  controlSize="regular" className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
  isActive
- ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-400 hover:text-zinc-200"
+ ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-100 hover:text-zinc-50"
  }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -321,7 +321,7 @@ function ViewBoardDrawerImpl({
 
           {activeBoard?.sessionScoped && (
             <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
-              <Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+              <Layers className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
               <span className="text-minimal uppercase tracking-wide text-zinc-400">Scope</span>
               <UiSelect
                 value={scope}

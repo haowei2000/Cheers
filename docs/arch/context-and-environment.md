@@ -52,8 +52,10 @@ External agents (ACP bots reverse-connected through the connector, and third-par
 MCP hosts) need to **read and operate** Cheers. Two layers were separated early:
 
 - **Capability layer (HOW)** — what an agent can actually execute: read messages,
-  list members, edit memory. Strongly typed, discoverable, authenticated,
-  enforceable. → MCP **Tools** + the gateway `resource_req` protocol.
+  list members, edit shared files. Strongly typed, discoverable, authenticated,
+  enforceable. → Gateway MCP **Tools** over Streamable HTTP + OAuth. The browser
+  still uses its own typed resource channel; the Connector does not relay MCP
+  calls through Agent Bridge resource request/response frames.
 - **Semantic layer (WHEN/WHY)** — how an agent should *behave* in a given channel:
   mention etiquette, reply format, scenario rules. Soft, prompt-delivered,
   cannot be enforced. → injected into the bot **system prompt**.
@@ -62,21 +64,19 @@ The capability layer is the substrate. The semantic layer never carries real
 operations — a prompt convention must not be the only gate on "can this bot delete
 that channel's messages."
 
-### MCP exposure split (already prototyped)
+### MCP exposure
 
-- **Local stdio MCP** (`packages/cheers-mcp-server/`) — for the project's own
-  reverse-connected ACP bot. Co-located with the agent, gets the bound channel via
-  env injection. **This is the primary channel.** Most mature MCP transport.
-- **Remote HTTP MCP** (`server/src/api/mcp.rs` — currently only MCP config
-  preview/parsing under `/api/v1/mcp/*`) — for third-party MCP hosts
-  (Claude Desktop, Cursor) that do not go through the connector. REST-backed,
-  bot-token / OAuth scoped. Second phase (the full remote MCP host is not yet built).
+Gateway `/mcp` is the only active Cheers MCP tool surface. The Connector injects
+its canonical URL as a headerless ACP `McpServerHttp`; the Agent performs OAuth
+discovery and owns access-token refresh. Authorization remains bound to the
+installation, Bot scopes, channel membership and role. There is no Connector
+OAuth proxy, stdio sidecar, static Bearer header or automatic downgrade.
 
-Topology constraint: a bot has exactly one `(control, data)` WebSocket pair; a
-second connection with the same token is superseded (close 4402). The MCP server
-therefore **cannot open its own bridge WS** — it forwards each call over local IPC
-to the connector, which emits `resource_req` on its existing data WS and relays the
-matching `resource_res`.
+An incompatible Agent fails closed. Interactive login may require the Agent's
+own explicit MCP-login command or URL surface; Cheers does not impersonate that
+lifecycle. `workspace_req/workspace_res` remains a distinct internal last hop for
+remote `read_workspace`, because those bytes live on the owner Connector's local
+machine rather than in Gateway storage.
 
 ## 2. The three substrates
 

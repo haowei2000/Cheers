@@ -46,7 +46,7 @@ export function Tip({
         label={label}
         controlSize="compact"
         aria-describedby={id}
-        className="-m-1 text-zinc-500 transition-colors hover:text-zinc-300"
+        className="-m-1 text-zinc-100 transition-colors hover:text-zinc-50"
       >
         <Info className="h-3.5 w-3.5" />
       </IconButton>

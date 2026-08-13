@@ -240,7 +240,7 @@ function CreateUserItem({ onCreated, onCancel }: { onCreated: () => void; onCanc
       role="listitem"
       data-collection-mode="add"
       onSubmit={submit}
-      className="border-b border-zinc-800 px-2 py-3"
+      className="border-b border-zinc-600/70 px-2 py-3"
     >
       <div className="mb-2 flex h-9 items-center gap-2">
         <UserPlus className="h-4 w-4 text-zinc-400" />

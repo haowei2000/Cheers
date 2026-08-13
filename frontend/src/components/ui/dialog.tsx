@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { IconButton } from "./icon-button";
+import { ActionButton } from "./action-button";
 
 // A centered modal shell: backdrop (click-to-close) + card (click-stop) + optional titled
 // header with a close button. Reused by NewDmDialog, the bot-token modal, etc.
@@ -119,7 +118,7 @@ export function Dialog({
         tabIndex={-1}
         className={cn(
           // Borderless (DESIGN.md §2.4): the dimmed backdrop provides the separation.
-          `w-full ${maxWidth} rounded-sm bg-zinc-900 p-4 space-y-3 outline-none`,
+          `w-full ${maxWidth} rounded-concentric [--concentric-inset:1rem] bg-zinc-900 p-4 space-y-3 outline-none`,
           "max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain",
           "max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
           fullScreenOnMobile
@@ -133,14 +132,14 @@ export function Dialog({
             <h2 id={titleId} className="text-regular font-semibold text-zinc-100">
               {title}
             </h2>
-            <IconButton
+            <ActionButton
+              action="close"
+              context="windowChrome"
               onClick={onClose}
-              label="Close"
+              accessibleLabel="Close dialog"
               controlSize="compact"
-              className="ml-auto text-zinc-500 hover:text-zinc-300 max-md:p-2 max-md:-m-2"
-            >
-              <X className="w-4 h-4" />
-            </IconButton>
+              className="ml-auto text-zinc-100 hover:text-zinc-50 max-md:p-2 max-md:-m-2"
+            />
           </div>
         )}
         {children}

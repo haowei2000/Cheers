@@ -1,3 +1,5 @@
+/** @file Message-layout policy shared by chronological chat and threaded discussions. */
+
 import type { Message } from "@/types";
 import { groupMessagesByReply, isFoldedPermission } from "./messageTree";
 

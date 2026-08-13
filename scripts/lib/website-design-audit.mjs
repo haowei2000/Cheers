@@ -1,3 +1,8 @@
+/** @file
+ * Static CSS audit for the standalone website's typography, radii, borders,
+ * and control geometry. The returned findings include source line locations.
+ */
+
 const TYPOGRAPHY_SIZES = new Set(["10", "12", "14", "16"]);
 const CONTROL_SIZES = new Set(["28", "36", "44"]);
 
@@ -25,6 +30,7 @@ function isControlSelector(selector) {
   });
 }
 
+/** Audit `{ file, source }` entries and summarize findings by rule. */
 export function auditWebsiteSources(sources) {
   const findings = [];
   const add = (entry, match, rule, token) => findings.push({
@@ -51,7 +57,7 @@ export function auditWebsiteSources(sources) {
 
     for (const match of entry.source.matchAll(/border-radius\s*:\s*([^;}"`]+)/g)) {
       const value = match[1].trim();
-      if (/^(?:4px|0\s*!important|var\(--radius\)(?:\s*!important)?)$/.test(value)) continue;
+      if (/^(?:10px|0\s*!important|var\(--radius\)(?:\s*!important)?)$/.test(value)) continue;
       if (value === "999px" && isSemanticCircle(selectorBefore(entry.source, match.index))) continue;
       add(entry, match, "nonStandardRadius", value);
     }

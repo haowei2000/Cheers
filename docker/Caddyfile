@@ -21,6 +21,22 @@
     reverse_proxy gateway:8000
   }
 
+  handle /mcp {
+    reverse_proxy gateway:8000
+  }
+
+  handle /.well-known/oauth-protected-resource* {
+    reverse_proxy gateway:8000
+  }
+
+  handle /.well-known/oauth-authorization-server {
+    reverse_proxy gateway:8000
+  }
+
+  handle /oauth/* {
+    reverse_proxy gateway:8000
+  }
+
   handle /docs* {
     reverse_proxy gateway:8000
   }

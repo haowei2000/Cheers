@@ -1281,6 +1281,15 @@ fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, Strin
         }
         return Err(super::resource_error("BAD_REQUEST", "missing path"));
     }
+    if path.len() > 1024 {
+        return Err(super::resource_error("BAD_REQUEST", "path is too long"));
+    }
+    if path.chars().any(char::is_control) {
+        return Err(super::resource_error(
+            "BAD_REQUEST",
+            "path contains control characters",
+        ));
+    }
     if path
         .split('/')
         .any(|segment| segment.is_empty() || segment == "." || segment == "..")
@@ -1307,8 +1316,18 @@ fn version_conflict(current: i64) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_structured_ops, parse_structured, slice_lines};
+    use super::{apply_structured_ops, normalize_path, parse_structured, slice_lines};
     use serde_json::json;
+
+    #[test]
+    fn workspace_path_rejects_control_characters_and_excessive_length() {
+        assert!(normalize_path("reports/weekly\0.md", false).is_err());
+        assert!(normalize_path(&"a".repeat(1025), false).is_err());
+        assert_eq!(
+            normalize_path("reports/weekly.md", false).unwrap(),
+            "reports/weekly.md"
+        );
+    }
 
     #[test]
     fn no_range_returns_none() {
@@ -1407,7 +1426,7 @@ mod tests {
         ];
         let mut output = input.to_string();
         for op in ops {
-            output = apply_structured_ops("board.yaml", &output, &[op.clone()])
+            output = apply_structured_ops("board.yaml", &output, std::slice::from_ref(&op))
                 .unwrap_or_else(|error| panic!("op {op} failed against:\n{output}\n{error:?}"));
         }
         assert!(output.contains("# board"));

@@ -86,7 +86,7 @@ export default function InvitePage() {
       description="Review the invitation before entering the shared workspace."
     >
         <div className={`${publicPanelClass} flex flex-col items-center gap-3 text-center`}>
-          {!preview && !failed && <Spinner contentSize="large" className="text-zinc-600 my-6" />}
+          {!preview && !failed && <Spinner contentSize="large" className="text-zinc-400 my-6" />}
 
           {dead}
 

@@ -4,6 +4,7 @@
   "bot_username": "helper",
   "bridge_protocol_version": 1,
   "connection_id": "11111111-2222-4333-8444-555555555555",
+  "installation_id": "11111111-2222-4333-8444-555555555555",
   "connector_config": {
     "agentNativePermissionMode": "default"
   },
@@ -16,6 +17,7 @@
       "workspace_id": "cccccccc-dddd-4eee-8fff-000000000000"
     }
   ],
+  "mcp_url": "https://cheers.example/mcp",
   "server_capabilities": {
     "acp_security": true,
     "auth": [
@@ -24,7 +26,6 @@
     ],
     "file_upload": false,
     "latest_connector_version": "0.1.27",
-    "resource_req": true,
     "resume": "ack_only",
     "runtime_session_control": true,
     "send_ack": true,

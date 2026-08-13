@@ -64,9 +64,21 @@ export default {
         rail: "#0f0f11",
         sidebar: "#18181b",
         indigo: editorialInk,
+        // The product uses compact utility copy extensively, especially in
+        // Settings. Lift the quiet text tiers well above AA and separate card,
+        // field and divider surfaces from zinc-950 without losing hierarchy.
+        zinc: {
+          400: "#b4b4bc",
+          500: "#95959e",
+          600: "#85858f",
+          700: "#4a4a52",
+          800: "#303035",
+          900: "#1c1c20",
+        },
       },
       borderRadius: {
         sm: "var(--radius-control)",
+        concentric: "calc(var(--radius-control) + var(--concentric-inset, 0px))",
       },
       keyframes: {
         "fade-in": {

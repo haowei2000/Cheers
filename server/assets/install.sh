@@ -7,7 +7,7 @@
 #     of your shell history. The code is single-use and expires in ~15 min.
 #
 # What it does: redeems the one-time code over the API → receives a freshly
-# rotated bot token + a ready connector config → writes both (token to a 0600
+# installation credential + a ready connector config → writes both (credential to a 0600
 # sidecar) → installs a keep-alive service (launchd/systemd) → starts it.
 #
 # Env knobs:
@@ -16,7 +16,7 @@
 #   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
 #                        prebuilt release binary is downloaded for this platform)
 #   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default haowei2000/Cheers)
-#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.36 (default: newest
+#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.37 (default: newest
 #                        connector-v* GitHub release — NOT releases/latest, which
 #                        points at the desktop app)
 #   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
@@ -62,7 +62,8 @@ RESP_FILE="$(mktemp)"
 trap 'rm -f "$RESP_FILE"' EXIT
 # Code goes in the JSON body, never the URL/argv. --fail-with-body keeps the
 # opaque 400 message; we don't echo the code on any path.
-if ! printf '{"code":"%s"}' "$CODE" \
+DEVICE_NAME="${CHEERS_DEVICE_NAME:-$(hostname 2>/dev/null || printf 'Unnamed terminal')}"
+if ! python3 -c 'import json,sys; print(json.dumps({"code":sys.argv[1],"device_name":sys.argv[2]}))' "$CODE" "$DEVICE_NAME" \
     | curl -fsS -X POST "$API_BASE/enrollment/redeem" \
         -H 'Content-Type: application/json' --data-binary @- > "$RESP_FILE"; then
   die "redeem failed — code invalid, expired, already used, or gateway unreachable"
@@ -70,22 +71,22 @@ fi
 
 field() { python3 -c 'import sys,json; sys.stdout.write(str(json.load(open(sys.argv[1])).get(sys.argv[2],"")))' "$RESP_FILE" "$1"; }
 ACCOUNT_ID="$(field account_id)"
-TOKEN_FILE="$(field token_file)"      # relative, e.g. secrets/codex.token
+CREDENTIAL_FILE="$(field credential_file)" # relative, e.g. secrets/codex.token
 CONTROL_URL="$(field control_url)"
 AGENT_TYPE="$(field agent_type)"
-[ -n "$ACCOUNT_ID" ] && [ -n "$TOKEN_FILE" ] || die "unexpected redeem response"
+[ -n "$ACCOUNT_ID" ] && [ -n "$CREDENTIAL_FILE" ] || die "unexpected redeem response"
 
 CONFIG_FILE="$CONFIG_DIR/cheers-daemon.$ACCOUNT_ID.toml"
-TOKEN_PATH="$CONFIG_DIR/$TOKEN_FILE"
+CREDENTIAL_PATH="$CONFIG_DIR/$CREDENTIAL_FILE"
 
 # ── 3. write config + token (token straight to a 0600 file, never a var) ──────
-mkdir -p "$CONFIG_DIR/workspace" "$(dirname "$TOKEN_PATH")"
+mkdir -p "$CONFIG_DIR/workspace" "$(dirname "$CREDENTIAL_PATH")"
 python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["config_toml"])' "$RESP_FILE" > "$CONFIG_FILE"
 umask 077
-python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["token"])' "$RESP_FILE" > "$TOKEN_PATH"
-chmod 600 "$TOKEN_PATH"
+python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["credential"])' "$RESP_FILE" > "$CREDENTIAL_PATH"
+chmod 600 "$CREDENTIAL_PATH"
 info "wrote config → $CONFIG_FILE"
-info "wrote token  → $TOKEN_PATH (chmod 600)"
+info "wrote installation credential → $CREDENTIAL_PATH (chmod 600)"
 
 # ── 3a. capture agent vendor credentials for the keep-alive unit ─────────────
 # systemd/launchd do not see interactive-shell exports. Persist any keys present
@@ -233,31 +234,6 @@ PYUP
   fi
 fi
 
-# ── 4b. install the cheers MCP server next to the connector ───────────────────
-# The connector injects this stdio MCP server into every agent session and
-# resolves it from the directory of its own executable, so it must live next to
-# the connector binary. Best-effort: the bot works without it, but agents lose
-# their cheers platform tools (send message / fetch resources).
-if [ -n "$BIN" ] && [ -n "${os:-}" ] && [ -n "${arch:-}" ]; then
-  MCP_DEST="$(dirname "$BIN")/cheers-mcp-server"
-  if [ ! -x "$MCP_DEST" ]; then
-    MCP_ASSET="cheers-mcp-server-$os-$arch"
-    MCP_SOURCES="$API_BASE/connector/download/$MCP_ASSET"
-    if [ -n "${VER:-}" ] && [ "$VER" != "latest" ]; then
-      MCP_SOURCES="$MCP_SOURCES https://github.com/$REPO/releases/download/connector-v$VER/$MCP_ASSET"
-    fi
-    for MCP_SRC in $MCP_SOURCES; do
-      info "downloading cheers MCP server ($os/$arch) from $MCP_SRC …"
-      if curl -fsSL "$MCP_SRC" -o "$MCP_DEST" && [ -s "$MCP_DEST" ]; then
-        chmod +x "$MCP_DEST"
-        info "installed MCP server → $MCP_DEST"
-        break
-      fi
-      rm -f "$MCP_DEST"
-    done
-    [ -x "$MCP_DEST" ] || info "WARNING: no prebuilt cheers-mcp-server for $os/$arch — agent sessions will lack cheers MCP tools (set CHEERS_MCP_SERVER_BIN to a locally built binary to fix)"
-  fi
-fi
 if [ -z "$BIN" ]; then
   cat >&2 <<EOF
 

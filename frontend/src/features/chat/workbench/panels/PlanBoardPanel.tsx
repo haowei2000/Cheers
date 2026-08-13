@@ -53,7 +53,7 @@ function StatusIcon({ group }: { group: string }) {
     return <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />;
   if (group === "completed")
     return <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-500" />;
-  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600" />;
+  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />;
 }
 
 function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
@@ -138,7 +138,7 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext
   const plans = data.plans ?? [];
   if (plans.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-600">
+      <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-400">
         <ClipboardList className="w-5 h-5" />
         <span className="text-compact text-zinc-400">No plan yet</span>
         <span className="text-compact text-zinc-400">

@@ -17,7 +17,7 @@ use crate::{
     },
     errors::AppError,
     gateway::realtime::frame::WireFrame,
-    infra::crypto::{generate_bot_token, hash_bot_token},
+    infra::crypto::{generate_bot_token, hash_bot_token, hash_installation_credential},
 };
 
 #[derive(Deserialize)]
@@ -646,13 +646,9 @@ pub async fn test_bot(
     ))
 }
 
-/// Mint (or rotate) a bot's Agent Bridge token. Returns `(plaintext, prefix)`;
-/// only the SHA-256 is persisted, and the control/data WS authenticates by
-/// matching that hash. This is the **single** token-mint path — `issue_bot_token`
-/// (manual rotate) and `enrollment::redeem` (one-time onboarding) both call here
-/// so a rotated token can never come from two divergent code paths. Authorization
-/// is the caller's responsibility (see `ensure_bot_owner_or_admin` / the
-/// single-use enrollment code). NotFound if the bot row is gone.
+/// Mint (or rotate) the legacy Bot bearer used only by the transitional remote
+/// MCP token-exchange endpoint. Agent Bridge deliberately rejects this token;
+/// connector terminals authenticate with installation credentials instead.
 pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, String), AppError> {
     let token = generate_bot_token();
     let token_hash = hash_bot_token(&token);
@@ -682,9 +678,9 @@ pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, S
     Ok((token, token_prefix))
 }
 
-/// POST /api/v1/bots/{bot_id}/token — issue (or rotate) the bot's Agent Bridge
-/// token. The plaintext is returned **once**; only its SHA-256 is persisted, and
-/// the Agent Bridge control/data WS authenticates by matching that hash.
+/// POST /api/v1/bots/{bot_id}/token — issue (or rotate) the transitional MCP
+/// bootstrap token. The plaintext is returned **once**. It cannot authenticate
+/// an Agent Bridge connector.
 pub async fn issue_bot_token(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -897,11 +893,11 @@ pub struct BotSelfStatusRequest {
 }
 
 /// POST /api/v1/bots/{bot_id}/self-status — the bot updates ITS OWN status, authed
-/// by the bot's Agent Bridge token (the connector already holds it), NOT a user JWT.
+/// by the connector's installation credential, NOT a user JWT.
 /// This is the write-back for "the bot updates itself": either ad-hoc, or on its
 /// schedule after re-running `status_update_prompt`. Bumps `status_last_auto_update_at`
 /// so the scheduler's "due?" clock resets. The path `bot_id` must match the token's
-/// bot (a token is scoped to exactly one bot).
+/// bot (an installation credential is scoped to exactly one bot).
 pub async fn bot_self_status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -914,13 +910,15 @@ pub async fn bot_self_status(
         .and_then(|raw| raw.strip_prefix("Bearer "))
         .map(str::trim)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| AppError::Unauthorized("missing bot token".into()))?;
+        .ok_or_else(|| AppError::Unauthorized("missing installation credential".into()))?;
 
-    let token_hash = hash_bot_token(token);
-    // The token IS the credential and resolves to exactly one bot; matching the
-    // path bot_id closes the door on a valid token editing a different bot's row.
+    let token_hash = hash_installation_credential(token);
+    // Require the currently active, non-revoked installation. Matching the path
+    // bot_id prevents a credential from editing another bot's profile.
     let matched: Option<String> = sqlx::query_scalar(
-        "SELECT bot_id FROM bot_accounts WHERE bot_token_hash = $1 AND bot_id = $2",
+        "SELECT installation_id FROM terminal_installations
+         WHERE credential_hash = $1 AND bot_id = $2
+           AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(&token_hash)
     .bind(&bot_id)
@@ -928,7 +926,7 @@ pub async fn bot_self_status(
     .await?;
     if matched.is_none() {
         return Err(AppError::Unauthorized(
-            "invalid bot token for this bot".into(),
+            "invalid installation credential for this bot".into(),
         ));
     }
 

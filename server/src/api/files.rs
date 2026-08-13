@@ -579,82 +579,6 @@ pub async fn confirm_upload(
     })))
 }
 
-/// POST /api/v1/files/:file_id/realize
-/// Triggers on-demand upload of a staged remote file.
-/// The gateway sends a `realize_file` data frame to the connector that owns the file;
-/// the connector reads the local path, base64-encodes it, and calls channel.files.realize.
-/// Returns immediately with `{ "status": "realizing" }`; caller polls get_file_status
-/// until status transitions to "uploaded".
-pub async fn realize_file(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(file_id): Path<String>,
-) -> Result<Json<Value>, AppError> {
-    let file = load_file_record(&state, &file_id).await?;
-    ensure_file_scope(&state, &claims, &file).await?;
-
-    if file.status != "staged" {
-        return Err(AppError::BadRequest(format!(
-            "file status is '{}', expected 'staged'",
-            file.status
-        )));
-    }
-
-    let bot_id: uuid::Uuid = file
-        .uploader_id
-        .as_deref()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| AppError::BadRequest("staged file has no associated bot".into()))?;
-
-    let remote_ref: String =
-        sqlx::query_scalar("SELECT remote_ref FROM file_records WHERE file_id = $1")
-            .bind(&file_id)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten()
-            .ok_or_else(|| AppError::BadRequest("staged file has no remote_ref".into()))?;
-
-    let channel_id = file
-        .channel_id
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("staged file has no channel".into()))?;
-
-    // Confine the realize to the (bot, channel) PRIMARY session's root set. The
-    // primary binding is authoritative (a promoted session brings its own key);
-    // fall back to the scope-derived deterministic key. The connector re-clamps
-    // against allowed_roots and falls back to default_cwd when this is empty
-    // (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
-    let primary_key =
-        crate::domain::sessions::resolve_primary_session(&state.db, bot_id, &channel_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|(_, key)| key)
-            .unwrap_or_else(|| {
-                crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id)
-            });
-    let roots = crate::domain::sessions::session_root_set(&state.db, &primary_key).await;
-
-    let frame = crate::gateway::bridge_frames::realize_file_frame(
-        &file_id,
-        &remote_ref,
-        &channel_id,
-        &roots,
-    );
-
-    let sent = state.bot_locator.send_data(bot_id, frame).await;
-    if !sent {
-        return Err(AppError::BadRequest(
-            "bot connector is offline; cannot realize file".into(),
-        ));
-    }
-
-    Ok(Json(serde_json::json!({
-        "file_id": file_id,
-        "status": "realizing",
-    })))
-}
-
 pub async fn get_file_status(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -793,7 +717,7 @@ pub async fn download_file(
         .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
-    let filename = file.original_filename.unwrap_or_else(|| file_id);
+    let filename = file.original_filename.unwrap_or(file_id);
 
     Ok(attachment_response(
         bytes,

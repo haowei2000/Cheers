@@ -2,7 +2,7 @@
 #
 # Fill the two placeholders marked <<< and run:
 #   mkdir -p ~/.cheers/workspace
-#   export CHEERS_BOT_TOKEN=agb_...          # the token issued in Settings → Bots
+#   export CHEERS_INSTALLATION_CREDENTIAL=agbi_... # returned by enrollment redemption
 #   cargo run --bin cce-acp-connector -- start \
 #       --config examples/cheers-daemon.local-demo.toml --name demo
 #
@@ -21,7 +21,7 @@ log_dir = "logs"
 # Local gateway runs on :8000 over plain ws (use wss in production).
 control_url = "ws://localhost:8000/ws/agent-bridge/control"
 data_url = "ws://localhost:8000/ws/agent-bridge/data"
-bot_token_env = "CHEERS_BOT_TOKEN"
+installation_credential_env = "CHEERS_INSTALLATION_CREDENTIAL"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 
@@ -100,9 +100,5 @@ allow = true
 include_metadata = true
 
 [accounts.demo.policy.mcp]
-inject_cheers = true
 backend_may_inject_extra_servers = false
 allowed_servers = ["cheers"]
-
-[accounts.demo.policy.loopback]
-request_timeout_ms = 600000

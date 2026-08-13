@@ -15,6 +15,19 @@ pub fn hash_bot_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Installation-bound Agent Bridge credential. Unlike the legacy `agb_`
+/// token, this secret identifies one concrete connector device, not the bot
+/// identity itself. Only its SHA-256 is persisted.
+pub const INSTALLATION_CREDENTIAL_PREFIX: &str = "agbi_";
+
+pub fn generate_installation_credential() -> String {
+    generate_prefixed_secret(INSTALLATION_CREDENTIAL_PREFIX)
+}
+
+pub fn hash_installation_credential(credential: &str) -> String {
+    hash_bot_token(credential)
+}
+
 /// 生成新的 botToken：`agb_<256-bit hex>`。明文仅在签发时返回一次，
 /// 服务端只持久化其 SHA-256（见 [`hash_bot_token`]）。
 pub fn generate_bot_token() -> String {
@@ -137,7 +150,7 @@ pub fn decrypt_secret(master_key: &[u8; 32], blob_b64: &str) -> anyhow::Result<S
 pub async fn hash_password(plain: String) -> Result<String, bcrypt::BcryptError> {
     tokio::task::spawn_blocking(move || bcrypt::hash(&plain, bcrypt::DEFAULT_COST))
         .await
-        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::other(e)))?
 }
 
 /// Verify a password against a bcrypt hash, off the async reactor.
@@ -145,7 +158,7 @@ pub async fn hash_password(plain: String) -> Result<String, bcrypt::BcryptError>
 pub async fn verify_password(plain: String, hash: String) -> Result<bool, bcrypt::BcryptError> {
     tokio::task::spawn_blocking(move || bcrypt::verify(&plain, &hash))
         .await
-        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::other(e)))?
 }
 
 /// A short, unambiguous one-time code for email flows (e.g. password reset). 8 chars

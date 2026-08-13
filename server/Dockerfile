@@ -15,12 +15,18 @@ WORKDIR /app/server
 COPY server/Cargo.toml server/Cargo.lock ./
 COPY packages/cheers-acp-connector-rs/bridge-protocol/Cargo.toml \
      /app/packages/cheers-acp-connector-rs/bridge-protocol/Cargo.toml
+COPY packages/cheers-mcp-server/Cargo.toml \
+     /app/packages/cheers-mcp-server/Cargo.toml
 RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
+       /app/packages/cheers-mcp-server/src \
     && echo 'fn main() {}' > src/main.rs \
     && : > src/lib.rs \
     && : > /app/packages/cheers-acp-connector-rs/bridge-protocol/src/lib.rs \
+    && echo 'fn main() {}' > /app/packages/cheers-mcp-server/src/main.rs \
+    && : > /app/packages/cheers-mcp-server/src/lib.rs \
     && cargo build --release \
-    && rm -rf src /app/packages/cheers-acp-connector-rs/bridge-protocol/src
+    && rm -rf src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
+       /app/packages/cheers-mcp-server/src
 
 # ── 2) Real build ────────────────────────────────────────────────────────────
 # Copy the actual sources; only `server` + `cheers-bridge-protocol` recompile
@@ -29,6 +35,7 @@ RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
 # migrate! macro at compile time, so migrations/ must be present here.
 COPY packages/cheers-acp-connector-rs/bridge-protocol \
      /app/packages/cheers-acp-connector-rs/bridge-protocol
+COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
 COPY server/src ./src
 COPY server/migrations ./migrations
 # assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
@@ -42,7 +49,8 @@ COPY server/assets ./assets
 # change would otherwise be skipped by the same stale-artifact check. The find
 # starts at the RELATIVE path `assets`, so entries print as `assets/...` —
 # the pattern must be 'assets/*' (a '*/assets/*' pattern would never match).
-RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
+RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
+       /app/packages/cheers-mcp-server/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
     && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

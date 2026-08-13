@@ -14,7 +14,7 @@
 //! fields, dropping an explicit `null` for an absent Option, key order. NOT
 //! safe without a fleet version floor: removing the `task` frame's duplicated
 //! `msg_id`/session identifiers, dropping one of hello's two version fields,
-//! adding `v` to the version-less frames (`cancel`, `realize_file`,
+//! adding `v` to the version-less frames (`cancel`,
 //! `workspace_req`, `pong`), or renaming `config_update.settings`' camelCase
 //! keys (that casing IS the contract). `fixtures/compat/*` may only change
 //! together with an explicit version gate.
@@ -35,6 +35,33 @@ pub const WS_CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 /// Gateway 4400: protocol error / unsupported bridge protocol version. Fatal —
 /// retrying the same handshake can never succeed, the binary must be updated.
 pub const WS_CLOSE_UNSUPPORTED_PROTOCOL: u16 = 4400;
+
+/// Vendor-neutral, display-only fields decoded from optional Agent metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizedPresentation {
+    /// Human explanation for an interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Command suitable for display, never execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Working directory associated with the displayed command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Agent-provided normalized tool name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl NormalizedPresentation {
+    /// Returns true when a decoder did not contribute any field.
+    pub fn is_empty(&self) -> bool {
+        self.reason.is_none()
+            && self.command.is_none()
+            && self.cwd.is_none()
+            && self.tool_name.is_none()
+    }
+}
 
 pub fn is_fatal_close_code(code: u16) -> bool {
     matches!(
@@ -199,6 +226,22 @@ pub struct ConnectorControlConfig {
     pub options: Option<Value>,
 }
 
+/// One Agent-advertised provider authentication method shown to the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthMethod {
+    pub method_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_type: Option<String>,
+    #[serde(default)]
+    pub recommended: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerCapabilities {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -219,8 +262,6 @@ pub struct ServerCapabilities {
     pub config_option_set: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub membership_events: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resource_req: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_upload: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -378,6 +419,24 @@ pub struct PermissionResolution {
     pub extra: serde_json::Map<String, Value>,
 }
 
+/// Authenticated user response to an ACP v1 elicitation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElicitationResolution {
+    pub request_id: String,
+    /// `accept`, `decline`, or `cancel`.
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
 /// Human acknowledgment of a forwarded `auth_required` card.
 /// `action` is `"retry"` (re-run ACP authenticate) or `"cancel"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -398,20 +457,6 @@ pub struct AuthAcknowledgment {
 pub struct ConfigStatusRejectedField {
     pub field: String,
     pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceResponse {
-    #[serde(default = "default_bridge_protocol_version")]
-    pub v: u32,
-    pub req_id: String,
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -441,6 +486,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stream: Option<String>,
         bot_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        installation_id: Option<String>,
         bot_username: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_display_name: Option<String>,
@@ -454,7 +501,12 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connector_config: Option<ConnectorControlConfig>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
+        /// Gateway-owned canonical HTTP MCP resource URL. Connectors must use
+        /// this value verbatim instead of deriving it from WebSocket URLs or
+        /// untrusted proxy headers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mcp_url: Option<String>,
     },
     #[serde(rename = "runtime_session_control")]
     RuntimeSessionControl {
@@ -602,6 +654,13 @@ pub enum ControlInbound {
         #[serde(flatten)]
         resolution: PermissionResolution,
     },
+    #[serde(rename = "elicitation_resolution")]
+    ElicitationResolution {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        #[serde(flatten)]
+        resolution: ElicitationResolution,
+    },
     /// Human acknowledged an `auth_required` card — connector should retry
     /// ACP `authenticate` (action=`retry`) or abort the waiting turn (`cancel`).
     #[serde(rename = "auth_acknowledged")]
@@ -611,6 +670,9 @@ pub enum ControlInbound {
         request_id: String,
         /// `"retry"` | `"cancel"`
         action: String,
+        /// User-selected Agent-advertised method for action=`retry`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        method_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -738,6 +800,8 @@ pub enum DataInbound {
         stream: String,
         bot_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        installation_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         connection_id: Option<String>,
         session_id: String,
         #[serde(default)]
@@ -745,7 +809,7 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         acp_security: Option<AcpSecurityHello>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
     },
     #[serde(rename = "pong")]
     Pong,
@@ -814,28 +878,10 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
-    #[serde(rename = "resource_res")]
-    ResourceRes {
-        #[serde(flatten)]
-        response: ResourceResponse,
-    },
     #[serde(rename = "error")]
     Error {
         #[serde(flatten)]
         error: BridgeErrorFrame,
-    },
-    /// Gateway → connector: realize a staged file. Connector reads the local path,
-    /// base64-encodes it, and calls channel.files.realize to upload to S3.
-    #[serde(rename = "realize_file")]
-    RealizeFile {
-        file_id: String,
-        remote_ref: String,
-        channel_id: String,
-        /// The owning session's ACP root set (`cwd` + `additionalDirectories`). The
-        /// connector confines `remote_ref` to these (∩ `allowed_roots`); empty ⇒
-        /// the session's implicit root is the connector `default_cwd`.
-        #[serde(default)]
-        roots: Vec<String>,
     },
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
@@ -1019,21 +1065,6 @@ pub enum DataOutbound {
         content_type: Option<String>,
         data_b64: String,
     },
-    #[serde(rename = "resource_req")]
-    ResourceReq {
-        #[serde(default = "default_bridge_protocol_version")]
-        v: u32,
-        req_id: String,
-        resource: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        params: Option<Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        encrypted: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        encrypted_payload: Option<Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        acp_capability: Option<AcpCapabilityEnvelope>,
-    },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]
     WorkspaceRes {
@@ -1105,6 +1136,48 @@ pub enum DataOutbound {
         /// "timeout" | "cancelled"
         reason: String,
     },
+    /// ACP v1 `elicitation/create` forwarded to the channel UI without reshaping.
+    #[serde(rename = "elicitation_request")]
+    ElicitationRequest {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        client_msg_id: String,
+        channel_id: String,
+        request_id: String,
+        task_id: String,
+        msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_msg_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_session_id: Option<String>,
+        /// Original ACP JSON-RPC request ID for request-scoped correlation/audit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_request_id: Option<Value>,
+        /// Verified human who initiated the originating client→agent request.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        initiating_user_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        /// Raw ACP params; preserves `_meta` and future extensions.
+        params: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
+    },
+    /// Finalize an unresolved elicitation after timeout or local cancellation.
+    #[serde(rename = "elicitation_cancel")]
+    ElicitationCancel {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        reason: String,
+    },
+    /// ACP URL flow completed externally after a prior accept response.
+    #[serde(rename = "elicitation_complete")]
+    ElicitationComplete {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        elicitation_id: String,
+    },
     /// ACP agent authentication expired / failed mid-turn. Surfaces as a channel
     /// card so the bot owner can complete login (or set env credentials) and ack.
     #[serde(rename = "auth_required")]
@@ -1119,6 +1192,10 @@ pub enum DataOutbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         msg_id: Option<String>,
         method_id: String,
+        /// All Agent-advertised methods, ordered for display. The Web choice is
+        /// returned explicitly; Connector never trusts an arbitrary method id.
+        #[serde(default)]
+        methods: Vec<AuthMethod>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

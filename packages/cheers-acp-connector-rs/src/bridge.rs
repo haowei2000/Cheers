@@ -1,3 +1,8 @@
+//! Low-level Cheers Agent Bridge WebSocket frames and connection helpers.
+//!
+//! Wire DTOs are re-exported from `cheers-bridge-protocol`; this module adds
+//! connector-side authentication, reconnect timing, and WebSocket I/O.
+
 #![allow(dead_code)]
 
 use std::time::Duration;
@@ -266,69 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn resource_response_deserializes_by_req_id() {
-        let frame: DataInbound = serde_json::from_value(json!({
-            "type": "resource_res",
-            "v": 1,
-            "req_id": "r1",
-            "ok": true,
-            "data": {
-                "channel_id": "channel-1"
-            }
-        }))
-        .expect("resource response should deserialize");
-
-        match frame {
-            DataInbound::ResourceRes { response } => {
-                assert_eq!(response.req_id, "r1");
-                assert!(response.ok);
-                assert_eq!(response.data.expect("data")["channel_id"], "channel-1");
-            }
-            other => panic!("unexpected frame: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn realize_file_frame_deserializes() {
-        let frame: DataInbound = serde_json::from_value(json!({
-            "type": "realize_file",
-            "file_id": "f-001",
-            "remote_ref": "/home/user/report.pdf",
-            "channel_id": "c-001"
-        }))
-        .expect("realize_file frame should deserialize");
-
-        match frame {
-            DataInbound::RealizeFile {
-                file_id,
-                remote_ref,
-                channel_id,
-                roots,
-            } => {
-                assert_eq!(file_id, "f-001");
-                assert_eq!(remote_ref, "/home/user/report.pdf");
-                assert_eq!(channel_id, "c-001");
-                assert!(roots.is_empty(), "roots defaults to empty when absent");
-            }
-            other => panic!("unexpected frame: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn realize_file_and_workspace_req_carry_session_roots() {
-        let realize: DataInbound = serde_json::from_value(json!({
-            "type": "realize_file",
-            "file_id": "f", "remote_ref": "/repo/out.pdf", "channel_id": "c",
-            "roots": ["/repo/service", "/repo/shared"]
-        }))
-        .expect("realize frame with roots");
-        match realize {
-            DataInbound::RealizeFile { roots, .. } => {
-                assert_eq!(roots, vec!["/repo/service", "/repo/shared"]);
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-
+    fn workspace_req_carries_session_roots() {
         let browse: DataInbound = serde_json::from_value(json!({
             "type": "workspace_req",
             "req_id": "r", "op": "ls", "path": "",
@@ -442,7 +385,7 @@ pub fn compute_backoff(attempt: u32, opts: ReconnectOptions) -> Duration {
 
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
-    pub bot_token: String,
+    pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
     pub reconnect: ReconnectOptions,
@@ -455,7 +398,7 @@ pub struct BridgeWebSocket {
 }
 
 impl BridgeWebSocket {
-    pub async fn connect(url: &str, bot_token: &str) -> anyhow::Result<Self> {
+    pub async fn connect(url: &str, bridge_credential: &str) -> anyhow::Result<Self> {
         let request = url
             .into_client_request()
             .with_context(|| format!("invalid websocket URL: {url}"))?;
@@ -464,7 +407,10 @@ impl BridgeWebSocket {
             .with_context(|| format!("failed to connect websocket: {url}"))?;
         let mut socket = Self { stream };
         socket
-            .send_json(&AgentBridgeAuth::new(bot_token, local_connector_info()))
+            .send_json(&AgentBridgeAuth::new(
+                bridge_credential,
+                local_connector_info(),
+            ))
             .await?;
         Ok(socket)
     }
@@ -573,6 +519,7 @@ mod fixture_tests {
                 memberships,
                 server_capabilities,
                 connector_config,
+                mcp_url,
                 ..
             } => {
                 assert_eq!(bot_id, "6f9619ff-8b86-4d01-b42d-00c04fc964ff");
@@ -580,6 +527,7 @@ mod fixture_tests {
                 let caps = server_capabilities.expect("caps present");
                 assert_eq!(caps.latest_connector_version.as_deref(), Some("0.1.27"));
                 assert!(connector_config.is_some());
+                assert_eq!(mcp_url.as_deref(), Some("https://cheers.example/mcp"));
             }
             other => panic!("expected Hello, got {other:?}"),
         }
@@ -679,9 +627,6 @@ mod fixture_tests {
             ("data/to_connector/terminal_ack_ok.json", "TerminalAck"),
             ("data/to_connector/terminal_ack_err.json", "TerminalAck"),
             ("data/to_connector/error.json", "Error"),
-            ("data/to_connector/resource_res_ok.json", "ResourceRes"),
-            ("data/to_connector/resource_res_err.json", "ResourceRes"),
-            ("data/to_connector/realize_file.json", "RealizeFile"),
             ("data/to_connector/workspace_req_read.json", "WorkspaceReq"),
             ("data/to_connector/workspace_req_write.json", "WorkspaceReq"),
             (
@@ -707,11 +652,6 @@ mod fixture_tests {
                 D::Error { error } => {
                     assert_eq!(error.code, "CAPABILITY_DENIED", "{rel}");
                     "Error"
-                }
-                D::ResourceRes { .. } => "ResourceRes",
-                D::RealizeFile { roots, .. } => {
-                    assert_eq!(roots.len(), 1, "{rel}");
-                    "RealizeFile"
                 }
                 D::WorkspaceReq {
                     op,
@@ -988,18 +928,6 @@ mod fixture_tests {
             "data/to_gateway/file_upload.json",
         );
         assert_round_trips(
-            &DataOutbound::ResourceReq {
-                v: BRIDGE_PROTOCOL_VERSION,
-                req_id: "req-1".into(),
-                resource: "channel.activity.read".into(),
-                params: Some(json!({"channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb"})),
-                encrypted: None,
-                encrypted_payload: None,
-                acp_capability: None,
-            },
-            "data/to_gateway/resource_req.json",
-        );
-        assert_round_trips(
             &DataOutbound::WorkspaceRes {
                 v: BRIDGE_PROTOCOL_VERSION,
                 req_id: "req-2".into(),
@@ -1063,6 +991,16 @@ mod fixture_tests {
                 task_id: Some("99999999-aaaa-4bbb-8ccc-dddddddddddd".into()),
                 msg_id: Some("33333333-4444-4555-8666-777777777777".into()),
                 method_id: "browser_login".into(),
+                methods: vec![cheers_bridge_protocol::AuthMethod {
+                    method_id: "browser_login".into(),
+                    name: Some("Sign in".into()),
+                    description: Some(
+                        "Complete agent auth in the browser, then tap I've signed in.".into(),
+                    ),
+                    link: Some("https://example.com/login".into()),
+                    auth_type: Some("agent".into()),
+                    recommended: true,
+                }],
                 name: Some("Sign in".into()),
                 description: Some(
                     "Complete agent auth in the browser, then tap I've signed in.".into(),

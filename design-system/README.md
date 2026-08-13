@@ -36,7 +36,7 @@ SwiftUI, and Compose conventions.
 
 Shared items use a formal, newspaper-inspired treatment across platforms:
 
-- one 4px corner standard for ordinary rectangular surfaces;
+- one 10px Web corner base, with nested surfaces deriving concentric outer radii from their actual inset; native platforms retain platform-owned shapes;
 - compact 4/8px spacing inside items while preserving 44pt/48dp hit targets;
 - Source Sans 3 on Web and native platform sans-serif on mobile for entity names and navigation labels, with Source Serif 4 plus Source Han Serif CN reserved for reading content;
 - hairline rules instead of shadows to separate content;

@@ -1,10 +1,10 @@
 //! Workbench extension APIs — two deliberately separate kinds (see docs/arch/WORKBENCH.md):
-//!  - PLUGINS — server-level, CODE (sandboxed bundle).
-//!      list (auth) · bundle (auth) · install/update (admin) · delete (admin).
-//!  - TEMPLATES — server-level (global), DATA (declarative manifest, no code).
-//!      list (auth) · install/update (admin) · delete (admin). No sandbox: it's inert data.
-//!      (Ad-hoc/one-off templates never touch this API — they live only in the browser
-//!      session; see the frontend's temporary-upload path.)
+//! - PLUGINS — server-level, CODE (sandboxed bundle).
+//!   list (auth) · bundle (auth) · install/update (admin) · delete (admin).
+//! - TEMPLATES — server-level (global), DATA (declarative manifest, no code).
+//!   list (auth) · install/update (admin) · delete (admin). No sandbox: it's inert data.
+//!   (Ad-hoc/one-off templates never touch this API — they live only in the browser
+//!   session; see the frontend's temporary-upload path.)
 
 use axum::{
     extract::{Path, State},

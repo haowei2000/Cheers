@@ -92,8 +92,8 @@ export function QuickPanel() {
         className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-zinc-800 px-4"
       >
         <Zap className="w-4 h-4 text-indigo-400" />
-        <span className="text-compact font-medium text-zinc-300">Quick send</span>
-        <span className="ml-auto text-minimal text-zinc-600">Esc to dismiss</span>
+        <span className="text-compact font-medium text-zinc-200">Quick send</span>
+        <span className="ml-auto text-minimal text-zinc-400">Esc to dismiss</span>
       </div>
 
       {!user ? (
@@ -104,7 +104,7 @@ export function QuickPanel() {
         </div>
       ) : dms === null ? (
         <div className="flex-1 flex items-center justify-center">
-          <Spinner contentSize="large" className="text-zinc-600" />
+          <Spinner contentSize="large" className="text-zinc-400" />
         </div>
       ) : dms.length === 0 ? (
         <div className="flex-1 flex items-center justify-center p-6 text-center">

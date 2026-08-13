@@ -364,9 +364,8 @@ pub async fn handle_done(
         .ok()
         .flatten();
 
-    // Resolve attachment metadata (incl. staged files, with status) so the live
-    // frame renders attachments immediately — e.g. a staged file as a clickable
-    // tile to realize — instead of only after a history reload.
+    // Resolve attachment metadata, including the status of retired historical
+    // records, so the live frame can render unavailable attachments explicitly.
     let files = crate::domain::messages::load_message_files(db, &file_ids)
         .await
         .unwrap_or_default();
@@ -732,8 +731,8 @@ async fn chain_for_proactive_send(
 /// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
 /// **live 广播** + **bot@bot 触发**。
 ///
-/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 只在
-/// bot-bridge WS 边界才有，所以在 agent_bridge 收到 `resource_res` 后由这里补做——
+/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 由
+/// transport-neutral `resource_effects` 层在 dispatch 成功后统一补做——
 /// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
 /// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
 /// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
@@ -770,9 +769,7 @@ pub async fn broadcast_and_trigger_created_message(
     if mentions.is_empty() {
         return None;
     }
-    let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
-        return None;
-    };
+    let channel_seq = created.get("channel_seq").and_then(Value::as_i64)?;
     // Same proactive-send chain assignment as handle_send: inherit the author
     // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
     // else root a new one (§8).

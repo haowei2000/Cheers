@@ -791,7 +791,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_FOUND", "删后再读应 NOT_FOUND: {r}");
+    assert_eq!(r["error"]["code"], "NOT_FOUND", "删后再读应 NOT_FOUND: {r}");
 }
 
 /// 非频道成员的 bot：读写都应 NOT_MEMBER（channel-role 是唯一授权事实源）。
@@ -813,7 +813,10 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER", "非成员读应 NOT_MEMBER: {r}");
+    assert_eq!(
+        r["error"]["code"], "NOT_MEMBER",
+        "非成员读应 NOT_MEMBER: {r}"
+    );
 
     let r = dispatch(
         &db,
@@ -825,7 +828,10 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER", "非成员写应 NOT_MEMBER: {r}");
+    assert_eq!(
+        r["error"]["code"], "NOT_MEMBER",
+        "非成员写应 NOT_MEMBER: {r}"
+    );
 }
 
 /// pin：`.workbench.json` 的 `pinned` 列表 + 文件内容 → load_pinned_context 格式化块。
@@ -877,7 +883,7 @@ async fn m2_dispatch_unknown_resource(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "UNKNOWN_RESOURCE",
+        r["error"]["code"], "UNKNOWN_RESOURCE",
         "未知 verb 应 UNKNOWN_RESOURCE: {r}"
     );
 }
@@ -916,7 +922,7 @@ async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "PERMISSION_DENIED",
+        r["error"]["code"], "PERMISSION_DENIED",
         "member 破坏性 rm 应被拒: {r}"
     );
 }
@@ -965,7 +971,7 @@ async fn m2_user_non_member_rejected(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
-        r["code"], "NOT_MEMBER",
+        r["error"]["code"], "NOT_MEMBER",
         "非成员经 user 桥应 NOT_MEMBER: {r}"
     );
 }
@@ -995,7 +1001,10 @@ async fn m2_fs_write_size_cap(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "超限写入应被拒: {r}");
+    assert_eq!(
+        r["error"]["code"], "CONTENT_TOO_LARGE",
+        "超限写入应被拒: {r}"
+    );
 
     // 接近上限的文件 + append 推过上限 → 也被拒（enforce_file_size 在 update_content）
     let near = "y".repeat(256 * 1024 - 10);
@@ -1013,7 +1022,10 @@ async fn m2_fs_write_size_cap(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "append 推过上限应被拒: {r}");
+    assert_eq!(
+        r["error"]["code"], "CONTENT_TOO_LARGE",
+        "append 推过上限应被拒: {r}"
+    );
 
     // 正常小写入仍通过
     let r = dispatch(
@@ -1742,102 +1754,6 @@ async fn m3_channel_files_read_scoped_and_binary(db: PgPool) {
     assert!(re.is_err(), "过期文件不应可读");
 }
 
-// M3 Plan A: inbox_stage (channel.files.stage) + inbox_realize (channel.files.realize).
-// stage 不需要 S3——只写 DB 记录。realize 校验 status=staged 且同一 bot，然后尝试 S3
-// (无 init_s3 → E_STORAGE_UNAVAILABLE)。
-#[sqlx::test]
-async fn m3_inbox_stage_and_realize_lifecycle(db: PgPool) {
-    let ws = seed_workspace(&db).await;
-    let ch = seed_channel(&db, ws).await;
-    let bot = seed_bot(&db).await;
-    add_member(&db, ch, bot, "bot").await;
-    let outsider_bot = seed_bot(&db).await;
-    add_member(&db, ch, outsider_bot, "bot").await;
-
-    let p = server::resource::Principal::bot(bot);
-    let cid = ch.to_string();
-
-    // 非成员 bot → 鉴权失败
-    let stranger = server::resource::Principal::bot(Uuid::new_v4());
-    let denied = files::handle_stage(
-        &db,
-        &stranger,
-        &serde_json::json!({
-            "channel_id": cid, "filename": "r.pdf", "remote_ref": "/tmp/r.pdf"
-        }),
-    )
-    .await;
-    assert!(denied.is_err(), "非成员 bot 不能 stage");
-
-    // 合法 stage：不需要 S3，直接成功
-    let res = files::handle_stage(
-        &db,
-        &p,
-        &serde_json::json!({
-            "channel_id": cid,
-            "filename": "report.pdf",
-            "remote_ref": "/home/user/report.pdf",
-            "content_type": "application/pdf"
-        }),
-    )
-    .await
-    .expect("stage should succeed without S3");
-    let file_id = res["file_id"].as_str().expect("file_id").to_string();
-    assert_eq!(res["status"], "staged");
-
-    // realize by wrong bot → FORBIDDEN
-    let pout = server::resource::Principal::bot(outsider_bot);
-    let bad = files::handle_realize(
-        &db,
-        &pout,
-        &serde_json::json!({
-            "file_id": file_id,
-            "channel_id": cid,
-            "data_b64": "aGVsbG8=",
-            "content_type": "application/pdf",
-            "filename": "report.pdf"
-        }),
-    )
-    .await;
-    assert_eq!(bad.unwrap_err().0, "FORBIDDEN", "other bot cannot realize");
-
-    // realize by correct bot, no S3 → E_STORAGE_UNAVAILABLE (not a fake success)
-    let no_store = files::handle_realize(
-        &db,
-        &p,
-        &serde_json::json!({
-            "file_id": file_id,
-            "channel_id": cid,
-            "data_b64": "aGVsbG8=",
-            "content_type": "application/pdf",
-            "filename": "report.pdf"
-        }),
-    )
-    .await;
-    assert_eq!(
-        no_store.unwrap_err().0,
-        "E_STORAGE_UNAVAILABLE",
-        "realize must not fake success without S3"
-    );
-
-    // double-realize (status is still staged because realize failed) → ok to retry;
-    // but if status had been flipped to uploaded, second realize should fail with INVALID_STATE.
-    // Since S3 is absent the status stays 'staged', so a re-attempt still hits E_STORAGE_UNAVAILABLE.
-    let retry = files::handle_realize(
-        &db,
-        &p,
-        &serde_json::json!({
-            "file_id": file_id,
-            "channel_id": cid,
-            "data_b64": "aGVsbG8=",
-            "content_type": "application/pdf",
-            "filename": "report.pdf"
-        }),
-    )
-    .await;
-    assert_eq!(retry.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
-}
-
 // M3 inbox_deliver(channel.files.create):校验 + 鉴权,且绝不再伪造 file_id。
 // 真正的 S3 往返需要 init_s3(测试环境没有),所以这里锁定的是「坏输入早失败」「无存储时
 // 显式报错而非假成功」——后者正是评审里那条 HIGH(撒谎 stub)的回归护栏。
@@ -2026,7 +1942,7 @@ async fn phasea_usage_read_requires_membership(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false, "非成员应被拒: {r}");
-    assert_eq!(r["code"].as_str(), Some("NOT_MEMBER"));
+    assert_eq!(r["error"]["code"].as_str(), Some("NOT_MEMBER"));
 }
 
 #[sqlx::test]
@@ -2261,7 +2177,7 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     )
     .await;
     assert_eq!(denied["ok"], false);
-    assert_eq!(denied["code"].as_str(), Some("NOT_MEMBER"));
+    assert_eq!(denied["error"]["code"].as_str(), Some("NOT_MEMBER"));
 }
 
 // Regression: promote an "other" session to primary, then close it. The
@@ -2584,7 +2500,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER");
+    assert_eq!(r["error"]["code"], "NOT_MEMBER");
 
     // 空 query 报参数错误。
     let r = dispatch(
@@ -2597,7 +2513,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "INVALID_PARAMS");
+    assert_eq!(r["error"]["code"], "INVALID_PARAMS");
 }
 
 // ── bots-as-members：邀请候选搜索 / readonly 不派发 / bot 自退频道 ─────────────
@@ -2873,7 +2789,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "PERMISSION_DENIED");
+    assert_eq!(r["error"]["code"], "PERMISSION_DENIED");
 
     // bot 正常退出。
     let r = dispatch(
@@ -2904,7 +2820,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "NOT_MEMBER");
+    assert_eq!(r["error"]["code"], "NOT_MEMBER");
 
     // DM 不可退出。
     let dm = Uuid::new_v4();
@@ -2927,7 +2843,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], false, "DM 不可退出: {r}");
-    assert_eq!(r["code"], "INVALID_PARAMS");
+    assert_eq!(r["error"]["code"], "INVALID_PARAMS");
 }
 
 // ── 多 agent 协作：is_self / 群体 @ 展开 / @me 反查 ────────────────────────────
@@ -4025,4 +3941,69 @@ async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool)
     authorize_bot_workspace_read(&db, owner, reader, ch)
         .await
         .expect("default restored after delete");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn terminal_installations_enforce_one_active_and_independent_credentials(db: PgPool) {
+    let bot = seed_bot(&db).await;
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-a', $3, 'agbi_first', 'active')",
+    )
+    .bind(first.to_string())
+    .bind(bot.to_string())
+    .bind("a".repeat(64))
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let duplicate_active = sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'active')",
+    )
+    .bind(second.to_string())
+    .bind(bot.to_string())
+    .bind("b".repeat(64))
+    .execute(&db)
+    .await;
+    assert!(
+        duplicate_active.is_err(),
+        "database must reject two active installations"
+    );
+
+    sqlx::query(
+        "INSERT INTO terminal_installations
+         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+         VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'standby')",
+    )
+    .bind(second.to_string())
+    .bind(bot.to_string())
+    .bind("b".repeat(64))
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE terminal_installations SET revoked_at = NOW()
+         WHERE installation_id = $1",
+    )
+    .bind(second.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    let first_still_active: bool = sqlx::query_scalar(
+        "SELECT status = 'active' AND revoked_at IS NULL
+         FROM terminal_installations WHERE installation_id = $1",
+    )
+    .bind(first.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(
+        first_still_active,
+        "revoking standby must not alter active installation"
+    );
 }

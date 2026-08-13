@@ -78,6 +78,10 @@ pub struct SessionHandle {
 }
 
 /// 依据 provider 维度创建/复用 session，并绑定当前 scope。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "session identity and scope components are explicit persistence keys"
+)]
 pub async fn acquire_scope_session(
     db: &PgPool,
     bot_id: Uuid,
@@ -367,7 +371,7 @@ pub async fn ensure_primary_session_workspace_tx(
 }
 
 /// A session's ACP root set as a flat list `[cwd?, ...additional_dirs]` — for
-/// passing to the connector to scope a browse or a realize to the session's roots.
+/// passing to the connector to scope remote workspace operations to the session's roots.
 /// Empty when the session has no pinned workspace (the connector then falls back to
 /// its `default_cwd`). Best-effort: a DB error yields an empty list.
 pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<String> {
@@ -677,6 +681,10 @@ pub async fn close_channel_session(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "binding identity and scope components map directly to the unique database key"
+)]
 async fn upsert_session_binding<'e, E>(
     db: E,
     session_id: &Uuid,
@@ -918,6 +926,10 @@ pub fn normalize_runtime_status(raw: &str) -> Option<&'static str> {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "runtime acknowledgements expose optional connector identifiers without an ambiguous bag"
+)]
 pub async fn apply_runtime_session_ack(
     db: &PgPool,
     bot_id: Uuid,

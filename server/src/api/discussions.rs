@@ -1,3 +1,10 @@
+//! REST handlers and response models for discussion-mode channel threads.
+//!
+//! Discussion lists are ordered by the latest activity on each root message and
+//! use opaque cursors. Detail requests page replies backwards while always
+//! returning the thread root. Every handler verifies both channel membership and
+//! that the channel is configured for discussion mode before reading messages.
+
 use std::collections::HashMap;
 
 use axum::{
@@ -92,6 +99,7 @@ pub struct DiscussionDetailMeta {
     pub limit: i64,
 }
 
+/// Decode an opaque discussion-list cursor supplied by an API client.
 fn decode_cursor(raw: Option<&str>) -> Result<Option<DiscussionCursor>, AppError> {
     let Some(raw) = raw else { return Ok(None) };
     let bytes = URL_SAFE_NO_PAD
@@ -102,12 +110,14 @@ fn decode_cursor(raw: Option<&str>) -> Result<Option<DiscussionCursor>, AppError
         .map_err(|_| AppError::BadRequest("invalid discussion cursor".into()))
 }
 
+/// Serialize a discussion-list cursor for the next page of results.
 fn encode_cursor(cursor: &DiscussionCursor) -> Option<String> {
     serde_json::to_vec(cursor)
         .ok()
         .map(|bytes| URL_SAFE_NO_PAD.encode(bytes))
 }
 
+/// Require a user to belong to a channel whose conversation mode is `discuss`.
 async fn ensure_discuss_member(
     state: &AppState,
     channel_id: Uuid,
@@ -147,7 +157,10 @@ async fn ensure_discuss_member(
     Ok(())
 }
 
-/// GET /api/v1/channels/:channel_id/discussions
+/// List discussion roots in descending order of their most recent activity.
+///
+/// Implements `GET /api/v1/channels/:channel_id/discussions`, including optional
+/// text search and cursor pagination.
 pub async fn list_discussions(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -180,7 +193,7 @@ pub async fn list_discussions(
                    ) AS last_activity_at,
                    COUNT(reply.msg_id) FILTER (
                        WHERE reply.is_deleted = FALSE
-                         AND reply.msg_type NOT IN ('permission', 'auth_required')
+                         AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
                    )::bigint AS reply_count
             FROM messages root
             LEFT JOIN messages reply
@@ -189,13 +202,13 @@ pub async fn list_discussions(
              AND reply.is_partial = FALSE
              AND reply.is_secret = FALSE
              AND reply.is_deleted = FALSE
-             AND reply.msg_type NOT IN ('permission', 'auth_required')
+             AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
             WHERE root.channel_id = $1
               AND root.thread_root_msg_id IS NULL
               AND root.is_partial = FALSE
               AND root.is_secret = FALSE
               AND root.sender_type IN ('user', 'bot')
-              AND root.msg_type NOT IN ('permission', 'auth_required')
+              AND root.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
               AND (
                   $2::text IS NULL
                   OR EXISTS (
@@ -206,7 +219,7 @@ pub async fn list_discussions(
                         AND hit.is_partial = FALSE
                         AND hit.is_secret = FALSE
                         AND hit.is_deleted = FALSE
-                        AND hit.msg_type NOT IN ('permission', 'auth_required')
+                        AND hit.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
                         AND hit.content ILIKE '%' || $2 || '%'
                   )
               )
@@ -269,7 +282,7 @@ pub async fn list_discussions(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.is_deleted = FALSE
-           AND m.msg_type NOT IN ('permission', 'auth_required')
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
          ORDER BY m.thread_root_msg_id, m.channel_seq DESC NULLS LAST, m.created_at DESC",
     )
     .bind(channel_id.to_string())
@@ -310,7 +323,7 @@ pub async fn list_discussions(
               AND m.is_partial = FALSE
               AND m.is_secret = FALSE
               AND m.is_deleted = FALSE
-              AND m.msg_type NOT IN ('permission', 'auth_required')
+              AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
               AND m.sender_type IN ('user', 'bot')
             GROUP BY COALESCE(m.thread_root_msg_id, m.msg_id), m.sender_id,
                      m.sender_type, u.display_name, u.username, b.display_name,
@@ -365,10 +378,10 @@ pub async fn list_discussions(
 
     let next_cursor = if has_more {
         page_rows.last().and_then(|row| {
-            Some(encode_cursor(&DiscussionCursor {
+            encode_cursor(&DiscussionCursor {
                 at: row.try_get("last_activity_at").ok()?,
                 id: row.try_get("root_id").ok()?,
-            })?)
+            })
         })
     } else {
         None
@@ -383,7 +396,9 @@ pub async fn list_discussions(
     }))
 }
 
-/// GET /api/v1/channels/:channel_id/discussions/:root_msg_id
+/// Return a discussion root and one backwards-paginated window of replies.
+///
+/// Implements `GET /api/v1/channels/:channel_id/discussions/:root_msg_id`.
 pub async fn get_discussion(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -405,7 +420,7 @@ pub async fn get_discussion(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.sender_type IN ('user', 'bot')
-           AND m.msg_type NOT IN ('permission', 'auth_required')"
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')"
     ))
     .bind(channel_id.to_string())
     .bind(root_msg_id.to_string())
@@ -435,7 +450,7 @@ pub async fn get_discussion(
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.is_deleted = FALSE
-           AND m.msg_type NOT IN ('permission', 'auth_required')
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
            AND ($3::bigint IS NULL OR m.channel_seq < $3)
          ORDER BY m.channel_seq DESC NULLS LAST, m.created_at DESC
          LIMIT $4"

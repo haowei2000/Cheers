@@ -2,7 +2,7 @@
 ///
 /// 两个端点：
 ///   /ws/agent-bridge/control  —— 生命周期、task 派发
-///   /ws/agent-bridge/data     —— delta/done/resource_req 等数据帧
+///   /ws/agent-bridge/data     —— delta/done/workspace_res 等数据帧
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -23,9 +23,8 @@ use crate::{
         realtime::frame::WireFrame,
         stream::{handle_delta, handle_done, handle_send, handle_session_update},
     },
-    infra::crypto::hash_bot_token,
+    infra::crypto::hash_installation_credential,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
-    resource,
 };
 use sqlx::PgPool;
 
@@ -59,6 +58,7 @@ const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 #[derive(Debug, Clone)]
 struct BotInfo {
     bot_id: Uuid,
+    installation_id: Uuid,
     provider_account_id: String,
     username: String,
     display_name: Option<String>,
@@ -102,12 +102,14 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
     let memberships = load_memberships(&state.db, bot.bot_id).await;
     let hello = bridge_frames::control_hello_frame(
         bot.bot_id,
+        bot.installation_id,
         &bot.username,
         bot.display_name.as_deref(),
         connection_id,
         Value::Array(memberships),
         bot.connector_config.as_ref(),
         server_capabilities(&state),
+        &state.config.mcp_resource_url(),
         bot.acp_security.as_ref(),
     );
     if ws_send(&mut socket, &hello).await.is_err() {
@@ -148,7 +150,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
-    tracing::info!(bot_id = %bot.bot_id, "control connected");
+    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, "control connected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -226,7 +228,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
     };
 
     let superseded = reason == "superseded";
-    tracing::info!(bot_id = %bot.bot_id, reason, "control disconnected");
+    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, reason, "control disconnected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -247,6 +249,13 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
 async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     let bot_id = bot.bot_id;
+    let _ = sqlx::query(
+        "UPDATE terminal_installations SET last_seen_at = NOW(), updated_at = NOW()
+         WHERE installation_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(bot.installation_id.to_string())
+    .execute(&state.db)
+    .await;
     // Typed parse — the shared enum is the single schema both ends compile
     // against, so a field rename can no longer silently read as None (the
     // plugin_version bug class). Handlers that persist or tolerate legacy
@@ -312,6 +321,22 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 .await;
                 if let Err(e) = result {
                     tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
+                }
+                let installation_result = sqlx::query(
+                    "UPDATE terminal_installations
+                     SET connector_version = COALESCE($2, connector_version),
+                         capabilities = CASE WHEN $3::jsonb = 'null'::jsonb
+                                             THEN capabilities ELSE $3::jsonb END,
+                         last_seen_at = NOW(), updated_at = NOW()
+                     WHERE installation_id = $1 AND revoked_at IS NULL",
+                )
+                .bind(bot.installation_id.to_string())
+                .bind(connector_version.as_deref())
+                .bind(&caps_str)
+                .execute(&state.db)
+                .await;
+                if let Err(e) = installation_result {
+                    tracing::warn!(installation_id = %bot.installation_id, err = %e, "installation capabilities persist failed");
                 }
             }
         }
@@ -511,6 +536,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
     let hello = bridge_frames::data_hello_frame(
         bot.bot_id,
+        bot.installation_id,
         connection_id,
         server_capabilities(&state),
         bot.acp_security.as_ref(),
@@ -638,7 +664,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
                 }
             }
 
-            // Backend 发给 bot 的帧（resource_res、permission_request 等）
+            // Backend 发给 bot 的帧（permission_request、workspace_req 等）
             outbound = res_rx.recv() => {
                 match outbound {
                     Some(frame) => {
@@ -840,30 +866,6 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         // ── resource 访问 ──────────────────────────────────────────────────
-        "resource_req" => {
-            // `workspace.read` is a REMOTE-workspace pull (unified context model, P3):
-            // a reader bot resolves ANOTHER bot's workspace file under its own read
-            // grant. Brokering it needs the identity-free workspace RPC, so it is an
-            // alternate dispatch rather than a plain resource verb — intercepted here.
-            //
-            // Every other verb goes through `dispatch_with_effects`, never the db-only
-            // `resource::dispatch`: the live broadcast / bot@bot trigger / presence /
-            // Desk signal a successful write implies all live there, so any transport
-            // gets the complete semantics (see gateway::resource_effects).
-            let resp = if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
-                broker_workspace_read(state, bot.bot_id, frame).await
-            } else {
-                crate::gateway::resource_effects::dispatch_with_effects(
-                    state,
-                    resource::Principal::bot(bot.bot_id),
-                    frame,
-                )
-                .await
-            };
-            // resource_res 发回给 bot（通过同一条 data WS）
-            let _ = ws_send(socket, &resp).await;
-        }
-
         // ── 远程工作区 RPC 响应（connector → gateway，按 req_id 关联）──────────
         "workspace_res" => {
             if let Some(req_id) = frame.get("req_id").and_then(Value::as_str) {
@@ -910,6 +912,33 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         // ── 审批终态（超时/取消，连接器本地裁决后通知，避免卡片永久 pending）──
         "permission_cancel" => {
             handle_permission_cancel_frame(frame, state, bot).await;
+        }
+        "elicitation_request" => {
+            let client_msg_id = client_msg_id(frame);
+            match handle_elicitation_request_frame(frame, state, bot).await {
+                Ok(message_id) => {
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ =
+                            ws_send(socket, &send_ack_ok(&client_msg_id, message_id, false)).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(bot_id = %bot.bot_id, err = e, "elicitation_request rejected");
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ = ws_send(
+                            socket,
+                            &send_ack_err(&client_msg_id, "ELICITATION_REQUEST_FAILED", e),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+        "elicitation_cancel" => {
+            handle_elicitation_terminal_frame(frame, state, bot, false).await;
+        }
+        "elicitation_complete" => {
+            handle_elicitation_terminal_frame(frame, state, bot, true).await;
         }
         // ── ACP agent auth expired / failed — channel card for human re-login ─
         "auth_required" => {
@@ -1803,6 +1832,304 @@ async fn handle_permission_request_frame(
     Ok(msg_id)
 }
 
+/// Detects form fields that ACP requires clients to reject as sensitive input.
+fn elicitation_schema_is_sensitive(schema: &Value) -> bool {
+    const TERMS: &[&str] = &[
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "apikey",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "auth_token",
+        "recovery_code",
+        "credit_card",
+        "card_number",
+        "cvv",
+    ];
+    schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .is_some_and(|properties| {
+            properties.iter().any(|(name, field)| {
+                let normalized_name = name.to_ascii_lowercase().replace(['-', ' '], "_");
+                let prose = format!(
+                    "{} {}",
+                    field
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    field
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+                .to_ascii_lowercase();
+                TERMS
+                    .iter()
+                    .any(|term| normalized_name == *term || prose.contains(&term.replace('_', " ")))
+            })
+        })
+}
+
+/// Returns true only for an ACP URL elicitation targeting this Gateway's MCP OAuth UI.
+fn is_mcp_oauth_elicitation_url(target: &url::Url, issuer: &str) -> bool {
+    url::Url::parse(issuer).is_ok_and(|issuer| {
+        target.origin() == issuer.origin()
+            && matches!(target.path(), "/oauth/authorize" | "/mcp-authorize")
+    })
+}
+
+/// Persists ACP v1 form/URL elicitation as an ordinary channel message card.
+async fn handle_elicitation_request_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+) -> Result<Uuid, &'static str> {
+    let channel_id: Uuid = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse().ok())
+        .ok_or("missing channel_id")?;
+    ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
+    let params = frame.get("params").cloned().ok_or("missing params")?;
+    let mode = params
+        .get("mode")
+        .and_then(Value::as_str)
+        .ok_or("missing mode")?;
+    if !matches!(mode, "form" | "url") {
+        return Err("unsupported elicitation mode");
+    }
+    if mode == "form"
+        && params
+            .get("requestedSchema")
+            .is_some_and(elicitation_schema_is_sensitive)
+    {
+        return Err("sensitive fields are not allowed in form elicitation");
+    }
+    let message = params
+        .get("message")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("missing message")?;
+    let initiating_user_id = frame
+        .get("initiating_user_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    if let Some(initiating_user_id) = initiating_user_id {
+        let request_scoped = params.get("requestId").is_some();
+        if request_scoped
+            && !matches!(
+                frame.get("acp_request_id"),
+                Some(Value::String(_) | Value::Number(_))
+            )
+        {
+            return Err("request-scoped elicitation missing ACP request_id");
+        }
+        let origin_msg_id = frame
+            .get("origin_msg_id")
+            .and_then(Value::as_str)
+            .ok_or("request-scoped elicitation missing origin_msg_id")?;
+        let verified = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM messages AS m
+                INNER JOIN channel_memberships AS cm
+                    ON cm.channel_id = m.channel_id AND cm.member_id = m.sender_id
+                WHERE m.msg_id = $1 AND m.channel_id = $2
+                  AND m.sender_type = 'user' AND m.sender_id = $3
+                  AND cm.member_type = 'user'
+            )",
+        )
+        .bind(origin_msg_id)
+        .bind(channel_id.to_string())
+        .bind(initiating_user_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(crate::gateway::log_db_err(
+            "elicitation: verify initiating user",
+        ))?;
+        if !verified {
+            return Err("elicitation initiating user could not be verified");
+        }
+    }
+    let mut interaction_kind = "general";
+    if mode == "url" {
+        let raw_url = params
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or("missing url")?;
+        let url = url::Url::parse(raw_url).map_err(|_| "invalid elicitation URL")?;
+        let secure = url.scheme() == "https" && url.host_str().is_some();
+        let loopback = url.scheme() == "http"
+            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
+        if !(secure || loopback) {
+            return Err("elicitation URL must use HTTPS");
+        }
+        if is_mcp_oauth_elicitation_url(&url, &state.config.mcp_authorization_issuer()) {
+            if initiating_user_id.is_none() {
+                return Err("MCP OAuth elicitation requires a verified initiating user");
+            }
+            interaction_kind = "mcp_oauth";
+        }
+    }
+
+    let msg_id = Uuid::new_v4();
+    let request_id = frame.get("request_id").cloned().unwrap_or(Value::Null);
+    let content_data = json!({
+        "kind": "agent_bridge_elicitation",
+        "interaction_kind": interaction_kind,
+        "installation_id": bot.installation_id,
+        "request_id": request_id,
+        "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
+        "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
+        "origin_msg_id": frame.get("origin_msg_id").cloned().unwrap_or(Value::Null),
+        "acp_request_id": frame.get("acp_request_id").cloned().unwrap_or(Value::Null),
+        "initiating_user_id": frame.get("initiating_user_id").cloned().unwrap_or(Value::Null),
+        "session_id": frame.get("session_id").cloned().unwrap_or(Value::Null),
+        "mode": mode,
+        "message": message,
+        "requested_schema": params.get("requestedSchema").cloned().unwrap_or(Value::Null),
+        "url": params.get("url").cloned().unwrap_or(Value::Null),
+        "elicitation_id": params.get("elicitationId").cloned().unwrap_or(Value::Null),
+        "tool_call_id": params.get("toolCallId").cloned().unwrap_or(Value::Null),
+        "params": params,
+        "resolved": false,
+    });
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::gateway::log_db_err("elicitation: begin"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "elicitation: allocate channel_seq",
+            ))?;
+    sqlx::query(
+        "INSERT INTO messages
+         (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+          is_partial, content_data, file_ids, channel_seq)
+         VALUES ($1, $2, 'bot', $3, $4, 'elicitation', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+    )
+    .bind(msg_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(bot.bot_id.to_string())
+    .bind(message)
+    .bind(content_data.to_string())
+    .bind(channel_seq)
+    .execute(&mut *tx)
+    .await
+    .map_err(crate::gateway::log_db_err("elicitation: insert"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("elicitation: commit"))?;
+
+    if interaction_kind == "mcp_oauth" {
+        sqlx::query(
+            "UPDATE terminal_installations
+             SET mcp_connection_state = 'action_required', mcp_state_updated_at = NOW()
+             WHERE installation_id = $1 AND revoked_at IS NULL
+               AND mcp_connection_state <> 'connected'",
+        )
+        .bind(bot.installation_id.to_string())
+        .execute(&state.db)
+        .await
+        .map_err(crate::gateway::log_db_err(
+            "elicitation: mark MCP action required",
+        ))?;
+    }
+
+    state
+        .fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(
+                channel_id,
+                "message",
+                json!({
+                    "v": MESSAGE_SCHEMA_VERSION, "msg_id": msg_id, "channel_id": channel_id,
+                    "channel_seq": channel_seq, "sender_type":"bot", "sender_id":bot.bot_id,
+                    "content":message, "msg_type":"elicitation", "is_partial":false,
+                    "reply_to_msg_id":null, "file_ids":[], "mentions":[], "files":[],
+                    "content_data":content_data,
+                }),
+            ),
+        )
+        .await;
+    Ok(msg_id)
+}
+
+/// Finalizes a URL completion or connector-side timeout without racing a user response.
+async fn handle_elicitation_terminal_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    completed: bool,
+) {
+    let (field, value) = if completed {
+        (
+            "elicitation_id",
+            frame.get("elicitation_id").and_then(Value::as_str),
+        )
+    } else {
+        (
+            "request_id",
+            frame.get("request_id").and_then(Value::as_str),
+        )
+    };
+    let Some(value) = value else {
+        return;
+    };
+    let row = if completed {
+        sqlx::query(
+            "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'completed')
+             WHERE sender_id = $1 AND msg_type = 'elicitation'
+               AND content_data ->> 'elicitation_id' = $2
+               AND content_data ->> 'status' = 'accept'
+             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+        )
+        .bind(bot.bot_id.to_string())
+        .bind(value)
+        .fetch_optional(&state.db)
+        .await
+    } else {
+        sqlx::query(
+            "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'cancelled')
+             WHERE sender_id = $1 AND msg_type = 'elicitation' AND content_data ->> $2 = $3
+               AND COALESCE((content_data ->> 'resolved')::boolean, false) = false
+             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+        )
+        .bind(bot.bot_id.to_string())
+        .bind(field)
+        .bind(value)
+        .fetch_optional(&state.db)
+        .await
+    };
+    if let Ok(Some(row)) = row {
+        use sqlx::Row;
+        let channel_id = row
+            .try_get::<String, _>("channel_id")
+            .ok()
+            .and_then(|v| v.parse::<Uuid>().ok());
+        if let Some(channel_id) = channel_id {
+            state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": row.try_get::<String,_>("msg_id").unwrap_or_default(),
+                "channel_id": channel_id,
+                "channel_seq": row.try_get::<i64,_>("channel_seq").unwrap_or_default(),
+                "sender_type":"bot", "sender_id":bot.bot_id,
+                "content":row.try_get::<String,_>("content").unwrap_or_default(),
+                "msg_type":"elicitation", "is_partial":false, "file_ids":[], "mentions":[], "files":[],
+                "content_data":row.try_get::<Value,_>("content_data").unwrap_or(Value::Null),
+            }))).await;
+        }
+    }
+}
+
 /// Persist an ACP agent re-auth card and fan it out to the channel.
 async fn handle_auth_required_frame(
     frame: &Value,
@@ -1815,6 +2142,17 @@ async fn handle_auth_required_frame(
         .and_then(|raw| raw.parse().ok())
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
+    let agent_type = sqlx::query_scalar::<_, String>(
+        "SELECT agent_type FROM terminal_installations WHERE installation_id = $1",
+    )
+    .bind(bot.installation_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .map_err(crate::gateway::log_db_err(
+        "auth_required: load agent profile",
+    ))?
+    .unwrap_or_else(|| "generic".to_string());
+    let agent_profile = crate::domain::agent_profile::profile(&agent_type);
 
     let method_id = frame
         .get("method_id")
@@ -1822,6 +2160,17 @@ async fn handle_auth_required_frame(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or("missing method_id")?;
+    let methods = frame
+        .get("methods")
+        .and_then(Value::as_array)
+        .filter(|methods| !methods.is_empty())
+        .ok_or("missing auth methods")?;
+    if !methods
+        .iter()
+        .any(|method| method.get("method_id").and_then(Value::as_str) == Some(method_id))
+    {
+        return Err("recommended auth method was not advertised");
+    }
     let name = frame
         .get("name")
         .and_then(Value::as_str)
@@ -1849,10 +2198,12 @@ async fn handle_auth_required_frame(
         "provider_session_key": frame.get("provider_session_key").cloned().unwrap_or(Value::Null),
         "provider_session_id": frame.get("provider_session_id").cloned().unwrap_or(Value::Null),
         "method_id": method_id,
+        "methods": methods,
         "name": name,
         "description": description,
         "link": frame.get("link").cloned().unwrap_or(Value::Null),
         "auth_type": frame.get("auth_type").cloned().unwrap_or(Value::Null),
+        "agent_profile": agent_profile,
         "resolved": false,
         "bot_owner_id": bot.owner_id.clone(),
     });
@@ -2120,7 +2471,6 @@ fn server_capabilities(state: &AppState) -> Value {
         "auth": ["authorization_bearer", "auth_frame"],
         "task_stream": "control",
         "runtime_session_control": true,
-        "resource_req": true,
         "send_ack": true,
         "terminal_ack": true,
         "resume": "ack_only",
@@ -2161,7 +2511,7 @@ async fn auth_bot(
     header_token: Option<String>,
 ) -> Option<BotInfo> {
     if let Some(token) = header_token {
-        return match resolve_bot(&state.db, &token).await {
+        return match resolve_installation(&state.db, &token, None).await {
             Ok(bot) => Some(bot),
             Err(AuthFailure::BotUnavailable) => {
                 close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2243,7 +2593,8 @@ async fn auth_bot(
                     }
                 };
 
-                match resolve_bot(&state.db, &token).await {
+                let connector = frame.get("connector");
+                match resolve_installation(&state.db, &token, connector).await {
                     Ok(bot) => return Some(bot),
                     Err(AuthFailure::BotUnavailable) => {
                         close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2259,15 +2610,25 @@ async fn auth_bot(
     }
 }
 
-/// 通过 botToken 查找并验证 bot。
-async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
-    let token_hash = hash_bot_token(token);
+/// Resolve one active, non-revoked terminal installation and its Bot identity.
+/// Bot tokens are intentionally not accepted: otherwise a legacy shared token
+/// could bypass per-installation revocation and active/standby enforcement.
+async fn resolve_installation(
+    db: &PgPool,
+    credential: &str,
+    connector: Option<&Value>,
+) -> Result<BotInfo, AuthFailure> {
+    let credential_hash = hash_installation_credential(credential);
 
     let row = sqlx::query(
-        "SELECT bot_id, username, display_name, is_disabled, binding_config, created_by
-         FROM bot_accounts WHERE bot_token_hash = $1",
+        "SELECT i.installation_id, i.status, i.revoked_at,
+                b.bot_id, b.username, b.display_name, b.is_disabled,
+                b.binding_config, b.created_by
+         FROM terminal_installations i
+         JOIN bot_accounts b ON b.bot_id = i.bot_id
+         WHERE i.credential_hash = $1",
     )
-    .bind(&token_hash)
+    .bind(&credential_hash)
     .fetch_optional(db)
     .await
     .ok()
@@ -2280,12 +2641,43 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     if is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
+    let status: String = row.try_get("status").unwrap_or_default();
+    let revoked = row
+        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at")
+        .ok()
+        .flatten()
+        .is_some();
+    if revoked || status != "active" {
+        return Err(AuthFailure::BotUnavailable);
+    }
 
     let bot_id: Uuid = row
         .try_get::<String, _>("bot_id")
         .ok()
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
+    let installation_id: Uuid = row
+        .try_get::<String, _>("installation_id")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .ok_or(AuthFailure::InvalidToken)?;
+    let connector_version = connector
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_str);
+    let touched = sqlx::query(
+        "UPDATE terminal_installations
+         SET connector_version = COALESCE($2, connector_version),
+             last_seen_at = NOW(), connected_at = NOW(), updated_at = NOW()
+         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+    )
+    .bind(installation_id.to_string())
+    .bind(connector_version)
+    .execute(db)
+    .await
+    .map_err(|_| AuthFailure::InvalidToken)?;
+    if touched.rows_affected() == 0 {
+        return Err(AuthFailure::BotUnavailable);
+    }
     let binding_config = row
         .try_get::<Option<Value>, _>("binding_config")
         .ok()
@@ -2301,6 +2693,7 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     };
     Ok(BotInfo {
         bot_id,
+        installation_id,
         provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),
@@ -2431,68 +2824,6 @@ fn resolve_bot_acp_security(binding_config: Option<&Value>) -> Option<Value> {
     }))
 }
 
-/// Broker a `workspace.read` resource pull for a reader bot (unified context model,
-/// P3-2). The bundle reference names the OWNER bot + path + the channel it was shared
-/// in; `read_workspace_file_as_bot` enforces channel membership + the `workspace_read`
-/// grant, then reuses the identity-free workspace RPC to fetch the current file. Maps
-/// `AppError` back to a `resource_res` frame exactly like `resource::dispatch`, so the
-/// connector sees the same reply shape as every other verb. A `workspace.read` ref thus
-/// resolves under the reader's OWN read permission (superseding the inline snapshot).
-async fn broker_workspace_read(state: &AppState, reader_bot_id: Uuid, frame: &Value) -> Value {
-    let req_id = frame.get("req_id").and_then(Value::as_str).unwrap_or("");
-    let params = frame.get("params").cloned().unwrap_or(Value::Null);
-    let str_param = |k: &str| params.get(k).and_then(Value::as_str).map(str::to_string);
-    let uuid_param = |k: &str| str_param(k).and_then(|s| Uuid::parse_str(&s).ok());
-
-    let Some(owner_bot_id) = uuid_param("bot_id") else {
-        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "bot_id required");
-    };
-    let Some(channel_id) = uuid_param("channel_id") else {
-        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "channel_id required");
-    };
-    let Some(path) = str_param("path") else {
-        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "path required");
-    };
-    let session_id = uuid_param("session_id");
-    // The root the ref's `path` is relative to (from the picker's `treeRoot`). Without
-    // it the read falls back to the connector's default cwd / first allowed root, which
-    // can resolve a different same-named file — so pass it through when present.
-    let root = str_param("root");
-
-    match crate::api::workspace::read_workspace_file_as_bot(
-        state,
-        owner_bot_id,
-        reader_bot_id,
-        channel_id,
-        &path,
-        root.as_deref(),
-        session_id,
-    )
-    .await
-    {
-        Ok(data) => bridge_frames::resource_res_ok(req_id, data),
-        Err(e) => {
-            let (code, msg) = app_error_to_resource(&e);
-            bridge_frames::resource_res_err(req_id, code, &msg)
-        }
-    }
-}
-
-/// Map an `AppError` from the workspace broker to a `resource_res` (code, message)
-/// pair, mirroring the code space `resource::dispatch` / `workspace_call` already use
-/// (`E_CONFLICT`, `E_TOO_LARGE`, `PERMISSION_DENIED`, …). Internal errors are opaque.
-fn app_error_to_resource(e: &crate::errors::AppError) -> (&'static str, String) {
-    use crate::errors::AppError;
-    match e {
-        AppError::Forbidden(m) => ("PERMISSION_DENIED", m.clone()),
-        AppError::NotFound => ("NOT_FOUND", "not found".to_string()),
-        AppError::BadRequest(m) => ("INVALID_PARAMS", m.clone()),
-        AppError::Conflict(m) => ("E_CONFLICT", m.clone()),
-        AppError::PayloadTooLarge(m) => ("E_TOO_LARGE", m.clone()),
-        _ => ("INTERNAL_ERROR", "internal error".to_string()),
-    }
-}
-
 /// Fan the connector's `workspace_event` file-change push out to browsers as a
 /// signal-only `workspace_signal` frame. The frame is bot-scoped (the WS is already
 /// authenticated as `bot`), so we look up every channel the bot belongs to and
@@ -2564,4 +2895,29 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
             reason: reason.to_string().into(),
         })))
         .await;
+}
+
+#[cfg(test)]
+mod elicitation_url_tests {
+    use super::is_mcp_oauth_elicitation_url;
+
+    #[test]
+    fn only_same_origin_mcp_oauth_urls_get_product_presentation() {
+        let issuer = "https://cheers.example";
+        let authorize =
+            url::Url::parse("https://cheers.example/oauth/authorize?client_id=public&state=opaque")
+                .expect("valid URL");
+        assert!(is_mcp_oauth_elicitation_url(&authorize, issuer));
+
+        let consent = url::Url::parse("https://cheers.example/mcp-authorize?request=opaque")
+            .expect("valid URL");
+        assert!(is_mcp_oauth_elicitation_url(&consent, issuer));
+
+        let lookalike =
+            url::Url::parse("https://cheers.example.evil.test/oauth/authorize").expect("valid URL");
+        assert!(!is_mcp_oauth_elicitation_url(&lookalike, issuer));
+
+        let unrelated = url::Url::parse("https://cheers.example/settings").expect("valid URL");
+        assert!(!is_mcp_oauth_elicitation_url(&unrelated, issuer));
+    }
 }

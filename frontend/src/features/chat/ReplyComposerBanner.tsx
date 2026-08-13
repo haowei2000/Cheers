@@ -1,8 +1,11 @@
+/** @file Composer banner that identifies the message currently being replied to. */
+
 import { Button as UiButton } from "@/components/ui/button";
 import { Reply, X } from "lucide-react";
 import type { Message } from "@/types";
 import { replyPreviewOf } from "./replyPreview";
 
+/** Show a sanitized reply preview with an action for cancelling reply mode. */
 export function ReplyComposerBanner({
   message,
   senderName,
@@ -32,7 +35,7 @@ export function ReplyComposerBanner({
         <UiButton variant="plain"
           type="button"
           onClick={onCancel}
-          content="icon" controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          content="icon" controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-zinc-100 transition-colors hover:bg-zinc-800/70 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
           aria-label="Cancel reply"
           title="Cancel reply (Esc)"
         >

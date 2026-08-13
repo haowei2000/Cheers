@@ -1,26 +1,24 @@
 //! ACP agent re-authentication wait for [`RuntimeContext`].
 //!
 //! When `session/new` / `prompt` fail with an auth-class error, the connector
-//! retries `authenticate` once locally, then surfaces an `auth_required` channel
-//! card and waits for a human `auth_acknowledged` (retry / cancel) — same wait
-//! pattern as permission cards, but the outcome drives ACP authenticate rather
-//! than `request_permission`.
+//! asks the bot owner to select an Agent-advertised method in Web, then runs
+//! `authenticate` with a trusted request route so provider URL elicitation
+//! reaches that user.
 
 use super::*;
-use crate::acp_adapter::{
-    looks_like_auth_error, no_link_auth_operator_hint, preferred_auth_method, AuthMethodInfo,
+use crate::acp_semantics::{
+    advertised_auth_methods, looks_like_auth_error, no_link_auth_operator_hint,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum AuthAckAction {
-    Retry,
+    Retry { method_id: String },
     Cancel,
 }
 
 impl RuntimeContext {
-    /// After an ACP op fails with an auth-looking error: try `authenticate`
-    /// once silently; if that still fails (or the op still fails after), ask
-    /// the human via an `auth_required` card, then retry authenticate on ack.
+    /// After an ACP op fails with an auth-looking error, request an explicit Web
+    /// method choice and invoke `authenticate` with the task's trusted route.
     ///
     /// Returns `Ok(())` when the caller should retry the original op; `Err` when
     /// the human cancelled / timed out / authenticate still fails.
@@ -35,51 +33,41 @@ impl RuntimeContext {
         }
         tracing::warn!(
             account = %self.account_id,
-            "ACP op failed with auth-class error; attempting re-authenticate"
+            "ACP op failed with auth-class error; starting provider authenticate"
         );
-        let silent = {
-            let mut adapter = self.adapter.lock().await;
-            adapter.authenticate().await
-        };
-        if silent.is_ok() {
-            return Ok(());
-        }
-        let detail = silent
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| message.clone());
         tracing::warn!(
             account = %self.account_id,
-            "ACP re-authenticate failed; requesting human auth — {detail}"
+            "requesting an explicit Web auth-method selection"
         );
-        self.request_human_auth(task, &detail).await?;
+        let selected_method_id = self.request_human_auth(task, &message).await?;
         let mut adapter = self.adapter.lock().await;
-        adapter.authenticate().await?;
+        adapter
+            .authenticate(&selected_method_id, request_route_for_task(task))
+            .await?;
         Ok(())
     }
 
-    async fn request_human_auth(&self, task: &TaskCommand, detail: &str) -> anyhow::Result<()> {
-        let method = {
+    async fn request_human_auth(&self, task: &TaskCommand, detail: &str) -> anyhow::Result<String> {
+        let methods = {
             let adapter = self.adapter.lock().await;
             adapter
                 .initialize_response()
-                .and_then(|init| preferred_auth_method(init, &self.config.agent.env))
-                .unwrap_or_else(|| AuthMethodInfo {
-                    id: "default".into(),
-                    name: Some("Sign in".into()),
-                    description: Some(detail.to_string()),
-                    link: None,
-                    auth_type: None,
-                })
+                .map(|init| advertised_auth_methods(&init, &self.config.agent.env))
+                .unwrap_or_default()
         };
+        if methods.is_empty() {
+            return Err(anyhow!(
+                "agent authentication failed but initialize advertised no authMethods: {detail}"
+            ));
+        }
+        let method = methods[0].clone();
         let request_id = Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
-        self.shared.lock().await.pending_auths.insert(
+        self.shared.interactions.lock().await.pending_auths.insert(
             request_id.clone(),
             PendingAuth {
                 respond_to: tx,
-                method_id: method.id.clone(),
+                allowed_method_ids: methods.iter().map(|method| method.id.clone()).collect(),
             },
         );
         let shared = self.shared.clone();
@@ -90,6 +78,7 @@ impl RuntimeContext {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(wait_ms)).await;
             let pending = shared
+                .interactions
                 .lock()
                 .await
                 .pending_auths
@@ -145,6 +134,18 @@ impl RuntimeContext {
                 task_id: Some(task.task_id.clone()),
                 msg_id: Some(task.msg_id.clone()),
                 method_id: method.id.clone(),
+                methods: methods
+                    .iter()
+                    .enumerate()
+                    .map(|(index, method)| crate::bridge::AuthMethod {
+                        method_id: method.id.clone(),
+                        name: method.name.clone(),
+                        description: method.description.clone(),
+                        link: method.link.clone(),
+                        auth_type: method.auth_type.clone(),
+                        recommended: index == 0,
+                    })
+                    .collect(),
                 name: method.name.clone(),
                 description: Some(description),
                 link: method.link.clone(),
@@ -156,11 +157,16 @@ impl RuntimeContext {
             })
             .await
         {
-            self.shared.lock().await.pending_auths.remove(&request_id);
+            self.shared
+                .interactions
+                .lock()
+                .await
+                .pending_auths
+                .remove(&request_id);
             return Err(anyhow!("auth_required send failed: {err}"));
         }
         match rx.await {
-            Ok(AuthAckAction::Retry) => Ok(()),
+            Ok(AuthAckAction::Retry { method_id }) => Ok(method_id),
             Ok(AuthAckAction::Cancel) => Err(anyhow!("agent auth cancelled by user")),
             Err(_) => Err(anyhow!("agent auth wait aborted")),
         }
@@ -170,21 +176,36 @@ impl RuntimeContext {
         &self,
         request_id: String,
         action: String,
+        method_id: Option<String>,
     ) -> anyhow::Result<()> {
-        let pending = self.shared.lock().await.pending_auths.remove(&request_id);
+        let pending = self
+            .shared
+            .interactions
+            .lock()
+            .await
+            .pending_auths
+            .remove(&request_id);
         let Some(pending) = pending else {
             return Ok(());
         };
         let ack = if action.eq_ignore_ascii_case("retry") {
-            AuthAckAction::Retry
+            let Some(method_id) = method_id.filter(|id| pending.allowed_method_ids.contains(id))
+            else {
+                return Err(anyhow!("auth method was not advertised by the Agent"));
+            };
+            AuthAckAction::Retry { method_id }
         } else {
             AuthAckAction::Cancel
+        };
+        let selected_method_id = match &ack {
+            AuthAckAction::Retry { method_id } => Some(method_id.as_str()),
+            AuthAckAction::Cancel => None,
         };
         tracing::info!(
             account = %self.account_id,
             request_id = %request_id,
             action = ?ack,
-            method_id = %pending.method_id,
+            method_id = ?selected_method_id,
             "Backend acknowledged ACP auth_required"
         );
         let _ = pending.respond_to.send(ack);
@@ -194,7 +215,7 @@ impl RuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::acp_adapter::looks_like_auth_error;
+    use crate::acp_semantics::looks_like_auth_error;
 
     #[test]
     fn detects_common_auth_error_strings() {

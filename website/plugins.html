@@ -21,7 +21,7 @@
     --code-bg: #1b1e24;
     --code-ink: #e6e1d6;
     --shadow: 0 1px 2px rgba(20,16,8,.04), 0 8px 24px rgba(20,16,8,.06);
-    --radius: 14px;
+    --radius: 10px;
     --maxw: 1000px;
   }
   @media (prefers-color-scheme: dark) {
@@ -51,7 +51,7 @@
   a { color: var(--accent-strong); text-decoration: none; }
   a:hover { text-decoration: underline; }
   h1, h2, h3 { line-height: 1.25; letter-spacing: -0.02em; }
-  code { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: var(--bg-soft); border: 0; border-radius: 4px; padding: 1px 5px; }
+  code { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: var(--bg-soft); border: 0; border-radius: 10px; padding: 1px 5px; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
 
   header.nav {
@@ -69,7 +69,7 @@
   .nav-actions { display: flex; align-items: center; gap: 10px; }
   .icon-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; border-radius: 4px; cursor: pointer;
+    width: 36px; height: 36px; border-radius: 10px; cursor: pointer;
     background: transparent; border: 0; color: var(--ink-soft); font-size: 16px;
   }
   .icon-btn:hover { color: var(--ink); border-color: var(--accent); }
@@ -81,7 +81,7 @@
   .hero .btns { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 0; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 10px 18px; border-radius: 4px; font-weight: 600; font-size: 16px;
+    padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 16px;
     border: 0; cursor: pointer;
   }
   .btn-primary { background: var(--accent); color: #1a1305; }
@@ -92,7 +92,7 @@
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 30px 0 8px; }
   @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
   .step {
-    background: var(--card); border: 0; border-radius: 4px;
+    background: var(--card); border: 0; border-radius: 10px;
     padding: 16px 18px; box-shadow: var(--shadow); font-size: 14px; color: var(--ink-soft);
   }
   .step b { display: block; color: var(--ink); margin-bottom: 4px; font-size: 16px; }
@@ -103,7 +103,7 @@
   section p.sub { color: var(--ink-soft); margin: 0 0 18px; max-width: 760px; }
   .badge {
     display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em;
-    border-radius: 4px; padding: 2px 10px; vertical-align: 3px; margin-left: 10px;
+    border-radius: 10px; padding: 2px 10px; vertical-align: 3px; margin-left: 10px;
   }
   .badge.official { background: var(--accent-tint); color: var(--accent-strong); }
   .badge.example { background: var(--bg-soft); color: var(--ink-soft); border: 0; }
@@ -124,7 +124,7 @@
   .pcard .foot { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
   .dl {
     display: inline-flex; align-items: center; gap: 7px;
-    border: 0; border-radius: 4px; padding: 6px 12px;
+    border: 0; border-radius: 10px; padding: 6px 12px;
     font-size: 14px; font-weight: 600; color: var(--ink); background: var(--bg-soft);
   }
   .dl:hover { border-color: var(--accent); color: var(--accent-strong); text-decoration: none; }
@@ -132,7 +132,7 @@
 
   .callout {
     background: var(--accent-tint); border: 0;
-    border-radius: 4px; padding: 14px 18px; margin: 20px 0; font-size: 16px; color: var(--ink-soft);
+    border-radius: 10px; padding: 14px 18px; margin: 20px 0; font-size: 16px; color: var(--ink-soft);
   }
   .callout strong { color: var(--accent-strong); }
 
@@ -140,7 +140,7 @@
   @media (max-width: 760px) { .docs-grid { grid-template-columns: 1fr; } }
   .doc {
     display: flex; flex-direction: column; gap: 4px;
-    background: var(--card); border: 0; border-radius: 4px; padding: 16px 18px;
+    background: var(--card); border: 0; border-radius: 10px; padding: 16px 18px;
     box-shadow: var(--shadow);
   }
   .doc:hover { border-color: var(--accent); text-decoration: none; }

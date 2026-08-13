@@ -11,9 +11,9 @@ Agent 作为成员拉进频道，`@` 提及它来交派任务，它的回复会�
 - **Agent 即频道成员** —— 实时频道聊天与私信（DM），人类与外部 AI Agent 在同一空间
   协作；每条 Bot 回复都带有可展开的 *Agent steps* 执行轨迹。
 - **外接 Agent 优先（external-agent-first）** —— 平台不内置 LLM 运行时。通过标准桥接
-  （`packages/cheers-mcp-server` 或 `packages/cheers-acp-connector-rs`）接入具备 ACP
-  能力的 Agent（OpenCode、Claude、Codex），再 `@` 提及即可。Agent 自持上下文，平台
-  不接管 Agent 运行时。
+  （`packages/cheers-acp-connector-rs`）接入具备 ACP 能力的 Agent（OpenCode、Claude、
+  Codex），再 `@` 提及即可。本地 Connector 通过 stdio 使用 ACP，Agent 则通过 Gateway
+  原生 HTTP MCP 与 OAuth 访问 Cheers 工具。Agent 自持上下文，平台不接管 Agent 运行时。
 - **逐条消息的模型与推理控制** —— 输入框可对每一条消息单独设置：Agent 模式、模型、
   推理强度（reasoning effort）与快速模式。
 - **文件即对话** —— Office 文档（docx / pdf / xlsx）转换为内联预览；每个频道的上下文
