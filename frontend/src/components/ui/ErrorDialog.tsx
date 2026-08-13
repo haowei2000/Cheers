@@ -29,7 +29,7 @@ export function ErrorDialog({
       onClose={onClose}
       maxWidth="max-w-sm"
     >
-      <p className="text-regular text-zinc-300 whitespace-pre-wrap break-words">{message}</p>
+      <p className="text-regular text-zinc-200 whitespace-pre-wrap break-words">{message}</p>
       <div className="flex justify-end gap-2 pt-1">
         {action ? (
           <>

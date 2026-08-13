@@ -48,14 +48,14 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-zinc-300">Connection history</span>
+        <span className="text-compact font-medium text-zinc-200">Connection history</span>
         <span className="text-compact text-zinc-400">
           bridge connects/disconnects (newest first)
         </span>
         <IconButton
           label="Refresh connection history"
           onClick={load}
-          className="ml-auto text-zinc-500 hover:text-zinc-300"
+          className="ml-auto text-zinc-100 hover:text-zinc-50"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -72,7 +72,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
               trailing={<span className="text-compact tabular-nums text-zinc-400">{time(e.created_at)}</span>} leading={e.event === "connected" ? (
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
-                <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
               )} status={<span className="shrink-0 rounded-sm px-2 py-1 text-minimal bg-zinc-800 text-zinc-400">
                 {e.stream}
               </span>} presentationLevel="medium" className="border-0 bg-zinc-950/30" />

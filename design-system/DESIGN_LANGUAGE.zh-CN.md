@@ -22,8 +22,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 
 1. **静止无框**：Button、Input、Item、Card、Dialog、Popover、Composer 等 resting surface
    不使用四周装饰性 border。先使用留白、背景层级、对齐与方向性 hairline。
-2. **统一圆角**：普通矩形容器统一 `4px / 4pt / 4dp`。不使用 `rounded-xl/2xl` 形成卡片墙；
-   圆形只用于 Avatar、Presence、Unread、进度或其他形状本身携带语义的对象。
+2. **统一圆角**：Web 普通矩形统一以 `10px` 为基础；嵌套表面按“10px + 实际 inset”计算
+   外层同心圆角，不再使用其他固定 Web 圆角。iOS / Android 保留平台原生形状。圆形只用于
+   Avatar、Presence、Unread、进度或其他形状本身携带语义的对象。
 3. **不使用霓虹**：禁止彩色外发光、装饰性渐变和高饱和彩色阴影。中性阴影只用于表达浮层
    空间关系；焦点、选中、主操作和状态通过 fill、ring、文字或标记表达。
 4. **颜色只表达含义**：普通层级使用中性墨色；accent、online、unread、warning、error、
@@ -34,6 +35,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
    版面关系，不得退化成每个组件的四周边框。
 7. **关键状态不可被密度隐藏**：error、approval、unread、mention、online、disabled 等在任意
    PresentationLevel 下都必须可感知。
+8. **四级中性前景**：Web 主正文、标题、普通按钮与功能图标使用 `zinc-50/100`；次要正文使用
+   `zinc-200`；元数据与辅助说明使用 `zinc-400`；禁用状态沿用启用态前景并增加 `opacity-50`。
+   禁止将 `zinc-300/500/600/700` 用作前景色。语义填充表面的正反色和语法分类色不计入该灰阶层级。
 
 ## 3. 三级字体体系
 
@@ -101,6 +105,12 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   共享 size map 获取；这些规则在 Web CI 中 ceiling 均为 0。
 - 编辑已有对象必须使用就地编辑模式：默认对象旁显示 Edit IconButton；编辑态在同一位置替换为
   Cancel 与 Save IconButton。保存动作不得漂到 section 底部或远离被编辑对象；整页首次创建/提交表单除外。
+- 常用动作的呈现由“动作 + 场景”唯一决定，并由 Web `ActionButton` 注册表实现：窗口栏的
+  Back / Close / More / Refresh、disclosure 的 Expand / Collapse、行内编辑的
+  Edit / Save / Cancel / Delete / Remove 使用纯图标；完整表单 Create / Save 使用图标加文字，
+  Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性确认使用文字 Cancel 加
+  图标文字 Delete / Remove。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
+  trigger 时使用 `ControlTrigger` 并保留对象标题，不得用通用动作标签覆盖内容。
 - 产品布局间距只能使用 4px 网格对应的整数 Tailwind 档位，禁止 `0.5/1.5/2.5/3.5` 等半档；
   Loading Spinner 使用 ContentSize，不接受任意数字尺寸。
 - 响应式规则只能选择未显式设置时的环境默认值，不能覆盖业务显式设置。
@@ -238,7 +248,7 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 ## 12. 今日固定决策摘要
 
 - 设计方向固定为正式、克制的 Editorial Correspondence；撤销全部霓虹风格。
-- 普通全局圆角从过硬的 2px 提高到统一 4px，仍保持无框和非卡片墙。
+- Web 普通全局圆角统一为 10px；嵌套浮层由 inset 动态计算同心外圆角，仍保持无框和非卡片墙。
 - 字体固定为 display / reading / utility 三角色，并补齐免费开源的中文衬线支持。
 - 正文 reading 字号降低为正文尺度；所有实体名称回到 utility sans。
 - 信息档位固定 max / medium / minimal；物理尺寸固定 comfortable / regular / compact。

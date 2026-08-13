@@ -115,13 +115,13 @@ export function MessageRecordInspector({
         <DragHandle className="mx-auto mb-3 md:hidden" />
         <header className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
           <div className="min-w-0 flex-1">
-            <p className="text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            <p className="text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-400">
               Message record · {String(count).padStart(2, "0")}
             </p>
             <h2 id={titleId} className="mt-1 text-comfortable font-semibold text-zinc-100">
               {sender}
             </h2>
-            <p className="mt-1 text-compact tabular-nums text-zinc-500">
+            <p className="mt-1 text-compact tabular-nums text-zinc-400">
               {formatTime(message.created_at)} · {message.msg_id.slice(0, 8)}
             </p>
           </div>
@@ -130,7 +130,7 @@ export function MessageRecordInspector({
             label="Close message record"
             title="Close"
             controlSize="compact"
-            className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200"
+            className="shrink-0 text-zinc-100 transition-colors hover:text-zinc-50"
           >
             <X className="h-4 w-4" />
           </IconButton>
@@ -147,10 +147,10 @@ export function MessageRecordInspector({
           {meta.contextCount > 0 && (
             <section className="py-5" aria-labelledby={`${titleId}-references`}>
               <div className="mb-3 flex items-baseline justify-between gap-3">
-                <h3 id={`${titleId}-references`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-300">
+                <h3 id={`${titleId}-references`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-200">
                   References
                 </h3>
-                <span className="text-minimal tabular-nums text-zinc-500">{String(meta.contextCount).padStart(2, "0")}</span>
+                <span className="text-minimal tabular-nums text-zinc-400">{String(meta.contextCount).padStart(2, "0")}</span>
               </div>
               <MessageContextChips bundle={message.context_bundle} className="gap-2" />
             </section>
@@ -159,10 +159,10 @@ export function MessageRecordInspector({
           {meta.hasTrace && channelId && (
             <section className="py-5" aria-labelledby={`${titleId}-agent-record`}>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 id={`${titleId}-agent-record`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-300">
+                <h3 id={`${titleId}-agent-record`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-200">
                   Agent record
                 </h3>
-                <span className="inline-flex items-center gap-1 text-minimal tabular-nums text-zinc-500">
+                <span className="inline-flex items-center gap-1 text-minimal tabular-nums text-zinc-400">
                   <ListTree className="h-3.5 w-3.5" />
                   {String(meta.traceCount).padStart(2, "0")}
                 </span>

@@ -41,6 +41,23 @@ object; while editing, replace it in place with Cancel and Save IconButtons.
 Do not place a detached Save/Edit text button at the bottom of a section. A
 first-time creation form or whole-form submission is the only exception.
 
+Common product actions use `<ActionButton action context>`; feature code does
+not choose `content` or `variant`. The registered presentation is:
+
+| Context | Icon only | Text | Icon + text |
+|---|---|---|---|
+| Window chrome | Back, Close, More, Refresh | — | — |
+| Disclosure | Expand, Collapse | — | — |
+| Inline edit | Edit, Save, Cancel, Delete, Remove | — | — |
+| Full form | — | Back, Cancel | Create, Save |
+| Dialog footer | — | Back, Cancel | — |
+| Destructive confirmation | — | Cancel | Delete, Remove |
+
+Use `ControlTrigger` for a disclosure whose label/content is the disclosed
+object itself (for example a diff file heading). `ActionButton` disclosure is
+for a compact standalone chevron in chrome. Icon-only actions must supply an
+object-specific `accessibleLabel` when the adjacent context is insufficient.
+
 ## Cross-platform item contract
 
 The platform-independent item inventory and information-density contract lives
@@ -80,23 +97,21 @@ migration is "lift every `zinc-*` literal into CSS variables + add a
 `prefers-color-scheme` default + a System/Light/Dark setting" — do it as its
 own PR, not piecemeal.
 
-### Text contrast floor (non-negotiable)
+### Four-level neutral foreground hierarchy (non-negotiable)
 
-Every color that paints **meaningful text** must clear **WCAG AA 4.5:1**
-against its surface (3:1 only for large text ≥18px, or ≥14px bold). On our
-zinc surfaces that makes **`zinc-400` the floor for muted/secondary text**
-(`zinc-400` on `zinc-900` ≈ 6.9:1). The dimmer tiers are for pixels that carry
-no text meaning:
+Every meaningful foreground clears WCAG AA 4.5:1. Web neutral foregrounds use
+exactly four semantic levels; `zinc-300/500/600/700` are not foreground colors:
 
-| Use | Token | Why |
+| Level | Token | Use |
 |---|---|---|
-| Meaningful text — labels, hints, timestamps, placeholders, section headers, code comments, chart axis text | `zinc-400` floor (brighter for primary: `zinc-100/200/300`) | must reach 4.5:1 |
-| Functional icons (search, chevron, close) | `zinc-500` acceptable (icons need only 3:1) — but never on `zinc-800` fills where it dips to 3.08:1 | non-text 3:1 floor |
-| Purely decorative marks — separators (`·`), large empty-state hero glyphs | `zinc-600/700` OK (decorative, information is carried elsewhere) | exempt |
+| Primary | `zinc-50` or `zinc-100` | body copy, headings, ordinary buttons and functional icons |
+| Secondary | `zinc-200` | supporting body copy |
+| Metadata | `zinc-400` | timestamps, hints, placeholders, section labels and auxiliary notes |
+| Disabled | the enabled foreground plus `opacity-50` | every disabled control; never a darker gray token |
 
-**`zinc-500` is never a text color for content, and `zinc-600`/`zinc-700` are
-never a text color at all** (they fail even 3:1). Placeholders count as
-meaningful text → `zinc-400`.
+`white` and `zinc-950` remain inverse-color exceptions on semantic filled
+surfaces. Syntax highlighting may use registered categorical colors. Business
+button call sites may not override an ordinary action to `zinc-200/400`.
 
 ### Color semantics
 
@@ -169,10 +184,13 @@ dividers, not disclosure buttons: do not add a chevron, collapsed state, or
 
 ### Shape & states
 
-- Radius: the shared ordinary rectangle radius is 4px for product items,
-  controls, fields, overlays, and composer surfaces. Use the project token or
-  Tailwind utility that currently resolves to 4px; never infer the contract
-  from the utility name alone. `rounded-full` is reserved for avatars,
+- Radius: the shared ordinary Web rectangle radius is 10px for product items,
+  controls, fields, cards, and composer surfaces. Nested overlays use the same
+  rule concentrically: outer radius = 10px + the actual content inset. Use
+  `rounded-sm` for ordinary surfaces and `rounded-concentric` with
+  `--concentric-inset` for an overlay; never introduce another fixed radius.
+  Supporting browsers enhance both with `corner-shape: squircle`; standard
+  `border-radius` is the fallback. `rounded-full` is reserved for avatars,
   presence, unread dots, progress, and platform-native controls whose shape
   carries meaning.
 - Separation: resting controls stay free of layout-affecting borders. Form fields use `ring-1 ring-inset ring-zinc-600`; other controls use spacing and surface contrast first. Use hairline rules only for editorial sections or dense rows that must scan as a register.
@@ -187,7 +205,8 @@ dividers, not disclosure buttons: do not add a chevron, collapsed state, or
 
 ### 2.1 Buttons — always borderless
 
-Use `<Button>` (`src/components/ui/button.tsx`). Variants: `primary`
+Use `<ActionButton>` for registered common actions and `<Button>` for all other
+semantic actions (`src/components/ui/action-button.tsx` and `button.tsx`). Variants: `primary`
 (indigo fill), `secondary` (zinc soft fill), `ghost` (transparent), `danger`
 (red text). Physical sizing must resolve through `ControlSize`: compact 28px,
 regular 36px, or comfortable 44px. An icon-only button uses the same selected
@@ -213,7 +232,7 @@ recipes are:
 
 | Kind | Recipe |
 |---|---|
-| Neutral soft | `rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100` |
+| Neutral soft | `rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100` |
 | Indigo soft | `rounded-lg bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30` |
 | Danger soft | `rounded-lg bg-red-950/40 text-red-300 hover:bg-red-950/70` |
 | Warning soft | `rounded bg-amber-900/40 text-amber-200 hover:bg-amber-900/60` |
@@ -225,7 +244,7 @@ fetched yet"). Don't hand-roll `bg-indigo-600` primaries — use `<Button>`.
 ### 2.2 Search / filter field — three forms
 
 One visual language, three placements. All use a `Search` (or contextual)
-lucide icon at `w-3.5`–`w-4 text-zinc-500` and a transparent inner input.
+lucide icon at `w-3.5`–`w-4 text-zinc-400` and a transparent inner input.
 
 **A. Dialog picker search** — wrapper carries the style, input is bare.
 Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
@@ -233,9 +252,9 @@ Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
 ```tsx
 <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
                 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-  <Search className="w-4 h-4 text-zinc-500" />
+  <Search className="w-4 h-4 text-zinc-400" />
   <input className="flex-1 bg-transparent text-regular text-zinc-200 outline-none
-                    placeholder:text-zinc-600" placeholder="…" />
+                    placeholder:text-zinc-400" placeholder="…" />
 </div>
 ```
 
@@ -244,9 +263,9 @@ positioned icon. Used by AdminUsers filter, FriendsPage lookup:
 
 ```tsx
 <div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
   <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-600
+                    text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-400
                     focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
 </div>
 ```
@@ -256,7 +275,7 @@ dense popovers/panels (ActivityPanel search):
 
 ```tsx
 <input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-compact text-zinc-200 outline-none placeholder:text-zinc-600
+                  text-compact text-zinc-200 outline-none placeholder:text-zinc-400
                   focus:border-indigo-500/60" />
 ```
 
@@ -330,7 +349,7 @@ while open. Three states: resting (soft zinc),
 open/targeted (`bg-indigo-600/15 text-indigo-200`, icon `text-indigo-400`),
 mobile touch target via the regular ControlSize mapping. Focus comes from the
 shared Button primitive. The composer card itself
-is the canonical borderless field with the shared 4px radius and
+is the canonical borderless field with the shared 10px Web radius and
 `bg-zinc-800/80` plus
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 
@@ -341,7 +360,7 @@ is the canonical borderless field with the shared 4px radius and
 | BOT tag | `text-minimal px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
 | Unread count | `text-minimal font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
 | Mention count | same shape, `bg-rose-600` |
-| Role / status label | plain `text-minimal text-zinc-500` next to the name (no pill) |
+| Role / status label | plain `text-minimal text-zinc-400` next to the name (no pill) |
 
 ### 2.7 Presence dot
 
@@ -384,7 +403,7 @@ Canon is the Plan panel: centered, icon + primary + secondary line.
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
-  <SomeIcon className="w-5 h-5 text-zinc-500 mb-2" />   {/* decorative glyph: zinc-500 ok */}
+  <SomeIcon className="w-5 h-5 text-zinc-400 mb-2" />   {/* decorative glyph: zinc-500 ok */}
   <p className="text-compact text-zinc-400">Nothing here yet</p>       {/* primary line: meaningful text */}
   <p className="text-compact text-zinc-400 mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
 </div>
@@ -395,14 +414,14 @@ Compact lists may use the one-liner `text-compact text-zinc-400 py-4 text-center
 ### 2.10 Loading
 
 - Inline / action: `Loader2` icon + `animate-spin`, inheriting `currentColor`.
-- Full surface: `Loader2 w-5 h-5 text-zinc-600 animate-spin` centered.
+- Full surface: `Loader2 w-5 h-5 text-zinc-400 animate-spin` centered.
 - Buttons: the built-in `loading` prop of `<Button>`.
 - Don't hand-roll CSS border-circle spinners; don't pair a spinner with
   "Loading…" text unless the wait is long.
 
 ### 2.11 Close button
 
-`text-zinc-500 hover:text-zinc-300` with `X w-4 h-4`, top-right. Drawers and
+`text-zinc-400 hover:text-zinc-200` with `X w-4 h-4`, top-right. Drawers and
 floating panels may add `rounded p-0.5 hover:bg-zinc-800`. Hover target is
 `zinc-300` — not `zinc-200`.
 
@@ -590,8 +609,8 @@ The full audit that produced this doc: visual-consistency reports
 Reject in review:
 
 - [ ] `gray-*` / `slate-*` / `neutral-*` / `stone-*` anywhere
-- [ ] `text-zinc-500` on meaningful text — it's below 4.5:1 on every surface; use `zinc-400`, and reserve `zinc-500` for functional icons (§1 contrast floor)
-- [ ] `text-zinc-600` / `text-zinc-700` as a text color — decorative marks (separators, hero glyphs) only
+- [ ] `text-zinc-400` on meaningful text — it's below 4.5:1 on every surface; use `zinc-400`, and reserve `zinc-500` for functional icons (§1 contrast floor)
+- [ ] `text-zinc-400` / `text-zinc-400` as a text color — decorative marks (separators, hero glyphs) only
 - [ ] any interactive element with a hit area below 44×44px (pad the target even when the glyph is smaller)
 - [ ] icon-only button without an `aria-label`; `outline-none` without a replacement focus ring; a clickable `<div>` where a `<button>` belongs
 - [ ] `rose-*` for errors (rose is mention-only)

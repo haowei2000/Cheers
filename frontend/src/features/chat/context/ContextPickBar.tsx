@@ -162,7 +162,7 @@ export function AttachContextButton({
       title={disabled ? disabledTitle ?? "Unavailable" : added ? ADDED_TO_CONTEXT_TITLE : title}
       className={
  className ??
- "rounded-sm text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"}
+ "rounded-sm text-zinc-100 hover:text-indigo-300 disabled:opacity-50 disabled:hover:text-zinc-100"}
     >
       {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
     </UiButton>
@@ -211,7 +211,7 @@ export function ContextPickBar({
             leading={<Icon className="w-3.5 h-3.5" />}
             controlSize="regular"
             presentationLevel="medium"
-            className={`flex-shrink-0 bg-zinc-800/50 text-zinc-500 ${controlHeightClasses.regular}`}
+            className={`flex-shrink-0 bg-zinc-800/50 text-zinc-400 ${controlHeightClasses.regular}`}
             actions={<>
             <IconButton
               onClick={() => add(channelId, sg)}
@@ -227,7 +227,7 @@ export function ContextPickBar({
               label={`Dismiss suggestion ${sg.label}`}
               title="Dismiss suggestion"
               controlSize="compact"
-              className="text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
+              className="text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700"
             >
               <X className="w-3.5 h-3.5" />
             </IconButton>
@@ -246,7 +246,7 @@ export function ContextPickBar({
             leading={<Icon className="h-4 w-4 flex-shrink-0 text-zinc-400" />}
             presentationLevel="medium"
             controlSize="regular"
-            className="bg-zinc-800/60 text-regular text-zinc-300"
+            className="bg-zinc-800/60 text-regular text-zinc-200"
             actions={
               <>
                 {jumpTo && (
@@ -255,7 +255,7 @@ export function ContextPickBar({
                     label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
                     title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
                     controlSize="compact"
-                    className="text-zinc-500 hover:bg-zinc-700 hover:text-indigo-300"
+                    className="text-zinc-100 hover:bg-zinc-700 hover:text-indigo-300"
                   >
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </IconButton>
@@ -265,7 +265,7 @@ export function ContextPickBar({
                   label={`Remove ${it.label}`}
                   title="Remove"
                   controlSize="compact"
-                  className="text-zinc-500 hover:bg-zinc-700 hover:text-zinc-200"
+                  className="text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50"
                 >
                   <X className="h-3.5 w-3.5" />
                 </IconButton>
@@ -324,7 +324,7 @@ export function ContextPickBar({
                     controlSize="regular"
                     label="Workbench files"
                     leading={<PanelRight className="w-3.5 h-3.5 text-zinc-400" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />}
                   />
                 )}
                 {onBrowseWorkspace && (
@@ -337,12 +337,12 @@ export function ContextPickBar({
                     controlSize="regular"
                     label="Workspace files"
                     leading={<FolderTree className="w-3.5 h-3.5 text-zinc-400" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />}
                   />
                 )}
               </>
             )}
-            <p className="px-2 pt-2 pb-1 text-minimal text-zinc-500">
+            <p className="px-2 pt-2 pb-1 text-minimal text-zinc-400">
               Or attach a message from its reply action.
             </p>
           </PopoverPanel>

@@ -105,7 +105,7 @@ export default function OAuthCallbackPage() {
           <p className="mt-2 text-regular text-zinc-400">{linkedMessage}</p>
         </div>
       ) : (
-        <Spinner contentSize="large" className="text-zinc-500" />
+        <Spinner contentSize="large" className="text-zinc-400" />
       )}
       </div>
     </PublicPageShell>

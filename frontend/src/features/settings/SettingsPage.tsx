@@ -132,7 +132,7 @@ function ServerCard() {
         )}
       </div>
       {!isTauri() && (
-        <p className="text-compact text-zinc-500 mt-3">
+        <p className="text-compact text-zinc-400 mt-3">
           Web clients use this origin. Switch servers from the desktop app or by
           opening a different gateway URL.
         </p>
@@ -725,9 +725,9 @@ function DevicesSessionsCard() {
         <p className="text-regular font-medium text-zinc-200">Devices and sessions</p>
       </div>
       {loading ? (
-        <p className="text-compact text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-400">Loading…</p>
       ) : sessions.length === 0 ? (
-        <p className="text-compact text-zinc-500">No active sessions.</p>
+        <p className="text-compact text-zinc-400">No active sessions.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
           {sessions.map((s) => (
@@ -795,9 +795,9 @@ function ExternalAIPermissionsCard() {
         <p className="text-regular font-medium text-zinc-200">External AI permissions</p>
       </div>
       {loading ? (
-        <p className="text-compact text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-400">Loading…</p>
       ) : consents.length === 0 ? (
-        <p className="text-compact text-zinc-500">
+        <p className="text-compact text-zinc-400">
           No stored consents. When a bot uses an external AI processor, agreements
           appear here.
         </p>
@@ -1047,9 +1047,9 @@ function ProfileEditCard() {
           </Field>
         </div>
       ) : bio ? (
-        <p className="max-w-prose font-reading text-regular leading-relaxed text-zinc-300">{bio}</p>
+        <p className="max-w-prose font-reading text-regular leading-relaxed text-zinc-200">{bio}</p>
       ) : (
-        <p className="font-utility text-compact text-zinc-500">No bio added.</p>
+        <p className="font-utility text-compact text-zinc-400">No bio added.</p>
       )}
 
       <div>
@@ -1060,7 +1060,7 @@ function ProfileEditCard() {
               <OverflowText fullText={`User ID: ${user?.user_id ?? "—"}`} className="w-full">
                 <span className="block truncate">
                   <span className="text-zinc-400">User ID</span>
-                  <code className="ml-3 font-utility text-compact font-normal text-zinc-300">
+                  <code className="ml-3 font-utility text-compact font-normal text-zinc-200">
                     {user?.user_id ?? "—"}
                   </code>
                 </span>
@@ -1076,7 +1076,7 @@ function ProfileEditCard() {
             title={
               <span>
                 <span className="text-zinc-400">Role</span>
-                <span className="ml-3 capitalize text-zinc-300">{user?.role ?? "user"}</span>
+                <span className="ml-3 capitalize text-zinc-200">{user?.role ?? "user"}</span>
               </span>
             }
           />
@@ -1122,7 +1122,7 @@ export default function SettingsPage() {
           // leaving Settings. Matches FriendsPage's back button.
           onClick={() => navigate("/chat")}
           title="Back"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors rounded-sm"
+          className="text-zinc-100 hover:text-zinc-50 transition-colors rounded-sm"
         >
           <ArrowLeft className="w-5 h-5" />
         </UiButton>
@@ -1142,7 +1142,7 @@ export default function SettingsPage() {
                 aria-current={active ? "page" : undefined}
                 controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0  font-medium whitespace-nowrap transition-colors ${
  active
- ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+ ? "bg-zinc-800 text-zinc-100": "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
  }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />

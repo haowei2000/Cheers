@@ -128,11 +128,11 @@ function Preview() {
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <LayoutGrid className="h-4 w-4 text-indigo-300" />
           <h1 className="text-regular font-semibold">Workbench</h1>
-          <span className="text-compact text-zinc-500"># engineering</span>
+          <span className="text-compact text-zinc-400"># engineering</span>
           <div className="ml-auto flex items-center gap-2">
-            <UiButton content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800 text-zinc-300"><Folder className="h-4 w-4" />Raw</UiButton>
-            <UiButton variant="plain" aria-label="Expand" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
-            <UiButton variant="plain" aria-label="Close" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
+            <UiButton content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800 text-zinc-100"><Folder className="h-4 w-4" />Raw</UiButton>
+            <UiButton variant="plain" aria-label="Expand" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" aria-label="Close" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
           </div>
         </header>
         <div className="min-h-0 flex-1">

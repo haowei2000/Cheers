@@ -57,7 +57,7 @@ export function AgentUpdates() {
         </p>
         <UiButton action="refresh" variant="plain"
           type="button"
-          className=" text-zinc-500 hover:text-zinc-300 ml-auto"
+          className=" text-zinc-100 hover:text-zinc-50 ml-auto"
           onClick={() => void check()}
           disabled={busy}
         >

@@ -20,7 +20,7 @@ export function PinToggle({
     >
       <Pin
         className={`w-3.5 h-3.5 ${
-          isPinned ? "fill-amber-400 text-amber-400" : "text-zinc-500 hover:text-zinc-300"
+          isPinned ? "fill-amber-400 text-amber-400" : "text-zinc-400 hover:text-zinc-200"
         }`}
       />
     </UiButton>

@@ -9,6 +9,7 @@ import path from "node:path";
 const RAW_TAGS = ["button", "input", "select", "textarea"];
 const SHARED_CONTROLS = new Set([
   "Button",
+  "ActionButton",
   "IconButton",
   "Input",
   "Select",
@@ -115,7 +116,7 @@ function utilityBase(token) {
 }
 
 function isDevelopmentFile(file) {
-  return /\.(?:test|preview)\.tsx$/.test(file) || /ItemGallery(?:\.preview)?\.tsx$/.test(file);
+  return /\.(?:test|preview)\.tsx?$/.test(file) || /ItemGallery(?:\.preview)?\.tsx$/.test(file);
 }
 
 function isPrimitiveFile(file) {
@@ -152,6 +153,12 @@ export function auditSources(files, ts, policy) {
       detachedEditActionButton: 0,
       actionButtonWithoutKey: 0,
       legacyControlSizeProp: 0,
+      commonActionPresentationOverride: 0,
+      unregisteredFormAction: 0,
+      nonStandardNeutralTextShade: 0,
+      nonStandardDisabledOpacity: 0,
+      nonPrimaryButtonNeutralText: 0,
+      nonStandardNeutralForegroundLiteral: 0,
     },
     findings: [],
     invalidReasons: [],
@@ -172,6 +179,19 @@ export function auditSources(files, ts, policy) {
       ts.forEachChild(node, collectDeclarations);
     };
     collectDeclarations(sourceFile);
+
+    if (!development) {
+      for (const match of source.matchAll(/\btext-zinc-(?:300|500|600|700|800|900)(?:\/[0-9]+)?\b/g)) {
+        const line = source.slice(0, match.index).split("\n").length;
+        result.violations.nonStandardNeutralTextShade += 1;
+        result.findings.push({ file, line, rule: "nonStandardNeutralTextShade", token: match[0] });
+      }
+      for (const match of source.matchAll(/(?:\bcolor\s*:\s*|\bfill=)["']#(?:d4d4d8|71717a|52525b|3f3f46)["']/g)) {
+        const line = source.slice(0, match.index).split("\n").length;
+        result.violations.nonStandardNeutralForegroundLiteral += 1;
+        result.findings.push({ file, line, rule: "nonStandardNeutralForegroundLiteral", token: match[0] });
+      }
+    }
 
     for (const match of source.matchAll(/design-system-(native|exempt):\s*([a-z0-9-]+)/g)) {
       const [, kind, reason] = match;
@@ -200,7 +220,8 @@ export function auditSources(files, ts, policy) {
         }
 
         if (!development) {
-          const tokens = classTokens(classText(node, sourceFile, ts, declarations));
+          const classes = classText(node, sourceFile, ts, declarations);
+          const tokens = classTokens(classes);
           const spacingTokens = tokens.filter((token) => /^(?:-)?(?:p[trblxy]?|m[trblxy]?|gap(?:-[xy])?|space-[xy])-(?:0\.5|1\.5|2\.5|3\.5)$/.test(utilityBase(token)));
           if (spacingTokens.length) {
             result.violations.nonStandardSpacing += spacingTokens.length;
@@ -218,6 +239,19 @@ export function auditSources(files, ts, policy) {
             if (token === "border" && !exempt) {
               result.violations.restingBorder += 1;
               result.findings.push({ file, line, rule: "restingBorder", token });
+            }
+          }
+          const disabledOpacityTokens = classes.match(/\bdisabled:opacity-(?!50\b)[0-9]+\b/g) ?? [];
+          if (disabledOpacityTokens.length) {
+            result.violations.nonStandardDisabledOpacity += disabledOpacityTokens.length;
+            result.findings.push({ file, line, rule: "nonStandardDisabledOpacity", token: disabledOpacityTokens.join(" ") });
+          }
+
+          if (!primitive && ["button", "Button", "UiButton", "ActionButton", "IconButton", "ControlTrigger"].includes(tag)) {
+            const mutedButtonTokens = tokens.filter((token) => /^(?:text-zinc-(?:200|400))$/.test(utilityBase(token)));
+            if (mutedButtonTokens.length) {
+              result.violations.nonPrimaryButtonNeutralText += mutedButtonTokens.length;
+              result.findings.push({ file, line, rule: "nonPrimaryButtonNeutralText", token: mutedButtonTokens.join(" ") });
             }
           }
 
@@ -315,6 +349,31 @@ export function auditSources(files, ts, policy) {
             if (!actionAttribute && contentValue !== "icon" && !selectorLike) {
               result.violations.actionButtonWithoutKey += 1;
               result.findings.push({ file, line, rule: "actionButtonWithoutKey", token: contentValue ?? "text" });
+            }
+          }
+
+          if (!primitive && tag === "ActionButton") {
+            const forbidden = node.attributes?.properties.filter(
+              (property) => ts.isJsxAttribute(property) && ["content", "variant"].includes(property.name.getText(sourceFile))
+            ) ?? [];
+            if (forbidden.length) {
+              result.violations.commonActionPresentationOverride += forbidden.length;
+              result.findings.push({ file, line, rule: "commonActionPresentationOverride", token: forbidden.map((property) => property.name.getText(sourceFile)).join(" ") });
+            }
+          }
+
+          if (!primitive && tag === "IconButton") {
+            const labelAttribute = node.attributes?.properties.find(
+              (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "label"
+            );
+            const labelText = labelAttribute?.initializer && ts.isStringLiteral(labelAttribute.initializer)
+              ? labelAttribute.initializer.text
+              : labelAttribute?.initializer && ts.isJsxExpression(labelAttribute.initializer)
+                ? staticExpressionText(labelAttribute.initializer.expression, sourceFile, ts, declarations)
+                : "";
+            if (/^Save\b.*\b(?:settings|profile|config)\b/i.test(labelText.trim())) {
+              result.violations.unregisteredFormAction += 1;
+              result.findings.push({ file, line, rule: "unregisteredFormAction", token: labelText.trim() });
             }
           }
 

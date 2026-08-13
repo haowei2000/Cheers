@@ -147,7 +147,6 @@ export function TaskClaimSettings({
       title={editorMode === "add" ? "Add claim policy" : `Edit ${editorBot ? botName(editorBot) : "claim policy"}`}
       onCancel={cancel}
       onSave={() => void save()}
-      saveLabel={editorMode === "add" ? "Add policy" : "Save changes"}
       saving={saving}
       saveDisabled={!draftBotId || draft.mode === "off"}
     >
@@ -246,7 +245,7 @@ export function TaskClaimSettings({
               controlSize="regular"
               leading={<Radio className={controlIconClasses.regular} />}
               title={botName(bot)}
-              status={<span className="font-utility text-compact uppercase tracking-wide text-zinc-500">{modeLabel(policy.mode)}</span>}
+              status={<span className="font-utility text-compact uppercase tracking-wide text-zinc-400">{modeLabel(policy.mode)}</span>}
               actions={(
                 <>
                   <IconButton label={`Edit ${botName(bot)} claim policy`} controlSize="compact" onClick={() => beginEdit(bot)}>

@@ -1019,7 +1019,7 @@ function MessageComposerImpl({
               title={c.label}
               status={c.sublabel ? <span className="truncate text-compact text-zinc-400">@{c.sublabel}</span> : undefined}
               leading={c.type === "bot" ? (
-                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-500" : "text-indigo-400")} />
+                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-400" : "text-indigo-400")} />
               ) : (
                 <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               )}
@@ -1029,8 +1029,8 @@ function MessageComposerImpl({
  "border-0 ",
  i === picker.index
  ? "bg-indigo-600/30 text-zinc-100": c.type === "bot" && c.isOnline === false
- ? "text-zinc-500 hover:bg-zinc-800"
- : "text-zinc-300 hover:bg-zinc-800"
+ ? "text-zinc-400 hover:bg-zinc-800"
+ : "text-zinc-200 hover:bg-zinc-800"
  )}
             />
           ))}
@@ -1061,7 +1061,7 @@ function MessageComposerImpl({
               }
               leading={<FileText className="w-3.5 h-3.5 text-indigo-400" />}
               controlSize="regular"
-              className="bg-zinc-800 text-zinc-300"
+              className="bg-zinc-800 text-zinc-200"
               actions={
                 <IconButton
                 onClick={() => removeAttachment(a.file_id)}
@@ -1191,9 +1191,9 @@ function MessageComposerImpl({
             controlSize="regular"
             label={dictating ? "Stop dictation" : "Start voice dictation"}
             className={cn(
- "disabled:opacity-40",
+ "disabled:opacity-50",
  dictating
- ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
+ ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50",
  )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
@@ -1212,9 +1212,9 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Attach file"
               className={cn(
- "disabled:opacity-40",
+ "disabled:opacity-50",
  attachMenuOpen
- ? "text-zinc-200 bg-zinc-700/50": "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+ ? "text-zinc-100 bg-zinc-700/50": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
  )}
               title="Attach file"
             >
@@ -1229,7 +1229,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Upload file"
-                  leading={<Upload className="w-3.5 h-3.5 text-zinc-500" />}
+                  leading={<Upload className="w-3.5 h-3.5 text-zinc-400" />}
                 />
                 <MenuOption
                   onClick={() => {
@@ -1238,7 +1238,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Channel file"
-                  leading={<FolderOpen className="w-3.5 h-3.5 text-zinc-500" />}
+                  leading={<FolderOpen className="w-3.5 h-3.5 text-zinc-400" />}
                 />
                 {isTauri() && (
                   <MenuOption
@@ -1248,7 +1248,7 @@ function MessageComposerImpl({
                     }}
                     controlSize="regular"
                     label="Screenshot"
-                    leading={<Camera className="w-3.5 h-3.5 text-zinc-500" />}
+                    leading={<Camera className="w-3.5 h-3.5 text-zinc-400" />}
                   />
                 )}
               </PopoverPanel>
@@ -1260,7 +1260,7 @@ function MessageComposerImpl({
               onClick={openCommandPicker}
               disabled={disabled || sending}
               controlSize="regular"
-              className="disabled:opacity-40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+              className="disabled:opacity-50 text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
               label="Insert a command"
               title="Commands (/)"
             >
@@ -1294,7 +1294,7 @@ function MessageComposerImpl({
               label="Send message"
               className={cn(
  canSend
- ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
+ ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-100 opacity-50 cursor-not-allowed"
  )}
               title="Send message"
             >

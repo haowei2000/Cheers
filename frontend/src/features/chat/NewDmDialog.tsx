@@ -79,7 +79,7 @@ export function NewDmDialog({
     <Dialog title="New direct message" onClose={onClose}>
       <>
         <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-          <Search className="w-3.5 h-3.5 text-zinc-500" />
+          <Search className="w-3.5 h-3.5 text-zinc-400" />
           <UiInput
             ref={inputRef}
             autoFocus
@@ -98,7 +98,7 @@ export function NewDmDialog({
                 setQ("");
                 inputRef.current?.focus();
               }}
-              className="rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
+              className="rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
             >
               <X className="w-4 h-4" />
             </UiButton>
@@ -111,7 +111,7 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_user_id: u.user_id }, u.display_name || u.username)}
               title={u.display_name || u.username}
-              leading={<User className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />}
+              leading={<User className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
               className="border-0"
             />
           ))}

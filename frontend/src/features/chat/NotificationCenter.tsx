@@ -189,7 +189,7 @@ export function ActivityCenter() {
       <IconButton
         onClick={() => setOpen(true)}
         label="Activity — approvals & invites"
-        className="relative text-zinc-500"
+        className="relative text-zinc-100"
       >
         <Bell className="w-4 h-4" />
         {badge > 0 && (

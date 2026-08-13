@@ -35,7 +35,7 @@ export function PublicPageShell({
             Cheers
           </Link>
           <div className="mt-auto max-w-xs border-t border-zinc-800 pt-5">
-            <p className="font-utility text-minimal font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            <p className="font-utility text-minimal font-semibold uppercase tracking-[0.14em] text-zinc-400">
               A shared desk for people and agents
             </p>
             <p className="font-reading mt-3 text-regular leading-6 text-zinc-400">
@@ -51,11 +51,11 @@ export function PublicPageShell({
                 <Link to="/" className="font-masthead text-comfortable text-zinc-100">
                   Cheers
                 </Link>
-                <span className="font-utility text-minimal uppercase tracking-[0.12em] text-zinc-600">
+                <span className="font-utility text-minimal uppercase tracking-[0.12em] text-zinc-400">
                   Web edition
                 </span>
               </div>
-              <p className="font-utility text-minimal font-semibold uppercase tracking-[0.14em] text-zinc-500">
+              <p className="font-utility text-minimal font-semibold uppercase tracking-[0.14em] text-zinc-400">
                 {eyebrow}
               </p>
               <h1 className="font-masthead mt-2 text-comfortable font-normal leading-[0.98] tracking-[0.005em] text-zinc-50">

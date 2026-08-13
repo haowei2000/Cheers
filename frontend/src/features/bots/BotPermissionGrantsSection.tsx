@@ -210,7 +210,6 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       title={editorMode === "add" ? "Add permission grant" : "Edit permission grant"}
       onCancel={resetDraft}
       onSave={() => void saveGrant()}
-      saveLabel={editorMode === "add" ? "Add grant" : "Save changes"}
       saving={busy !== null}
       saveDisabled={!perm || !subject}
     >
@@ -269,7 +268,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       {access.effective && access.effective.length > 0 && (
         <div className="overflow-hidden rounded-sm ">
           <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/40">
-            <p className="text-compact font-medium text-zinc-300">Effective defaults · Bot-wide</p>
+            <p className="text-compact font-medium text-zinc-200">Effective defaults · Bot-wide</p>
             <span className="text-minimal text-zinc-400">
               <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
               grants can narrow this per scope
@@ -313,7 +312,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                       <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
                         <td className="px-3 py-1">
                           <span
-                            className="text-zinc-300"
+                            className="text-zinc-200"
                             title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}
                           >
                             {gl.label}

@@ -78,7 +78,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           onClick={() => toast.dismiss(t.id)}
           label="Dismiss"
           controlSize="compact"
-          className="-my-1 -mr-1 flex-shrink-0 text-zinc-500 transition-colors hover:text-zinc-300"
+          className="-my-1 -mr-1 flex-shrink-0 text-zinc-100 transition-colors hover:text-zinc-50"
         >
           <X className="h-4 w-4" />
         </IconButton>

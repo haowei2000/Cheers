@@ -7,7 +7,7 @@ import { ItemList, WorkbenchItem } from "@/components/ui/item";
 
 const homeCls: Record<string, string> = {
   cheers: "bg-indigo-950/60 border-indigo-900 text-indigo-200",
-  observe: "bg-zinc-800 border-zinc-700 text-zinc-300",
+  observe: "bg-zinc-800 border-zinc-700 text-zinc-200",
   connector: "bg-amber-950/50 border-amber-900 text-amber-200",
   agent: "bg-zinc-800 border-zinc-700 text-zinc-400",
 };
@@ -48,14 +48,14 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-zinc-300">Recent activity</span>
+        <span className="text-compact font-medium text-zinc-200">Recent activity</span>
         <span className="text-compact text-zinc-400">
           every event the bot emitted (newest first)
         </span>
         <IconButton
           label="Refresh bot activity"
           onClick={load}
-          className="ml-auto text-zinc-500 hover:text-zinc-300"
+          className="ml-auto text-zinc-100 hover:text-zinc-50"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />

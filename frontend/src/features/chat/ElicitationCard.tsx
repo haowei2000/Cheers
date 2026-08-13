@@ -83,9 +83,9 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
             const label = schema.title || name;
             if (schema.type === "boolean") return <CheckboxField key={name} label={label} checked={Boolean(values[name])} onChange={e => setValues(v => ({...v, [name]:e.target.checked}))} />;
             const choices = schema.enum ?? schema.items?.enum;
-            return <label key={name} className="block text-compact text-zinc-300">
+            return <label key={name} className="block text-compact text-zinc-200">
               <span>{label}{required.has(name) ? " *" : ""}</span>
-              {schema.description && <span className="ml-2 text-zinc-500">{schema.description}</span>}
+              {schema.description && <span className="ml-2 text-zinc-400">{schema.description}</span>}
               {choices ? <UiSelect controlSize="regular" multiple={schema.type === "array"} className="mt-1" value={schema.type === "array" ? ((values[name] as Array<string | number> | undefined) ?? []).map(String) : String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "array" ? Array.from(e.target.selectedOptions, option => choices.find(choice => String(choice) === option.value) ?? option.value) : choices.find(choice => String(choice) === e.target.value) ?? e.target.value}))}>
                 {schema.type !== "array" && <option value="">Select…</option>}{choices.map(choice => <option key={String(choice)} value={String(choice)}>{String(choice)}</option>)}
               </UiSelect> : <UiInput controlSize="regular" className="mt-1" type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} required={required.has(name)} value={String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "number" || schema.type === "integer" ? Number(e.target.value) : e.target.value}))} />}
@@ -94,15 +94,15 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
         </div>}
         {data.mode === "url" && <div className="mt-3 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact text-zinc-400">
           <p>{isMcpOAuth ? "Authorize this Agent to use Cheers tools on" : "Continue on"} <span className="font-medium text-zinc-200">{host || "external site"}</span>. Cheers will not open or prefetch it until you confirm.</p>
-          {data.url && <code className="mt-1 block break-all text-zinc-300">{data.url}</code>}
-          {isMcpOAuth && <p className="mt-2 text-zinc-500">Credentials stay in the Agent&apos;s OAuth store and are never returned through ACP or added to model context.</p>}
+          {data.url && <code className="mt-1 block break-all text-zinc-200">{data.url}</code>}
+          {isMcpOAuth && <p className="mt-2 text-zinc-400">Credentials stay in the Agent&apos;s OAuth store and are never returned through ACP or added to model context.</p>}
         </div>}
         {isInitiatingUser ? <div className="mt-3 flex flex-wrap gap-2">
           <UiButton action="link" variant="plain" disabled={busy !== null} onClick={() => data.mode === "url" ? void openUrl() : void resolve("accept")} controlSize="regular" className="gap-2 rounded-sm bg-indigo-600 text-white hover:bg-indigo-500">
             {busy === "accept" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{data.mode === "url" ? <>{isMcpOAuth ? "Authorize Cheers MCP" : "Continue"} <ExternalLink className="h-3.5 w-3.5" /></> : "Submit"}
           </UiButton>
-          <UiButton action="cancel" variant="plain" disabled={busy !== null} onClick={() => void resolve("decline")} controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Decline</UiButton>
-        </div> : <p className="mt-3 text-compact text-zinc-500">Waiting for the user who started this Agent request to respond.</p>}
+          <UiButton action="cancel" variant="plain" disabled={busy !== null} onClick={() => void resolve("decline")} controlSize="regular" className="rounded-sm bg-zinc-800 hover:bg-zinc-700">Decline</UiButton>
+        </div> : <p className="mt-3 text-compact text-zinc-400">Waiting for the user who started this Agent request to respond.</p>}
       </div>
     </div>
   </div>;

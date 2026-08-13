@@ -1,4 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
@@ -11,7 +13,6 @@ import { useProfileCard } from "./ProfileHovercard";
 import { DiffView } from "./DiffView";
 import { looksLikeGitCommit } from "./workspaceLink";
 import type { Message, PermissionContentData, PermissionOption } from "@/types";
-import { ControlTrigger } from "@/components/ui/control-trigger";
 import { OverflowText } from "@/components/ui/overflow-text";
 import { ShieldCheck } from "lucide-react";
 
@@ -285,7 +286,7 @@ export function PermissionCard({
         <UiButton action="request" variant="plain"
           disabled={busy || requested}
           onClick={onRequestAccess}
-          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-zinc-100 transition-colors hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
         >
           {requested ? "Requested" : "Request access"}
         </UiButton>
@@ -296,8 +297,9 @@ export function PermissionCard({
   // ── Pending, collapsed: one-line preview (skipped when embedded) ──────────
   if (collapsed && !embedded) {
     return (
-      <UiButton action="expand" controlWidth="fill" variant="plain"
+      <ControlTrigger controlWidth="fill"
         onClick={() => setCollapsed(false)}
+        aria-expanded="false"
         title="Show approval details"
         controlSize="regular" className={cn(
  shell,
@@ -312,9 +314,9 @@ export function PermissionCard({
           )}
         </div>
         <span className="flex items-center gap-2 whitespace-nowrap text-compact text-zinc-400">
-          Details <span className="text-zinc-500">⌄</span>
+          Details <span className="text-zinc-400">⌄</span>
         </span>
-      </UiButton>
+      </ControlTrigger>
     );
   }
 
@@ -332,14 +334,11 @@ export function PermissionCard({
           <span className="shrink-0 text-minimal text-amber-400/90">Needs approval</span>
         )}
         {!embedded && (
-          <UiButton action="collapse" variant="plain"
+          <ActionButton action="collapse" context="disclosure"
             onClick={() => setCollapsed(true)}
-            aria-label="Collapse"
-            title="Collapse"
-            className="shrink-0 leading-none text-zinc-500 transition-colors hover:text-zinc-300"
-          >
-            <span className="inline-block rotate-180 text-compact">⌄</span>
-          </UiButton>
+            accessibleLabel="Collapse approval details"
+            className="shrink-0 leading-none text-zinc-100 transition-colors hover:text-zinc-50"
+          />
         )}
       </div>
 
@@ -348,11 +347,11 @@ export function PermissionCard({
           {compact ? (
             <OverflowText
               fullText={command}
-              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-zinc-300"
+              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-zinc-200"
               touchDisclosure={false}
             />
           ) : (
-            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-300">
+            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-200">
               {command}
             </pre>
           )}
@@ -368,11 +367,11 @@ export function PermissionCard({
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-100 transition-colors hover:bg-zinc-800 hover:text-zinc-50"
               >
-                <span className="text-zinc-500">±</span>
+                <span className="text-zinc-400">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
-                {diffLoading && <span className="text-zinc-500">…</span>}
+                {diffLoading && <span className="text-zinc-400">…</span>}
               </UiButton>
               {diffOpen && (
                 <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
@@ -410,14 +409,14 @@ export function PermissionCard({
               controlSize="regular"
               className={cn(
                 "justify-start bg-zinc-800/55 text-left transition-colors hover:bg-zinc-700/70",
-                reject ? "text-red-300 hover:text-red-200" : "text-zinc-200 hover:text-zinc-100",
+                reject ? "text-red-300 hover:text-red-200" : "text-zinc-100 hover:text-zinc-50",
               )}
             >
               <span className="min-w-0 truncate text-compact font-medium">
                 {o.name || o.kind || id}
               </span>
               {!compact && o.description && (
-                <span className="ml-auto min-w-0 truncate text-minimal text-zinc-500">
+                <span className="ml-auto min-w-0 truncate text-minimal text-zinc-400">
                   {o.description}
                 </span>
               )}

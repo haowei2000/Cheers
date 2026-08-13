@@ -122,7 +122,7 @@ export function TwoFactorCard() {
           <div>
             <p className="text-regular text-zinc-200">
               Status:{" "}
-              <span className={enabled ? "text-emerald-400" : "text-zinc-500"}>
+              <span className={enabled ? "text-emerald-400" : "text-zinc-400"}>
                 {enabled == null ? "…" : enabled ? "On" : "Off"}
               </span>
             </p>
@@ -331,20 +331,20 @@ export function PasskeyCard() {
         Sign in with Face ID, Touch ID, or a device passkey when 2FA is required.
       </p>
 
-      <p className="text-regular text-zinc-300 mb-3">
+      <p className="text-regular text-zinc-200 mb-3">
         Status:{" "}
-        <span className={available ? "text-emerald-400" : "text-zinc-500"}>
+        <span className={available ? "text-emerald-400" : "text-zinc-400"}>
           {loading ? "…" : available ? "Available" : "Not configured on server"}
         </span>
         {rpId && (
-          <span className="ml-2 font-mono text-compact text-zinc-500">{rpId}</span>
+          <span className="ml-2 font-mono text-compact text-zinc-400">{rpId}</span>
         )}
       </p>
 
       {loading ? (
-        <p className="text-compact text-zinc-500">Loading…</p>
+        <p className="text-compact text-zinc-400">Loading…</p>
       ) : credentials.length === 0 ? (
-        <p className="text-compact text-zinc-500 mb-3">No passkeys yet.</p>
+        <p className="text-compact text-zinc-400 mb-3">No passkeys yet.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
