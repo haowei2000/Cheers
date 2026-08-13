@@ -421,7 +421,7 @@ export function DiscussionView({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-zinc-700" /><p className="mt-3 text-regular font-medium text-zinc-300">Select a discussion</p><p className="mt-1 text-compact text-zinc-500">Open a topic to read and reply.</p></div></div>
+        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-zinc-600" /><p className="mt-3 text-regular font-medium text-zinc-300">Select a discussion</p><p className="mt-1 text-compact text-zinc-500">Open a topic to read and reply.</p></div></div>
       )}
       </div>
       {(selectedId || creating) && footer}

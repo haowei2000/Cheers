@@ -524,7 +524,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         <span
           className={cn(
             "shrink-0 text-compact",
-            pending ? "text-amber-400/90" : ok ? "text-zinc-400" : denied || expired ? "text-red-400/70" : "text-zinc-400",
+            pending ? "text-amber-400/90" : ok ? "text-zinc-400" : denied || expired ? "text-red-400" : "text-zinc-400",
           )}
         >
           {pending ? "Needs approval" : expired ? "Expired" : ok ? "Approved" : denied ? "Denied" : statusLabel(event.status ?? "Done")}

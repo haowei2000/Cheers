@@ -42,15 +42,17 @@
 | 工作区侧轨 | `bg-rail`（`#0f0f11`） |
 | 侧栏 | `bg-sidebar`（`#18181b`） |
 | 卡片、弹窗、popover | `bg-zinc-900` —— 无边框；分层靠表面明度差 + 阴影 |
-| 输入框、chip、软按钮 | `bg-zinc-800`（chip 可用 `/60`） |
+| 输入框 | `bg-zinc-800 ring-1 ring-inset ring-zinc-600` |
+| chip、软按钮 | `bg-zinc-800`（chip 可用 `/60`） |
 | 弹窗内的内凹字段 | `bg-zinc-950` |
 | 软表面 hover | `bg-zinc-700` |
 
 **分层原则——全面无边框。** 层与层之间靠表面明度差、阴影和有意识的间距分离，绝
-不用盒式描边：按钮、输入框、卡片、chip、popover 一律禁止 `border border-*`。堆
+不用会影响布局的盒式描边：按钮、输入框、卡片、chip、popover 一律禁止 `border border-*`。
+表单字段使用中性内描边，确保边界与相邻深色表面至少达到 3:1 对比度。堆
 叠区域默认用垂直和水平**间距**分组；只有需要像表格一样连续扫描的高密度数据区域
-才保留 1px 分割线，tab 的下划线**指示器**仍然保留。ring 只作为**状态**出现：focus
-（`ring-indigo-500`）和错误（`ring-red-500`）。
+才保留 1px 分割线，tab 的下划线**指示器**仍然保留。ring 用于字段边界和**状态**：
+中性（`ring-zinc-600`）、focus（`ring-indigo-500`）和错误（`ring-red-500`）。
 
 ### 排版
 
@@ -142,12 +144,14 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 
 ### 2.3 文本输入
 
-单行文本用 `<Input>`。输入类字段是**无边框的填充盒**——填充色就是可输入的
-提示，ring 只表达状态。select / textarea 在共享组件出现前镜像同一写法：
+单行文本用 `<Input>`。输入类字段是**带中性内描边的填充盒**——填充色表达可输入性，
+内描边保证字段边界与相邻深色表面至少达到 3:1；focus / error 会替换中性 ring。
+select / textarea 镜像同一写法：
 
 ```tsx
-// 字段标准写法（input / select / textarea）—— 无边框
-className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600
+// 字段标准写法（input / select / textarea）—— 无影响布局的边框
+className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400
+           ring-1 ring-inset ring-zinc-600
            focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
 // 错误态：追加 ring-1 ring-red-500/70

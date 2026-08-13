@@ -109,7 +109,7 @@ export function TwoFactorCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-indigo-400" /> Authenticator app
       </p>
@@ -323,7 +323,7 @@ export function PasskeyCard() {
   }
 
   return (
-    <section className="border-t border-zinc-800 py-5">
+    <section className="border-t border-zinc-600/70 py-5">
       <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <Fingerprint className="w-4 h-4 text-indigo-400" /> Passkeys
       </p>

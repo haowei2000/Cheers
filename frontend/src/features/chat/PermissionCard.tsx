@@ -239,7 +239,7 @@ export function PermissionCard({
       <div className="flex items-center gap-2 py-1 text-compact">
         <span
           className={cn(
-            expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400/70"
+            expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
