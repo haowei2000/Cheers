@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-13",
+  "platform": "macOS",
+  "protocol_version": 1,
+  "result_scope": "ACP initialize only; this does not pass any OAuth lifecycle case",
+  "agents": [
+    {
+      "id": "codex",
+      "command": ["npx", "-y", "@agentclientprotocol/codex-acp@1.2.0"],
+      "reported_name": "@agentclientprotocol/codex-acp",
+      "reported_version": "1.2.0",
+      "mcp_http": true,
+      "mcp_sse": false
+    },
+    {
+      "id": "claude",
+      "command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.66.0"],
+      "reported_name": "@agentclientprotocol/claude-agent-acp",
+      "reported_version": "0.66.0",
+      "mcp_http": true,
+      "mcp_sse": true
+    },
+    {
+      "id": "gemini",
+      "command": ["npx", "-y", "@google/gemini-cli@0.55.1", "--acp"],
+      "reported_name": "gemini-cli",
+      "reported_version": "0.55.1",
+      "mcp_http": true,
+      "mcp_sse": true
+    },
+    {
+      "id": "opencode",
+      "command": ["npx", "-y", "opencode-ai@1.18.18", "acp"],
+      "reported_name": "OpenCode",
+      "reported_version": "1.18.18",
+      "mcp_http": true,
+      "mcp_sse": true
+    }
+  ]
+}
