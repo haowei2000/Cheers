@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -61,6 +62,8 @@ interface Props {
   onExpandedChange?: (expanded: boolean) => void;
   /** False when the parent message renders the unified Details trigger. */
   showToggle?: boolean;
+  /** Inline messages show only live/urgent state; the record owns full history. */
+  view?: "inline" | "record";
 }
 
 type EventVisual = { Icon: LucideIcon; tone: string; label: string };
@@ -557,6 +560,7 @@ function TraceItem({
   channelId,
   currentUserId,
   onApprovalResolved,
+  view,
 }: {
   event: TraceEvent;
   active: boolean;
@@ -566,6 +570,7 @@ function TraceItem({
   channelId?: string;
   currentUserId?: string;
   onApprovalResolved?: () => void;
+  view: "inline" | "record";
 }) {
   const { Icon, tone, label } = eventMeta(event);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -612,31 +617,14 @@ function TraceItem({
   // Pending approvals expand inline under the row with action buttons — no click needed.
   if (needsAction && pendingApproval) {
     return (
-      <div className="min-w-0 space-y-2">
-        <div
-          className={cn(
-            "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left",
-            "bg-amber-500/5",
-          )}
-        >
-          <Icon className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />
-          <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-zinc-200">
-            {displayTitle}
-          </span>
-          {preview && (
-            <span className="min-w-0 flex-1 truncate font-mono text-minimal text-zinc-400" title={preview}>
-              {preview}
-            </span>
-          )}
-          <span className={cn("shrink-0 text-minimal", statusTone)}>{statusText}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-amber-400/70" />
-        </div>
+      <div className="min-w-0">
         <PermissionCard
           message={pendingApproval}
           channelId={channelId}
           currentUserId={currentUserId}
           onResolved={onApprovalResolved}
           embedded
+          compact={view === "inline"}
         />
       </div>
     );
@@ -644,14 +632,14 @@ function TraceItem({
 
   return (
     <div className="relative min-w-0">
-      <UiButton action={active ? "collapse" : "expand"} content="iconText" controlWidth="fill" variant="plain"
+      <ControlTrigger controlWidth="fill"
         ref={triggerRef}
         type="button"
         onClick={onToggle}
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
- "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-900/70",
+ "justify-start gap-2 text-left text-zinc-400 transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
  )}
       >
@@ -675,7 +663,7 @@ function TraceItem({
             active && "rotate-90 text-zinc-300",
           )}
         />
-      </UiButton>
+      </ControlTrigger>
       {active &&
         createPortal(
           <FloatingPanel
@@ -697,6 +685,7 @@ function TraceItem({
             viewport
             anchorRef={triggerRef}
             reanchorOnOpen
+            anchorPlacement="left"
             bodyClassName="!p-0"
           >
             <div className="p-3">
@@ -766,6 +755,7 @@ export function BotTracePanel({
   expanded: controlledExpanded,
   onExpandedChange,
   showToggle = true,
+  view = "record",
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(
     pendingApprovals.some(
@@ -833,10 +823,23 @@ export function BotTracePanel({
     ];
   }, [displayedEvents, orphanPending, msgId]);
 
-  // While the turn is running, only show the latest step (plus any actionable
-  // approval that isn't that step). Completed turns / explicit "Show all" keep
-  // the full timeline for auditability.
+  // The message surface is an operational glance: pending approvals plus the
+  // latest running step only. Message Record is the sole owner of durable
+  // history, preventing the same trace timeline from appearing twice.
   const visibleTimeline = useMemo(() => {
+    if (view === "inline") {
+      const pending = timeline.filter((event) => {
+        if (event.kind !== "approval" || !event.request_id) return false;
+        const approval = approvalByRequestId.get(event.request_id);
+        return Boolean(
+          approval &&
+          !(approval.content_data as PermissionContentData | null | undefined)?.resolved,
+        );
+      });
+      if (!streaming) return pending;
+      const latest = [...timeline].reverse().find((event) => !pending.includes(event));
+      return latest ? [...pending, latest] : pending;
+    }
     if (!streaming || showAll || timeline.length <= 1) return timeline;
     const latest = timeline[timeline.length - 1]!;
     const pendingExtras = timeline.filter((e) => {
@@ -847,7 +850,7 @@ export function BotTracePanel({
         ?.resolved;
     });
     return [...pendingExtras, latest];
-  }, [streaming, showAll, timeline, approvalByRequestId]);
+  }, [view, streaming, showAll, timeline, approvalByRequestId]);
 
   // Keep Agent steps open while something still needs a decision.
   useEffect(() => {
@@ -889,11 +892,11 @@ export function BotTracePanel({
 
   // Fetch on open (user toggle or auto-open for a pending approval).
   useEffect(() => {
-    if (!expanded || events !== null || loading) return;
+    if (view === "inline" || !expanded || events !== null || loading) return;
     void load();
     // Intentionally keyed on expand/cache only — load() closes over the latest ids.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded, events, loading, channelId, msgId]);
+  }, [view, expanded, events, loading, channelId, msgId]);
 
   // Once we've loaded and found nothing (and nothing pending), drop the toggle.
   if (
@@ -908,17 +911,18 @@ export function BotTracePanel({
   const approvalCount = timeline.filter((e) => e.kind === "approval").length;
   const pendingCount = actionableApprovals.length;
   const hasRows = visibleTimeline.length > 0;
-  const latestOnly = streaming && !showAll && timeline.length > 1;
+  const latestOnly = view === "record" && streaming && !showAll && timeline.length > 1;
 
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
-        <UiButton action={expanded ? "collapse" : "expand"} content="iconText" variant="plain"
+        <ControlTrigger
           type="button"
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
+          aria-label={expanded ? "Hide agent steps" : "Show agent steps"}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="flex items-center gap-2  text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="w-auto justify-start text-zinc-400 transition-colors hover:bg-zinc-900/70 hover:text-zinc-200"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -945,7 +949,7 @@ export function BotTracePanel({
             </span>
           ) : null}
           {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-        </UiButton>
+        </ControlTrigger>
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
@@ -976,26 +980,29 @@ export function BotTracePanel({
                   )
                 }
                 onApprovalResolved={() => setActiveEventId(null)}
+                view={view}
               />
             );
           })}
-          {latestOnly && (
-            <UiButton action="collapse" variant="plain"
+          {view === "record" && latestOnly && (
+            <ControlTrigger
               type="button"
               onClick={() => setShowAll(true)}
-              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              aria-label={`Show all ${timeline.length} agent steps`}
+              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
             >
               Show all {timeline.length} steps
-            </UiButton>
+            </ControlTrigger>
           )}
-          {streaming && showAll && timeline.length > 1 && (
-            <UiButton action="expand" variant="plain"
+          {view === "record" && streaming && showAll && timeline.length > 1 && (
+            <ControlTrigger
               type="button"
               onClick={() => setShowAll(false)}
-              className="self-start  text-zinc-500 hover:text-zinc-300 transition-colors mt-1"
+              aria-label="Show the latest agent step only"
+              className="mt-1 w-auto self-start justify-start text-zinc-500 transition-colors hover:bg-zinc-900/70 hover:text-zinc-300"
             >
               Show latest only
-            </UiButton>
+            </ControlTrigger>
           )}
         </div>
       )}

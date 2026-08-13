@@ -245,3 +245,4 @@ The full frame keeps all three targets legible at original resolution, so a sepa
 No actionable P0, P1, or P2 visual mismatch remains in the three requested areas.
 
 final result: passed
+

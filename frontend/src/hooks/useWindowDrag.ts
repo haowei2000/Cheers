@@ -9,7 +9,7 @@
 // full-screen sheets — pass `enabled: false` there and the hook is inert.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import { placeNearRect } from "@/components/ui/floating-layer";
+import { placeNearRect, type AnchorPlacement } from "@/components/ui/floating-layer";
 import {
   beginSnap,
   updateSnap,
@@ -128,6 +128,8 @@ export interface WindowDragOptions {
   anchorRef?: RefObject<HTMLElement | null>;
   /** Ignore persisted x/y on each open and re-place near `anchorRef` (keeps w/h). */
   reanchorOnOpen?: boolean;
+  /** Preferred side of the anchor for a viewport float. */
+  anchorPlacement?: AnchorPlacement;
 }
 
 // `getBounds` (optional) turns on BOUNDED mode: the window floats inside that
@@ -152,6 +154,7 @@ export function useWindowDrag(
   const panelOpen = opts.open ?? true;
   const anchorRef = opts.anchorRef;
   const reanchorOnOpen = opts.reanchorOnOpen ?? false;
+  const anchorPlacement = opts.anchorPlacement ?? "down";
   const [geom, setGeom] = useState<Geom>(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -210,11 +213,11 @@ export function useWindowDrag(
     const el = elRef.current;
     const w = g.w ?? el?.offsetWidth ?? 640;
     const h = g.h ?? el?.offsetHeight ?? 480;
-    const placed = placeNearRect(anchor.getBoundingClientRect(), w, h);
+    const placed = placeNearRect(anchor.getBoundingClientRect(), w, h, anchorPlacement);
     const next: Geom = { ...g, x: placed.x, y: placed.y };
     setGeom(next);
     // Size may already be persisted; don't write until the user drags/resizes.
-  }, [enabled, panelOpen, getBounds, anchorRef, reanchorOnOpen]);
+  }, [enabled, panelOpen, getBounds, anchorRef, reanchorOnOpen, anchorPlacement]);
 
   const z = useSyncExternalStore(subscribeZ, () => {
     const i = zOrder.indexOf(storageKey);

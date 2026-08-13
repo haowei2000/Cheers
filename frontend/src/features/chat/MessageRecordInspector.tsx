@@ -174,6 +174,7 @@ export function MessageRecordInspector({
                 focusRequestId={focusRequestId}
                 expanded
                 showToggle={false}
+                view="record"
               />
             </section>
           )}

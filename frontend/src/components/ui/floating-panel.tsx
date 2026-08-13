@@ -7,6 +7,7 @@ import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
+import type { AnchorPlacement } from "@/components/ui/floating-layer";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
 // A NON-MODAL floating window (ViewBoard-style chrome): rounded-sm elevated card,
@@ -38,6 +39,7 @@ export function FloatingPanel({
   viewport = false,
   anchorRef,
   reanchorOnOpen = false,
+  anchorPlacement = "down",
   children,
 }: {
   title: ReactNode;
@@ -67,6 +69,8 @@ export function FloatingPanel({
   anchorRef?: RefObject<HTMLElement | null>;
   /** Recompute x/y from the anchor every open; keep resized w/h. */
   reanchorOnOpen?: boolean;
+  /** Preferred side of an anchored viewport panel. */
+  anchorPlacement?: AnchorPlacement;
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -85,6 +89,7 @@ export function FloatingPanel({
       open: true,
       anchorRef: viewport ? anchorRef : undefined,
       reanchorOnOpen: viewport ? reanchorOnOpen : false,
+      anchorPlacement,
     }
   );
   // Minimized = just the title bar (a compact chip you can park anywhere).
