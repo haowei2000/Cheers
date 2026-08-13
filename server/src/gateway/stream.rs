@@ -769,9 +769,7 @@ pub async fn broadcast_and_trigger_created_message(
     if mentions.is_empty() {
         return None;
     }
-    let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
-        return None;
-    };
+    let channel_seq = created.get("channel_seq").and_then(Value::as_i64)?;
     // Same proactive-send chain assignment as handle_send: inherit the author
     // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
     // else root a new one (§8).

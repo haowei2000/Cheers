@@ -251,8 +251,8 @@ async fn list_reject_logs_by_filter(
     )
     .bind(bot_id)
     .bind(params.delegation_id.as_deref())
-    .bind(params.start_at.clone())
-    .bind(params.end_at.clone())
+    .bind(params.start_at)
+    .bind(params.end_at)
     .bind(fetch_limit)
     .bind(offset)
     .fetch_all(db)
@@ -292,8 +292,8 @@ async fn list_reject_logs_by_filter(
         db,
         bot_id,
         params.delegation_id.as_deref(),
-        params.start_at.clone(),
-        params.end_at.clone(),
+        params.start_at,
+        params.end_at,
     )
     .await?;
 

@@ -56,7 +56,7 @@ Gateway ── workspace_req ── owner Connector ── local file read
 
 ### 历史 staged 文件
 
-- migration `0075_retire_staged_attachments.sql` 将历史 `status='staged'` 标为 `expired`，清除 `remote_ref` 并写入 `expires_at`。
+- migration `0076_retire_staged_attachments.sql` 将历史 `status='staged'` 标为 `expired`，清除 `remote_ref` 并写入 `expires_at`。
 - 这些记录只有 Connector 本地路径而没有 Gateway 可访问的字节，无法安全自动迁移；Web 不再尝试 realize。
 - 迁移已在一次性 PostgreSQL 16 上验证：首次更新 1 行，重复执行更新 0 行，最终断言 `expired | remote_ref is null | expires_at is not null`。
 

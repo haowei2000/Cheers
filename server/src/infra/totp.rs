@@ -65,7 +65,7 @@ fn generate_code(secret: &[u8], counter: u64) -> String {
 }
 
 fn encode_base32(input: &[u8]) -> String {
-    let mut out = String::with_capacity((input.len() * 8 + 4) / 5);
+    let mut out = String::with_capacity((input.len() * 8).div_ceil(5));
     let mut buffer = 0u64;
     let mut bits_left = 0u8;
     for &b in input {

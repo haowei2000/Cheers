@@ -282,13 +282,7 @@ fn validate_authorize_shape(state: &AppState, request: &McpAuthorizeRequest) -> 
     if request.code_challenge_method != "S256" {
         return Err("code_challenge_method must be S256".into());
     }
-    if request.code_challenge.len() < 43
-        || request.code_challenge.len() > 128
-        || !request
-            .code_challenge
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~'))
-    {
+    if !valid_s256_challenge(&request.code_challenge) {
         return Err("code_challenge is invalid".into());
     }
     if request.resource != state.config.mcp_resource_url() {
@@ -296,6 +290,20 @@ fn validate_authorize_shape(state: &AppState, request: &McpAuthorizeRequest) -> 
     }
     canonical_scope(&request.scope)?;
     Ok(())
+}
+
+fn valid_s256_challenge(value: &str) -> bool {
+    value.len() == 43
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn valid_pkce_verifier(value: &str) -> bool {
+    (43..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~'))
 }
 
 fn canonical_scope(raw: &str) -> Result<String, String> {
@@ -318,6 +326,7 @@ fn validate_client_redirect(
     {
         return Err("redirect_uri is not registered by the client".into());
     }
+    validate_redirect_uri(&request.redirect_uri)?;
     if client
         .grant_types
         .as_ref()
@@ -331,6 +340,40 @@ fn validate_client_redirect(
         .is_some_and(|v| !v.iter().any(|x| x == "code"))
     {
         return Err("client does not register code responses".into());
+    }
+    Ok(())
+}
+
+fn validate_redirect_uri(raw: &str) -> Result<(), String> {
+    let uri = Url::parse(raw).map_err(|_| "redirect_uri is invalid")?;
+    if !uri.username().is_empty() || uri.password().is_some() || uri.fragment().is_some() {
+        return Err("redirect_uri must not contain userinfo or a fragment".into());
+    }
+    match uri.scheme() {
+        "https" if uri.host().is_none() => {
+            return Err("HTTPS redirect_uri must include a host".into());
+        }
+        "https" => {}
+        "http" => {
+            let loopback = match uri.host() {
+                Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+                Some(url::Host::Ipv4(address)) => address.is_loopback(),
+                Some(url::Host::Ipv6(address)) => address.is_loopback(),
+                None => false,
+            };
+            if !loopback {
+                return Err("HTTP redirect_uri is only allowed for loopback clients".into());
+            }
+        }
+        // RFC 8252 allows private-use URI schemes for native apps. Explicitly
+        // reject schemes that browsers can execute or expose as local content.
+        "javascript" | "data" | "file" | "vbscript" | "about" | "blob" => {
+            return Err("redirect_uri uses a prohibited scheme".into());
+        }
+        // Other schemes are native-app private-use redirects. URL parsing has
+        // already constrained the scheme grammar; exact CIMD registration is
+        // still required above.
+        _ => {}
     }
     Ok(())
 }
@@ -436,6 +479,8 @@ fn is_public_ip(ip: IpAddr) -> bool {
                 || ip.is_multicast()
                 || ip.is_broadcast()
                 || ip.is_documentation()
+                || a == 0
+                || a >= 240
                 || (a == 100 && (64..=127).contains(&b))
                 || (a == 192 && b == 0 && c == 0)
                 || (a == 198 && (b == 18 || b == 19)))
@@ -444,12 +489,17 @@ fn is_public_ip(ip: IpAddr) -> bool {
             if let Some(mapped) = ip.to_ipv4_mapped() {
                 return is_public_ip(IpAddr::V4(mapped));
             }
-            let first = ip.segments()[0];
+            let segments = ip.segments();
+            let first = segments[0];
             !(ip.is_loopback()
                 || ip.is_unspecified()
                 || ip.is_multicast()
                 || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80)
+                || (first & 0xffc0) == 0xfe80
+                || (first == 0x2001 && segments[1] == 0x0db8)
+                || (first == 0x2001 && segments[1] == 0x0002 && segments[2] == 0)
+                || (first == 0x2001 && (segments[1] & 0xfff0) == 0x0010)
+                || (first == 0x0064 && segments[1] == 0xff9b && segments[2] == 1))
         }
     }
 }
@@ -545,6 +595,12 @@ pub async fn issue_mcp_access_token(
         );
     }
     let basic = basic_client_credentials(&headers);
+    if basic.is_some() && (request.client_id.is_some() || request.client_secret.is_some()) {
+        return oauth_token_error(
+            "invalid_request",
+            "use exactly one client authentication method",
+        );
+    }
     let client_id = request
         .client_id
         .as_deref()
@@ -553,17 +609,22 @@ pub async fn issue_mcp_access_token(
         .client_secret
         .as_deref()
         .or_else(|| basic.as_ref().map(|v| v.1.as_str()));
-    let Some(installation_credential) = installation_credential else {
-        return oauth_token_error("invalid_client", "installation credential is required");
+    let (Some(client_id), Some(installation_credential)) = (client_id, installation_credential)
+    else {
+        return oauth_token_error(
+            "invalid_client",
+            "installation client_id and credential are required",
+        );
     };
     let credential_hash = hash_installation_credential(installation_credential);
     let row = match sqlx::query(
         "SELECT i.installation_id, i.bot_id, b.is_disabled
          FROM terminal_installations i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
-         WHERE i.credential_hash = $1 AND i.status = 'active'
+         WHERE i.installation_id = $1 AND i.credential_hash = $2 AND i.status = 'active'
            AND i.revoked_at IS NULL",
     )
+    .bind(client_id)
     .bind(&credential_hash)
     .fetch_optional(&state.db)
     .await
@@ -586,12 +647,7 @@ pub async fn issue_mcp_access_token(
         tracing::error!("MCP token exchange found malformed installation id");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     };
-    if client_id.is_some_and(|value| value != installation_id) {
-        return oauth_token_error(
-            "invalid_client",
-            "client_id does not match the installation",
-        );
-    }
+    debug_assert_eq!(client_id, installation_id);
     if Uuid::parse_str(&bot_id).is_err() {
         tracing::error!("MCP token exchange found invalid bot UUID");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
@@ -678,7 +734,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
             "code, client_id, redirect_uri and code_verifier are required",
         );
     };
-    if verifier.len() < 43 || verifier.len() > 128 {
+    if !valid_pkce_verifier(verifier) {
         return oauth_token_error("invalid_grant", "code_verifier is invalid");
     }
     let challenge = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
@@ -732,12 +788,13 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     let refresh_token_id = Uuid::new_v4().to_string();
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,installation_id,client_id,scope,resource,expires_at)
-         VALUES ($1,$1,$2,$3,$4,$5,$6,$7)",
+         (refresh_token_id,family_id,token_hash,installation_id,credential_hash,client_id,scope,resource,expires_at)
+         VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8)",
     )
     .bind(refresh_token_id)
     .bind(hash_oauth_secret(&refresh_token))
     .bind(&installation_id)
+    .bind(&installation.1)
     .bind(client_id)
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
@@ -788,7 +845,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
     let row = match sqlx::query(
-        "SELECT refresh_token_id, family_id, installation_id, scope
+        "SELECT refresh_token_id, family_id, installation_id, credential_hash, scope
          FROM mcp_oauth_refresh_tokens
          WHERE token_hash=$1 AND client_id=$2 AND resource=$3
            AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()
@@ -836,10 +893,24 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    let original_id: String = row.try_get("refresh_token_id").unwrap_or_default();
-    let family_id: String = row.try_get("family_id").unwrap_or_default();
-    let installation_id: String = row.try_get("installation_id").unwrap_or_default();
-    let original_scope: String = row.try_get("scope").unwrap_or_default();
+    let decoded = (
+        row.try_get::<String, _>("refresh_token_id"),
+        row.try_get::<String, _>("family_id"),
+        row.try_get::<String, _>("installation_id"),
+        row.try_get::<String, _>("credential_hash"),
+        row.try_get::<String, _>("scope"),
+    );
+    let (
+        Ok(original_id),
+        Ok(family_id),
+        Ok(installation_id),
+        Ok(grant_credential_hash),
+        Ok(original_scope),
+    ) = decoded
+    else {
+        tracing::error!("MCP refresh-token row is malformed");
+        return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+    };
     let scope = match request.scope.as_deref() {
         None => original_scope,
         Some(raw) => match narrowed_scope(&original_scope, raw) {
@@ -849,17 +920,42 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     };
     let installation = match active_installation(&mut tx, &installation_id).await {
         Ok(Some(value)) => value,
-        _ => return oauth_token_error("invalid_grant", "installation is no longer active"),
+        Ok(None) => return oauth_token_error("invalid_grant", "installation is no longer active"),
+        Err(error) => {
+            tracing::error!(%error, "MCP installation lookup during refresh failed");
+            return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
     };
+    if grant_credential_hash != installation.1 {
+        if let Err(error) = sqlx::query(
+            "UPDATE mcp_oauth_refresh_tokens
+             SET revoked_at=COALESCE(revoked_at,NOW()) WHERE family_id=$1",
+        )
+        .bind(&family_id)
+        .execute(&mut *tx)
+        .await
+        {
+            tracing::error!(%error, "MCP stale refresh-token family revocation failed");
+            return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+        if tx.commit().await.is_err() {
+            return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+        return oauth_token_error(
+            "invalid_grant",
+            "refresh token was invalidated by credential rotation",
+        );
+    }
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,installation_id,client_id,scope,resource,expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+         (refresh_token_id,family_id,token_hash,installation_id,credential_hash,client_id,scope,resource,expires_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
     .bind(&replacement_id)
     .bind(&family_id)
     .bind(hash_oauth_secret(&replacement))
     .bind(&installation_id)
+    .bind(&installation.1)
     .bind(client_id)
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
@@ -870,7 +966,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         tracing::error!(%error, "MCP rotated refresh-token persistence failed");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
-    if let Err(error) = sqlx::query(
+    let rotation = match sqlx::query(
         "UPDATE mcp_oauth_refresh_tokens SET rotated_at=NOW(), replaced_by_id=$1
          WHERE refresh_token_id=$2 AND rotated_at IS NULL AND revoked_at IS NULL",
     )
@@ -879,7 +975,17 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     .execute(&mut *tx)
     .await
     {
-        tracing::error!(%error, "MCP old refresh-token finalization failed");
+        Ok(result) => result,
+        Err(error) => {
+            tracing::error!(%error, "MCP old refresh-token finalization failed");
+            return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+    };
+    if rotation.rows_affected() != 1 {
+        tracing::error!(
+            rows = rotation.rows_affected(),
+            "MCP refresh-token rotation lost its locked row"
+        );
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
     if tx.commit().await.is_err() {
@@ -2660,6 +2766,42 @@ mod tests {
     }
 
     #[test]
+    fn pkce_s256_values_are_strictly_validated() {
+        let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+        assert!(valid_pkce_verifier(verifier));
+        assert!(!valid_pkce_verifier("short"));
+        assert!(!valid_pkce_verifier(&format!("{}!", "a".repeat(42))));
+
+        let challenge = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+        assert_eq!(challenge.len(), 43);
+        assert!(valid_s256_challenge(&challenge));
+        assert!(!valid_s256_challenge(&format!("{}~", &challenge[..42])));
+        assert!(!valid_s256_challenge(&format!("{challenge}a")));
+    }
+
+    #[test]
+    fn oauth_redirects_reject_executable_and_non_loopback_http_schemes() {
+        for uri in [
+            "javascript:alert(1)",
+            "data:text/html,owned",
+            "file:///etc/passwd",
+            "http://example.com/callback",
+            "https://user@example.com/callback",
+            "https://example.com/callback#fragment",
+        ] {
+            assert!(validate_redirect_uri(uri).is_err(), "{uri}");
+        }
+        for uri in [
+            "https://client.example/callback",
+            "http://127.0.0.1:49152/callback",
+            "http://[::1]:49152/callback",
+            "com.example.client:/oauth/callback",
+        ] {
+            assert!(validate_redirect_uri(uri).is_ok(), "{uri}");
+        }
+    }
+
+    #[test]
     fn validates_prompt_name_header_against_prompt_name() {
         let mut headers = modern_headers("prompts/get");
         headers.insert(MCP_NAME_HEADER, HeaderValue::from_static("channel_brief"));
@@ -2687,8 +2829,13 @@ mod tests {
             "169.254.169.254",
             "192.168.1.1",
             "198.18.0.1",
+            "0.0.0.1",
+            "240.0.0.1",
             "::1",
             "fc00::1",
+            "2001:db8::1",
+            "2001:2::1",
+            "64:ff9b:1::1",
             "::ffff:127.0.0.1",
         ] {
             assert!(!is_public_ip(address.parse().unwrap()), "{address}");

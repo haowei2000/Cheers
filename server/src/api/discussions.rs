@@ -378,10 +378,10 @@ pub async fn list_discussions(
 
     let next_cursor = if has_more {
         page_rows.last().and_then(|row| {
-            Some(encode_cursor(&DiscussionCursor {
+            encode_cursor(&DiscussionCursor {
                 at: row.try_get("last_activity_at").ok()?,
                 id: row.try_get("root_id").ok()?,
-            })?)
+            })
         })
     } else {
         None

@@ -650,6 +650,10 @@ pub async fn connector_download(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    reason = "normalization tests stay beside enrollment redemption; release-discovery handlers follow"
+)]
 mod installation_tests {
     use super::normalize_device_name;
 

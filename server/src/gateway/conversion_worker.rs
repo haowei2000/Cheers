@@ -110,6 +110,10 @@ async fn convert_batch(
 }
 
 /// Fetch the original from S3, convert to PDF, store the PDF, and record its key.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "conversion dependencies and immutable file identity are explicit worker inputs"
+)]
 async fn convert_one(
     db: &PgPool,
     s3client: &S3Client,

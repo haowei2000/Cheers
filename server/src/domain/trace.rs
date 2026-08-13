@@ -327,6 +327,10 @@ fn row_to_json(r: sqlx::postgres::PgRow) -> Value {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    reason = "normalization contract tests stay beside row conversion; query helpers follow"
+)]
 mod contract_tests {
     use super::*;
 

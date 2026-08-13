@@ -590,7 +590,7 @@ impl SelfUpdater {
             }
             tokio::time::sleep(DRAIN_POLL).await;
             waited += DRAIN_POLL;
-            if waited.as_secs() % 300 == 0 {
+            if waited.as_secs().is_multiple_of(300) {
                 tracing::info!(
                     in_flight = active_prompts(),
                     "self-update: still draining before restart"

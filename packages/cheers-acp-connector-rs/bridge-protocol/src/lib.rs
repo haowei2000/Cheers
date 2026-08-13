@@ -501,7 +501,7 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connector_config: Option<ConnectorControlConfig>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
         /// Gateway-owned canonical HTTP MCP resource URL. Connectors must use
         /// this value verbatim instead of deriving it from WebSocket URLs or
         /// untrusted proxy headers.
@@ -809,7 +809,7 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         acp_security: Option<AcpSecurityHello>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
     },
     #[serde(rename = "pong")]
     Pong,

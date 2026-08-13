@@ -969,14 +969,13 @@ fn build_public_routes() -> Router<AppState> {
 fn build_ws_routes() -> Router<AppState> {
     // WebSocket endpoints are attached without JWT middleware; each handler
     // performs its own protocol-level validation where required.
-    let ws_routes = Router::new()
+    Router::new()
         .route("/ws", get(ws::browser::ws_handler))
         .route(
             "/ws/agent-bridge/control",
             get(ws::agent_bridge::control_handler),
         )
-        .route("/ws/agent-bridge/data", get(ws::agent_bridge::data_handler));
-    ws_routes
+        .route("/ws/agent-bridge/data", get(ws::agent_bridge::data_handler))
 }
 
 async fn health() -> &'static str {

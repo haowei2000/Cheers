@@ -181,8 +181,7 @@ async fn subscribe_loop(client: redis::Client, local: Arc<InProcessFanout>) {
 }
 
 async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> anyhow::Result<()> {
-    let conn = client.get_async_connection().await?;
-    let mut pubsub = conn.into_pubsub();
+    let mut pubsub = client.get_async_pubsub().await?;
 
     pubsub.psubscribe(CHANNEL_PATTERN).await?;
     pubsub.psubscribe(CHANNEL_SEE_PATTERN).await?;

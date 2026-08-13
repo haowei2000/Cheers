@@ -27,7 +27,7 @@ impl CapabilitySigner {
         }
         let config =
             config.ok_or_else(|| anyhow!("acpCapability is required by Agent Bridge hello"))?;
-        if config.algorithm.to_ascii_lowercase() != "ed25519" {
+        if !config.algorithm.eq_ignore_ascii_case("ed25519") {
             return Err(anyhow!(
                 "unsupported acpCapability algorithm {}; expected ed25519",
                 config.algorithm
@@ -37,7 +37,7 @@ impl CapabilitySigner {
             .as_ref()
             .and_then(|value| value.algorithm.as_deref())
         {
-            if algorithm.to_ascii_lowercase() != "ed25519" {
+            if !algorithm.eq_ignore_ascii_case("ed25519") {
                 return Err(anyhow!(
                     "unsupported Agent Bridge acp_security algorithm {}; expected ed25519",
                     algorithm

@@ -29,6 +29,10 @@ use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 /// Build the live counterpart of an append-only approval trace row. The
 /// `request_id` is also the event id so clients replace the pending lifecycle
 /// step instead of rendering a second, unrelated terminal row.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "approval audit fields remain explicit to avoid silently incomplete terminal traces"
+)]
 pub(crate) fn approval_trace_wire(
     channel_id: uuid::Uuid,
     msg_id: &str,

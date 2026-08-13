@@ -20,7 +20,7 @@ const GENERIC_TITLES: &[&str] = &[
 
 fn is_generic_title(s: &str) -> bool {
     let t = s.trim().to_ascii_lowercase();
-    t.is_empty() || GENERIC_TITLES.iter().any(|g| *g == t.as_str())
+    t.is_empty() || GENERIC_TITLES.contains(&t.as_str())
 }
 
 fn trim_str(v: Option<&Value>) -> Option<&str> {
@@ -230,7 +230,7 @@ pub fn normalize_permission_payload(
     if let Some(d) = diff {
         out.insert("diff".into(), json!(d));
     }
-    if !paths.is_empty() && out.get("locations").map_or(true, Value::is_null) {
+    if !paths.is_empty() && out.get("locations").is_none_or(Value::is_null) {
         out.insert(
             "locations".into(),
             json!(paths
