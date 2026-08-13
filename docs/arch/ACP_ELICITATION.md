@@ -11,15 +11,16 @@ change the negotiated `ProtocolVersion::V1` or enable ACP v2.
 2. The official or rollback runtime validates the typed ACP request and emits a
    transport-neutral `RuntimeEvent::ElicitationRequest`.
 3. The connector binds a session-scoped request to its active Cheers
-   channel/task. For request scope, the transport maps the actual outbound ACP
+   channel/task and retains the verified human origin when the turn came from a
+   user. For request scope, the transport maps the actual outbound ACP
    JSON-RPC ID to a human-originated `session/new`, `session/load`, or
    `authenticate` operation and removes that route when the request ends.
 4. Gateway persists a `msg_type=elicitation` message and renders either a form
    or URL card in Web/Desktop.
-5. For session scope, an authenticated authorized channel member submits
-   `accept`, `decline`, or `cancel`; for request scope, only the verified
-   initiating user may do so. Gateway atomically finalizes the card and routes
-   the response to the same connector.
+5. An authenticated authorized channel member submits `accept`, `decline`, or
+   `cancel`. Whenever a verified initiating user exists—including MCP OAuth in
+   session scope—only that user may respond. Gateway atomically finalizes the
+   card and routes the response to the same connector.
 6. `elicitation/complete` finalizes an accepted URL card after the agent reports
    external completion.
 
@@ -43,5 +44,14 @@ change the negotiated `ProtocolVersion::V1` or enable ACP v2.
   verifies that identity against the persisted origin message before creating
   the card. Unmatched, expired, bot/system-originated, and startup-initialize
   scopes fail closed.
+- URL elicitations targeting the configured Cheers OAuth issuer are presented
+  as a dedicated “Connect Cheers MCP” card. They require a verified initiating
+  user, compare the complete URL origin (not a hostname suffix), and remain in
+  an accepted/waiting state until the Agent sends `elicitation/complete` on the
+  same ACP connection. The URL never carries credentials and Cheers never
+  receives the resulting OAuth tokens over ACP.
+- Agents that do not emit ACP `elicitation/create` are not impersonated by the
+  Connector. Their native CLI login requirement remains an `auth_required`
+  diagnostic card with explicit retry/cancel controls.
 
 Reference: [ACP v1 Elicitation](https://agentclientprotocol.com/protocol/v1/elicitation).

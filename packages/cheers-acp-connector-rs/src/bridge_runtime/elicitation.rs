@@ -70,9 +70,9 @@ impl RuntimeContext {
                         channel_id: guard.channel_id.clone(),
                         task_id: guard.task_id.clone(),
                         msg_id: guard.msg_id.clone(),
-                        origin_msg_id: None,
+                        origin_msg_id: guard.origin_msg_id.clone(),
                         session_id: guard.session_id.clone(),
-                        initiating_user_id: None,
+                        initiating_user_id: guard.initiating_user_id.clone(),
                     }
                 }
                 None => {

@@ -203,6 +203,8 @@ export interface AuthRequiredContentData {
 /** ACP v1 form or URL elicitation rendered as an interactive channel card. */
 export interface ElicitationContentData {
   kind?: "agent_bridge_elicitation";
+  /** Product presentation hint derived by Gateway; ACP params remain authoritative. */
+  interaction_kind?: "general" | "mcp_oauth" | string;
   request_id?: string;
   /** Original ACP request ID, retained for diagnostics but never used as authorization. */
   acp_request_id?: string | number;

@@ -1874,6 +1874,14 @@ fn elicitation_schema_is_sensitive(schema: &Value) -> bool {
         })
 }
 
+/// Returns true only for an ACP URL elicitation targeting this Gateway's MCP OAuth UI.
+fn is_mcp_oauth_elicitation_url(target: &url::Url, issuer: &str) -> bool {
+    url::Url::parse(issuer).is_ok_and(|issuer| {
+        target.origin() == issuer.origin()
+            && matches!(target.path(), "/oauth/authorize" | "/mcp-authorize")
+    })
+}
+
 /// Persists ACP v1 form/URL elicitation as an ordinary channel message card.
 async fn handle_elicitation_request_frame(
     frame: &Value,
@@ -1911,10 +1919,13 @@ async fn handle_elicitation_request_frame(
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty());
     if let Some(initiating_user_id) = initiating_user_id {
-        if !matches!(
-            frame.get("acp_request_id"),
-            Some(Value::String(_) | Value::Number(_))
-        ) {
+        let request_scoped = params.get("requestId").is_some();
+        if request_scoped
+            && !matches!(
+                frame.get("acp_request_id"),
+                Some(Value::String(_) | Value::Number(_))
+            )
+        {
             return Err("request-scoped elicitation missing ACP request_id");
         }
         let origin_msg_id = frame
@@ -1944,6 +1955,7 @@ async fn handle_elicitation_request_frame(
             return Err("elicitation initiating user could not be verified");
         }
     }
+    let mut interaction_kind = "general";
     if mode == "url" {
         let raw_url = params
             .get("url")
@@ -1956,12 +1968,19 @@ async fn handle_elicitation_request_frame(
         if !(secure || loopback) {
             return Err("elicitation URL must use HTTPS");
         }
+        if is_mcp_oauth_elicitation_url(&url, &state.config.mcp_authorization_issuer()) {
+            if initiating_user_id.is_none() {
+                return Err("MCP OAuth elicitation requires a verified initiating user");
+            }
+            interaction_kind = "mcp_oauth";
+        }
     }
 
     let msg_id = Uuid::new_v4();
     let request_id = frame.get("request_id").cloned().unwrap_or(Value::Null);
     let content_data = json!({
         "kind": "agent_bridge_elicitation",
+        "interaction_kind": interaction_kind,
         "request_id": request_id,
         "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
         "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
@@ -2836,4 +2855,29 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
             reason: reason.to_string().into(),
         })))
         .await;
+}
+
+#[cfg(test)]
+mod elicitation_url_tests {
+    use super::is_mcp_oauth_elicitation_url;
+
+    #[test]
+    fn only_same_origin_mcp_oauth_urls_get_product_presentation() {
+        let issuer = "https://cheers.example";
+        let authorize =
+            url::Url::parse("https://cheers.example/oauth/authorize?client_id=public&state=opaque")
+                .expect("valid URL");
+        assert!(is_mcp_oauth_elicitation_url(&authorize, issuer));
+
+        let consent = url::Url::parse("https://cheers.example/mcp-authorize?request=opaque")
+            .expect("valid URL");
+        assert!(is_mcp_oauth_elicitation_url(&consent, issuer));
+
+        let lookalike =
+            url::Url::parse("https://cheers.example.evil.test/oauth/authorize").expect("valid URL");
+        assert!(!is_mcp_oauth_elicitation_url(&lookalike, issuer));
+
+        let unrelated = url::Url::parse("https://cheers.example/settings").expect("valid URL");
+        assert!(!is_mcp_oauth_elicitation_url(&unrelated, issuer));
+    }
 }

@@ -1734,6 +1734,19 @@ impl RuntimeContext {
             provider_session_key: task.provider_session_key.clone(),
             acp_session_id: acp_session_id.clone(),
             session_id: task.session_id.clone(),
+            origin_msg_id: task
+                .trigger_message
+                .as_ref()
+                .and_then(|message| message.get("msg_id"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+            initiating_user_id: task
+                .trigger_message
+                .as_ref()
+                .filter(|_| task.trigger.as_deref() == Some("user_message"))
+                .and_then(|message| message.get("user"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
@@ -2696,6 +2709,10 @@ struct ActiveRun {
     provider_session_key: String,
     acp_session_id: String,
     session_id: Option<String>,
+    /// Trusted human message that initiated this run, used to bind session-scoped elicitation.
+    origin_msg_id: Option<String>,
+    /// Verified human sender of `origin_msg_id`; absent for bot/system initiated work.
+    initiating_user_id: Option<String>,
     delta_seq: u64,
     trace_seq: u64,
     text: String,
@@ -2896,6 +2913,8 @@ mod tests {
             provider_session_key: "p".to_string(),
             acp_session_id: "s".to_string(),
             session_id: None,
+            origin_msg_id: None,
+            initiating_user_id: None,
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
@@ -3392,6 +3411,22 @@ mod tests {
             Some(json!({"msg_id":"origin-2", "user":"bot-1"})),
         );
         assert!(request_route_for_task(&bot).is_none());
+    }
+
+    #[test]
+    fn active_run_keeps_human_origin_for_session_scoped_elicitation() {
+        let task = identity_task(
+            Some("user_message"),
+            Some(json!({"msg_id":"origin-1", "user":"user-1"})),
+        );
+        let route = request_route_for_task(&task).expect("trusted human route");
+        let run = ActiveRun {
+            origin_msg_id: route.origin_msg_id.clone(),
+            initiating_user_id: route.initiating_user_id.clone(),
+            ..empty_run()
+        };
+        assert_eq!(run.origin_msg_id.as_deref(), Some("origin-1"));
+        assert_eq!(run.initiating_user_id.as_deref(), Some("user-1"));
     }
 
     #[test]

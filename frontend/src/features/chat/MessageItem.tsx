@@ -405,7 +405,7 @@ export const MessageItem = memo(function MessageItem({
       <div className="flex items-start gap-3 px-4 py-1">
         <div className="w-9 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <ElicitationCard message={message} channelId={channelId} />
+          <ElicitationCard message={message} channelId={channelId} currentUserId={currentUserId} />
         </div>
       </div>
     );

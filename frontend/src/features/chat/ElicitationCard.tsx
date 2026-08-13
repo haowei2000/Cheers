@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ExternalLink, Loader2, MessageCircleQuestion } from "lucide-react";
+import { ExternalLink, KeyRound, Loader2, MessageCircleQuestion } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button as UiButton } from "@/components/ui/button";
 import { CheckboxField } from "@/components/ui/checkbox-field";
@@ -9,10 +9,10 @@ import { resolveElicitation } from "@/api/approval";
 import type { ElicitationContentData, Message } from "@/types";
 
 /** Inputs needed to bind one persisted card to its resolution endpoint. */
-interface Props { message: Message; channelId?: string }
+interface Props { message: Message; channelId?: string; currentUserId?: string }
 
 /** Renders ACP v1 form and URL elicitation with explicit user consent. */
-export function ElicitationCard({ message, channelId }: Props) {
+export function ElicitationCard({ message, channelId, currentUserId }: Props) {
   const data = (message.content_data ?? {}) as ElicitationContentData;
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -21,6 +21,8 @@ export function ElicitationCard({ message, channelId }: Props) {
   const host = useMemo(() => {
     try { return data.url ? new URL(data.url).host : ""; } catch { return ""; }
   }, [data.url]);
+  const isMcpOAuth = data.mode === "url" && data.interaction_kind === "mcp_oauth";
+  const isInitiatingUser = !data.initiating_user_id || data.initiating_user_id === currentUserId;
 
   /** Submits one terminal answer after client-side required-field checks. */
   async function resolve(action: "accept" | "decline" | "cancel") {
@@ -64,16 +66,17 @@ export function ElicitationCard({ message, channelId }: Props) {
 
   if (data.resolved) {
     return <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-zinc-400">
-      <span className="inline-flex items-center gap-2"><MessageCircleQuestion className="h-3.5 w-3.5" />
-        {data.status === "completed" ? "Interaction completed" : data.status === "accept" ? "Response submitted" : "Interaction declined"}
+      <span className="inline-flex items-center gap-2">{isMcpOAuth ? <KeyRound className="h-3.5 w-3.5" /> : <MessageCircleQuestion className="h-3.5 w-3.5" />}
+        {data.status === "completed" ? (isMcpOAuth ? "Cheers MCP connected" : "Interaction completed") : data.status === "accept" ? (isMcpOAuth ? "Authorization opened — waiting for the Agent to confirm" : "Response submitted") : "Interaction declined"}
       </span>
     </div>;
   }
 
-  return <div className="rounded-sm bg-indigo-500/5 px-3 py-3">
+  return <div className={`rounded-sm px-3 py-3 ${isMcpOAuth ? "bg-amber-500/5" : "bg-indigo-500/5"}`}>
     <div className="flex items-start gap-2">
-      <MessageCircleQuestion className="mt-1 h-4 w-4 shrink-0 text-indigo-300" />
+      {isMcpOAuth ? <KeyRound className="mt-1 h-4 w-4 shrink-0 text-amber-400" /> : <MessageCircleQuestion className="mt-1 h-4 w-4 shrink-0 text-indigo-300" />}
       <div className="min-w-0 flex-1">
+        {isMcpOAuth && <p className="mb-1 text-regular font-medium text-zinc-100">Connect Cheers MCP</p>}
         <p className="whitespace-pre-wrap text-regular text-zinc-100">{data.message || message.content}</p>
         {data.mode === "form" && <div className="mt-3 space-y-3">
           {Object.entries(properties).map(([name, schema]) => {
@@ -90,15 +93,16 @@ export function ElicitationCard({ message, channelId }: Props) {
           })}
         </div>}
         {data.mode === "url" && <div className="mt-3 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact text-zinc-400">
-          <p>Continue on <span className="font-medium text-zinc-200">{host || "external site"}</span>. Cheers will not open or prefetch it until you confirm.</p>
+          <p>{isMcpOAuth ? "Authorize this Agent to use Cheers tools on" : "Continue on"} <span className="font-medium text-zinc-200">{host || "external site"}</span>. Cheers will not open or prefetch it until you confirm.</p>
           {data.url && <code className="mt-1 block break-all text-zinc-300">{data.url}</code>}
+          {isMcpOAuth && <p className="mt-2 text-zinc-500">Credentials stay in the Agent&apos;s OAuth store and are never returned through ACP or added to model context.</p>}
         </div>}
-        <div className="mt-3 flex flex-wrap gap-2">
+        {isInitiatingUser ? <div className="mt-3 flex flex-wrap gap-2">
           <UiButton action="link" variant="plain" disabled={busy !== null} onClick={() => data.mode === "url" ? void openUrl() : void resolve("accept")} controlSize="regular" className="gap-2 rounded-sm bg-indigo-600 text-white hover:bg-indigo-500">
-            {busy === "accept" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{data.mode === "url" ? <>Continue <ExternalLink className="h-3.5 w-3.5" /></> : "Submit"}
+            {busy === "accept" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{data.mode === "url" ? <>{isMcpOAuth ? "Authorize Cheers MCP" : "Continue"} <ExternalLink className="h-3.5 w-3.5" /></> : "Submit"}
           </UiButton>
           <UiButton action="cancel" variant="plain" disabled={busy !== null} onClick={() => void resolve("decline")} controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Decline</UiButton>
-        </div>
+        </div> : <p className="mt-3 text-compact text-zinc-500">Waiting for the user who started this Agent request to respond.</p>}
       </div>
     </div>
   </div>;
