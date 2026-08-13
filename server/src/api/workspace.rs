@@ -418,6 +418,10 @@ pub async fn validate_workspace_paths(
 /// overwrite only if the file still hashes to that etag. It's a distinct frame field
 /// (JSON `null` when `None`) — orthogonal to `extra`; every non-write caller passes
 /// `None`.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "workspace RPC policy inputs remain explicit before serialization to the connector"
+)]
 async fn workspace_call(
     state: &AppState,
     bot_id: Uuid,

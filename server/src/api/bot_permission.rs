@@ -157,7 +157,7 @@ pub async fn set_posture(
     let (_, allowed) = connector_config::posture_preset(&agent_type);
     // Gateway-side check mirrors the connector's L0 allowed_modes envelope (the
     // connector re-clamps on apply, so this is a friendly early 400, not the gate).
-    if !allowed.is_empty() && !allowed.iter().any(|m| *m == mode) {
+    if !allowed.is_empty() && !allowed.contains(&mode) {
         return Err(AppError::BadRequest(format!(
             "mode {mode:?} not in allowed_modes {allowed:?} for agent {agent_type:?}"
         )));

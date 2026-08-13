@@ -218,7 +218,7 @@ pub async fn create_message(
                 display_name: None,
             })
             .collect(),
-        files: load_message_files(&db, &file_ids).await?,
+        files: load_message_files(db, &file_ids).await?,
         created_at: now,
         content_data: None,
         context_bundle: row_bundle.clone(),
@@ -707,7 +707,7 @@ pub async fn list_messages(
         ));
     }
 
-    list_channel_messages(&db, &channel_id, before, after, limit).await
+    list_channel_messages(db, &channel_id, before, after, limit).await
 }
 
 /// Permission-checked `channel_seq`-based catch-up: returns terminal messages

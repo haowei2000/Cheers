@@ -78,6 +78,10 @@ pub struct SessionHandle {
 }
 
 /// 依据 provider 维度创建/复用 session，并绑定当前 scope。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "session identity and scope components are explicit persistence keys"
+)]
 pub async fn acquire_scope_session(
     db: &PgPool,
     bot_id: Uuid,
@@ -677,6 +681,10 @@ pub async fn close_channel_session(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "binding identity and scope components map directly to the unique database key"
+)]
 async fn upsert_session_binding<'e, E>(
     db: E,
     session_id: &Uuid,
@@ -918,6 +926,10 @@ pub fn normalize_runtime_status(raw: &str) -> Option<&'static str> {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "runtime acknowledgements expose optional connector identifiers without an ambiguous bag"
+)]
 pub async fn apply_runtime_session_ack(
     db: &PgPool,
     bot_id: Uuid,

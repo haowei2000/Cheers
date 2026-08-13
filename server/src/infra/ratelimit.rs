@@ -277,12 +277,7 @@ pub fn client_key(
         if let Some(last) = headers
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
-            .and_then(|xff| {
-                xff.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .last()
-            })
+            .and_then(|xff| xff.split(',').map(str::trim).rfind(|s| !s.is_empty()))
         {
             return last.to_string();
         }

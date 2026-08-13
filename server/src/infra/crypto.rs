@@ -150,7 +150,7 @@ pub fn decrypt_secret(master_key: &[u8; 32], blob_b64: &str) -> anyhow::Result<S
 pub async fn hash_password(plain: String) -> Result<String, bcrypt::BcryptError> {
     tokio::task::spawn_blocking(move || bcrypt::hash(&plain, bcrypt::DEFAULT_COST))
         .await
-        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::other(e)))?
 }
 
 /// Verify a password against a bcrypt hash, off the async reactor.
@@ -158,7 +158,7 @@ pub async fn hash_password(plain: String) -> Result<String, bcrypt::BcryptError>
 pub async fn verify_password(plain: String, hash: String) -> Result<bool, bcrypt::BcryptError> {
     tokio::task::spawn_blocking(move || bcrypt::verify(&plain, &hash))
         .await
-        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::other(e)))?
 }
 
 /// A short, unambiguous one-time code for email flows (e.g. password reset). 8 chars

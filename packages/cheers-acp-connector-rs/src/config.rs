@@ -363,7 +363,7 @@ struct RawAdapter {
     permission_mode: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPolicy {
     #[serde(default)]
@@ -390,25 +390,6 @@ struct RawPolicy {
     mcp: RawMcpPolicy,
     #[serde(default)]
     loopback: RawLoopbackPolicy,
-}
-
-impl Default for RawPolicy {
-    fn default() -> Self {
-        Self {
-            sessions: RawSessionsPolicy::default(),
-            prompt: RawPromptPolicy::default(),
-            workspace: RawWorkspacePolicy::default(),
-            env: RawEnvPolicy::default(),
-            config: RawRuntimeConfigPolicy::default(),
-            permission: RawPermissionPolicy::default(),
-            send: RawSendPolicy::default(),
-            file_upload: RawFileUploadPolicy::default(),
-            trace: RawTracePolicy::default(),
-            session_update: RawSessionUpdatePolicy::default(),
-            mcp: RawMcpPolicy::default(),
-            loopback: RawLoopbackPolicy::default(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]

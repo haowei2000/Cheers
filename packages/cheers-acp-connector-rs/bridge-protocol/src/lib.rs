@@ -456,7 +456,7 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connector_config: Option<ConnectorControlConfig>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
     },
     #[serde(rename = "runtime_session_control")]
     RuntimeSessionControl {
@@ -749,7 +749,7 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         acp_security: Option<AcpSecurityHello>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        server_capabilities: Option<ServerCapabilities>,
+        server_capabilities: Option<Box<ServerCapabilities>>,
     },
     #[serde(rename = "pong")]
     Pong,

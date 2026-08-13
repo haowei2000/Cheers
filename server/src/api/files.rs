@@ -793,7 +793,7 @@ pub async fn download_file(
         .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
-    let filename = file.original_filename.unwrap_or_else(|| file_id);
+    let filename = file.original_filename.unwrap_or(file_id);
 
     Ok(attachment_response(
         bytes,

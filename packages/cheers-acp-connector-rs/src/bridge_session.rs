@@ -366,7 +366,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
                 memberships,
                 acp_security,
                 connector_config,
-                server_capabilities,
+                server_capabilities: server_capabilities.map(|capabilities| *capabilities),
             })
         }
         other => Err(anyhow!("expected control hello, got {other:?}")),
@@ -398,7 +398,7 @@ fn data_hello_from_value(value: Value) -> anyhow::Result<DataHelloState> {
                 session_id,
                 last_event_seq,
                 acp_security,
-                server_capabilities,
+                server_capabilities: server_capabilities.map(|capabilities| *capabilities),
             })
         }
         other => Err(anyhow!("expected data hello, got {other:?}")),

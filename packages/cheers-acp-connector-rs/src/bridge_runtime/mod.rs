@@ -198,8 +198,10 @@ impl AccountRuntime {
             });
         }
 
-        let mut shared = SharedRuntimeState::default();
-        shared.channel_names = channel_names;
+        let shared = SharedRuntimeState {
+            channel_names,
+            ..SharedRuntimeState::default()
+        };
         let shared = Arc::new(Mutex::new(shared));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
@@ -372,6 +374,22 @@ struct GitPageParams {
     skip: Option<u32>,
 }
 
+/// Owned, validated wire inputs for one workspace operation. Keeping the frame
+/// fields together prevents the dispatch boundary from becoming position-based.
+struct WorkspaceRequest {
+    op: String,
+    rel: String,
+    root: Option<String>,
+    content_b64: Option<String>,
+    if_etag: Option<String>,
+    session_roots: Vec<String>,
+    staged: bool,
+    page: GitPageParams,
+    commit: Option<String>,
+    commit_path: Option<String>,
+    watch_id: Option<String>,
+}
+
 /// Parsed subset of `git status --porcelain=v2 --branch` headers + entries.
 #[derive(Debug, Default)]
 struct GitStatusParse {
@@ -532,10 +550,10 @@ impl RuntimeContext {
         while let Some(input) = rx.recv().await {
             match input {
                 RuntimeInput::Control(frame) => {
-                    self.clone().handle_control(frame).await?;
+                    self.clone().handle_control(*frame).await?;
                 }
                 RuntimeInput::Data(frame) => {
-                    self.clone().handle_data(frame).await?;
+                    self.clone().handle_data(*frame).await?;
                 }
                 RuntimeInput::Adapter(event) => {
                     self.clone().handle_adapter_event(event).await?;
@@ -835,19 +853,19 @@ impl RuntimeContext {
                 let runtime = self.clone();
                 tokio::spawn(async move {
                     let frame = match runtime
-                        .handle_workspace_req(
-                            &op,
-                            &path,
-                            root.as_deref(),
-                            content_b64.as_deref(),
-                            if_etag.as_deref(),
-                            &roots,
-                            staged.unwrap_or(false),
-                            GitPageParams { limit, skip },
-                            commit.as_deref(),
-                            commit_path.as_deref(),
-                            watch_id.as_deref(),
-                        )
+                        .handle_workspace_req(WorkspaceRequest {
+                            op,
+                            rel: path,
+                            root,
+                            content_b64,
+                            if_etag,
+                            session_roots: roots,
+                            staged: staged.unwrap_or(false),
+                            page: GitPageParams { limit, skip },
+                            commit,
+                            commit_path,
+                            watch_id,
+                        })
                         .await
                     {
                         Ok(data) => DataOutbound::WorkspaceRes {
@@ -1041,18 +1059,31 @@ impl RuntimeContext {
     /// rejected after canonicalization. Returns Err((code, message)) on violation.
     async fn handle_workspace_req(
         &self,
-        op: &str,
-        rel: &str,
-        root: Option<&str>,
-        content_b64: Option<&str>,
-        if_etag: Option<&str>,
-        session_roots: &[String],
-        staged: bool,
-        page: GitPageParams,
-        commit: Option<&str>,
-        commit_path: Option<&str>,
-        watch_id: Option<&str>,
+        request: WorkspaceRequest,
     ) -> Result<Value, (String, String, Option<Value>)> {
+        let WorkspaceRequest {
+            op,
+            rel,
+            root,
+            content_b64,
+            if_etag,
+            session_roots,
+            staged,
+            page,
+            commit,
+            commit_path,
+            watch_id,
+        } = request;
+        let op = op.as_str();
+        let rel = rel.as_str();
+        let root = root.as_deref();
+        let content_b64 = content_b64.as_deref();
+        let if_etag = if_etag.as_deref();
+        let session_roots = session_roots.as_slice();
+        let commit = commit.as_deref();
+        let commit_path = commit_path.as_deref();
+        let watch_id = watch_id.as_deref();
+
         const MAX_READ: u64 = 10 * 1024 * 1024;
         const MAX_WRITE: u64 = 10 * 1024 * 1024;
         // The error is a `(code, message, data)` triple; only E_CONFLICT ships a
@@ -1655,11 +1686,12 @@ impl RuntimeContext {
     /// canonicalized + clamped inside `root_canon`). The whole critical section runs
     /// under the `shared` lock so the cap check and insert are atomic against
     /// concurrent `watch` ops:
-    ///  - a watch on an already-watched dir RENEWS its TTL and returns the same
-    ///    `watch_id` (never stacks a second watcher);
-    ///  - beyond `MAX_WATCHES` distinct dirs → `E_TOO_MANY_WATCHES`;
-    ///  - otherwise the notify watcher is created, a `watch_loop` task is spawned to
-    ///    coalesce + emit events and enforce the TTL, and its handle is stored.
+    /// - a watch on an already-watched dir RENEWS its TTL and returns the same
+    ///   `watch_id` (never stacks a second watcher);
+    /// - beyond `MAX_WATCHES` distinct dirs → `E_TOO_MANY_WATCHES`;
+    /// - otherwise the notify watcher is created, a `watch_loop` task is spawned to
+    ///   coalesce + emit events and enforce the TTL, and its handle is stored.
+    ///
     /// The returned handle owns an `AbortOnDrop`, so removing the registry entry
     /// (unwatch / TTL / disconnect-teardown) aborts the task and drops the watcher.
     async fn start_watch(
@@ -3063,8 +3095,8 @@ impl BotIdentity {
 }
 
 enum RuntimeInput {
-    Control(ControlInbound),
-    Data(DataInbound),
+    Control(Box<ControlInbound>),
+    Data(Box<DataInbound>),
     Adapter(RuntimeEvent),
     Loopback(LoopbackRequest),
     SocketClosed(&'static str),

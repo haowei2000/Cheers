@@ -354,6 +354,10 @@ fn room_name(channel_id: &str) -> String {
     format!("cheers-{channel_id}")
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "all signed LiveKit claim inputs remain explicit at this security boundary"
+)]
 fn mint_join_token(
     api_key: &str,
     api_secret: &str,

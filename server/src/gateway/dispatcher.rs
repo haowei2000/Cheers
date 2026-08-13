@@ -253,6 +253,10 @@ fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
 ///
 /// `trigger_msg_id` is stored as `in_reply_to_msg_id` so the bot turn nests under
 /// the human (or prior-bot) trigger in the channel timeline.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "idempotent placeholder identity and causation fields map directly to the insert"
+)]
 async fn create_placeholder(
     db: &PgPool,
     placeholder_id: Uuid,

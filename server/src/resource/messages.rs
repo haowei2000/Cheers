@@ -271,7 +271,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(&content)
     .bind(&msg_type)
     .bind(&reply_to_msg_id)
-    .bind(&serde_json::json!(file_ids.clone()))
+    .bind(serde_json::json!(file_ids.clone()))
     .bind(now)
     .bind(channel_seq)
     .bind(context_bundle.clone())
