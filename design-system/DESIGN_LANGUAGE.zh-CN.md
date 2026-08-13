@@ -184,6 +184,8 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 - Personal workspace 使用 Cheers 系统的 correspondence/personal mark，不使用临时 emoji、通用
   envelope 或与系统映射不一致的图标。
 - icon button 必须有 accessible name；选中状态不能只靠图标颜色。
+- 正文中的文件、目录和分支引用属于 inline reference，不属于 Action Button：必须保留原始引用文本，以等宽字体、轻底色和链接下划线呈现；完整的 “Open …” 动作只进入 accessible name 和 tooltip。
+- Trace step、section 和详情开关属于 disclosure，不属于 Action Button：可见标签必须显示对象名称、工具概要和关键状态；Expand/Collapse 只通过 chevron、`aria-expanded`、accessible name 和 tooltip 表达。
 
 ## 8. 消息、Discussion 与 Details
 

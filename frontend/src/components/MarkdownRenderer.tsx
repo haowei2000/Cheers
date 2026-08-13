@@ -1,4 +1,4 @@
-import { Button as UiButton } from "@/components/ui/button";
+import { InlineReference } from "@/components/ui/inline-reference";
 import { memo, useContext, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -68,14 +68,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
           // Linkify a backtick-wrapped path to the remote-workspace browser.
           if (onPath && looksLikePath(text)) {
             return (
-              <UiButton action="open" variant="plain"
-                type="button"
+              <InlineReference
+                reference={text}
                 onClick={() => onPath(text)}
-                title="Open in the remote workspace"
-                controlSize="regular" className="bg-zinc-800 rounded-sm  text-indigo-400 hover:text-indigo-300 hover:underline"
-              >
-                {children} ↗
-              </UiButton>
+                title={`Open ${text} in the remote workspace`}
+                aria-label={`Open ${text} in the remote workspace`}
+              />
             );
           }
           return <code className="bg-zinc-800 px-1 py-1 rounded-sm text-regular">{children}</code>;

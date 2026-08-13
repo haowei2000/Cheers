@@ -35,6 +35,7 @@ import { messageDetailsMeta } from "./messageDetails";
 import { usePresentationLevel } from "@/components/ui/presentation";
 import { MessageRecordInspector } from "./MessageRecordInspector";
 import { identityRailWidthClasses } from "@/components/ui/content-size";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -288,7 +289,7 @@ function ReplyPreview({
   };
 
   return (
-    <UiButton action="open" variant="plain"
+    <ControlTrigger
       type="button"
       controlWidth="fill"
       controlSize="regular"
@@ -315,7 +316,7 @@ function ReplyPreview({
           {source}
         </>
       )}
-    </UiButton>
+    </ControlTrigger>
   );
 }
 
@@ -441,6 +442,7 @@ export const MessageItem = memo(function MessageItem({
       focusRequestId={focusRequestId}
       expanded
       showToggle={false}
+      view="inline"
     />
   ) : null;
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
@@ -709,34 +711,40 @@ export const MessageItem = memo(function MessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  const folio = detailsMeta.hasDetails ? (
+  // One operational status owns the inline surface. A pending approval is more
+  // urgent than an earlier failed trace step, so failure history stays in the
+  // Message Record until the approval is resolved.
+  const showFailureInline = detailsMeta.hasFailure && actionableApprovalCount === 0;
+  const hasOperationalDetails = showFailureInline || keepTraceInline;
+  const folio = detailsMeta.hasDetails && !hasOperationalDetails ? (
     <UiButton variant="plain"
       type="button"
       onClick={(event) => openInspector(event.currentTarget)}
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       content="icon" controlSize="compact" className={cn(
- "relative inline-flex items-center justify-center self-start text-zinc-500 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
- isOwnAlignedRight && "self-end",
- detailsMeta.hasFailure && "text-red-400/70 opacity-100 hover:text-red-300",
- )}
+        "relative inline-flex items-center justify-center self-start text-zinc-500 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
+        isOwnAlignedRight && "self-end",
+      )}
     >
       <ListTree className={controlIconClasses.compact} aria-hidden />
     </UiButton>
   ) : null;
-  const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
+  const detailsSection = detailsMeta.hasDetails && hasOperationalDetails ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
-      {detailsMeta.hasFailure && (
+      {showFailureInline && (
         <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-red-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
-          <UiButton action="open" variant="plain"
+          <IconButton
+            label="Open message record"
+            controlSize="compact"
             type="button"
             onClick={(event) => openInspector(event.currentTarget)}
-            className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+            className="text-red-300 hover:bg-red-950/30 hover:text-red-200"
           >
-            View record
-          </UiButton>
+            <ListTree className={controlIconClasses.compact} aria-hidden />
+          </IconButton>
         </div>
       )}
       {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}

@@ -38,4 +38,14 @@ describe("placeNearRect", () => {
     const anchor = { top: 820, bottom: 848, left: 40, right: 200, width: 160, height: 28 } as DOMRect;
     expect(placeNearRect(anchor, 400, 300, "down", viewport)).toEqual({ x: 40, y: 512 });
   });
+
+  it("opens to the left of a trace row in a right-side inspector", () => {
+    const anchor = { top: 240, bottom: 268, left: 980, right: 1140, width: 160, height: 28 } as DOMRect;
+    expect(placeNearRect(anchor, 640, 300, "left", viewport)).toEqual({ x: 332, y: 240 });
+  });
+
+  it("flips right when the left side cannot fit the panel", () => {
+    const anchor = { top: 120, bottom: 148, left: 80, right: 240, width: 160, height: 28 } as DOMRect;
+    expect(placeNearRect(anchor, 400, 300, "left", viewport)).toEqual({ x: 248, y: 120 });
+  });
 });
