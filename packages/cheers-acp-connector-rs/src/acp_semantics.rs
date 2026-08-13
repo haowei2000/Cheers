@@ -95,6 +95,17 @@ pub(crate) fn preferred_auth_method(
             return Some(method.clone());
         }
     }
+    // Prefer an ACP-visible device-code flow over a browser opened on the
+    // Connector host. Codex advertises this method only when URL elicitation is
+    // available, so its verification URL and one-time code can reach Cheers Web.
+    if let Some(method) = methods.iter().find(|method| {
+        matches!(
+            method.id.as_str(),
+            "chat-gpt-device-code" | "chatgpt-device-code" | "chat_gpt_device_code"
+        )
+    }) {
+        return Some(method.clone());
+    }
     if let Some(method) = methods
         .iter()
         .find(|method| matches!(method.id.as_str(), "chat-gpt" | "chatgpt" | "chat_gpt"))

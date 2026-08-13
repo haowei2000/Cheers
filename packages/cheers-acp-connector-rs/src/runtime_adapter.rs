@@ -199,7 +199,9 @@ pub trait RuntimeAdapter: Send {
     async fn stop(&mut self) -> anyhow::Result<()>;
     /// Restarts the runtime and returns the new initialize response.
     async fn restart(&mut self) -> anyhow::Result<Value>;
-    /// Re-run ACP `authenticate` using the method advertised at initialize.
+    /// Re-run ACP `authenticate` using the preferred method advertised at initialize.
+    /// Agent-to-client elicitation emitted while the request is active is routed
+    /// through the supplied trusted request route.
     /// No-op when the agent advertised no authMethods.
     async fn authenticate(&mut self, request_route: Option<RequestRoute>) -> anyhow::Result<()>;
     /// Creates a new ACP session with the supplied workspace and MCP context.

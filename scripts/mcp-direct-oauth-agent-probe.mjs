@@ -13,8 +13,9 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { writeFile } from "node:fs/promises";
 
-const SECRET_KEY = /(authorization|token|secret|credential|code|verifier)/i;
+const SECRET_KEY = /(authorization|token|secret|credential|code|verifier|loginId)/i;
 const OAUTH_URL = /https?:\/\/[^\s"'<>]+/g;
+const DEVICE_CODE = /\b[A-Z0-9]{4}(?:-[A-Z0-9]{4,8})+\b/g;
 
 /** Replace credentials in strings and structured evidence before it reaches disk. */
 export function redact(value, key = "") {
@@ -33,6 +34,7 @@ export function redact(value, key = "") {
   }
   if (typeof value !== "string") return value;
   return value
+    .replace(DEVICE_CODE, "[REDACTED-DEVICE-CODE]")
     .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [REDACTED]")
     .replace(/agbi_[A-Za-z0-9_-]+/g, "agbi_[REDACTED]")
     .replace(/(^|[?&\s])((?:code|access_token|refresh_token|client_secret|code_verifier|state)=)[^&\s]+/gi, "$1$2[REDACTED]")
@@ -86,6 +88,15 @@ export function parseCommand(agentId, raw) {
     throw new Error("CHEERS_SPIKE_AGENT_COMMAND_JSON must be a non-empty string array");
   }
   return value;
+}
+
+/** Select an ACP-visible provider login method, preferring URL device code. */
+export function providerAuthMethod(initialize) {
+  const methods = initialize?.authMethods ?? [];
+  return methods.find((method) => method.id === "chat-gpt-device-code" || method.methodId === "chat-gpt-device-code") ??
+    methods.find((method) => method.id === "chat-gpt" || method.methodId === "chat-gpt") ??
+    methods.find((method) => !["api-key", "api_key", "env", "env_var"].includes(method.id ?? method.methodId)) ??
+    null;
 }
 
 class AcpPeer {
@@ -198,7 +209,7 @@ class AcpPeer {
         this.evidence.oauth_urls.push(...oauthUrls(params.url));
         // stderr is outside the ACP stdout framing and lets the operator review
         // the host before deciding whether to open the URL.
-        process.stderr.write(`ACP URL elicitation (${params.message ?? "authorization requested"}): ${redact(params.url)}\n`);
+        process.stderr.write(`ACP URL elicitation (${redact(params.message ?? "authorization requested")}): ${redact(params.url)}\n`);
       }
       const action = process.env.CHEERS_SPIKE_ACCEPT_ELICITATION_URL === "1" ? "accept" : "cancel";
       this.send({ jsonrpc: "2.0", id: message.id, result: { action } });
@@ -241,7 +252,9 @@ export async function runProbe(env = process.env) {
   if (!agentId) throw new Error("CHEERS_SPIKE_AGENT_ID is required");
   const mcpUrl = env.CHEERS_SPIKE_MCP_URL;
   const phase = env.CHEERS_SPIKE_PHASE ?? "capability";
-  if (phase !== "capability" && !mcpUrl) throw new Error("CHEERS_SPIKE_MCP_URL is required");
+  if (!["capability", "provider-auth"].includes(phase) && !mcpUrl) {
+    throw new Error("CHEERS_SPIKE_MCP_URL is required");
+  }
   const command = parseCommand(agentId, env.CHEERS_SPIKE_AGENT_COMMAND_JSON);
   const cwd = env.CHEERS_SPIKE_CWD ?? process.cwd();
   const timeoutMs = Number(env.CHEERS_SPIKE_TIMEOUT_MS ?? "180000");
@@ -311,6 +324,25 @@ export async function runProbe(env = process.env) {
     });
     evidence.initialize = redact(initialize);
     evidence.http_capability = supportsHttp(initialize?.agentCapabilities);
+    if (phase === "provider-auth") {
+      const method = providerAuthMethod(initialize);
+      if (!method) throw new Error("Agent did not advertise an interactive provider auth method");
+      evidence.provider_auth_method = method.id ?? method.methodId;
+      try {
+        evidence.provider_auth_result = redact(await peer.request("authenticate", {
+          methodId: evidence.provider_auth_method,
+        }));
+      } catch (error) {
+        // Cancelling the elicitation normally makes authenticate fail. The spike
+        // succeeds when the Agent surfaced a URL without consuming credentials.
+        evidence.provider_auth_error = redact(error instanceof Error ? error.message : String(error));
+      }
+      if (evidence.elicitations.some((item) => item.mode === "url" && typeof item.url === "string")) {
+        evidence.result = "passed";
+        return evidence;
+      }
+      throw new Error("Provider authenticate did not surface URL elicitation");
+    }
     if (!evidence.http_capability) throw new Error("Agent does not advertise HTTP MCP capability");
     if (phase === "capability") {
       evidence.result = "passed";

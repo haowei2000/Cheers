@@ -354,7 +354,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         self.request_with_route(
             AGENT_METHOD_NAMES.authenticate,
             typed_params(AuthenticateRequest::new(method.id.clone())),
-            self.request_timeout_ms(),
+            self.config.auth_timeout_ms,
             request_route,
         )
         .await

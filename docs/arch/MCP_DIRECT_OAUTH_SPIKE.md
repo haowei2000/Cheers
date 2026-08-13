@@ -164,6 +164,25 @@ running `session/new` alone is not a pass.
   reported that the user must run `codex mcp login cheers`; it did not surface
   OAuth discovery through ACP session creation. This is evidence for an explicit,
   Agent-owned login path, not an OAuth lifecycle pass.
+- A separate provider-auth probe used an isolated temporary `CODEX_HOME` and
+  real network access. Codex 1.2.0 advertised `chat-gpt-device-code`; ACP
+  `authenticate` emitted request-scoped URL elicitation for
+  `https://auth.openai.com/codex/device` with a one-time code. The probe returned
+  `cancel`, verified that the URL traveled over ACP, and deleted the temporary
+  state. This validates the Agent-provider login surface only; it does not count
+  as a Cheers MCP OAuth lifecycle pass.
+
+  The probe can be repeated without touching an existing Codex login:
+
+  ```bash
+  CODEX_HOME="$(mktemp -d)" \
+  CHEERS_SPIKE_AGENT_ID=codex \
+  CHEERS_SPIKE_PHASE=provider-auth \
+  node scripts/mcp-direct-oauth-agent-probe.mjs
+  ```
+
+  The default probe cancels URL elicitation after observing it. Retained output
+  redacts the one-time user code and provider login identifier.
 - A sandboxed Codex ACP 1.1.9 capability attempt could not initialize its SQLite
   state under `~/.codex`; this is classified as `harness_environment_failure`,
   not an OAuth compatibility result. The real matrix needs normal access to each

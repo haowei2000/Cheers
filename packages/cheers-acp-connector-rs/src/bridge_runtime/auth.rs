@@ -1,10 +1,9 @@
 //! ACP agent re-authentication wait for [`RuntimeContext`].
 //!
 //! When `session/new` / `prompt` fail with an auth-class error, the connector
-//! retries `authenticate` once locally, then surfaces an `auth_required` channel
-//! card and waits for a human `auth_acknowledged` (retry / cancel) — same wait
-//! pattern as permission cards, but the outcome drives ACP authenticate rather
-//! than `request_permission`.
+//! runs `authenticate` with a trusted request route so provider URL elicitation
+//! reaches Cheers Web. Agents without an interactive ACP surface fall back to an
+//! `auth_required` channel card and explicit retry/cancel acknowledgement.
 
 use super::*;
 use crate::acp_semantics::{
@@ -18,9 +17,10 @@ pub(super) enum AuthAckAction {
 }
 
 impl RuntimeContext {
-    /// After an ACP op fails with an auth-looking error: try `authenticate`
-    /// once silently; if that still fails (or the op still fails after), ask
-    /// the human via an `auth_required` card, then retry authenticate on ack.
+    /// After an ACP op fails with an auth-looking error, invoke `authenticate`
+    /// with the task's trusted human route. Interactive Agents can issue a URL
+    /// elicitation during that request; non-interactive failures fall back to an
+    /// `auth_required` diagnostic before one explicit retry.
     ///
     /// Returns `Ok(())` when the caller should retry the original op; `Err` when
     /// the human cancelled / timed out / authenticate still fails.
@@ -35,7 +35,7 @@ impl RuntimeContext {
         }
         tracing::warn!(
             account = %self.account_id,
-            "ACP op failed with auth-class error; attempting re-authenticate"
+            "ACP op failed with auth-class error; starting provider authenticate"
         );
         let silent = {
             let mut adapter = self.adapter.lock().await;

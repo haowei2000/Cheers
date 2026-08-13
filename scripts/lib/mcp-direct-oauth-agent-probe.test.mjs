@@ -9,6 +9,7 @@ import {
   classifyFailure,
   oauthUrls,
   parseCommand,
+  providerAuthMethod,
   redact,
 } from "../mcp-direct-oauth-agent-probe.mjs";
 import { redactFile } from "../redact-mcp-oauth-spike-evidence.mjs";
@@ -21,6 +22,7 @@ test("redact removes OAuth and installation credentials", () => {
     url: "https://example.test/callback?code=one&state=ok",
     form: "refresh_token=refresh-me&code_verifier=verify-me",
     installation: "agbi_super-secret",
+    message: "Enter ABCD-EFGHI to continue",
   });
   assert.equal(value.access_token, "[REDACTED]");
   assert.equal(value.code, -32601);
@@ -28,6 +30,7 @@ test("redact removes OAuth and installation credentials", () => {
   assert.equal(value.url, "https://example.test/callback?code=[REDACTED]&state=[REDACTED]");
   assert.equal(value.form, "refresh_token=[REDACTED]&code_verifier=[REDACTED]");
   assert.equal(value.installation, "agbi_[REDACTED]");
+  assert.equal(value.message, "Enter [REDACTED-DEVICE-CODE] to continue");
 });
 
 test("failure classification distinguishes compatibility from harness failures", () => {
@@ -63,6 +66,21 @@ test("command overrides must be non-empty string arrays", () => {
   assert.deepEqual(parseCommand("codex", '["custom","acp"]'), ["custom", "acp"]);
   assert.throws(() => parseCommand("codex", "[]"));
   assert.throws(() => parseCommand("codex", '["ok",1]'));
+});
+
+test("provider auth prefers an ACP-visible Codex device-code flow", () => {
+  assert.equal(
+    providerAuthMethod({
+      authMethods: [
+        { id: "api-key" },
+        { id: "chat-gpt" },
+        { id: "chat-gpt-device-code" },
+      ],
+    }).id,
+    "chat-gpt-device-code",
+  );
+  assert.equal(providerAuthMethod({ authMethods: [{ id: "chat-gpt" }] }).id, "chat-gpt");
+  assert.equal(providerAuthMethod({ authMethods: [{ id: "api-key" }] }), null);
 });
 
 test("redactFile sanitizes retained text evidence", async () => {

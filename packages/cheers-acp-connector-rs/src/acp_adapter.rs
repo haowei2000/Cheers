@@ -667,7 +667,7 @@ impl RuntimeAdapter for AcpAdapter {
         self.request_with_route(
             "authenticate",
             json!({ "methodId": method.id }),
-            self.request_timeout_ms(),
+            self.config.auth_timeout_ms,
             request_route,
         )
         .await
@@ -1295,17 +1295,18 @@ mod tests {
     }
 
     #[test]
-    fn picks_auth_method_preferring_chatgpt_without_api_key_env() {
+    fn picks_url_device_code_before_host_browser_without_api_key_env() {
         let init = json!({
             "authMethods": [
                 { "id": "api-key", "name": "API Key" },
-                { "id": "chat-gpt", "name": "ChatGPT" }
+                { "id": "chat-gpt", "name": "ChatGPT" },
+                { "id": "chat-gpt-device-code", "name": "ChatGPT (device code)" }
             ]
         });
         let empty = BTreeMap::new();
         assert_eq!(
             preferred_auth_method_id(&init, &empty).as_deref(),
-            Some("chat-gpt")
+            Some("chat-gpt-device-code")
         );
 
         let mut with_key = BTreeMap::new();
@@ -1387,6 +1388,7 @@ mod tests {
                 env: BTreeMap::new(),
                 inherit_env: true,
                 request_timeout_ms: 1000,
+                auth_timeout_ms: 1000,
                 prompt_timeout_ms: 1000,
                 agent_native_permission_mode: None,
                 config_options: None,

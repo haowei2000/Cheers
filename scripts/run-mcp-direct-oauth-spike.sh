@@ -20,7 +20,7 @@ Usage: scripts/run-mcp-direct-oauth-spike.sh --agent AGENT --mode MODE [options]
 Agents: codex | claude | gemini | opencode
 Modes:  interactive | client-credentials
 Options:
-  --phase capability|session|full  Probe depth (default: full)
+  --phase capability|provider-auth|session|full  Probe depth (default: full)
   --hold-seconds N                 Wait before the second prompt (default: 620)
   --keep-artifacts                 Keep the redacted result directory
   --dry-run                        Validate inputs and print the case plan only
@@ -55,10 +55,10 @@ done
 
 case "$agent" in codex|claude|gemini|opencode) ;; *) echo "invalid --agent" >&2; exit 2 ;; esac
 case "$mode" in interactive|client-credentials) ;; *) echo "invalid --mode" >&2; exit 2 ;; esac
-case "$phase" in capability|session|full) ;; *) echo "invalid --phase" >&2; exit 2 ;; esac
+case "$phase" in capability|provider-auth|session|full) ;; *) echo "invalid --phase" >&2; exit 2 ;; esac
 [[ "$hold_seconds" =~ ^[0-9]+$ ]] || { echo "--hold-seconds must be an integer" >&2; exit 2; }
 
-if [[ "$mode" == client-credentials && "$phase" != capability && -z "${CHEERS_SPIKE_AGENT_ENV_JSON:-}" ]]; then
+if [[ "$mode" == client-credentials && "$phase" != capability && "$phase" != provider-auth && -z "${CHEERS_SPIKE_AGENT_ENV_JSON:-}" ]]; then
   echo "client-credentials requires the Agent's documented credential provider via CHEERS_SPIKE_AGENT_ENV_JSON" >&2
   echo "No generic secret env is injected; absence is an unsupported result, not a harness error." >&2
   exit 3
@@ -72,7 +72,7 @@ if $dry_run; then
   exit 0
 fi
 
-if [[ "$phase" == capability ]]; then
+if [[ "$phase" == capability || "$phase" == provider-auth ]]; then
   CHEERS_SPIKE_AGENT_ID="$agent" CHEERS_SPIKE_PHASE=capability \
     node "$repo_root/scripts/mcp-direct-oauth-agent-probe.mjs"
   exit $?

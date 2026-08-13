@@ -84,6 +84,8 @@ pub struct StdioAgentConfig {
     pub env: BTreeMap<String, String>,
     pub inherit_env: bool,
     pub request_timeout_ms: u64,
+    /// Upper bound for authenticate flows that wait on a human interaction.
+    pub auth_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
     pub agent_native_permission_mode: Option<String>,
     /// Backend-desired ACP config options (`{configId: value}`), applied per
@@ -804,6 +806,10 @@ async fn normalize_account(
             env,
             inherit_env: policy.env.inherit,
             request_timeout_ms: policy.sessions.request_timeout_ms,
+            auth_timeout_ms: policy
+                .sessions
+                .request_timeout_ms
+                .max(policy.permission.wait_timeout_ms),
             prompt_timeout_ms: policy.prompt.max_duration_ms,
             agent_native_permission_mode: raw.adapter.permission_mode,
             config_options: None,
@@ -1371,6 +1377,7 @@ request_timeout_ms = 666000
         assert_eq!(account.advanced.reconnect_base_ms, 250);
         assert_eq!(account.agent.args, vec!["--flag"]);
         assert_eq!(account.agent.request_timeout_ms, 333000);
+        assert_eq!(account.agent.auth_timeout_ms, 555000);
         assert_eq!(account.agent.prompt_timeout_ms, 444000);
         assert_eq!(account.policy.prompt.max_prompt_bytes, 12345);
         assert!(!account.agent.inherit_env);

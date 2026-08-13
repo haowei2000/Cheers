@@ -75,4 +75,21 @@ are returned to Web surfaces but never select Connector or `BridgeRuntime`
 behavior. Unknown and not-yet-verified versions therefore remain explicit
 instead of acquiring an optimistic compatibility claim.
 
+## Agent-provider authentication
+
+Provider authentication and Cheers MCP authentication remain separate security
+domains. When a task hits an Agent provider-auth error, the Connector invokes
+ACP `authenticate` with the verified human request route. An Agent may issue
+request-scoped URL elicitation while that call is pending; Cheers forwards the
+URL and instructions to the same initiating user, then returns only the ACP
+accept/decline result. Provider authorization codes and tokens never pass
+through Gateway or enter model context.
+
+For Codex, Cheers prefers the advertised `chat-gpt-device-code` method when URL
+elicitation is available. This presents the verification URL and one-time code
+in Web instead of opening a browser on the Connector host. The older
+`chat-gpt` browser method remains a fallback when device-code authentication is
+not advertised. Human-waiting authenticate calls use the interaction timeout,
+not the shorter ordinary session-request timeout.
+
 Reference: [ACP v1 Elicitation](https://agentclientprotocol.com/protocol/v1/elicitation).
