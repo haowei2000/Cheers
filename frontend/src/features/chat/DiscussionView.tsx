@@ -1,3 +1,5 @@
+/** @file Discussion-mode channel UI for browsing topics and their reply threads. */
+
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import {
@@ -45,6 +47,7 @@ interface Props {
   onComposerContextChange: (root: Message | null, creating: boolean) => void;
 }
 
+/** Derive a short topic title and preview from a root message's plain text. */
 export function titleAndPreview(message: Message) {
   const content = (message.content ?? "").trim();
   if (message.is_deleted) {
@@ -65,6 +68,7 @@ export function titleAndPreview(message: Message) {
   };
 }
 
+/** Format a server timestamp as a compact relative-activity label. */
 function relativeActivity(value: string) {
   const time = new Date(value).getTime();
   const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
@@ -78,6 +82,7 @@ function relativeActivity(value: string) {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Render a searchable, paginated topic list with an inline thread reader. */
 export function DiscussionView({
   channelId,
   currentUserId,

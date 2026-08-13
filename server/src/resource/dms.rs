@@ -1,11 +1,20 @@
+//! Bot-facing resource handler for opening direct-message channels.
+//!
+//! The handler deliberately exposes a narrower policy than the user REST API:
+//! a bot may contact only its owner or a human who shares an active non-DM
+//! channel with it.
+
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{resource_error, Principal, PrincipalType, ResourceResult};
 
-/// Bot-authenticated DM creation.  Eligibility is deliberately narrow: owner
-/// or a human who currently shares a non-DM channel with the bot.
+/// Open or reuse a direct-message channel for an authenticated bot.
+///
+/// `params.target_user_id` must be a UUID identifying the bot's owner or a user
+/// who currently shares an active non-DM channel with the bot. The response
+/// reports the channel ID and whether this call created the channel.
 pub async fn handle_open(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     if principal.principal_type != PrincipalType::Bot {
         return Err(resource_error("FORBIDDEN", "dm.open is bot-only"));

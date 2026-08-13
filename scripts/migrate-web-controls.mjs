@@ -1,3 +1,8 @@
+/** @file
+ * One-shot AST-assisted migration from native form controls to Cheers UI
+ * primitives. Native checkbox and file inputs receive explicit audit markers.
+ */
+
 import fs from "node:fs";
 import { createRequire } from "node:module";
 
@@ -17,6 +22,7 @@ const imports = {
   UiTextarea: 'import { Textarea as UiTextarea } from "@/components/ui/textarea";',
 };
 
+/** Remove legacy control sizing classes and add the equivalent component props. */
 function normalizedControlSource(source, path) {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const edits = [];

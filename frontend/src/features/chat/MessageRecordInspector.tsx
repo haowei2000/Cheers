@@ -1,3 +1,5 @@
+/** @file Modal inspector for the durable metadata attached to a chat message. */
+
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, ListTree, X } from "lucide-react";
@@ -27,6 +29,7 @@ interface MessageRecordInspectorProps {
  * compact screens. Keeping this out of the timeline prevents completed trace
  * history from changing message rhythm while preserving one audited surface.
  */
+/** Present message metadata as an accessible dialog and restore focus on close. */
 export function MessageRecordInspector({
   message,
   channelId,

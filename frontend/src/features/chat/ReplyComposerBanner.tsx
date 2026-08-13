@@ -1,8 +1,11 @@
+/** @file Composer banner that identifies the message currently being replied to. */
+
 import { Button as UiButton } from "@/components/ui/button";
 import { Reply, X } from "lucide-react";
 import type { Message } from "@/types";
 import { replyPreviewOf } from "./replyPreview";
 
+/** Show a sanitized reply preview with an action for cancelling reply mode. */
 export function ReplyComposerBanner({
   message,
   senderName,

@@ -1,3 +1,10 @@
+/** @file
+ * Repository-wide design-system contract check.
+ *
+ * Validates the shared JSON contract, scans web and native implementations,
+ * and exits non-zero when source code drifts from the registered primitives.
+ */
+
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -74,6 +81,7 @@ const registryFiles = {
   android: "apps/android/app/src/main/java/com/cheers/android/ui/components/ItemSystem.kt"
 };
 
+/** Recursively concatenate files with an extension for cross-file assertions. */
 async function sourceText(directory, extension) {
   const entries = await readdir(directory, { withFileTypes: true });
   const chunks = await Promise.all(entries.map(async (entry) => {
@@ -84,6 +92,7 @@ async function sourceText(directory, extension) {
   return chunks.join("\n");
 }
 
+/** Recursively load files while preserving paths for source-located findings. */
 async function sourceFiles(directory, extension) {
   const entries = await readdir(directory, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {

@@ -1,3 +1,5 @@
+/** @file Accessible two-option control for selecting chat or discussion layout. */
+
 import { TabOption } from "@/components/ui/tab-option";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { MessageCircle, MessagesSquare } from "lucide-react";
@@ -26,6 +28,7 @@ const OPTIONS: Array<{
   },
 ];
 
+/** Render the conversation-mode choices and report the selected mode. */
 export function ConversationModePicker({
   value,
   onChange,

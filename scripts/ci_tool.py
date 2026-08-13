@@ -31,11 +31,15 @@ class CiToolError(RuntimeError):
 
 @dataclass(frozen=True)
 class LaneResult:
+    """Selection decision and matching files for one workflow lane."""
+
     selected: bool
     matches: tuple[str, ...]
 
 
 def load_config(path: Path = DEFAULT_CONFIG) -> dict:
+    """Load and minimally validate the versioned CI dependency map."""
+
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -46,6 +50,8 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict:
 
 
 def normalize_files(files: Iterable[str]) -> tuple[str, ...]:
+    """Normalize repository paths, remove duplicates, and return stable ordering."""
+
     normalized = {
         item.strip().replace("\\", "/").removeprefix("./")
         for item in files
@@ -55,6 +61,8 @@ def normalize_files(files: Iterable[str]) -> tuple[str, ...]:
 
 
 def matches_any(path: str, patterns: Sequence[str]) -> bool:
+    """Return whether a repository path matches any configured glob."""
+
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
 
 
@@ -65,6 +73,8 @@ def plan_for_files(
     *,
     force_all: bool = False,
 ) -> dict[str, LaneResult]:
+    """Select workflow lanes affected by a set of changed files."""
+
     try:
         workflow_config = config["workflows"][workflow]
         lanes = workflow_config["lanes"]
@@ -85,6 +95,8 @@ def plan_for_files(
 
 
 def git_changed_files(base: str, head: str, *, merge_base: bool) -> tuple[str, ...]:
+    """Read changed paths from Git using either two-dot or merge-base semantics."""
+
     if not base or base == ZERO_SHA:
         raise CiToolError("the base revision is empty; use --force-all for an initial push")
     revision_range = f"{base}...{head}" if merge_base else f"{base}..{head}"
@@ -110,6 +122,8 @@ def git_changed_files(base: str, head: str, *, merge_base: bool) -> tuple[str, .
 
 
 def write_github_output(path: Path, plan: dict[str, LaneResult], changed_count: int) -> None:
+    """Append lane decisions in GitHub Actions output-file format."""
+
     selected = ",".join(name for name, result in plan.items() if result.selected)
     with path.open("a", encoding="utf-8") as output:
         for lane, result in plan.items():
@@ -125,6 +139,8 @@ def render_plan(
     *,
     forced: bool,
 ) -> str:
+    """Render a human-readable lane plan for local or CI logs."""
+
     lines = [
         f"CI/CD plan for {workflow}: {len(changed)} changed file(s)"
         + (" (forced full run)" if forced else "")
@@ -147,6 +163,8 @@ def write_summary(
     plan: dict[str, LaneResult],
     forced: bool,
 ) -> None:
+    """Append a Markdown execution plan to a GitHub Actions job summary."""
+
     with path.open("a", encoding="utf-8") as summary:
         summary.write(f"## {workflow.upper()} execution plan\n\n")
         summary.write(f"Changed files: **{len(changed)}**")
@@ -161,6 +179,8 @@ def write_summary(
 
 
 def audit(config: dict) -> list[str]:
+    """Validate dependency-map shape and its integration with workflow files."""
+
     errors: list[str] = []
     workflows = config.get("workflows", {})
     expected = {"ci": {"gateway", "frontend", "plugin", "desktop", "ios"}, "cd": {"gateway", "frontend"}}
@@ -206,10 +226,14 @@ def audit(config: dict) -> list[str]:
 
 
 def parse_timestamp(value: str) -> datetime:
+    """Parse an ISO-8601 timestamp, accepting GitHub's trailing `Z` form."""
+
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def analyze_runs(runs: Sequence[dict]) -> dict:
+    """Compute duration and duplicate-trigger metrics from Actions run records."""
+
     durations: list[float] = []
     events_by_sha: dict[str, set[str]] = {}
     branches_by_sha: dict[str, set[str]] = {}
@@ -242,6 +266,8 @@ def analyze_runs(runs: Sequence[dict]) -> dict:
 
 
 def command_plan(args: argparse.Namespace) -> int:
+    """Execute the `plan` subcommand and emit requested machine-readable outputs."""
+
     config = load_config(args.config)
     force_all = args.force_all
     if args.files_from:
@@ -283,6 +309,8 @@ def command_plan(args: argparse.Namespace) -> int:
 
 
 def command_audit(args: argparse.Namespace) -> int:
+    """Execute the `audit` subcommand and report all dependency-map errors."""
+
     errors = audit(load_config(args.config))
     if errors:
         print("CI/CD audit failed:", file=sys.stderr)
@@ -294,6 +322,8 @@ def command_audit(args: argparse.Namespace) -> int:
 
 
 def command_metrics(args: argparse.Namespace) -> int:
+    """Execute the `metrics` subcommand from a file or recent GitHub runs."""
+
     if args.input:
         runs = json.loads(args.input.read_text(encoding="utf-8"))
     else:
@@ -332,6 +362,8 @@ def command_metrics(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct the command-line parser and its three subcommands."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.set_defaults(handler=None)
     subparsers = parser.add_subparsers(dest="command")
@@ -363,6 +395,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the selected command and convert expected failures into exit code 2."""
+
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.handler is None:
