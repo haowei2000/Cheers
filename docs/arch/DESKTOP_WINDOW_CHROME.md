@@ -60,6 +60,10 @@ Route feature (Channel, Fleet, Activity, Settings)
 - The main-window capability includes `core:window:allow-start-dragging`; the
   HTML drag regions invoke that command and do not work with `core:default`
   alone.
+- The titlebar navigation control follows the app's information hierarchy, not
+  browser history. It moves from channel to workspace, from nested management
+  routes to their section root, and from top-level management routes back to
+  Chat. Hierarchy navigation does not expose a Forward control.
 
 Tauri merges the platform file into the base configuration. Window arrays are
 replaced rather than merged item-by-item, so the macOS file intentionally
