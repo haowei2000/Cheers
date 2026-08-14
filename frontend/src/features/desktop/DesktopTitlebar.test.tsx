@@ -22,7 +22,7 @@ describe("DesktopTitlebar", () => {
 
   it("navigates through the information hierarchy instead of browser history", () => {
     expect(resolveDesktopParentPath("/chat/workspace/channel")).toBe("/chat/workspace");
-    expect(resolveDesktopParentPath("/chat/workspace")).toBe("/chat");
+    expect(resolveDesktopParentPath("/chat/workspace")).toBeNull();
     expect(resolveDesktopParentPath("/chat")).toBeNull();
     expect(resolveDesktopParentPath("/fleet/bots/bot-id/overview")).toBe("/fleet/bots");
     expect(resolveDesktopParentPath("/fleet/installations")).toBe("/fleet");

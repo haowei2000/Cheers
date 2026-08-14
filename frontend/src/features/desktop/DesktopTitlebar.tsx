@@ -82,7 +82,6 @@ export function resolveDesktopParentPath(pathname: string): string | null {
 
   if (section === "chat") {
     if (segments.length >= 3) return `/chat/${segments[1]}`;
-    if (segments.length === 2) return "/chat";
     return null;
   }
 
