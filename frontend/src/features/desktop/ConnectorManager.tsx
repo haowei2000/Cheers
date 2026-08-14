@@ -9,8 +9,8 @@ import {
   GitBranch,
   History,
   Loader2,
+  Laptop,
   Play,
-  Plug,
   Plus,
   RotateCw,
   Settings2,
@@ -155,7 +155,7 @@ function HealthRow({
           type="button"
           onClick={onRestart}
           disabled={busy}
-          title={`${reason} — restart this connector`}
+          title={`${reason} — restart this installation`}
           controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -396,7 +396,7 @@ export function ConnectorManager() {
         tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Connector "${redeemed.account_id}" set up and started`);
+      toast.success(`Installation "${redeemed.account_id}" is running`);
       setEnrollCode("");
       setModal(null);
       refresh();
@@ -446,7 +446,7 @@ export function ConnectorManager() {
         tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Connector "${redeemed.account_id}" set up and started`);
+      toast.success(`Installation "${redeemed.account_id}" is running`);
       setNewUsername("");
       setModal(null);
       refresh();
@@ -509,7 +509,7 @@ export function ConnectorManager() {
       await apply();
       if (restart && inst.running) {
         await invokeDesktop("connector_restart", { name: inst.name });
-        toast.success("Config saved, connector restarted");
+        toast.success("Config saved, installation restarted");
       } else {
         toast.success("Config saved");
       }
@@ -527,15 +527,15 @@ export function ConnectorManager() {
   return (
     <section>
       <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <Plug className="w-3.5 h-3.5" />
-        Connector
+        <Laptop className="w-3.5 h-3.5" />
+        Installations
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-zinc-200">Local connector daemons</p>
+        <p className="text-regular font-medium text-zinc-200">Bots installed on this Mac</p>
         <p className="text-compact text-zinc-400 mt-1 mb-4">
-          Instances under <code className="bg-zinc-800 rounded-sm px-1">~/.cheers/acp-connector</code>.
-          "Start with app" instances are launched on app start and revived if they die.
+          Each installation runs one bot and keeps its own agent, credential, and workspace.
+          Installations marked “Start with app” stay available in the background.
         </p>
 
         {/* Grid: the local setup tile is always the first item. */}
@@ -547,8 +547,8 @@ export function ConnectorManager() {
             className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-100 hover:text-zinc-50 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="h-5 w-5" />
-            <span className="text-regular font-medium">Set up on this Mac</span>
-            <span className="text-compact text-zinc-400">Create or attach a bot, then verify it starts</span>
+            <span className="text-regular font-medium">Add installation</span>
+            <span className="text-compact text-zinc-400">Run a new or existing bot on this Mac</span>
           </UiButton>
 
           {/* The other direction: a bot created somewhere else (the phone, the
@@ -564,7 +564,7 @@ export function ConnectorManager() {
           >
             <Ticket className="h-5 w-5" />
             <span className="text-regular font-medium">I have a code</span>
-            <span className="text-compact text-zinc-400">Set up a bot made elsewhere</span>
+            <span className="text-compact text-zinc-400">Install a bot paired from another device</span>
           </UiButton>
 
           {instances.map((inst) => (
@@ -600,7 +600,7 @@ export function ConnectorManager() {
                     void act(
                       inst.name,
                       () => invokeDesktop("connector_restart", { name: inst.name }),
-                      "Connector restarted"
+                      "Installation restarted"
                     )
                   }
                 />
@@ -616,7 +616,7 @@ export function ConnectorManager() {
                       void act(
                         inst.name,
                         () => invokeDesktop("connector_stop", { name: inst.name }),
-                        "Connector stopped"
+                        "Installation stopped"
                       )
                     }
                   />
@@ -633,7 +633,7 @@ export function ConnectorManager() {
                             name: inst.name,
                             configPath: inst.config_path,
                           }),
-                        "Connector started"
+                        "Installation started"
                       )
                     }
                   />
@@ -646,7 +646,7 @@ export function ConnectorManager() {
                     void act(
                       inst.name,
                       () => invokeDesktop("connector_restart", { name: inst.name }),
-                      "Connector restarted"
+                      "Installation restarted"
                     )
                   }
                 />
@@ -729,8 +729,8 @@ export function ConnectorManager() {
             />
             <p className="text-compact text-zinc-400">
               Codes are single-use and expire after about 15 minutes. Using one
-              replaces the bot's token, so any connector already running it
-              elsewhere will stop.
+              activates this installation, so the bot's previously active
+              installation will stop.
             </p>
             <div className="flex justify-end gap-2">
               <Button action="cancel" variant="secondary" onClick={() => setModal(null)}>
@@ -746,7 +746,7 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "onboard" && (
-        <Dialog title="Set up a connector on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
+        <Dialog title="Add an installation on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <OnboardForm
             bots={bots}
             mode={mode}
@@ -775,7 +775,7 @@ export function ConnectorManager() {
                     name: newName.trim(),
                     configPath: newConfig.trim(),
                   }),
-                "Connector started"
+                "Installation started"
               ).then((ok) => {
                 if (!ok) return;
                 setNewName("");
@@ -891,9 +891,9 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "delete" && (
-        <Dialog title="Remove connector" onClose={() => setModal(null)} maxWidth="max-w-md">
+        <Dialog title="Remove local installation" onClose={() => setModal(null)} maxWidth="max-w-md">
           <p className="text-regular text-zinc-200">
-            Remove the local connector <b>{modal.inst.name}</b> (stops it and
+            Remove the local installation <b>{modal.inst.name}</b> (stops it and
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
           </p>
@@ -924,11 +924,11 @@ export function ConnectorManager() {
                       name: modal.inst.name,
                       deleteConfig: !keepConfig,
                     }),
-                  "Connector removed"
+                  "Installation removed"
                 ).then((ok) => ok && setModal(null))
               }
             >
-              Remove connector
+              Remove installation
             </Button>
             <Button action="cancel" variant="secondary" controlSize="compact" onClick={() => setModal(null)}>
               Cancel
@@ -1000,7 +1000,7 @@ function AuditTimeline({
       </div>
       {shown.length === 0 ? (
         <p className="text-compact text-zinc-400">
-          No audit events yet. Per-command / file detail needs the connector running with{" "}
+          No audit events yet. Advanced per-command and file detail requires{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
         </p>
@@ -1036,7 +1036,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
   );
 }
 
-/** The onboarding form body (shown inside the New-connector modal). */
+/** The onboarding form body for adding a bot installation on this Mac. */
 function OnboardForm(props: {
   bots: BotItem[];
   mode: "existing" | "new";
@@ -1065,8 +1065,8 @@ function OnboardForm(props: {
       <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-indigo-100">
         <p className="font-medium">Four steps, all on this Mac</p>
         <p className="mt-1 text-indigo-200/75">
-          Choose a bot → check its agent → save the secure local config → start and verify it.
-          If a start fails, the saved connector remains below for Logs, Edit, or Retry.
+          Choose a bot → check its agent → save its secure installation → start and verify it.
+          If startup fails, the installation remains below with recovery and diagnostics.
         </p>
       </div>
       <div className="flex gap-2">
@@ -1131,7 +1131,7 @@ function OnboardForm(props: {
           <p className="font-medium">Setup needs attention</p>
           <p className="mt-1 break-words text-rose-200/80">{p.onboardingError}</p>
           <p className="mt-1 text-rose-200/70">
-            You can fix the agent or configuration and retry. A saved connector will appear on this page instead of being lost.
+            You can fix the agent or configuration and retry. The saved installation remains on this page.
           </p>
         </div>
       )}

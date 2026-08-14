@@ -1,18 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Bot, KeyRound, RefreshCw, Circle, CircleDot, Ban, Wand2 } from "lucide-react";
+import { Bot, RefreshCw, Circle, CircleDot, Ban, Wand2 } from "lucide-react";
 import {
   listBots,
-  issueBotToken,
-  type IssuedToken,
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
-import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { EntityItem } from "@/components/ui/item";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
-import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
+import { BotDetailPanel } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
 import { IconButton } from "@/components/ui/icon-button";
@@ -64,8 +61,8 @@ export function BotsManager() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [issued, setIssued] = useState<IssuedToken | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardBotId, setWizardBotId] = useState<string | undefined>();
   const [selectedId, setSelectedId] = useState("");
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
@@ -104,14 +101,6 @@ export function BotsManager() {
     if (!bots.some((b) => b.bot_id === selectedId)) setSelectedId(bots[0].bot_id);
   }, [bots, selectedId]);
 
-  async function onIssue(botId: string) {
-    try {
-      setIssued(await issueBotToken(botId));
-    } catch (e) {
-      notify.error(messageOf(e));
-    }
-  }
-
   const selected = bots.find((b) => b.bot_id === selectedId) ?? null;
 
   return (
@@ -124,7 +113,10 @@ export function BotsManager() {
           aria-label="Add bot"
           controlSize="compact"
           className="ml-auto normal-case tracking-normal"
-          onClick={() => setWizardOpen(true)}
+          onClick={() => {
+            setWizardBotId(undefined);
+            setWizardOpen(true);
+          }}
         >
           <Wand2 className="w-3.5 h-3.5" />
         </Button>
@@ -170,10 +162,13 @@ export function BotsManager() {
                 key={selected.bot_id}
                 bot={selected}
                 channels={channels}
-                onIssue={onIssue}
                 onError={(m) => toast.error(m)}
                 onChanged={refresh}
                 onPoll={pollRefresh}
+                onAddInstallation={() => {
+                  setWizardBotId(selected.bot_id);
+                  setWizardOpen(true);
+                }}
               />
             ) : (
               <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-regular text-zinc-400">
@@ -184,37 +179,14 @@ export function BotsManager() {
         </div>
       )}
 
-      {/* Token modal — shown once */}
-      {issued && (
-        <Dialog
-          title={
-            <span className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-indigo-400" /> Connection token
-            </span>
-          }
-          onClose={() => setIssued(null)}
-          maxWidth="max-w-lg"
-        >
-          <p className="text-compact text-amber-400">
-            {issued.note ?? "Store this token now — shown only once."}
-          </p>
-          <div className="rounded-sm bg-zinc-950 p-3">
-            <code className="text-compact text-emerald-300 break-all">{issued.token}</code>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-compact text-zinc-400">
-              This is what proves the bot is yours when it connects. Save it into
-              the bot's token file on the machine that runs it.
-            </span>
-            <CopyButton value={issued.token} label="Copy token" />
-          </div>
-        </Dialog>
-      )}
-
       {wizardOpen && (
         <BotOnboardingWizard
           bots={bots}
-          onClose={() => setWizardOpen(false)}
+          initialBotId={wizardBotId}
+          onClose={() => {
+            setWizardOpen(false);
+            setWizardBotId(undefined);
+          }}
           onDone={refresh}
         />
       )}
