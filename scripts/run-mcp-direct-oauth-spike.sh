@@ -189,11 +189,11 @@ admin_token="$(curl -fsS -X POST "$gateway_origin/api/v1/auth/login" \
 workspace_id="$(api_json POST /api/v1/workspaces "$(jq -nc --arg name "OAuth spike ${case_id}" '{name:$name}')" | jq -er .workspace_id)"
 bot_id="$(api_json POST /api/v1/bots "$(jq -nc --arg username "spike-${case_id}" '{username:$username,display_name:$username,binding_type:"agent_bridge",bridge_provider:"generic"}')" | jq -er .bot_id)"
 channel_id="$(api_json POST /api/v1/channels "$(jq -nc --arg workspace_id "$workspace_id" --arg name "spike-${case_id}" --arg bot_id "$bot_id" '{workspace_id:$workspace_id,name:$name,type:"private",initial_bot_ids:[$bot_id]}')" | jq -er .channel_id)"
-enrollment="$(api_json POST "/api/v1/bots/${bot_id}/enrollment" "$(jq -nc --arg agent_type "$agent" --arg device_name "$case_id" '{agent_type:$agent_type,device_name:$device_name}')")"
-code="$(jq -er .code <<<"$enrollment")"
-installation="$(curl -fsS -X POST "$gateway_origin/api/v1/enrollment/redeem" \
+pairing="$(api_json POST "/api/v1/bots/${bot_id}/installations" "$(jq -nc --arg agent_type "$agent" --arg device_name "$case_id" '{agent_type:$agent_type,device_name:$device_name}')")"
+code="$(jq -er .pairing_code <<<"$pairing")"
+installation="$(curl -fsS -X POST "$gateway_origin/api/v1/installations/redeem" \
   -H 'content-type: application/json' \
-  --data "$(jq -nc --arg code "$code" --arg device_name "$case_id" '{code:$code,device_name:$device_name}')")"
+  --data "$(jq -nc --arg code "$code" --arg device_name "$case_id" '{pairing_code:$code,device_name:$device_name}')")"
 installation_id="$(jq -er .installation_id <<<"$installation")"
 installation_credential="$(jq -er .credential <<<"$installation")"
 

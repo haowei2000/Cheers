@@ -5,7 +5,7 @@ Cheers separates the durable channel identity from the machine that runs it:
 - `bot_accounts` owns channel membership, roles, messages, MCP scopes and approvals.
 - `terminal_installations` identifies one ACP connector host and stores only the
   SHA-256 of its `agbi_…` credential.
-- Enrollment codes are single-use, short-lived and bound to a pending
+- Pairing codes are single-use, short-lived and bound to a pending
   `installation_id` when minted. Redemption activates that installation and
   returns its credential once.
 

@@ -2,7 +2,7 @@
 #
 # Fill the two placeholders marked <<< and run:
 #   mkdir -p ~/.cheers/workspace
-#   export CHEERS_INSTALLATION_CREDENTIAL=agbi_... # returned by enrollment redemption
+#   export CHEERS_INSTALLATION_CREDENTIAL=agbi_... # returned by installation pairing
 #   cargo run --bin cce-acp-connector -- start \
 #       --config examples/cheers-daemon.local-demo.toml --name demo
 #

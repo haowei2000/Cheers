@@ -34,17 +34,18 @@ pub fn generate_bot_token() -> String {
     generate_prefixed_secret(BOT_TOKEN_PREFIX)
 }
 
-/// Onboarding enrollment-code 明文前缀（一次性、短时，换取 botToken）。
-pub const ENROLLMENT_CODE_PREFIX: &str = "agbenr_";
+/// Installation pairing-code prefix. The plaintext is short-lived and
+/// single-use; only its hash is persisted.
+pub const PAIRING_CODE_PREFIX: &str = "agbpair_";
 
-/// 生成一次性 enrollment code：`agbenr_<256-bit hex>`。只在铸造时返回一次，
-/// 服务端只存其 SHA-256（用 [`hash_enrollment_code`]）。
-pub fn generate_enrollment_code() -> String {
-    generate_prefixed_secret(ENROLLMENT_CODE_PREFIX)
+/// Generate a one-time pairing code. The plaintext is returned only when the
+/// pending installation is created.
+pub fn generate_pairing_code() -> String {
+    generate_prefixed_secret(PAIRING_CODE_PREFIX)
 }
 
-/// enrollment code 的 SHA-256（同 [`hash_bot_token`] 的算法）。
-pub fn hash_enrollment_code(code: &str) -> String {
+/// SHA-256 for a pairing code (same primitive as [`hash_bot_token`]).
+pub fn hash_pairing_code(code: &str) -> String {
     hash_bot_token(code)
 }
 
@@ -59,7 +60,7 @@ fn generate_prefixed_secret(prefix: &str) -> String {
 pub const INVITE_LINK_PREFIX: &str = "cinv_";
 
 /// 生成 invite-link token：`cinv_<128-bit hex>`。16 字节（而非 32）让分享出去的
-/// URL 更短，仍然不可枚举；与 enrollment code 不同，它明文入库（见 0044 迁移头注）。
+/// URL 更短，仍然不可枚举；与 pairing code 不同，它明文入库（见 0044 迁移头注）。
 pub fn generate_invite_link_token() -> String {
     let mut bytes = [0u8; 16];
     getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
@@ -206,5 +207,13 @@ mod tests {
         let blank = derive_master_key(Some("  "), "pem");
         assert_ne!(from_env, from_pem);
         assert_eq!(blank, from_pem);
+    }
+
+    #[test]
+    fn pairing_code_has_pairing_prefix_and_stable_hash() {
+        let code = generate_pairing_code();
+        assert!(code.starts_with(PAIRING_CODE_PREFIX));
+        assert_eq!(code.len(), PAIRING_CODE_PREFIX.len() + 64);
+        assert_eq!(hash_pairing_code(&code), hash_pairing_code(&code));
     }
 }

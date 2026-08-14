@@ -1131,7 +1131,7 @@ fn normalize_desktop_config_at(config_path: &Path) -> Result<(), String> {
 
 /// Write a gateway-generated connector config + its token to `~/.cheers/`, the
 /// way `install.sh` does — the "configure via form" path. The gateway's
-/// `POST /enrollment/redeem` returns a ready `config_toml` (which references a
+/// `POST /installations/redeem` returns a ready `config_toml` (which references a
 /// `token_file`), the plaintext `token`, and that relative `token_file` path;
 /// this lands both on disk so the instance can start with NO hand-editing.
 /// The adapter command is resolved to an absolute path (GUI PATH is minimal).

@@ -8,7 +8,8 @@ import {
 import { listChannels } from "@/api/channels";
 import { ActionButton } from "@/components/ui/action-button";
 import { EntityItem } from "@/components/ui/item";
-import { BotOnboardingWizard } from "./BotOnboardingWizard";
+import { CreateBotDialog } from "./CreateBotDialog";
+import { CreateInstallationWizard } from "./CreateInstallationWizard";
 import { BotDetailPanel } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
@@ -61,8 +62,8 @@ export function BotsManager() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardBotId, setWizardBotId] = useState<string | undefined>();
+  const [createBotOpen, setCreateBotOpen] = useState(false);
+  const [installationBotId, setInstallationBotId] = useState<string | undefined>();
   const [selectedId, setSelectedId] = useState("");
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
@@ -115,8 +116,7 @@ export function BotsManager() {
           controlSize="compact"
           className="ml-auto normal-case tracking-normal"
           onClick={() => {
-            setWizardBotId(undefined);
-            setWizardOpen(true);
+            setCreateBotOpen(true);
           }}
         />
         <IconButton
@@ -165,8 +165,7 @@ export function BotsManager() {
                 onChanged={refresh}
                 onPoll={pollRefresh}
                 onAddInstallation={() => {
-                  setWizardBotId(selected.bot_id);
-                  setWizardOpen(true);
+                  setInstallationBotId(selected.bot_id);
                 }}
               />
             ) : (
@@ -178,13 +177,17 @@ export function BotsManager() {
         </div>
       )}
 
-      {wizardOpen && (
-        <BotOnboardingWizard
+      {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
+        setCreateBotOpen(false);
+        setSelectedId(bot.bot_id);
+        void refresh();
+      }} />}
+      {installationBotId !== undefined && (
+        <CreateInstallationWizard
           bots={bots}
-          initialBotId={wizardBotId}
+          initialBotId={installationBotId}
           onClose={() => {
-            setWizardOpen(false);
-            setWizardBotId(undefined);
+            setInstallationBotId(undefined);
           }}
           onDone={refresh}
         />

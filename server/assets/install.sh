@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Cheers connector installer (bot onboarding — mode 2).
+# Cheers connector installer (installation pairing — mode 2).
 #
 # Canonical use (code via env, NEVER on the command line / URL):
-#   CHEERS_ENROLL_CODE='agbenr_…' bash <(curl -fsSL https://<host>/api/v1/install.sh)
+#   CHEERS_PAIRING_CODE='agbpair_…' bash <(curl -fsSL https://<host>/api/v1/install.sh)
 #   ^ note the LEADING SPACE: with `HISTCONTROL=ignorespace` the code stays out
 #     of your shell history. The code is single-use and expires in ~15 min.
 #
-# What it does: redeems the one-time code over the API → receives a freshly
+# What it does: redeems the one-time code over the API → receives a fresh
 # installation credential + a ready connector config → writes both (credential to a 0600
 # sidecar) → installs a keep-alive service (launchd/systemd) → starts it.
 #
 # Env knobs:
-#   CHEERS_ENROLL_CODE   the one-time code (required; prompted if a TTY)
+#   CHEERS_PAIRING_CODE  the one-time code (required; prompted if a TTY)
 #   CHEERS_API_BASE      gateway API base; default injected at serve time
 #   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
 #                        prebuilt release binary is downloaded for this platform)
@@ -47,26 +47,26 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required (used to parse JSON safely)"
 
 # ── 1. resolve the one-time code (env, then TTY prompt — never an argument) ────
-CODE="${CHEERS_ENROLL_CODE:-}"
+CODE="${CHEERS_PAIRING_CODE:-}"
 if [ -z "$CODE" ]; then
   if [ -t 0 ]; then
-    printf 'Enrollment code (agbenr_…): ' >&2
+    printf 'Installation pairing code (agbpair_…): ' >&2
     read -rs CODE; printf '\n' >&2
   fi
 fi
-[ -n "$CODE" ] || die "no enrollment code (set CHEERS_ENROLL_CODE)"
+[ -n "$CODE" ] || die "no pairing code (set CHEERS_PAIRING_CODE)"
 
-# ── 2. redeem (single-use, over the API). Response holds token + config. ──────
-info "redeeming enrollment code at $API_BASE …"
+# ── 2. redeem (single-use, over the API). Response holds credential + config. ─
+info "redeeming installation pairing code at $API_BASE …"
 RESP_FILE="$(mktemp)"
 trap 'rm -f "$RESP_FILE"' EXIT
 # Code goes in the JSON body, never the URL/argv. --fail-with-body keeps the
 # opaque 400 message; we don't echo the code on any path.
 DEVICE_NAME="${CHEERS_DEVICE_NAME:-$(hostname 2>/dev/null || printf 'Unnamed terminal')}"
-if ! python3 -c 'import json,sys; print(json.dumps({"code":sys.argv[1],"device_name":sys.argv[2]}))' "$CODE" "$DEVICE_NAME" \
-    | curl -fsS -X POST "$API_BASE/enrollment/redeem" \
+if ! python3 -c 'import json,sys; print(json.dumps({"pairing_code":sys.argv[1],"device_name":sys.argv[2]}))' "$CODE" "$DEVICE_NAME" \
+    | curl -fsS -X POST "$API_BASE/installations/redeem" \
         -H 'Content-Type: application/json' --data-binary @- > "$RESP_FILE"; then
-  die "redeem failed — code invalid, expired, already used, or gateway unreachable"
+  die "pairing failed — code invalid, expired, already used, or gateway unreachable"
 fi
 
 field() { python3 -c 'import sys,json; sys.stdout.write(str(json.load(open(sys.argv[1])).get(sys.argv[2],"")))' "$RESP_FILE" "$1"; }
@@ -79,7 +79,7 @@ AGENT_TYPE="$(field agent_type)"
 CONFIG_FILE="$CONFIG_DIR/cheers-daemon.$ACCOUNT_ID.toml"
 CREDENTIAL_PATH="$CONFIG_DIR/$CREDENTIAL_FILE"
 
-# ── 3. write config + token (token straight to a 0600 file, never a var) ──────
+# ── 3. write config + credential (straight to a 0600 file, never a var) ───────
 mkdir -p "$CONFIG_DIR/workspace" "$(dirname "$CREDENTIAL_PATH")"
 python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["config_toml"])' "$RESP_FILE" > "$CONFIG_FILE"
 umask 077
@@ -321,7 +321,7 @@ if [ "$ADAPTER_OK" = "0" ]; then
     2. put its ABSOLUTE path into $CONFIG_FILE (adapter.command), then:
        systemctl --user enable --now cheers-connector-$ACCOUNT_ID.service   # linux
        # (macOS: launchctl load ~/Library/LaunchAgents/com.cheers.connector.$ACCOUNT_ID.plist)
-  Config + token are already in place — no new enrollment code is needed.
+  Config + token are already in place — no new pairing code is needed.
 EOF
 fi
 

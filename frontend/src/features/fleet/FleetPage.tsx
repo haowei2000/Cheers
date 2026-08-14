@@ -29,7 +29,8 @@ import {
 import { listChannels } from "@/api/channels";
 import { useFleetLive } from "./useFleetLive";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
-import { BotOnboardingWizard } from "@/features/bots/BotOnboardingWizard";
+import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
+import { CreateInstallationWizard } from "@/features/bots/CreateInstallationWizard";
 import { BotDetailPanel, CopyButton } from "@/features/bots/BotDetailPanel";
 import { ConnectorManager } from "@/features/desktop/ConnectorManager";
 import type { BotItem, Channel } from "@/types";
@@ -177,8 +178,8 @@ export default function FleetPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardBotId, setWizardBotId] = useState<string | undefined>();
+  const [createBotOpen, setCreateBotOpen] = useState(false);
+  const [installationBotId, setInstallationBotId] = useState<string | undefined>();
 
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
@@ -214,9 +215,9 @@ export default function FleetPage() {
   const manageableBots = catalog.filter((bot) => bot.can_manage);
 
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }
-  function openWizard(botId?: string) { setWizardBotId(botId); setWizardOpen(true); }
+  function openInstallation(botId?: string) { setInstallationBotId(botId ?? ""); }
 
-  const headerActions = <><AddMenu onNewBot={() => openWizard()} onInstallation={() => openWizard(manageableBots[0]?.bot_id)} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
+  const headerActions = <><AddMenu onNewBot={() => setCreateBotOpen(true)} onInstallation={() => openInstallation()} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
 
   return <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
     <RouteChromeHeader actions={headerActions}>
@@ -244,7 +245,8 @@ export default function FleetPage() {
         </ItemSection> : section === "installations" ? <InstallationsView items={installations} refresh={async () => { await refresh(true); }} /> : <AuditView events={audit} bots={bots} />}
       </div></main>
     </div>
-    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openWizard(selectedBot.bot_id); }} /></Dialog>}
-    {wizardOpen && <BotOnboardingWizard bots={manageableBots} initialBotId={wizardBotId} onClose={() => { setWizardOpen(false); setWizardBotId(undefined); }} onDone={() => void refresh()} />}
+    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
+    {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => { setCreateBotOpen(false); void refresh(true); openBot(bot.bot_id); }} />}
+    {installationBotId !== undefined && <CreateInstallationWizard bots={manageableBots} initialBotId={installationBotId || undefined} onClose={() => setInstallationBotId(undefined)} onDone={() => void refresh()} />}
   </div>;
 }

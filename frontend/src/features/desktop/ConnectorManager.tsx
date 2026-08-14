@@ -41,13 +41,7 @@ import { ConnectorChanges } from "./ConnectorChanges";
 import { AgentUpdates } from "./AgentUpdates";
 import { AgentPicker, type DetectedAgent } from "./AgentPicker";
 import { consumeConnectorIntent } from "./connectorIntent";
-import {
-  createBot,
-  listBots,
-  mintEnrollmentCode,
-  redeemEnrollmentCode,
-  type AgentType,
-} from "@/api/bots";
+import { createInstallation, listBots, redeemInstallationPairing, type AgentType } from "@/api/bots";
 import type { BotItem } from "@/types";
 
 /** Shape returned by the Tauri `connector_list` command (src-tauri/src/connector.rs). */
@@ -91,7 +85,7 @@ function fmtMem(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-/** Non-empty bridge_provider / agent id (legacy short name or registry id). */
+/** Non-empty Installation agent id (legacy short name or registry id). */
 function isAgentType(v: string | undefined): v is AgentType {
   return !!v && v.trim().length > 0;
 }
@@ -213,12 +207,10 @@ export function ConnectorManager() {
   const [keepConfig, setKeepConfig] = useState(false);
   // Card highlighted while a Finder folder is dragged over it (drag-to-grant).
   const [dragOverName, setDragOverName] = useState<string | null>(null);
-  // Onboarding: create-or-pick a bot, then the gateway mint→redeem flow.
+  // Installation setup always starts from an existing bot identity.
   const [bots, setBots] = useState<BotItem[]>([]);
-  const [mode, setMode] = useState<"existing" | "new">("existing");
   const [existingBotId, setExistingBotId] = useState("");
-  const [enrollCode, setEnrollCode] = useState("");
-  const [newUsername, setNewUsername] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [onboarding, setOnboarding] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
@@ -317,7 +309,6 @@ export function ConnectorManager() {
     const intent = consumeConnectorIntent();
     const wantBot = intent?.botId;
     if (intent) {
-      setMode("existing");
       setExistingBotId(intent.botId);
       // Honour the agent type the wizard already asked about, so the hand-off
       // doesn't quietly re-default to this component's own initial value.
@@ -346,15 +337,6 @@ export function ConnectorManager() {
     }
   }, []);
 
-  // Selecting an existing bot adopts the agent it was registered for. The bot's
-  // bridge_provider is the source of truth — a connector built from a different
-  // agent's preset starts the wrong adapter, and nothing downstream notices.
-  useEffect(() => {
-    if (mode !== "existing" || !existingBotId) return;
-    const provider = bots.find((b) => b.bot_id === existingBotId)?.bridge_provider;
-    if (isAgentType(provider)) setAgentType(provider);
-  }, [mode, existingBotId, bots]);
-
   async function act(
     name: string,
     action: () => Promise<unknown>,
@@ -374,22 +356,22 @@ export function ConnectorManager() {
     }
   }
 
-  // ── redeem a code minted elsewhere (the "I have a code" tile) ─────────────
+  // ── redeem a pairing code created elsewhere ───────────────────────────────
   // The bot already exists and someone else picked its agent; this Mac only
   // supplies the host. The adapter pre-flight therefore reads the agent type
   // out of the redeemed config rather than from this component's picker.
   async function redeemCode() {
-    const code = enrollCode.trim();
+    const code = pairingCode.trim();
     if (!code) {
       toast.error("Paste the code first");
       return;
     }
     setOnboarding(true);
     try {
-      const redeemed = await redeemEnrollmentCode(code, "Cheers Desktop");
+      const redeemed = await redeemInstallationPairing(code, "Cheers Desktop");
       if (isAgentType(redeemed.agent_type) && !(await ensureAdapterReady(redeemed.agent_type))) {
-        // The code is spent by now — redeeming is what rotates the token, and
-        // it can't be undone. Say so plainly instead of a bare "not installed",
+        // The code is spent and the Installation is active by now, so redemption
+        // can't be undone. Say so plainly instead of a bare "not installed",
         // because the user's next step is to install and mint a fresh code.
         toast.error(
           `This bot needs the ${redeemed.agent_type} adapter. Install failed or isn't available — ask for a new code after installing.`
@@ -404,7 +386,7 @@ export function ConnectorManager() {
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
       toast.success(`Installation "${redeemed.account_id}" is running`);
-      setEnrollCode("");
+      setPairingCode("");
       setModal(null);
       refresh();
     } catch (e) {
@@ -421,31 +403,19 @@ export function ConnectorManager() {
     setOnboardingError(null);
     setOnboarding(true);
     try {
-      // Pre-flight the adapter BEFORE anything server-side. Redeeming mints a
-      // new bot token, which destructively replaces the old one and kicks any
-      // live connector — so a client-side failure *after* that point strands
-      // the bot: nobody holds the token the gateway now expects, and re-running
-      // onboarding is the only way back. Auto-install installable agents here
-      // so "not installed" stays a side-effect-free error path.
+      // Pre-flight the adapter before creating a pending installation, so an
+      // unavailable local agent does not leave a pairing behind.
       if (!(await ensureAdapterReady(agentType))) {
         return;
       }
 
-      let botId = existingBotId;
-      if (mode === "new") {
-        const uname = newUsername.trim();
-        if (!uname) {
-          toast.error("Enter a username for the new bot");
-          return;
-        }
-        botId = (await createBot({ username: uname, bridge_provider: agentType })).bot_id;
-      }
+      const botId = existingBotId;
       if (!botId) {
         toast.error("Pick a bot first");
         return;
       }
-      const { code } = await mintEnrollmentCode(botId, agentType);
-      const redeemed = await redeemEnrollmentCode(code, "Cheers Desktop");
+      const pairing = await createInstallation(botId, agentType, "Cheers Desktop");
+      const redeemed = await redeemInstallationPairing(pairing.pairing_code, "Cheers Desktop");
       const configPath = await invokeDesktop<string>("connector_write_onboarded", {
         accountId: redeemed.account_id,
         configToml: redeemed.config_toml,
@@ -454,7 +424,6 @@ export function ConnectorManager() {
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
       toast.success(`Installation "${redeemed.account_id}" is running`);
-      setNewUsername("");
       setModal(null);
       refresh();
     } catch (e) {
@@ -716,9 +685,9 @@ export function ConnectorManager() {
               becomes the machine that runs it.
             </p>
             <UiInput
-              value={enrollCode}
-              onChange={(e) => setEnrollCode(e.target.value)}
-              placeholder="agbenr_…"
+              value={pairingCode}
+              onChange={(e) => setPairingCode(e.target.value)}
+              placeholder="agbpair_…"
               autoFocus
               spellCheck={false}
               controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-zinc-100 placeholder:text-zinc-400 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -745,12 +714,8 @@ export function ConnectorManager() {
         <Dialog title="Add an installation on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <OnboardForm
             bots={bots}
-            mode={mode}
-            setMode={setMode}
             existingBotId={existingBotId}
             setExistingBotId={setExistingBotId}
-            newUsername={newUsername}
-            setNewUsername={setNewUsername}
             agentType={agentType}
             setAgentType={setAgentType}
             onboarding={onboarding}
@@ -1035,12 +1000,8 @@ function AuditRow({ e }: { e: AuditEvent }) {
 /** The onboarding form body for adding a bot installation on this Mac. */
 function OnboardForm(props: {
   bots: BotItem[];
-  mode: "existing" | "new";
-  setMode: (m: "existing" | "new") => void;
   existingBotId: string;
   setExistingBotId: (v: string) => void;
-  newUsername: string;
-  setNewUsername: (v: string) => void;
   agentType: AgentType;
   setAgentType: (v: AgentType) => void;
   onboarding: boolean;
@@ -1065,25 +1026,7 @@ function OnboardForm(props: {
           If startup fails, the installation remains below with recovery and diagnostics.
         </p>
       </div>
-      <div className="flex gap-2">
-        {/* design-system-exempt: menu-option — onboarding mode tabs. */}
-        {(["existing", "new"] as const).map((m) => (
-          <UiButton action="create" variant="plain"
-            key={m}
-            type="button"
-            onClick={() => p.setMode(m)}
-            controlSize="regular" className={` rounded-sm transition-colors ${
- p.mode === m
- ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-100 hover:text-zinc-50"
- }`}
-          >
-            {m === "existing" ? "Existing bot" : "New bot"}
-          </UiButton>
-        ))}
-      </div>
-
-      {p.mode === "existing" ? (
-        <Field label="Bot" htmlFor="onb-bot">
+      <Field label="Bot identity" htmlFor="onb-bot">
           <UiSelect
             id="onb-bot"
             value={p.existingBotId}
@@ -1098,16 +1041,10 @@ function OnboardForm(props: {
             ))}
           </UiSelect>
         </Field>
-      ) : (
-        <Field label="New bot username" htmlFor="onb-uname">
-          <Input
-            id="onb-uname"
-            value={p.newUsername}
-            onChange={(e) => p.setNewUsername(e.target.value)}
-            placeholder="codex-local"
-          />
-        </Field>
-      )}
+      {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-amber-200">
+        Create a bot identity first; installations cannot create bots.
+        <div className="mt-2"><Button action="open" variant="secondary" controlSize="compact" onClick={() => window.location.assign("/fleet/bots")}>Create bot in Fleet</Button></div>
+      </div>}
 
       <Field label="Agent">
         <AgentPicker
@@ -1135,9 +1072,7 @@ function OnboardForm(props: {
       <div>
         <Button action="setup" content="iconText"
           controlSize="compact"
-          disabled={
-            p.onboarding || (p.mode === "existing" ? !p.existingBotId : !p.newUsername.trim())
-          }
+          disabled={p.onboarding || !p.existingBotId}
           onClick={p.onSubmit}
         >
           <Play className="w-3.5 h-3.5" /> {p.onboarding ? "Setting up…" : "Set up & start"}

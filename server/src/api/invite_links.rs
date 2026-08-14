@@ -7,7 +7,7 @@
 //! entry path for people with NO account yet: `POST /auth/register` accepts a live
 //! invite token in place of `config.open_registration` (see `token_is_live`).
 //!
-//! Trust model: possession of the token IS the authorization (like an enrollment
+//! Trust model: possession of the token IS the authorization (like a pairing
 //! code), so the two token-keyed endpoints are public-facing and rate-limited;
 //! everything else sits behind JWT + `ensure_workspace_admin`. A "use" is consumed
 //! only when a NEW workspace membership is created — previews, re-clicks by
