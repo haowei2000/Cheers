@@ -233,7 +233,8 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/workspaces/:workspace_id/members",
-            get(api::workspaces::list_workspace_members),
+            get(api::workspaces::list_workspace_members)
+                .post(api::workspaces::add_workspace_member),
         )
         // Fleet view: workspace-level approvals inbox + bot roster (docs/design/FLEET_VIEW.md)
         .route(

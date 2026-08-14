@@ -27,13 +27,14 @@ import {
   revokeTerminalInstallation, rotateTerminalCredential,
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
+import { listWorkspaces } from "@/api/workspaces";
 import { useFleetLive } from "./useFleetLive";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
 import { CreateInstallationWizard } from "@/features/bots/CreateInstallationWizard";
 import { BotDetailPanel, CopyButton } from "@/features/bots/BotDetailPanel";
 import { ConnectorManager } from "@/features/desktop/ConnectorManager";
-import type { BotItem, Channel } from "@/types";
+import type { BotItem, Channel, Workspace } from "@/types";
 
 const POLL_MS = 30_000;
 type Section = "overview" | "bots" | "installations" | "audit";
@@ -176,6 +177,7 @@ export default function FleetPage() {
   const [audit, setAudit] = useState<FleetAuditEvent[]>([]);
   const [catalog, setCatalog] = useState<BotItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
@@ -184,8 +186,8 @@ export default function FleetPage() {
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     try {
-      const [fleet, botCatalog, channelCatalog, installationItems, auditResult] = await Promise.all([
-        getAllFleet(), listBots(), listChannels().catch(() => [] as Channel[]),
+      const [fleet, botCatalog, channelCatalog, workspaceCatalog, installationItems, auditResult] = await Promise.all([
+        getAllFleet(), listBots(), listChannels().catch(() => [] as Channel[]), listWorkspaces().catch(() => [] as Workspace[]),
         getFleetInstallations().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
       ]);
       setApprovals(fleet.approvals);
@@ -196,7 +198,7 @@ export default function FleetPage() {
         offline: fleet.bots.filter((bot) => !bot.online).length,
         waiting: fleet.approvals.filter((approval) => approval.actionable).length,
       });
-      setCatalog(botCatalog); setChannels(channelCatalog); setInstallations(installationItems); setAudit(auditResult.events);
+      setCatalog(botCatalog); setChannels(channelCatalog); setWorkspaces(workspaceCatalog); setInstallations(installationItems); setAudit(auditResult.events);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
     finally { setLoading(false); if (!quiet) setRefreshing(false); }
   }, []);
@@ -245,7 +247,7 @@ export default function FleetPage() {
         </ItemSection> : section === "installations" ? <InstallationsView items={installations} refresh={async () => { await refresh(true); }} /> : <AuditView events={audit} bots={bots} />}
       </div></main>
     </div>
-    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
+    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} workspaces={workspaces} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => { setCreateBotOpen(false); void refresh(true); openBot(bot.bot_id); }} />}
     {installationBotId !== undefined && <CreateInstallationWizard bots={manageableBots} initialBotId={installationBotId || undefined} onClose={() => setInstallationBotId(undefined)} onDone={() => void refresh()} />}
   </div>;
