@@ -330,6 +330,15 @@ pub async fn create_bot(
         )),
         _ => AppError::Db(e),
     })?;
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.created",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({ "username": body.username.trim() }),
+    )
+    .await;
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
         "username": row.try_get::<String, _>("username").unwrap_or_default(),
@@ -592,6 +601,19 @@ async fn set_bot_disabled(
             state.bot_registry.kick(id);
         }
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        if disabled {
+            "bot.disabled"
+        } else {
+            "bot.enabled"
+        },
+        Some(bot_id),
+        None,
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "is_disabled": disabled })))
 }
 
@@ -623,6 +645,15 @@ pub async fn delete_bot(
         return Err(AppError::NotFound);
     }
     tx.commit().await?;
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.deleted",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "deleted": true })))
 }
 
@@ -878,6 +909,15 @@ pub async fn update_bot_profile(
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.profile_updated",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({ "fields": obj.keys().collect::<Vec<_>>() }),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "updated": true })))
 }
 

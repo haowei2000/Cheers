@@ -20,7 +20,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   controlWidth?: ControlWidth;
   /** Icon is content="icon"; text uses the 96px slot; iconText uses the 128px slot. */
   content?: ButtonContent;
-  /** Generates the visible short label from the shared action dictionary. */
+  /** Supplies the shared action identity and a fallback label when no children are provided. */
   action?: ActionKey;
   loading?: boolean;
 }
@@ -139,7 +139,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ) : content === "icon" ? (
         loading ? <LoadingIndicator /> : children
       ) : (
-        <>{loading && <LoadingIndicator />}{action ? actionLabel(action) : children}</>
+        <>{loading && <LoadingIndicator />}{children ?? (action ? actionLabel(action) : null)}</>
       )}
     </button>;
   }

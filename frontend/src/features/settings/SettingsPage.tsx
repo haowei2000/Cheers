@@ -51,7 +51,6 @@ import {
   installAppUpdate,
   type AppUpdate,
 } from "@/lib/desktop";
-import { ConnectorManager } from "@/features/desktop/ConnectorManager";
 import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
@@ -73,7 +72,6 @@ type SectionId =
   | "profile"
   | "bots"
   | "server"
-  | "connector"
   | "about"
   | "workbench"
   | "members"
@@ -92,7 +90,6 @@ const NAV: {
   { id: "profile", label: "Profile", icon: User },
   { id: "bots", label: "Bots", icon: Bot },
   { id: "server", label: "Server", icon: Server },
-  { id: "connector", label: "Installations", icon: Laptop, desktopOnly: true },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
   { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
@@ -1174,8 +1171,6 @@ export default function SettingsPage() {
               <ServerCard />
             </section>
           )}
-
-          {section === "connector" && <ConnectorManager />}
 
           {section === "about" && (
             <section>

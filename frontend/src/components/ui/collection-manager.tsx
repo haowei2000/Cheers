@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Plus, Search } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { Button } from "./button";
 import { ActionButton } from "./action-button";
 import { controlIconClasses, controlMinHeightClasses } from "./control-size";
@@ -85,19 +85,16 @@ export function CollectionManager({
           />
         </label>
         {showAdd && (
-          <Button
-            content="iconText"
+          <ActionButton
             action="add"
+            context="toolbar"
             type="button"
-            aria-label={addLabel}
+            accessibleLabel={addLabel}
             controlSize={controlSize}
-            variant="secondary"
             disabled={addDisabled}
             onClick={onAdd}
             className="shrink-0"
-          >
-            <Plus className={controlIconClasses[controlSize]} />
-          </Button>
+          />
         )}
       </div>
 

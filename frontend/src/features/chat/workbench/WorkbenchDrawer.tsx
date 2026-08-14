@@ -1,8 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Tip } from "@/components/ui/tip";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Eye, Folder, LayoutGrid, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
+import { Clock, Eye, Folder, LayoutGrid, Package, Pin, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
@@ -538,20 +539,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           {...(float ? drag.handleProps : {})}
           className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
         >
-          {minimized ? (
-            // Collapsed: the whole title is the expand target (bigger than the
-            // 14px restore icon); a button also opts out of the drag handle.
-            <UiButton action="expand" variant="plain"
-              type="button"
-              onClick={toggleCollapsed}
-              title="Expand"
-              controlSize="regular" className="-mx-1 rounded-sm  font-semibold text-zinc-100 hover:bg-zinc-800/60"
-            >
-              Workbench
-            </UiButton>
-          ) : (
-            <span className="text-regular font-semibold text-zinc-100">Workbench</span>
-          )}
+          <span className="text-regular font-semibold text-zinc-100">Workbench</span>
           {!minimized && (
           <>
           <ControlTrigger
@@ -644,25 +632,21 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             className="hidden"
           />
           <div className="flex-1" />
-          <UiButton variant="plain"
+          <ActionButton
+            action={minimized ? "expand" : "collapse"}
+            context="toolbar"
+            accessibleLabel={minimized ? "Expand Workbench" : "Minimize Workbench"}
             onClick={toggleCollapsed}
-            title={minimized ? "Expand" : "Minimize"}
-            content="icon" controlSize="compact"
+            controlSize="compact"
             className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
-          >
-            {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </UiButton>
-          <UiButton action="close" variant="plain" onClick={onClose} title="Close">
-            <X className="w-4 h-4 text-zinc-400 hover:text-zinc-200" />
-          </UiButton>
+          />
+          <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
         </div>
 
         {!minimized && notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
-            <UiButton action="dismiss" variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-100 hover:text-zinc-50">
-              <X className="w-3.5 h-3.5" />
-            </UiButton>
+            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize="compact" onClick={() => setNotice(null)} />
           </div>
         )}
 

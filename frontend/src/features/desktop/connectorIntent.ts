@@ -1,6 +1,6 @@
 // Hand-off between the "new bot" flow and the connector setup: the desktop
 // "Set up on this Mac" button stashes the just-created bot here and navigates
-// to Settings → Connector, where ConnectorManager consumes it on mount and
+// to Fleet → Installations, where ConnectorManager consumes it on mount and
 // opens the New-connector modal pre-selected. One-shot, like the push deep-link
 // intent in lib/push.ts.
 //
@@ -19,7 +19,7 @@ export interface ConnectorIntent {
 
 let pending: ConnectorIntent | null = null;
 
-/** Called from the bot flow before navigating to /settings/connector. */
+/** Called from the bot flow before navigating to /fleet/installations. */
 export function requestConnectorForBot(
   botId: string,
   agentType?: AgentType

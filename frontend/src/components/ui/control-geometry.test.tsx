@@ -45,6 +45,14 @@ describe("shared control geometry", () => {
     }
   });
 
+  it("keeps a specific text label when an action key is also provided", () => {
+    const markup = renderToStaticMarkup(
+      <Button action="setup">Add installation</Button>,
+    );
+    expect(markup).toContain("Add installation");
+    expect(markup).not.toContain(">Set up<");
+  });
+
   it("owns leading-icon field padding inside the Input primitive", () => {
     const markup = renderToStaticMarkup(<Input inset="leading" aria-label="Search" />);
     expect(markup).toContain("px-3");

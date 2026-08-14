@@ -191,6 +191,16 @@ pub async fn mint_enrollment_code(
     let expires_at: chrono::DateTime<chrono::Utc> = row.try_get("expires_at")?;
     tx.commit().await?;
 
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.created",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({ "device_name": device_name, "agent_type": agent_type, "status": "pending" }),
+    )
+    .await;
+
     let (public_base, configured) = resolve_public_base(&state);
 
     // Audit only the prefix + bot_id — never the code (it's a bearer secret).
@@ -325,7 +335,7 @@ pub async fn redeem_enrollment_code(
     let claimed = sqlx::query(
         "UPDATE enrollment_codes SET redeemed_at = NOW()
          WHERE code_hash = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()
-         RETURNING bot_id, agent_type, installation_id",
+         RETURNING bot_id, agent_type, installation_id, created_by",
     )
     .bind(&code_hash)
     .fetch_optional(&mut *tx)
@@ -341,6 +351,7 @@ pub async fn redeem_enrollment_code(
         .ok()
         .flatten()
         .ok_or_else(opaque)?;
+    let created_by: Option<String> = row.try_get("created_by").ok();
     let agent_type = normalize_agent_type(
         row.try_get::<Option<String>, _>("agent_type")
             .ok()
@@ -392,6 +403,16 @@ pub async fn redeem_enrollment_code(
         return Err(opaque());
     }
     tx.commit().await?;
+
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.enrolled",
+        Some(&bot_id),
+        Some(&installation_id),
+        created_by.as_deref(),
+        json!({ "device_name": device_name, "agent_type": agent_type }),
+    )
+    .await;
 
     // Disconnect the previously active installation immediately. Its secret is
     // still independently valid but standby and therefore cannot reconnect.

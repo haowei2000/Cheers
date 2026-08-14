@@ -14,9 +14,9 @@ answering the two questions a team actually has:
 2. **"What is my fleet doing right now?"** — working / idle / stuck-on-approval,
    and what it costs, are invisible unless you open each channel's Viewboard.
 
-The Fleet view is one surface that answers both: a workspace-level **mission
-control** — pending approvals you can act on at the top, the bot roster with live
-status below.
+The Fleet view is one surface that answers both: a user-level **mission
+control** across every workspace they can access — pending approvals at the top,
+the bot roster with live status below.
 
 This is the first deliverable of the multi-agent UX track (entry points #1
 approval inbox + #3 agent presence, merged into one surface).
@@ -25,15 +25,22 @@ approval inbox + #3 agent presence, merged into one surface).
 
 - A **Fleet** button on the WorkspaceRail (with a pending-approvals badge from P2)
   → a full page at `/fleet`. Full page, not a work-lane drawer: it is
-  workspace-scoped, not channel-scoped, and should not compete for lane space.
+  global rather than workspace- or channel-scoped, and should not compete for
+  lane space.
 - **Zone A — approvals inbox**: pending permission requests across all channels
   the user is a member of, most recent first. Each card shows the requesting bot,
   channel, the concrete ask (command / paths / cwd — same extraction as the Audit
   panel), and Approve / Deny when the user is authorized to answer.
-- **Zone B — bot roster**, grouped by channel: per bot a status chip
+- **Zone B — bot roster**, grouped by bot (never workspace/channel): per bot a status chip
   (`online/offline` from presence, `working/idle` from session status), the bot's
-  self-status line (`status_emoji status_text`), busy/idle session counts, and
-  today's cost.
+  self-status line (`status_emoji status_text`), aggregated busy/idle session
+  counts, today's cost, Mine/Shared relationship, installations, and channel
+  context. Owned bots remain visible before they join any channel.
+
+- **Installations** — every registered device for bots the caller manages;
+  desktop enriches this with local connector runtime controls.
+- **Audit** — cursor-paginated management, connection, ACP, and approval events
+  for manageable bots. Management history survives bot deletion.
 
 Team-first requirements (these drove the design):
 
@@ -51,13 +58,16 @@ Team-first requirements (these drove the design):
 
 ## API
 
-One new REST endpoint. **Not** a WS resource verb: `resource/mod.rs` dispatch
+The primary page uses a global REST endpoint. **Not** a WS resource verb: `resource/mod.rs` dispatch
 authorizes on channel membership only and is channel-scoped by design; a
 cross-channel aggregation does not belong there.
 
 ```
-GET /workspaces/:workspace_id/fleet
+GET /fleet
 ```
+
+`GET /workspaces/:workspace_id/fleet` remains available for consumers that
+intentionally need one workspace slice, such as workspace-specific tray state.
 
 ```jsonc
 {
@@ -126,7 +136,7 @@ hiccup must not reveal every pending approval in the workspace to every member.
 
 | Phase | Scope | Notes |
 |---|---|---|
-| **P1** | `GET /workspaces/:id/fleet` (domain queries + handler + route), `/fleet` page, WorkspaceRail button; approvals reuse `PermissionCard` with a channel-context prop | no schema changes |
+| **P1** | `GET /fleet` global aggregation plus retained `GET /workspaces/:id/fleet`, `/fleet` page, WorkspaceRail button; approvals reuse `PermissionCard` with a channel-context prop | no schema changes |
 | **P2** | emit `bot_processing`, cost-today rollup polish, rail badge with pending count | fixes the half-wired WS type |
 | **P3** | per-channel fleet mini-strip in the work lane; inbox filters (by bot/channel/kind); shortcut from a card to delegation management | |
 

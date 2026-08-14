@@ -14,7 +14,6 @@ import {
   Pencil,
   Laptop,
   RotateCw,
-  Plus,
 } from "lucide-react";
 import {
   disableBot,
@@ -83,9 +82,16 @@ type Tab = "overview" | "terminals" | "permissions" | "events";
 const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
   { id: "overview", label: "Overview", icon: Info },
   { id: "terminals", label: "Installations", icon: Laptop },
-  { id: "permissions", label: "Permissions", icon: ShieldCheck },
-  { id: "events", label: "Events", icon: Activity },
+  { id: "permissions", label: "Access", icon: ShieldCheck },
+  { id: "events", label: "Audit", icon: Activity },
 ];
+
+function routeTab(value?: string): Tab {
+  if (value === "installations" || value === "terminals") return "terminals";
+  if (value === "access" || value === "permissions") return "permissions";
+  if (value === "audit" || value === "events") return "events";
+  return "overview";
+}
 
 /**
  * Right-pane detail view for the selected bot — replaces the old nested BotPermissionsDialog
@@ -99,6 +105,7 @@ export function BotDetailPanel({
   onChanged,
   onPoll,
   onAddInstallation,
+  initialTab,
 }: {
   bot: BotItem;
   channels: Channel[];
@@ -108,8 +115,11 @@ export function BotDetailPanel({
   onPoll: () => void;
   /** Starts the shared setup flow with this bot already selected. */
   onAddInstallation: () => void;
+  initialTab?: string;
 }) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => routeTab(initialTab));
+
+  useEffect(() => setTab(routeTab(initialTab)), [initialTab, bot.bot_id]);
 
   // A manual "Update status now" lifecycle (item 4) is actively polling. While
   // true, the live-while-open poll below stands down so the two don't overlap.
@@ -314,15 +324,13 @@ function BotInstallationsSection({
             credential, agent, workspace, and connection state. One installation is active at a time.
           </p>
         </div>
-        <Button
+        <ActionButton
           action="add"
-          content="iconText"
+          context="toolbar"
+          accessibleLabel="Add installation"
           controlSize="compact"
           onClick={onAddInstallation}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add installation
-        </Button>
+        />
       </div>
       {items.length === 0 && (
         <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-zinc-400">
@@ -518,9 +526,20 @@ function BotOverview({
               </option>
             ))}
           </Select>
-          <Button action="add" controlSize="compact" variant="secondary" onClick={add} disabled={!channelId || busy}>
-            {added ? "Added ✓" : "Add"}
-          </Button>
+          {added ? (
+            <IconButton label="Added to channel" tone="success" controlSize="compact" disabled>
+              <Check className="h-3.5 w-3.5" />
+            </IconButton>
+          ) : (
+            <ActionButton
+              action="add"
+              context="toolbar"
+              accessibleLabel="Add bot to channel"
+              controlSize="compact"
+              onClick={add}
+              disabled={!channelId || busy}
+            />
+          )}
         </MetaRow>
       </section>
 

@@ -1217,6 +1217,14 @@ extension APIClient {
         try await getJSON("/bots", as: [BotDto].self)
     }
 
+    func listFleetInstallations() async throws -> [FleetInstallationDto] {
+        try await getJSON("/fleet/installations", as: FleetInstallationListDto.self).installations
+    }
+
+    func listFleetAudit() async throws -> [FleetAuditEventDto] {
+        try await getJSON("/fleet/audit?limit=100", as: FleetAuditListDto.self).events
+    }
+
     func disableBot(botId: String) async throws {
         try await postEmpty("/bots/\(botId)/disable")
     }

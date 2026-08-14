@@ -31,6 +31,7 @@ const ChatLayout = lazy(() => import("@/features/chat/ChatLayout"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
 const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 const FleetPage = lazy(() => import("@/features/fleet/FleetPage"));
+const ActivityPage = lazy(() => import("@/features/activity/ActivityPage"));
 
 function Spinner() {
   return (
@@ -185,10 +186,18 @@ export default function App() {
           }
         />
         <Route
-          path="/fleet"
+          path="/fleet/*"
           element={
             <RequireAuth>
               <FleetPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/activity"
+          element={
+            <RequireAuth>
+              <ActivityPage />
             </RequireAuth>
           }
         />

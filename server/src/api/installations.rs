@@ -111,6 +111,15 @@ pub async fn activate_installation(
     .await?;
     tx.commit().await?;
     kick_bot(&state, &bot_id);
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.activated",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation activated");
     Ok(Json(
         json!({"bot_id": bot_id, "installation_id": installation_id, "status": "active"}),
@@ -148,6 +157,15 @@ pub async fn rotate_installation_credential(
     if row.try_get::<String, _>("status").ok().as_deref() == Some("active") {
         kick_bot(&state, &bot_id);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.credential_rotated",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({ "credential_prefix": prefix }),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, credential_prefix = %prefix, owner = %claims.sub, "terminal installation credential rotated");
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -179,6 +197,15 @@ pub async fn reconnect_installation(
         ));
     }
     kick_bot(&state, &bot_id);
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.reconnect_requested",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation reconnect requested");
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -219,6 +246,15 @@ pub async fn revoke_installation(
     if previous_status == "active" {
         kick_bot(&state, &bot_id);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.revoked",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({ "previous_status": previous_status }),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation revoked");
     Ok(Json(
         json!({"bot_id": bot_id, "installation_id": installation_id, "revoked": true}),

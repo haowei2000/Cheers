@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronRight,
   Ellipsis,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   RefreshCw,
@@ -19,6 +21,7 @@ import { controlIconClasses, useControlSize } from "./control-size";
 
 export type CommonActionContext =
   | "windowChrome"
+  | "toolbar"
   | "disclosure"
   | "inlineEdit"
   | "form"
@@ -28,6 +31,7 @@ export type CommonActionContext =
 export type CommonActionKey = Extract<
   ActionKey,
   | "back"
+  | "add"
   | "cancel"
   | "close"
   | "collapse"
@@ -53,6 +57,13 @@ const commonActionPresentations = {
     close: { content: "icon", icon: X, variant: "plain" },
     more: { content: "icon", icon: Ellipsis, variant: "plain" },
     refresh: { content: "icon", icon: RefreshCw, variant: "plain" },
+  },
+  toolbar: {
+    add: { content: "icon", icon: Plus, variant: "plain" },
+    collapse: { content: "icon", icon: Minimize2, variant: "plain" },
+    delete: { content: "icon", icon: Trash2, variant: "danger" },
+    expand: { content: "icon", icon: Maximize2, variant: "plain" },
+    remove: { content: "icon", icon: X, variant: "danger" },
   },
   disclosure: {
     collapse: { content: "icon", icon: ChevronDown, variant: "plain" },

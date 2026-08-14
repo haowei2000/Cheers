@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Bot, RefreshCw, Circle, CircleDot, Ban, Wand2 } from "lucide-react";
+import { Bot, RefreshCw, Circle, CircleDot, Ban } from "lucide-react";
 import {
   listBots,
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
-import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { EntityItem } from "@/components/ui/item";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel } from "./BotDetailPanel";
@@ -108,18 +108,17 @@ export function BotsManager() {
       <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
-        <Button content="iconText"
+        <ActionButton
           action="add"
-          aria-label="Add bot"
+          context="toolbar"
+          accessibleLabel="Add bot"
           controlSize="compact"
           className="ml-auto normal-case tracking-normal"
           onClick={() => {
             setWizardBotId(undefined);
             setWizardOpen(true);
           }}
-        >
-          <Wand2 className="w-3.5 h-3.5" />
-        </Button>
+        />
         <IconButton
           label="Refresh bots"
           onClick={() => void refresh()}
