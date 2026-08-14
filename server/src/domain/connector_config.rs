@@ -1,4 +1,4 @@
-//! Connector config (TOML) generator for the 3-mode bot onboarding flow.
+//! Connector config (TOML) generator for the 3-mode Installation pairing flow.
 //!
 //! Renders a ready-to-run `cheers-daemon.<name>.toml` for the host-side
 //! `cce-acp-connector` from a bot + a chosen agent type. The schema mirrors the

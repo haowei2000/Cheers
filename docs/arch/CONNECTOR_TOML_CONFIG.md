@@ -98,7 +98,7 @@ label (e.g. `haowei_codex`).
 | `ack_timeout_ms`        | int    | `600000` | How long to wait for the Backend to ack a data-frame before treating the send as failed. |
 
 **Provide exactly one of `installation_credential_env` /
-`installation_credential_file`.** Enrollment returns this installation-bound
+`installation_credential_file`.** Pairing returns this installation-bound
 credential once. Prefer the file form for daemons and the env form
 for shells/containers.
 

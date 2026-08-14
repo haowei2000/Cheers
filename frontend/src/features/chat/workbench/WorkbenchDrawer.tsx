@@ -1,8 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Tip } from "@/components/ui/tip";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Eye, Folder, LayoutGrid, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
+import { Eye, EyeOff, Folder, LayoutGrid, Package, Pin, Upload, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
@@ -538,77 +539,78 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           {...(float ? drag.handleProps : {})}
           className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
         >
-          {minimized ? (
-            // Collapsed: the whole title is the expand target (bigger than the
-            // 14px restore icon); a button also opts out of the drag handle.
-            <UiButton action="expand" variant="plain"
-              type="button"
-              onClick={toggleCollapsed}
-              title="Expand"
-              controlSize="regular" className="-mx-1 rounded-sm  font-semibold text-zinc-100 hover:bg-zinc-800/60"
-            >
-              Workbench
-            </UiButton>
-          ) : (
-            <span className="text-regular font-semibold text-zinc-100">Workbench</span>
-          )}
+          <span className="text-regular font-semibold text-zinc-100">Workbench</span>
           {!minimized && (
           <>
-          <ControlTrigger
-            type="button"
-            onClick={() => setRawMode((current) => !current)}
-            aria-pressed={rawMode}
-            title={rawMode ? "Return to scene tabs" : "Browse every workspace file"}
-            controlSize="regular" className={cn(
- "flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+          <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
+            <ControlTrigger
+              type="button"
+              square
+              onClick={() => setRawMode((current) => !current)}
+              aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
+              aria-pressed={rawMode}
+              title={rawMode ? "Show scenes" : "Show raw workspace files"}
+              controlSize="regular" className={cn(
+ "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
  ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
  )}
-          >
-            {rawMode ? <LayoutGrid className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
-            {rawMode ? "Scenes" : "Raw"}
-          </ControlTrigger>
+            >
+              {rawMode ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : <Folder className="h-4 w-4" aria-hidden="true" />}
+            </ControlTrigger>
+          </Tip>
           <Tip content="Load a temporary template or renderer extension for this session.">
-          <UiButton action="upload" content="iconText" variant="plain"
+          <UiButton action="upload" content="icon" variant="plain"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            className="flex items-center gap-1 text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
+            aria-label="Load template or extension"
+            title="Load template or extension"
+            className="text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
           >
-            <Clock className="w-3.5 h-3.5" /> Load
+            <Upload className="h-4 w-4" aria-hidden="true" />
           </UiButton>
           </Tip>
           {canWatch &&
             (watching ? (
               <Tip content="Stop watching the current extension file.">
-              <UiButton action="stop" content="iconText" variant="plain"
+              <UiButton action="stop" content="icon" variant="plain"
                 onClick={stopWatch}
                 aria-label={`Stop watching ${watching}`}
-                className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300"
+                title="Stop watching extension"
+                className="text-emerald-400 hover:text-emerald-300"
               >
-                <Eye className="w-3.5 h-3.5" /> Stop watch
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
               </UiButton>
               </Tip>
             ) : (
               <Tip content="Watch an extension file and reload it after every editor save.">
-              <UiButton action="watch" content="iconText" variant="plain"
+              <UiButton action="watch" content="icon" variant="plain"
                 onClick={() => void startWatch()}
                 disabled={busy}
                 aria-label="Watch an extension file on disk"
-                className="flex items-center gap-1 text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
+                title="Watch extension file"
+                className="text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
               >
-                <Eye className="w-3.5 h-3.5" /> Watch
+                <Eye className="h-4 w-4" aria-hidden="true" />
               </UiButton>
               </Tip>
             ))}
           {pinned.length > 0 && (
             <div className="relative">
-              <UiButton action={pinMenu ? "collapse" : "expand"} variant="plain"
-                onClick={() => setPinMenu((o) => !o)}
-                title="Pinned files (click to manage / unpin)"
-                className="text-amber-400/80 hover:text-amber-300"
-              >
-                📌 {pinned.length}
-              </UiButton>
+              <Tip content="Manage files pinned into every prompt.">
+                <UiButton action={pinMenu ? "collapse" : "expand"} content="icon" variant="plain"
+                  onClick={() => setPinMenu((o) => !o)}
+                  aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
+                  aria-expanded={pinMenu}
+                  title="Manage pinned files"
+                  className="relative text-amber-400/80 hover:text-amber-300"
+                >
+                  <Pin className="h-4 w-4" aria-hidden="true" />
+                  <span aria-hidden="true" className="absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-zinc-950">
+                    {pinned.length > 9 ? "9+" : pinned.length}
+                  </span>
+                </UiButton>
+              </Tip>
               {pinMenu && (
                 <div className="absolute left-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
                   <div className="px-2 py-1 text-minimal uppercase tracking-wider text-zinc-400">
@@ -644,25 +646,21 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             className="hidden"
           />
           <div className="flex-1" />
-          <UiButton variant="plain"
+          <ActionButton
+            action={minimized ? "expand" : "collapse"}
+            context="toolbar"
+            accessibleLabel={minimized ? "Expand Workbench" : "Minimize Workbench"}
             onClick={toggleCollapsed}
-            title={minimized ? "Expand" : "Minimize"}
-            content="icon" controlSize="compact"
+            controlSize="compact"
             className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
-          >
-            {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </UiButton>
-          <UiButton action="close" variant="plain" onClick={onClose} title="Close">
-            <X className="w-4 h-4 text-zinc-400 hover:text-zinc-200" />
-          </UiButton>
+          />
+          <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
         </div>
 
         {!minimized && notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
             <span className="flex-1">{notice}</span>
-            <UiButton action="dismiss" variant="plain" onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-100 hover:text-zinc-50">
-              <X className="w-3.5 h-3.5" />
-            </UiButton>
+            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize="compact" onClick={() => setNotice(null)} />
           </div>
         )}
 

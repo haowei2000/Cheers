@@ -289,7 +289,7 @@ pub async fn create_bot(
     // ID squatting and collision-as-existence-oracle.
     let bot_id = Uuid::new_v4().to_string();
     let scope = body.scope.unwrap_or_else(|| "friend".into());
-    let binding_type = body.binding_type.unwrap_or_else(|| "http".into());
+    let binding_type = body.binding_type.unwrap_or_else(|| "agent_bridge".into());
     let bridge_provider = body.bridge_provider.unwrap_or_else(|| "generic".into());
     let row = sqlx::query(
         "INSERT INTO bot_accounts
@@ -325,11 +325,20 @@ pub async fn create_bot(
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(de) if de.is_unique_violation() => AppError::Conflict(format!(
-            "bot username '{}' is already taken — choose another name, or switch to Existing bot",
+            "bot username '{}' is already taken — choose another name or use the existing bot identity",
             body.username.trim()
         )),
         _ => AppError::Db(e),
     })?;
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.created",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({ "username": body.username.trim() }),
+    )
+    .await;
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
         "username": row.try_get::<String, _>("username").unwrap_or_default(),
@@ -339,7 +348,7 @@ pub async fn create_bot(
         "is_disabled": row.try_get::<bool, _>("is_disabled").unwrap_or(false),
         "can_manage": true,
         "scope": row.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
-        "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
+        "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "agent_bridge".into()),
         "bridge_provider": row.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
         "model_id": row.try_get::<String, _>("model_id").ok(),
         "template_id": row.try_get::<String, _>("template_id").ok(),
@@ -424,7 +433,7 @@ pub async fn get_bot_status(
         Err(_) => false,
     };
 
-    // Live enrollment-code count is owner/admin-only: it reveals pending onboarding
+    // Pending-installation count is owner/admin-only: it reveals live pairing
     // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
     let owner = row
         .try_get::<Option<String>, _>("created_by")
@@ -490,7 +499,7 @@ pub async fn get_bot_status(
         "bridge_connected": bridge_connected,
         "last_connected_at": last_connected_at.map(|t| t.to_rfc3339()),
         "last_disconnected_at": last_disconnected_at.map(|t| t.to_rfc3339()),
-        "live_enrollment_codes": live_codes,
+        "pending_installation_count": live_codes,
         "connector_version": connector_version,
         "latest_connector_version": latest_version,
         "update_available": update_available,
@@ -592,12 +601,25 @@ async fn set_bot_disabled(
             state.bot_registry.kick(id);
         }
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        if disabled {
+            "bot.disabled"
+        } else {
+            "bot.enabled"
+        },
+        Some(bot_id),
+        None,
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "is_disabled": disabled })))
 }
 
 /// DELETE /api/v1/bots/{bot_id} — hard-delete a bot (admin/owner). Kicks the live
 /// connector, removes its channel memberships, and deletes the account row; FK
-/// `ON DELETE CASCADE` clears its sessions/bindings, enrollment codes, permission
+/// `ON DELETE CASCADE` clears its sessions/bindings, pairing codes, permission
 /// rules, approvals, capability delegations and event-access rules. Irreversible.
 pub async fn delete_bot(
     State(state): State<AppState>,
@@ -623,6 +645,15 @@ pub async fn delete_bot(
         return Err(AppError::NotFound);
     }
     tx.commit().await?;
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.deleted",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "deleted": true })))
 }
 
@@ -671,7 +702,7 @@ pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, S
     // Rotation revokes the OLD token NOW: kick any live connector that
     // authenticated with it (same seam as the disable kill-switch), forcing a
     // reconnect that the connect gate only accepts with the new token. No-op
-    // when the bot has no live session (e.g. first mint via enrollment).
+    // when the bot has no live session.
     if let Ok(id) = Uuid::parse_str(bot_id) {
         state.bot_registry.kick(id);
     }
@@ -878,6 +909,15 @@ pub async fn update_bot_profile(
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "bot.profile_updated",
+        Some(&bot_id),
+        None,
+        Some(&claims.sub),
+        json!({ "fields": obj.keys().collect::<Vec<_>>() }),
+    )
+    .await;
     Ok(Json(json!({ "bot_id": bot_id, "updated": true })))
 }
 

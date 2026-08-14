@@ -23,23 +23,35 @@ use crate::{
     errors::AppError,
 };
 
-/// Read a bot's agent type (`bridge_provider`, default "generic") + its persisted
-/// posture mode from `binding_config.connector_control.agentNativePermissionMode`.
+/// Read the active Installation's agent type + the Bot's persisted posture mode.
+/// `bridge_provider` is only a legacy fallback for Bots that have no active
+/// Installation yet; it never overrides an Installation choice.
 async fn load_posture(
     state: &AppState,
     bot_id: &str,
 ) -> Result<(String, Option<String>), AppError> {
-    let row =
-        sqlx::query("SELECT bridge_provider, binding_config FROM bot_accounts WHERE bot_id = $1")
-            .bind(bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
+    let row = sqlx::query(
+        "SELECT b.binding_config,
+                COALESCE(
+                    (SELECT NULLIF(TRIM(i.agent_type), '')
+                     FROM terminal_installations i
+                     WHERE i.bot_id = b.bot_id AND i.status = 'active'
+                       AND i.revoked_at IS NULL
+                     ORDER BY i.updated_at DESC
+                     LIMIT 1),
+                    NULLIF(TRIM(b.bridge_provider), ''),
+                    'generic'
+                ) AS agent_type
+         FROM bot_accounts b
+         WHERE b.bot_id = $1",
+    )
+    .bind(bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     let agent_type = row
-        .try_get::<Option<String>, _>("bridge_provider")
+        .try_get::<String, _>("agent_type")
         .ok()
-        .flatten()
-        .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "generic".to_string());
     let current = row
         .try_get::<Option<Value>, _>("binding_config")

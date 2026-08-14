@@ -21,6 +21,7 @@ import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { TabOption } from "@/components/ui/tab-option";
 import { isComposing } from "@/lib/ime";
+import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
   listFriends,
   removeFriend,
@@ -56,18 +57,20 @@ export default function FriendsPage() {
 
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-        <IconButton
-          label="Back to chat"
-          onClick={() => navigate("/chat")}
-          title="Back to chat"
-          controlSize="regular"
-          className="max-md:-ml-2"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </IconButton>
-        <h1 className="text-comfortable font-semibold">Friends</h1>
-      </header>
+      <RouteChromeHeader>
+        <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+          <IconButton
+            label="Back to chat"
+            onClick={() => navigate("/chat")}
+            title="Back to chat"
+            controlSize="regular"
+            className="max-md:-ml-2"
+          >
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+          </IconButton>
+          <h1 className="text-comfortable font-semibold">Friends</h1>
+        </header>
+      </RouteChromeHeader>
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto max-w-2xl p-4 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">

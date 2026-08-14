@@ -90,25 +90,15 @@ the Agent's native OAuth lifecycle and an installation-bound access token; the
 Gateway validates installation state, scopes, audience, and channel membership
 on every call. The Bridge credential model remains:
 
-1. **Minting.** `generate_bot_token()` mints an `agb_<hex>` token. The plaintext is returned
-   **once**; only its **SHA-256** is stored, in `bot_accounts.bot_token_hash` (plus a
-   display-only `bot_token_prefix`). Re-issuing rotates it and invalidates the old one.
-2. **One minting path.** `mint_bot_token()` is the only code that creates tokens. It has two
-   entry points:
-   - `POST /api/v1/bots/{bot_id}/token` — manual issue/rotate, gated to the bot's **owner or
-     an admin**.
-   - **Enrollment redeem** — `POST /api/v1/bots/{bot_id}/enrollment` mints a one-time,
-     900-second, single-use **enrollment code**; `POST /api/v1/enrollment/redeem` (the only
-     unauthenticated endpoint — it authenticates *by the code itself*) swaps that code for a
-     bot token. This is the smooth onboarding path a connector uses.
-3. **Handshake.** On the Bridge WS, the control channel prefers an
-   `Authorization: Bearer <token>` header; if absent, it accepts a first JSON `auth` frame
-   carrying the token.
-4. **Verification.** `resolve_bot()` hashes the presented token and looks up
-   `bot_accounts WHERE bot_token_hash = $1`. A bot flagged `is_disabled` (the admin
-   kill-switch) is rejected as `BotUnavailable`.
+1. **Identity first.** `POST /api/v1/bots` creates only the durable Bot identity.
+2. **Installation creation.** `POST /api/v1/bots/{bot_id}/installations` creates a pending
+   device Installation and returns a 900-second, single-use pairing code.
+3. **Pairing.** `POST /api/v1/installations/redeem` authenticates by that code, activates
+   the Installation, and returns an `agbi_…` credential once. Only its SHA-256 is stored.
+4. **Handshake.** Agent Bridge accepts the Installation credential only when its Installation
+   is active and not revoked and the Bot is enabled.
 
-Because the token is high-entropy and random, an **unsalted SHA-256** at rest is correct here
+Because the credential is high-entropy and random, an **unsalted SHA-256** at rest is correct here
 (no bcrypt needed).
 
 ---

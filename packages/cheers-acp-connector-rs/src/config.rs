@@ -46,7 +46,7 @@ pub struct DaemonFileConfig {
 #[derive(Debug, Clone)]
 pub struct AccountConfig {
     /// Credential used only by the connector to authenticate Agent Bridge.
-    /// Enrollment supplies an installation-bound `agbi_…` secret.
+    /// Pairing supplies an installation-bound `agbi_…` secret.
     pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,

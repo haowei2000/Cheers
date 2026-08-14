@@ -45,6 +45,14 @@ describe("shared control geometry", () => {
     }
   });
 
+  it("keeps a specific text label when an action key is also provided", () => {
+    const markup = renderToStaticMarkup(
+      <Button action="setup">Add installation</Button>,
+    );
+    expect(markup).toContain("Add installation");
+    expect(markup).not.toContain(">Set up<");
+  });
+
   it("owns leading-icon field padding inside the Input primitive", () => {
     const markup = renderToStaticMarkup(<Input inset="leading" aria-label="Search" />);
     expect(markup).toContain("px-3");
@@ -58,5 +66,14 @@ describe("shared control geometry", () => {
     expect(markup).toContain("w-32");
     expect(markup).toContain("h-9");
     expect(markup).toContain("text-regular");
+  });
+
+  it("supports an icon-sized select without product-level width overrides", () => {
+    const markup = renderToStaticMarkup(
+      <Select controlWidth="icon" aria-label="Add scene"><option>Add scene</option></Select>,
+    );
+    expect(markup).toContain("h-9");
+    expect(markup).toContain("w-9");
+    expect(markup).not.toContain("w-32");
   });
 });

@@ -879,7 +879,7 @@ tr:last-child td { border-bottom: 0; }
       <div class="hero-inner">
         <p class="eyebrow">Architecture status · 2026-06-30</p>
         <h1>外接 Agent 网格 · Bot 权限治理 + 会话模型重构（已合 develop）</h1>
-        <p class="lead">Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照。2026-06-22 的 M1 核心闭环之上，2026-06-23 → 06-30 又落地并合入 <code>develop</code>：安全加固、协作域补全、Bot 三模式接入、ACP 审批闭环，以及本轮重点——Bot 配置主权（L0/L1/L2）、事件中心权限模型（INITIATE/SEE/RESPOND × 角色/用户/群组）与会话模型重构 P1–P4（会话脱离 workspace 改频道级 + 一频道 primary/other 多会话 + 委派、值钳制的 <code>set_mode</code>/<code>set_config_option</code>）。下方 M0/M1 账本留底。</p>
+        <p class="lead">Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照。2026-06-22 的 M1 核心闭环之上，2026-06-23 → 06-30 又落地并合入 <code>develop</code>：安全加固、协作域补全、Installation 三模式接入、ACP 审批闭环，以及本轮重点——Bot 配置主权（L0/L1/L2）、事件中心权限模型（INITIATE/SEE/RESPOND × 角色/用户/群组）与会话模型重构 P1–P4（会话脱离 workspace 改频道级 + 一频道 primary/other 多会话 + 委派、值钳制的 <code>set_mode</code>/<code>set_config_option</code>）。下方 M0/M1 账本留底。</p>
         <div class="meta-row" aria-label="Audit metadata">
           <span class="pill">实测日期 2026-06-30</span>
           <span class="pill">branch develop</span>
@@ -893,7 +893,7 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="status-title">一眼看状态</h2>
-            <p>2026-06-23 → 06-30 在 M1 之上叠加：安全加固 + 协作域 + Bot 三模式接入 + ACP 审批闭环，并完成 Bot 配置主权、事件中心权限、会话模型重构 P1–P4（含委派 <code>set_mode</code>/<code>set_config_option</code>）。全部已合 <code>develop</code>（origin @ fa006e75）。下方 M0/M1 账本留底。</p>
+            <p>2026-06-23 → 06-30 在 M1 之上叠加：安全加固 + 协作域 + Installation 三模式接入 + ACP 审批闭环，并完成 Bot 配置主权、事件中心权限、会话模型重构 P1–P4（含委派 <code>set_mode</code>/<code>set_config_option</code>）。全部已合 <code>develop</code>（origin @ fa006e75）。下方 M0/M1 账本留底。</p>
           </div>
         </div>
         <div class="status-band">
@@ -917,7 +917,7 @@ tr:last-child td { border-bottom: 0; }
               </div>
               <div class="counter done">
                 <strong>协作+安全</strong>
-                <span>好友/DM 屏蔽/未读/工作区邀请 · 封禁/会话吊销 · Bot 三模式接入（enrollment code）· ACP 审批卡闭环</span>
+                <span>好友/DM 屏蔽/未读/工作区邀请 · 封禁/会话吊销 · Installation 三模式接入（pairing code）· ACP 审批卡闭环</span>
               </div>
             </div>
           </div>
@@ -1366,8 +1366,8 @@ tr:last-child td { border-bottom: 0; }
           </article>
           <article class="backlog-card">
             <span class="badge done">接入 ✓</span>
-            <h3>Bot 三模式接入（onboarding）</h3>
-            <p>enrollment code + 连接器配置生成器 · 安装脚本 <code>/install.sh</code> · 手动模式向导 · 自接入 <code>/enrollment/guidance</code>；NodePort / 公网可达性。</p>
+            <h3>Installation 三模式接入（pairing）</h3>
+            <p>pairing code + 连接器配置生成器 · 安装脚本 <code>/install.sh</code> · 手动模式向导 · 自接入 <code>/installations/guidance</code>；NodePort / 公网可达性。</p>
           </article>
           <article class="backlog-card">
             <span class="badge done">审批 ✓</span>
@@ -1484,7 +1484,7 @@ tr:last-child td { border-bottom: 0; }
       </section>
     </main>
     <footer class="footer">
-      <p>基于 2026-06-30 对当前代码的实测快照（branch <code>develop</code> @ fa006e75）。M1 核心闭环之上，2026-06-23 → 06-30 已合入：安全加固 · 协作域补全 · Bot 三模式接入 · ACP 审批闭环 · Bot 配置主权（L0/L1/L2）· 事件中心权限（INITIATE/SEE/RESPOND × 角色/用户/群组）· 会话模型重构 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）。破坏性变更见 <code>docs/arch/SESSION_MODEL.md</code>。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
+      <p>基于 2026-06-30 对当前代码的实测快照（branch <code>develop</code> @ fa006e75）。M1 核心闭环之上，2026-06-23 → 06-30 已合入：安全加固 · 协作域补全 · Installation 三模式接入 · ACP 审批闭环 · Bot 配置主权（L0/L1/L2）· 事件中心权限（INITIATE/SEE/RESPOND × 角色/用户/群组）· 会话模型重构 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）。破坏性变更见 <code>docs/arch/SESSION_MODEL.md</code>。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
     </footer>
   </div>
 </body>

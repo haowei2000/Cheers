@@ -7,6 +7,8 @@ import Observation
 @Observable
 final class AgentsModel {
     private(set) var bots: [BotDto] = []
+    private(set) var installations: [FleetInstallationDto] = []
+    private(set) var auditEvents: [FleetAuditEventDto] = []
     private(set) var isLoading = false
     var errorMessage: String?
 
@@ -30,7 +32,12 @@ final class AgentsModel {
         defer { isLoading = false }
         errorMessage = nil
         do {
-            bots = try await api.listBots()
+            async let loadedBots = api.listBots()
+            async let loadedInstallations = api.listFleetInstallations()
+            async let loadedAudit = api.listFleetAudit()
+            bots = try await loadedBots
+            installations = (try? await loadedInstallations) ?? []
+            auditEvents = (try? await loadedAudit) ?? []
         } catch let error as APIError {
             if case .unauthorized = error { app?.clearSession(); return }
             errorMessage = error.errorDescription

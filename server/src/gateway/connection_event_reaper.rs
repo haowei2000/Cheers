@@ -3,7 +3,7 @@
 //! `bot_connection_events` gets a row per control/data connect/disconnect, so a
 //! flapping connector could grow the table without bound. The history exists for
 //! recent-uptime inspection, not long-term audit — delete rows past the retention
-//! window. Mirrors `enrollment_reaper`.
+//! window. Mirrors `pairing_reaper`.
 
 use std::time::Duration;
 
@@ -30,7 +30,7 @@ async fn reap_once(db: &PgPool, retention_secs: i64) {
 }
 
 /// Spawn the periodic reaper. `interval_secs == 0` runs a single startup sweep
-/// and stops (mirrors `enrollment_reaper::spawn`).
+/// and stops (mirrors `pairing_reaper::spawn`).
 pub fn spawn(db: PgPool, interval_secs: u64, retention_secs: i64) {
     tokio::spawn(async move {
         reap_once(&db, retention_secs).await;

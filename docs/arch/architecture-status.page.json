@@ -38,7 +38,7 @@
   "hero": {
     "eyebrow": "Architecture status · 2026-06-30",
     "heading": "外接 Agent 网格 · Bot 权限治理 + 会话模型重构（已合 develop）",
-    "lead": "Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（`server/`）是唯一后端，React 前端（`frontend/`），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照。2026-06-22 的 M1 核心闭环之上，2026-06-23 → 06-30 又落地并合入 `develop`：安全加固、协作域补全、Bot 三模式接入、ACP 审批闭环，以及本轮重点——Bot 配置主权（L0/L1/L2）、事件中心权限模型（INITIATE/SEE/RESPOND × 角色/用户/群组）与会话模型重构 P1–P4（会话脱离 workspace 改频道级 + 一频道 primary/other 多会话 + 委派、值钳制的 `set_mode`/`set_config_option`）。下方 M0/M1 账本留底。",
+    "lead": "Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（`server/`）是唯一后端，React 前端（`frontend/`），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照。2026-06-22 的 M1 核心闭环之上，2026-06-23 → 06-30 又落地并合入 `develop`：安全加固、协作域补全、Installation 三模式接入、ACP 审批闭环，以及本轮重点——Bot 配置主权（L0/L1/L2）、事件中心权限模型（INITIATE/SEE/RESPOND × 角色/用户/群组）与会话模型重构 P1–P4（会话脱离 workspace 改频道级 + 一频道 primary/other 多会话 + 委派、值钳制的 `set_mode`/`set_config_option`）。下方 M0/M1 账本留底。",
     "meta": [
       "实测日期 2026-06-30",
       "branch develop",
@@ -53,7 +53,7 @@
     {
       "type": "statusBand",
       "title": "一眼看状态",
-      "intro": "2026-06-23 → 06-30 在 M1 之上叠加：安全加固 + 协作域 + Bot 三模式接入 + ACP 审批闭环，并完成 Bot 配置主权、事件中心权限、会话模型重构 P1–P4（含委派 `set_mode`/`set_config_option`）。全部已合 `develop`（origin @ fa006e75）。下方 M0/M1 账本留底。",
+      "intro": "2026-06-23 → 06-30 在 M1 之上叠加：安全加固 + 协作域 + Installation 三模式接入 + ACP 审批闭环，并完成 Bot 配置主权、事件中心权限、会话模型重构 P1–P4（含委派 `set_mode`/`set_config_option`）。全部已合 `develop`（origin @ fa006e75）。下方 M0/M1 账本留底。",
       "verdict": {
         "value": "治理 + 会话 ✓",
         "label": "Bot 配置主权 L0/L1/L2 · 事件中心权限（INITIATE/SEE/RESPOND）· 会话模型 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）— 已合 develop @ fa006e75",
@@ -77,7 +77,7 @@
         },
         {
           "value": "协作+安全",
-          "label": "好友/DM 屏蔽/未读/工作区邀请 · 封禁/会话吊销 · Bot 三模式接入（enrollment code）· ACP 审批卡闭环",
+          "label": "好友/DM 屏蔽/未读/工作区邀请 · 封禁/会话吊销 · Installation 三模式接入（pairing code）· ACP 审批卡闭环",
           "status": "done"
         }
       ],
@@ -589,8 +589,8 @@
         {
           "status": "done",
           "badge": "接入 ✓",
-          "title": "Bot 三模式接入（onboarding）",
-          "body": "enrollment code + 连接器配置生成器 · 安装脚本 `/install.sh` · 手动模式向导 · 自接入 `/enrollment/guidance`；NodePort / 公网可达性。"
+          "title": "Installation 三模式接入（pairing）",
+          "body": "pairing code + 连接器配置生成器 · 安装脚本 `/install.sh` · 手动模式向导 · 自接入 `/installations/guidance`；NodePort / 公网可达性。"
         },
         {
           "status": "done",
@@ -726,5 +726,5 @@
       ]
     }
   ],
-  "footer": "基于 2026-06-30 对当前代码的实测快照（branch `develop` @ fa006e75）。M1 核心闭环之上，2026-06-23 → 06-30 已合入：安全加固 · 协作域补全 · Bot 三模式接入 · ACP 审批闭环 · Bot 配置主权（L0/L1/L2）· 事件中心权限（INITIATE/SEE/RESPOND × 角色/用户/群组）· 会话模型重构 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）。破坏性变更见 `docs/arch/SESSION_MODEL.md`。改 `architecture-status.page.json` 后跑 `node scripts/generate-architecture-status-page.mjs` 重新生成本页。"
+  "footer": "基于 2026-06-30 对当前代码的实测快照（branch `develop` @ fa006e75）。M1 核心闭环之上，2026-06-23 → 06-30 已合入：安全加固 · 协作域补全 · Installation 三模式接入 · ACP 审批闭环 · Bot 配置主权（L0/L1/L2）· 事件中心权限（INITIATE/SEE/RESPOND × 角色/用户/群组）· 会话模型重构 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）。破坏性变更见 `docs/arch/SESSION_MODEL.md`。改 `architecture-status.page.json` 后跑 `node scripts/generate-architecture-status-page.mjs` 重新生成本页。"
 }

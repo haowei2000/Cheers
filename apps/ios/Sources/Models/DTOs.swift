@@ -1454,7 +1454,61 @@ struct BotDto: Decodable, Identifiable {
     }
 }
 
-// MARK: - Bot onboarding (server/src/api/enrollment.rs)
+struct FleetInstallationListDto: Decodable {
+    let installations: [FleetInstallationDto]
+}
+
+struct FleetInstallationDto: Decodable, Identifiable {
+    let installationId: String
+    let botId: String
+    let botName: String
+    let deviceName: String
+    let agentType: String
+    let status: String
+    let online: Bool
+    let connectorVersion: String?
+    let lastSeenAt: String?
+    let revokedAt: String?
+    let mcpConnectionState: String
+
+    var id: String { installationId }
+
+    enum CodingKeys: String, CodingKey {
+        case installationId = "installation_id"
+        case botId = "bot_id"
+        case botName = "bot_name"
+        case deviceName = "device_name"
+        case agentType = "agent_type"
+        case status, online
+        case connectorVersion = "connector_version"
+        case lastSeenAt = "last_seen_at"
+        case revokedAt = "revoked_at"
+        case mcpConnectionState = "mcp_connection_state"
+    }
+}
+
+struct FleetAuditListDto: Decodable {
+    let events: [FleetAuditEventDto]
+}
+
+struct FleetAuditEventDto: Decodable, Identifiable {
+    let id: String
+    let source: String
+    let eventType: String
+    let botId: String?
+    let installationId: String?
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, source
+        case eventType = "event_type"
+        case botId = "bot_id"
+        case installationId = "installation_id"
+        case createdAt = "created_at"
+    }
+}
+
+// MARK: - Bot identity and installation pairing (server/src/api/pairing.rs)
 //
 // iOS can never host a connector — there is no way to run a long-lived ACP
 // child process on the phone. So the phone's job is to CREATE the bot and hand
@@ -1492,12 +1546,10 @@ enum AgentType: String, CaseIterable, Identifiable, Codable {
 struct CreateBotRequest: Encodable {
     let username: String
     let displayName: String?
-    let bridgeProvider: String
 
     enum CodingKeys: String, CodingKey {
         case username
         case displayName = "display_name"
-        case bridgeProvider = "bridge_provider"
     }
 }
 
@@ -1513,28 +1565,34 @@ struct ReachabilityDto: Decodable {
     }
 }
 
-/// One-time enrollment code. Single-use, TTL-bounded, and the *only* credential
-/// safe to move between devices — it rotates the bot token on redemption, so a
-/// leaked code costs one bot rather than an account.
-struct EnrollmentCodeDto: Decodable {
-    let code: String
+/// A pending installation and its single-use, TTL-bounded pairing code.
+struct InstallationPairingDto: Decodable {
+    let pairingCode: String
+    let pairingId: String
+    let installationId: String
     let botId: String
     let agentType: String?
+    let status: String?
     let expiresAt: String?
     let ttlSecs: Int?
+    let redeemPath: String?
     let controlUrl: String?
     let reachability: ReachabilityDto?
-    let liveCodes: Int?
+    let livePairings: Int?
 
     enum CodingKeys: String, CodingKey {
-        case code
+        case pairingCode = "pairing_code"
+        case pairingId = "pairing_id"
+        case installationId = "installation_id"
         case botId = "bot_id"
         case agentType = "agent_type"
+        case status
         case expiresAt = "expires_at"
         case ttlSecs = "ttl_secs"
+        case redeemPath = "redeem_path"
         case controlUrl = "control_url"
         case reachability
-        case liveCodes = "live_codes"
+        case livePairings = "live_pairings"
     }
 }
 
@@ -1571,16 +1629,16 @@ struct IssuedTokenDto: Decodable {
 }
 
 /// Prompt template for "let your agent connect itself". The server never sees
-/// the code in a GET — the client substitutes `codePlaceholder` locally.
-struct EnrollmentGuidanceDto: Decodable {
+/// the code in a GET — the client substitutes `pairingCodePlaceholder` locally.
+struct PairingGuidanceDto: Decodable {
     let installUrl: String
     let promptTemplate: String
-    let codePlaceholder: String
+    let pairingCodePlaceholder: String
 
     enum CodingKeys: String, CodingKey {
         case installUrl = "install_url"
         case promptTemplate = "prompt_template"
-        case codePlaceholder = "code_placeholder"
+        case pairingCodePlaceholder = "pairing_code_placeholder"
     }
 }
 
@@ -1605,7 +1663,7 @@ struct BotStatusDto: Decodable {
     let isDisabled: Bool?
     let isOnline: Bool?
     let bridgeConnected: Bool?
-    let liveEnrollmentCodes: Int?
+    let pendingInstallationCount: Int?
     let statusText: String?
     let statusEmoji: String?
 
@@ -1616,7 +1674,7 @@ struct BotStatusDto: Decodable {
         case isDisabled = "is_disabled"
         case isOnline = "is_online"
         case bridgeConnected = "bridge_connected"
-        case liveEnrollmentCodes = "live_enrollment_codes"
+        case pendingInstallationCount = "pending_installation_count"
         case statusText = "status_text"
         case statusEmoji = "status_emoji"
     }

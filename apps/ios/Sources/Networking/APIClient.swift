@@ -1217,6 +1217,14 @@ extension APIClient {
         try await getJSON("/bots", as: [BotDto].self)
     }
 
+    func listFleetInstallations() async throws -> [FleetInstallationDto] {
+        try await getJSON("/fleet/installations", as: FleetInstallationListDto.self).installations
+    }
+
+    func listFleetAudit() async throws -> [FleetAuditEventDto] {
+        try await getJSON("/fleet/audit?limit=100", as: FleetAuditListDto.self).events
+    }
+
     func disableBot(botId: String) async throws {
         try await postEmpty("/bots/\(botId)/disable")
     }
@@ -1237,38 +1245,34 @@ extension APIClient {
         )
     }
 
-    // MARK: Bot onboarding
+    // MARK: Bot identity and Installation pairing
     //
-    // The phone can create a bot and mint credentials, but never runs the
-    // connector — see the AgentType/EnrollmentCodeDto note in DTOs.swift. Every
+    // The phone can create a bot and pair installations, but never runs the
+    // connector — see the AgentType/InstallationPairingDto note in DTOs.swift. Every
     // call here exists to produce something the user carries to a real host.
 
-    func createBot(username: String, displayName: String?, agentType: AgentType) async throws -> BotDto {
+    func createBot(username: String, displayName: String?) async throws -> BotDto {
         try await postJSON(
             "/bots",
             body: CreateBotRequest(
                 username: username,
-                displayName: displayName,
-                bridgeProvider: agentType.rawValue
+                displayName: displayName
             ),
             as: BotDto.self
         )
     }
 
-    /// Mint a one-time enrollment code (owner/admin). Plaintext is returned
-    /// once and never stored server-side — only its hash is.
-    func mintEnrollmentCode(botId: String, agentType: AgentType) async throws -> EnrollmentCodeDto {
+    /// Create a pending installation. Its pairing code is returned once.
+    func createInstallation(botId: String, agentType: AgentType) async throws -> InstallationPairingDto {
         try await postJSON(
-            "/bots/\(botId)/enrollment",
+            "/bots/\(botId)/installations",
             body: ["agent_type": agentType.rawValue],
-            as: EnrollmentCodeDto.self
+            as: InstallationPairingDto.self
         )
     }
 
-    /// Revoke ALL live codes for a bot. Idempotent — and blunt: there is no
-    /// single-code revoke, so this will also kill an install in flight.
-    func revokeEnrollmentCodes(botId: String) async throws {
-        try await deleteEmpty("/bots/\(botId)/enrollment")
+    func revokeInstallation(botId: String, installationId: String) async throws {
+        try await deleteEmpty("/bots/\(botId)/installations/\(installationId)")
     }
 
     func connectorConfig(botId: String, agentType: AgentType) async throws -> ConnectorConfigDto {
@@ -1285,8 +1289,8 @@ extension APIClient {
         try await postJSON("/bots/\(botId)/token", body: [String: String](), as: IssuedTokenDto.self)
     }
 
-    func enrollmentGuidance() async throws -> EnrollmentGuidanceDto {
-        try await getJSON("/enrollment/guidance", as: EnrollmentGuidanceDto.self)
+    func pairingGuidance() async throws -> PairingGuidanceDto {
+        try await getJSON("/installations/guidance", as: PairingGuidanceDto.self)
     }
 
     func connectorDiscovery() async throws -> ConnectorDiscoveryDto {

@@ -157,7 +157,7 @@ function ActionBar({
           className={actionClass}
           onClick={(event) => onOpenDetails(event.currentTarget)}
         >
-          <ListTree className={controlIconClasses.regular} />
+          <ListTree className={controlIconClasses.regular} aria-hidden="true" />
         </IconButton>
       )}
       {canMention && actions.onMention && (
@@ -168,17 +168,17 @@ function ActionBar({
           className={actionClass}
           onClick={() => actions.onMention?.(message)}
         >
-          <AtSign className={controlIconClasses.regular} />
+          <AtSign className={controlIconClasses.regular} aria-hidden="true" />
         </IconButton>
       )}
       <IconButton label="Reply" controlSize="regular" className={actionClass} onClick={() => actions.onReply(message)}>
-        <MessageCircleMore className={controlIconClasses.regular} />
+        <MessageCircleMore className={controlIconClasses.regular} aria-hidden="true" />
       </IconButton>
       <IconButton label="Copy text" controlSize="regular" className={actionClass} onClick={() => void copyMessage(message)}>
-        <Copy className={controlIconClasses.regular} />
+        <Copy className={controlIconClasses.regular} aria-hidden="true" />
       </IconButton>
       <IconButton label="Forward" controlSize="regular" className={actionClass} onClick={() => actions.onForward(message)}>
-        <Forward className={controlIconClasses.regular} />
+        <Forward className={controlIconClasses.regular} aria-hidden="true" />
       </IconButton>
       <IconButton
         label="Select message"
@@ -187,7 +187,7 @@ function ActionBar({
         className={actionClass}
         onClick={() => actions.onToggleSelect(message)}
       >
-        <CheckSquare className={controlIconClasses.regular} />
+        <CheckSquare className={controlIconClasses.regular} aria-hidden="true" />
       </IconButton>
     </FloatingLayer>
   );
@@ -446,10 +446,19 @@ export const MessageItem = memo(function MessageItem({
   const selectable = Boolean(actions && selectMode);
   const rowRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  // Delayed hide (not instant setState-on-leave) so the bar survives the gap
-  // between the row and the floating toolbar while the cursor crosses it —
-  // see useHoverIntent.
-  const { visible: actionsVisible, show: showActionBar, hide: hideActionBar } = useHoverIntent();
+  // A deliberate dwell prevents action bars from flashing while the pointer
+  // scans the timeline. The exclusive group also guarantees that a previous
+  // row cannot linger when another message takes ownership.
+  const {
+    visible: actionsVisible,
+    show: showActionBar,
+    showNow: showActionBarNow,
+    hide: hideActionBar,
+  } = useHoverIntent({
+    showDelayMs: 350,
+    hideDelayMs: 140,
+    exclusiveGroup: "message-actions",
+  });
   const openInspector = (trigger: HTMLElement) => {
     inspectorTriggerRef.current = trigger;
     setInspectorOpen(true);
@@ -719,7 +728,7 @@ export const MessageItem = memo(function MessageItem({
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       content="icon" controlSize="compact" className={cn(
-        "relative inline-flex items-center justify-center self-start text-zinc-100 opacity-0 transition-colors hover:bg-zinc-800/70 hover:text-zinc-50 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
+        "relative inline-flex items-center justify-center self-start text-zinc-100 hover:bg-zinc-800/70 hover:text-zinc-50 md:hidden",
         isOwnAlignedRight && "self-end",
       )}
     >
@@ -799,7 +808,6 @@ export const MessageItem = memo(function MessageItem({
         ref={rowRef}
         onMouseEnter={showActionBar}
         onMouseLeave={hideActionBar}
-        onFocusCapture={showActionBar}
       >
         {selectable && (
           <SelectBox
@@ -838,7 +846,7 @@ export const MessageItem = memo(function MessageItem({
             actions={actions}
             anchorRef={contentRef}
             visible={actionsVisible}
-            onEnter={showActionBar}
+            onEnter={showActionBarNow}
             onLeave={hideActionBar}
             hasDetails={detailsMeta.hasDetails}
             onOpenDetails={openInspector}
@@ -865,7 +873,6 @@ export const MessageItem = memo(function MessageItem({
       ref={rowRef}
       onMouseEnter={showActionBar}
       onMouseLeave={hideActionBar}
-      onFocusCapture={showActionBar}
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
       {selectable && (
@@ -903,7 +910,7 @@ export const MessageItem = memo(function MessageItem({
           actions={actions}
           anchorRef={contentRef}
           visible={actionsVisible}
-          onEnter={showActionBar}
+          onEnter={showActionBarNow}
           onLeave={hideActionBar}
           hasDetails={detailsMeta.hasDetails}
           onOpenDetails={openInspector}

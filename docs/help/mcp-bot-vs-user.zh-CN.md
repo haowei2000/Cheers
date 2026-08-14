@@ -83,22 +83,16 @@ Rust 网关（唯一后端）
 
 Prompt 传输在 **Agent Bridge WebSocket** 上鉴权。MCP 调用使用 Agent 原生
 OAuth 生命周期取得的 installation-bound access token；Gateway 每次都校验
-installation 状态、scope、audience 和频道成员资格。Bridge credential 模型仍为：
+installation 状态、scope、audience 和频道成员资格。Bridge credential 模型为：
 
-1. **签发。** `generate_bot_token()` 生成 `agb_<hex>` token。明文**只返回一次**；库里只存它的
-   **SHA-256**，落在 `bot_accounts.bot_token_hash`（外加一个仅用于展示的 `bot_token_prefix`）。
-   再次签发即轮换，旧 token 立即失效。
-2. **唯一签发路径。** `mint_bot_token()` 是唯一创建 token 的代码，有两个入口：
-   - `POST /api/v1/bots/{bot_id}/token`——手动签发/轮换，仅 bot 的 **owner 或管理员**可调。
-   - **enrollment 兑换**——`POST /api/v1/bots/{bot_id}/enrollment` 签发一个一次性、900 秒、单次
-     使用的 **enrollment code**；`POST /api/v1/enrollment/redeem`（系统里**唯一**免鉴权的端点——它
-     靠 code 本身鉴权）用这个 code 换回一个 bot token。这是连接器丝滑接入用的路径。
-3. **握手。** 在 Bridge WS 上，control 通道优先读 `Authorization: Bearer <token>` 头；没有则接受
-   第一帧携带 token 的 JSON `auth` 帧。
-4. **校验。** `resolve_bot()` 把提交的 token 做哈希，反查 `bot_accounts WHERE bot_token_hash = $1`。
-   被标记 `is_disabled`（管理员一键停用开关）的 bot 会以 `BotUnavailable` 拒绝。
+1. **先建身份。** `POST /api/v1/bots` 只创建长期存在的 Bot 身份。
+2. **再建 Installation。** `POST /api/v1/bots/{bot_id}/installations` 创建 pending Installation，
+   并返回一个 900 秒有效、只能使用一次的 pairing code。
+3. **配对。** `POST /api/v1/installations/redeem` 由 code 本身鉴权；成功后激活该 Installation，
+   并只返回一次 `agbi_…` Installation credential。数据库只保存它的 SHA-256。
+4. **握手。** Agent Bridge 只接受 active、未撤销 Installation 的 credential；Bot 被停用时同样拒绝连接。
 
-因为 token 是高熵随机值，静态存储用**无盐 SHA-256** 是正确的（不需要 bcrypt）。
+因为 credential 是高熵随机值，静态存储用**无盐 SHA-256** 是正确的（不需要 bcrypt）。
 
 ---
 

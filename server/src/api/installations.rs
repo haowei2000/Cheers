@@ -111,6 +111,15 @@ pub async fn activate_installation(
     .await?;
     tx.commit().await?;
     kick_bot(&state, &bot_id);
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.activated",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation activated");
     Ok(Json(
         json!({"bot_id": bot_id, "installation_id": installation_id, "status": "active"}),
@@ -148,6 +157,15 @@ pub async fn rotate_installation_credential(
     if row.try_get::<String, _>("status").ok().as_deref() == Some("active") {
         kick_bot(&state, &bot_id);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.credential_rotated",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({ "credential_prefix": prefix }),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, credential_prefix = %prefix, owner = %claims.sub, "terminal installation credential rotated");
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -179,6 +197,15 @@ pub async fn reconnect_installation(
         ));
     }
     kick_bot(&state, &bot_id);
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.reconnect_requested",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation reconnect requested");
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -205,28 +232,73 @@ pub async fn revoke_installation(
     let Some(previous_status) = previous_status else {
         return Err(AppError::NotFound);
     };
+    if previous_status == "pending" {
+        sqlx::query(
+            "UPDATE enrollment_codes SET revoked = TRUE
+             WHERE installation_id = $1 AND bot_id = $2
+               AND redeemed_at IS NULL AND NOT revoked",
+        )
+        .bind(&installation_id)
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let revoked_status = status_after_revoke(&previous_status);
     sqlx::query(
         "UPDATE terminal_installations
-         SET revoked_at = COALESCE(revoked_at, NOW()), status = 'standby',
+         SET revoked_at = COALESCE(revoked_at, NOW()), status = $3,
              mcp_connection_state = 'revoked', mcp_state_updated_at = NOW(), updated_at = NOW()
          WHERE installation_id = $1 AND bot_id = $2",
     )
     .bind(&installation_id)
     .bind(&bot_id)
+    .bind(revoked_status)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
     if previous_status == "active" {
         kick_bot(&state, &bot_id);
     }
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.revoked",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({ "previous_status": previous_status }),
+    )
+    .await;
     tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation revoked");
     Ok(Json(
         json!({"bot_id": bot_id, "installation_id": installation_id, "revoked": true}),
     ))
 }
 
+/// A revoked pending Installation stays pending until `pairing_reaper` removes
+/// it with its revoked code. Credentialed Installations become standby so the
+/// historical row remains visible as a non-active runtime location.
+fn status_after_revoke(previous_status: &str) -> &'static str {
+    if previous_status == "pending" {
+        "pending"
+    } else {
+        "standby"
+    }
+}
+
 fn kick_bot(state: &AppState, bot_id: &str) {
     if let Ok(id) = Uuid::parse_str(bot_id) {
         state.bot_registry.kick(id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_after_revoke;
+
+    #[test]
+    fn pending_revoke_remains_reapable() {
+        assert_eq!(status_after_revoke("pending"), "pending");
+        assert_eq!(status_after_revoke("active"), "standby");
+        assert_eq!(status_after_revoke("standby"), "standby");
     }
 }

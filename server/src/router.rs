@@ -240,6 +240,13 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/:workspace_id/fleet",
             get(api::fleet::get_fleet),
         )
+        // Primary Fleet page: workspace-agnostic bot roster + approvals.
+        .route("/api/v1/fleet", get(api::fleet::get_fleet_all))
+        .route(
+            "/api/v1/fleet/installations",
+            get(api::fleet::list_installations_all),
+        )
+        .route("/api/v1/fleet/audit", get(api::fleet::list_audit_all))
         // Rail badge: workspace-agnostic actionable-pending count
         .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
         // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配
@@ -546,19 +553,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/token",
             post(api::bots::issue_bot_token),
         )
-        // ── Bot onboarding: one-time enrollment codes + connector config ─────
-        .route(
-            "/api/v1/bots/:bot_id/enrollment",
-            post(api::enrollment::mint_enrollment_code)
-                .delete(api::enrollment::revoke_enrollment_codes),
-        )
+        // ── Installation pairing + connector config ──────────────────────────
         .route(
             "/api/v1/bots/:bot_id/connector-config",
-            get(api::enrollment::get_connector_config),
+            get(api::pairing::get_connector_config),
         )
         .route(
             "/api/v1/bots/:bot_id/installations",
-            get(api::installations::list_installations),
+            get(api::installations::list_installations).post(api::pairing::create_installation),
         )
         .route(
             "/api/v1/bots/:bot_id/installations/:installation_id/activate",
@@ -578,13 +580,13 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/ops/connector-discovery",
-            get(api::enrollment::connector_discovery),
+            get(api::pairing::connector_discovery),
         )
         .route(
-            "/api/v1/enrollment/guidance",
-            get(api::enrollment::guidance),
+            "/api/v1/installations/guidance",
+            get(api::pairing::pairing_guidance),
         )
-        .route("/api/v1/acp/agents", get(api::enrollment::list_acp_agents))
+        .route("/api/v1/acp/agents", get(api::pairing::list_acp_agents))
         .route(
             "/api/v1/bots/:bot_id/capability-delegations",
             get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),
@@ -906,12 +908,11 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/auth/reset-password",
             post(api::auth::reset_password),
         )
-        // Public, code-authenticated: a host redeems a one-time enrollment code
-        // for a fresh installation credential + connector config. No JWT — the code
-        // IS the credential (rate-limited + single-use + short TTL).
+        // Public, code-authenticated: a host redeems an installation pairing
+        // code for that installation's credential + connector config.
         .route(
-            "/api/v1/enrollment/redeem",
-            post(api::enrollment::redeem_enrollment_code),
+            "/api/v1/installations/redeem",
+            post(api::pairing::redeem_installation_pairing),
         )
         // Public invite-link preview for the landing page: the visitor usually has
         // no account yet. Read-only + rate-limited; workspace details come back
@@ -922,12 +923,12 @@ fn build_public_routes() -> Router<AppState> {
         )
         // Public, no secrets: the mode-2 connector installer, served with the
         // API base baked in (reachable via the existing nginx /api proxy).
-        .route("/api/v1/install.sh", get(api::enrollment::install_script))
+        .route("/api/v1/install.sh", get(api::pairing::install_script))
         // Public: same-origin proxy for the prebuilt connector binaries — for hosts
         // that can reach this gateway but not GitHub (install.sh tries this first).
         .route(
             "/api/v1/connector/download/:asset",
-            get(api::enrollment::connector_download),
+            get(api::pairing::connector_download),
         )
         // Bot self-status: authenticated by the bot's Agent Bridge token (Bearer),
         // not a user JWT — the connector calls this to write the bot's own status

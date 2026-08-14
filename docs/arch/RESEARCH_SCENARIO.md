@@ -301,8 +301,8 @@ The demo agent is **Codex** via `codex-acp`. Verified facts (static trace, devel
   `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` (generic stdio
   adapter, binary `codex-acp`); docs-canonical "Minimal Codex example" in
   [CONNECTOR_TOML_CONFIG.md](./CONNECTOR_TOML_CONFIG.md). The gateway ships a codex
-  `AgentPreset` (`server/src/domain/connector_config.rs`) and enrollment accepts
-  `agent_type=codex` (`server/src/api/enrollment.rs`).
+  `AgentPreset` (`server/src/domain/connector_config.rs`) and installation creation accepts
+  `agent_type=codex` (`server/src/api/pairing.rs`).
 - **Tools are agent-agnostic.** `inject_cheers=true` hands Codex the same
   `desk_*`/`inbox_*`/`post_message` MCP tools; there is zero agent-type branching in
   `cheers-mcp-server`.
@@ -446,23 +446,23 @@ online" cause.
    the gateway (`kubectl port-forward -n cheers svc/cheers-gateway 8000:8000`) and run Vite
    (`npm --prefix frontend run dev`) — the UI is at <http://localhost:5173> (`admin` /
    `admin12345`); the NodePort build is at <http://localhost:30080>.
-2. **Bot + channel + membership.** Reuse or create a `codex`-type bot (Bots → onboarding
-   wizard), then issue its bridge token and put it in a channel. Headless equivalents:
+2. **Bot identity + channel + membership.** Reuse or create a Bot identity, then create a
+   pending Codex Installation and put the Bot in a channel. Headless equivalents:
    ```bash
    TOKEN=$(curl -s -X POST :8000/api/v1/auth/login -H 'Content-Type: application/json' \
      -d '{"login":"admin","password":"admin12345"}' | jq -r .access_token)
-   curl -s -X POST :8000/api/v1/bots/<BOT_ID>/token -H "Authorization: Bearer $TOKEN"   # → agb_…
+   PAIRING=$(curl -s -X POST :8000/api/v1/bots/<BOT_ID>/installations \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"agent_type":"codex","device_name":"Research host"}')
+   PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
    curl -s -X POST :8000/api/v1/channels -H "Authorization: Bearer $TOKEN" \
      -d '{"workspace_id":"<WS_ID>","name":"research-lab"}'                              # workspace_id is required
    curl -s -X POST :8000/api/v1/channels/<CH_ID>/members -H "Authorization: Bearer $TOKEN" \
      -d '{"member_id":"<BOT_ID>","member_type":"bot","role":"member"}'
    ```
-3. **Start the connector** (the bot goes online within ~1s):
+3. **Pair and start the Installation** (the Bot goes online after setup completes):
    ```bash
-   export CHEERS_CODEX_BOT_TOKEN=agb_…            # from step 2
-   mkdir -p ~/.cheers/workspace
-   cd packages/cheers-acp-connector-rs
-   cargo run --bin cce-acp-connector -- run --config examples/cheers-daemon.codex.toml --name codex
+   CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
    ```
 4. **Activate the scenario** in the channel: Workbench drawer → **Temp template** → pick
    `frontend/src/features/chat/workbench/examples/research-lab.json` (or drag it on). This

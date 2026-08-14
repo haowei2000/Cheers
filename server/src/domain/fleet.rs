@@ -1,4 +1,5 @@
-//! Fleet view: workspace-level aggregation queries (docs/design/FLEET_VIEW.md).
+//! Fleet view aggregation queries (docs/design/FLEET_VIEW.md). The primary
+//! cockpit is user-level; workspace-scoped helpers remain for explicit slices.
 //!
 //! Read-only SQL for the two Fleet zones — the caller's pending-approval inbox
 //! and the bot roster with session/cost rollups. Policy (SEE / may-answer) is
@@ -137,28 +138,53 @@ pub async fn list_fleet_bots(
     .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| {
-            Some(FleetBotRow {
-                bot_id: r
-                    .try_get::<String, _>("bot_id")
-                    .ok()
-                    .and_then(|s| s.parse().ok())?,
-                channel_id: r
-                    .try_get::<String, _>("channel_id")
-                    .ok()
-                    .and_then(|s| s.parse().ok())?,
-                channel_name: r.try_get("channel_name").unwrap_or_default(),
-                bot_name: r.try_get("bot_name").unwrap_or_default(),
-                status_text: r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-                status_emoji: r
-                    .try_get::<Option<String>, _>("status_emoji")
-                    .ok()
-                    .flatten(),
-            })
-        })
-        .collect())
+    Ok(rows.into_iter().filter_map(row_to_fleet_bot).collect())
+}
+
+/// Every bot that shares any channel with `user_id`, across all workspaces.
+/// Channel membership remains the visibility gate; this is not a global bot
+/// directory.
+pub async fn list_fleet_bots_all(
+    db: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<FleetBotRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,
+                COALESCE(ba.display_name, ba.username) AS bot_name,
+                ba.status_text, ba.status_emoji
+         FROM channel_memberships cm
+         JOIN channels c ON c.channel_id = cm.channel_id
+         JOIN channel_memberships me
+           ON me.channel_id = cm.channel_id
+          AND me.member_id = $1 AND me.member_type = 'user'
+         JOIN bot_accounts ba ON ba.bot_id = cm.member_id
+         WHERE cm.member_type = 'bot'
+         ORDER BY c.name, bot_name",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().filter_map(row_to_fleet_bot).collect())
+}
+
+fn row_to_fleet_bot(r: sqlx::postgres::PgRow) -> Option<FleetBotRow> {
+    Some(FleetBotRow {
+        bot_id: r
+            .try_get::<String, _>("bot_id")
+            .ok()
+            .and_then(|s| s.parse().ok())?,
+        channel_id: r
+            .try_get::<String, _>("channel_id")
+            .ok()
+            .and_then(|s| s.parse().ok())?,
+        channel_name: r.try_get("channel_name").unwrap_or_default(),
+        bot_name: r.try_get("bot_name").unwrap_or_default(),
+        status_text: r.try_get::<Option<String>, _>("status_text").ok().flatten(),
+        status_emoji: r
+            .try_get::<Option<String>, _>("status_emoji")
+            .ok()
+            .flatten(),
+    })
 }
 
 /// (busy, idle) live-session counts keyed by `(bot_id, channel_id)`.

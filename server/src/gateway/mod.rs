@@ -3,7 +3,7 @@ pub mod bridge_frames;
 pub mod connection_event_reaper;
 pub mod conversion_worker;
 pub mod dispatcher;
-pub mod enrollment_reaper;
+pub mod pairing_reaper;
 pub mod presence;
 pub mod realtime;
 pub mod reclaimer;

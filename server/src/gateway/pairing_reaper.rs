@@ -1,7 +1,7 @@
-//! Periodic reaper for spent/expired bot-onboarding enrollment codes.
+//! Periodic reaper for spent/expired installation pairing codes.
 //!
-//! The per-bot / per-owner caps in `api::enrollment` count only **live** codes
-//! (`redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()`), so a redeemed,
+//! The per-bot / per-owner caps in `api::pairing` count only **live** codes
+//! (`redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()`), so a paired,
 //! revoked, or expired row stops counting but is otherwise never deleted — the
 //! table would grow without bound under repeated mint→redeem cycles. This sweep
 //! is the backstop, mirroring `approval_sweeper`: it periodically deletes codes
@@ -20,7 +20,7 @@ use sqlx::PgPool;
 /// just-finished code around briefly for inspection before it is reaped.
 async fn reap_once(db: &PgPool, retention_secs: i64) {
     // Pending installations contain no credential and are useful only while
-    // their bound code is live. Delete them first; the FK cascades the matching
+    // their bound pairing code is live. Delete them first; the FK cascades the matching
     // code and prevents abandoned device rows from accumulating.
     let pending = sqlx::query(
         "DELETE FROM terminal_installations i
@@ -47,10 +47,10 @@ async fn reap_once(db: &PgPool, retention_secs: i64) {
     .await;
     match res {
         Ok(r) if r.rows_affected() > 0 => {
-            tracing::info!(deleted = r.rows_affected(), "reaped spent enrollment codes");
+            tracing::info!(deleted = r.rows_affected(), "reaped spent pairing codes");
         }
         Ok(_) => {}
-        Err(e) => tracing::warn!(error = %e, "enrollment code reaper failed"),
+        Err(e) => tracing::warn!(error = %e, "pairing code reaper failed"),
     }
 }
 

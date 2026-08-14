@@ -17,12 +17,12 @@ import {
   RotateCcw,
   Server,
   TriangleAlert,
-  Trash2,
   X,
 } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
+import { ActionButton } from "@/components/ui/action-button";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -103,9 +103,13 @@ function TableLens({ data, config, onChange }: LensProps) {
                 </td>
               ))}
               <td className="p-1">
-                <UiButton action="delete" variant="plain" onClick={() => del(i)} title="Delete row">
-                  <Trash2 className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
-                </UiButton>
+                <ActionButton
+                  action="delete"
+                  context="toolbar"
+                  accessibleLabel={`Delete row ${i + 1}`}
+                  controlSize="compact"
+                  onClick={() => del(i)}
+                />
               </td>
             </tr>
           ))}
@@ -116,9 +120,13 @@ function TableLens({ data, config, onChange }: LensProps) {
           )}
         </tbody>
       </table>
-      <UiButton action="add" content="iconText" variant="plain" onClick={add} className="mt-2 flex items-center gap-1 text-zinc-100 hover:text-zinc-50">
-        <Plus className="w-3.5 h-3.5" /> Add row
-      </UiButton>
+      <ActionButton
+        action="add"
+        context="toolbar"
+        accessibleLabel="Add row"
+        onClick={add}
+        className="mt-2"
+      />
     </div>
   );
 }
@@ -174,9 +182,14 @@ function KanbanLens({ data, onChange }: LensProps) {
                 <UiButton content="icon" variant="plain" aria-label="Move right" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
                   <ChevronRight className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
                 </UiButton>
-                <UiButton action="delete" variant="plain" onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
-                  <X className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
-                </UiButton>
+                <ActionButton
+                  action="remove"
+                  context="toolbar"
+                  accessibleLabel={`Remove ${it}`}
+                  controlSize="compact"
+                  onClick={() => delItem(ci, ii)}
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                />
                 </>}
                 className="border-b-0 bg-zinc-800/70 text-zinc-200"
               />
@@ -189,9 +202,13 @@ function KanbanLens({ data, onChange }: LensProps) {
                 placeholder="+ Task"
                 className="bg-transparent flex-1 text-zinc-200 outline-none placeholder:text-zinc-400"
               />
-              <UiButton action="add" variant="plain" onClick={() => addItem(ci)} title="Add task">
-                <Plus className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
-              </UiButton>
+              <ActionButton
+                action="add"
+                context="toolbar"
+                accessibleLabel={`Add task to ${c.name}`}
+                controlSize="compact"
+                onClick={() => addItem(ci)}
+              />
             </div>
           </div>
         </div>

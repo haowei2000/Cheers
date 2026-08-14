@@ -8,11 +8,10 @@ import {
   useMemo,
   lazy,
   Suspense,
+  type ReactNode,
 } from "react";
 import {
-  ArrowLeft,
   Hash,
-  MessageSquare,
   Users,
   Loader2,
   PanelRight,
@@ -78,6 +77,9 @@ import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { usePopoverDismiss } from "@/components/ui/popover";
+import { ChannelChrome } from "./ChannelChrome";
+import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
+import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
@@ -146,6 +148,8 @@ function mergeMessages(msgs: Message[], incoming: Message[]): Message[] {
 
 interface Props {
   channel: Channel | null;
+  /** A workspace switch is waiting for its own channel snapshot. */
+  channelSelectionPending?: boolean;
   /** Mobile stacked navigation: renders a back button that pops to the channel list. */
   onBack?: () => void;
   /** Desktop: whether the channel sidebar is expanded (drives the toggle icon). */
@@ -154,8 +158,39 @@ interface Props {
   onToggleSidebar?: () => void;
 }
 
+export function ChannelSelectionState({
+  pending,
+  sidebarToggle,
+}: {
+  pending: boolean;
+  sidebarToggle: ReactNode;
+}) {
+  if (pending) {
+    return (
+      <div
+        className="flex flex-1 items-center justify-center text-zinc-400"
+        aria-busy="true"
+        aria-label="Loading channels"
+      >
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-regular flex-col gap-3">
+      {sidebarToggle && (
+        <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
+      )}
+      <Hash className="h-5 w-5 text-zinc-400" aria-hidden="true" />
+      <span>Select a channel to start chatting</span>
+    </div>
+  );
+}
+
 export function ChannelView({
   channel,
+  channelSelectionPending = false,
   onBack,
   sidebarOpen,
   onToggleSidebar,
@@ -1693,10 +1728,11 @@ export function ChannelView({
     }
   }
 
-  // Desktop sidebar collapse toggle — lives in the channel header (and floats in
-  // the empty state, so an expanded toggle is always reachable while collapsed).
-  const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
-  const sidebarToggle = onToggleSidebar ? (
+  // Inline shells keep the collapse toggle in the channel surface (and float it
+  // in the empty state). The desktop window frame owns the hosted toggle.
+  const isMac = usesMacKeyboardShortcuts();
+  const chromePlacement = useWindowChromePlacement();
+  const sidebarToggle = onToggleSidebar && chromePlacement === "inline" ? (
     <UiButton variant="plain"
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
@@ -1704,22 +1740,19 @@ export function ChannelView({
       content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0 transition-colors"
     >
       {sidebarOpen ? (
-        <PanelLeftClose className="w-4 h-4" />
+        <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
       ) : (
-        <PanelLeftOpen className="w-4 h-4" />
+        <PanelLeftOpen className="w-4 h-4" aria-hidden="true" />
       )}
     </UiButton>
   ) : null;
 
   if (!channel) {
     return (
-      <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-regular flex-col gap-3">
-        {sidebarToggle && (
-          <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
-        )}
-        <Hash className="h-5 w-5 text-zinc-400" />
-        <span>Select a channel to start chatting</span>
-      </div>
+      <ChannelSelectionState
+        pending={channelSelectionPending}
+        sidebarToggle={sidebarToggle}
+      />
     );
   }
 
@@ -1741,23 +1774,13 @@ export function ChannelView({
     };
     return (
       <div className="flex flex-col h-full">
-        <div className="mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-zinc-950/80 px-4 backdrop-blur-sm max-md:gap-1 max-md:px-2">
-          {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
-          {onBack && (
-            <UiButton variant="plain"
-              onClick={onBack}
-              title="Back to channels"
-              aria-label="Back to channels"
-              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </UiButton>
-          )}
-          <Hash className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
-          <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
-            {channel.name}
-          </span>
-        </div>
+        <ChannelChrome
+          title={channel.name}
+          isDm={false}
+          sidebarToggle={sidebarToggle}
+          onBack={onBack}
+          actions={null}
+        />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <Hash className="h-5 w-5 text-zinc-400" />
           <div className="text-zinc-100 font-semibold text-comfortable">
@@ -1792,6 +1815,118 @@ export function ChannelView({
     ? channel.peer_name || channel.name || "Direct Message"
     : channel.name;
 
+  const channelToolbar = (
+    <>
+      <div className="hidden md:flex items-center gap-3 text-compact text-zinc-400">
+        <div className="relative" ref={membersRootRef}>
+          <ControlTrigger controlWidth="slot"
+            type="button"
+            onClick={() => setMembersOpen((v) => !v)}
+            title="Channel members"
+            aria-expanded={membersOpen}
+            controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-50 hover:bg-zinc-800 transition-colors ${
+ membersOpen ? "text-zinc-100 bg-zinc-800": ""
+ }`}
+          >
+            <Users className="w-3.5 h-3.5" aria-hidden="true" />
+            {mentionables.length || "Members"}
+            {onlineCount > 0 && (
+              <span className="flex items-center gap-2 ml-1">
+                <PresenceDot contentSize="small" className="bg-emerald-500" />
+                {onlineCount} online
+              </span>
+            )}
+          </ControlTrigger>
+          {membersOpen && (
+            <MembersPopover
+              channelId={channel.channel_id}
+              isDm={channel.type === "dm"}
+              onManage={() => setSettingsOpen(true)}
+              onClose={() => setMembersOpen(false)}
+            />
+          )}
+        </div>
+      </div>
+      <UiButton variant="plain"
+        onClick={() => {
+          setFilesFocus(undefined);
+          setFilesOpen((v) => {
+            if (!v) openInstrument("files", "open", false);
+            return !v;
+          });
+        }}
+        title="Channel files"
+        aria-label="Channel files"
+        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ filesOpen
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ }`}
+      >
+        <Paperclip className="w-4 h-4" aria-hidden="true" />
+      </UiButton>
+      <UiButton variant="plain"
+        onClick={() => {
+          setWsInit({});
+          setWsOpen((v) => {
+            if (!v) openInstrument("workspace", "open", false);
+            return !v;
+          });
+        }}
+        title="Remote workspace"
+        aria-label="Remote workspace"
+        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ wsOpen
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ }`}
+      >
+        <FolderTree className="w-4 h-4" aria-hidden="true" />
+      </UiButton>
+      <UiButton variant="plain"
+        onClick={() =>
+          setVbOpen((v) => {
+            if (!v) openInstrument("viewboard", "open", false);
+            return !v;
+          })
+        }
+        title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
+        aria-label="ViewBoard"
+        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ vbOpen
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ }`}
+      >
+        <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
+      </UiButton>
+      <UiButton variant="plain"
+        onClick={() => {
+          setWbTarget(undefined);
+          setWbOpen((v) => {
+            if (!v) openInstrument("workbench", "open", false);
+            return !v;
+          });
+        }}
+        title="Workbench — file workspace"
+        aria-label="Workbench"
+        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
+ wbOpen
+ ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ }`}
+      >
+        <PanelRight className="w-4 h-4" aria-hidden="true" />
+      </UiButton>
+      {channel.type !== "dm" && (
+        <UiButton variant="plain"
+          onClick={() => setSettingsOpen(true)}
+          title="Channel settings"
+          aria-label="Channel settings"
+          content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
+        >
+          <Settings className="w-4 h-4" aria-hidden="true" />
+        </UiButton>
+      )}
+    </>
+  );
+
   return (
     <ProfileCardProvider
       members={memberById}
@@ -1803,144 +1938,14 @@ export function ChannelView({
         centered while the work area is closed, docked against it when open.
         Mobile: the panels stay full/near-full-screen overlay sheets. */}
       <div className="flex flex-col h-full">
-        {/* Channel header — `relative z-30` lifts the header's stacking context (it
-          already makes one via backdrop-blur) above the message list, so header
-          dropdowns like the session panel render over the chat, not under it. */}
-        <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-zinc-950/80 px-4 backdrop-blur-sm max-md:gap-1 max-md:px-2">
-          {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
-          {onBack && (
-            <UiButton variant="plain"
-              onClick={onBack}
-              title="Back to channels"
-              aria-label="Back to channels"
-              content="icon" controlSize="comfortable" className="md:hidden flex items-center justify-center -ml-1 rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </UiButton>
-          )}
-          {isDm ? (
-            <MessageSquare className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
-          ) : (
-            <Hash className="w-4 h-4 text-zinc-400 flex-shrink-0 max-md:hidden" />
-          )}
-          <span className="font-semibold text-zinc-100 text-regular truncate min-w-0 max-md:pl-1">
-            {channelTitle}
-          </span>
-          {channel.purpose && (
-            <div className="hidden md:flex items-center gap-3 pl-1 min-w-0">
-              <span className="text-compact text-zinc-400 truncate">
-                {channel.purpose}
-              </span>
-            </div>
-          )}
-          <div className="flex-1" />
-          <div className="hidden md:flex items-center gap-3 text-compact text-zinc-400">
-            {/* Members: was a dead-looking span — now a real button opening the roster. */}
-            <div className="relative" ref={membersRootRef}>
-              <ControlTrigger controlWidth="slot"
-                type="button"
-                onClick={() => setMembersOpen((v) => !v)}
-                title="Channel members"
-                aria-expanded={membersOpen}
-                controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-50 hover:bg-zinc-800 transition-colors ${
- membersOpen ? "text-zinc-100 bg-zinc-800": ""
- }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                {mentionables.length || "Members"}
-                {onlineCount > 0 && (
-                  <span className="flex items-center gap-2 ml-1">
-                    <PresenceDot contentSize="small" className="bg-emerald-500" />
-                    {onlineCount} online
-                  </span>
-                )}
-              </ControlTrigger>
-              {membersOpen && (
-                <MembersPopover
-                  channelId={channel.channel_id}
-                  isDm={channel.type === "dm"}
-                  onManage={() => setSettingsOpen(true)}
-                  onClose={() => setMembersOpen(false)}
-                />
-              )}
-            </div>
-          </div>
-          {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
-          <UiButton variant="plain"
-            onClick={() => {
-              setFilesFocus(undefined);
-              setFilesOpen((v) => {
-                if (!v) openInstrument("files", "open", false);
-                return !v;
-              });
-            }}
-            title="Channel files"
-            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- filesOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
- }`}
-          >
-            <Paperclip className="w-4 h-4" />
-          </UiButton>
-          <UiButton variant="plain"
-            onClick={() => {
-              setWsInit({});
-              setWsOpen((v) => {
-                if (!v) openInstrument("workspace", "open", false);
-                return !v;
-              });
-            }}
-            title="Remote workspace"
-            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- wsOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
- }`}
-          >
-            <FolderTree className="w-4 h-4" />
-          </UiButton>
-          <UiButton variant="plain"
-            onClick={() =>
-              setVbOpen((v) => {
-                if (!v) openInstrument("viewboard", "open", false);
-                return !v;
-              })
-            }
-            title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- vbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
- }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-          </UiButton>
-          <UiButton variant="plain"
-            onClick={() => {
-              setWbTarget(undefined);
-              setWbOpen((v) => {
-                if (!v) openInstrument("workbench", "open", false);
-                return !v;
-              });
-            }}
-            title="Workbench — file workspace"
-            content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- wbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
- }`}
-          >
-            <PanelRight className="w-4 h-4" />
-          </UiButton>
-          {channel.type !== "dm" && (
-            <>
-              <UiButton variant="plain"
-                onClick={() => setSettingsOpen(true)}
-                title="Channel settings"
-                content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
-              >
-                <Settings className="w-4 h-4" />
-              </UiButton>
-            </>
-          )}
-        </div>
+        <ChannelChrome
+          title={channelTitle}
+          purpose={channel.purpose}
+          isDm={isDm}
+          sidebarToggle={sidebarToggle}
+          onBack={onBack}
+          actions={channelToolbar}
+        />
 
         <div className="flex-1 min-h-0 flex">
           {/* Chat region — fills the width left of the (resizable) lane, down to a

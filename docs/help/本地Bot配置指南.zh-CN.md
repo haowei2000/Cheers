@@ -3,7 +3,7 @@
 > **语言**：中文 | [English](本地Bot配置指南.md)
 
 面向**在本机以 host 守护进程方式**接入 ACP Agent（如 Codex、Claude）的用户 / 开发者。
-讲清楚：一个 bot 怎么配、token 放哪、多个 bot 怎么管、怎么排障。
+讲清楚：如何创建 Bot 身份、配对本机 Installation、保存其凭证、管理多个 Installation，以及如何排障。
 
 - 在 UI 里创建 Bot 的完整流程见 [AgentBridge 接入指南](AgentBridge接入指南.md)。
   本文聚焦**本地、从源码跑网关 + host 连接器**这条链路。
@@ -16,13 +16,13 @@
 
 ```
 你的浏览器 ──▶ 网关(:8000, 从源码跑) ◀──WebSocket── 连接器守护进程 ──stdio──▶ ACP Agent(codex/claude)
-                                                   └ 一个 TOML = 一个 bot = 一个守护进程
+                                                   └ 一个 TOML = 一个 Installation = 一个守护进程
 ```
 
 三条铁律：
 
-1. **一个 TOML 文件 = 一个 bot = 一个守护进程**（用 `--name` 区分）。两个 bot 就两个文件、两个守护进程，互不影响。
-2. **Token 放在独立的 sidecar 文件里**（`bot_token_file`），**不写进 TOML**（TOML 会被提交/分享，明文 token 会泄露），本地也**不建议用环境变量**（重启要重新 export，且会进程环境可见）。
+1. **Bot 是长期身份，Installation 是这个 Bot 的一个运行位置**。一个 TOML 文件 = 一个 Installation = 一个守护进程（用 `--name` 区分）。
+2. **Installation 凭证放在独立 sidecar 文件里**（`bot_token_file` 是连接器保留的历史配置键名），不要写进 TOML。
 3. 网关从源码跑、复用已有 Docker 基础设施（Postgres/Redis/RustFS）；**不要**对本仓库的 `docker-compose.yml` 跑 `up`（它已过时，且会和已有容器抢 5432/6379/9000 端口）。
 
 ---
@@ -71,8 +71,8 @@ Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生
 ~/.cheers/
 ├─ bin/
 │   └─ cce-acp-connector
-├─ cheers-daemon.codex.toml      # bot：codex（一个文件一个 bot）
-├─ cheers-daemon.claude.toml     # bot：claude
+├─ cheers-daemon.codex.toml      # Installation：codex（一个 Installation 一个文件）
+├─ cheers-daemon.claude.toml     # Installation：claude
 ├─ secrets/
 │   ├─ codex.token   (chmod 600) # 仅 token 明文，gitignore
 │   └─ claude.token  (chmod 600)
@@ -85,12 +85,12 @@ Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生
 
 ---
 
-## 3. 五步接入一个 Bot
+## 3. 通过 Installation 接入 Bot
 
 下面以 **codex** 为例（claude 把名字/命令/bot_id 换掉即可）。
 
-### 3.1 在 Cheers 里确认/创建 Bot，拿到 `bot_id`
-UI：登录 → 设置 → Bots → 新建（bridge_provider 选 generic/acp）。或用 API 列出：
+### 3.1 在 Cheers 里确认/创建 Bot 身份，拿到 `bot_id`
+UI：登录 → Fleet → **New bot**。这一步只创建身份，不选择 Agent，也不创建 Installation。或用 API 列出：
 
 ```bash
 TOK=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
@@ -100,17 +100,31 @@ curl -s http://127.0.0.1:8000/api/v1/bots -H "Authorization: Bearer $TOK" \
   | jq -r '.[] | "\(.username)  \(.bot_id)"'
 ```
 
-### 3.2 签发 token，写进 sidecar 文件（mode 600）
-> ⚠️ 签发会**轮换**：旧 token 立刻失效。确保没有别的连接器在用同一个 bot。
+### 3.2 创建并兑换 Installation Pairing
+
+Agent 在 Installation 创建时选择。兑换后该 Installation 变为 active；同一 Bot 原有的 active Installation 会转为 standby。
 
 ```bash
 mkdir -p ~/.cheers/secrets && chmod 700 ~/.cheers/secrets
-curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/token" \
-  -H "Authorization: Bearer $TOK" | jq -r .token > ~/.cheers/secrets/codex.token
+PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/installations" \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"agent_type":"codex","device_name":"Local Mac"}')
+PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
+REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/installations/redeem" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -nc --arg code "$PAIRING_CODE" --arg device 'Local Mac' '{pairing_code:$code,device_name:$device}')")
+printf '%s' "$REDEEMED" | jq -r .credential > ~/.cheers/secrets/codex.token
+printf '%s' "$REDEEMED" | jq -r .config_toml > ~/.cheers/cheers-daemon.codex.toml
 chmod 600 ~/.cheers/secrets/codex.token
 ```
 
-### 3.3 写 per-bot 配置 `~/.cheers/cheers-daemon.codex.toml`
+推荐直接使用安装脚本，而不是继续执行下面的手工步骤：
+
+```bash
+CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
+```
+
+### 3.3 检查或定制生成的 Installation 配置
 （完整字段含义见 [§6 配置参考](#6-完整配置参考)。`bot_token_file` 相对**配置文件所在目录**解析。）
 
 ```toml
@@ -334,7 +348,7 @@ $BIN stop    --name codex
 $BIN run     --config <file>     # 前台运行（调试用，不守护）
 ```
 
-- **轮换 token**：重新签发（§3.2）覆盖 `secrets/<name>.token`，再 `restart --name <name>`。
+- **替换 Installation 凭证**：按 §3.2 创建并配对新的 Installation。新实例会变为 active，旧实例转为 standby；确认不再需要后再撤销旧 Installation。
 - **开机自启**：可写一个 launchd plist（每个 bot 一个，或一个跑 `cheers-bots.sh start`）。需要可让我补一份。
 
 ### 自动更新（连接器 >= 0.1.27）

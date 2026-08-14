@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell, Shield } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ItemSection, OperationsItem } from "@/components/ui/item";
@@ -19,7 +20,7 @@ import {
   notificationKey,
   type NotificationItem,
 } from "@/api/notifications";
-import { getFleet, getFleetBadge, type FleetApproval } from "@/api/fleet";
+import { getAllFleet, getFleetBadge, type FleetApproval } from "@/api/fleet";
 import { PermissionCard } from "@/features/chat/PermissionCard";
 import type { Message } from "@/types";
 
@@ -77,20 +78,9 @@ function toCardMessage(a: FleetApproval, botName?: string): Message {
   };
 }
 
-function workspaceIdsFromStore(): string[] {
-  const { workspaces, personalWorkspace } = useChatStore.getState();
-  const ids = workspaces.map((w) => w.workspace_id);
-  if (
-    personalWorkspace &&
-    !ids.includes(personalWorkspace.workspace_id)
-  ) {
-    ids.unshift(personalWorkspace.workspace_id);
-  }
-  return [...new Set(ids)];
-}
-
 /** Activity rail control — approvals + invites (`docs/arch/CLIENT_NAV_IA.md`). */
 export function ActivityCenter() {
+  const navigate = useNavigate();
   const open = useActivityUiStore((s) => s.open);
   const setOpen = useActivityUiStore((s) => s.setOpen);
   const [busy, setBusy] = useState<string | null>(null);
@@ -98,8 +88,6 @@ export function ActivityCenter() {
   const [approvalCount, setApprovalCount] = useState(0);
   const items = useNotificationStore((s) => s.items);
   const remove = useNotificationStore((s) => s.remove);
-  const workspaces = useChatStore((s) => s.workspaces);
-  const personalWorkspace = useChatStore((s) => s.personalWorkspace);
   const user = useAuthStore((s) => s.user);
   const inviteCount = items.length;
   const badge = inviteCount + approvalCount;
@@ -131,40 +119,19 @@ export function ActivityCenter() {
     };
   }, []);
 
-  // Load actionable approvals across every workspace the caller can see —
-  // the badge is global (`/fleet/badge`), so the dialog must match.
+  // Activity and its badge share the same user-level, global Fleet source.
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const ids = workspaceIdsFromStore();
-    if (ids.length === 0) {
-      setApprovals([]);
-      return;
-    }
-    void Promise.all(
-      ids.map((id) =>
-        getFleet(id).catch(() => ({ approvals: [] as FleetApproval[], bots: [] }))
-      )
-    ).then((results) => {
+    void getAllFleet().then((result) => {
       if (!alive) return;
-      const seen = new Set<string>();
-      const merged: FleetApproval[] = [];
-      for (const res of results) {
-        for (const a of res.approvals) {
-          if (!a.actionable || seen.has(a.message_id)) continue;
-          seen.add(a.message_id);
-          merged.push(a);
-        }
-      }
-      setApprovals(merged);
-      // Keep the rail badge on the global count — never overwrite it with a
-      // per-workspace slice.
+      setApprovals(result.approvals.filter((approval) => approval.actionable));
       void refreshBadge();
-    });
+    }).catch(() => {});
     return () => {
       alive = false;
     };
-  }, [open, workspaces, personalWorkspace]);
+  }, [open]);
 
   async function act(n: NotificationItem, accept: boolean) {
     const key = notificationKey(n);
@@ -187,7 +154,7 @@ export function ActivityCenter() {
   return (
     <>
       <IconButton
-        onClick={() => setOpen(true)}
+        onClick={() => navigate("/activity")}
         label="Activity — approvals & invites"
         className="relative text-zinc-100"
       >

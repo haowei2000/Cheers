@@ -15,6 +15,10 @@ import { initPushBridge } from "@/lib/push";
 import { initDeepLinks } from "@/lib/deepLink";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { ServerPicker } from "@/features/desktop/ServerPicker";
+import {
+  DesktopPageFrame,
+  DesktopWindowFrame,
+} from "@/features/desktop/DesktopTitlebar";
 
 const QuickPanel = lazy(() =>
   import("@/features/desktop/QuickPanel").then((m) => ({ default: m.QuickPanel }))
@@ -31,10 +35,11 @@ const ChatLayout = lazy(() => import("@/features/chat/ChatLayout"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
 const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 const FleetPage = lazy(() => import("@/features/fleet/FleetPage"));
+const ActivityPage = lazy(() => import("@/features/activity/ActivityPage"));
 
 function Spinner() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+    <div className="h-full bg-zinc-950 flex items-center justify-center">
       <LoadingIcon contentSize="large" className="text-zinc-400" />
     </div>
   );
@@ -132,7 +137,9 @@ export default function App() {
     return initDeepLinks();
   }, [isQuickPanel]);
 
-  if (!isQuickPanel && !authInitialized) return <Spinner />;
+  if (!isQuickPanel && !authInitialized) {
+    return <DesktopWindowFrame><DesktopPageFrame><Spinner /></DesktopPageFrame></DesktopWindowFrame>;
+  }
 
   if (isQuickPanel) {
     return (
@@ -144,19 +151,20 @@ export default function App() {
   // Desktop shell without a configured server: nothing can load (every URL
   // derives from the server base), so the picker takes over the whole app.
   if (isTauri() && !getServerBase()) {
-    return <ServerPicker />;
+    return <DesktopWindowFrame><DesktopPageFrame><ServerPicker /></DesktopPageFrame></DesktopWindowFrame>;
   }
   return (
-    <Suspense fallback={<Spinner />}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-        <Route path="/mcp-authorize" element={<RequireAuth><McpAuthorizePage /></RequireAuth>} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot" element={<ForgotPasswordPage />} />
-        <Route path="/reset" element={<ResetPasswordPage />} />
+    <DesktopWindowFrame>
+      <Suspense fallback={<DesktopPageFrame><Spinner /></DesktopPageFrame>}>
+        <Routes>
+        <Route path="/login" element={<DesktopPageFrame><LoginPage /></DesktopPageFrame>} />
+        <Route path="/auth/callback" element={<DesktopPageFrame><OAuthCallbackPage /></DesktopPageFrame>} />
+        <Route path="/mcp-authorize" element={<DesktopPageFrame><RequireAuth><McpAuthorizePage /></RequireAuth></DesktopPageFrame>} />
+        <Route path="/register" element={<DesktopPageFrame><RegisterPage /></DesktopPageFrame>} />
+        <Route path="/forgot" element={<DesktopPageFrame><ForgotPasswordPage /></DesktopPageFrame>} />
+        <Route path="/reset" element={<DesktopPageFrame><ResetPasswordPage /></DesktopPageFrame>} />
         {/* Public: the landing page itself routes signed-out visitors to auth. */}
-        <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/invite/:token" element={<DesktopPageFrame><InvitePage /></DesktopPageFrame>} />
         {/* The open workspace/channel live in the path so they survive a reload and
             can be shared as a link; both are optional because /chat is the generic
             entry point (ChatLayout then redirects to the personal workspace). */}
@@ -171,30 +179,47 @@ export default function App() {
         <Route
           path="/settings/*"
           element={
-            <RequireAuth>
-              <SettingsPage />
-            </RequireAuth>
+            <DesktopPageFrame>
+              <RequireAuth>
+                <SettingsPage />
+              </RequireAuth>
+            </DesktopPageFrame>
           }
         />
         <Route
           path="/friends/*"
           element={
-            <RequireAuth>
-              <FriendsPage />
-            </RequireAuth>
+            <DesktopPageFrame>
+              <RequireAuth>
+                <FriendsPage />
+              </RequireAuth>
+            </DesktopPageFrame>
           }
         />
         <Route
-          path="/fleet"
+          path="/fleet/*"
           element={
-            <RequireAuth>
-              <FleetPage />
-            </RequireAuth>
+            <DesktopPageFrame>
+              <RequireAuth>
+                <FleetPage />
+              </RequireAuth>
+            </DesktopPageFrame>
+          }
+        />
+        <Route
+          path="/activity"
+          element={
+            <DesktopPageFrame>
+              <RequireAuth>
+                <ActivityPage />
+              </RequireAuth>
+            </DesktopPageFrame>
           }
         />
         <Route path="*" element={<Navigate to="/chat" replace />} />
-      </Routes>
-      <SessionExpiredTakeover />
-    </Suspense>
+        </Routes>
+        <SessionExpiredTakeover />
+      </Suspense>
+    </DesktopWindowFrame>
   );
 }

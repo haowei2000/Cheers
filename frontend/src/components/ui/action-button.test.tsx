@@ -44,4 +44,14 @@ describe("ActionButton", () => {
     expect(markup).toContain('aria-label="Close settings"');
     expect(markup).toContain('data-button-content="icon"');
   });
+
+  it("uses labelled icon-only actions in toolbars", () => {
+    const markup = renderToStaticMarkup(
+      <ActionButton action="add" context="toolbar" accessibleLabel="Add bot" />,
+    );
+    expect(markup).toContain('aria-label="Add bot"');
+    expect(markup).toContain('title="Add bot"');
+    expect(markup).toContain('data-button-content="icon"');
+    expect(markup).not.toContain('data-button-slot="label"');
+  });
 });
