@@ -150,7 +150,7 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
-        so a connector running anywhere else may not be able to sign in. Setting
+        so an installation running anywhere else may not be able to sign in. Setting
         up on this same machine will still work. Whoever runs the server can fix
         this by configuring its public address.
       </span>
@@ -160,10 +160,13 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
 
 export function BotOnboardingWizard({
   bots,
+  initialBotId,
   onClose,
   onDone,
 }: {
   bots: BotItem[];
+  /** When opened from a bot detail, reuse that identity and add a device installation. */
+  initialBotId?: string;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -175,13 +178,13 @@ export function BotOnboardingWizard({
 
   // Step 0 — choose bot
   const [pick, setPick] = useState<"create" | "existing">(
-    bots.length ? "existing" : "create"
+    initialBotId || bots.length ? "existing" : "create"
   );
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
-  const [existingId, setExistingId] = useState(bots[0]?.bot_id ?? "");
+  const [existingId, setExistingId] = useState(initialBotId ?? bots[0]?.bot_id ?? "");
   const [bot, setBot] = useState<BotItem | null>(null);
 
   const [busy, setBusy] = useState(false);
@@ -267,9 +270,8 @@ export function BotOnboardingWizard({
     setStep(1);
   }
 
-  /** Desktop only: resolve the bot, then jump straight to the local
-   * "New connector" setup with it pre-selected (skips the remote-machine
-   * connection modes — the connector runs right here). */
+  /** Desktop only: resolve the bot, then jump straight to the local installation
+   * setup with it pre-selected (skips the remote-device pairing modes). */
   async function setupLocally() {
     setError(null);
     setBusy(true);
@@ -310,7 +312,7 @@ export function BotOnboardingWizard({
     <Dialog
       title={
         <span className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-indigo-400" /> Connect an agent
+          <Bot className="w-5 h-5 text-indigo-400" /> Set up a bot
         </span>
       }
       onClose={onClose}
@@ -326,13 +328,13 @@ export function BotOnboardingWizard({
         {step === 0 && (
           <div className="space-y-3">
             <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-indigo-100">
-              <p className="font-medium">A bot is an identity; a connector is where it runs.</p>
+              <p className="font-medium">A bot is an AI identity. An installation is where it runs.</p>
               <p className="mt-1 text-indigo-200/75">
                 {localDesktop
-                  ? "This Mac can create the bot and run its connector in one guided setup."
+                  ? "Install this bot on your Mac now, or prepare another Mac or Linux device."
                   : isMobile
-                    ? "This phone creates the bot and a secure pairing code. Use that code on a Mac or Linux machine where your agent is installed."
-                    : "This browser creates the bot and a secure pairing code. Run the connector later on the Mac or Linux machine where your agent is installed."}
+                    ? "This phone creates the bot identity and a secure pairing code for its Mac or Linux installation."
+                    : "This browser creates the bot identity and a secure pairing code for its Mac or Linux installation."}
               </p>
             </div>
             <div className="flex gap-2 text-compact">
@@ -425,12 +427,12 @@ export function BotOnboardingWizard({
               {localDesktop && (
                 <Button action="setup" content="iconText" variant="secondary" onClick={setupLocally} disabled={busy}>
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <Laptop className="w-4 h-4" /> Set up on this Mac
+                  <Laptop className="w-4 h-4" /> Install on this Mac
                 </Button>
               )}
               <Button action="setup" onClick={validateAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                {localDesktop ? "Set up another host" : "Choose host"}
+                {localDesktop ? "Install on another device" : "Choose device"}
               </Button>
             </div>
           </div>
@@ -444,14 +446,14 @@ export function BotOnboardingWizard({
               <span className="text-zinc-200">
                 @{bot?.username ?? username.trim()}
               </span>
-              . Choose how the host machine will receive its secure pairing code.
+              . Choose how the device that runs this bot will receive its secure pairing code.
             </p>
             <div className="grid gap-2">
               <ModeCard
                 icon={<Terminal className="w-5 h-5 text-indigo-300" />}
                 title="Run one command on the host"
                 badge="Easiest"
-                desc="Recommended. On the Mac or Linux host, one command pairs the bot, writes its config, and starts a background connector."
+                desc="Recommended. One command pairs the bot and keeps its installation running in the background."
                 onClick={() => pickMode("script")}
                 disabled={busy}
               />
@@ -533,7 +535,7 @@ function ConnectionWatch({ botId, username }: { botId: string; username: string 
         setOnline(!!s.bridge_connected);
       } catch {
         // Transient failure: keep the last known state rather than flapping to
-        // "offline", which would read as the connector having dropped.
+        // "offline", which would read as the installation having dropped.
       }
       if (alive) timer = setTimeout(tick, 3000);
     }
@@ -555,13 +557,13 @@ function ConnectionWatch({ botId, username }: { botId: string; username: string 
   return online ? (
     <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-compact text-emerald-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
-      @{username} is online — the connector reached the gateway. You're done.
+      @{username} is online — this installation reached Cheers. You're done.
     </p>
   ) : (
     <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-zinc-400">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-      Waiting for @{username} to connect — finish the steps above on the agent's
-      machine. This updates on its own.
+      Waiting for @{username}'s installation — finish setup on the device that
+      runs the agent. This updates on its own.
     </p>
   );
 }
@@ -870,7 +872,7 @@ function ScriptPanel({
           )}
           <p className="text-compact text-zinc-400">
             No terminal handy? If that machine has the Cheers desktop app, open{" "}
-            <span className="text-zinc-200">Settings → Connector → I have a code</span>{" "}
+            <span className="text-zinc-200">Settings → Installations → I have a code</span>{" "}
             and paste the code there instead.
           </p>
           <div className="flex items-center justify-between">

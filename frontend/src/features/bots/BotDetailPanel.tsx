@@ -5,7 +5,6 @@ import {
   CircleDot,
   Ban,
   Power,
-  KeyRound,
   ShieldCheck,
   Activity,
   Copy,
@@ -15,6 +14,7 @@ import {
   Pencil,
   Laptop,
   RotateCw,
+  Plus,
 } from "lucide-react";
 import {
   disableBot,
@@ -82,7 +82,7 @@ type Tab = "overview" | "terminals" | "permissions" | "events";
 
 const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
   { id: "overview", label: "Overview", icon: Info },
-  { id: "terminals", label: "Terminals", icon: Laptop },
+  { id: "terminals", label: "Installations", icon: Laptop },
   { id: "permissions", label: "Permissions", icon: ShieldCheck },
   { id: "events", label: "Events", icon: Activity },
 ];
@@ -95,18 +95,19 @@ const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
 export function BotDetailPanel({
   bot,
   channels,
-  onIssue,
   onError,
   onChanged,
   onPoll,
+  onAddInstallation,
 }: {
   bot: BotItem;
   channels: Channel[];
-  onIssue: (botId: string) => void;
   onError: (msg: string) => void;
   onChanged: () => void;
   /** Silent background refetch for "live while open" (item 8) — no spinner. */
   onPoll: () => void;
+  /** Starts the shared setup flow with this bot already selected. */
+  onAddInstallation: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -195,7 +196,7 @@ export function BotDetailPanel({
               "inline-flex items-center gap-1 text-compact",
               bot.is_online ? "text-emerald-400" : "text-zinc-400"
             )}
-            title={bot.is_online ? "Connector attached" : "Connector not attached"}
+            title={bot.is_online ? "An installation is online" : "No installation is online"}
           >
             <CircleDot className="w-3.5 h-3.5" />
             {bot.is_online ? "online" : "offline"}
@@ -230,7 +231,6 @@ export function BotDetailPanel({
           <BotOverview
             bot={bot}
             channels={channels}
-            onIssue={onIssue}
             onError={onError}
             onChanged={onChanged}
             lifecycleActiveRef={refreshLifecycleActive}
@@ -245,9 +245,13 @@ export function BotDetailPanel({
         )}
         {tab === "terminals" && (
           bot.can_manage ? (
-            <BotTerminalsSection botId={bot.bot_id} onError={onError} />
+            <BotInstallationsSection
+              botId={bot.bot_id}
+              onError={onError}
+              onAddInstallation={onAddInstallation}
+            />
           ) : (
-            <p className="text-compact text-zinc-400">Only the bot owner or an administrator can view terminal installations.</p>
+            <p className="text-compact text-zinc-400">Only the bot owner or an administrator can view installations.</p>
           )
         )}
         {tab === "events" && (
@@ -261,7 +265,15 @@ export function BotDetailPanel({
   );
 }
 
-function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg: string) => void }) {
+function BotInstallationsSection({
+  botId,
+  onError,
+  onAddInstallation,
+}: {
+  botId: string;
+  onError: (msg: string) => void;
+  onAddInstallation: () => void;
+}) {
   const [items, setItems] = useState<TerminalInstallation[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ id: string; credential: string } | null>(null);
@@ -294,15 +306,27 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
 
   return (
     <section className="space-y-3">
-      <div>
-        <SectionHead>Terminal installations</SectionHead>
-        <p className="mt-1 text-compact text-zinc-400">
-          Each connector has an independent credential. Only the active terminal may connect in v1.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionHead>Installations</SectionHead>
+          <p className="mt-1 max-w-2xl text-compact text-zinc-400">
+            An installation is this bot running on a specific device. Each one has its own
+            credential, agent, workspace, and connection state. One installation is active at a time.
+          </p>
+        </div>
+        <Button
+          action="add"
+          content="iconText"
+          controlSize="compact"
+          onClick={onAddInstallation}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add installation
+        </Button>
       </div>
       {items.length === 0 && (
         <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-zinc-400">
-          No terminal enrolled yet. Create an enrollment code to connect one.
+          This bot has no installations yet. Add one to choose where the bot runs.
         </p>
       )}
       <ItemList presentationLevel="max" controlSize="regular" className="space-y-2">
@@ -312,7 +336,7 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
               containerRole="presentation"
               title={item.device_name}
               leading={<Laptop className="h-4 w-4 text-zinc-400" />}
-              subtitle={`${item.agent_type} · ${item.connector_version ?? "version unknown"} · ${item.credential_prefix}`}
+              subtitle={`${item.agent_type} · runtime ${item.connector_version ?? "version unknown"} · ${item.credential_prefix}`}
               metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
               status={(
                 <span className={cn("text-compact", item.online ? "text-emerald-400" : "text-zinc-400")}>
@@ -356,7 +380,7 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
                 )}
                 {item.status === "active" && (
                   <Button action="connect" content="iconText" variant="secondary" controlSize="compact"
-                    aria-label="Reconnect terminal"
+                    aria-label="Reconnect installation"
                     disabled={busy === item.installation_id}
                     onClick={() => run(item.installation_id, () => reconnectTerminalInstallation(botId, item.installation_id))}>
                     <RotateCw className="h-3.5 w-3.5" />
@@ -365,7 +389,7 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
                 <Button action="revoke" content="iconText" variant="danger" controlSize="compact"
                   disabled={busy === item.installation_id}
                   onClick={() => {
-                    if (window.confirm(`Revoke terminal “${item.device_name}”? It will no longer be able to connect.`)) {
+                    if (window.confirm(`Revoke installation “${item.device_name}”? It will no longer be able to connect.`)) {
                       void run(item.installation_id, () => revokeTerminalInstallation(botId, item.installation_id));
                     }
                   }}>
@@ -390,14 +414,12 @@ function BotTerminalsSection({ botId, onError }: { botId: string; onError: (msg:
 function BotOverview({
   bot,
   channels,
-  onIssue,
   onError,
   onChanged,
   lifecycleActiveRef,
 }: {
   bot: BotItem;
   channels: Channel[];
-  onIssue: (botId: string) => void;
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
@@ -449,7 +471,7 @@ function BotOverview({
         toast.success(`Enabled ${bot.display_name || bot.username}`);
       } else {
         await disableBot(bot.bot_id);
-        toast.success(`Disabled ${bot.display_name || bot.username} (connector disconnected)`);
+        toast.success(`Disabled ${bot.display_name || bot.username} (installation disconnected)`);
       }
       onChanged();
     } catch (e) {
@@ -472,7 +494,8 @@ function BotOverview({
 
       {bot.can_manage && <div className="border-t border-zinc-800" />}
 
-      {/* Details — Bot ID / transitional MCP bootstrap / Channels. */}
+      {/* Details — stable identity and channel membership. Runtime credentials
+          belong to Installations and are deliberately managed there. */}
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
@@ -481,16 +504,6 @@ function BotOverview({
           </code>
           <CopyButton value={bot.bot_id} label="" />
         </MetaRow>
-        {bot.can_manage && (
-          <MetaRow label="Legacy MCP bootstrap">
-            <Tip content="Temporary compatibility credential for the remote MCP token exchange. It cannot connect a terminal.">
-              <Button action="issue" content="iconText" controlSize="compact" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
-                <KeyRound className="w-3.5 h-3.5" />
-                Issue legacy token
-              </Button>
-            </Tip>
-          </MetaRow>
-        )}
         <MetaRow label="Channels">
           <Select
             value={channelId}
@@ -522,8 +535,8 @@ function BotOverview({
                 align="end"
                 content={
                   bot.is_disabled
-                    ? "Re-enables the bot so its connector can attach again."
-                    : "Disconnects the connector; the bot goes offline until re-enabled."
+                    ? "Re-enables the bot so its active installation can connect again."
+                    : "Disconnects the active installation; the bot stays offline until re-enabled."
                 }
               >
                 <UiButton action="disable" variant="plain"
