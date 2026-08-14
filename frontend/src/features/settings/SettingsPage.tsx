@@ -12,7 +12,6 @@ import {
   KeyRound,
   AudioLines,
   Bell,
-  Plug,
   ShieldAlert,
   Link2,
   Trash2,
@@ -93,7 +92,7 @@ const NAV: {
   { id: "profile", label: "Profile", icon: User },
   { id: "bots", label: "Bots", icon: Bot },
   { id: "server", label: "Server", icon: Server },
-  { id: "connector", label: "Connector", icon: Plug, desktopOnly: true },
+  { id: "connector", label: "Installations", icon: Laptop, desktopOnly: true },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
   { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
@@ -141,8 +140,8 @@ function ServerCard() {
   );
 }
 
-/** Desktop shell only: register the app as a macOS login item, so the tray
- * resident (and its connector supervisor) is there from boot. */
+/** Desktop shell only: register the app as a macOS login item, so the tray and
+ * local installation supervisor are available after sign-in. */
 function LaunchAtLoginCard() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -180,7 +179,7 @@ function LaunchAtLoginCard() {
         <div>
           <p className="text-regular font-medium text-zinc-200">Launch at login</p>
           <p className="text-compact text-zinc-400 mt-1">
-            Start Cheers (tray + connector supervisor) when you sign in to your Mac.
+            Start Cheers and keep local bot installations available when you sign in to your Mac.
           </p>
         </div>
         <Button action="disable"

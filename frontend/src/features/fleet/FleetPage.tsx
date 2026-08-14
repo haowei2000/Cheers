@@ -7,9 +7,6 @@ import {
   RefreshCw,
   Bot as BotIcon,
   Wand2,
-  KeyRound,
-  Copy,
-  Check,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -25,7 +22,7 @@ import { OverflowText } from "@/components/ui/overflow-text";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { getFleet, type FleetApproval, type FleetBot } from "@/api/fleet";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
-import { listBots, issueBotToken, type IssuedToken } from "@/api/bots";
+import { listBots } from "@/api/bots";
 import { listChannels } from "@/api/channels";
 import { useFleetLive } from "./useFleetLive";
 import { useChatStore } from "@/stores/chatStore";
@@ -139,9 +136,8 @@ export default function FleetPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardBotId, setWizardBotId] = useState<string | undefined>();
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
-  const [issued, setIssued] = useState<IssuedToken | null>(null);
-  const [tokenCopied, setTokenCopied] = useState(false);
 
   const refreshCatalog = useCallback(
     async (quiet = false) => {
@@ -232,14 +228,6 @@ export default function FleetPage() {
     return list;
   }, [workspaces, personalWorkspace]);
 
-  async function onIssue(botId: string) {
-    try {
-      setIssued(await issueBotToken(botId));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't issue token");
-    }
-  }
-
   async function openBot(botId: string) {
     try {
       const [b, c] = await Promise.all([
@@ -278,7 +266,10 @@ export default function FleetPage() {
             aria-label="Add bot"
             variant="secondary"
             controlSize="regular"
-            onClick={() => setWizardOpen(true)}
+            onClick={() => {
+              setWizardBotId(undefined);
+              setWizardOpen(true);
+            }}
           >
             <Wand2 className="w-3.5 h-3.5" />
           </Button>
@@ -390,60 +381,29 @@ export default function FleetPage() {
             key={selectedBot.bot_id}
             bot={selectedBot}
             channels={channels}
-            onIssue={onIssue}
             onError={(m) => toast.error(m)}
             onChanged={() => {
               void refreshCatalog();
               if (activeWsId) void refresh(activeWsId, true);
             }}
             onPoll={() => void refreshCatalog(true)}
+            onAddInstallation={() => {
+              setWizardBotId(selectedBot.bot_id);
+              setSelectedBotId(null);
+              setWizardOpen(true);
+            }}
           />
-        </Dialog>
-      )}
-
-      {issued && (
-        <Dialog
-          title={
-            <span className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-indigo-400" /> Connection token
-            </span>
-          }
-          onClose={() => setIssued(null)}
-          maxWidth="max-w-lg"
-        >
-          <p className="text-compact text-amber-400">
-            {issued.note ?? "Store this token now — shown only once."}
-          </p>
-          <div className="rounded-sm bg-zinc-950 p-3">
-            <code className="text-compact text-emerald-300 break-all">{issued.token}</code>
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-3">
-            <span className="text-compact text-zinc-400">
-              Save this into the bot&apos;s token file on the machine that runs it.
-            </span>
-            <IconButton
-              label="Copy connection token"
-              controlSize="regular"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(issued.token);
-                  setTokenCopied(true);
-                  window.setTimeout(() => setTokenCopied(false), 1500);
-                } catch {
-                  toast.error("Clipboard unavailable — select and copy manually");
-                }
-              }}
-            >
-              {tokenCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            </IconButton>
-          </div>
         </Dialog>
       )}
 
       {wizardOpen && (
         <BotOnboardingWizard
           bots={catalog}
-          onClose={() => setWizardOpen(false)}
+          initialBotId={wizardBotId}
+          onClose={() => {
+            setWizardOpen(false);
+            setWizardBotId(undefined);
+          }}
           onDone={() => {
             void refreshCatalog();
             if (activeWsId) void refresh(activeWsId);
