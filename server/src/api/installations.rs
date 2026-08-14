@@ -232,6 +232,17 @@ pub async fn revoke_installation(
     let Some(previous_status) = previous_status else {
         return Err(AppError::NotFound);
     };
+    if previous_status == "pending" {
+        sqlx::query(
+            "UPDATE enrollment_codes SET revoked = TRUE
+             WHERE installation_id = $1 AND bot_id = $2
+               AND redeemed_at IS NULL AND NOT revoked",
+        )
+        .bind(&installation_id)
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    }
     sqlx::query(
         "UPDATE terminal_installations
          SET revoked_at = COALESCE(revoked_at, NOW()), status = 'standby',

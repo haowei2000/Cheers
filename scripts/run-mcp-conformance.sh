@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # End-to-end MCP 2026-07-28 gate. This deliberately obtains the MCP bearer via
-# the public installation enrollment + OAuth client_credentials flow; it never
+# the public installation pairing + OAuth client_credentials flow; it never
 # inserts a Bot credential or bypasses the protected-resource boundary.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -113,15 +113,15 @@ bot_id="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots" \
   --data "$(jq -nc --arg username "mcp-conformance-${run_suffix}" '{username:$username,display_name:"MCP Conformance Agent",binding_type:"agent_bridge",bridge_provider:"generic"}')" \
   | jq -er .bot_id)"
 
-enrollment="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots/${bot_id}/enrollment" \
+pairing="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots/${bot_id}/installations" \
   -H 'content-type: application/json' \
   -H "authorization: Bearer ${admin_token}" \
   --data '{"agent_type":"generic","device_name":"official-conformance"}')"
-code="$(jq -er .code <<<"$enrollment")"
+code="$(jq -er .pairing_code <<<"$pairing")"
 
-installation="$(curl -fsS -X POST "${gateway_origin}/api/v1/enrollment/redeem" \
+installation="$(curl -fsS -X POST "${gateway_origin}/api/v1/installations/redeem" \
   -H 'content-type: application/json' \
-  --data "$(jq -nc --arg code "$code" '{code:$code,device_name:"official-conformance"}')")"
+  --data "$(jq -nc --arg code "$code" '{pairing_code:$code,device_name:"official-conformance"}')")"
 installation_id="$(jq -er .installation_id <<<"$installation")"
 credential="$(jq -er .credential <<<"$installation")"
 

@@ -1,14 +1,11 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { useNavigate } from "react-router-dom";
 import { serverOrigin, isTauri } from "@/lib/serverConfig";
 import { requestConnectorForBot } from "@/features/desktop/connectorIntent";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import {
-  Bot,
   Terminal,
   Sparkles,
   KeyRound,
@@ -24,18 +21,17 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  createBot,
+  createInstallation,
+  revokeTerminalInstallation,
   getBotStatus,
   getConnectorDiscovery,
-  mintEnrollmentCode,
-  revokeEnrollmentCodes,
-  getEnrollmentGuidance,
+  getPairingGuidance,
   listAcpAgents,
   type AgentType,
   type AcpAgentInfo,
   type ConnectorDiscovery,
-  type EnrollmentCode,
-  type EnrollmentGuidance,
+  type InstallationPairing,
+  type PairingGuidance,
   type ConnectorConfig,
   type IssuedToken,
 } from "@/api/bots";
@@ -158,7 +154,7 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
   );
 }
 
-export function BotOnboardingWizard({
+export function CreateInstallationWizard({
   bots,
   initialBotId,
   onClose,
@@ -171,17 +167,11 @@ export function BotOnboardingWizard({
   onDone: () => void;
 }) {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const localDesktop = isTauri();
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [mode, setMode] = useState<Mode | null>(null);
 
-  // Step 0 — choose bot
-  const [pick, setPick] = useState<"create" | "existing">(
-    initialBotId || bots.length ? "existing" : "create"
-  );
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  // Step 0 — choose an existing bot and this installation's agent.
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
   const [existingId, setExistingId] = useState(initialBotId ?? bots[0]?.bot_id ?? "");
@@ -206,67 +196,17 @@ export function BotOnboardingWizard({
       .catch(() => {});
   }, []);
 
-  // Picking an existing bot adopts the agent it was registered for, so the
-  // config and enrollment code the panels mint below match its actual adapter.
-  useEffect(() => {
-    if (pick !== "existing") return;
-    const provider = bots.find((b) => b.bot_id === existingId)?.bridge_provider;
-    if (provider && agentCatalog.some((a) => a.id === provider)) {
-      setAgentType(provider);
-    }
-  }, [pick, existingId, bots, agentCatalog]);
-
-  /** The agent a bot is actually registered for. For a brand-new bot that's the
-   * picker value; for an existing one it's whatever it was created with —
-   * re-using the picker there would mint a config for the wrong adapter. */
-  function agentTypeFor(b: BotItem): AgentType {
-    if (pick === "create") return agentType;
-    const provider = b.bridge_provider;
-    return provider && agentCatalog.some((a) => a.id === provider)
-      ? provider
-      : agentType;
-  }
-
-  /** Resolve the chosen bot (create a new one, or use the selected existing
-   * one). Shared by "Continue" and the desktop "Set up on this Mac" hand-off. */
-  async function resolveBot(): Promise<BotItem | null> {
-    if (pick === "create") {
-      if (!username.trim()) {
-        setError("Username is required.");
-        return null;
-      }
-      const created = await createBot({
-        username: username.trim(),
-        display_name: displayName.trim() || undefined,
-        bridge_provider: agentType,
-      });
-      onDone(); // refresh the parent list
-      return created;
-    }
+  function resolveBot(): BotItem | null {
     const existing = bots.find((b) => b.bot_id === existingId) ?? null;
     if (!existing) setError("Pick a bot.");
     return existing;
   }
 
-  /** Step 0 → 1. Validates only: creating the bot here would leave an orphan
-   * behind whenever someone opens the wizard, clicks Continue, and thinks
-   * better of it — the wizard has no delete affordance to undo that. The bot is
-   * created once a mode is picked (see `pickMode`), which is the first point
-   * the user has committed to actually connecting something. */
   function validateAndAdvance() {
     setError(null);
-    if (pick === "create" && !username.trim()) {
-      setError("Username is required.");
-      return;
-    }
-    if (pick === "existing") {
-      const existing = bots.find((b) => b.bot_id === existingId) ?? null;
-      if (!existing) {
-        setError("Pick a bot.");
-        return;
-      }
-      setBot(existing);
-    }
+    const existing = resolveBot();
+    if (!existing) return;
+    setBot(existing);
     setStep(1);
   }
 
@@ -276,9 +216,9 @@ export function BotOnboardingWizard({
     setError(null);
     setBusy(true);
     try {
-      const resolved = await resolveBot();
+      const resolved = resolveBot();
       if (!resolved) return;
-      requestConnectorForBot(resolved.bot_id, agentTypeFor(resolved));
+      requestConnectorForBot(resolved.bot_id, agentType);
       onClose();
       navigate("/fleet/installations?local=1");
     } catch (e) {
@@ -288,31 +228,18 @@ export function BotOnboardingWizard({
     }
   }
 
-  /** Step 1 → 2, and the point the bot actually gets created: the user has now
-   * chosen how they intend to connect it. Creation failures (duplicate
-   * username, quota) keep them on the mode list with a persistent error rather
-   * than dropping them into a panel with no bot behind it. */
-  async function pickMode(m: Mode) {
+  function pickMode(m: Mode) {
     setError(null);
-    setBusy(true);
-    try {
-      const resolved = bot ?? (await resolveBot());
-      if (!resolved) return;
-      setBot(resolved);
-      setMode(m);
-      setStep(2);
-    } catch (e) {
-      setError(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
+    if (!bot) return;
+    setMode(m);
+    setStep(2);
   }
 
   return (
     <Dialog
       title={
         <span className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-indigo-400" /> Set up a bot
+          <Laptop className="w-5 h-5 text-indigo-400" /> Create an installation
         </span>
       }
       onClose={onClose}
@@ -324,86 +251,22 @@ export function BotOnboardingWizard({
           <p className="text-compact text-red-400 break-words">{error}</p>
         )}
 
-        {/* ── Step 0: choose / create bot ───────────────────────────── */}
+        {/* ── Step 0: choose an existing bot and installation agent ─── */}
         {step === 0 && (
           <div className="space-y-3">
             <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-indigo-100">
-              <p className="font-medium">A bot is an AI identity. An installation is where it runs.</p>
+              <p className="font-medium">Create a runtime installation for an existing bot.</p>
               <p className="mt-1 text-indigo-200/75">
-                {localDesktop
-                  ? "Install this bot on your Mac now, or prepare another Mac or Linux device."
-                  : isMobile
-                    ? "This phone creates the bot identity and a secure pairing code for its Mac or Linux installation."
-                    : "This browser creates the bot identity and a secure pairing code for its Mac or Linux installation."}
+                The bot identity stays unchanged. This installation chooses its own agent and device.
               </p>
             </div>
-            <div className="flex gap-2 text-compact">
-              <UiButton action="create" variant="plain"
-                type="button"
-                onClick={() => setPick("create")}
-                controlSize="regular" className={`rounded-sm ${
- pick === "create"? "bg-indigo-600 text-white"
- : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
- }`}
-              >
-                New bot
-              </UiButton>
-              <UiButton action="choose" variant="plain"
-                type="button"
-                disabled={!bots.length}
-                onClick={() => setPick("existing")}
-                controlSize="regular" className={`rounded-sm disabled:opacity-50 ${
- pick === "existing"? "bg-indigo-600 text-white"
- : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
- }`}
-              >
-                Existing bot
-              </UiButton>
+            <div>
+              <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot identity</label>
+              <UiSelect value={existingId} disabled={Boolean(initialBotId)} onChange={(e) => setExistingId(e.target.value)} controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {bots.map((b) => <option key={b.bot_id} value={b.bot_id}>{b.display_name || b.username} (@{b.username})</option>)}
+              </UiSelect>
+              {!bots.length && <p className="mt-2 text-compact text-amber-300">Create a bot identity before adding an installation.</p>}
             </div>
-
-            {pick === "create" ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
-                      Username
-                    </label>
-                    <UiInput
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="codex-main"
-                      controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
-                      Display name
-                    </label>
-                    <UiInput
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Codex"
-                      controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot</label>
-                <UiSelect
-                  value={existingId}
-                  onChange={(e) => setExistingId(e.target.value)}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {bots.map((b) => (
-                    <option key={b.bot_id} value={b.bot_id}>
-                      {b.display_name || b.username} (@{b.username})
-                    </option>
-                  ))}
-                </UiSelect>
-              </div>
-            )}
 
             <div>
               <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
@@ -430,7 +293,7 @@ export function BotOnboardingWizard({
                   <Laptop className="w-4 h-4" /> Install on this Mac
                 </Button>
               )}
-              <Button action="setup" onClick={validateAndAdvance} disabled={busy}>
+              <Button action="setup" onClick={validateAndAdvance} disabled={busy || !bots.length}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 {localDesktop ? "Install on another device" : "Choose device"}
               </Button>
@@ -444,7 +307,7 @@ export function BotOnboardingWizard({
             <p className="text-compact text-zinc-400">
               Connecting{" "}
               <span className="text-zinc-200">
-                @{bot?.username ?? username.trim()}
+                @{bot?.username}
               </span>
               . Choose how the device that runs this bot will receive its secure pairing code.
             </p>
@@ -623,7 +486,7 @@ function ManualPanel({
     <div className="space-y-3">
       <p className="text-compact text-zinc-400">
         Manual setup for <span className="text-zinc-200">@{bot.username}</span>{" "}
-        ({agentType}). Two pieces: a settings file (safe to keep) and a token
+        ({agentType}). Two pieces: a settings file (safe to keep) and an installation credential
         (a password — save it so only you can read it, and never commit it).
       </p>
 
@@ -673,21 +536,21 @@ function ManualPanel({
         )}
       </div>
 
-      {/* 2. token */}
+      {/* 2. installation credential */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-compact font-semibold text-zinc-200">
-            2. One-time token
+            2. Installation credential
           </span>
           <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
             <KeyRound className="w-3.5 h-3.5" />
-            {token ? "Rotate token" : "Issue token"}
+            {token ? "Rotate credential" : "Issue credential"}
           </Button>
         </div>
         {token && (
           <>
             <p className="text-compact text-amber-400">
-              {token.note ?? "Shown once. Rotating replaces any previous token."}
+              {token.note ?? "Shown once. Rotating replaces this installation's previous credential."}
             </p>
             <div className="rounded-sm bg-zinc-950 p-3">
               <code className="text-compact text-emerald-300 break-all">
@@ -698,7 +561,7 @@ function ManualPanel({
               <span className="text-compact text-zinc-400">
                 write to <code className="text-zinc-400">~/.cheers/{tokenFile}</code> (chmod 600)
               </span>
-              <CopyBtn value={token.token} label="Copy token" />
+              <CopyBtn value={token.token} label="Copy credential" />
             </div>
           </>
         )}
@@ -710,7 +573,7 @@ function ManualPanel({
         <div className="rounded-sm bg-zinc-950 p-3">
           <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
-# (save the config + token from above into the paths shown)
+# (save the config + credential from above into the paths shown)
 cce-acp-connector start --config ${configFile} --name ${accountId}
 cce-acp-connector status --name ${accountId}`}
           </pre>
@@ -756,12 +619,12 @@ function ScriptPanel({
   agentType: AgentType;
   discovery: ConnectorDiscovery | null;
 }) {
-  const [code, setCode] = useState<EnrollmentCode | null>(null);
+  const [code, setCode] = useState<InstallationPairing | null>(null);
   const [busy, setBusy] = useState(false);
 
   const installUrl = `${serverOrigin()}/api/v1/install.sh`;
   const command = code
-    ? `CHEERS_ENROLL_CODE='${code.code}' bash <(curl -fsSL ${installUrl})`
+    ? `CHEERS_PAIRING_CODE='${code.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
   const needsApiKeyHint =
     agentType === "claude" ||
@@ -773,13 +636,14 @@ function ScriptPanel({
       ? "OPENAI_API_KEY"
       : "ANTHROPIC_API_KEY";
   const commandWithKey = code
-    ? `${apiKeyVar}='…' CHEERS_ENROLL_CODE='${code.code}' bash <(curl -fsSL ${installUrl})`
+    ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${code.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
 
   async function mint() {
     setBusy(true);
     try {
-      setCode(await mintEnrollmentCode(bot.bot_id, agentType));
+      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
+      setCode(await createInstallation(bot.bot_id, agentType));
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -790,7 +654,7 @@ function ScriptPanel({
   async function revoke() {
     setBusy(true);
     try {
-      await revokeEnrollmentCodes(bot.bot_id);
+      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
       setCode(null);
     } catch (e) {
       notify.error(messageOf(e));
@@ -804,14 +668,14 @@ function ScriptPanel({
       <p className="text-compact text-zinc-400">
         One command on the agent's machine for{" "}
         <span className="text-zinc-200">@{bot.username}</span> ({agentType}). It
-        trades the code below for a token, saves both files, and installs the
+        trades the code below for an installation credential, saves both files, and installs the
         connector so it restarts on its own after a reboot.
       </p>
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-compact font-semibold text-zinc-200">
-            1. Mint a one-time code
+            1. Create a pending installation
           </span>
           <div className="flex items-center gap-2">
             {code && (
@@ -830,14 +694,14 @@ function ScriptPanel({
               ) : (
                 <Ticket className="w-3.5 h-3.5" />
               )}
-              {code ? "New code" : "Mint code"}
+              {code ? "Replace installation" : "Create installation"}
             </Button>
           </div>
         </div>
         {code && (
           <p className="text-compact text-amber-400">
             Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.{" "}
-            {code.live_codes} live code{code.live_codes === 1 ? "" : "s"} for this bot.
+            {code.live_pairings} pending installation{code.live_pairings === 1 ? "" : "s"} for this bot.
           </p>
         )}
       </div>
@@ -900,28 +764,29 @@ function AgentPanel({
   agentType: AgentType;
   discovery: ConnectorDiscovery | null;
 }) {
-  const [code, setCode] = useState<EnrollmentCode | null>(null);
-  const [guidance, setGuidance] = useState<EnrollmentGuidance | null>(null);
+  const [code, setCode] = useState<InstallationPairing | null>(null);
+  const [guidance, setGuidance] = useState<PairingGuidance | null>(null);
   // Persistent, not a toast: without the template, step 2 can never render, so
   // the failure must stay visible in the panel (StrictMode also double-runs this).
   const [guidanceError, setGuidanceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getEnrollmentGuidance()
+    getPairingGuidance()
       .then(setGuidance)
       .catch((e) => setGuidanceError(String(e)));
   }, []);
 
   const prompt =
     code && guidance
-      ? guidance.prompt_template.replace(guidance.code_placeholder, code.code)
+      ? guidance.prompt_template.replace(guidance.pairing_code_placeholder, code.pairing_code)
       : "";
 
   async function mint() {
     setBusy(true);
     try {
-      setCode(await mintEnrollmentCode(bot.bot_id, agentType));
+      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
+      setCode(await createInstallation(bot.bot_id, agentType));
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -932,7 +797,7 @@ function AgentPanel({
   async function revoke() {
     setBusy(true);
     try {
-      await revokeEnrollmentCodes(bot.bot_id);
+      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
       setCode(null);
     } catch (e) {
       notify.error(messageOf(e));
@@ -959,7 +824,7 @@ function AgentPanel({
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-compact font-semibold text-zinc-200">
-            1. Mint a one-time code
+            1. Create a pending installation
           </span>
           <div className="flex items-center gap-2">
             {code && (
@@ -978,7 +843,7 @@ function AgentPanel({
               ) : (
                 <Ticket className="w-3.5 h-3.5" />
               )}
-              {code ? "New code" : "Mint code"}
+              {code ? "Replace installation" : "Create installation"}
             </Button>
           </div>
         </div>

@@ -148,10 +148,10 @@ async fn main() -> anyhow::Result<()> {
         config.approval_card_ttl_secs,
     );
 
-    // Reap spent/expired bot-onboarding enrollment codes (audit follow-up L2):
+    // Reap spent/expired installation pairing codes (audit follow-up L2):
     // the per-owner/per-bot caps count only live codes, so terminal rows would
     // otherwise accumulate without bound. Hourly, keeping rows 1 day for audit.
-    gateway::enrollment_reaper::spawn(state.db.clone(), 3600, 86_400);
+    gateway::pairing_reaper::spawn(state.db.clone(), 3600, 86_400);
 
     // Prune bot bridge connection history (bot_connection_events) — kept 30 days
     // for uptime inspection, then reaped hourly so a flapping connector can't

@@ -3,7 +3,7 @@ import CoreImage.CIFilterBuiltins
 
 /// Create a bot from the phone and hand it off to the machine that will run it.
 ///
-/// Mirrors the web wizard (frontend/src/features/bots/BotOnboardingWizard.tsx):
+/// Mirrors the installation wizard while retaining iOS's compact combined UI:
 /// choose bot → pick a mode → connect. The steps are the same because the
 /// server contract is the same; what differs is the *carrier*. A phone has no
 /// terminal, so every mode here ends in something you can actually move off the
@@ -42,8 +42,8 @@ struct BotOnboardingView: View {
     @State private var error: String?
 
     // Step 3 artifacts
-    @State private var code: EnrollmentCodeDto?
-    @State private var guidance: EnrollmentGuidanceDto?
+    @State private var code: InstallationPairingDto?
+    @State private var guidance: PairingGuidanceDto?
     @State private var guidanceError: String?
     @State private var config: ConnectorConfigDto?
     @State private var token: IssuedTokenDto?
@@ -83,7 +83,6 @@ struct BotOnboardingView: View {
                     bot = preselectedBot
                     existingId = preselectedBot.botId
                     pickExisting = true
-                    agentType = preselectedBot.agentType
                     step = .mode
                 }
             }
@@ -93,21 +92,9 @@ struct BotOnboardingView: View {
             existingId = manageableBots.first?.botId ?? ""
             discovery = try? await api?.connectorDiscovery()
         }
-        // Adopt the agent an existing bot was registered for. Re-using the
-        // picker value would mint a config naming the wrong adapter — the
-        // connector starts whatever it's told, so nothing downstream catches it.
-        .onChange(of: existingId) { _, _ in adoptExistingAgentType() }
-        .onChange(of: pickExisting) { _, _ in adoptExistingAgentType() }
     }
 
     private var manageableBots: [BotDto] { existingBots.filter { $0.canManage ?? false } }
-
-    private func adoptExistingAgentType() {
-        guard pickExisting,
-              let selected = manageableBots.first(where: { $0.botId == existingId })
-        else { return }
-        agentType = selected.agentType
-    }
 
     // MARK: Stepper
 
@@ -176,10 +163,7 @@ struct BotOnboardingView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .disabled(pickExisting)
-                        Text(pickExisting
-                             ? "Chosen when this bot was created. It decides which program the machine needs to run."
-                             : "That machine will need \(agentType.adapterHint) installed.")
+                        Text("Chosen for this Installation. That machine will need \(agentType.adapterHint) installed.")
                             .font(.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -220,6 +204,18 @@ struct BotOnboardingView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Connecting @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces)). Pick how the connector gets onto the agent's machine.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
+
+            if preselectedBot != nil {
+                card {
+                    Picker("Agent for this Installation", selection: $agentType) {
+                        ForEach(AgentType.allCases) { agent in
+                            Text(agent.label).tag(agent)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
 
             modeCard(
                 .script,
@@ -301,8 +297,7 @@ struct BotOnboardingView: View {
                 let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
                 bot = try await api.createBot(
                     username: username.trimmingCharacters(in: .whitespaces),
-                    displayName: trimmedName.isEmpty ? nil : trimmedName,
-                    agentType: agentType
+                    displayName: trimmedName.isEmpty ? nil : trimmedName
                 )
                 onDone()
             }
@@ -346,7 +341,7 @@ struct BotOnboardingView: View {
             if let code {
                 card {
                     VStack(spacing: 12) {
-                        if let image = qrImage(code.code) {
+                        if let image = qrImage(code.pairingCode) {
                             Image(uiImage: image)
                                 .interpolation(.none)
                                 .resizable()
@@ -356,7 +351,7 @@ struct BotOnboardingView: View {
                                 .background(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                         }
-                        Text(code.code)
+                        Text(code.pairingCode)
                             .font(.caption.monospaced())
                             .foregroundStyle(Theme.textBody)
                             .multilineTextAlignment(.center)
@@ -366,12 +361,12 @@ struct BotOnboardingView: View {
                                 .font(.caption).foregroundStyle(Theme.textMuted)
                         }
                         HStack(spacing: 10) {
-                            ShareLink(item: code.code) {
+                            ShareLink(item: code.pairingCode) {
                                 Label("Share", systemImage: "square.and.arrow.up")
                                     .font(.subheadline.weight(.medium))
                             }
                             Button {
-                                UIPasteboard.general.string = code.code
+                                UIPasteboard.general.string = code.pairingCode
                             } label: {
                                 Label("Copy", systemImage: "doc.on.doc")
                                     .font(.subheadline.weight(.medium))
@@ -416,7 +411,7 @@ struct BotOnboardingView: View {
 
             if let code, let guidance {
                 let prompt = guidance.promptTemplate.replacingOccurrences(
-                    of: guidance.codePlaceholder, with: code.code
+                    of: guidance.pairingCodePlaceholder, with: code.pairingCode
                 )
                 card {
                     VStack(alignment: .leading, spacing: 10) {
@@ -525,7 +520,10 @@ struct BotOnboardingView: View {
         error = nil
         busy = true
         defer { busy = false }
-        do { code = try await api.mintEnrollmentCode(botId: bot.botId, agentType: agentType) }
+        do {
+            if let code { try await api.revokeInstallation(botId: bot.botId, installationId: code.installationId) }
+            code = try await api.createInstallation(botId: bot.botId, agentType: agentType)
+        }
         catch { self.error = friendly(error) }
     }
 
@@ -534,7 +532,7 @@ struct BotOnboardingView: View {
         busy = true
         defer { busy = false }
         do {
-            try await api.revokeEnrollmentCodes(botId: bot.botId)
+            if let code { try await api.revokeInstallation(botId: bot.botId, installationId: code.installationId) }
             code = nil
         } catch { self.error = friendly(error) }
     }
@@ -542,7 +540,7 @@ struct BotOnboardingView: View {
     private func loadGuidance() async {
         guard let api else { return }
         guidanceError = nil
-        do { guidance = try await api.enrollmentGuidance() }
+        do { guidance = try await api.pairingGuidance() }
         catch { guidanceError = "Couldn't load the agent prompt: \(friendly(error))" }
     }
 

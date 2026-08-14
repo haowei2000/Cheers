@@ -3,7 +3,7 @@
 > **Language**: English | [中文](本地Bot配置指南.zh-CN.md)
 
 For users / developers connecting an ACP agent (e.g. Codex, Claude) **as a local host daemon**.
-It covers: how to configure one bot, where the token goes, how to manage multiple bots, and how to troubleshoot.
+It covers: how to create a Bot identity, pair a local Installation, store its credential, manage multiple Installations, and troubleshoot.
 
 - For the full "create a bot in the UI" flow, see the
   [Agent Bridge Integration Guide](AgentBridge接入指南.md). This document focuses
@@ -17,13 +17,13 @@ It covers: how to configure one bot, where the token goes, how to manage multipl
 
 ```
 your browser ──▶ gateway(:8000, from source) ◀──WebSocket── connector daemon ──stdio──▶ ACP agent (codex/claude)
-                                                            └ one TOML = one bot = one daemon
+                                                            └ one TOML = one Installation = one daemon
 ```
 
 Three rules:
 
-1. **One TOML file = one bot = one daemon** (distinguished by `--name`). Two bots → two files, two daemons, fully independent.
-2. **Put the token in a separate sidecar file** (`bot_token_file`); **not inline in the TOML** (configs get committed/shared — a plaintext token leaks), and for local use **avoid env vars** (you'd re-export on every restart, and it shows up in the process environment).
+1. A **Bot is the durable identity**; an **Installation is one place where that Bot runs**. One TOML file = one Installation = one daemon (distinguished by `--name`).
+2. Put the Installation credential in a separate sidecar file (`bot_token_file` is the connector's historical config key); never inline it in TOML.
 3. The gateway runs from source and reuses your existing Docker infra (Postgres/Redis/RustFS). **Do not** `docker compose up` the repo's `docker-compose.yml` — it's stale and would collide with your running containers on ports 5432/6379/9000.
 
 ---
@@ -74,8 +74,8 @@ Keep **runtime config + secrets outside the repo** (`~/.cheers/`); treat the rep
 ~/.cheers/
 ├─ bin/
 │   └─ cce-acp-connector
-├─ cheers-daemon.codex.toml      # bot: codex (one file = one bot)
-├─ cheers-daemon.claude.toml     # bot: claude
+├─ cheers-daemon.codex.toml      # Installation: codex (one file per Installation)
+├─ cheers-daemon.claude.toml     # Installation: claude
 ├─ secrets/
 │   ├─ codex.token   (chmod 600) # token plaintext only, gitignored
 │   └─ claude.token  (chmod 600)
@@ -88,12 +88,12 @@ Daemon metadata (pid, etc.) lives in `~/.cheers/acp-connector/<name>/daemon.json
 
 ---
 
-## 3. Connect a bot in 5 steps
+## 3. Connect a Bot through an Installation
 
 Example: **codex** (for claude, swap the name / command / bot_id).
 
-### 3.1 Confirm/create the bot in Cheers, get its `bot_id`
-UI: log in → Settings → Bots → New (set bridge_provider to generic/acp). Or list via API:
+### 3.1 Confirm/create the Bot identity, get its `bot_id`
+UI: log in → Fleet → **New bot**. This creates only the identity; it does not select an Agent or create an Installation. Or list via API:
 
 ```bash
 TOK=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
@@ -103,17 +103,31 @@ curl -s http://127.0.0.1:8000/api/v1/bots -H "Authorization: Bearer $TOK" \
   | jq -r '.[] | "\(.username)  \(.bot_id)"'
 ```
 
-### 3.2 Issue a token into a sidecar file (mode 600)
-> ⚠️ Issuing **rotates**: the old token is invalidated immediately. Make sure no other connector is using this bot.
+### 3.2 Create and redeem an Installation pairing
+
+Choose the Agent for this Installation. Redeeming it makes this Installation active and moves any previous active Installation for the same Bot to standby.
 
 ```bash
 mkdir -p ~/.cheers/secrets && chmod 700 ~/.cheers/secrets
-curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/token" \
-  -H "Authorization: Bearer $TOK" | jq -r .token > ~/.cheers/secrets/codex.token
+PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/installations" \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"agent_type":"codex","device_name":"Local Mac"}')
+PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
+REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/installations/redeem" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -nc --arg code "$PAIRING_CODE" --arg device 'Local Mac' '{pairing_code:$code,device_name:$device}')")
+printf '%s' "$REDEEMED" | jq -r .credential > ~/.cheers/secrets/codex.token
+printf '%s' "$REDEEMED" | jq -r .config_toml > ~/.cheers/cheers-daemon.codex.toml
 chmod 600 ~/.cheers/secrets/codex.token
 ```
 
-### 3.3 Write the per-bot config `~/.cheers/cheers-daemon.codex.toml`
+For the recommended installer instead of the manual steps below, run the single-use code directly:
+
+```bash
+CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
+```
+
+### 3.3 Inspect or customize the generated Installation config
 (Field reference in [§6](#6-full-config-reference). `bot_token_file` resolves relative to **the config file's directory**.)
 
 ```toml
@@ -341,7 +355,7 @@ $BIN stop    --name codex
 $BIN run     --config <file>     # run in the foreground (debugging, not daemonized)
 ```
 
-- **Rotate a token:** re-issue (§3.2) over `secrets/<name>.token`, then `restart --name <name>`.
+- **Replace an Installation credential:** create and pair a replacement Installation (§3.2). It becomes active and the old Installation becomes standby; revoke the old Installation when it is no longer needed.
 - **Auto-start on login:** write a launchd plist (one per bot, or one that runs `cheers-bots.sh start`). Ask if you want one.
 
 ### Automatic updates (connector >= 0.1.27)

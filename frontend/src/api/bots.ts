@@ -5,7 +5,7 @@ export async function listBots(): Promise<BotItem[]> {
   return apiJson<BotItem[]>("/bots");
 }
 
-/** ACP agent id for enrollment presets: legacy short names (`claude`/`codex`/
+/** ACP agent id for installation presets: legacy short names (`claude`/`codex`/
  *  `opencode`/`generic`) or an ACP registry id (`gemini`, `cline`, …). */
 export type AgentType = string;
 
@@ -28,16 +28,6 @@ export async function listAcpAgents(): Promise<AcpAgentInfo[]> {
 export interface CreateBotInput {
   username: string;
   display_name?: string;
-  intro?: string;
-  /** Remembers which external agent this bot fronts (drives config presets). */
-  bridge_provider?: string;
-  /** When set, the Agent Bridge requires a signed ACP capability delegation. */
-  acp_security?: { enabled: boolean; require_capability?: boolean };
-  external_processor?: boolean;
-  processor_name?: string;
-  processor_privacy_url?: string;
-  processor_data_use?: string;
-  processor_policy_version?: string;
 }
 
 export async function createBot(input: CreateBotInput): Promise<BotItem> {
@@ -122,8 +112,8 @@ export interface BotStatus {
   /** Control bridge timeline anchors from bot_connection_events (RFC 3339). */
   last_connected_at?: string | null;
   last_disconnected_at?: string | null;
-  /** Owner/admin-only count of un-redeemed enrollment codes; null otherwise. */
-  live_enrollment_codes?: number | null;
+  /** Owner/admin-only count of pending installations; null otherwise. */
+  pending_installation_count?: number | null;
   /** Current status line (mirrors the profile) — lets a poller detect a fresh write. */
   status_text?: string | null;
   status_emoji?: string | null;
@@ -188,7 +178,7 @@ export async function revokeTerminalInstallation(botId: string, installationId: 
   await apiJson(`/bots/${botId}/installations/${installationId}`, { method: "DELETE" });
 }
 
-// ── Bot onboarding: enrollment codes + connector config ───────────────────────
+// ── Installation pairing + connector config ──────────────────────────────────
 
 export interface Reachability {
   public_base: string;
@@ -207,7 +197,7 @@ export interface ConnectorConfig {
   note?: string;
 }
 
-/** Connector config skeleton. Enrollment is still required to obtain the
+/** Connector config skeleton. Pairing is still required to obtain the
  * installation-bound credential referenced by this file. */
 export async function getConnectorConfig(
   botId: string,
@@ -217,41 +207,38 @@ export async function getConnectorConfig(
   return apiJson<ConnectorConfig>(`/bots/${botId}/connector-config${q}`);
 }
 
-export interface EnrollmentCode {
-  code: string;
-  code_id: string;
+export interface InstallationPairing {
+  pairing_code: string;
+  pairing_id: string;
   bot_id: string;
+  installation_id: string;
+  device_name: string;
   agent_type: string;
+  status: "pending";
   expires_at: string;
   ttl_secs: number;
   redeem_path: string;
   control_url: string;
   reachability: Reachability;
-  live_codes: number;
+  live_pairings: number;
   note?: string;
 }
 
-/** Mint a one-time enrollment code for a bot (owner/admin). Plaintext once. */
-export async function mintEnrollmentCode(
+/** Create a pending installation and return its one-time pairing code. */
+export async function createInstallation(
   botId: string,
-  agentType?: AgentType
-): Promise<EnrollmentCode> {
-  return apiJson<EnrollmentCode>(`/bots/${botId}/enrollment`, {
+  agentType: AgentType,
+  deviceName?: string
+): Promise<InstallationPairing> {
+  return apiJson<InstallationPairing>(`/bots/${botId}/installations`, {
     method: "POST",
-    body: JSON.stringify(agentType ? { agent_type: agentType } : {}),
+    body: JSON.stringify({ agent_type: agentType, device_name: deviceName }),
   });
 }
 
-/** Revoke ALL live enrollment codes for a bot (owner/admin). Idempotent. */
-export async function revokeEnrollmentCodes(
-  botId: string
-): Promise<{ bot_id: string; revoked: number }> {
-  return apiJson(`/bots/${botId}/enrollment`, { method: "DELETE" });
-}
-
-/** Result of redeeming an enrollment code: a ready-to-run config plus the
+/** Result of redeeming a pairing code: a ready-to-run config plus the
  * one-time installation credential and its relative credential file. */
-export interface RedeemedEnrollment {
+export interface RedeemedInstallationPairing {
   bot_id: string;
   installation_id: string;
   device_name: string;
@@ -267,15 +254,15 @@ export interface RedeemedEnrollment {
   note?: string;
 }
 
-/** Redeem an enrollment code (single-use; authenticated by the code itself, so
- * no bearer needed). Returns the generated config + token to write to disk. */
-export async function redeemEnrollmentCode(
-  code: string,
+/** Redeem a pairing code (single-use; authenticated by the code itself, so
+ * no bearer needed). Returns the generated config + installation credential. */
+export async function redeemInstallationPairing(
+  pairingCode: string,
   deviceName?: string
-): Promise<RedeemedEnrollment> {
-  return apiJson<RedeemedEnrollment>("/enrollment/redeem", {
+): Promise<RedeemedInstallationPairing> {
+  return apiJson<RedeemedInstallationPairing>("/installations/redeem", {
     method: "POST",
-    body: JSON.stringify({ code, device_name: deviceName }),
+    body: JSON.stringify({ pairing_code: pairingCode, device_name: deviceName }),
   });
 }
 
@@ -292,16 +279,16 @@ export async function getConnectorDiscovery(): Promise<ConnectorDiscovery> {
   return apiJson<ConnectorDiscovery>(`/ops/connector-discovery`);
 }
 
-export interface EnrollmentGuidance {
+export interface PairingGuidance {
   install_url: string;
   prompt_template: string;
-  code_placeholder: string;
+  pairing_code_placeholder: string;
   note?: string;
 }
 
 /** Mode-1 prompt template (install URL baked in); client fills the code. */
-export async function getEnrollmentGuidance(): Promise<EnrollmentGuidance> {
-  return apiJson<EnrollmentGuidance>(`/enrollment/guidance`);
+export async function getPairingGuidance(): Promise<PairingGuidance> {
+  return apiJson<PairingGuidance>(`/installations/guidance`);
 }
 
 // ── Bot posture (the agent's session mode) ────────────────────────────────────

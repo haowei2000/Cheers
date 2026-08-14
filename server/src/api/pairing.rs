@@ -1,16 +1,16 @@
-//! One-time enrollment codes — the shared primitive behind all three bot
-//! onboarding modes (manual / install-script / agent-self-connect).
+//! Installation pairing — the shared primitive behind all connector setup
+//! modes (manual / install-script / agent-self-connect).
 //!
-//! Flow: an owner MINTS a short-lived, single-use code bound to a bot (not to a
-//! user). A host REDEEMS it once, anonymously, over TLS, to create one terminal
-//! installation and receive that installation's credential + connector config.
+//! Flow: an owner creates a pending installation and receives a short-lived,
+//! single-use pairing code. A host redeems it once, anonymously, over TLS, to
+//! activate that installation and receive its credential + connector config.
 //! The code and credential plaintexts are never stored. Redeeming a new terminal
 //! makes it the bot's sole active installation; older installations remain
 //! registered as standby and can be reactivated by the owner.
 //!
 //! Public surface is intentionally tiny: only `redeem` is unauthenticated (it
-//! authenticates by the code itself). Mint / revoke / config all sit behind JWT
-//! + `ensure_bot_owner_or_admin`. See the design note "Bot 接入三模式设计".
+//! authenticates by the code itself). Create / config sit behind JWT and
+//! `ensure_bot_owner_or_admin`.
 
 use std::collections::HashMap;
 
@@ -34,23 +34,23 @@ use crate::{
     },
     errors::AppError,
     infra::crypto::{
-        generate_enrollment_code, generate_installation_credential, hash_enrollment_code,
-        hash_installation_credential,
+        generate_installation_credential, generate_pairing_code, hash_installation_credential,
+        hash_pairing_code,
     },
 };
 
 /// How long a freshly minted code stays redeemable (15 minutes). Short by
-/// design: the code is an ownerless bearer secret, so TTL + single-use + the
-/// blast radius being "rotates exactly one bot's token" are what bound it.
-const ENROLLMENT_TTL_SECS: f64 = 900.0;
+/// design: the code is an ownerless bearer secret, so TTL + single-use + its
+/// scope being exactly one pending installation are what bound it.
+const PAIRING_TTL_SECS: f64 = 900.0;
 
 /// Per-bot live (un-redeemed, un-revoked, un-expired) code cap. One code per
 /// target host is the norm; this stops an accidental mint loop hoarding codes.
-const MAX_LIVE_CODES_PER_BOT: i64 = 5;
+const MAX_LIVE_PAIRINGS_PER_BOT: i64 = 5;
 
 /// Per-owner global live-code cap. With up to 50 bots × 5/bot the per-bot cap
 /// alone allows 250 outstanding secrets; this is the real abuse bound.
-const MAX_LIVE_CODES_PER_OWNER: i64 = 20;
+const MAX_LIVE_PAIRINGS_PER_OWNER: i64 = 20;
 
 /// Sidecar path (relative to the connector config dir) the generated config
 /// reads the installation credential from. The install script writes the
@@ -84,6 +84,19 @@ fn normalize_agent_type(raw: Option<&str>) -> String {
     }
 }
 
+fn validate_agent_type(raw: &str) -> Result<String, AppError> {
+    let value = raw.trim().to_ascii_lowercase();
+    if value.is_empty()
+        || !(matches!(value.as_str(), "claude" | "codex" | "opencode" | "generic")
+            || is_registry_agent_id(&value))
+    {
+        return Err(AppError::BadRequest(
+            "agent_type must be a supported ACP agent id".into(),
+        ));
+    }
+    Ok(value)
+}
+
 fn is_registry_agent_id(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some('a'..='z'))
@@ -91,36 +104,31 @@ fn is_registry_agent_id(s: &str) -> bool {
 }
 
 #[derive(Deserialize)]
-pub struct MintRequest {
+pub struct CreateInstallationRequest {
     /// claude | codex | opencode | generic | ACP registry id (drives adapter.command).
-    #[serde(default)]
-    pub agent_type: Option<String>,
+    pub agent_type: String,
     /// Optional label known before the terminal redeems the code. The terminal
     /// may replace the placeholder with its local hostname during redemption.
     #[serde(default)]
     pub device_name: Option<String>,
 }
 
-/// POST /api/v1/bots/{bot_id}/enrollment — mint a one-time enrollment code.
-/// Owner/admin only. Returns the plaintext code **once**.
-pub async fn mint_enrollment_code(
+/// POST /api/v1/bots/{bot_id}/installations — create one pending installation.
+/// Owner/admin only. Returns its plaintext pairing code **once**.
+pub async fn create_installation(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
-    body: Option<Json<MintRequest>>,
+    Json(body): Json<CreateInstallationRequest>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let agent_type = normalize_agent_type(
-        body.as_ref()
-            .and_then(|b| b.agent_type.as_deref())
-            .filter(|s| !s.trim().is_empty()),
-    );
+    let agent_type = validate_agent_type(&body.agent_type)?;
 
-    let code = generate_enrollment_code();
-    let code_hash = hash_enrollment_code(&code);
-    let code_id = Uuid::new_v4().to_string();
+    let pairing_code = generate_pairing_code();
+    let code_hash = hash_pairing_code(&pairing_code);
+    let pairing_id = Uuid::new_v4().to_string();
     let installation_id = Uuid::new_v4().to_string();
-    let device_name = normalize_device_name(body.as_ref().and_then(|b| b.device_name.as_deref()))?;
+    let device_name = normalize_device_name(body.device_name.as_deref())?;
 
     // Cap check + insert run in one transaction guarded by a per-owner advisory
     // lock (audit follow-up L1): previously the two COUNT(*)s and the INSERT were
@@ -141,9 +149,9 @@ pub async fn mint_enrollment_code(
     .bind(&bot_id)
     .fetch_one(&mut *tx)
     .await?;
-    if live_for_bot >= MAX_LIVE_CODES_PER_BOT {
+    if live_for_bot >= MAX_LIVE_PAIRINGS_PER_BOT {
         return Err(AppError::Forbidden(format!(
-            "too many live enrollment codes for this bot (max {MAX_LIVE_CODES_PER_BOT}); revoke some first"
+            "too many pending installations for this bot (max {MAX_LIVE_PAIRINGS_PER_BOT}); revoke one first"
         )));
     }
 
@@ -155,9 +163,9 @@ pub async fn mint_enrollment_code(
     .bind(&claims.sub)
     .fetch_one(&mut *tx)
     .await?;
-    if live_for_owner >= MAX_LIVE_CODES_PER_OWNER {
+    if live_for_owner >= MAX_LIVE_PAIRINGS_PER_OWNER {
         return Err(AppError::Forbidden(format!(
-            "too many live enrollment codes (max {MAX_LIVE_CODES_PER_OWNER} per user); revoke some first"
+            "too many pending installations (max {MAX_LIVE_PAIRINGS_PER_OWNER} per user); revoke one first"
         )));
     }
 
@@ -179,13 +187,13 @@ pub async fn mint_enrollment_code(
          VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(secs => $7))
          RETURNING expires_at",
     )
-    .bind(&code_id)
+    .bind(&pairing_id)
     .bind(&bot_id)
     .bind(&code_hash)
     .bind(&claims.sub)
     .bind(&agent_type)
     .bind(&installation_id)
-    .bind(ENROLLMENT_TTL_SECS)
+    .bind(PAIRING_TTL_SECS)
     .fetch_one(&mut *tx)
     .await?;
     let expires_at: chrono::DateTime<chrono::Utc> = row.try_get("expires_at")?;
@@ -206,77 +214,36 @@ pub async fn mint_enrollment_code(
     // Audit only the prefix + bot_id — never the code (it's a bearer secret).
     tracing::info!(
         %bot_id,
-        code_prefix = &code[..code.len().min(12)],
+        code_prefix = &pairing_code[..pairing_code.len().min(12)],
         %agent_type,
         owner = %claims.sub,
-        "enrollment code minted"
+        "pending installation created with pairing code"
     );
 
     Ok(Json(json!({
-        "code": code,
-        "code_id": code_id,
+        "pairing_code": pairing_code,
+        "pairing_id": pairing_id,
         "bot_id": bot_id,
         "installation_id": installation_id,
         "device_name": device_name,
         "agent_type": agent_type,
+        "status": "pending",
         "expires_at": expires_at.to_rfc3339(),
-        "ttl_secs": ENROLLMENT_TTL_SECS as i64,
-        "redeem_path": "/api/v1/enrollment/redeem",
+        "ttl_secs": PAIRING_TTL_SECS as i64,
+        "redeem_path": "/api/v1/installations/redeem",
         "control_url": control_url(&public_base),
         "reachability": {
             "public_base": public_base,
             "configured": configured,
         },
-        "live_codes": live_for_bot + 1,
-        "note": "Single-use, expires soon. Pass it to the target host via CHEERS_ENROLL_CODE (never a URL).",
+        "live_pairings": live_for_bot + 1,
+        "note": "Single-use, expires soon. Pass it to the target host via CHEERS_PAIRING_CODE (never a URL).",
     })))
 }
 
-/// DELETE /api/v1/bots/{bot_id}/enrollment — revoke ALL live codes for a bot.
-/// Owner/admin only. Idempotent; returns how many were revoked.
-pub async fn revoke_enrollment_codes(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(bot_id): Path<String>,
-) -> Result<Json<Value>, AppError> {
-    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let mut tx = state.db.begin().await?;
-    let pending_ids = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT installation_id FROM enrollment_codes
-         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked",
-    )
-    .bind(&bot_id)
-    .fetch_all(&mut *tx)
-    .await?
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
-    let revoked = sqlx::query(
-        "UPDATE enrollment_codes SET revoked = TRUE
-         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked",
-    )
-    .bind(&bot_id)
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
-    if !pending_ids.is_empty() {
-        sqlx::query(
-            "UPDATE terminal_installations
-             SET revoked_at = COALESCE(revoked_at, NOW()), updated_at = NOW()
-             WHERE installation_id = ANY($1) AND status = 'pending'",
-        )
-        .bind(&pending_ids)
-        .execute(&mut *tx)
-        .await?;
-    }
-    tx.commit().await?;
-    tracing::info!(%bot_id, revoked, owner = %claims.sub, "enrollment codes revoked");
-    Ok(Json(json!({ "bot_id": bot_id, "revoked": revoked })))
-}
-
 #[derive(Deserialize)]
-pub struct RedeemRequest {
-    pub code: String,
+pub struct RedeemPairingRequest {
+    pub pairing_code: String,
     #[serde(default)]
     pub device_name: Option<String>,
 }
@@ -294,18 +261,18 @@ fn normalize_device_name(raw: Option<&str>) -> Result<String, AppError> {
     Ok(name.to_string())
 }
 
-/// POST /api/v1/enrollment/redeem — PUBLIC. Authenticated by the code itself.
-/// Atomically claims the code (single-use), creates an active installation, and
+/// POST /api/v1/installations/redeem — PUBLIC. Authenticated by the code itself.
+/// Atomically claims the code (single-use), activates the pending installation, and
 /// returns its credential + a ready-to-run connector config. Every failure mode (unknown /
 /// expired / already-redeemed / revoked) returns the SAME opaque 400 so it isn't
 /// an existence/状态 oracle.
-pub async fn redeem_enrollment_code(
+pub async fn redeem_installation_pairing(
     State(state): State<AppState>,
     connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     headers: HeaderMap,
-    Json(body): Json<RedeemRequest>,
+    Json(body): Json<RedeemPairingRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let limiter = crate::infra::ratelimit::enrollment_redeem_limiter();
+    let limiter = crate::infra::ratelimit::pairing_redeem_limiter();
     let rl_key = crate::infra::ratelimit::client_key(
         &headers,
         connect_info.map(|axum::extract::ConnectInfo(a)| a),
@@ -315,13 +282,13 @@ pub async fn redeem_enrollment_code(
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
 
-    let code = body.code.trim();
-    let opaque = || AppError::BadRequest("enrollment code is invalid or expired".into());
+    let code = body.pairing_code.trim();
+    let opaque = || AppError::BadRequest("pairing code is invalid or expired".into());
     if code.is_empty() {
         limiter.record_failure(&rl_key);
         return Err(opaque());
     }
-    let code_hash = hash_enrollment_code(code);
+    let code_hash = hash_pairing_code(code);
     let device_name = normalize_device_name(body.device_name.as_deref())?;
 
     let credential = generate_installation_credential();
@@ -376,7 +343,7 @@ pub async fn redeem_enrollment_code(
         .unwrap_or_else(|_| bot_id.clone());
     let account_id = connector_config::sanitize_account_id(&username);
 
-    // Active/passive v1: enrollment is an owner-authorized takeover. Preserve
+    // Active/passive v1: pairing is an owner-authorized takeover. Preserve
     // old installations for audit/reactivation, but only the new one may connect.
     sqlx::query(
         "UPDATE terminal_installations SET status = 'standby', updated_at = NOW()
@@ -406,7 +373,7 @@ pub async fn redeem_enrollment_code(
 
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.enrolled",
+        "installation.paired",
         Some(&bot_id),
         Some(&installation_id),
         created_by.as_deref(),
@@ -430,7 +397,7 @@ pub async fn redeem_enrollment_code(
     });
 
     limiter.reset(&rl_key);
-    tracing::info!(%bot_id, %installation_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "enrollment code redeemed");
+    tracing::info!(%bot_id, %installation_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "installation pairing code redeemed");
 
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -460,7 +427,7 @@ pub struct ConnectorConfigQuery {
 
 /// GET /api/v1/bots/{bot_id}/connector-config — owner/admin config preview.
 /// The rendered file references an installation credential sidecar, but no
-/// credential is issued here; a terminal must still redeem its bound enrollment.
+/// credential is issued here; a terminal must still redeem its pairing code.
 pub async fn get_connector_config(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -515,7 +482,7 @@ pub async fn get_connector_config(
                 .flatten(),
             "self_status_path": format!("/api/v1/bots/{bot_id}/self-status"),
         },
-        "note": "Redeem an enrollment code for this bot, then write the returned installation credential to <config_dir>/<credential_file> (chmod 600).",
+        "note": "Redeem an installation pairing code, then write the returned credential to <config_dir>/<credential_file> (chmod 600).",
     })))
 }
 
@@ -565,7 +532,7 @@ fn resolve_api_base(state: &AppState, headers: &HeaderMap) -> String {
 
 /// GET /api/v1/install.sh — PUBLIC. Serves the mode-2 connector installer with
 /// the API base baked in. No secrets here; the script reads the one-time code
-/// from CHEERS_ENROLL_CODE at runtime and redeems it itself.
+/// from CHEERS_PAIRING_CODE at runtime and redeems it itself.
 pub async fn install_script(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -673,10 +640,10 @@ pub async fn connector_download(
 #[cfg(test)]
 #[allow(
     clippy::items_after_test_module,
-    reason = "normalization tests stay beside enrollment redemption; release-discovery handlers follow"
+    reason = "normalization tests stay beside pairing redemption; release-discovery handlers follow"
 )]
 mod installation_tests {
-    use super::normalize_device_name;
+    use super::{normalize_device_name, validate_agent_type};
 
     #[test]
     fn device_name_is_bounded_and_rejects_controls() {
@@ -686,6 +653,15 @@ mod installation_tests {
         );
         assert!(normalize_device_name(Some("bad\nname")).is_err());
         assert!(normalize_device_name(Some(&"x".repeat(129))).is_err());
+    }
+
+    #[test]
+    fn agent_type_is_required_and_strictly_validated() {
+        assert_eq!(validate_agent_type(" Codex ").unwrap(), "codex");
+        assert_eq!(validate_agent_type("gemini-2").unwrap(), "gemini-2");
+        assert!(validate_agent_type("").is_err());
+        assert!(validate_agent_type("custom agent").is_err());
+        assert!(validate_agent_type("custom_agent").is_err());
     }
 }
 
@@ -741,18 +717,18 @@ async fn resolve_latest_connector_asset_url(
 }
 
 /// Natural-language prompt handed to a user's own agent (mode 1). `{INSTALL_URL}`
-/// is filled server-side; `{ENROLL_CODE}` is filled client-side from a minted
+/// is filled server-side; `{PAIRING_CODE}` is filled client-side from a newly issued
 /// code so the secret never rides in this GET. Mode 1 is honestly mode 2 driven
 /// by the agent — hence the keep-alive emphasis.
 const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat workspace as a long-running bot connector. Please set yourself up on THIS machine:
 
 1. Run this exact command in a terminal. It redeems a one-time code, writes a connector config + a 0600 token file, installs a keep-alive service, and starts the connector:
 
-   CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
+   CHEERS_PAIRING_CODE='{PAIRING_CODE}' bash <(curl -fsSL {INSTALL_URL})
 
    For headless Claude/Codex API-key auth (no browser login), export the vendor key in the SAME command so install.sh wires it into the systemd/launchd unit — interactive shell exports alone will NOT reach the connector:
 
-   ANTHROPIC_API_KEY='…' CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
+   ANTHROPIC_API_KEY='…' CHEERS_PAIRING_CODE='{PAIRING_CODE}' bash <(curl -fsSL {INSTALL_URL})
 
 2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary — first from this Cheers server itself (no GitHub access needed), then from the GitHub connector-v* release (https://github.com/haowei2000/Cheers/releases). Only if no downloaded binary runs on this platform, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
 
@@ -762,10 +738,10 @@ const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat work
 
 The code is single-use and expires in ~15 minutes. Do not echo it back or save it anywhere except by running the command above."#;
 
-/// GET /api/v1/enrollment/guidance — authed. Returns the mode-1 agent prompt
+/// GET /api/v1/installations/guidance — authed. Returns the mode-1 agent prompt
 /// template (with the install URL baked in) plus the install URL, so the wizard
-/// and any programmatic caller share one prompt. The client fills {ENROLL_CODE}.
-pub async fn guidance(
+/// and any programmatic caller share one prompt. The client fills {PAIRING_CODE}.
+pub async fn pairing_guidance(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
     headers: HeaderMap,
@@ -776,8 +752,8 @@ pub async fn guidance(
     Ok(Json(json!({
         "install_url": install_url,
         "prompt_template": prompt_template,
-        "code_placeholder": "{ENROLL_CODE}",
-        "note": "Fill {ENROLL_CODE} with a freshly minted one-time code before handing this to your agent.",
+        "pairing_code_placeholder": "{PAIRING_CODE}",
+        "note": "Fill {PAIRING_CODE} with a freshly created installation pairing code before handing this to your agent.",
     })))
 }
 
