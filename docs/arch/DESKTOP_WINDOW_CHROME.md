@@ -33,8 +33,9 @@ Route feature (Channel, Fleet, Activity, Settings)
 - React shares the 44 px title-bar row. Only blank nodes are Tauri drag regions.
 - The 96 px native-controls inset is present in a normal window and released in
   fullscreen.
-- An expanded chat shell paints exactly 56 px Rail + 240 px Sidebar in the row.
-  A collapsed shell keeps no fake sidebar surface.
+- An expanded chat shell paints one continuous 296 px Sidebar-tone surface in
+  the row, aligned to the 56 px Rail + 240 px Sidebar geometry below. A
+  collapsed shell keeps no fake sidebar surface.
 
 ### Windows
 
@@ -56,6 +57,9 @@ Route feature (Channel, Fleet, Activity, Settings)
 - `tauri.macos.conf.json` applies the overlay and traffic-light geometry.
 - `tauri.windows.conf.json` contains Windows bundle settings and inherits the
   native decorated window.
+- The main-window capability includes `core:window:allow-start-dragging`; the
+  HTML drag regions invoke that command and do not work with `core:default`
+  alone.
 
 Tauri merges the platform file into the base configuration. Window arrays are
 replaced rather than merged item-by-item, so the macOS file intentionally

@@ -307,10 +307,12 @@ export function DesktopTitlebarChrome({
       aria-label={isMacOverlay ? "Window toolbar" : "Application toolbar"}
     >
       {resolvedPanes?.sidebarOpen && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex" aria-hidden="true">
-          <div className="w-14 bg-rail" />
-          <div className="w-60 bg-sidebar" />
-        </div>
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 bg-sidebar"
+          style={{ width: resolvedPanes.railWidth + resolvedPanes.sidebarWidth }}
+          data-window-sidebar-surface="true"
+          aria-hidden="true"
+        />
       )}
       <div
         {...dragRegion}

@@ -37,8 +37,9 @@ describe("DesktopTitlebar", () => {
     expect(markup).toContain('data-window-chrome="macos-overlay"');
     expect(markup).toContain("bg-sidebar");
     expect(markup).toContain("bg-zinc-950");
-    expect(markup).toContain('class="w-14 bg-rail"');
-    expect(markup).toContain('class="w-60 bg-sidebar"');
+    expect(markup).toContain('data-window-sidebar-surface="true"');
+    expect(markup).toContain('style="width:296px"');
+    expect(markup).not.toContain("bg-rail");
     expect(markup).toContain('aria-label="Hide channel sidebar (Command B)"');
     expect(markup).not.toContain("border-b border-zinc-800");
     expect(markup).not.toContain('aria-label="Activity"');
@@ -63,9 +64,7 @@ describe("DesktopTitlebar", () => {
     );
 
     expect(markup).toMatch(/class="[^"]*h-full[^"]*w-24[^"]*"/);
-    expect(markup).not.toContain('class="w-24 bg-sidebar"');
-    expect(markup).not.toContain('class="w-14 bg-rail"');
-    expect(markup).not.toContain('class="w-60 bg-sidebar"');
+    expect(markup).not.toContain('data-window-sidebar-surface="true"');
     expect(markup).toContain('aria-label="Show channel sidebar (Command B)"');
   });
 
