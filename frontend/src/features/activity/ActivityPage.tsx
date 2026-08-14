@@ -13,6 +13,7 @@ import { PermissionCard } from "@/features/chat/PermissionCard";
 import { useAuthStore } from "@/stores/authStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import type { Message } from "@/types";
+import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 
 function approvalMessage(approval: FleetApproval): Message {
   return {
@@ -83,15 +84,19 @@ export default function ActivityPage() {
     }
   }
 
+  const headerActions = <IconButton label="Refresh activity" disabled={refreshing} onClick={() => void refresh()}>
+    <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+  </IconButton>;
+
   return <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-    <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-      <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" /></IconButton>
-      <Bell className="h-4 w-4 text-indigo-400" />
-      <h1 className="text-comfortable font-semibold">Activity</h1>
-      <IconButton label="Refresh activity" className="ml-auto" disabled={refreshing} onClick={() => void refresh()}>
-        <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-      </IconButton>
-    </header>
+    <RouteChromeHeader actions={headerActions}>
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" aria-hidden="true" /></IconButton>
+        <Bell className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+        <h1 className="text-comfortable font-semibold">Activity</h1>
+        <div className="ml-auto">{headerActions}</div>
+      </header>
+    </RouteChromeHeader>
     <main className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-7 px-4 py-6">
         {loading ? <SurfaceSpinner /> : approvals.length === 0 && invites.length === 0 && recent.length === 0 ?

@@ -67,6 +67,7 @@ import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
 import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowText } from "@/components/ui/overflow-text";
+import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 
 type SectionId =
   | "profile"
@@ -1106,24 +1107,22 @@ export default function SettingsPage() {
     // its scrolling (min-h-screen alone would clip anything taller than the viewport,
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
     <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
-      {/* Header */}
-      <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
-        <UiButton variant="plain"
-          type="button"
-          content="icon"
-          controlSize="regular"
-          // Always return to the chat home, not the previous history entry — the
-          // in-page section nav pushes /settings/:section entries, so navigate(-1)
-          // would step through those (or leave the app on a fresh load) instead of
-          // leaving Settings. Matches FriendsPage's back button.
-          onClick={() => navigate("/chat")}
-          title="Back"
-          className="text-zinc-100 hover:text-zinc-50 transition-colors rounded-sm"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </UiButton>
-        <h1 className="text-comfortable font-semibold">Settings</h1>
-      </div>
+      <RouteChromeHeader>
+        <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
+          <UiButton variant="plain"
+            type="button"
+            content="icon"
+            controlSize="regular"
+            onClick={() => navigate("/chat")}
+            title="Back to chat"
+            aria-label="Back to chat"
+            className="text-zinc-100 hover:text-zinc-50 transition-colors rounded-sm"
+          >
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+          </UiButton>
+          <h1 className="text-comfortable font-semibold">Settings</h1>
+        </div>
+      </RouteChromeHeader>
 
       <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
         {/* Nav rail */}

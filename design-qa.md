@@ -1,3 +1,27 @@
+# macOS Seamless Titlebar Design QA
+
+- Source visual truth: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-cf23355d-7414-4b39-8ea1-b974986d12ab.png`
+- Implementation screenshot: `/private/tmp/cheers-titlebar-final-window.png`
+- Combined focused comparison: `/private/tmp/cheers-titlebar-comparison.png`
+- Capture size: 2048 × 1280 px; dark mode, authenticated channel, native macOS window
+
+## Evidence reviewed
+
+- The native traffic lights and the React toolbar controls now share the same optical center.
+- The toolbar bottom rule is removed. Its left surface continues the rail/sidebar tone, while the channel portion continues the main-content tone.
+- The workspace rail and channel sidebar use one continuous surface only in macOS titlebar placement; Web keeps its existing rail contrast.
+- The remaining transitions are tonal section boundaries and the native outer window stroke, not added divider lines.
+
+## Comparison history
+
+- Pass 1 [P2]: traffic lights remained about 7 px above the React toolbar controls. Adjusted the native Tauri traffic-light inset from y=15 to y=22.
+- Pass 1 [P2]: using one toolbar background produced a hard horizontal transition across the main content. Replaced it with column-aligned titlebar surfaces matching the content below.
+- Pass 2: the focused source/implementation comparison shows aligned controls and no toolbar bottom rule; no P0, P1, or P2 issue remains in the tested state.
+
+final result: passed
+
+---
+
 # iOS Composer Design QA
 
 - Source visual truth: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-4c4431fc-a7be-44e7-9d9c-8f730233927d.png`
@@ -245,4 +269,3 @@ The full frame keeps all three targets legible at original resolution, so a sepa
 No actionable P0, P1, or P2 visual mismatch remains in the three requested areas.
 
 final result: passed
-

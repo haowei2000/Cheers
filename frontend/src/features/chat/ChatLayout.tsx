@@ -14,6 +14,8 @@ import { permissionContext } from "@/lib/desktopApproval";
 import { isTauri } from "@/lib/serverConfig";
 import { useUserSocket } from "./hooks/useUserSocket";
 import { useTrayLiveness } from "@/features/desktop/useTrayLiveness";
+import { DesktopChatFrame } from "@/features/desktop/DesktopTitlebar";
+import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 import type { NotificationItem } from "@/api/notifications";
 import type { PermissionContentData, PermissionOption, VoicePresenceSnapshot } from "@/types";
 import { WorkspaceRail } from "./WorkspaceRail";
@@ -344,16 +346,47 @@ export default function ChatLayout() {
   // workspaces show just their own channels, and DMs no longer duplicate across
   // every sidebar. Wrapped in a callback so mobile hardware-Back can re-run it
   // to refresh unread counts on return to the list.
+  //
+  // Keep the workspace that owns the current channel snapshot explicit. A
+  // workspace selection changes synchronously, while its channels arrive later;
+  // without this ownership marker the intervening render looks like a genuine
+  // empty channel and briefly mounts the inline sidebar toggle.
+  const [channelsWorkspaceId, setChannelsWorkspaceId] = useState<string | null>(null);
+  const channelRequestRef = useRef(0);
   const refreshChannels = useCallback(() => {
-    if (!selectedWorkspaceId) return;
+    const workspaceId = selectedWorkspaceId;
+    if (!workspaceId) {
+      channelRequestRef.current += 1;
+      setChannels([]);
+      setChannelsWorkspaceId(null);
+      return;
+    }
+    const requestId = ++channelRequestRef.current;
     const isPersonal =
-      !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
+      !!personalWorkspace && workspaceId === personalWorkspace.workspace_id;
     Promise.all([
-      listChannels(selectedWorkspaceId),
+      listChannels(workspaceId),
       isPersonal ? listDms().catch(() => []) : Promise.resolve([]),
     ])
-      .then(([chs, dms]) => setChannels([...chs, ...dms]))
+      .then(([chs, dms]) => {
+        // A slower response from the workspace we just left must never replace
+        // the newly selected workspace's channel snapshot.
+        if (
+          requestId !== channelRequestRef.current ||
+          useChatStore.getState().selectedWorkspaceId !== workspaceId
+        )
+          return;
+        setChannels([...chs, ...dms]);
+        setChannelsWorkspaceId(workspaceId);
+      })
       .catch(() => {
+        if (
+          requestId !== channelRequestRef.current ||
+          useChatStore.getState().selectedWorkspaceId !== workspaceId
+        )
+          return;
+        setChannels([]);
+        setChannelsWorkspaceId(workspaceId);
         toast.error("Couldn't load channels — check the gateway connection.");
       });
   }, [selectedWorkspaceId, personalWorkspace, setChannels]);
@@ -381,7 +414,7 @@ export default function ChatLayout() {
     // Desktop-only chrome: on mobile the shortcut would do nothing visible but
     // still persist a hidden-sidebar preference for the next desktop session.
     if (isMobile) return;
-    const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+    const isMac = usesMacKeyboardShortcuts();
     const onKey = (e: KeyboardEvent) => {
       // Platform-appropriate modifier ONLY: on macOS Ctrl+B is native
       // move-cursor-back in text fields — never intercept it there.
@@ -398,7 +431,9 @@ export default function ChatLayout() {
       toggleSidebar();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
   }, [isMobile, toggleSidebar]);
 
   // Mobile: picking a channel pushes the conversation screen.
@@ -449,8 +484,12 @@ export default function ChatLayout() {
     personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id
       ? personalWorkspace
       : workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
+  const channelSelectionPending =
+    !!selectedWorkspaceId && channelsWorkspaceId !== selectedWorkspaceId;
   const selectedChannel =
-    channels.find((c) => c.channel_id === selectedChannelId) ?? null;
+    !channelSelectionPending
+      ? channels.find((c) => c.channel_id === selectedChannelId) ?? null
+      : null;
 
   // Shown in the main area when the mount-time load failed, so a dead gateway
   // surfaces a reason + retry instead of silent empty states.
@@ -466,57 +505,62 @@ export default function ChatLayout() {
   if (isMobile) {
     const showChat = chatPushed && !!selectedChannel;
     return (
-      <div className="flex h-full bg-zinc-950 overflow-hidden">
-        {showChat ? (
-          <main className="flex-1 min-w-0 flex flex-col">
-            <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
-          </main>
-        ) : bootstrapFailed ? (
-          <main className="flex-1 min-w-0 flex flex-col">{bootstrapErrorPanel}</main>
-        ) : (
-          <>
-            <Sidebar
-              workspace={selectedWorkspace}
-              onOpenNav={() => setNavOpen(true)}
-              onChannelSelected={openChatScreen}
-            />
-            {navOpen && (
-              <div className="fixed inset-0 z-50 flex">
-                <div
-                  className="absolute inset-0 bg-black/50"
-                  onClick={() => setNavOpen(false)}
-                  aria-hidden
-                />
-                <div className="relative h-full flex shadow-2xl">
-                  <WorkspaceRail onAction={() => setNavOpen(false)} />
+      <DesktopChatFrame sidebarOpen={false}>
+        <div className="flex h-full bg-zinc-950 overflow-hidden">
+          {showChat ? (
+            <main className="flex-1 min-w-0 flex flex-col">
+              <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
+            </main>
+          ) : bootstrapFailed ? (
+            <main className="flex-1 min-w-0 flex flex-col">{bootstrapErrorPanel}</main>
+          ) : (
+            <>
+              <Sidebar
+                workspace={selectedWorkspace}
+                onOpenNav={() => setNavOpen(true)}
+                onChannelSelected={openChatScreen}
+              />
+              {navOpen && (
+                <div className="fixed inset-0 z-50 flex">
+                  <div
+                    className="absolute inset-0 bg-black/50"
+                    onClick={() => setNavOpen(false)}
+                    aria-hidden
+                  />
+                  <div className="relative h-full flex shadow-2xl">
+                    <WorkspaceRail onAction={() => setNavOpen(false)} />
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+              )}
+            </>
+          )}
+        </div>
+      </DesktopChatFrame>
     );
   }
 
   return (
-    <div className="flex h-full bg-zinc-950">
-      <WorkspaceRail />
-      {/* CSS-hidden (not unmounted) so sidebar-hosted dialogs (New DM / New
-          channel / workspace settings) and their drafts survive a toggle. */}
-      <div className={sidebarOpen ? "contents" : "hidden"}>
-        <Sidebar workspace={selectedWorkspace} />
+    <DesktopChatFrame sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar}>
+      <div className="flex h-full bg-zinc-950">
+        <WorkspaceRail />
+        {/* CSS-hidden (not unmounted) so sidebar-hosted dialogs (New DM / New
+            channel / workspace settings) and their drafts survive a toggle. */}
+        <div className={sidebarOpen ? "contents" : "hidden"}>
+          <Sidebar workspace={selectedWorkspace} />
+        </div>
+        <main className="flex-1 min-w-0 flex flex-col">
+          {bootstrapFailed ? (
+            bootstrapErrorPanel
+          ) : (
+            <ChannelView
+              channel={selectedChannel}
+              channelSelectionPending={channelSelectionPending}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={toggleSidebar}
+            />
+          )}
+        </main>
       </div>
-      <main className="flex-1 min-w-0 flex flex-col">
-        {bootstrapFailed ? (
-          bootstrapErrorPanel
-        ) : (
-          <ChannelView
-            channel={selectedChannel}
-            sidebarOpen={sidebarOpen}
-            onToggleSidebar={toggleSidebar}
-          />
-        )}
-      </main>
-    </div>
+    </DesktopChatFrame>
   );
 }

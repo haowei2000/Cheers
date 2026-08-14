@@ -28,6 +28,7 @@ import {
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
 import { useFleetLive } from "./useFleetLive";
+import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { BotOnboardingWizard } from "@/features/bots/BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "@/features/bots/BotDetailPanel";
 import { ConnectorManager } from "@/features/desktop/ConnectorManager";
@@ -215,12 +216,16 @@ export default function FleetPage() {
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }
   function openWizard(botId?: string) { setWizardBotId(botId); setWizardOpen(true); }
 
+  const headerActions = <><AddMenu onNewBot={() => openWizard()} onInstallation={() => openWizard(manageableBots[0]?.bot_id)} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
+
   return <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-    <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-      <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" /></IconButton>
-      <Radar className="h-4 w-4 text-indigo-400" /><div><h1 className="text-comfortable font-semibold leading-none">Fleet</h1><p className="mt-1 hidden text-minimal text-zinc-400 sm:block">Personal bot cockpit</p></div>
-      <div className="ml-auto flex items-center gap-1"><AddMenu onNewBot={() => openWizard()} onInstallation={() => openWizard(manageableBots[0]?.bot_id)} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} /></IconButton></div>
-    </header>
+    <RouteChromeHeader actions={headerActions}>
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" aria-hidden="true" /></IconButton>
+        <Radar className="h-4 w-4 text-indigo-400" aria-hidden="true" /><div><h1 className="text-comfortable font-semibold leading-none">Fleet</h1><p className="mt-1 hidden text-minimal text-zinc-400 sm:block">Personal bot cockpit</p></div>
+        <div className="ml-auto flex items-center gap-1">{headerActions}</div>
+      </header>
+    </RouteChromeHeader>
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <nav aria-label="Fleet sections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800 p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
         {sections.map((item) => { const Icon = item.icon; return <NavigationItem key={item.id} title={item.label} leading={<Icon className="h-4 w-4" />} selected={section === item.id} onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)} criticalStatus={item.id === "overview" && actionableCount > 0 ? <UnreadBadge tone="approval" contentSize="small">{actionableCount}</UnreadBadge> : undefined} />; })}

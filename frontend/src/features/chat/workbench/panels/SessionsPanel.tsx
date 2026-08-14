@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
 // Sessions inspector + controller — a ViewBoard grouped BY BOT: each bot is a
@@ -21,7 +22,7 @@ import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { Layers, CircleDot, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   getSessionControls,
@@ -624,14 +625,13 @@ function SessionsBody({
         </span>
         <div className="flex-1" />
         {creatableBots.length > 0 && (
-          <UiButton action="create" content="iconText" variant="plain"
+          <ActionButton action="add" context="toolbar"
             type="button"
             onClick={() => setDialogOpen(true)}
-            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15  text-indigo-200 hover:bg-indigo-600/30"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New session
-          </UiButton>
+            accessibleLabel="New session"
+            controlSize="regular"
+            className="rounded-sm bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30"
+          />
         )}
       </div>
 
