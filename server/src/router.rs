@@ -576,6 +576,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::installations::reconnect_installation),
         )
         .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id/record",
+            delete(api::installations::delete_installation_record),
+        )
+        .route(
             "/api/v1/bots/:bot_id/installations/:installation_id",
             delete(api::installations::revoke_installation),
         )

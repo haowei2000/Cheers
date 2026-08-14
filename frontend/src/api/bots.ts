@@ -178,6 +178,9 @@ export async function revokeTerminalInstallation(botId: string, installationId: 
   await apiJson(`/bots/${botId}/installations/${installationId}`, { method: "DELETE" });
 }
 
+export async function deleteInstallationRecord(botId: string, installationId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/installations/${installationId}/record`, { method: "DELETE" });
+}
 // ── Installation pairing + connector config ──────────────────────────────────
 
 export interface Reachability {
