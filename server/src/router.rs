@@ -240,6 +240,13 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/:workspace_id/fleet",
             get(api::fleet::get_fleet),
         )
+        // Primary Fleet page: workspace-agnostic bot roster + approvals.
+        .route("/api/v1/fleet", get(api::fleet::get_fleet_all))
+        .route(
+            "/api/v1/fleet/installations",
+            get(api::fleet::list_installations_all),
+        )
+        .route("/api/v1/fleet/audit", get(api::fleet::list_audit_all))
         // Rail badge: workspace-agnostic actionable-pending count
         .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
         // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配

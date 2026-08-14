@@ -1454,6 +1454,60 @@ struct BotDto: Decodable, Identifiable {
     }
 }
 
+struct FleetInstallationListDto: Decodable {
+    let installations: [FleetInstallationDto]
+}
+
+struct FleetInstallationDto: Decodable, Identifiable {
+    let installationId: String
+    let botId: String
+    let botName: String
+    let deviceName: String
+    let agentType: String
+    let status: String
+    let online: Bool
+    let connectorVersion: String?
+    let lastSeenAt: String?
+    let revokedAt: String?
+    let mcpConnectionState: String
+
+    var id: String { installationId }
+
+    enum CodingKeys: String, CodingKey {
+        case installationId = "installation_id"
+        case botId = "bot_id"
+        case botName = "bot_name"
+        case deviceName = "device_name"
+        case agentType = "agent_type"
+        case status, online
+        case connectorVersion = "connector_version"
+        case lastSeenAt = "last_seen_at"
+        case revokedAt = "revoked_at"
+        case mcpConnectionState = "mcp_connection_state"
+    }
+}
+
+struct FleetAuditListDto: Decodable {
+    let events: [FleetAuditEventDto]
+}
+
+struct FleetAuditEventDto: Decodable, Identifiable {
+    let id: String
+    let source: String
+    let eventType: String
+    let botId: String?
+    let installationId: String?
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, source
+        case eventType = "event_type"
+        case botId = "bot_id"
+        case installationId = "installation_id"
+        case createdAt = "created_at"
+    }
+}
+
 // MARK: - Bot onboarding (server/src/api/enrollment.rs)
 //
 // iOS can never host a connector — there is no way to run a long-lived ACP

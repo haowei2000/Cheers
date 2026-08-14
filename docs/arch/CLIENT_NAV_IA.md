@@ -32,7 +32,7 @@ sidebar).
 | Destination | Job (one sentence) | Badge | iOS chrome | Desktop chrome |
 | --- | --- | --- | --- | --- |
 | **Activity** | Things that need *me*: pending approvals + invites | Pending count | Full page from drawer chip | Rail control → page **or** popover with the **same sections** |
-| **Fleet** | What my bots are doing + manage/create bots | Optional “waiting on me” (may mirror Activity) | Full page from drawer chip | Rail → `/fleet` |
+| **Fleet** | Personal bot cockpit: status, create/manage, installations, audit | Optional “waiting on me” (mirrors Activity) | Full page from drawer chip | Rail → `/fleet` |
 | **Friends** | People graph: friends, requests, add, blocked | Incoming requests | Full page from drawer chip | Rail → `/friends` |
 | **Settings** | Me, account security, legal, server, platform prefs | — | Full page from drawer footer | Rail → `/settings` |
 
@@ -117,10 +117,11 @@ Entered from chat header **⋯** / channel title — not from primary nav:
 ```
 Activity                         Fleet
 ─────────────────────            ────────────────────────────
-Needs approval (top)             Summary strip (running / waiting / idle)
-Invites (Accept/Decline)         Bot roster → detail / sessions
-Recent (quiet, optional)         Add bot / onboarding (primary create)
-                                 Deep link → Activity for a pending item
+Needs approval (top)             Overview / attention summary
+Invites (Accept/Decline)         Bot-centric roster (Mine / Shared)
+Recent resolutions              Cross-bot installations
+                                 Unified owner audit
+                                 Add bot / installation
 ```
 
 Approvals may appear as compact cards in chat and as push targets; the
@@ -152,5 +153,6 @@ Remaining polish (not blocking the IA lock):
 
 - Pixel-identical chrome (drawer ≠ rail is fine).
 - Porting admin / Connector / autostart to iOS.
-- Merging Activity and Fleet into one screen.
+- Merging non-bot invitations into Fleet. Activity remains the personal inbox;
+  Fleet mirrors bot attention and deep-links to Activity.
 - Putting bot catalog back under Settings as the primary owner.

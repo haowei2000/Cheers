@@ -3,6 +3,10 @@ import SwiftUI
 /// Fleet — bot roster + create/manage. Approvals live in Activity
 /// (`docs/arch/CLIENT_NAV_IA.md` §5); this screen deep-links when any are pending.
 struct FleetView: View {
+    private enum Section: String, CaseIterable, Identifiable {
+        case overview = "Overview", bots = "Bots", installations = "Installations", audit = "Audit"
+        var id: String { rawValue }
+    }
     @Environment(AppModel.self) private var app
     @Environment(ShellModel.self) private var shell
     var activity: ActivityModel
@@ -11,6 +15,7 @@ struct FleetView: View {
     @State private var selectedBot: BotDto?
     @State private var searchText = ""
     @State private var searchPresented = false
+    @State private var section: Section = .overview
 
     private var filteredBots: [BotDto] {
         guard !searchText.isEmpty else { return model.bots }
@@ -37,23 +42,38 @@ struct FleetView: View {
                         .buttonStyle(.plain)
                     }
 
-                    sectionHeader("Bots")
-                    summaryStrip.padding(.vertical, 2)
-                    if model.isLoading && model.bots.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-                    } else if model.bots.isEmpty {
-                        emptyState
-                    } else if filteredBots.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
-                    } else {
-                        ForEach(filteredBots) { bot in
-                            Button { selectedBot = bot } label: {
-                                botRow(bot)
-                            }
-                            .buttonStyle(.plain)
-                            if bot.id != filteredBots.last?.id {
-                                Divider().overlay(Theme.border).padding(.leading, 60)
-                            }
+                    Picker("Fleet section", selection: $section) {
+                        ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.vertical, 4)
+
+                    switch section {
+                    case .overview:
+                        sectionHeader("Status")
+                        summaryStrip.padding(.vertical, 2)
+                        sectionHeader("Recent bots")
+                        botList(Array(filteredBots.prefix(5)))
+                        if !model.auditEvents.isEmpty {
+                            sectionHeader("Recent events")
+                            ForEach(model.auditEvents.prefix(5)) { auditRow($0) }
+                        }
+                    case .bots:
+                        sectionHeader("Bots")
+                        botList(filteredBots)
+                    case .installations:
+                        sectionHeader("Registered installations")
+                        if model.installations.isEmpty {
+                            ContentUnavailableView("No installations", systemImage: "laptopcomputer", description: Text("Add one to choose where a bot runs."))
+                        } else {
+                            ForEach(model.installations) { installationRow($0) }
+                        }
+                    case .audit:
+                        sectionHeader("Audit timeline")
+                        if model.auditEvents.isEmpty {
+                            ContentUnavailableView("No audit events", systemImage: "clock.arrow.circlepath")
+                        } else {
+                            ForEach(model.auditEvents) { auditRow($0) }
                         }
                     }
                 }
@@ -95,6 +115,41 @@ struct FleetView: View {
                 Task { await model.load() }
             }
         }
+    }
+
+    @ViewBuilder
+    private func botList(_ bots: [BotDto]) -> some View {
+        if model.isLoading && model.bots.isEmpty {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+        } else if model.bots.isEmpty {
+            emptyState
+        } else if bots.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            ForEach(bots) { bot in
+                Button { selectedBot = bot } label: { botRow(bot) }.buttonStyle(.plain)
+                if bot.id != bots.last?.id { Divider().overlay(Theme.border).padding(.leading, 60) }
+            }
+        }
+    }
+
+    private func installationRow(_ installation: FleetInstallationDto) -> some View {
+        CheersOperationsItem(row: CheersItemRow(
+            title: "\(installation.botName) · \(installation.deviceName)",
+            subtitle: "\(installation.agentType) · MCP \(installation.mcpConnectionState.replacingOccurrences(of: "_", with: " "))",
+            leading: AnyView(Image(systemName: "laptopcomputer").foregroundStyle(Theme.textSecondary)),
+            status: AnyView(Text(installation.revokedAt != nil ? "Revoked" : installation.online ? "Online" : installation.status.capitalized)
+                .font(.caption).foregroundStyle(installation.online ? Theme.online : Theme.textSecondary))
+        ))
+    }
+
+    private func auditRow(_ event: FleetAuditEventDto) -> some View {
+        CheersOperationsItem(row: CheersItemRow(
+            title: event.eventType.replacingOccurrences(of: ".", with: " · ").replacingOccurrences(of: "_", with: " "),
+            subtitle: event.createdAt,
+            leading: AnyView(Image(systemName: "clock.arrow.circlepath").foregroundStyle(Theme.textSecondary)),
+            status: AnyView(Text(event.source.capitalized).font(.caption).foregroundStyle(Theme.textSecondary))
+        ))
     }
 
     private var emptyState: some View {

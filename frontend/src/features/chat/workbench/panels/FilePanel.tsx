@@ -1,5 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
@@ -449,14 +450,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       )}
     >
       <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
-        <UiButton action="create" content="iconText" variant="plain"
+        <ActionButton action="add" context="toolbar"
           type="button"
           onClick={() => beginCreate("")}
+          accessibleLabel="Create file"
           controlSize="regular"
-          className="flex items-center gap-1 rounded-sm  text-zinc-100 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-        >
-          <Plus className="w-3.5 h-3.5" /> New
-        </UiButton>
+          className="rounded-sm"
+        />
         <div className="flex-1" />
         <UiButton variant="plain"
           type="button"

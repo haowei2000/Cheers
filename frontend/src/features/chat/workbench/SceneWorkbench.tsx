@@ -1,5 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
+import { Tip } from "@/components/ui/tip";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Atom,
@@ -31,6 +32,43 @@ const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: s
 
 function metaFor(id: string) {
   return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-zinc-200" };
+}
+
+function AddSceneControl({
+  available,
+  onSelect,
+}: {
+  available: TemplateManifest[];
+  onSelect: (manifest: TemplateManifest) => void;
+}) {
+  if (available.length === 0) return null;
+
+  return (
+    <div className="relative flex-shrink-0">
+      <FolderPlus
+        className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-zinc-200"
+        aria-hidden="true"
+      />
+      <Tip content="Add a scene" align="end">
+        <UiSelect
+          aria-label="Add scene"
+          title="Add scene"
+          defaultValue=""
+          onChange={(event) => {
+            const manifest = available.find((candidate) => candidate.id === event.target.value);
+            if (manifest) onSelect(manifest);
+            event.currentTarget.value = "";
+          }}
+          controlSize="regular"
+          controlWidth="icon"
+          className="cursor-pointer appearance-none bg-zinc-900 text-transparent hover:bg-zinc-800"
+        >
+          <option value="" disabled className="text-zinc-100">Add scene</option>
+          {available.map((template) => <option className="text-zinc-100" key={template.id} value={template.id}>{template.title}</option>)}
+        </UiSelect>
+      </Tip>
+    </div>
+  );
 }
 
 function basename(path: string) {
@@ -283,6 +321,7 @@ export function SceneWorkbench({
             </UiButton>
           );
         })}
+        <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
       </div>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
@@ -310,24 +349,7 @@ export function SceneWorkbench({
             })}
           </div>
           <div className="mt-auto pt-2">
-            {available.length > 0 && (
-              <label className="relative block">
-                <FolderPlus className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-                <UiSelect
-                  aria-label="Add scene"
-                  defaultValue=""
-                  onChange={(event) => {
-                    const manifest = templates.find((candidate) => candidate.id === event.target.value);
-                    if (manifest) void onAddScene(manifest);
-                    event.currentTarget.value = "";
-                  }}
-                  controlSize="regular" className="appearance-none rounded-sm bg-zinc-900 text-compact text-zinc-400 outline-none hover:text-zinc-200 focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="" disabled>Add scene</option>
-                  {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
-                </UiSelect>
-              </label>
-            )}
+            <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
           </div>
         </aside>
 

@@ -9,6 +9,7 @@ pub mod auth;
 pub mod auth_sessions;
 pub mod bot_event_policy;
 pub mod bot_events;
+pub mod bot_management_audit;
 pub mod bot_status_scheduler;
 pub mod chains;
 pub mod channel_seq;

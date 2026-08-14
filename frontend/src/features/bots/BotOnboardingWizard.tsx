@@ -280,7 +280,7 @@ export function BotOnboardingWizard({
       if (!resolved) return;
       requestConnectorForBot(resolved.bot_id, agentTypeFor(resolved));
       onClose();
-      navigate("/settings/connector");
+      navigate("/fleet/installations?local=1");
     } catch (e) {
       notify.error(messageOf(e));
     } finally {

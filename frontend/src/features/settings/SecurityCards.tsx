@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, ShieldCheck, Fingerprint, Copy, Check } from "lucide-react";
+import { ShieldCheck, Fingerprint, Copy, Check } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   deletePasskey,
@@ -15,6 +15,7 @@ import {
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -352,7 +353,7 @@ export function PasskeyCard() {
               key={c.credential_pk}
               title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
               trailing={c.last_used_at ? <span className="text-compact text-zinc-400">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
-              actions={<Button variant="danger" action="delete" aria-label={`Delete passkey ${c.name}`} onClick={() => void remove(c.credential_pk)} />}
+              actions={<ActionButton action="delete" context="toolbar" accessibleLabel={`Delete passkey ${c.name}`} onClick={() => void remove(c.credential_pk)} />}
             />
           ))}
         </ItemList>
@@ -368,9 +369,7 @@ export function PasskeyCard() {
               className={inputCls}
             />
           </Field>
-          <Button content="iconText" action="add" aria-label="Add passkey" loading={busy} onClick={() => void add()}>
-            <KeyRound className="w-3.5 h-3.5" />
-          </Button>
+          <ActionButton action="add" context="toolbar" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
         </div>
       )}
     </section>

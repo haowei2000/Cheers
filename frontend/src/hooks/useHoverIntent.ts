@@ -1,41 +1,122 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+type HoverIntentOptions = {
+  /** Require a deliberate pointer dwell before revealing transient controls. */
+  showDelayMs?: number;
+  /** Keep the surface alive briefly while the pointer crosses a portal gap. */
+  hideDelayMs?: number;
+  /** Only one controller in an exclusive group may remain visible. */
+  exclusiveGroup?: string;
+};
+
+type HoverIntentController = {
+  show: () => void;
+  showNow: () => void;
+  hide: () => void;
+  dispose: () => void;
+};
+
+const activeExclusiveIntent = new Map<string, () => void>();
+
+/**
+ * Timer and exclusivity engine kept separate from React so interaction timing
+ * can be tested without a DOM. The hook below only owns rendered visibility.
+ */
+export function createHoverIntentController(
+  setVisible: (visible: boolean) => void,
+  {
+    showDelayMs = 350,
+    hideDelayMs = 140,
+    exclusiveGroup,
+  }: HoverIntentOptions = {},
+): HoverIntentController {
+  let disposed = false;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearShow = () => {
+    if (showTimer === null) return;
+    clearTimeout(showTimer);
+    showTimer = null;
+  };
+  const clearHide = () => {
+    if (hideTimer === null) return;
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  };
+
+  const hideNow = () => {
+    clearShow();
+    clearHide();
+    if (exclusiveGroup && activeExclusiveIntent.get(exclusiveGroup) === hideNow) {
+      activeExclusiveIntent.delete(exclusiveGroup);
+    }
+    if (!disposed) setVisible(false);
+  };
+
+  const reveal = () => {
+    clearShow();
+    clearHide();
+    if (disposed) return;
+    if (exclusiveGroup) {
+      const previous = activeExclusiveIntent.get(exclusiveGroup);
+      if (previous && previous !== hideNow) previous();
+      activeExclusiveIntent.set(exclusiveGroup, hideNow);
+    }
+    setVisible(true);
+  };
+
+  const show = () => {
+    clearHide();
+    if (disposed || showTimer !== null) return;
+    if (showDelayMs <= 0) reveal();
+    else showTimer = setTimeout(reveal, showDelayMs);
+  };
+
+  const hide = () => {
+    clearShow();
+    clearHide();
+    if (disposed) return;
+    if (hideDelayMs <= 0) hideNow();
+    else hideTimer = setTimeout(hideNow, hideDelayMs);
+  };
+
+  const dispose = () => {
+    clearShow();
+    clearHide();
+    if (exclusiveGroup && activeExclusiveIntent.get(exclusiveGroup) === hideNow) {
+      activeExclusiveIntent.delete(exclusiveGroup);
+    }
+    disposed = true;
+  };
+
+  return { show, showNow: reveal, hide, dispose };
+}
 
 /**
  * Hover-visible state that survives the gap between a trigger and a floating
- * panel anchored a few pixels away from it (e.g. a message row and its hover
- * action bar, rendered via `FloatingLayer`). Hiding on a plain `onMouseLeave`
- * fires the instant the cursor exits the trigger's box — including mid-move
- * *toward* the panel — so the panel (and its `pointer-events-none` while
- * hidden) vanishes underneath the pointer before the click lands. Delaying
- * the hide by `hideDelayMs` gives the cursor time to reach the panel and call
- * `show` again, which cancels the pending hide.
+ * panel anchored a few pixels away from it. Pointer entry uses a deliberate
+ * dwell; keyboard focus can call `showNow`. A short delayed hide preserves the
+ * path across a portal gap without leaving stale surfaces behind.
  */
-export function useHoverIntent(hideDelayMs = 250): {
+export function useHoverIntent(options: HoverIntentOptions = {}): {
   visible: boolean;
   show: () => void;
+  showNow: () => void;
   hide: () => void;
 } {
   const [visible, setVisible] = useState(false);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controllerRef = useRef<HoverIntentController>();
+  if (!controllerRef.current) {
+    controllerRef.current = createHoverIntentController(setVisible, options);
+  }
 
-  const clearPendingHide = () => {
-    if (hideTimer.current !== null) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
+  useEffect(() => () => controllerRef.current?.dispose(), []);
+
+  return {
+    visible,
+    show: controllerRef.current.show,
+    showNow: controllerRef.current.showNow,
+    hide: controllerRef.current.hide,
   };
-
-  const show = useCallback(() => {
-    clearPendingHide();
-    setVisible(true);
-  }, []);
-
-  const hide = useCallback(() => {
-    clearPendingHide();
-    hideTimer.current = setTimeout(() => setVisible(false), hideDelayMs);
-  }, [hideDelayMs]);
-
-  useEffect(() => clearPendingHide, []);
-
-  return { visible, show, hide };
 }

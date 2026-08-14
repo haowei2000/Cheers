@@ -340,7 +340,7 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func scriptPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Open Cheers on the machine that will run the agent, go to Settings → Connector → I have a code, and scan or type this.")
+            Text("Open Cheers on the machine that will run the agent, go to Fleet → Installations → Use pairing code, and scan or type this.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
 
             if let code {

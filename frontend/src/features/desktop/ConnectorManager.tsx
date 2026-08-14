@@ -339,6 +339,13 @@ export function ConnectorManager() {
       .catch(() => {});
   }, []);
 
+  // Deep links from the Fleet create menu land directly in the pairing flow.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("redeem")) {
+      setModal({ kind: "redeem" });
+    }
+  }, []);
+
   // Selecting an existing bot adopts the agent it was registered for. The bot's
   // bridge_provider is the source of truth — a connector built from a different
   // agent's preset starts the wrong adapter, and nothing downstream notices.
@@ -532,41 +539,30 @@ export function ConnectorManager() {
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-zinc-200">Bots installed on this Mac</p>
-        <p className="text-compact text-zinc-400 mt-1 mb-4">
-          Each installation runs one bot and keeps its own agent, credential, and workspace.
-          Installations marked “Start with app” stay available in the background.
-        </p>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-regular font-medium text-zinc-200">Bots installed on this Mac</p>
+            <p className="mt-1 text-compact text-zinc-400">
+              Local connector processes. Registered devices and credentials are listed above.
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <UiButton action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
+              <Plus className="h-4 w-4" /> Add installation
+            </UiButton>
+            <UiButton action="setup" content="icon" variant="plain" controlSize="compact" aria-label="Use pairing code" title="Use pairing code" onClick={() => setModal({ kind: "redeem" })}>
+              <Ticket className="h-4 w-4" />
+            </UiButton>
+          </div>
+        </div>
 
-        {/* Grid: the local setup tile is always the first item. */}
+        {instances.length === 0 && (
+          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-zinc-400">
+            No connector is running on this Mac. Add an installation or use a pairing code.
+          </p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {/* design-system-exempt: drop-zone */}
-          <UiButton action="setup" variant="plain"
-            type="button"
-            onClick={() => setModal({ kind: "onboard" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-100 hover:text-zinc-50 flex flex-col items-center justify-center gap-2 transition-colors"
-          >
-            <Plus className="h-5 w-5" />
-            <span className="text-regular font-medium">Add installation</span>
-            <span className="text-compact text-zinc-400">Run a new or existing bot on this Mac</span>
-          </UiButton>
-
-          {/* The other direction: a bot created somewhere else (the phone, the
-              web UI, a teammate) hands you a one-time code, and this Mac is the
-              machine that will actually run it. Without this, a code minted off
-              this device had nowhere to go — the desktop could only mint and
-              redeem for itself in one shot. */}
-          {/* design-system-exempt: drop-zone */}
-          <UiButton action="setup" variant="plain"
-            type="button"
-            onClick={() => setModal({ kind: "redeem" })}
-            className="min-h-[132px] rounded-sm border border-dashed border-zinc-600 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-100 hover:text-zinc-50 flex flex-col items-center justify-center gap-2 transition-colors"
-          >
-            <Ticket className="h-5 w-5" />
-            <span className="text-regular font-medium">I have a code</span>
-            <span className="text-compact text-zinc-400">Install a bot paired from another device</span>
-          </UiButton>
-
           {instances.map((inst) => (
             <div
               key={inst.name}
