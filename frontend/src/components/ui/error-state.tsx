@@ -41,9 +41,9 @@ export function ErrorState({
           tone === "error" ? "text-red-400" : "text-amber-400"
         )}
       />
-      <p className="text-regular font-semibold text-zinc-100">{title}</p>
+      <p className="text-title">{title}</p>
       {description && (
-        <p className="text-compact text-zinc-400 mt-1 max-w-xs">{description}</p>
+        <p className="text-caption mt-1 max-w-xs">{description}</p>
       )}
       {(action || secondaryAction) && (
         <div className="flex items-center gap-3 mt-4">
@@ -56,7 +56,7 @@ export function ErrorState({
             <button
               type="button"
               onClick={secondaryAction.onClick}
-              className="text-compact text-zinc-100 hover:text-zinc-50 hover:underline transition-colors"
+              className="text-label-primary hover:text-zinc-50 hover:underline transition-colors"
             >
               {secondaryAction.label}
             </button>

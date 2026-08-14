@@ -64,6 +64,206 @@
   font-variation-settings: normal;
 }
 
+/* Semantic text roles. These sit above the raw scale utilities so product code
+   can name the complete text contract: family + size + rhythm + weight/style +
+   foreground. Use raw font/size/color utilities only for geometry-driven
+   primitives or one-off states that are not yet registered here. */
+.text-message {
+  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC",
+    "Songti SC", Georgia, serif;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular);
+  line-height: 1.6;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #e4e4e7;
+}
+
+.text-message-error {
+  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC",
+    "Songti SC", Georgia, serif;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular);
+  line-height: 1.6;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: #f87171;
+}
+
+.text-body {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #fafafa;
+}
+
+.text-body-secondary {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #e4e4e7;
+}
+
+.text-body-error {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #f87171;
+}
+
+.text-body-warning {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #fbbf24;
+}
+
+.text-title {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular);
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: #fafafa;
+}
+
+.text-label {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: #b4b4bc;
+}
+
+.text-label-primary {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: #fafafa;
+}
+
+.text-section-label {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #b4b4bc;
+}
+
+.text-section-label-error {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #f87171;
+}
+
+.text-caption {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #b4b4bc;
+}
+
+.text-caption-error {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #f87171;
+}
+
+.text-caption-italic {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: #b4b4bc;
+}
+
+.text-metadata {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-minimal);
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: #b4b4bc;
+}
+
+.text-status {
+  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: #fafafa;
+}
+
 :root {
   --type-minimal: 0.625rem;
   --type-compact: 0.75rem;

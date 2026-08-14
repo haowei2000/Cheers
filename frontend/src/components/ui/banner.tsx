@@ -48,7 +48,7 @@ export function Banner({
     <div
       role={severity === "error" ? "alert" : "status"}
       className={cn(
-        "flex items-center gap-3 rounded-sm px-3 py-2 text-regular",
+        "flex items-center gap-3 rounded-sm px-3 py-2 font-utility text-regular",
         severityCls[severity],
         className
       )}

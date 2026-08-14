@@ -91,31 +91,31 @@ export function ItemGallery() {
 
       <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
         <div className="px-3 py-3">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-400">
+          <p className="text-section-label">
             Display · Opsz 60
           </p>
           <h2 id="type-register" className="mt-1 font-display text-comfortable font-semibold tracking-[-0.025em]">
             The Formal Edition · 正式版
           </h2>
-          <p className="mt-1 font-utility text-compact text-zinc-400">Introductions · Hero titles · Major headings</p>
+          <p className="mt-1 text-caption">Introductions · Hero titles · Major headings</p>
         </div>
         <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-400">
+          <p className="text-section-label">
             Reading · Opsz 14
           </p>
-          <p className="mt-1 font-reading text-regular leading-6 text-zinc-200">
+          <p className="mt-1 text-message">
             A sturdy classical rhythm keeps long messages calm. 稳健的宋体让长消息正式而易读。
           </p>
-          <p className="mt-1 font-utility text-compact text-zinc-400">Messages · Previews · Long-form copy</p>
+          <p className="mt-1 text-caption">Messages · Previews · Long-form copy</p>
         </div>
         <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-400">
+          <p className="text-section-label">
             Utility · Source Sans 3
           </p>
           <p className="mt-2 font-utility text-compact font-semibold uppercase tracking-[0.08em] text-amber-300">
             Channel name · 频道名称 · Warning · Trace active
           </p>
-          <p className="mt-2 font-utility text-compact text-zinc-400">Controls · Status · Trace labels</p>
+          <p className="mt-2 text-caption">Controls · Status · Trace labels</p>
         </div>
       </section>
 
