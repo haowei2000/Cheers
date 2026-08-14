@@ -670,19 +670,28 @@ pub async fn session_controls(
 }
 
 async fn bot_agent_type(state: &AppState, bot_id: Uuid) -> String {
-    sqlx::query("SELECT bridge_provider FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| {
-            r.try_get::<Option<String>, _>("bridge_provider")
-                .ok()
-                .flatten()
-        })
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "generic".to_string())
+    sqlx::query(
+        "SELECT COALESCE(
+                    (SELECT NULLIF(TRIM(i.agent_type), '')
+                     FROM terminal_installations i
+                     WHERE i.bot_id = b.bot_id AND i.status = 'active'
+                       AND i.revoked_at IS NULL
+                     ORDER BY i.updated_at DESC
+                     LIMIT 1),
+                    NULLIF(TRIM(b.bridge_provider), ''),
+                    'generic'
+                ) AS agent_type
+         FROM bot_accounts b
+         WHERE b.bot_id = $1",
+    )
+    .bind(bot_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<String, _>("agent_type").ok())
+    .filter(|s| !s.trim().is_empty())
+    .unwrap_or_else(|| "generic".to_string())
 }
 
 #[cfg(test)]
