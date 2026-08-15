@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -33,12 +34,14 @@ import {
   ServerCard,
 } from "./GeneralSettings";
 import {
-  ChangePasswordCard,
-  DeleteAccountCard,
+  ChangePasswordAction,
+  DeleteAccountAction,
   DevicesSessionsCard,
   ExternalAIPermissionsCard,
   ExternalIdentitiesCard,
+  ForgotPasswordAction,
   LegalLinks,
+  SignOutAction,
 } from "./AccountSettings";
 
 type SectionId =
@@ -112,7 +115,7 @@ export default function SettingsPage() {
     // h-full + internal scroll: the app root is overflow-hidden, so the page must own
     // its scrolling (min-h-screen alone would clip anything taller than the viewport,
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
-    <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-content-primary">
+    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
         <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
           <UiButton variant="plain"
@@ -136,15 +139,15 @@ export default function SettingsPage() {
           {items.map(({ id, label, icon: Icon }) => {
             const active = section === id;
             return (
-              <UiButton content="iconText" variant="plain" role="tab" aria-selected={active}
+              <UiButton content="iconText" variant="plain" selected={active} role="tab" aria-selected={active}
                 key={id}
                 type="button"
                 onClick={() => navigate(`/settings/${id}`)}
                 aria-current={active ? "page" : undefined}
-                controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0  font-medium whitespace-nowrap transition-colors ${
- active
- ? "bg-zinc-800 text-content-primary": "text-content-primary hover:bg-zinc-800 hover:text-content-strong"
- }`}
+                controlSize="regular" className={cn(
+                  "flex items-center gap-3 rounded-sm shrink-0 font-medium whitespace-nowrap transition-colors",
+                  !active && "text-content-primary hover:bg-control hover:text-content-strong",
+                )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 {label}
@@ -202,9 +205,33 @@ export default function SettingsPage() {
               </h2>
 
               <div className="bg-zinc-900 px-6 max-md:px-4">
-                <ChangePasswordCard onRotated={(token) => setToken(token)} />
-
-                <TwoFactorCard />
+                <section className="py-5 first:pt-0">
+                  <p className="text-title text-content-secondary">Account actions</p>
+                  <p className="mt-1 text-caption">
+                    Open an action when you need it. Security details stay hidden until then.
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-2 max-md:grid-cols-1">
+                    <ChangePasswordAction onRotated={(token) => setToken(token)} />
+                    <ForgotPasswordAction />
+                    <TwoFactorCard />
+                    <DeleteAccountAction
+                      onDeleted={() => {
+                        logout();
+                        navigate("/login", { replace: true });
+                      }}
+                    />
+                    <SignOutAction
+                      onSignOut={async () => {
+                        // Push first (the DELETE needs the auth token), then
+                        // best-effort server revocation, then clear local state.
+                        await disablePush().catch(() => {});
+                        await logoutApi().catch(() => {});
+                        logout();
+                        navigate("/login", { replace: true });
+                      }}
+                    />
+                  </div>
+                </section>
 
                 <PasskeyCard />
 
@@ -220,39 +247,7 @@ export default function SettingsPage() {
 
                 <PushNotificationsCard />
 
-                <section className="border-t border-zinc-600/70 py-5">
-                  <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-regular font-medium text-content-secondary">Sign out</p>
-                    <p className="text-compact text-content-muted mt-1">
-                      Revokes this session on the server and returns you to the login page.
-                    </p>
-                  </div>
-                  <ActionButton
-                    action="signOut"
-                    context="settings"
-                    accessibleLabel="Sign out of Cheers"
-                    onClick={async () => {
-                      // Push first (the DELETE needs the auth token), then
-                      // best-effort server revocation, then clear local state
-                      // regardless — a signed-out browser must not keep
-                      // receiving lock-screen notifications.
-                      await disablePush().catch(() => {});
-                      await logoutApi().catch(() => {});
-                      logout();
-                      navigate("/login", { replace: true });
-                    }}
-                  />
-                  </div>
-                </section>
-
-                <DeleteAccountCard
-                  onDeleted={() => {
-                    logout();
-                    navigate("/login", { replace: true });
-                  }}
-                />
-                </div>
+              </div>
 
               <LegalLinks />
             </section>

@@ -23,7 +23,7 @@ export function MetricCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-sm bg-zinc-900/60 px-4 py-3", className)}>
+    <div className={cn("rounded-sm bg-panel px-4 py-3", className)}>
       <p className="text-section-label">{label}</p>
       <p className={cn("mt-1 text-comfortable font-semibold tabular-nums", valueToneClasses[tone])}>
         {value}

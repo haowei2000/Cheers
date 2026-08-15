@@ -38,7 +38,7 @@ export function SettingsCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-sm bg-zinc-900 p-6 max-md:p-4", className)}>
+    <div className={cn("rounded-sm bg-panel p-6 max-md:p-4", className)}>
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-title text-content-secondary">{title}</p>

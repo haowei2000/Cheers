@@ -84,7 +84,7 @@ describe("ActionButton", () => {
     expect(enable).toContain("bg-emphasis");
     expect(enable).toContain("text-content-on-accent");
     expect(enable).not.toContain("text-content-on-light");
-    expect(retry).toContain("bg-zinc-800");
+    expect(retry).toContain("bg-control");
   });
 
   it("uses secondary and danger tones for security row actions", () => {
@@ -94,9 +94,24 @@ describe("ActionButton", () => {
     const unlink = renderToStaticMarkup(
       <ActionButton action="unlink" context="security" accessibleLabel="Unlink Google" />,
     );
-    expect(link).toContain("bg-zinc-800");
+    expect(link).toContain("bg-control");
     expect(link).toContain(">Link</span>");
     expect(unlink).toContain("text-danger-400");
     expect(unlink).toContain(">Unlink</span>");
+  });
+
+  it("uses registered full labels for account action launchers", () => {
+    const changePassword = renderToStaticMarkup(
+      <ActionButton action="changePassword" context="security" controlWidth="fill" />,
+    );
+    const twoFactor = renderToStaticMarkup(
+      <ActionButton action="manageTwoFactor" context="security" controlWidth="fill" />,
+    );
+
+    expect(changePassword).toContain(">Change password</span>");
+    expect(changePassword).toContain("w-full");
+    expect(changePassword).toContain('data-button-slot="icon"');
+    expect(changePassword).toContain('data-button-slot="label"');
+    expect(twoFactor).toContain(">2FA settings</span>");
   });
 });

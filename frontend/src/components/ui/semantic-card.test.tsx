@@ -15,7 +15,7 @@ describe("semantic cards", () => {
 
     expect(markup).toContain("Appearance");
     expect(markup).toContain("Color theme");
-    expect(markup).toContain("rounded-sm bg-zinc-900");
+    expect(markup).toContain("rounded-sm bg-panel");
   });
 
   it("maps metric meaning to a registered semantic tone", () => {

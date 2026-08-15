@@ -308,6 +308,11 @@
   --tone-zinc-800: 48 48 53;
   --tone-zinc-900: 28 28 32;
   --tone-zinc-950: 9 9 11;
+  --surface-canvas: 9 9 11;
+  --surface-panel: 28 28 32;
+  --surface-control: 48 48 53;
+  --surface-control-hover: 74 74 82;
+  --surface-control-active: 133 133 143;
   --surface-rail: 15 15 17;
   --surface-sidebar: 24 24 27;
   --surface-emphasis: 74 74 82;
@@ -347,11 +352,19 @@
   --tone-zinc-500: 113 113 122;
   --tone-zinc-600: 161 161 170;
   --tone-zinc-700: 212 212 216;
-  --tone-zinc-800: 244 244 245;
+  --tone-zinc-800: 228 228 231;
   --tone-zinc-900: 255 255 255;
-  --tone-zinc-950: 248 248 250;
-  --surface-rail: 235 235 239;
-  --surface-sidebar: 244 244 245;
+  --tone-zinc-950: 244 244 245;
+  /* Light mode needs elevation by tone, not white-on-off-white ambiguity:
+     canvas < panel < control < hover/active. Legacy zinc utilities map to
+     the same values while feature code migrates to these semantic surfaces. */
+  --surface-canvas: 244 244 245;
+  --surface-panel: 255 255 255;
+  --surface-control: 228 228 231;
+  --surface-control-hover: 212 212 216;
+  --surface-control-active: 161 161 170;
+  --surface-rail: 228 228 231;
+  --surface-sidebar: 255 255 255;
   --surface-emphasis: 39 39 42;
   --surface-emphasis-hover: 63 63 70;
   --surface-emphasis-active: 24 24 27;

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, KeyRound, Laptop, Link2, Shield, Trash2 } from "lucide-react";
+import { ExternalLink, Laptop, Link2, Shield } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   changePassword,
   deleteAccount,
+  forgotPassword,
   getExternalIdentity,
   unlinkExternalIdentity,
   startExternalIdentityOAuthLink,
@@ -19,18 +20,29 @@ import {
   type StoredAIConsent,
 } from "@/api/accountSecurity";
 import { ActionButton } from "@/components/ui/action-button";
+import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input as UiInput } from "@/components/ui/input";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { isTauri } from "@/lib/serverConfig";
 import { queryKeys } from "@/lib/queryClient";
 
-export function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void }) {
+export function ChangePasswordAction({ onRotated }: { onRotated: (token: string) => void }) {
+  const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function closeDialog() {
+    if (busy) return;
+    setCurrent("");
+    setNext("");
+    setConfirm("");
+    setTwoFactorCode("");
+    setOpen(false);
+  }
 
   async function submit() {
     if (next.length < 12) {
@@ -54,6 +66,7 @@ export function ChangePasswordCard({ onRotated }: { onRotated: (token: string) =
       setConfirm("");
       setTwoFactorCode("");
       toast.success("Password changed — other sessions were signed out");
+      setOpen(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to change password");
     } finally {
@@ -61,76 +74,114 @@ export function ChangePasswordCard({ onRotated }: { onRotated: (token: string) =
     }
   }
 
-  // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-  const inputCls =
-    "bg-zinc-800 text-content-primary";
   return (
-    <section className="py-5 first:pt-0">
-      <div className="mb-4 flex min-w-0 items-start gap-3">
-        <KeyRound className="h-4 w-4 flex-shrink-0 text-accent-400" />
-        <div className="min-w-0 flex-1">
-          <h3 className="font-utility text-regular font-medium text-content-secondary">Change password</h3>
-          <p className="mt-1 font-utility text-compact text-content-muted">
-            Updating your password signs out every other device.
-          </p>
-        </div>
-      </div>
-      <div className="grid max-w-2xl grid-cols-2 gap-3 max-md:grid-cols-1">
-        <Field label="Current password" htmlFor="cp-current">
-          <UiInput
-            id="cp-current"
-            type="password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-            autoComplete="current-password"
-            className={inputCls}
-          />
-        </Field>
-        <Field label="New password" htmlFor="cp-new">
-          <UiInput
-            id="cp-new"
-            type="password"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            placeholder="At least 12 characters"
-            autoComplete="new-password"
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Confirm password" htmlFor="cp-confirm">
-          <UiInput
-            id="cp-confirm"
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void submit()}
-            autoComplete="new-password"
-            className={inputCls}
-          />
-        </Field>
-        <Field label="2FA code" htmlFor="cp-two-factor">
-          <UiInput
-            id="cp-two-factor"
-            type="text"
-            value={twoFactorCode}
-            onChange={(e) => setTwoFactorCode(e.target.value)}
-            placeholder="Authenticator or backup code"
-            autoComplete="one-time-code"
-            className={inputCls}
-          />
-        </Field>
-        <div className="col-span-2 flex justify-end max-md:col-span-1">
-          <ActionButton
-            action="update"
-            context="security"
-            accessibleLabel="Update account password"
-            loading={busy}
-            onClick={() => void submit()}
-            disabled={!current || !next}
-          />
-        </div>
-      </div>
-    </section>
+    <>
+      <ActionButton action="changePassword" context="security" controlWidth="fill" onClick={() => setOpen(true)} />
+      {open && (
+        <Dialog title="Change password" onClose={closeDialog} maxWidth="max-w-lg">
+          <p className="text-caption">Updating your password signs out every other device.</p>
+          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+            <Field label="Current password" htmlFor="cp-current">
+              <UiInput id="cp-current" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+            </Field>
+            <Field label="New password" htmlFor="cp-new">
+              <UiInput id="cp-new" type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="At least 12 characters" autoComplete="new-password" />
+            </Field>
+            <Field label="Confirm password" htmlFor="cp-confirm">
+              <UiInput id="cp-confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} autoComplete="new-password" />
+            </Field>
+            <Field label="2FA code" htmlFor="cp-two-factor">
+              <UiInput id="cp-two-factor" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="Authenticator or backup code" autoComplete="one-time-code" />
+            </Field>
+          </div>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
+            <ActionButton
+              action="update"
+              context="security"
+              accessibleLabel="Update account password"
+              loading={busy}
+              onClick={() => void submit()}
+              disabled={!current || !next}
+            />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
+export function ForgotPasswordAction() {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function closeDialog() {
+    if (busy) return;
+    setEmail("");
+    setOpen(false);
+  }
+
+  async function submit() {
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      await forgotPassword(email.trim());
+      toast.success("If the account exists, a reset code has been sent");
+      setEmail("");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't request a reset code");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <ActionButton action="forgotPassword" context="security" controlWidth="fill" onClick={() => setOpen(true)} />
+      {open && (
+        <Dialog title="Forgot password" onClose={closeDialog}>
+          <p className="text-caption">Request a reset code for the email address attached to your account.</p>
+          <Field label="Email" htmlFor="forgot-password-email">
+            <UiInput id="forgot-password-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void submit()} autoComplete="email" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
+            <ActionButton action="request" context="security" loading={busy} disabled={!email.trim()} onClick={() => void submit()} />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
+export function SignOutAction({ onSignOut }: { onSignOut: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function confirm() {
+    setBusy(true);
+    try {
+      await onSignOut();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <ActionButton action="signOut" context="settings" controlWidth="fill" onClick={() => setOpen(true)} />
+      {open && (
+        <Dialog title="Sign out" onClose={() => !busy && setOpen(false)}>
+          <p className="text-caption">This session will be revoked and you will return to the sign-in page.</p>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={() => setOpen(false)} disabled={busy} />
+            <ActionButton action="signOut" context="settings" loading={busy} onClick={() => void confirm()} />
+          </div>
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -261,16 +312,21 @@ export function ExternalIdentitiesCard() {
   );
 }
 
-export function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
+export function DeleteAccountAction({ onDeleted }: { onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  function closeDialog() {
+    if (busy) return;
+    setConfirmation("");
+    setPassword("");
+    setOpen(false);
+  }
+
   async function remove() {
     if (confirmation !== "DELETE") return;
-    if (!window.confirm("Permanently delete your Cheers account and its personal data?")) {
-      return;
-    }
     setBusy(true);
     try {
       await deleteAccount({
@@ -285,41 +341,26 @@ export function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
   }
 
   return (
-    <section className="border-t border-red-950/70 py-5">
-      <p className="text-regular font-medium text-danger-300 flex items-center gap-2">
-        <Trash2 className="w-4 h-4" /> Delete account
-      </p>
-      <p className="text-compact text-content-muted mt-1 mb-4">
-        This permanently removes your account. Passwordless accounts must have signed in within the last five minutes.
-      </p>
-      <div className="grid max-w-2xl grid-cols-2 gap-3 max-md:grid-cols-1">
-        <Field label="Current password" hint="Optional for passwordless accounts">
-          <UiInput
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-          />
-        </Field>
-        <Field label="Confirmation" hint="Type DELETE to confirm">
-          <UiInput
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            placeholder="DELETE"
-          />
-        </Field>
-        <div className="col-span-2 flex justify-end max-md:col-span-1">
-          <ActionButton
-            action="delete"
-            context="confirmation"
-            accessibleLabel="Permanently delete account"
-            disabled={busy || confirmation !== "DELETE"}
-            loading={busy}
-            onClick={() => void remove()}
-          />
-        </div>
-      </div>
-    </section>
+    <>
+      <ActionButton action="delete" context="confirmation" controlWidth="fill" accessibleLabel="Delete account" onClick={() => setOpen(true)} />
+      {open && (
+        <Dialog title="Delete account" onClose={closeDialog}>
+          <p className="text-caption text-danger-300">
+            This permanently removes your account and personal data. This action cannot be undone.
+          </p>
+          <Field label="Current password" hint="Optional for passwordless accounts" htmlFor="delete-account-password">
+            <UiInput id="delete-account-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+          </Field>
+          <Field label="Confirmation" hint="Type DELETE to confirm" htmlFor="delete-account-confirmation">
+            <UiInput id="delete-account-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="DELETE" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
+            <ActionButton action="delete" context="confirmation" accessibleLabel="Permanently delete account" disabled={busy || confirmation !== "DELETE"} loading={busy} onClick={() => void remove()} />
+          </div>
+        </Dialog>
+      )}
+    </>
   );
 }
 

@@ -11,6 +11,7 @@ import {
   KeyRound,
   Link2,
   LogOut,
+  MailQuestion,
   Maximize2,
   Minimize2,
   Pencil,
@@ -47,6 +48,7 @@ export type CommonActionKey = Extract<
   | "add"
   | "cancel"
   | "check"
+  | "changePassword"
   | "close"
   | "collapse"
   | "copy"
@@ -58,10 +60,13 @@ export type CommonActionKey = Extract<
   | "edit"
   | "enable"
   | "expand"
+  | "forgotPassword"
   | "link"
+  | "manageTwoFactor"
   | "more"
   | "open"
   | "refresh"
+  | "request"
   | "resolve"
   | "restart"
   | "retry"
@@ -80,6 +85,8 @@ export type CommonActionKey = Extract<
 type Presentation = {
   content: ButtonContent;
   icon?: LucideIcon;
+  /** Registered longer copy for fill-width launchers; compact ActionKey labels stay slot-safe. */
+  label?: string;
   variant: NonNullable<ButtonProps["variant"]>;
 };
 
@@ -125,11 +132,15 @@ const commonActionPresentations = {
   },
   security: {
     add: { content: "iconText", icon: Fingerprint, variant: "emphasis" },
+    changePassword: { content: "iconText", icon: KeyRound, label: "Change password", variant: "secondary" },
     copy: { content: "iconText", icon: Copy, variant: "secondary" },
     disable: { content: "iconText", icon: ShieldOff, variant: "danger" },
     done: { content: "iconText", icon: Check, variant: "emphasis" },
     enable: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
+    forgotPassword: { content: "iconText", icon: MailQuestion, label: "Forgot password", variant: "secondary" },
     link: { content: "iconText", icon: Link2, variant: "secondary" },
+    manageTwoFactor: { content: "iconText", icon: ShieldCheck, label: "2FA settings", variant: "secondary" },
+    request: { content: "iconText", icon: MailQuestion, variant: "emphasis" },
     revoke: { content: "iconText", icon: X, variant: "danger" },
     setup: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
     unlink: { content: "iconText", icon: Unlink, variant: "danger" },
@@ -161,7 +172,7 @@ type CommonActionIntent = {
 
 export type ActionButtonProps = Omit<
   ButtonProps,
-  "action" | "children" | "content" | "variant"
+  "action" | "children" | "content" | "label" | "variant"
 > & CommonActionIntent & {
   /** Adds object-specific context to icon-only accessible names, e.g. "Save profile". */
   accessibleLabel?: string;
@@ -177,13 +188,15 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
     const resolvedSize = useControlSize(controlSize);
     const Icon = presentation.icon;
     const label = accessibleLabel ?? actionLabel(action);
+    const visibleLabel = presentation.label;
     const icon = Icon ? <Icon className={controlIconClasses[resolvedSize]} aria-hidden="true" /> : null;
 
     return (
       <Button
         ref={ref}
         type={type}
-        action={action}
+        action={visibleLabel ? undefined : action}
+        label={visibleLabel}
         content={presentation.content}
         variant={presentation.variant}
         controlSize={resolvedSize}

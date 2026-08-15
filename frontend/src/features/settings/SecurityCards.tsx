@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck, Fingerprint, ExternalLink } from "lucide-react";
+import { Fingerprint, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   deletePasskey,
@@ -15,6 +15,7 @@ import {
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { ActionButton } from "@/components/ui/action-button";
+import { Dialog } from "@/components/ui/dialog";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -24,6 +25,7 @@ const inputCls =
 
 /** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
 export function TwoFactorCard() {
+  const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [phase, setPhase] = useState<"idle" | "setup" | "backup" | "disable">("idle");
   const [secret, setSecret] = useState("");
@@ -41,6 +43,16 @@ export function TwoFactorCard() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  function closeDialog() {
+    if (busy) return;
+    setPhase("idle");
+    setSecret("");
+    setProvisioningUri("");
+    setCode("");
+    setBackupCodes([]);
+    setOpen(false);
+  }
 
   async function beginSetup() {
     setBusy(true);
@@ -82,6 +94,7 @@ export function TwoFactorCard() {
       setEnabled(false);
       setPhase("idle");
       setCode("");
+      setOpen(false);
       toast.success("Two-factor authentication is off");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't disable 2FA");
@@ -109,50 +122,33 @@ export function TwoFactorCard() {
   }
 
   return (
-    <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-content-secondary flex items-center gap-2 mb-1">
-        <ShieldCheck className="w-4 h-4 text-accent-400" /> Authenticator app
-      </p>
-      <p className="text-compact text-content-muted mb-4">
-        Use an authenticator app (or backup codes) when signing in.
-      </p>
-
-      {phase === "idle" && (
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-regular text-content-secondary">
-              Status:{" "}
-              <span className={enabled ? "text-success-400" : "text-content-muted"}>
-                {enabled == null ? "…" : enabled ? "On" : "Off"}
-              </span>
-            </p>
-          </div>
-          {enabled ? (
-            <ActionButton
-              action="disable"
-              context="security"
-              accessibleLabel="Turn off authenticator app"
-              disabled={busy}
-              onClick={() => {
-                setCode("");
-                setPhase("disable");
-              }}
-            />
-          ) : (
-            <ActionButton
-              action="setup"
-              context="security"
-              accessibleLabel="Set up authenticator app"
-              loading={busy}
-              disabled={enabled == null}
-              onClick={() => void beginSetup()}
-            />
+    <>
+      <ActionButton
+        action="manageTwoFactor"
+        context="security"
+        controlWidth="fill"
+        accessibleLabel={enabled ? "Manage two-factor authentication" : "Set up two-factor authentication"}
+        loading={busy && !open}
+        disabled={enabled == null}
+        onClick={() => {
+          setOpen(true);
+          if (!enabled) void beginSetup();
+        }}
+      />
+      {open && (
+        <Dialog title={enabled ? "Manage 2FA" : "Set up 2FA"} onClose={closeDialog}>
+          {phase === "idle" && enabled && (
+            <div className="space-y-3">
+              <p className="text-caption">Two-factor authentication is on. You can turn it off using an authenticator or backup code.</p>
+              <ActionButton action="disable" context="security" accessibleLabel="Turn off authenticator app" onClick={() => { setCode(""); setPhase("disable"); }} />
+            </div>
           )}
-        </div>
-      )}
+          {phase === "idle" && !enabled && (
+            <p className="text-caption">{busy ? "Preparing authenticator setup…" : "Authenticator setup could not be started. Close this dialog and try again."}</p>
+          )}
 
-      {phase === "setup" && (
-        <div className="space-y-3 max-w-md">
+          {phase === "setup" && (
+            <div className="space-y-3">
           <p className="text-compact text-content-muted">
             Add this account in your authenticator app using the secret below
             (or open the otpauth link).
@@ -184,19 +180,18 @@ export function TwoFactorCard() {
             <ActionButton action="enable" context="security" accessibleLabel="Enable authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
             <ActionButton
               action="cancel"
-              context="form"
+              context="dialog"
               onClick={() => {
-                setPhase("idle");
-                setCode("");
+                closeDialog();
               }}
               accessibleLabel="Cancel authenticator setup"
             />
           </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {phase === "backup" && (
-        <div className="space-y-3 max-w-md">
+          {phase === "backup" && (
+            <div className="space-y-3">
           <p className="text-compact text-warning-200/90">
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
@@ -210,16 +205,15 @@ export function TwoFactorCard() {
             <ActionButton action="copy" context="security" accessibleLabel="Copy backup codes" onClick={() => void copyBackup()} />
             <ActionButton action="done" context="security" accessibleLabel="Finish authenticator setup"
               onClick={() => {
-                setPhase("idle");
-                setBackupCodes([]);
+                closeDialog();
               }}
             />
           </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {phase === "disable" && (
-        <div className="space-y-3 max-w-sm">
+          {phase === "disable" && (
+            <div className="space-y-3">
           <p className="text-compact text-content-muted">
             Enter an authenticator or backup code to turn off 2FA.
           </p>
@@ -241,28 +235,36 @@ export function TwoFactorCard() {
             />
             <ActionButton
               action="cancel"
-              context="form"
+              context="dialog"
               onClick={() => {
-                setPhase("idle");
-                setCode("");
+                closeDialog();
               }}
               accessibleLabel="Cancel turning off authenticator app"
             />
           </div>
-        </div>
+            </div>
+          )}
+        </Dialog>
       )}
-    </section>
+    </>
   );
 }
 
 /** Passkey list / add / delete — mirrors iOS PasskeySettingsView. */
 export function PasskeyCard() {
+  const [addOpen, setAddOpen] = useState(false);
   const [available, setAvailable] = useState(false);
   const [rpId, setRpId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<PasskeyCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+
+  function closeAddDialog() {
+    if (busy) return;
+    setName("");
+    setAddOpen(false);
+  }
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -295,6 +297,7 @@ export function PasskeyCard() {
       const credential = await createPasskey(options);
       await passkeyRegisterFinish(transactionId, credential);
       setName("");
+      setAddOpen(false);
       toast.success("Passkey added");
       await reload();
     } catch (e) {
@@ -353,18 +356,18 @@ export function PasskeyCard() {
         </ItemList>
       )}
 
-      {available && (
-        <div className="flex flex-wrap items-end gap-2 max-w-md">
-          <Field label="Name (optional)" className="min-w-0 flex-1">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="This MacBook"
-              className={inputCls}
-            />
+      {available && <ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} />}
+      {addOpen && (
+        <Dialog title="Add passkey" onClose={closeAddDialog}>
+          <p className="text-caption">Give this passkey an optional device name before the system security prompt opens.</p>
+          <Field label="Name (optional)" htmlFor="passkey-name">
+            <Input id="passkey-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="This MacBook" />
           </Field>
-          <ActionButton action="add" context="security" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
-        </div>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={closeAddDialog} disabled={busy} />
+            <ActionButton action="add" context="security" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
+          </div>
+        </Dialog>
       )}
     </section>
   );

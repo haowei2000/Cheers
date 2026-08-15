@@ -100,6 +100,13 @@ export default {
         category: themedScale("category", colors.teal),
         rail: "rgb(var(--surface-rail) / <alpha-value>)",
         sidebar: "rgb(var(--surface-sidebar) / <alpha-value>)",
+        canvas: "rgb(var(--surface-canvas) / <alpha-value>)",
+        panel: "rgb(var(--surface-panel) / <alpha-value>)",
+        control: {
+          DEFAULT: "rgb(var(--surface-control) / <alpha-value>)",
+          hover: "rgb(var(--surface-control-hover) / <alpha-value>)",
+          active: "rgb(var(--surface-control-active) / <alpha-value>)",
+        },
         emphasis: {
           DEFAULT: "rgb(var(--surface-emphasis) / <alpha-value>)",
           hover: "rgb(var(--surface-emphasis-hover) / <alpha-value>)",

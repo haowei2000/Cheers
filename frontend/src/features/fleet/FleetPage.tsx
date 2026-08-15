@@ -128,7 +128,7 @@ export default function FleetPage() {
 
   const headerActions = <><AddMenu onNewBot={() => setCreateBotOpen(true)} onInstallation={() => openInstallation()} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
 
-  return <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-content-primary">
+  return <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
     <RouteChromeHeader actions={headerActions}>
       <header className="flex items-center gap-4 px-6 py-5 max-md:px-4">
         <UiButton
@@ -162,6 +162,7 @@ export default function FleetPage() {
               type="button"
               content="iconText"
               variant="plain"
+              selected={active}
               role="tab"
               aria-selected={active}
               aria-current={active ? "page" : undefined}
@@ -169,9 +170,7 @@ export default function FleetPage() {
               onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
               className={cn(
                 "flex shrink-0 items-center gap-3 rounded-sm font-medium whitespace-nowrap transition-colors",
-                active
-                  ? "bg-zinc-800 text-content-primary"
-                  : "text-content-primary hover:bg-zinc-800 hover:text-content-strong",
+                !active && "text-content-primary hover:bg-control hover:text-content-strong",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

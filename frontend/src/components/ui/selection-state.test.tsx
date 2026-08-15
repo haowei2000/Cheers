@@ -13,7 +13,20 @@ describe("shared control selection state", () => {
 
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('data-selected="true"');
-    expect(markup).toContain("bg-zinc-800");
+    expect(markup).toContain("bg-control");
+  });
+
+  it("uses selected tab semantics without mixing in toggle semantics", () => {
+    const markup = renderToStaticMarkup(
+      <Button role="tab" selected aria-selected="true">
+        Overview
+      </Button>,
+    );
+
+    expect(markup).toContain('role="tab"');
+    expect(markup).toContain('aria-selected="true"');
+    expect(markup).not.toContain("aria-pressed");
+    expect(markup).toContain('data-selected="true"');
   });
 
   it("uses expanded semantics instead of pressed semantics for disclosures", () => {
