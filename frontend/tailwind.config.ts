@@ -23,36 +23,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          '"Source Sans 3"',
-          '"Source Han Sans SC"',
-          '"Noto Sans SC"',
-          '"PingFang SC"',
-          "sans-serif",
-        ],
-        display: [
-          '"Source Serif 4"',
-          '"Source Han Serif CN"',
-          '"Noto Serif SC"',
-          '"Songti SC"',
-          "Georgia",
-          "serif",
-        ],
-        reading: [
-          '"Source Serif 4"',
-          '"Source Han Serif CN"',
-          '"Noto Serif SC"',
-          '"Songti SC"',
-          "Georgia",
-          "serif",
-        ],
-        utility: [
-          '"Source Sans 3"',
-          '"Source Han Sans SC"',
-          '"Noto Sans SC"',
-          '"PingFang SC"',
-          "sans-serif",
-        ],
+        sans: ["var(--font-ui)"],
+        display: ["var(--font-serif)"],
+        masthead: ["var(--font-serif)"],
+        reading: ["var(--font-serif)"],
+        utility: ["var(--font-ui)"],
       },
       fontSize: {
         minimal: ["var(--type-minimal)", { lineHeight: "1.4" }],
