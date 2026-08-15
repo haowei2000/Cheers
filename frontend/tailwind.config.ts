@@ -19,6 +19,30 @@ const editorialInk = {
   950: "#09090b",
 };
 
+const editorialNeutral = {
+  ...colors.zinc,
+  400: "#b4b4bc",
+  500: "#95959e",
+  600: "#85858f",
+  700: "#4a4a52",
+  800: "#303035",
+  900: "#1c1c20",
+};
+
+function rgbChannels(hex: string): string {
+  const value = hex.replace("#", "");
+  return `${Number.parseInt(value.slice(0, 2), 16)} ${Number.parseInt(value.slice(2, 4), 16)} ${Number.parseInt(value.slice(4, 6), 16)}`;
+}
+
+function themedScale(name: string, palette: Record<string | number, string>) {
+  return Object.fromEntries(
+    Object.entries(palette).map(([shade, fallback]) => [
+      shade,
+      `rgb(var(--tone-${name}-${shade}, ${rgbChannels(fallback)}) / <alpha-value>)`,
+    ]),
+  );
+}
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
@@ -65,29 +89,35 @@ export default {
           "on-light": "rgb(var(--text-on-light) / <alpha-value>)",
           "on-accent": "rgb(var(--text-on-accent) / <alpha-value>)",
         },
-        accent: editorialInk,
-        danger: colors.red,
-        warning: colors.amber,
-        success: colors.emerald,
-        removed: colors.rose,
-        info: colors.sky,
-        stale: colors.orange,
-        research: colors.violet,
-        category: colors.teal,
-        rail: "#0f0f11",
-        sidebar: "#18181b",
-        indigo: editorialInk,
+        accent: themedScale("ink", editorialInk),
+        danger: themedScale("danger", colors.red),
+        warning: themedScale("warning", colors.amber),
+        success: themedScale("success", colors.emerald),
+        removed: themedScale("removed", colors.rose),
+        info: themedScale("info", colors.sky),
+        stale: themedScale("stale", colors.orange),
+        research: themedScale("research", colors.violet),
+        category: themedScale("category", colors.teal),
+        rail: "rgb(var(--surface-rail) / <alpha-value>)",
+        sidebar: "rgb(var(--surface-sidebar) / <alpha-value>)",
+        emphasis: {
+          DEFAULT: "rgb(var(--surface-emphasis) / <alpha-value>)",
+          hover: "rgb(var(--surface-emphasis-hover) / <alpha-value>)",
+          active: "rgb(var(--surface-emphasis-active) / <alpha-value>)",
+        },
+        indigo: themedScale("ink", editorialInk),
+        red: themedScale("danger", colors.red),
+        amber: themedScale("warning", colors.amber),
+        emerald: themedScale("success", colors.emerald),
+        rose: themedScale("removed", colors.rose),
+        sky: themedScale("info", colors.sky),
+        orange: themedScale("stale", colors.orange),
+        violet: themedScale("research", colors.violet),
+        teal: themedScale("category", colors.teal),
         // The product uses compact utility copy extensively, especially in
         // Settings. Lift the quiet text tiers well above AA and separate card,
         // field and divider surfaces from zinc-950 without losing hierarchy.
-        zinc: {
-          400: "#b4b4bc",
-          500: "#95959e",
-          600: "#85858f",
-          700: "#4a4a52",
-          800: "#303035",
-          900: "#1c1c20",
-        },
+        zinc: themedScale("zinc", editorialNeutral),
       },
       borderRadius: {
         sm: "var(--radius-control)",

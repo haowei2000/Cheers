@@ -10,7 +10,24 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#09090b" />
+    <script>
+      (() => {
+        const key = "cheers.theme";
+        let preference = "system";
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored === "light" || stored === "dark" || stored === "system") preference = stored;
+        } catch (_) {}
+        const resolved = preference === "system"
+          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : preference;
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        document.querySelector('meta[name="theme-color"]').content = resolved === "dark" ? "#09090b" : "#f8f8fa";
+      })();
+    </script>
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Cheers</title>
   </head>

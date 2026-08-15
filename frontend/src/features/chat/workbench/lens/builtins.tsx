@@ -395,7 +395,7 @@ function ChartLens({ data }: LensProps) {
       <svg viewBox={`0 0 ${CW} ${CH}`} className="w-full select-none" onMouseMove={onMove} onMouseLeave={() => setHoverX(null)}>
         {yTicks.map((t) => (
           <g key={`y${t}`}>
-            <line x1={PAD.l} y1={sy(t)} x2={CW - PAD.r} y2={sy(t)} stroke="#27272a" strokeWidth="1" />
+            <line x1={PAD.l} y1={sy(t)} x2={CW - PAD.r} y2={sy(t)} stroke="rgb(var(--tone-zinc-800))" strokeWidth="1" />
             <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))" style={{ fontVariantNumeric: "tabular-nums" }}>
               {fmtNum(t, yStep)}
             </text>
@@ -406,7 +406,7 @@ function ChartLens({ data }: LensProps) {
             {fmtNum(t, xStep)}
           </text>
         ))}
-        <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="#3f3f46" strokeWidth="1" />
+        <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="rgb(var(--tone-zinc-700))" strokeWidth="1" />
         {d?.yLabel && (
           <text x={PAD.l} y={PAD.t - 3} fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))">
             {d.yLabel}
@@ -440,12 +440,12 @@ function ChartLens({ data }: LensProps) {
         ))}
         {hx !== null && (
           <g>
-            <line x1={sx(hx)} y1={PAD.t} x2={sx(hx)} y2={CH - PAD.b} stroke="#52525b" strokeWidth="1" strokeDasharray="3 3" />
+            <line x1={sx(hx)} y1={PAD.t} x2={sx(hx)} y2={CH - PAD.b} stroke="rgb(var(--tone-zinc-600))" strokeWidth="1" strokeDasharray="3 3" />
             {hoverRows.map((r) => (
-              <circle key={`h${r.i}`} cx={sx(r.p.x)} cy={sy(r.p.y)} r="4" fill={color(r.i)} stroke="#09090b" strokeWidth="2" />
+              <circle key={`h${r.i}`} cx={sx(r.p.x)} cy={sy(r.p.y)} r="4" fill={color(r.i)} stroke="rgb(var(--tone-zinc-950))" strokeWidth="2" />
             ))}
             <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
-              <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+              <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="rgb(var(--tone-zinc-900))" stroke="rgb(var(--tone-zinc-700))" strokeWidth="1" />
               <text x="8" y="12" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {d?.xLabel ?? "x"} {fmtNum(hx)}
               </text>
@@ -713,7 +713,7 @@ function CodemapLens({ data }: LensProps) {
               const y2 = to.y;
               return (
                 <g key={`${edge.from}:${edge.to}:${index}`}>
-                  <path d={`M ${x1} ${y1} C ${x1} ${y1 + 36}, ${x2} ${y2 - 36}, ${x2} ${y2}`} fill="none" stroke="#52525b" strokeWidth="1.25" strokeDasharray={edge.kind === "data" ? "4 4" : undefined} />
+                  <path d={`M ${x1} ${y1} C ${x1} ${y1 + 36}, ${x2} ${y2 - 36}, ${x2} ${y2}`} fill="none" stroke="rgb(var(--tone-zinc-600))" strokeWidth="1.25" strokeDasharray={edge.kind === "data" ? "4 4" : undefined} />
                   {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 6} textAnchor="middle" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))">{edge.label}</text>}
                 </g>
               );

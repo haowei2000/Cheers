@@ -110,6 +110,26 @@
   --leading-reading: 1.6;
   --leading-masthead: 0.98;
 
+  /* Theme palettes are semantic even where legacy Tailwind class names still
+     say zinc/indigo. Changing these values recolors the whole application;
+     feature components never carry a second set of light-mode classes. */
+  --tone-zinc-50: 250 250 250;
+  --tone-zinc-100: 244 244 245;
+  --tone-zinc-200: 228 228 231;
+  --tone-zinc-300: 212 212 216;
+  --tone-zinc-400: 180 180 188;
+  --tone-zinc-500: 149 149 158;
+  --tone-zinc-600: 133 133 143;
+  --tone-zinc-700: 74 74 82;
+  --tone-zinc-800: 48 48 53;
+  --tone-zinc-900: 28 28 32;
+  --tone-zinc-950: 9 9 11;
+  --surface-rail: 15 15 17;
+  --surface-sidebar: 24 24 27;
+  --surface-emphasis: 74 74 82;
+  --surface-emphasis-hover: 82 82 91;
+  --surface-emphasis-active: 48 48 53;
+
   /* Semantic foreground hierarchy. Components describe meaning instead of
      selecting a zinc shade; state colors are registered beside these tokens. */
   --text-strong: 250 250 250;
@@ -131,6 +151,100 @@
   /* One Web shape system: 10px ordinary corners; nested surfaces add their
      actual inset so parent and child arcs remain concentric. */
   --radius-control: 10px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --tone-zinc-50: 9 9 11;
+  --tone-zinc-100: 24 24 27;
+  --tone-zinc-200: 39 39 42;
+  --tone-zinc-300: 63 63 70;
+  --tone-zinc-400: 82 82 91;
+  --tone-zinc-500: 113 113 122;
+  --tone-zinc-600: 161 161 170;
+  --tone-zinc-700: 212 212 216;
+  --tone-zinc-800: 244 244 245;
+  --tone-zinc-900: 255 255 255;
+  --tone-zinc-950: 248 248 250;
+  --surface-rail: 235 235 239;
+  --surface-sidebar: 244 244 245;
+  --surface-emphasis: 39 39 42;
+  --surface-emphasis-hover: 63 63 70;
+  --surface-emphasis-active: 24 24 27;
+
+  --text-strong: 9 9 11;
+  --text-primary: 24 24 27;
+  --text-secondary: 63 63 70;
+  --text-muted: 82 82 91;
+  --text-on-light: 255 255 255;
+  --text-on-accent: 255 255 255;
+
+  /* Neutral ink doubles as the focus/selection scale. Filled actions stay
+     dark while quiet selected surfaces become light in the light theme. */
+  --tone-ink-50: 9 9 11;
+  --tone-ink-100: 24 24 27;
+  --tone-ink-200: 39 39 42;
+  --tone-ink-300: 63 63 70;
+  --tone-ink-400: 82 82 91;
+  --tone-ink-500: 82 82 91;
+  --tone-ink-600: 82 82 91;
+  --tone-ink-700: 161 161 170;
+  --tone-ink-800: 212 212 216;
+  --tone-ink-900: 228 228 231;
+  --tone-ink-950: 244 244 245;
+
+  /* Status palettes use pale resting surfaces and darker foreground shades so
+     success/warning/error text keeps AA contrast on white. */
+  --tone-danger-100: 127 29 29;
+  --tone-danger-200: 153 27 27;
+  --tone-danger-300: 185 28 28;
+  --tone-danger-400: 185 28 28;
+  --tone-danger-500: 220 38 38;
+  --tone-danger-900: 254 226 226;
+  --tone-danger-950: 254 242 242;
+  --tone-warning-100: 120 53 15;
+  --tone-warning-200: 120 53 15;
+  --tone-warning-300: 146 64 14;
+  --tone-warning-400: 161 98 7;
+  --tone-warning-500: 217 119 6;
+  --tone-warning-600: 217 119 6;
+  --tone-warning-700: 180 83 9;
+  --tone-warning-800: 253 230 138;
+  --tone-warning-900: 254 243 199;
+  --tone-warning-950: 255 251 235;
+  --tone-success-100: 6 78 59;
+  --tone-success-200: 6 95 70;
+  --tone-success-300: 4 120 87;
+  --tone-success-400: 4 120 87;
+  --tone-success-500: 5 150 105;
+  --tone-success-600: 5 150 105;
+  --tone-success-700: 4 120 87;
+  --tone-success-900: 209 250 229;
+  --tone-success-950: 236 253 245;
+  --tone-removed-200: 159 18 57;
+  --tone-removed-300: 190 18 60;
+  --tone-removed-400: 190 18 60;
+  --tone-removed-500: 225 29 72;
+  --tone-removed-600: 225 29 72;
+  --tone-removed-950: 255 241 242;
+  --tone-info-300: 3 105 161;
+  --tone-info-400: 3 105 161;
+  --tone-stale-400: 194 65 12;
+  --tone-research-300: 109 40 217;
+  --tone-research-400: 109 40 217;
+  --tone-research-600: 124 58 237;
+  --tone-category-300: 15 118 110;
+  --tone-category-400: 15 118 110;
+
+  --syntax-keyword: 120 53 15;
+  --syntax-string: 6 95 70;
+  --syntax-number: 154 52 18;
+  --syntax-function: 30 64 175;
+  --syntax-type: 134 25 143;
+  --syntax-operator: 51 65 85;
+  --syntax-link: 55 65 81;
+  --syntax-code: 127 29 29;
+  --syntax-invalid: 185 28 28;
 }
 
 /* Progressive enhancement: browsers without CSS corner-shape keep the same
@@ -187,7 +301,7 @@ body,
 
 body {
   font-family: var(--font-ui);
-  background: #09090b;
+  background: rgb(var(--tone-zinc-950));
   color: rgb(var(--text-primary));
   -webkit-font-smoothing: antialiased;
 }
@@ -201,11 +315,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: rgb(var(--tone-zinc-700));
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: rgb(var(--tone-zinc-600));
 }
 
 /* The message timeline is content, not a scroll control. Preserve wheel, touch,
@@ -273,7 +387,7 @@ button:not(:disabled) {
 }
 
 .prose code {
-  background: #27272a;
+  background: rgb(var(--tone-zinc-800));
   color: rgb(var(--text-secondary));
   padding: 0.15em 0.4em;
   border-radius: var(--radius-control);
@@ -283,7 +397,7 @@ button:not(:disabled) {
 }
 
 .prose pre {
-  background: #18181b;
+  background: rgb(var(--tone-zinc-900));
   border-radius: var(--radius-control);
   padding: 1em;
   overflow-x: auto;
@@ -305,7 +419,7 @@ button:not(:disabled) {
 }
 
 .prose blockquote {
-  border-left: 3px solid #3f3f46;
+  border-left: 3px solid rgb(var(--tone-zinc-700));
   margin: 0.5em 0;
   padding-left: 1em;
   color: rgb(var(--text-muted));
@@ -342,22 +456,22 @@ button:not(:disabled) {
 .prose th,
 .prose td {
   border: 0;
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid rgb(var(--tone-zinc-800));
   padding: 0.5em 0.75em;
   text-align: left;
 }
 .prose th {
-  background: #27272a;
+  background: rgb(var(--tone-zinc-800));
   color: rgb(var(--text-strong));
   font-weight: var(--weight-semibold);
 }
 .prose tr:nth-child(even) td {
-  background: #18181b;
+  background: rgb(var(--tone-zinc-900));
 }
 
 .prose hr {
   border: none;
-  border-top: 1px solid #27272a;
+  border-top: 1px solid rgb(var(--tone-zinc-800));
   margin: 1em 0;
 }
 
@@ -419,7 +533,7 @@ button:not(:disabled) {
 
 .public-edition button.bg-indigo-600 {
   border: 0;
-  background: #e4e4e7;
+  background: rgb(var(--tone-zinc-200));
   color: rgb(var(--text-on-light));
 }
 
@@ -429,5 +543,5 @@ button:not(:disabled) {
 }
 
 .public-edition input:focus {
-  --tw-ring-color: #d4d4d8;
+  --tw-ring-color: rgb(var(--tone-zinc-300));
 }

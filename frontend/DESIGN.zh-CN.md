@@ -22,6 +22,16 @@
 
 ## 1. 设计 Token
 
+### 外观模式
+
+Cheers 支持 `System / Light / Dark`，默认跟随系统。选择保存在当前设备的
+`cheers.theme`；System 模式实时监听 `prefers-color-scheme`。`ThemeProvider` 负责运行时状态，
+`index.html` 在 React 启动前应用已保存主题，避免首屏闪烁。
+
+Tailwind 的 `zinc`、中性 `indigo`、状态色、rail 和 sidebar 全部由 `index.css` 的 CSS 变量解析，
+现有语义 utility 会全局切换。业务组件禁止再维护一套平行的 `dark:` class；共享控件和自绘渲染器
+都必须消费同一套 token。品牌图标和隔离 sandbox 文档可保留其原始配色。
+
 ### 颜色语义
 
 | 角色 | Token | 说明 |
@@ -39,13 +49,13 @@
 禁用状态沿用启用态前景并统一增加 `opacity-50`。`zinc-300/500/600/700` 不得作为 Web 前景色。
 语义填充表面上的 `white` / `zinc-950` 和代码语法分类色属于明确例外。
 
-### 表面层级（深色主题，由后到前）
+### 表面层级（语义层级，由后到前）
 
 | 层 | 值 |
 |---|---|
-| 应用背景 | `#09090b`（body）/ `bg-zinc-950` |
-| 工作区侧轨 | `bg-rail`（`#0f0f11`） |
-| 侧栏 | `bg-sidebar`（`#18181b`） |
+| 应用背景 | `bg-zinc-950` |
+| 工作区侧轨 | `bg-rail` |
+| 侧栏 | `bg-sidebar` |
 | 卡片、弹窗、popover | `bg-zinc-900` —— 无边框；分层靠表面明度差 + 阴影 |
 | 输入框 | `bg-zinc-800 ring-1 ring-inset ring-zinc-600` |
 | chip、软按钮 | `bg-zinc-800`（chip 可用 `/60`） |

@@ -78,7 +78,7 @@ export function AgentPicker({
               <span
                 data-design-system-exempt="identity"
                 className={`${avatarSizeClasses.regular} flex shrink-0 items-center justify-center rounded-full`}
-                style={{ backgroundColor: icon?.bg ?? "#3f3f46", color: icon?.fg ?? "#e4e4e7" }}
+                style={{ backgroundColor: icon?.bg ?? "rgb(var(--tone-zinc-700))", color: icon?.fg ?? "rgb(var(--text-secondary))" }}
               >
                 {icon ? (
                   <AgentGlyph icon={icon} className="w-[60%] h-[60%]" />

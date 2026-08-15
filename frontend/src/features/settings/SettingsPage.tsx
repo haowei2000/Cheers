@@ -22,6 +22,7 @@ import {
   Shield,
   Copy,
   Check,
+  Palette,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
@@ -68,9 +69,11 @@ import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowText } from "@/components/ui/overflow-text";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
+import { ThemeSelector } from "@/components/ui/theme-selector";
 
 type SectionId =
   | "profile"
+  | "appearance"
   | "bots"
   | "server"
   | "about"
@@ -89,6 +92,7 @@ const NAV: {
   desktopOnly?: boolean;
 }[] = [
   { id: "profile", label: "Profile", icon: User },
+  { id: "appearance", label: "Appearance", icon: Palette },
   { id: "bots", label: "Bots", icon: Bot },
   { id: "server", label: "Server", icon: Server },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
@@ -98,6 +102,24 @@ const NAV: {
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
+
+function AppearanceCard() {
+  return (
+    <section>
+      <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-section text-content-muted">
+        <Palette className="h-3.5 w-3.5" />
+        Appearance
+      </h2>
+      <div className="rounded-sm bg-zinc-900 p-6 max-md:p-4">
+        <p className="text-regular font-medium text-content-secondary">Color theme</p>
+        <p className="mb-4 mt-1 text-compact text-content-muted">
+          Follow your device automatically or keep a fixed appearance on this device.
+        </p>
+        <ThemeSelector />
+      </div>
+    </section>
+  );
+}
 
 /** Current API base + switch (Tauri). Web shows the origin when same-origin. */
 function ServerCard() {
@@ -1152,6 +1174,8 @@ export default function SettingsPage() {
               <ProfileEditCard />
             </section>
           )}
+
+          {section === "appearance" && <AppearanceCard />}
 
           {section === "bots" && <BotsMovedCard />}
 

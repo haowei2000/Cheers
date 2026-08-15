@@ -98,17 +98,19 @@ Use `ItemGallery` as the canonical visual fixture for the three levels.
 
 ## 1. Tokens
 
-### Appearance: dark-only (deliberate)
+### Appearance: system, light, and dark
 
-Cheers ships a **single dark appearance** — this is a product decision, not an
-oversight. `index.css` sets `color-scheme: dark`; there is no light token set
-and no in-app appearance switch. The audience (developers running an
-agent-console chat tool) works dark, and a second theme would double the
-token-maintenance surface for little value. The trade-off we accept: users
-whose OS is set to light still get a dark app. If that ever changes, the
-migration is "lift every `zinc-*` literal into CSS variables + add a
-`prefers-color-scheme` default + a System/Light/Dark setting" — do it as its
-own PR, not piecemeal.
+Cheers supports **System / Light / Dark**, with System as the default. The
+preference is stored per device in `cheers.theme`; System listens to
+`prefers-color-scheme` live, including changes made while the app is open.
+`ThemeProvider` owns state and `index.html` applies the stored preference before
+React starts so the initial frame does not flash the wrong appearance.
+
+The Tailwind `zinc`, neutral `indigo`, status, rail, and sidebar palettes resolve
+through CSS variables in `index.css`. Existing semantic utility classes therefore
+switch globally; product components must not add parallel `dark:` class lists.
+Shared controls and custom renderers consume the same tokens. Brand artwork and
+isolated sandbox documents may retain their authored colors.
 
 ### Four-level neutral foreground hierarchy (non-negotiable)
 
@@ -138,13 +140,13 @@ button call sites may not override an ordinary action to `zinc-200/400`.
 | Grayscale | `zinc` only | Never `gray`, `slate`, `neutral`, `stone` |
 | Categorical (data-coding) | any tinted hue | Badges that encode *identity*, not state — e.g. permission-capability tags (sky/violet), per-bot activity markers, avatar palette, syntax highlighting. Keep them to tinted badges/marks; never use them for interactive chrome, focus rings or buttons. |
 
-### Surfaces (dark theme, back to front)
+### Surfaces (semantic, back to front)
 
 | Layer | Value |
 |---|---|
-| App background | `#09090b` (body) / `bg-zinc-950` |
-| Workspace rail | `bg-rail` (`#0f0f11`) |
-| Sidebar | `bg-sidebar` (`#18181b`) |
+| App background | `bg-zinc-950` |
+| Workspace rail | `bg-rail` |
+| Sidebar | `bg-sidebar` |
 | Cards, dialogs, popovers | `bg-zinc-900` — no border; separation comes from surface contrast + shadow |
 | Fields | `bg-zinc-800 ring-1 ring-inset ring-zinc-600` |
 | Chips, soft buttons | `bg-zinc-800` (or `/60` for chips) |

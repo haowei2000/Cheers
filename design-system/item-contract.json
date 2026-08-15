@@ -5,6 +5,11 @@
   "defaultControlSize": "regular",
   "defaultContentSize": "regular",
   "defaultTypographySize": "regular",
+  "appearance": {
+    "default": "system",
+    "options": ["system", "light", "dark"],
+    "rule": "Shared semantic color tokens switch every product surface; feature components do not maintain parallel theme classes."
+  },
   "neutralForegroundLevels": {
     "primary": ["content-strong", "content-primary"],
     "secondary": "content-secondary",

@@ -29,6 +29,7 @@ import { MenuOption } from "@/components/ui/menu-option";
 import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { ChoiceGroup } from "@/components/ui/choice-button";
+import { ThemeSelector } from "@/components/ui/theme-selector";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
@@ -91,6 +92,16 @@ export function ItemGallery() {
           </p>
         </div>
       </header>
+
+      <section aria-label="Appearance preview" className="mb-4 border-y border-zinc-700 px-3 py-3">
+        <div className="flex items-start justify-between gap-4 max-sm:flex-col">
+          <div>
+            <p className="font-utility text-compact font-semibold text-content-primary">Appearance preview</p>
+            <p className="font-utility text-compact text-content-muted">Shared System / Light / Dark tokens</p>
+          </div>
+          <ThemeSelector className="w-full sm:w-96" showStatus={false} />
+        </div>
+      </section>
 
       <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 md:grid-cols-2 md:divide-x md:divide-zinc-700 xl:grid-cols-4">
         <div className="px-3 py-3">
