@@ -100,6 +100,7 @@ fn main() {
             plugins::extensions_install,
             plugins::extensions_remove,
             plugins::extension_dev_read,
+            plugins::extension_catalog_download,
             // A2/A3/A4/C8/C9: agent-changes watch, git, roots, audit, health, updates
             changes::connector_watch_start,
             changes::connector_watch_stop,

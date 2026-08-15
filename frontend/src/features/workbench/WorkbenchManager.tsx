@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Power, PowerOff, Trash2, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Blocks, CircleCheck, ExternalLink, Laptop, Package, Power, PowerOff, Trash2, Upload, X } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
 import { useIsAdmin } from "@/stores/authStore";
 import { isTauri } from "@/lib/serverConfig";
 import {
+  downloadCatalogExtension,
   installPersonalExtension,
   listPersonalExtensions,
   removePersonalExtension,
@@ -29,6 +30,15 @@ import {
   setPersonalExtensionDisabled,
   subscribeExtensionRuntime,
 } from "@/features/chat/workbench/extensions/runtime";
+import {
+  clearExtensionInstallIntent,
+  EXTENSION_INSTALL_EVENT,
+  peekExtensionInstallIntent,
+} from "@/lib/extensionInstallIntent";
+import { ExtensionInstallDialog } from "./ExtensionInstallDialog";
+import type { ExtensionInstallCandidate, InstalledExtensionIdentity, InstallScope } from "./extensionInstall";
+
+const OFFICIAL_CATALOG_URL = "https://haowei2000.github.io/Cheers/plugins.html";
 
 function fromBase64(value: string): Uint8Array {
   const binary = atob(value);
@@ -42,9 +52,12 @@ export function WorkbenchManager() {
   const [personal, setPersonal] = useState<ParsedExtension[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<ExtensionInstallCandidate | null>(null);
+  const [installing, setInstalling] = useState(false);
   const [, setRuntimeRevision] = useState(0);
   const globalRef = useRef<HTMLInputElement>(null);
   const personalRef = useRef<HTMLInputElement>(null);
+  const catalogLoading = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -67,39 +80,74 @@ export function WorkbenchManager() {
 
   useEffect(() => subscribeExtensionRuntime(() => setRuntimeRevision((value) => value + 1)), []);
 
-  const installGlobal = useCallback(async (file: File) => {
+  const prepareFile = useCallback(async (file: File, scope: InstallScope) => {
     setError(null);
     try {
-      const extension = await parseExtensionPackage(await file.arrayBuffer(), "global");
-      await installGlobalExtension(extension.manifest, extension.bytes);
-      setNotice(`Installed globally: ${extension.manifest.title}`);
-      await reload();
+      const extension = await parseExtensionPackage(await file.arrayBuffer(), scope);
+      setCandidate({ extension, scope, source: "file", sourceLabel: file.name });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [reload]);
+  }, []);
 
-  const installPersonal = useCallback(async (file: File) => {
+  const prepareCatalogIntent = useCallback(async () => {
+    const intent = peekExtensionInstallIntent();
+    if (!desktop || !intent || catalogLoading.current) return;
+    catalogLoading.current = true;
     setError(null);
     try {
-      const extension = await parseExtensionPackage(await file.arrayBuffer(), "personal");
-      const permissions = permissionSummary(extension.manifest);
-      const warning = [
-        `Install "${extension.manifest.title}" on this Mac?`,
-        `SHA-256: ${extension.sha256}`,
-        permissions.length ? `Permissions:\n- ${permissions.join("\n- ")}` : "Permissions: none",
-        extension.manifest.permissions?.network === "unrestricted"
-          ? "This renderer may send rendered content to any network destination."
-          : "Network access is blocked by the renderer CSP.",
-      ].join("\n\n");
-      if (!window.confirm(warning)) return;
-      await installPersonalExtension(extension.manifest.id, extension.bytes, extension.sha256);
-      setNotice(`Installed on this Mac: ${extension.manifest.title}`);
+      const bytes = await downloadCatalogExtension(intent.source, intent.sha256);
+      const extension = await parseExtensionPackage(bytes, "personal");
+      if (extension.sha256 !== intent.sha256 || extension.manifest.id !== intent.id || extension.manifest.version !== intent.version) {
+        throw new Error("Official catalog metadata does not match the downloaded extension");
+      }
+      setCandidate({ extension, scope: "personal", source: "official-catalog", sourceLabel: "Cheers official catalog" });
+      clearExtensionInstallIntent();
+    } catch (reason) {
+      clearExtensionInstallIntent();
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      catalogLoading.current = false;
+    }
+  }, [desktop]);
+
+  useEffect(() => {
+    void prepareCatalogIntent();
+    const receive = () => void prepareCatalogIntent();
+    window.addEventListener(EXTENSION_INSTALL_EVENT, receive);
+    return () => window.removeEventListener(EXTENSION_INSTALL_EVENT, receive);
+  }, [prepareCatalogIntent]);
+
+  const installed = useMemo<InstalledExtensionIdentity | undefined>(() => {
+    if (!candidate) return undefined;
+    if (candidate.scope === "global") {
+      const match = global.find((extension) => extension.id === candidate.extension.manifest.id);
+      return match ? { version: match.version, sha256: match.sha256, permissions: match.permissions } : undefined;
+    }
+    const match = personal.find((extension) => extension.manifest.id === candidate.extension.manifest.id);
+    return match ? { version: match.manifest.version, sha256: match.sha256, permissions: match.manifest.permissions ?? {} } : undefined;
+  }, [candidate, global, personal]);
+
+  const confirmInstall = useCallback(async () => {
+    if (!candidate || installing) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      if (candidate.scope === "global") {
+        await installGlobalExtension(candidate.extension.manifest, candidate.extension.bytes);
+        setNotice(`Installed globally: ${candidate.extension.manifest.title}`);
+      } else {
+        await installPersonalExtension(candidate.extension.manifest.id, candidate.extension.bytes, candidate.extension.sha256);
+        setNotice(`Installed on this Mac: ${candidate.extension.manifest.title}`);
+      }
+      setCandidate(null);
       await reload();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setInstalling(false);
     }
-  }, [reload]);
+  }, [candidate, installing, reload]);
 
   return (
     <section>
@@ -118,6 +166,9 @@ export function WorkbenchManager() {
         className="border-t border-zinc-800 pt-2"
         description="Scenes and renderers are installed from one verified .cheers-extension package."
         action={<div className="flex items-center gap-2">
+          <UiButton action="open" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => { const popup = window.open(OFFICIAL_CATALOG_URL, "_blank", "noopener,noreferrer"); if (popup) popup.opener = null; }}>
+            <ExternalLink className="h-3.5 w-3.5" /> Browse extensions
+          </UiButton>
           {isAdmin && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => globalRef.current?.click()}>
             <Upload className="h-3.5 w-3.5" /> Install globally
           </UiButton>}
@@ -125,9 +176,9 @@ export function WorkbenchManager() {
             <Laptop className="h-3.5 w-3.5" /> Install on this Mac
           </UiButton>}
           {/* design-system-native: file-input */}
-          <input ref={globalRef} aria-label="Choose a global extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installGlobal(file); event.target.value = ""; }} />
+          <input ref={globalRef} aria-label="Choose a global extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareFile(file, "global"); event.target.value = ""; }} />
           {/* design-system-native: file-input */}
-          <input ref={personalRef} aria-label="Choose a personal extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installPersonal(file); event.target.value = ""; }} />
+          <input ref={personalRef} aria-label="Choose a personal extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareFile(file, "personal"); event.target.value = ""; }} />
         </div>}
       >
         {global.map((extension) => (
@@ -167,6 +218,7 @@ export function WorkbenchManager() {
         })}
         {global.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
+      {candidate && <ExtensionInstallDialog candidate={candidate} installed={installed} busy={installing} onConfirm={() => void confirmInstall()} onClose={() => { clearExtensionInstallIntent(); setCandidate(null); }} />}
     </section>
   );
 }

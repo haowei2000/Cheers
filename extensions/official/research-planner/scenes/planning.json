@@ -1,0 +1,55 @@
+{
+  "items": [
+    {
+      "id": "papers",
+      "title": "Papers",
+      "file": "research/papers.yaml",
+      "renderer": "builtin:table",
+      "config": {
+        "columns": [
+          { "key": "title", "label": "Paper" },
+          { "key": "target", "label": "Target venue" },
+          { "key": "status", "label": "Status", "options": ["idea", "drafting", "internal-review", "ready", "submitted"] },
+          { "key": "owner", "label": "Owner" }
+        ]
+      }
+    },
+    {
+      "id": "deadlines",
+      "title": "Submission dates",
+      "file": "research/deadlines.yaml",
+      "renderer": "builtin:table",
+      "config": {
+        "columns": [
+          { "key": "venue", "label": "Venue" },
+          { "key": "deadline", "label": "Deadline" },
+          { "key": "timezone", "label": "Timezone" },
+          { "key": "source", "label": "Official source" },
+          { "key": "checked", "label": "Checked" }
+        ]
+      }
+    },
+    {
+      "id": "risks",
+      "title": "Planning risks",
+      "file": "research/risks.yaml",
+      "renderer": "builtin:table",
+      "config": {
+        "columns": [
+          { "key": "risk", "label": "Risk" },
+          { "key": "impact", "label": "Impact", "options": ["low", "medium", "high"] },
+          { "key": "owner", "label": "Owner" },
+          { "key": "mitigation", "label": "Mitigation" },
+          { "key": "reviewDate", "label": "Review date" }
+        ]
+      }
+    }
+  ],
+  "seed": [
+    { "path": "research/papers.yaml", "source": "seed/planning/research/papers.yaml" },
+    { "path": "research/deadlines.yaml", "source": "seed/planning/research/deadlines.yaml" },
+    { "path": "research/risks.yaml", "source": "seed/planning/research/risks.yaml" },
+    { "path": "prompts/research-planning.md", "source": "seed/planning/prompts/research-planning.md" }
+  ],
+  "pin": ["prompts/research-planning.md"]
+}

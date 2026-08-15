@@ -9,10 +9,11 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "extensions/**"
+      - "packages/cheers-workbench-sdk/**"
+      - "scripts/build-extension-catalog.mjs"
+      - "scripts/lib/extension-catalog.test.mjs"
       - ".github/workflows/pages.yml"
-      # the plugins page serves these as downloads (assembled at build time below)
-      - "server/assets/workbench-plugins/**"
-      - "docs/arch/examples/**"
   workflow_dispatch:
 
 permissions:
@@ -34,28 +35,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/cheers-workbench-sdk/package-lock.json
+
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
-      # plugins.html links to ./downloads/plugins/* — assembled here from the
-      # sources of truth (official set + docs examples), never duplicated in git.
-      - name: Assemble plugin downloads
+      - name: Build and verify extension catalog
         run: |
-          mkdir -p website/downloads/plugins
-          cp server/assets/workbench-plugins/*.plugin.html website/downloads/plugins/
-          cp docs/arch/examples/*.plugin.html \
-             docs/arch/examples/*.template.json \
-             docs/arch/examples/cheers-plugin-sdk.js \
-             website/downloads/plugins/
-          # Official scenario templates get their OWN dir: docs examples share some
-          # filenames (code-project / research-lab), one dir would silently clobber.
-          mkdir -p website/downloads/templates
-          cp server/assets/workbench-templates/*.template.json website/downloads/templates/
+          npm --prefix packages/cheers-workbench-sdk ci
+          npm --prefix packages/cheers-workbench-sdk run build
+          node --test scripts/lib/extension-catalog.test.mjs
+          cp -R website _site
+          node scripts/build-extension-catalog.mjs --website-dir _site
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

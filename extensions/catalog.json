@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "publisher": "Cheers",
+  "entries": [
+    {
+      "kind": "package",
+      "source": "extensions/official/notes-workflow",
+      "category": "productivity",
+      "featured": true,
+      "title": { "en": "Notes workflow", "zh-CN": "笔记工作流" },
+      "description": {
+        "en": "Edit shared Markdown notes in a focused renderer and schedule a daily review of open questions.",
+        "zh-CN": "用专注的渲染器编辑共享 Markdown 笔记，并安排每日回顾未解决问题。"
+      }
+    },
+    {
+      "kind": "package",
+      "source": "extensions/official/research-planner",
+      "category": "research",
+      "featured": true,
+      "title": { "en": "Research planner", "zh-CN": "论文规划助手" },
+      "description": {
+        "en": "Track papers, verified submission dates, and planning risks with a recurring research check-in.",
+        "zh-CN": "集中跟踪论文、已核实投稿日期和规划风险，并通过定时任务持续检查。"
+      }
+    },
+    {
+      "kind": "builtin",
+      "id": "cheers-task-board",
+      "category": "productivity",
+      "title": { "en": "Task board", "zh-CN": "任务看板" },
+      "description": {
+        "en": "A kanban board and structured backlog included with every Cheers gateway.",
+        "zh-CN": "每个 Cheers Gateway 内置的看板与结构化待办列表。"
+      },
+      "contributes": ["scene"]
+    },
+    {
+      "kind": "builtin",
+      "id": "cheers-code-project",
+      "category": "engineering",
+      "title": { "en": "Code project", "zh-CN": "代码项目" },
+      "description": {
+        "en": "Project planning, issue tracking, test progress, and code-map seeds.",
+        "zh-CN": "项目计划、问题跟踪、测试进度和代码地图种子文件。"
+      },
+      "contributes": ["scene"]
+    },
+    {
+      "kind": "builtin",
+      "id": "cheers-research-lab",
+      "category": "research",
+      "title": { "en": "Research lab", "zh-CN": "研究实验室" },
+      "description": {
+        "en": "Experiment, metric, and submission tracking included with Cheers.",
+        "zh-CN": "Cheers 内置的实验、指标与投稿进度跟踪场景。"
+      },
+      "contributes": ["scene"]
+    },
+    {
+      "kind": "builtin",
+      "id": "cheers-team-ops",
+      "category": "operations",
+      "title": { "en": "Team operations", "zh-CN": "团队运营" },
+      "description": {
+        "en": "Shared operating status, decisions, and follow-up tracking.",
+        "zh-CN": "共享运营状态、决策记录和后续事项跟踪。"
+      },
+      "contributes": ["scene"]
+    }
+  ]
+}

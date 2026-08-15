@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "research-planner",
+  "version": "1.0.0",
+  "title": "Research planner",
+  "description": "Declarative paper deadline and planning risk tracking",
+  "contributes": {
+    "scenes": [
+      { "id": "planning", "title": "Research planning", "definition": "scenes/planning.json" }
+    ],
+    "renderers": [],
+    "automations": [
+      {
+        "id": "deadline-check",
+        "title": "Check submission dates and risks",
+        "description": "Ask a channel bot to verify official venue dates and update the research plan.",
+        "message": "Search official venue and conference sources for the papers tracked in research/papers.yaml. Verify submission dates, record each source URL and checked date, update research/deadlines.yaml, and summarize schedule conflicts or planning risks in research/risks.yaml. Do not replace a verified date with an unsourced claim.",
+        "defaultSchedule": { "kind": "daily", "localTime": "09:00" }
+      }
+    ]
+  },
+  "permissions": {}
+}

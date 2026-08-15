@@ -1,8 +1,9 @@
 # Cheers landing page
 
 A static landing/overview site for Cheers, aimed at both users and developers.
-There is no build step or network dependency: every page shares the local
-`editorial.css` design system and the bundled Source Serif 4 font.
+Every page shares the local `editorial.css` design system and bundled fonts. The
+extension catalog adds one deterministic generation step so its package URLs and
+SHA-256 values always match the bytes deployed to Pages.
 
 Pages:
 
@@ -15,7 +16,8 @@ Pages:
   keep both in sync.
 - `docs.html` / `docs.zh-CN.html` — Documentation hub linking to help guides,
   deploy docs, connector/MCP/plugin pages, and architecture. Keep both in sync.
-- `plugin-dev.html` — workbench renderer plugin guide (English only for now).
+- `plugins.html` / `plugins.zh-CN.html` — generated official extension catalog.
+- `plugin-dev.html` — unified `.cheers-extension` and TypeScript SDK guide.
 - `connector.html` / `connector.zh-CN.html` — user-facing guide to the ACP
   connector (connect your own Claude/Codex bot): install, token, config, keeping
   it updated, and the "bot can't see attached files → update the connector"
@@ -26,11 +28,11 @@ Pages:
 ## Preview locally
 
 ```bash
-# just open it
-open website/index.html          # macOS
-
-# or serve it (nicer for testing relative behavior)
-python3 -m http.server -d website 8080   # → http://localhost:8080
+# Build the generated catalog into a disposable preview directory.
+npm --prefix packages/cheers-workbench-sdk run build
+cp -R website /tmp/cheers-site
+node scripts/build-extension-catalog.mjs --website-dir /tmp/cheers-site
+python3 -m http.server -d /tmp/cheers-site 8080
 ```
 
 ## Deploy
@@ -41,8 +43,8 @@ python3 -m http.server -d website 8080   # → http://localhost:8080
 `workflow_dispatch`). One-time setup: repo Settings → Pages → Source =
 **"GitHub Actions"**. Live site: <https://haowei2000.github.io/Cheers/>
 
-Any other static host also works — the site is a handful of self-contained
-HTML files plus the `imgs/` screenshots, with no build step.
+Any other static host also works after running the extension catalog generation
+step. The deployed result remains plain HTML, CSS, JavaScript, images, and ZIPs.
 
 The production Cheers frontend also publishes the App Store policy and support
 URLs from this directory. `frontend/vite.config.ts` copies the English and
@@ -67,10 +69,9 @@ as its build context.
   but the shared stylesheet owns the global tokens and final presentation.
 - Source Serif 4, Source Han Serif CN, and Source Sans 3 are redistributed under
   the SIL Open Font License; keep their matching files in `assets/`.
-- `downloads/plugins/` and `downloads/templates/` contain the static download
-  copies linked by `plugins.html`. Refresh them from the authoritative
-  `server/assets/workbench-*` and `docs/arch/examples/` sources when a bundled
-  plugin or template changes.
+- Extension sources and bilingual presentation metadata live under `extensions/`.
+  Never hand-edit generated catalog or package files in a deployment artifact;
+  `scripts/build-extension-catalog.mjs` owns them.
 - Documentation and repo links point at `https://github.com/haowei2000/Cheers`
   — update them if the canonical repo URL changes.
 - Content is intentionally kept in sync with `README.md` (and

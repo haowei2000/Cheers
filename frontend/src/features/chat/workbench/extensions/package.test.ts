@@ -30,6 +30,15 @@ describe("parseExtensionPackage", () => {
     expect(parsed.manifest.contributes.automations).toHaveLength(1);
   });
 
+  it("parses the official data-only research planner fixture in global scope", async () => {
+    const path = fileURLToPath(new URL("../../../../../../fixtures/workbench/research-planner.cheers-extension", import.meta.url));
+    const parsed = await parseExtensionPackage(new Uint8Array(readFileSync(path)), "global");
+    expect(parsed.manifest.id).toBe("research-planner");
+    expect(parsed.scenes[0].views).toHaveLength(3);
+    expect(parsed.manifest.contributes.automations?.[0].id).toBe("deadline-check");
+    expect(parsed.rendererExtension).toBeNull();
+  });
+
   it("resolves scenes, seed files, and stable global ids", async () => {
     const bytes = archive(
       { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
