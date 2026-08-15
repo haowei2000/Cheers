@@ -2104,17 +2104,58 @@ struct FsWriteResponse: Decodable {
     let version: Int
 }
 
-struct WorkbenchTemplateRow: Decodable, Identifiable {
+struct WorkbenchExtensionSummary: Decodable, Identifiable {
+    let id: String
+    let version: String
+    let title: String
+    let description: String
+    let sha256: String
+    let origin: String
+    let scenes: [WorkbenchExtensionSceneContribution]
+    /// iOS intentionally ignores web renderer contributions and uses native lenses.
+    let renderers: [WorkbenchExtensionRendererContribution]
+}
+
+struct WorkbenchExtensionSceneContribution: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let definition: String
+}
+
+struct WorkbenchExtensionRendererContribution: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let entry: String
+}
+
+struct WorkbenchResolvedScene: Decodable {
+    let id: String
+    let title: String
+    let items: [WorkbenchExtensionSceneItem]
+    let seed: [WorkbenchExtensionSeedFile]
+    let pin: [String]
+}
+
+struct WorkbenchExtensionSceneItem: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let file: String
+    let renderer: String
+    let config: JSONValue?
+}
+
+struct WorkbenchExtensionSeedFile: Decodable {
+    let path: String
+    let content: String
+}
+
+struct WorkbenchTemplateRow: Identifiable {
     let tplId: String
     let title: String
     let manifest: WorkbenchTemplateManifest
     let origin: String?
     var id: String { tplId }
 
-    enum CodingKeys: String, CodingKey {
-        case tplId = "tpl_id"
-        case title, manifest, origin
-    }
 }
 
 struct WorkbenchTemplateManifest: Codable, Identifiable {
@@ -2130,6 +2171,7 @@ struct WorkbenchTemplateView: Codable, Identifiable {
     let title: String
     let file: String
     let lens: String
+    let renderer: String
     let config: JSONValue?
 }
 

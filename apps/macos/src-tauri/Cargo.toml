@@ -26,6 +26,8 @@ toml = "0.8"
 toml_edit = "0.22"
 dirs = "5"
 base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 # Agent-changes watch (A2): FSEvents-backed local workdir watcher.
 notify = "8"

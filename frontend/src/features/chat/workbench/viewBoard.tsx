@@ -1,7 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
 // ViewBoard — the channel's instrument / observability plane, SEPARATE from the
 // Workbench. The Workbench is a *file-based workspace* (context_files, fs.*, editable,
-// rendered via lenses/plugins). A ViewBoard is NOT file-based: it renders a live,
+// rendered via lenses/extensions). A ViewBoard is NOT file-based: it renders a live,
 // read-only *projection* of agent activity / session state from a resource verb
 // (*.read), keyed by channel + optionally the selected session. Truth lives in the
 // event/session/usage stores, not in a file. Maps to the two-class data model:
@@ -16,7 +16,7 @@ import type { SendResourceReq } from "./fsClient";
 import { useResourceQuery } from "./useResourceQuery";
 
 /** The minimal context a ViewBoard needs — channel + resource client + the selected
- *  session. No files / pins / plugins (that's the Workbench's PanelContext). */
+ *  session. No files / pins / extensions (that's the Workbench's PanelContext). */
 export interface ViewBoardContext {
   channelId: string;
   sendResourceReq: SendResourceReq;

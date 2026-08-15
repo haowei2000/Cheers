@@ -25,29 +25,50 @@ export async function pickFolder(): Promise<string | null> {
   return typeof result === "string" ? result : null;
 }
 
-/** A personal workbench plugin installed on this Mac (~/.cheers/plugins/<id>.html).
- * `content` is the full bundle, used inline as the sandbox iframe srcDoc — the
- * server never sees it. Mirror of the Rust `PersonalPlugin` (plugins.rs). */
-export interface PersonalPlugin {
+/** A personal package installed on this Mac under ~/.cheers/extensions. The server
+ * never sees its bytes; the frontend validates them before exposing renderer assets. */
+export interface PersonalExtension {
   id: string;
-  content: string;
+  contentBase64: string;
+  sha256: string;
 }
 
-/** Personal plugins installed on this machine. Empty in the browser. */
-export async function listPersonalPlugins(): Promise<PersonalPlugin[]> {
+/** Personal extensions installed on this machine. Empty in the browser. */
+export async function listPersonalExtensions(): Promise<PersonalExtension[]> {
   if (!isTauri()) return [];
-  return invokeDesktop<PersonalPlugin[]>("plugins_list");
+  return invokeDesktop<PersonalExtension[]>("extensions_list");
 }
 
-/** Install (or update, same id overwrites) a personal plugin. The caller has
- * already parsed + validated the manifest and extracted its id. */
-export async function installPersonalPlugin(id: string, content: string): Promise<void> {
-  await invokeDesktop("plugins_install", { id, content });
+/** Atomically install or update a validated personal extension package. */
+export async function installPersonalExtension(id: string, bytes: Uint8Array, sha256: string): Promise<void> {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  await invokeDesktop("extensions_install", { id, contentBase64: btoa(binary), sha256 });
+  window.dispatchEvent(new Event("cheers:extensions-changed"));
 }
 
-/** Uninstall a personal plugin by id. Idempotent. */
-export async function removePersonalPlugin(id: string): Promise<void> {
-  await invokeDesktop("plugins_remove", { id });
+/** Uninstall a personal extension by id. Idempotent. */
+export async function removePersonalExtension(id: string): Promise<void> {
+  await invokeDesktop("extensions_remove", { id });
+  window.dispatchEvent(new Event("cheers:extensions-changed"));
+}
+
+/** Pick and read a development package without installing it. */
+export async function pickDevelopmentExtension(): Promise<(PersonalExtension & { path: string }) | null> {
+  if (!isTauri()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const path = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "Cheers extension", extensions: ["cheers-extension"] }],
+  });
+  if (typeof path !== "string") return null;
+  const extension = await invokeDesktop<PersonalExtension>("extension_dev_read", { path });
+  return { ...extension, path };
+}
+
+export function readDevelopmentExtension(path: string): Promise<PersonalExtension> {
+  return invokeDesktop<PersonalExtension>("extension_dev_read", { path });
 }
 
 /** Launch-at-login (login item). Wraps @tauri-apps/plugin-autostart. */

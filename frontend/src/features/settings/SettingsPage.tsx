@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Info,
   Server,
+  CalendarClock,
   Palette,
 } from "lucide-react";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
@@ -20,6 +21,7 @@ import { disablePush } from "@/lib/push";
 import { isTauri } from "@/lib/serverConfig";
 import { ActionButton } from "@/components/ui/action-button";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
+import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessagesManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 import { AdminReports } from "./AdminReports";
@@ -51,6 +53,7 @@ type SectionId =
   | "server"
   | "about"
   | "workbench"
+  | "scheduled"
   | "members"
   | "speech"
   | "reports"
@@ -69,7 +72,8 @@ const NAV: {
   { id: "bots", label: "Bots", icon: Bot },
   { id: "server", label: "Server", icon: Server },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
-  { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
+  { id: "workbench", label: "Workbench", icon: Blocks },
+  { id: "scheduled", label: "Scheduled tasks", icon: CalendarClock },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
@@ -194,6 +198,7 @@ export default function SettingsPage() {
 
           {/* Admin-only; each self-gates (renders null for non-admins). */}
           {section === "workbench" && <WorkbenchManager />}
+          {section === "scheduled" && <ScheduledMessagesManager />}
           {section === "members" && <AdminUsers />}
           {section === "reports" && <AdminReports />}
           {section === "speech" && <AdminSttSettings />}

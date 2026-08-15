@@ -17,7 +17,7 @@ import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
-import { candidatesFor, getRenderer, type RendererDesc } from "./renderers/registry";
+import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
 
@@ -118,12 +118,14 @@ function itemTitle(sceneId: string, path: string, templates: TemplateManifest[])
 function rendererFor(
   path: string,
   content: string | undefined,
-  ctx: WorkbenchContext
+  ctx: WorkbenchContext,
+  failed: string[] = []
 ): RendererDesc | undefined {
-  const bound = ctx.bindings[path] ? getRenderer(ctx.bindings[path], ctx.plugins) : undefined;
-  if (bound) return bound;
-  if (content === undefined) return undefined;
-  return candidatesFor(path, content, ctx.plugins)[0];
+  if (content === undefined) {
+    const bound = ctx.bindings[path] ? getRenderer(ctx.bindings[path], ctx.rendererExtensions) : undefined;
+    return bound && !failed.includes(bound.id) ? bound : undefined;
+  }
+  return previewOptions(path, content, ctx.rendererExtensions, ctx.bindings[path], failed)[0];
 }
 
 async function readDiscoverableFiles(
@@ -133,7 +135,7 @@ async function readDiscoverableFiles(
 ) {
   const candidates = entries.filter((entry) => {
     if (entry.is_dir || entry.path === ".workbench.json") return false;
-    if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.plugins)) return false;
+    if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.rendererExtensions)) return false;
     return /\.(md|markdown|json|ya?ml)$/i.test(entry.path);
   });
   for (let start = 0; start < candidates.length; start += 4) {
@@ -168,6 +170,7 @@ export function SceneWorkbench({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
+  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const reconciled = useMemo(
     () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
     [sceneState, templates, legacyEnvironment]
@@ -206,11 +209,11 @@ export function SceneWorkbench({
   const renderers = useMemo(() => {
     const found: Record<string, RendererDesc> = {};
     for (const path of existing) {
-      const renderer = rendererFor(path, contents[path], ctx);
+      const renderer = rendererFor(path, contents[path], ctx, failedRenderers[path]);
       if (renderer) found[path] = renderer;
     }
     return found;
-  }, [existing, contents, ctx]);
+  }, [existing, contents, ctx, failedRenderers]);
   const claimed = useMemo(
     () => new Set(reconciled.order.flatMap((id) => reconciled.items[id] ?? [])),
     [reconciled]
@@ -238,7 +241,7 @@ export function SceneWorkbench({
 
   const activePaths = useMemo(() => {
     const paths = activeScene === OTHER_SCENE ? otherPaths : reconciled.items[activeScene] ?? [];
-    return paths.filter((path) => existing.has(path) && renderers[path]);
+    return paths.filter((path) => existing.has(path) && (activeScene !== OTHER_SCENE || renderers[path]));
   }, [activeScene, otherPaths, reconciled.items, existing, renderers]);
   const storedSelection = activeScene
     ? localStorage.getItem(`${storagePrefix}.item.${activeScene}`)
@@ -249,6 +252,15 @@ export function SceneWorkbench({
       : storedSelection && activePaths.includes(storedSelection)
         ? storedSelection
         : activePaths[0]) ?? null;
+
+  useEffect(() => {
+    if (!selectedPath || contents[selectedPath] !== undefined) return;
+    let alive = true;
+    void ctx.fs.read(selectedPath).then((file) => {
+      if (alive) setContents((current) => ({ ...current, [selectedPath]: file.content }));
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [selectedPath, contents, ctx.fs]);
 
   const selectPath = (path: string) => {
     setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
@@ -337,7 +349,6 @@ export function SceneWorkbench({
                   key={id}
                   type="button"
                   onClick={() => setActiveScene(id)}
-                  aria-pressed={selected}
                   controlSize={workbenchControlSize.navigation} className={cn(
  "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  selected ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
@@ -384,7 +395,23 @@ export function SceneWorkbench({
                 path={selectedPath}
                 renderer={renderers[selectedPath]}
                 config={ctx.configs[selectedPath]}
+                onFailure={(rendererId, reason) => {
+                  setFailedRenderers((current) => ({
+                    ...current,
+                    [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                  }));
+                  if (contents[selectedPath] === undefined) {
+                    void ctx.fs.read(selectedPath).then((file) =>
+                      setContents((current) => ({ ...current, [selectedPath]: file.content }))
+                    ).catch(() => undefined);
+                  }
+                  setStatus(`${renderers[selectedPath].title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
+                }}
               />
+            ) : selectedPath ? (
+              <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
+                {contents[selectedPath] ?? "Loading Raw content…"}
+              </pre>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
                 <FileQuestion className="h-5 w-5 text-content-muted" />

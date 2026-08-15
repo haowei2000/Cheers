@@ -27,7 +27,6 @@ export function AppearanceCard() {
     </SettingsSection>
   );
 }
-
 /** Current API base + switch (Tauri). Web shows the origin when same-origin. */
 export function ServerCard() {
   const logout = useAuthStore((s) => s.logout);
@@ -277,4 +276,3 @@ export function PushNotificationsCard() {
     </section>
   );
 }
-

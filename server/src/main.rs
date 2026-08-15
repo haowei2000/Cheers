@@ -51,10 +51,9 @@ async fn main() -> anyhow::Result<()> {
     // migration), so the gateway is reachable for the login/demo flow.
     server::domain::seed::ensure_admin_user(&db).await?;
 
-    // Seed the official workbench plugins (embedded in this binary). Version-gated
-    // upserts: admin deletions stick within a release; see domain/workbench_official.rs.
-    server::domain::workbench_official::seed(&db).await?;
-    server::domain::workbench_official_templates::seed(&db).await?;
+    // Official scenes are ordinary data-only extension packages and pass through the
+    // same package parser used by admin uploads.
+    server::domain::workbench_official_extensions::seed(&db).await?;
 
     // S3 / RustFS client for gateway-proxied file storage. Bucket bootstrap is
     // best-effort: a missing object store must not block the core chat loop.
@@ -214,6 +213,10 @@ async fn main() -> anyhow::Result<()> {
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
     tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
+
+    // User-owned scheduled messages use durable PostgreSQL state and leases, so
+    // multiple gateway replicas can poll without posting the same run twice.
+    gateway::scheduled_message_scheduler::spawn(state.clone());
 
     let app = router::build(state);
 

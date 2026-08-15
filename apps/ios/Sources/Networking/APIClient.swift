@@ -1034,7 +1034,35 @@ struct APIClient: Sendable {
     }
 
     func listWorkbenchTemplates() async throws -> [WorkbenchTemplateRow] {
-        try await getJSON("/workbench/templates", as: [WorkbenchTemplateRow].self)
+        let extensions = try await getJSON(
+            "/workbench/extensions", as: [WorkbenchExtensionSummary].self)
+        var scenes: [WorkbenchTemplateRow] = []
+        for extensionValue in extensions {
+            for contribution in extensionValue.scenes {
+                let scene = try await getJSON(
+                    "/workbench/extensions/\(extensionValue.id)/scenes/\(contribution.id)",
+                    as: WorkbenchResolvedScene.self)
+                let runtimeId = "extension:\(extensionValue.id):\(contribution.id)"
+                let manifest = WorkbenchTemplateManifest(
+                    id: runtimeId,
+                    title: scene.title,
+                    views: scene.items.map { item in
+                        let lens = item.renderer.hasPrefix("builtin:")
+                            ? String(item.renderer.dropFirst("builtin:".count)) : "auto"
+                        return WorkbenchTemplateView(
+                            id: item.id, title: item.title, file: item.file,
+                            lens: lens, renderer: item.renderer, config: item.config)
+                    },
+                    seed: Dictionary(uniqueKeysWithValues: scene.seed.map {
+                        ($0.path, JSONValue.string($0.content))
+                    }),
+                    pin: scene.pin)
+                scenes.append(WorkbenchTemplateRow(
+                    tplId: runtimeId, title: scene.title, manifest: manifest,
+                    origin: extensionValue.origin))
+            }
+        }
+        return scenes
     }
 
     // MARK: Remote workspace

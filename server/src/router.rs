@@ -157,27 +157,33 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/auth/passkey/credentials/:credential_pk",
             delete(api::passkey::delete_credential),
         )
-        // Server-level workbench plugin store (install = admin; list/bundle = any member).
         .route(
-            "/api/v1/workbench/plugins",
-            get(api::workbench::list_plugins),
+            "/api/v1/workbench/extensions",
+            get(api::workbench::list_extensions),
         )
         .route(
-            "/api/v1/workbench/plugins/:plugin_id",
-            put(api::workbench::install_plugin).delete(api::workbench::delete_plugin),
+            "/api/v1/workbench/extensions/:extension_id",
+            put(api::workbench::put_extension).delete(api::workbench::delete_extension),
         )
         .route(
-            "/api/v1/workbench/plugins/:plugin_id/bundle",
-            get(api::workbench::get_bundle),
-        )
-        // Global workbench templates (DATA; install/delete = admin, list = any member).
-        .route(
-            "/api/v1/workbench/templates",
-            get(api::workbench::list_templates),
+            "/api/v1/workbench/extensions/:extension_id/scenes/:scene_id",
+            get(api::workbench::get_scene),
         )
         .route(
-            "/api/v1/workbench/templates/:tpl_id",
-            put(api::workbench::put_template).delete(api::workbench::delete_template),
+            "/api/v1/scheduled-messages",
+            get(api::scheduled_messages::list).post(api::scheduled_messages::create),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id",
+            put(api::scheduled_messages::update).delete(api::scheduled_messages::delete),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id/runs",
+            get(api::scheduled_messages::list_runs),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id/run",
+            post(api::scheduled_messages::run_now),
         )
         .route(
             "/api/v1/workspaces",
