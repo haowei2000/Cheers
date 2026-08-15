@@ -168,6 +168,7 @@ export function SandboxRenderer({
     }
     let alive = true;
     let disposed = false;
+    const pendingRequests = pendingRef.current;
     failedRef.current = false;
     const respond = (message: RpcRequest, result?: unknown, errorMessage?: string) => {
       if (message.id == null) return;
@@ -237,7 +238,8 @@ export function SandboxRenderer({
         const pending = pendingRef.current.get(message.id);
         if (!pending) return;
         pendingRef.current.delete(message.id);
-        message.error ? pending.reject(new Error(message.error.message)) : pending.resolve(message.result);
+        if (message.error) pending.reject(new Error(message.error.message));
+        else pending.resolve(message.result);
         return;
       }
       if (!("method" in message)) return;
@@ -303,14 +305,14 @@ export function SandboxRenderer({
     return () => {
       alive = false;
       void dispose();
-      for (const pending of pendingRef.current.values()) pending.reject(new Error("renderer disposed"));
-      pendingRef.current.clear();
+      for (const pending of pendingRequests.values()) pending.reject(new Error("renderer disposed"));
+      pendingRequests.clear();
       window.removeEventListener("message", handler);
       if (!failedRef.current) reportRendererStatus(extension.extensionId, "ready");
     };
   }, [active, fs, path, rendererId, extension]);
 
   if (!active) return null;
-  if (status === "failed") return <div className="p-3 text-amber-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;
+  if (status === "failed") return <div className="p-3 text-warning-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;
   return <iframe ref={iframeRef} sandbox="allow-scripts" srcDoc={document} title={`${extension.title} (${status})`} className="h-full w-full border-0 bg-white" />;
 }

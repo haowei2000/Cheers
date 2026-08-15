@@ -134,8 +134,8 @@ export function FloatingPanel({
   // buttons), so a click reliably expands instead of half-starting a drag.
   const titleLabel = (
     <>
-      {Icon && <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
-      <span className="text-compact font-semibold uppercase tracking-wider text-zinc-400 truncate">
+      {Icon && <Icon className="w-4 h-4 text-content-muted flex-shrink-0" />}
+      <span className="text-compact font-semibold uppercase tracking-section text-content-muted truncate">
         {title}
       </span>
     </>
@@ -201,7 +201,7 @@ export function FloatingPanel({
           onClick={toggleCollapsed}
           accessibleLabel={collapsed ? "Expand panel" : "Minimize panel"}
           controlSize="compact"
-          className="text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
+          className="text-content-primary hover:bg-zinc-800 hover:text-content-strong max-md:hidden"
         />
         <ActionButton
           action="close"
@@ -209,7 +209,7 @@ export function FloatingPanel({
           onClick={onClose}
           accessibleLabel="Close panel"
           controlSize="compact"
-          className="text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+          className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
         />
       </div>
       {collapsed && !isMobile ? (

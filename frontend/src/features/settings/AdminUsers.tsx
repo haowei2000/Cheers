@@ -140,12 +140,12 @@ export function AdminUsers() {
               title={<OverflowText fullText={`${name} · @${user.username}`}>{name}</OverflowText>}
               subtitle={[`@${user.username}`, user.email].filter(Boolean).join(" · ")}
               leading={<Avatar name={name} id={user.user_id} size="regular" />}
-              status={user.role !== "member" ? <span className="text-zinc-400">{roleLabel(user.role)}</span> : undefined}
+              status={user.role !== "member" ? <span className="text-content-muted">{roleLabel(user.role)}</span> : undefined}
               criticalStatus={(
                 deleting ? (
-                  <span className="font-utility text-compact font-semibold uppercase tracking-wide text-red-400">Delete?</span>
+                  <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">Delete?</span>
                 ) : user.is_suspended ? (
-                  <span className="font-utility text-compact font-semibold uppercase tracking-wide text-red-400">Suspended</span>
+                  <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">Suspended</span>
                 ) : undefined
               )}
               actions={deleting ? (
@@ -243,8 +243,8 @@ function CreateUserItem({ onCreated, onCancel }: { onCreated: () => void; onCanc
       className="border-b border-zinc-600/70 px-2 py-3"
     >
       <div className="mb-2 flex h-9 items-center gap-2">
-        <UserPlus className="h-4 w-4 text-zinc-400" />
-        <span className="min-w-0 flex-1 font-utility text-regular font-semibold text-zinc-100">New member</span>
+        <UserPlus className="h-4 w-4 text-content-muted" />
+        <span className="min-w-0 flex-1 font-utility text-regular font-semibold text-content-primary">New member</span>
         <IconButton label="Cancel adding member" controlSize="regular" disabled={busy} onClick={onCancel}>
           <X className="h-4 w-4" />
         </IconButton>

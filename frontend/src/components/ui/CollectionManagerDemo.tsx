@@ -182,7 +182,7 @@ export function CollectionManagerDemo() {
             )}
             title={record.title}
             status={(
-              <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-400">
+              <span className="font-utility text-compact font-semibold uppercase tracking-label text-content-muted">
                 {record.type}
               </span>
             )}

@@ -51,7 +51,8 @@ function globToRegExp(glob: string): RegExp {
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "\u0000") // ** => any (incl. /)
     .replace(/\*/g, "[^/]*") // *  => any within a segment
-    .replace(/\u0000/g, ".*");
+    .split("\u0000")
+    .join(".*");
   return new RegExp("^" + esc + "$");
 }
 

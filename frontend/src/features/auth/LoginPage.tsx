@@ -293,7 +293,7 @@ export default function LoginPage() {
             <div className="space-y-3 pt-1">
               <div className="flex items-center gap-3" aria-hidden="true">
                 <span className="h-px flex-1 bg-zinc-800" />
-                <span className="text-compact text-zinc-400">or</span>
+                <span className="text-compact text-content-muted">or</span>
                 <span className="h-px flex-1 bg-zinc-800" />
               </div>
               {capabilities.providers.apple && (
@@ -333,7 +333,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between text-compact text-zinc-400">
+          <div className="flex items-center justify-between text-compact text-content-muted">
             <Link to="/register" className={publicLinkClass}>
               Create account
             </Link>

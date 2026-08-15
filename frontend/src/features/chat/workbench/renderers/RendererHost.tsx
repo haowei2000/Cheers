@@ -36,7 +36,7 @@ export function RendererHost({
   if (renderer.source === "extension") {
     const extension = ctx.rendererExtensions.find((p) => p.extensionId === renderer.extensionId);
     if (!extension) {
-      return <div className="p-3 text-amber-400 text-compact">Renderer extension not installed: {renderer.extensionId}</div>;
+      return <div className="p-3 text-warning-400 text-compact">Renderer extension not installed: {renderer.extensionId}</div>;
     }
     // whitelisted, channel-scoped reader handed to the extension (host API)
     const readChannel = (resource: string, params: Record<string, unknown>) => {

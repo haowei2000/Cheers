@@ -19,19 +19,20 @@ import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
+import { workbenchControlSize } from "./workbench-control";
 
 const OTHER_SCENE = "__other__";
 
 const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: string }> = {
-  "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-indigo-300" },
-  "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-violet-300" },
-  "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-sky-300" },
-  "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-amber-300" },
-  [OTHER_SCENE]: { subtitle: "Renderable items outside scenes", Icon: Boxes, color: "text-teal-300" },
+  "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
+  "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-research-300" },
+  "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-info-300" },
+  "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-warning-300" },
+  [OTHER_SCENE]: { subtitle: "Renderable items outside scenes", Icon: Boxes, color: "text-category-300" },
 };
 
 function metaFor(id: string) {
-  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-zinc-200" };
+  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-content-secondary" };
 }
 
 function AddSceneControl({
@@ -46,7 +47,7 @@ function AddSceneControl({
   return (
     <div className="relative flex-shrink-0">
       <FolderPlus
-        className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-zinc-200"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-content-secondary"
         aria-hidden="true"
       />
       <Tip content="Add a scene" align="end">
@@ -59,12 +60,12 @@ function AddSceneControl({
             if (manifest) onSelect(manifest);
             event.currentTarget.value = "";
           }}
-          controlSize="regular"
+          controlSize={workbenchControlSize.tab}
           controlWidth="icon"
           className="cursor-pointer appearance-none bg-zinc-900 text-transparent hover:bg-zinc-800"
         >
-          <option value="" disabled className="text-zinc-100">Add scene</option>
-          {available.map((template) => <option className="text-zinc-100" key={template.id} value={template.id}>{template.title}</option>)}
+          <option value="" disabled className="text-content-primary">Add scene</option>
+          {available.map((template) => <option className="text-content-primary" key={template.id} value={template.id}>{template.title}</option>)}
         </UiSelect>
       </Tip>
     </div>
@@ -281,16 +282,16 @@ export function SceneWorkbench({
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
   if (loading && entries.length === 0) {
-    return <div className="flex h-full items-center justify-center text-compact text-zinc-400">Preparing Workbench…</div>;
+    return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
   }
 
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <LayoutGrid className="h-5 w-5 text-zinc-400" />
+        <LayoutGrid className="h-5 w-5 text-content-muted" />
         <div>
-          <div className="text-regular font-medium text-zinc-200">Choose a scene</div>
-          <p className="mt-1 max-w-sm text-compact leading-5 text-zinc-400">
+          <div className="text-regular font-medium text-content-secondary">Choose a scene</div>
+          <p className="mt-1 max-w-sm text-compact leading-5 text-content-muted">
             Scenes turn workspace data into focused tabs. Unsupported files remain available in Raw.
           </p>
         </div>
@@ -302,7 +303,7 @@ export function SceneWorkbench({
               if (manifest) void onAddScene(manifest);
               event.currentTarget.value = "";
             }}
-            controlSize="regular" className="rounded-sm bg-indigo-600 text-compact font-medium text-white outline-none"
+            controlSize={workbenchControlSize.tab} className="rounded-sm bg-indigo-600 text-compact font-medium text-content-on-accent outline-none"
           >
             <option value="" disabled>Add a scene…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
@@ -323,9 +324,9 @@ export function SceneWorkbench({
               key={id}
               type="button"
               onClick={() => setActiveScene(id)}
-              controlSize="regular" className={cn(
+              controlSize={workbenchControlSize.tab} className={cn(
  "flex flex-shrink-0 items-center gap-2 rounded-sm  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- activeScene === id ? "bg-indigo-500/15 text-indigo-200": "text-zinc-100 hover:bg-zinc-800/60 hover:text-zinc-50"
+ activeScene === id ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
  )}
             >
               <Icon className="h-4 w-4" />
@@ -337,7 +338,7 @@ export function SceneWorkbench({
       </div>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
-          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-[0.12em] text-zinc-400">Scenes</div>
+          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-overline text-content-muted">Scenes</div>
           <div className="space-y-1">
             {sceneIds.map((id) => {
               const meta = metaFor(id);
@@ -348,10 +349,9 @@ export function SceneWorkbench({
                   key={id}
                   type="button"
                   onClick={() => setActiveScene(id)}
-                  aria-pressed={selected}
-                  controlSize="comfortable" className={cn(
+                  controlSize={workbenchControlSize.navigation} className={cn(
  "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- selected ? "bg-indigo-500/15 text-indigo-200": "text-zinc-100 hover:bg-zinc-800/60 hover:text-zinc-50"
+ selected ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
  )}
                 >
                   <Icon className={cn("h-4 w-4 flex-shrink-0", selected && meta.color)} />
@@ -376,9 +376,9 @@ export function SceneWorkbench({
                     type="button"
                     onClick={() => selectPath(path)}
                     aria-current={selected ? "page" : undefined}
-                    controlSize="comfortable" className={cn(
+                    controlSize={workbenchControlSize.tab} className={cn(
  "relative flex-shrink-0  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
- selected ? "text-indigo-300": "text-zinc-100 hover:text-zinc-50"
+ selected ? "text-accent-300": "text-content-primary hover:text-content-strong"
  )}
                   >
                     {itemTitle(activeScene, path, templates)}
@@ -409,18 +409,18 @@ export function SceneWorkbench({
                 }}
               />
             ) : selectedPath ? (
-              <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-zinc-950 p-4 text-compact text-zinc-200">
+              <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
                 {contents[selectedPath] ?? "Loading Raw content…"}
               </pre>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-zinc-400">
-                <FileQuestion className="h-5 w-5 text-zinc-400" />
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
+                <FileQuestion className="h-5 w-5 text-content-muted" />
                 <span>No native items in this scene.</span>
-                <span className="max-w-xs text-compact leading-4 text-zinc-400">Unsupported files stay hidden here and remain available from Raw.</span>
+                <span className="max-w-xs text-compact leading-4 text-content-muted">Unsupported files stay hidden here and remain available from Raw.</span>
               </div>
             )}
           </div>
-          {status && <div className="border-t border-zinc-800 px-3 py-2 text-compact text-amber-300">{status}</div>}
+          {status && <div className="border-t border-zinc-800 px-3 py-2 text-compact text-warning-300">{status}</div>}
         </section>
       </div>
     </div>

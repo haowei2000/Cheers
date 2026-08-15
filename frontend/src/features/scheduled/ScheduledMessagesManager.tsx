@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, CirclePause, CirclePlay, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, CirclePause, CirclePlay, History, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { listChannels, listChannelMembers } from "@/api/channels";
 import {
@@ -16,6 +16,7 @@ import {
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, SectionHead } from "@/components/ui/field";
+import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { Input as UiInput } from "@/components/ui/input";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
 import { Select as UiSelect } from "@/components/ui/select";
@@ -232,14 +233,20 @@ export function ScheduledMessagesManager() {
             title={task.title}
             subtitle={`#${task.channelName}`}
             preview={task.content}
-            status={<span className={task.lastError ? "text-red-400" : "text-zinc-400"}>{scheduleLabel(task)}</span>}
+            status={<span className={task.lastError ? "text-danger-400" : "text-content-muted"}>{scheduleLabel(task)}</span>}
             metadata={task.sourceExtensionId ? `Extension: ${task.sourceExtensionId}:${task.sourceAutomationId}` : undefined}
             actions={<>
               <UiButton action="start" content="icon" variant="plain" title="Run now" aria-label={`Run ${task.title} now`} onClick={async () => { try { await runScheduledMessageNow(task.id); toast.success("Message sent"); await reload(); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><CirclePlay className="h-3.5 w-3.5" /></UiButton>
               <UiButton action="review" content="icon" variant="plain" title="Run history" aria-label={`Run history for ${task.title}`} onClick={async () => { try { setHistory({ task, runs: await listScheduledMessageRuns(task.id) }); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><History className="h-3.5 w-3.5" /></UiButton>
               {!(task.schedule.kind === "once" && !task.nextRunAt && task.lastRunAt) && <UiButton action={task.enabled ? "disable" : "enable"} content="icon" variant="plain" title={task.enabled ? "Pause" : "Resume"} aria-label={`${task.enabled ? "Pause" : "Resume"} ${task.title}`} onClick={() => void toggle(task)}>{task.enabled ? <CirclePause className="h-3.5 w-3.5" /> : <CirclePlay className="h-3.5 w-3.5" />}</UiButton>}
-              <UiButton action="edit" content="icon" variant="plain" title="Edit" aria-label={`Edit ${task.title}`} onClick={() => setForm(editForm(task))}><Pencil className="h-3.5 w-3.5" /></UiButton>
-              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-red-400" onClick={async () => { if (!window.confirm(`Delete "${task.title}"?`)) return; await deleteScheduledMessage(task.id); await reload(); }}><Trash2 className="h-3.5 w-3.5" /></UiButton>
+              <InlineEditActions
+                label={task.title}
+                editing={false}
+                onEdit={() => setForm(editForm(task))}
+                onSave={() => undefined}
+                onCancel={() => undefined}
+              />
+              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-danger-400" onClick={async () => { if (!window.confirm(`Delete "${task.title}"?`)) return; await deleteScheduledMessage(task.id); await reload(); }}><Trash2 className="h-3.5 w-3.5" /></UiButton>
             </>}
           />
         ))}
@@ -281,9 +288,15 @@ export function ScheduledMessagesManager() {
                 : <Field label="Local time"><UiInput type="time" value={form.localTime} onChange={(event) => setForm({ ...form, localTime: event.target.value })} /></Field>}
           </div>
           {form.kind === "daily" && <Field label="Timezone"><UiSelect value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}>{timezoneOptions.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</UiSelect></Field>}
-          <div className="flex justify-end gap-2 pt-2">
-            <UiButton action="cancel" variant="plain" onClick={() => setForm(null)}>Cancel</UiButton>
-            <UiButton action="save" variant="primary" loading={saving} onClick={() => void save()}>Save</UiButton>
+          <div className="flex justify-end pt-2">
+            <InlineEditActions
+              label="scheduled task"
+              editing
+              saving={saving}
+              onEdit={() => undefined}
+              onSave={() => void save()}
+              onCancel={() => setForm(null)}
+            />
           </div>
         </div>
       </Dialog>}
@@ -297,7 +310,7 @@ export function ScheduledMessagesManager() {
               subtitle={`${run.trigger === "manual" ? "Manual" : "Scheduled"} · Attempt ${run.attempt} · ${new Date(run.scheduledFor).toLocaleString()}`}
               metadata={run.messageId ? `Message ${run.messageId}` : undefined}
               preview={run.error ?? undefined}
-              status={<span className={run.status === "failed" ? "text-red-400" : run.status === "succeeded" ? "text-emerald-400" : "text-amber-400"}>{run.status}</span>}
+              status={<span className={run.status === "failed" ? "text-danger-400" : run.status === "succeeded" ? "text-success-400" : "text-warning-400"}>{run.status}</span>}
             />)}
             {history.runs.length === 0 && <WorkbenchItem title="No runs yet" />}
           </ItemSection>

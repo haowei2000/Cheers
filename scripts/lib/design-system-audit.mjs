@@ -155,6 +155,7 @@ export function auditSources(files, ts, policy) {
       legacyControlSizeProp: 0,
       commonActionPresentationOverride: 0,
       unregisteredFormAction: 0,
+      nonSemanticTextColor: 0,
       nonStandardNeutralTextShade: 0,
       nonStandardDisabledOpacity: 0,
       nonPrimaryButtonNeutralText: 0,
@@ -181,7 +182,12 @@ export function auditSources(files, ts, policy) {
     collectDeclarations(sourceFile);
 
     if (!development) {
-      for (const match of source.matchAll(/\btext-zinc-(?:300|500|600|700|800|900)(?:\/[0-9]+)?\b/g)) {
+      for (const match of source.matchAll(/\btext-(?:zinc|indigo|red|amber|emerald|rose|sky|orange|teal|violet)(?:-[0-9]+)(?:\/[0-9]+)?\b|\btext-white\b/g)) {
+        const line = source.slice(0, match.index).split("\n").length;
+        result.violations.nonSemanticTextColor += 1;
+        result.findings.push({ file, line, rule: "nonSemanticTextColor", token: match[0] });
+      }
+      for (const match of source.matchAll(/\btext-zinc-(?:[0-9]+)(?:\/[0-9]+)?\b/g)) {
         const line = source.slice(0, match.index).split("\n").length;
         result.violations.nonStandardNeutralTextShade += 1;
         result.findings.push({ file, line, rule: "nonStandardNeutralTextShade", token: match[0] });
@@ -248,7 +254,7 @@ export function auditSources(files, ts, policy) {
           }
 
           if (!primitive && ["button", "Button", "UiButton", "ActionButton", "IconButton", "ControlTrigger"].includes(tag)) {
-            const mutedButtonTokens = tokens.filter((token) => /^(?:text-zinc-(?:200|400))$/.test(utilityBase(token)));
+            const mutedButtonTokens = tokens.filter((token) => /^(?:text-content-(?:secondary|muted))$/.test(utilityBase(token)));
             if (mutedButtonTokens.length) {
               result.violations.nonPrimaryButtonNeutralText += mutedButtonTokens.length;
               result.findings.push({ file, line, rule: "nonPrimaryButtonNeutralText", token: mutedButtonTokens.join(" ") });

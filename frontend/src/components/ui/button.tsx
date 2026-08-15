@@ -9,7 +9,7 @@ import {
   type ControlSize,
 } from "./control-size";
 
-type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
+type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill";
 export type ButtonContent = "icon" | "text" | "iconText";
 
@@ -22,18 +22,24 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   content?: ButtonContent;
   /** Supplies the shared action identity and a fallback label when no children are provided. */
   action?: ActionKey;
+  /** Optional explicit label for iconText controls whose visible copy is registered outside ActionKey. */
+  label?: ReactNode;
   loading?: boolean;
+  /** Toggle/selector state. Applies shared selected styling and button semantics. */
+  selected?: boolean;
 }
 
 const variantCls: Record<Variant, string> = {
   primary:
-    "bg-indigo-100 text-zinc-950 hover:bg-white active:bg-indigo-300",
+    "bg-content-strong text-content-on-light hover:bg-zinc-200 active:bg-zinc-300",
+  emphasis:
+    "bg-emphasis text-content-on-accent hover:bg-emphasis-hover active:bg-emphasis-active",
   ghost:
-    "bg-transparent text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 active:bg-zinc-700",
+    "bg-transparent text-content-primary hover:bg-zinc-800 hover:text-content-strong active:bg-zinc-700",
   danger:
-    "bg-transparent text-red-400 hover:bg-red-950 hover:text-red-300 active:bg-red-900",
+    "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900",
   secondary:
-    "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 active:bg-zinc-600",
+    "bg-control text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
   plain:
     "bg-transparent text-inherit hover:bg-zinc-800/70 active:bg-zinc-700/70",
 };
@@ -63,9 +69,10 @@ function LoadingIndicator() {
   );
 }
 
-function IconTextContent({ action, children, loading, size }: {
+function IconTextContent({ action, children, label, loading, size }: {
   action?: ActionKey;
   children: ReactNode;
+  label?: ReactNode;
   loading?: boolean;
   size: ControlSize;
 }) {
@@ -87,7 +94,7 @@ function IconTextContent({ action, children, loading, size }: {
         data-button-slot="label"
         className="inline-flex min-w-0 flex-1 items-center justify-center self-stretch px-3"
       >
-        {action ? actionLabel(action) : parts}
+        {action ? actionLabel(action) : label ?? parts}
       </span>
     </>
   );
@@ -101,10 +108,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       controlWidth = "slot",
       content = "text",
       action,
+      label,
       loading,
+      selected = false,
       disabled,
       className,
       children,
+      role,
       ...props
     },
     ref
@@ -118,9 +128,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       data-button-content={content}
       data-control-width={controlWidth}
       aria-busy={loading || undefined}
+      role={role}
+      aria-pressed={role === "tab" ? undefined : selected || undefined}
+      data-selected={selected || undefined}
       className={cn(
         "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
         variantCls[variant],
+        selected && "bg-control text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
         className,
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses.regular,
@@ -135,7 +149,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {...props}
     >
       {content === "iconText" ? (
-        <IconTextContent action={action} loading={loading} size={resolvedSize}>{children}</IconTextContent>
+        <IconTextContent action={action} label={label} loading={loading} size={resolvedSize}>{children}</IconTextContent>
       ) : content === "icon" ? (
         loading ? <LoadingIndicator /> : children
       ) : (

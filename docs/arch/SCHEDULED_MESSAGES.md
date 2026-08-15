@@ -20,7 +20,7 @@ not part of this release.
 
 ## Persistence
 
-Migration `0080_scheduled_messages.sql` owns two tables:
+Migration `0081_scheduled_messages.sql` owns two tables:
 
 - `scheduled_messages`: schedule, message payload, owner, channel, next run, lease, and
   latest status.

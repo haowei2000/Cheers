@@ -41,12 +41,12 @@ export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDe
         {lens ? (
           lens.render({ data, config: view.config, onChange })
         ) : (
-          <div className="p-3 text-amber-400">Unknown lens: {view.lens}</div>
+          <div className="p-3 text-warning-400">Unknown lens: {view.lens}</div>
         )}
       </div>
       {(status || !lens?.viewOnly) && (
         <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
-          <span className="text-compact text-zinc-400 truncate flex-1">{status}</span>
+          <span className="text-compact text-content-muted truncate flex-1">{status}</span>
           {!lens?.viewOnly && (
             <IconButton label={`Save ${view.file}`} controlSize="compact" onClick={() => void onSave()}>
               <Save className="w-3.5 h-3.5" />

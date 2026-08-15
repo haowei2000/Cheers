@@ -103,7 +103,7 @@ export function WorkbenchManager() {
 
   return (
     <section>
-      <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-wider text-zinc-400">
+      <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-section text-content-muted">
         <Blocks className="h-3.5 w-3.5" /> Workbench extensions
       </h2>
       {(error || notice) && (
@@ -124,17 +124,19 @@ export function WorkbenchManager() {
           {desktop && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => personalRef.current?.click()}>
             <Laptop className="h-3.5 w-3.5" /> Install on this Mac
           </UiButton>}
-          <input ref={globalRef} type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installGlobal(file); event.target.value = ""; }} />
-          <input ref={personalRef} type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installPersonal(file); event.target.value = ""; }} />
+          {/* design-system-native: file-input */}
+          <input ref={globalRef} aria-label="Choose a global extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installGlobal(file); event.target.value = ""; }} />
+          {/* design-system-native: file-input */}
+          <input ref={personalRef} aria-label="Choose a personal extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void installPersonal(file); event.target.value = ""; }} />
         </div>}
       >
         {global.map((extension) => (
           <WorkbenchItem
             key={`global:${extension.id}`}
             title={`${extension.title} · ${extension.version}`}
-            leading={<Package className="h-3.5 w-3.5 text-indigo-300" />}
-            status={<span className="text-minimal text-zinc-400">{extension.origin === "system" ? "Official" : "Global"} · Installed · Ready · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
-            actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.title}`} title="Uninstall" onClick={async () => { await deleteExtension(extension.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
+            leading={<Package className="h-3.5 w-3.5 text-accent-300" />}
+            status={<span className="text-minimal text-content-muted">{extension.origin === "system" ? "Official" : "Global"} · Installed · Ready · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
+            actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.title}`} title="Uninstall" onClick={async () => { await deleteExtension(extension.id); await reload(); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
           />
         ))}
         {personal.map((extension) => {
@@ -145,11 +147,11 @@ export function WorkbenchManager() {
           return <WorkbenchItem
             key={`personal:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
-            leading={<Laptop className="h-3.5 w-3.5 text-emerald-300" />}
-            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-red-400" : "text-minimal text-zinc-400"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
+            leading={<Laptop className="h-3.5 w-3.5 text-success-300" />}
+            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
             actions={<div className="flex items-center gap-1">
-              <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-zinc-100 hover:text-zinc-50">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
-              <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { setPersonalExtensionDisabled(extension.manifest.id, false); await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-content-primary hover:text-content-strong">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
+              <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { setPersonalExtensionDisabled(extension.manifest.id, false); await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
             </div>}
           />;
         })}
@@ -158,9 +160,9 @@ export function WorkbenchManager() {
           return <WorkbenchItem
             key={`temporary:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
-            leading={<Upload className="h-3.5 w-3.5 text-amber-300" />}
-            status={<span className={status === "failed" ? "text-minimal text-red-400" : "text-minimal text-zinc-400"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
-            actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-zinc-100 hover:text-red-400"><X className="h-3.5 w-3.5" /></UiButton>}
+            leading={<Upload className="h-3.5 w-3.5 text-warning-300" />}
+            status={<span className={status === "failed" ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
+            actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-content-primary hover:text-danger-400"><X className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}
         {global.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}

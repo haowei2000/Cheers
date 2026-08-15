@@ -21,6 +21,7 @@ import type { PermissionContentData, PermissionOption, VoicePresenceSnapshot } f
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
+import { useShallow } from "zustand/react/shallow";
 
 // Human-readable byte size for the native banner context line.
 function formatBytes(n: number): string {
@@ -74,7 +75,22 @@ export default function ChatLayout() {
     updateVoicePresence,
     selectWorkspace,
     hydrateSelection,
-  } = useChatStore();
+  } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      channels: state.channels,
+      personalWorkspace: state.personalWorkspace,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      selectedChannelId: state.selectedChannelId,
+      setWorkspaces: state.setWorkspaces,
+      setPersonalWorkspace: state.setPersonalWorkspace,
+      setChannels: state.setChannels,
+      setVoicePresence: state.setVoicePresence,
+      updateVoicePresence: state.updateVoicePresence,
+      selectWorkspace: state.selectWorkspace,
+      hydrateSelection: state.hydrateSelection,
+    })),
+  );
   const isMobile = useIsMobile();
   // Desktop tray + dock badge (no-op in the browser). Derives unread + pending
   // + agent-busy and pushes to the native shell.

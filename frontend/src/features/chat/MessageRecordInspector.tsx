@@ -115,13 +115,13 @@ export function MessageRecordInspector({
         <DragHandle className="mx-auto mb-3 md:hidden" />
         <header className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
           <div className="min-w-0 flex-1">
-            <p className="text-minimal font-semibold uppercase tracking-[0.16em] text-zinc-400">
+            <p className="text-minimal font-semibold uppercase tracking-overline text-content-muted">
               Message record · {String(count).padStart(2, "0")}
             </p>
-            <h2 id={titleId} className="mt-1 text-comfortable font-semibold text-zinc-100">
+            <h2 id={titleId} className="mt-1 text-comfortable font-semibold text-content-primary">
               {sender}
             </h2>
-            <p className="mt-1 text-compact tabular-nums text-zinc-400">
+            <p className="mt-1 text-compact tabular-nums text-content-muted">
               {formatTime(message.created_at)} · {message.msg_id.slice(0, 8)}
             </p>
           </div>
@@ -130,14 +130,14 @@ export function MessageRecordInspector({
             label="Close message record"
             title="Close"
             controlSize="compact"
-            className="shrink-0 text-zinc-100 transition-colors hover:text-zinc-50"
+            className="shrink-0 text-content-primary transition-colors hover:text-content-strong"
           >
             <X className="h-4 w-4" />
           </IconButton>
         </header>
 
         {meta.hasFailure && (
-          <div role="alert" className="flex min-h-11 items-center gap-2 border-b border-red-950/80 text-compact text-red-300">
+          <div role="alert" className="flex min-h-11 items-center gap-2 border-b border-red-950/80 text-compact text-danger-300">
             <AlertCircle className="h-3.5 w-3.5" />
             One or more agent steps failed.
           </div>
@@ -147,10 +147,10 @@ export function MessageRecordInspector({
           {meta.contextCount > 0 && (
             <section className="py-5" aria-labelledby={`${titleId}-references`}>
               <div className="mb-3 flex items-baseline justify-between gap-3">
-                <h3 id={`${titleId}-references`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-200">
+                <h3 id={`${titleId}-references`} className="text-compact font-semibold uppercase tracking-overline text-content-secondary">
                   References
                 </h3>
-                <span className="text-minimal tabular-nums text-zinc-400">{String(meta.contextCount).padStart(2, "0")}</span>
+                <span className="text-minimal tabular-nums text-content-muted">{String(meta.contextCount).padStart(2, "0")}</span>
               </div>
               <MessageContextChips bundle={message.context_bundle} className="gap-2" />
             </section>
@@ -159,10 +159,10 @@ export function MessageRecordInspector({
           {meta.hasTrace && channelId && (
             <section className="py-5" aria-labelledby={`${titleId}-agent-record`}>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 id={`${titleId}-agent-record`} className="text-compact font-semibold uppercase tracking-[0.12em] text-zinc-200">
+                <h3 id={`${titleId}-agent-record`} className="text-compact font-semibold uppercase tracking-overline text-content-secondary">
                   Agent record
                 </h3>
-                <span className="inline-flex items-center gap-1 text-minimal tabular-nums text-zinc-400">
+                <span className="inline-flex items-center gap-1 text-minimal tabular-nums text-content-muted">
                   <ListTree className="h-3.5 w-3.5" />
                   {String(meta.traceCount).padStart(2, "0")}
                 </span>

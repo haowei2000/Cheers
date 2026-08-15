@@ -14,6 +14,7 @@ import { UnreadBadge } from "@/components/ui/unread-badge";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
+import { useShallow } from "zustand/react/shallow";
 
 interface SectionProps {
   label: string;
@@ -36,7 +37,7 @@ function Section({ label, children, onAdd, addLabel }: SectionProps) {
             onClick={onAdd}
             label={addLabel ?? "Add"}
             title={addLabel ?? "Add"}
-            className="text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50"
+            className="text-content-primary hover:bg-zinc-700 hover:text-content-strong"
           >
             <Plus className={controlIconClasses.compact} />
           </IconButton>
@@ -85,7 +86,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
           <EditorialIcon name="section" contentSize="regular" className="flex-shrink-0 opacity-70" />
         )}
         status={participants.length > 0 ? (
-          <span className={cn(controlTextClasses.compact, "tabular-nums text-emerald-400")}>
+          <span className={cn(controlTextClasses.compact, "tabular-nums text-success-400")}>
             {participants.length}
           </span>
         ) : undefined}
@@ -133,7 +134,15 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
     selectChannel,
     selectedWorkspaceId,
     voicePresenceByChannel,
-  } = useChatStore();
+  } = useChatStore(
+    useShallow((state) => ({
+      channels: state.channels,
+      selectedChannelId: state.selectedChannelId,
+      selectChannel: state.selectChannel,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      voicePresenceByChannel: state.voicePresenceByChannel,
+    })),
+  );
   const [dmOpen, setDmOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
@@ -166,7 +175,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
@@ -176,13 +185,13 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           title={canOpenSettings ? "Workspace settings" : undefined}
           controlSize="regular" className="group flex items-center gap-2 rounded-sm transition-colors hover:bg-zinc-800/60"
         >
-          <span className="font-utility flex-1 truncate text-left text-regular font-semibold text-zinc-100">
+          <span className="font-utility flex-1 truncate text-left text-regular font-semibold text-content-primary">
             {workspace?.name ?? "Workspace"}
           </span>
           {canOpenSettings && (
             // Gear, not a down-chevron: this opens the settings modal rather than
             // expanding a dropdown beneath the header, so a chevron would lie.
-            <Settings className={cn(controlIconClasses.regular, "text-zinc-400 flex-shrink-0")} />
+            <Settings className={cn(controlIconClasses.regular, "text-content-muted flex-shrink-0")} />
           )}
         </ControlTrigger>
       </div>
@@ -242,24 +251,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 className="rounded-sm border-0"
               />
             ))}
-            {dms.length === 0 && (
-              <div role="listitem" className={cn("px-2 py-1 text-zinc-400", controlTextClasses.compact)}>Use + to start a direct message</div>
-            )}
           </Section>
-        )}
-
-        {channels.length === 0 && (
-          <div className="px-3 py-4 text-center">
-            <p className={cn("text-zinc-400", controlTextClasses.compact)}>No channels yet</p>
-            <UiButton action="create" variant="plain"
-              type="button"
-              onClick={() => setChannelOpen(true)}
-              controlSize="compact"
-              className="mt-1 font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
-            >
-              Create a channel
-            </UiButton>
-          </div>
         )}
       </div>
       {dmOpen && (

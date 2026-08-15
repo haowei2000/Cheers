@@ -56,7 +56,7 @@ export function Avatar({ name, src, id, size = "regular", className, online }: A
       <span
         data-design-system-exempt="identity"
         className={cn(
-          "rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0",
+          "rounded-full flex items-center justify-center font-semibold text-content-on-accent flex-shrink-0",
           avatarSizeClasses[size],
           color,
           className

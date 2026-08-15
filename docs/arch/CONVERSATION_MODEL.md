@@ -10,6 +10,12 @@
 
 一段会话 = **成员 + 一条消息时间线 + 文件 + bot 会话**。这四样全部 keyed by `channel_id`（`channel_seq`、`channel_memberships`、`context_files`、`cheers_sessions`、`channel.*` resource）。public / private / dm 只是 `channel.type` 的取值，**共享同一套机制**。
 
+Workspace 和 Channel 的公开成员契约均为
+`{ member_id, member_type: "user" | "bot", role? }`。Bot 与用户走相同的
+`POST /workspaces/{id}/members`、`POST /channels/{id}/members` 入口；服务端只在
+角色上限、用户邀请接受和 Bot owner 授权处按主体类型分支。将 Bot 加入非 DM
+频道时，会同时保证它是该频道所属 Workspace 的成员。
+
 - **删 topic**：会话层级从 `workspace → channel → topic → message` 塌缩为 `workspace → channel → message`。topic 不是字段，是每条 scope 轴上多出的一层；删了它，「按 channel 还是 topic」的追问一律只有一个答案：channel。
 - **DM 不另起炉灶**：messages / seq / 成员 / 文件 / 工作台 / sessions / `channel.*` 全部直接复用 channel 机器。
 

@@ -274,6 +274,67 @@ pub async fn revoke_installation(
     ))
 }
 
+pub async fn delete_installation_record(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((bot_id, installation_id)): Path<(String, String)>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let mut tx = state.db.begin().await?;
+
+    let revoked_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
+        "SELECT revoked_at FROM terminal_installations
+         WHERE installation_id = $1 AND bot_id = $2
+         FOR UPDATE",
+    )
+    .bind(&installation_id)
+    .bind(&bot_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    match revoked_at {
+        None => return Err(AppError::NotFound),
+        Some(None) => {
+            return Err(AppError::BadRequest(
+                "revoke the installation before deleting its record".into(),
+            ));
+        }
+        Some(Some(_)) => {}
+    }
+
+    sqlx::query(
+        "DELETE FROM terminal_installations
+         WHERE installation_id = $1 AND bot_id = $2",
+    )
+    .bind(&installation_id)
+    .bind(&bot_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    crate::domain::bot_management_audit::record(
+        &state.db,
+        "installation.deleted",
+        Some(&bot_id),
+        Some(&installation_id),
+        Some(&claims.sub),
+        json!({}),
+    )
+    .await;
+
+    tracing::info!(
+        %bot_id,
+        %installation_id,
+        owner = %claims.sub,
+        "terminal installation record deleted"
+    );
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "installation_id": installation_id,
+        "deleted": true
+    })))
+}
 /// A revoked pending Installation stays pending until `pairing_reaper` removes
 /// it with its revoked code. Credentialed Installations become standby so the
 /// historical row remains visible as a non-active runtime location.

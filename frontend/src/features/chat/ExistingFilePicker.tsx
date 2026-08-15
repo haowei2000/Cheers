@@ -57,11 +57,11 @@ export function ExistingFilePicker({
   return (
     <Dialog title="Pick channel files" onClose={onClose} maxWidth="max-w-xl">
       {files === null ? (
-        <div className="py-8 flex items-center justify-center gap-2 text-compact text-zinc-400">
+        <div className="py-8 flex items-center justify-center gap-2 text-compact text-content-muted">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : files.length === 0 ? (
-        <div className="py-8 text-center text-compact text-zinc-400">
+        <div className="py-8 text-center text-compact text-content-muted">
           No files in this channel yet. Upload one with 📎 first.
         </div>
       ) : (
@@ -88,22 +88,22 @@ export function ExistingFilePicker({
                 <span
                   className={
                     "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm  " +
-                    (checked ? "border-indigo-500 bg-indigo-600 text-white" : "border-zinc-600")
+                    (checked ? "border-indigo-500 bg-indigo-600 text-content-on-accent" : "border-zinc-600")
                   }
                 >
                   {checked && <Check className="w-3.5 h-3.5" />}
                 </span>
                 <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
                 <span
-                  className="min-w-0 flex-1 truncate text-regular text-zinc-200"
+                  className="min-w-0 flex-1 truncate text-regular text-content-secondary"
                   title={f.original_filename || f.file_id}
                 >
                   {f.original_filename || f.file_id.slice(0, 8)}
                 </span>
                 {typeof f.size_bytes === "number" && (
-                  <span className="text-compact text-zinc-400">{formatBytes(f.size_bytes)}</span>
+                  <span className="text-compact text-content-muted">{formatBytes(f.size_bytes)}</span>
                 )}
-                {isAttached && <span className="text-minimal text-zinc-400">Added</span>}
+                {isAttached && <span className="text-minimal text-content-muted">Added</span>}
               </UiButton>
             );
           })}

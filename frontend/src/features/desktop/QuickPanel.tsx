@@ -85,30 +85,30 @@ export function QuickPanel() {
   );
 
   return (
-    <div className="h-screen w-screen bg-zinc-900 text-zinc-100 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-zinc-900 text-content-primary flex flex-col overflow-hidden">
       {/* Frameless window: this strip is the drag handle. */}
       <div
         data-tauri-drag-region
         className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-zinc-800 px-4"
       >
-        <Zap className="w-4 h-4 text-indigo-400" />
-        <span className="text-compact font-medium text-zinc-200">Quick send</span>
-        <span className="ml-auto text-minimal text-zinc-400">Esc to dismiss</span>
+        <Zap className="w-4 h-4 text-accent-400" />
+        <span className="text-compact font-medium text-content-secondary">Quick send</span>
+        <span className="ml-auto text-minimal text-content-muted">Esc to dismiss</span>
       </div>
 
       {!user ? (
         <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <p className="text-regular text-zinc-400">
+          <p className="text-regular text-content-muted">
             Sign in from the main Cheers window first, then reopen this panel.
           </p>
         </div>
       ) : dms === null ? (
         <div className="flex-1 flex items-center justify-center">
-          <Spinner contentSize="large" className="text-zinc-400" />
+          <Spinner contentSize="large" className="text-content-muted" />
         </div>
       ) : dms.length === 0 ? (
         <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <p className="text-regular text-zinc-400">
+          <p className="text-regular text-content-muted">
             No direct messages yet. Start a DM with a bot in the main window, then
             quick-send here.
           </p>

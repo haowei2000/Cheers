@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "./avatar";
@@ -28,6 +28,7 @@ export function AvatarUpload({
   onUpload: (file: File) => Promise<string>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
@@ -44,11 +45,19 @@ export function AvatarUpload({
       return;
     }
     setBusy(true);
-    setPreview(URL.createObjectURL(file));
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    setPreview(objectUrl);
     try {
-      await onUpload(file);
+      const uploadedUrl = await onUpload(file);
+      URL.revokeObjectURL(objectUrl);
+      previewObjectUrlRef.current = null;
+      setPreview(uploadedUrl);
       toast.success("Avatar updated");
     } catch (err) {
+      URL.revokeObjectURL(objectUrl);
+      previewObjectUrlRef.current = null;
       setPreview(null);
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -56,11 +65,20 @@ export function AvatarUpload({
     }
   }
 
+  useEffect(
+    () => () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    },
+  );
+
   return (
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
       disabled={busy}
+      aria-label="Change avatar"
       data-design-system-exempt="identity"
       className={cn(
         "group relative inline-flex flex-shrink-0 items-center justify-center rounded-full",
@@ -71,9 +89,9 @@ export function AvatarUpload({
       <Avatar name={name} id={id} src={preview || src || undefined} size={size} />
       <span data-design-system-exempt="identity" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
         {busy ? (
-          <Loader2 className={`${contentIconClasses.regular} animate-spin text-white`} />
+          <Loader2 className={`${contentIconClasses.regular} animate-spin text-content-on-accent`} />
         ) : (
-          <Camera className={`${contentIconClasses.regular} text-white`} />
+          <Camera className={`${contentIconClasses.regular} text-content-on-accent`} />
         )}
       </span>
       <input

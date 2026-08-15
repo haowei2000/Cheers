@@ -124,16 +124,16 @@ const context: WorkbenchContext = {
 
 function Preview() {
   return (
-    <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-zinc-100">
+    <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-content-primary">
       <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-sm border border-zinc-700/80 bg-zinc-900 shadow-2xl shadow-black/50">
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-          <LayoutGrid className="h-4 w-4 text-indigo-300" />
+          <LayoutGrid className="h-4 w-4 text-accent-300" />
           <h1 className="text-regular font-semibold">Workbench</h1>
-          <span className="text-compact text-zinc-400"># engineering</span>
+          <span className="text-compact text-content-muted"># engineering</span>
           <div className="ml-auto flex items-center gap-2">
-            <UiButton content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800 text-zinc-100"><Folder className="h-4 w-4" />Raw</UiButton>
-            <UiButton variant="plain" aria-label="Expand" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
-            <UiButton variant="plain" aria-label="Close" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-100 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
+            <UiButton content="iconText" variant="plain" controlSize="regular" className="bg-zinc-800 text-content-primary"><Folder className="h-4 w-4" />Raw</UiButton>
+            <UiButton variant="plain" aria-label="Expand" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" aria-label="Close" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
           </div>
         </header>
         <div className="min-h-0 flex-1">

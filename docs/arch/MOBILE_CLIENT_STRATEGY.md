@@ -116,9 +116,12 @@ reference an Expo rewrite copies from.
   is frozen but kept (fixes only).
 - **Frontend cleanups** surfaced during the review, tracked separately from this
   decision but relevant to the mobile-web line:
-  - React Query is configured but **unused** (0 `useQuery`, 19 files hand-roll
-    `useEffect` + `apiJson`) — highest-value refactor, no bundle cost.
-  - Near-zero test coverage (1 test file in the whole frontend).
+  - **Updated 2026-08-15:** React Query now owns REST-backed account settings
+    (profile, external identities, sessions, and AI consents). Zustand remains
+    limited to authentication, navigation/UI state, and realtime projections;
+    the remaining hand-rolled REST screens should migrate incrementally.
+  - Frontend coverage now includes unit, design-system, CSP, and dependency
+    security checks; browser-level end-to-end coverage remains the next gap.
   - `highlight.js` ships full (969 KB) — switch to `lib/core` + registered langs.
   - Oversized components (`RemoteWorkspaceDialog.tsx` 1309 LoC).
 
@@ -139,7 +142,8 @@ reference an Expo rewrite copies from.
 2. ✅ Merge the three branches into `develop` (order above).
 3. ~~Scaffold `apps/mobile/` with Expo~~ — **cancelled 2026-07-19, never started.**
 4. ~~Reach feature parity, then retire `apps/ios` + `apps/android`.~~ — **void.**
-5. In parallel, migrate the web data layer to React Query (benefits mobile web too).
+5. 🚧 Migrate the web REST data layer to React Query incrementally (account
+   settings complete; remaining feature queries pending).
 
 **Revised roadmap (2026-07-19)**
 

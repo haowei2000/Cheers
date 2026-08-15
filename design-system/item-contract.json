@@ -5,12 +5,17 @@
   "defaultControlSize": "regular",
   "defaultContentSize": "regular",
   "defaultTypographySize": "regular",
+  "appearance": {
+    "default": "system",
+    "options": ["system", "light", "dark"],
+    "rule": "Shared semantic color tokens switch every product surface; feature components do not maintain parallel theme classes."
+  },
   "neutralForegroundLevels": {
-    "primary": ["zinc-50", "zinc-100"],
-    "secondary": "zinc-200",
-    "metadata": "zinc-400",
+    "primary": ["content-strong", "content-primary"],
+    "secondary": "content-secondary",
+    "metadata": "content-muted",
     "disabled": "enabled foreground plus opacity-50",
-    "inverseExceptions": ["white", "zinc-950"]
+    "inverseExceptions": ["content-on-accent", "content-on-light"]
   },
   "visualLanguage": {
     "name": "Editorial Correspondence",
@@ -22,9 +27,10 @@
       "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
     ],
     "typography": {
+      "code": "The registered Web code stack through font-code, with ligatures disabled and tabular figures enabled for commands, paths, identifiers, logs, and diffs. Native platforms use their system monospace face.",
       "display": "Source Serif 4 at display optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Semibold for Chinese introductions and major headings; Japanese and Korean use locale-correct native serif faces.",
       "reading": "Source Serif 4 at text optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Regular/Semibold for Chinese messages, previews, and long-form copy; Japanese and Korean use locale-correct native serif faces.",
-      "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts. Monospace is a technical sub-role for code only."
+      "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts."
     },
     "typographySizes": {
       "minimal": "10px",
@@ -102,8 +108,10 @@
     "Typography size has exactly minimal, compact, regular, and comfortable tiers; every production surface, including code, diff, charts, dense panels, and mastheads, must use one of them without exception.",
     "Peer text controls use a shared width slot or an explicit fill mode; content length never determines control width.",
     "Horizontal control padding belongs to the shared primitive and cannot be overridden by business call sites.",
+    "Leading input icons and search semantics belong to shared field primitives; business call sites cannot add a second field boundary, focus ring, icon position, or leading padding.",
     "Presentation level and control size inherit and override independently.",
-    "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior."
+    "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior.",
+    "Mutually exclusive form choices use a semantic selection control with a visible non-color-only selected state and platform-standard keyboard or assistive interaction."
   ],
   "semanticActions": {
     "create": "plus",
@@ -123,7 +131,9 @@
     "inlineEdit": { "cancel": "icon", "delete": "icon", "edit": "icon", "remove": "icon", "save": "icon" },
     "form": { "back": "text", "cancel": "text", "create": "iconText", "save": "iconText" },
     "dialog": { "back": "text", "cancel": "text" },
-    "confirmation": { "cancel": "text", "delete": "iconText", "remove": "iconText" }
+    "confirmation": { "cancel": "text", "delete": "iconText", "remove": "iconText" },
+    "security": { "add": "iconText", "copy": "iconText", "disable": "iconText", "done": "iconText", "enable": "iconText", "link": "iconText", "revoke": "iconText", "setup": "iconText", "unlink": "iconText", "update": "iconText" },
+    "settings": { "check": "iconText", "disable": "iconText", "dismiss": "text", "enable": "iconText", "open": "iconText", "resolve": "text", "restart": "iconText", "retry": "iconText", "review": "text", "save": "iconText", "signOut": "iconText", "switch": "iconText", "test": "text" }
   },
   "legacyBaselines": {
     "iosDirectButtonCalls": 186,
@@ -136,6 +146,7 @@
     { "id": "search", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "select", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "toggle", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "choice", "category": "control", "platforms": ["web", "ios"] },
     { "id": "tabs", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "menu", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "popover", "category": "control", "platforms": ["web"] },

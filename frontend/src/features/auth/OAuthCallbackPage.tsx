@@ -94,7 +94,7 @@ export default function OAuthCallbackPage() {
         {error ? (
         <div>
           <h2 className="font-masthead text-comfortable">Couldn&apos;t sign in</h2>
-          <p className="mt-2 text-regular text-zinc-400">{error}</p>
+          <p className="mt-2 text-regular text-content-muted">{error}</p>
           <UiButton action="signIn" variant="plain" className={`mt-5 ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
             Back to sign in
           </UiButton>
@@ -102,10 +102,10 @@ export default function OAuthCallbackPage() {
       ) : linkedMessage ? (
         <div>
           <h2 className="font-masthead text-comfortable">Linked</h2>
-          <p className="mt-2 text-regular text-zinc-400">{linkedMessage}</p>
+          <p className="mt-2 text-regular text-content-muted">{linkedMessage}</p>
         </div>
       ) : (
-        <Spinner contentSize="large" className="text-zinc-400" />
+        <Spinner contentSize="large" className="text-content-muted" />
       )}
       </div>
     </PublicPageShell>

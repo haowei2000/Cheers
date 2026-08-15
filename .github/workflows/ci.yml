@@ -218,6 +218,12 @@ jobs:
       - name: Test design-system scanner
         run: npm run design-system:test
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Security checks
+        run: npm run security:check
+
       - name: Type-check
         run: npm run typecheck
 

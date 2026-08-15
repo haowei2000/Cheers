@@ -37,7 +37,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
           placeholder="Workspace name…"
-          controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel" variant="ghost" onClick={onClose}>

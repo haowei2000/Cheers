@@ -2,9 +2,13 @@ import { apiJson } from "./client";
 import type { Workspace } from "@/types";
 
 export interface WorkspaceMember {
-  user_id: string;
+  member_id: string;
+  member_type: "user" | "bot";
+  user_id?: string;
+  bot_id?: string;
   username: string;
   display_name?: string | null;
+  avatar_url?: string | null;
   role: string;
   /** 'active' (joined) or 'pending' (invited, not yet accepted). */
   status: string;
@@ -58,9 +62,22 @@ export async function inviteWorkspaceMember(
   });
 }
 
+export async function addWorkspaceMember(
+  workspaceId: string,
+  member: { member_id: string; member_type: "user" | "bot"; role?: string }
+): Promise<{ status: "active" | "pending" | "exists" }> {
+  return apiJson(`/workspaces/${workspaceId}/members`, {
+    method: "POST",
+    body: JSON.stringify(member),
+  });
+}
+
 /** A workspace-invite candidate; `membership` non-null means already in (or invited). */
 export interface WorkspaceInvitable {
-  user_id: string;
+  member_id: string;
+  member_type: "user" | "bot";
+  user_id?: string;
+  bot_id?: string;
   username: string;
   display_name?: string | null;
   avatar_url?: string | null;

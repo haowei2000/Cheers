@@ -689,20 +689,42 @@ struct WorkspaceDto: Codable, Identifiable, Hashable {
 }
 
 struct WorkspaceMemberDto: Decodable, Identifiable, Hashable {
-    let userId: String
+    let memberId: String
+    let memberType: String
     let username: String
     let displayName: String?
     let role: String
     let status: String
 
-    var id: String { userId }
+    var id: String { "\(memberType):\(memberId)" }
+    var userId: String { memberId }
     var name: String { displayName?.isEmpty == false ? displayName! : username }
 
     enum CodingKeys: String, CodingKey {
+        case memberId = "member_id"
+        case memberType = "member_type"
         case userId = "user_id"
+        case botId = "bot_id"
         case username
         case displayName = "display_name"
         case role, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let botId = try values.decodeIfPresent(String.self, forKey: .botId)
+        let genericId = try values.decodeIfPresent(String.self, forKey: .memberId)
+        let legacyUserId = try values.decodeIfPresent(String.self, forKey: .userId)
+        memberId = genericId
+            ?? legacyUserId
+            ?? botId
+            ?? ""
+        memberType = try values.decodeIfPresent(String.self, forKey: .memberType)
+            ?? (botId == nil ? "user" : "bot")
+        username = try values.decode(String.self, forKey: .username)
+        displayName = try values.decodeIfPresent(String.self, forKey: .displayName)
+        role = try values.decode(String.self, forKey: .role)
+        status = try values.decode(String.self, forKey: .status)
     }
 }
 

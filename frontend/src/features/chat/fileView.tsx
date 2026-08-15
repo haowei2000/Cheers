@@ -44,7 +44,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-zinc-400">
+      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-content-muted">
         Loading image…
       </div>
     );
@@ -84,13 +84,13 @@ function AudioTile({ file }: { file: FileInfo }) {
 
   return (
     <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-3 py-2">
-      <div className="flex items-center gap-2 text-compact text-zinc-200">
+      <div className="flex items-center gap-2 text-compact text-content-secondary">
         <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
           {file.original_filename || "audio"}
         </span>
         {typeof file.size_bytes === "number" && (
-          <span className="flex-shrink-0 text-zinc-400">{formatBytes(file.size_bytes)}</span>
+          <span className="flex-shrink-0 text-content-muted">{formatBytes(file.size_bytes)}</span>
         )}
       </div>
       {failed ? (
@@ -98,14 +98,14 @@ function AudioTile({ file }: { file: FileInfo }) {
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this audio file"
-          className="text-left  text-zinc-100 hover:text-zinc-50"
+          className="text-left  text-content-primary hover:text-content-strong"
         >
           Playback unavailable — click to download
         </UiButton>
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
-        <div className="flex h-9 items-center gap-2 text-compact text-zinc-400">
+        <div className="flex h-9 items-center gap-2 text-compact text-content-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…
         </div>
       )}
@@ -128,7 +128,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 
   if (file.summary) {
     return (
-      <p className="whitespace-pre-wrap break-words text-compact leading-relaxed text-zinc-400">
+      <p className="whitespace-pre-wrap break-words text-compact leading-reading text-content-muted">
         {file.summary}
       </p>
     );
@@ -137,7 +137,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   const status = file.transcript_status;
   if (requested || status === "pending") {
     return (
-      <span className="inline-flex items-center gap-1 text-compact text-zinc-400">
+      <span className="inline-flex items-center gap-1 text-compact text-content-muted">
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Transcribing…
       </span>
     );
@@ -157,7 +157,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
       type="button"
       onClick={request}
       title="Transcribe this audio to text"
-      className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50 transition-colors"
+      className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong transition-colors"
     >
       <Captions className="h-3.5 w-3.5" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
@@ -174,7 +174,7 @@ function UnavailableFileTile({ file }: { file: FileInfo }) {
     <div
       role="status"
       title={file.original_filename || file.file_id}
-      className="inline-flex max-w-[240px] items-center gap-2 rounded-sm border border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-zinc-400"
+      className="inline-flex max-w-[240px] items-center gap-2 rounded-sm border border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-content-muted"
       data-design-system-exempt="drop-zone"
     >
       <FileText className="h-3.5 w-3.5 flex-shrink-0" />
@@ -212,12 +212,12 @@ export function FileTile({ file }: { file: FileInfo }) {
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-100 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
+          controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-content-primary hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>
           {typeof file.size_bytes === "number" && (
-            <span className="text-zinc-400">{formatBytes(file.size_bytes)}</span>
+            <span className="text-content-muted">{formatBytes(file.size_bytes)}</span>
           )}
         </UiButton>
       )}

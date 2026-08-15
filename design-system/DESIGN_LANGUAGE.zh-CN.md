@@ -16,7 +16,8 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 - 统一语义、信息层级、状态、Item anatomy、字体角色、尺寸等级和图标映射。
 - React、SwiftUI、Compose 分别保留平台原生导航、动效、焦点、菜单、Sheet 与辅助功能。
 - 三端追求相同的理解和操作结果，不追求逐像素相同。
-- 网站介绍与政策页可以更接近正式出版物；产品工作区保持暗色、克制、紧凑和高可扫描性。
+- 网站介绍与政策页可以更接近正式出版物；产品工作区在浅色和深色下都保持克制、紧凑和高可扫描性。
+- 外观支持 System / Light / Dark，默认跟随系统；颜色由共享语义 token 切换，业务组件不得维护平行主题 class。
 
 ## 2. 不可破坏的视觉规则
 
@@ -109,7 +110,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   Back / Close / More / Refresh、disclosure 的 Expand / Collapse、行内编辑的
   Edit / Save / Cancel / Delete / Remove 使用纯图标；完整表单 Create / Save 使用图标加文字，
   Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性确认使用文字 Cancel 加
-  图标文字 Delete / Remove。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
+  图标文字 Delete / Remove。账户安全场景统一使用图标文字：Add / Done / Turn on / Set up / Update
+  为适配暗色 surface 的 emphasis，Copy / Link 为 secondary，Turn off / Revoke / Unlink 为 danger；
+  设置页动作使用 `settings` 场景：完成类动作使用 emphasis，辅助动作使用 secondary，退出或破坏性动作使用 danger；disabled/loading
+  仍须保留可见文字。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
   trigger 时使用 `ControlTrigger` 并保留对象标题，不得用通用动作标签覆盖内容。
 - 产品布局间距只能使用 4px 网格对应的整数 Tailwind 档位，禁止 `0.5/1.5/2.5/3.5` 等半档；
   Loading Spinner 使用 ContentSize，不接受任意数字尺寸。

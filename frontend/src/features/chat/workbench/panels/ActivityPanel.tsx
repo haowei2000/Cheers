@@ -1,5 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 // Activity — the channel's collaboration history as a FLOW LIST. One row per
 // episode (a causal unit: a human's @mention plus the bot turns / approvals /
 // file writes that follow — see activityEpisodes.ts). The collapsed row is a
@@ -23,7 +23,6 @@ import {
   Filter,
   Paperclip,
   Pencil,
-  Search,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -146,7 +145,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         id={lead ?? ep.id}
         size="small"
       />
-      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
+      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
       {shown.map((id, i) => {
         const mem = memberOf(id);
         return (
@@ -161,7 +160,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
         );
       })}
       {bots.length > shown.length && (
-        <span className="ml-1 text-minimal text-zinc-400">+{bots.length - shown.length}</span>
+        <span className="ml-1 text-minimal text-content-muted">+{bots.length - shown.length}</span>
       )}
     </span>
   );
@@ -226,7 +225,7 @@ function renderExcerpt(text: string): ReactNode {
   if (!text.includes("@")) return text;
   return text.split(MENTION_RE).map((part, i) =>
     part.startsWith("@") ? (
-      <span key={i} className="text-indigo-300">
+      <span key={i} className="text-accent-300">
         {part}
       </span>
     ) : (
@@ -254,27 +253,27 @@ function MessageRow({
       presentationLevel="minimal"
       onClick={clickable ? () => n.msgId && onJump?.(n.msgId) : undefined}
       leading={<span
-        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-zinc-200")}
+        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-content-secondary")}
         style={brand ? { color: brand } : undefined}
       >
         {name}
       </span>}
-      title={<span className="text-compact font-normal text-zinc-400">{renderExcerpt(n.excerpt)}</span>}
+      title={<span className="text-compact font-normal text-content-muted">{renderExcerpt(n.excerpt)}</span>}
       status={n.fileCount > 0 ? (
-        <span className="inline-flex items-center gap-1 text-minimal text-zinc-400 flex-shrink-0">
+        <span className="inline-flex items-center gap-1 text-minimal text-content-muted flex-shrink-0">
           <Paperclip className="h-3.5 w-3.5" />
           {n.fileCount}
         </span>
       ) : undefined}
       trailing={<span
         className={cn(
-          "text-minimal text-zinc-400 tabular-nums flex-shrink-0",
+          "text-minimal text-content-muted tabular-nums flex-shrink-0",
           clickable && "group-hover/item:hidden"
         )}
       >
         {fmtTime(n.ts)}
       </span>}
-      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3.5 w-3.5 flex-shrink-0 text-indigo-300 group-hover/item:block" /> : undefined}
+      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3.5 w-3.5 flex-shrink-0 text-accent-300 group-hover/item:block" /> : undefined}
       className="border-b-0"
     />
   );
@@ -293,7 +292,7 @@ function EpisodeDetail({
   const summary = episodeSummary(ep);
   return (
     <div className="px-3 pb-2">
-      {summary && <div className="pl-[26px] pb-1 text-minimal text-zinc-400">{summary}</div>}
+      {summary && <div className="pl-[26px] pb-1 text-minimal text-content-muted">{summary}</div>}
       <div className="ml-[7px] border-l-2 border-zinc-800 pl-3">
         {rows.map((row, i) => {
           if (row.type === "claim") {
@@ -303,16 +302,16 @@ function EpisodeDetail({
                 key={`claim-${row.n.seq}-${i}`}
                 className={cn(
                   "flex items-start gap-2 rounded-sm px-1 py-1 text-compact",
-                  failed ? "bg-red-950/30 text-red-200" : "text-zinc-400"
+                  failed ? "bg-red-950/30 text-danger-200" : "text-content-muted"
                 )}
               >
                 {failed ? (
-                  <AlertCircle className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-red-400" />
+                  <AlertCircle className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-danger-400" />
                 ) : (
-                  <Activity className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-indigo-300" />
+                  <Activity className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-accent-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
-                <span className="flex-shrink-0 text-minimal text-zinc-400">{fmtTime(row.n.ts)}</span>
+                <span className="flex-shrink-0 text-minimal text-content-muted">{fmtTime(row.n.ts)}</span>
               </div>
             );
           }
@@ -320,12 +319,12 @@ function EpisodeDetail({
             const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
               <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-2 py-[3px]">
-                <Icon className="w-3.5 h-3.5 text-zinc-400 self-center flex-shrink-0" />
-                <span className="min-w-0 truncate text-minimal text-zinc-400">
+                <Icon className="w-3.5 h-3.5 text-content-muted self-center flex-shrink-0" />
+                <span className="min-w-0 truncate text-minimal text-content-muted">
                   {row.items.map((it, j) => (
                     <span key={j}>
                       {j > 0 && " · "}
-                      <span className="text-zinc-200">{nameOf(memberOf(it.actorId), it.actorId)}</span>{" "}
+                      <span className="text-content-secondary">{nameOf(memberOf(it.actorId), it.actorId)}</span>{" "}
                       {it.kind === "write"
                         ? `wrote ${it.count} file${it.count > 1 ? "s" : ""}`
                         : `approved${it.count > 1 ? ` ×${it.count}` : ""}`}
@@ -371,12 +370,12 @@ function FlowEpisode({
         <span
           className={cn(
             "flex-1 min-w-0 truncate text-compact",
-            expanded ? "text-zinc-100" : "text-zinc-400"
+            expanded ? "text-content-primary" : "text-content-muted"
           )}
         >
           {episodeTitle(ep, memberOf)}
         </span>
-        <span className="text-minimal text-zinc-400 tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
+        <span className="text-minimal text-content-muted tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
       </UiButton>
       {expanded && <EpisodeDetail ep={ep} memberOf={memberOf} onJump={onJump} />}
     </div>
@@ -425,7 +424,7 @@ function ParticipantStrip({
               content="icon"
               controlSize="compact"
               className={cn(
- "relative rounded-full ring-2 transition-all",
+ "relative rounded-full ring-2 transition-[box-shadow,opacity]",
  active ? "ring-indigo-500": "ring-zinc-900",
  dim && !active && "opacity-50 hover:opacity-100"
  )}
@@ -442,9 +441,9 @@ function ParticipantStrip({
         })}
       </div>
       {overflow > 0 && (
-        <span className="ml-1 text-minimal text-zinc-400 flex-shrink-0">+{overflow}</span>
+        <span className="ml-1 text-minimal text-content-muted flex-shrink-0">+{overflow}</span>
       )}
-      {online > 0 && <span className="ml-2 text-minimal text-zinc-400 flex-shrink-0">{online} online</span>}
+      {online > 0 && <span className="ml-2 text-minimal text-content-muted flex-shrink-0">{online} online</span>}
     </div>
   );
 }
@@ -599,7 +598,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
                 onClick={() => setLens(l)}
                 controlSize="regular" className={cn(
  "rounded-sm  capitalize transition-colors",
- lens === l ? "bg-zinc-800 text-zinc-100": "text-zinc-100 hover:text-zinc-50"
+ lens === l ? "bg-zinc-800 text-content-primary": "text-content-primary hover:text-content-strong"
  )}
               >
                 {l}
@@ -639,7 +638,7 @@ function FilterChip({
       controlSize="regular" className={cn(
  "flex items-center gap-1 rounded-sm  whitespace-nowrap flex-shrink-0 transition-colors",
  active
- ? "border-zinc-600 bg-zinc-800 text-zinc-100": "border-transparent bg-zinc-900/60 text-zinc-100 hover:text-zinc-50"
+ ? "border-zinc-600 bg-zinc-800 text-content-primary": "border-transparent bg-zinc-900/60 text-content-primary hover:text-content-strong"
  )}
     >
       {children}
@@ -688,7 +687,7 @@ function MemberFilter({
         controlSize="regular" className={cn(
  "inline-flex items-center gap-2 rounded-sm  transition-colors",
  open || selected.size
- ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200": "border-zinc-700 bg-zinc-800/60 text-zinc-100 hover:text-zinc-50"
+ ? "border-indigo-500/50 bg-indigo-600/10 text-accent-200": "border-zinc-700 bg-zinc-800/60 text-content-primary hover:text-content-strong"
  )}
       >
         <Filter className="w-3.5 h-3.5" />
@@ -698,19 +697,18 @@ function MemberFilter({
 
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
-          <div className="m-1 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
-            <Search className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
-            <UiInput
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search members…"
-              className="flex-1 min-w-0 bg-transparent text-compact text-zinc-200 placeholder:text-zinc-400 outline-none"
-            />
-          </div>
+          <SearchInput
+            containerClassName="m-1 w-auto"
+            aria-label="Search members"
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search members…"
+            className="bg-zinc-800/50 text-content-secondary placeholder:text-content-muted"
+          />
           <div className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
-              <div className="px-3 py-3 text-center text-compact text-zinc-400">No members match.</div>
+              <div className="px-3 py-3 text-center text-compact text-content-muted">No members match.</div>
             ) : (
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
@@ -727,7 +725,7 @@ function MemberFilter({
                         on ? "border-indigo-400 bg-indigo-500/80" : "border-zinc-600"
                       )}
                     >
-                      {on && <Check className="h-3.5 w-3.5 text-white" />}
+                      {on && <Check className="h-3.5 w-3.5 text-content-on-accent" />}
                     </span>
                     <Avatar
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}
@@ -736,11 +734,11 @@ function MemberFilter({
                       online={mem.is_online ?? undefined}
                       size="small"
                     />
-                    <span className="flex-1 truncate text-compact text-zinc-200">
+                    <span className="flex-1 truncate text-compact text-content-secondary">
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
-                      <span className="text-minimal uppercase tracking-wide text-zinc-400 flex-shrink-0">bot</span>
+                      <span className="text-minimal uppercase tracking-label text-content-muted flex-shrink-0">bot</span>
                     )}
                   </UiButton>
                 );
@@ -764,7 +762,7 @@ function MemberFilter({
               <UiButton action="clear" variant="plain"
                 type="button"
                 onClick={onClear}
-                className=" text-zinc-100 hover:text-zinc-50 transition-colors flex-shrink-0"
+                className=" text-content-primary hover:text-content-strong transition-colors flex-shrink-0"
               >
                 Clear
               </UiButton>

@@ -129,7 +129,7 @@ export function Dialog({
       >
         {title !== undefined && (
           <div className="flex items-center gap-2 max-md:flex-shrink-0">
-            <h2 id={titleId} className="text-regular font-semibold text-zinc-100">
+            <h2 id={titleId} className="text-regular font-semibold text-content-primary">
               {title}
             </h2>
             <ActionButton
@@ -138,7 +138,7 @@ export function Dialog({
               onClick={onClose}
               accessibleLabel="Close dialog"
               controlSize="compact"
-              className="ml-auto text-zinc-100 hover:text-zinc-50 max-md:p-2 max-md:-m-2"
+              className="ml-auto text-content-primary hover:text-content-strong max-md:p-2 max-md:-m-2"
             />
           </div>
         )}
