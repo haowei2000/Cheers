@@ -127,16 +127,31 @@ export default function FleetPage() {
 
   const headerActions = <><AddMenu onNewBot={() => setCreateBotOpen(true)} onInstallation={() => openInstallation()} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
 
-  return <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
+  return <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
     <RouteChromeHeader actions={headerActions}>
-      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-        <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" aria-hidden="true" /></IconButton>
-        <Radar className="h-4 w-4 text-indigo-400" aria-hidden="true" /><div><h1 className="text-comfortable font-semibold leading-none">Fleet</h1><p className="mt-1 hidden text-minimal text-zinc-400 sm:block">Personal bot cockpit</p></div>
+      <header className="flex items-center gap-4 px-6 py-5 max-md:px-4">
+        <UiButton
+          variant="plain"
+          type="button"
+          content="icon"
+          controlSize="regular"
+          onClick={() => navigate("/chat")}
+          title="Back to chat"
+          aria-label="Back to chat"
+          className="rounded-sm text-zinc-100 transition-colors hover:text-zinc-50"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </UiButton>
+        <Radar className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+        <div>
+          <h1 className="text-comfortable font-semibold leading-none">Fleet</h1>
+          <p className="mt-1 hidden text-minimal text-zinc-400 sm:block">Personal bot cockpit</p>
+        </div>
         <div className="ml-auto flex items-center gap-1">{headerActions}</div>
       </header>
     </RouteChromeHeader>
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <nav aria-label="Fleet sections" className="flex flex-shrink-0 gap-1 overflow-x-auto p-2 md:w-48 md:flex-col">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
+      <nav aria-label="Fleet sections" className="flex gap-1 overflow-x-auto sm:w-48 sm:shrink-0 sm:flex-col">
         {sections.map((item) => {
           const Icon = item.icon;
           const active = section === item.id;
@@ -169,7 +184,8 @@ export default function FleetPage() {
           );
         })}
       </nav>
-      <main className="min-w-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-4xl space-y-7 px-4 py-6">
+      <main className="min-w-0 flex-1">
+        <div className="space-y-7">
         {loading ? <SurfaceSpinner /> : section === "overview" ? (
           <FleetOverview
             summary={summary}
@@ -189,7 +205,8 @@ export default function FleetPage() {
         ) : (
           <FleetAudit events={audit} bots={bots} />
         )}
-      </div></main>
+        </div>
+      </main>
     </div>
     {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => { setCreateBotOpen(false); void refresh(true); openBot(bot.bot_id); }} />}
