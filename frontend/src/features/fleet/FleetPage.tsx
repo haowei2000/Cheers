@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { isTauri } from "@/lib/serverConfig";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { ActionButton } from "@/components/ui/action-button";
+import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
@@ -135,8 +136,38 @@ export default function FleetPage() {
       </header>
     </RouteChromeHeader>
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <nav aria-label="Fleet sections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800 p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
-        {sections.map((item) => { const Icon = item.icon; return <NavigationItem key={item.id} title={item.label} leading={<Icon className="h-4 w-4" />} selected={section === item.id} onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)} criticalStatus={item.id === "overview" && actionableCount > 0 ? <UnreadBadge tone="approval" contentSize="small">{actionableCount}</UnreadBadge> : undefined} />; })}
+      <nav aria-label="Fleet sections" className="flex flex-shrink-0 gap-1 overflow-x-auto p-2 md:w-48 md:flex-col">
+        {sections.map((item) => {
+          const Icon = item.icon;
+          const active = section === item.id;
+          return (
+            <UiButton
+              key={item.id}
+              type="button"
+              content="iconText"
+              variant="plain"
+              role="tab"
+              aria-selected={active}
+              aria-current={active ? "page" : undefined}
+              controlSize="regular"
+              onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
+              className={cn(
+                "flex shrink-0 items-center gap-3 rounded-sm font-medium whitespace-nowrap transition-colors",
+                active
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50",
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{item.label}</span>
+              {item.id === "overview" && actionableCount > 0 ? (
+                <UnreadBadge tone="approval" contentSize="small">
+                  {actionableCount}
+                </UnreadBadge>
+              ) : null}
+            </UiButton>
+          );
+        })}
       </nav>
       <main className="min-w-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-4xl space-y-7 px-4 py-6">
         {loading ? <SurfaceSpinner /> : section === "overview" ? (
