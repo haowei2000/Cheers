@@ -52,6 +52,14 @@ not choose `content` or `variant`. The registered presentation is:
 | Full form | — | Back, Cancel | Create, Save |
 | Dialog footer | — | Back, Cancel | — |
 | Destructive confirmation | — | Cancel | Delete, Remove |
+| Account security | — | — | Add, Copy, Turn off, Done, Turn on, Link, Revoke, Set up, Unlink, Update |
+
+Account-security presentation uses one additional tone rule inside the shared
+`ActionButton` registry: Add/Done/Turn on/Set up/Update are primary completion
+actions; Copy/Link are secondary; Turn off/Revoke/Unlink are danger. Every one
+uses the registered utility font, regular type token, icon slot, and visible
+label, including disabled and loading states. Button-like external links are
+not allowed; render them as underlined semantic links.
 
 Use `ControlTrigger` for a disclosure whose label/content is the disclosed
 object itself (for example a diff file heading). `ActionButton` disclosure is

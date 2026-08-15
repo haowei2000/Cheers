@@ -55,6 +55,7 @@ import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -450,16 +451,14 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           />
         </Field>
         <div className="col-span-2 flex justify-end max-md:col-span-1">
-          <Button
-            content="iconText"
+          <ActionButton
             action="update"
-            aria-label="Update account password"
+            context="security"
+            accessibleLabel="Update account password"
             loading={busy}
             onClick={() => void submit()}
             disabled={!current || !next}
-          >
-            <KeyRound className="h-4 w-4" />
-          </Button>
+          />
         </div>
       </div>
     </section>
@@ -547,10 +546,10 @@ function ExternalIdentitiesCard() {
                 title={label}
                 status={identity.linked ? identity.email || identity.display_name || "Linked" : "Not linked"}
                 actions={identity.linked ? (
-                  <Button
-                    variant="danger"
+                  <ActionButton
                     action="unlink"
-                    aria-label={`Unlink ${label} sign-in method`}
+                    context="security"
+                    accessibleLabel={`Unlink ${label} sign-in method`}
                     loading={busy === identity.provider}
                     disabled={
                       busy !== null ||
@@ -567,9 +566,10 @@ function ExternalIdentitiesCard() {
                     onClick={() => void unlink(identity)}
                   />
                 ) : identity.provider === "google" ? (
-                  <Button
+                  <ActionButton
                     action="link"
-                    aria-label="Link Google sign-in method"
+                    context="security"
+                    accessibleLabel="Link Google sign-in method"
                     loading={busy === "google"}
                     disabled={busy !== null || !identity.recent_authentication}
                     title={
@@ -643,10 +643,10 @@ function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
           />
         </Field>
         <div className="col-span-2 flex justify-end max-md:col-span-1">
-          <Button
-            variant="danger"
+          <ActionButton
             action="delete"
-            aria-label="Permanently delete account"
+            context="confirmation"
+            accessibleLabel="Permanently delete account"
             disabled={busy || confirmation !== "DELETE"}
             loading={busy}
             onClick={() => void remove()}
@@ -735,10 +735,10 @@ function DevicesSessionsCard() {
                 {new Date(s.last_seen_at).toLocaleDateString()}
               </span>}
               actions={!s.current ? (
-                <Button
-                  variant="ghost"
+                <ActionButton
                   action="revoke"
-                  aria-label={`Revoke session ${s.device_name || s.client}`}
+                  context="security"
+                  accessibleLabel={`Revoke session ${s.device_name || s.client}`}
                   loading={busyId === s.session_id}
                   onClick={() => void revoke(s)}
                 />
@@ -807,11 +807,11 @@ function ExternalAIPermissionsCard() {
                 key={key}
                 title={`${c.bot_name}${c.provider_name ? ` · ${c.provider_name}` : ""}`}
                 status={`#${c.channel_name} · policy ${c.policy_version}`}
-                actions={<Button
+                actions={<ActionButton
                   controlSize="compact"
-                  variant="ghost"
                   action="revoke"
-                  aria-label={`Revoke external AI permission for ${c.bot_name}`}
+                  context="security"
+                  accessibleLabel={`Revoke external AI permission for ${c.bot_name}`}
                   loading={busyKey === key}
                   onClick={() => void revoke(c)}
                 />}

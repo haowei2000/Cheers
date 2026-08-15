@@ -4,14 +4,21 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   Ellipsis,
+  Fingerprint,
+  KeyRound,
+  Link2,
   Maximize2,
   Minimize2,
   Pencil,
   Plus,
   RefreshCw,
   Save,
+  ShieldCheck,
+  ShieldOff,
   Trash2,
+  Unlink,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -26,7 +33,8 @@ export type CommonActionContext =
   | "inlineEdit"
   | "form"
   | "dialog"
-  | "confirmation";
+  | "confirmation"
+  | "security";
 
 export type CommonActionKey = Extract<
   ActionKey,
@@ -35,14 +43,23 @@ export type CommonActionKey = Extract<
   | "cancel"
   | "close"
   | "collapse"
+  | "copy"
   | "create"
   | "delete"
+  | "disable"
+  | "done"
   | "edit"
+  | "enable"
   | "expand"
+  | "link"
   | "more"
   | "refresh"
   | "remove"
+  | "revoke"
   | "save"
+  | "setup"
+  | "unlink"
+  | "update"
 >;
 
 type Presentation = {
@@ -90,6 +107,18 @@ const commonActionPresentations = {
     cancel: { content: "text", variant: "secondary" },
     delete: { content: "iconText", icon: Trash2, variant: "danger" },
     remove: { content: "iconText", icon: Trash2, variant: "danger" },
+  },
+  security: {
+    add: { content: "iconText", icon: Fingerprint, variant: "primary" },
+    copy: { content: "iconText", icon: Copy, variant: "secondary" },
+    disable: { content: "iconText", icon: ShieldOff, variant: "danger" },
+    done: { content: "iconText", icon: Check, variant: "primary" },
+    enable: { content: "iconText", icon: ShieldCheck, variant: "primary" },
+    link: { content: "iconText", icon: Link2, variant: "secondary" },
+    revoke: { content: "iconText", icon: X, variant: "danger" },
+    setup: { content: "iconText", icon: ShieldCheck, variant: "primary" },
+    unlink: { content: "iconText", icon: Unlink, variant: "danger" },
+    update: { content: "iconText", icon: KeyRound, variant: "primary" },
   },
 } as const satisfies Record<CommonActionContext, Partial<Record<CommonActionKey, Presentation>>>;
 

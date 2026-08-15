@@ -54,4 +54,35 @@ describe("ActionButton", () => {
     expect(markup).toContain('data-button-content="icon"');
     expect(markup).not.toContain('data-button-slot="label"');
   });
+
+  it("keeps disabled security actions labelled and legible", () => {
+    const markup = renderToStaticMarkup(
+      <ActionButton
+        action="update"
+        context="security"
+        accessibleLabel="Update account password"
+        disabled
+      />,
+    );
+    expect(markup).toContain('data-button-content="iconText"');
+    expect(markup).toContain(">Update</span>");
+    expect(markup).toContain("font-utility");
+    expect(markup).toContain("text-regular");
+    expect(markup).toContain("bg-indigo-100");
+    expect(markup).toContain("text-content-on-light");
+    expect(markup).toContain("disabled:opacity-50");
+  });
+
+  it("uses secondary and danger tones for security row actions", () => {
+    const link = renderToStaticMarkup(
+      <ActionButton action="link" context="security" accessibleLabel="Link Google" />,
+    );
+    const unlink = renderToStaticMarkup(
+      <ActionButton action="unlink" context="security" accessibleLabel="Unlink Google" />,
+    );
+    expect(link).toContain("bg-zinc-800");
+    expect(link).toContain(">Link</span>");
+    expect(unlink).toContain("text-danger-400");
+    expect(unlink).toContain(">Unlink</span>");
+  });
 });

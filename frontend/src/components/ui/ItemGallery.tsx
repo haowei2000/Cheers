@@ -371,7 +371,7 @@ export function ItemGallery() {
           <p className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">Action + context contract</p>
           <h2 id="action-register" className="font-display text-comfortable font-semibold tracking-display">Common Action Register</h2>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <p className="font-utility text-compact text-content-muted">Window chrome · icon</p>
             <div className="flex gap-2">
@@ -396,6 +396,15 @@ export function ItemGallery() {
               <ActionButton action="cancel" context="form" />
               <ActionButton action="save" context="form" accessibleLabel="Save settings" />
               <ActionButton action="delete" context="confirmation" accessibleLabel="Delete channel" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="font-utility text-compact text-content-muted">Account security · fixed tones</p>
+            <div className="flex flex-wrap gap-2">
+              <ActionButton action="update" context="security" accessibleLabel="Update password" />
+              <ActionButton action="copy" context="security" accessibleLabel="Copy secret" />
+              <ActionButton action="unlink" context="security" accessibleLabel="Unlink Google" />
+              <ActionButton action="enable" context="security" accessibleLabel="Enable authenticator" disabled />
             </div>
           </div>
         </div>

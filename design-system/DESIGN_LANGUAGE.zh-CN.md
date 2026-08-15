@@ -109,7 +109,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
   Back / Close / More / Refresh、disclosure 的 Expand / Collapse、行内编辑的
   Edit / Save / Cancel / Delete / Remove 使用纯图标；完整表单 Create / Save 使用图标加文字，
   Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性确认使用文字 Cancel 加
-  图标文字 Delete / Remove。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
+  图标文字 Delete / Remove。账户安全场景统一使用图标文字：Add / Done / Turn on / Set up / Update
+  为 primary，Copy / Link 为 secondary，Turn off / Revoke / Unlink 为 danger；disabled/loading
+  仍须保留可见文字。业务调用点不得覆盖 `content` 或 `variant`。对象整行本身是 disclosure
   trigger 时使用 `ControlTrigger` 并保留对象标题，不得用通用动作标签覆盖内容。
 - 产品布局间距只能使用 4px 网格对应的整数 Tailwind 档位，禁止 `0.5/1.5/2.5/3.5` 等半档；
   Loading Spinner 使用 ContentSize，不接受任意数字尺寸。

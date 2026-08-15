@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck, Fingerprint, Copy, Check } from "lucide-react";
+import { ShieldCheck, Fingerprint, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   deletePasskey,
@@ -14,7 +14,6 @@ import {
   type PasskeyCredential,
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
-import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
@@ -129,10 +128,10 @@ export function TwoFactorCard() {
             </p>
           </div>
           {enabled ? (
-            <Button
-              variant="danger"
+            <ActionButton
               action="disable"
-              aria-label="Turn off authenticator app"
+              context="security"
+              accessibleLabel="Turn off authenticator app"
               disabled={busy}
               onClick={() => {
                 setCode("");
@@ -140,9 +139,10 @@ export function TwoFactorCard() {
               }}
             />
           ) : (
-            <Button
+            <ActionButton
               action="setup"
-              aria-label="Set up authenticator app"
+              context="security"
+              accessibleLabel="Set up authenticator app"
               loading={busy}
               disabled={enabled == null}
               onClick={() => void beginSetup()}
@@ -161,15 +161,13 @@ export function TwoFactorCard() {
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button action="copy" content="iconText" variant="secondary" controlSize="compact" onClick={() => void copySecret()}>
-              <Copy className="w-3.5 h-3.5" /> Copy secret
-            </Button>
+            <ActionButton action="copy" context="security" accessibleLabel="Copy authenticator secret" controlSize="compact" onClick={() => void copySecret()} />
             {provisioningUri && (
               <a
                 href={provisioningUri}
-                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-2 text-compact text-accent-300 hover:text-accent-200"
+                className="inline-flex items-center gap-1 font-utility text-regular font-medium text-accent-300 underline underline-offset-4 hover:text-accent-200"
               >
-                Open otpauth://
+                Open otpauth:// <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             )}
           </div>
@@ -183,15 +181,15 @@ export function TwoFactorCard() {
             />
           </Field>
           <div className="flex gap-2">
-            <Button action="enable" aria-label="Enable authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
-            <Button
-              variant="secondary"
+            <ActionButton action="enable" context="security" accessibleLabel="Enable authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
+            <ActionButton
+              action="cancel"
+              context="form"
               onClick={() => {
                 setPhase("idle");
                 setCode("");
               }}
-              action="cancel"
-              aria-label="Cancel authenticator setup"
+              accessibleLabel="Cancel authenticator setup"
             />
           </div>
         </div>
@@ -209,17 +207,13 @@ export function TwoFactorCard() {
             ))}
           </ul>
           <div className="flex gap-2">
-            <Button content="iconText" variant="secondary" action="copy" aria-label="Copy backup codes" onClick={() => void copyBackup()}>
-              <Copy className="w-3.5 h-3.5" />
-            </Button>
-            <Button content="iconText" action="done" aria-label="Finish authenticator setup"
+            <ActionButton action="copy" context="security" accessibleLabel="Copy backup codes" onClick={() => void copyBackup()} />
+            <ActionButton action="done" context="security" accessibleLabel="Finish authenticator setup"
               onClick={() => {
                 setPhase("idle");
                 setBackupCodes([]);
               }}
-            >
-              <Check className="w-3.5 h-3.5" />
-            </Button>
+            />
           </div>
         </div>
       )}
@@ -237,22 +231,22 @@ export function TwoFactorCard() {
             className={inputCls}
           />
           <div className="flex gap-2">
-            <Button
-              variant="danger"
+            <ActionButton
               action="disable"
-              aria-label="Confirm turning off authenticator app"
+              context="security"
+              accessibleLabel="Confirm turning off authenticator app"
               loading={busy}
               disabled={busy || !code.trim()}
               onClick={() => void confirmDisable()}
             />
-            <Button
-              variant="secondary"
+            <ActionButton
+              action="cancel"
+              context="form"
               onClick={() => {
                 setPhase("idle");
                 setCode("");
               }}
-              action="cancel"
-              aria-label="Cancel turning off authenticator app"
+              accessibleLabel="Cancel turning off authenticator app"
             />
           </div>
         </div>
@@ -369,7 +363,7 @@ export function PasskeyCard() {
               className={inputCls}
             />
           </Field>
-          <ActionButton action="add" context="toolbar" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
+          <ActionButton action="add" context="security" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
         </div>
       )}
     </section>
