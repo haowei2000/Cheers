@@ -113,6 +113,30 @@ exactly four semantic levels; `zinc-300/500/600/700` are not foreground colors:
 surfaces. Syntax highlighting may use registered categorical colors. Business
 button call sites may not override an ordinary action to `zinc-200/400`.
 
+### Semantic typography aliases
+
+Use semantic text roles when the role is clear; keep raw size tokens for
+geometry-driven controls and one-off dense layouts. These classes define the
+complete text contract: family, size, line-height, weight/style, and foreground
+color.
+
+| Alias | Use |
+|---|---|
+| `text-message` | Chat messages, markdown copy, long-form previews; defaults to `zinc-200` |
+| `text-message-error` | Error text inside a message; italic red serif |
+| `text-body` | Ordinary UI body copy; defaults to `zinc-50` |
+| `text-body-secondary` | Secondary body copy; defaults to `zinc-200` |
+| `text-body-error` / `text-body-warning` | Body-sized state text |
+| `text-title` | Small dialog/card titles; semibold `zinc-50` |
+| `text-label` | Form labels and compact text actions; defaults to `zinc-400` |
+| `text-label-primary` | Compact primary text actions; defaults to `zinc-50` |
+| `text-section-label` | Uppercase section dividers and group labels; defaults to `zinc-400` |
+| `text-section-label-error` | Uppercase section/error group label |
+| `text-caption` | Hints, metadata, descriptions, empty-state copy; defaults to `zinc-400` |
+| `text-caption-error` / `text-caption-italic` | Caption-sized state or italic variants |
+| `text-metadata` | Minimal-size dense metadata; defaults to `zinc-400` |
+| `text-status` | Status values and compact operational figures; defaults to `zinc-50` |
+
 ### Color semantics
 
 | Role | Token | Notes |
