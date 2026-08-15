@@ -177,6 +177,12 @@ color.
 | Inset fields inside dialogs | `bg-zinc-950` |
 | Hover on soft surfaces | `bg-zinc-700` |
 
+Settings screens compose `<SettingsSection>` and `<SettingsCard>` rather than
+repeating card padding, title, description, and action anatomy. Compact KPI
+summaries use `<MetricCard>` with a registered semantic `tone`; callers do not
+pass arbitrary foreground classes. All three live in `src/components/ui/` and
+are demonstrated in the Item Gallery.
+
 **Elevation principle — borderless everywhere.** Layers separate by surface
 contrast, shadow, and deliberate spacing, never by layout-affecting box outlines: `border
 border-*` is banned on buttons, fields, cards, chips and popovers alike. Filled
@@ -266,6 +272,11 @@ Text buttons default to the registered 96px `slot`; use
 control. Label length never determines peer-control width. Business call sites
 must not add `px-*`, `pl-*`, or `pr-*` to shared controls; horizontal padding
 is owned by the primitive or a registered variant.
+
+Toggle and panel-launch controls pass `selected` to `<Button>` or
+`<ControlTrigger>`. The primitive owns the selected fill and exposes
+`aria-pressed` for toggles; disclosure triggers retain `aria-expanded` instead.
+Business call sites must not recreate selected styling with `className`.
 
 Business call sites must not add any local `p-*` to shared controls. Icon actions
 use `square` plus a registered `ControlSize`; text actions use the primitive's
@@ -639,7 +650,8 @@ the recipes above:
 
 Extracted (were gaps, now shared components): `Select` / `Textarea`
 (mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
-`SectionHead` (§2.13), `Tip` (§2.14).
+`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsSection`, and
+`MetricCard`.
 
 The full audit that produced this doc: visual-consistency reports
 2026-07-10 (static sweep + live review, see PR #134 context).

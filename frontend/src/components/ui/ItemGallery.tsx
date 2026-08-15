@@ -1,4 +1,4 @@
-import { AlertTriangle, DollarSign, Hash, Lock, MessageSquarePlus, Plus, User, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CircleCheck, DollarSign, Hash, Info, Lock, MessageSquarePlus, Plus, User, X } from "lucide-react";
 import {
   EditorialIcon,
   editorialIconNames,
@@ -32,6 +32,10 @@ import { ChoiceGroup } from "@/components/ui/choice-button";
 import { ThemeSelector } from "@/components/ui/theme-selector";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
+import { Banner } from "@/components/ui/banner";
+import { ErrorState } from "@/components/ui/error-state";
+import { MetricCard } from "@/components/ui/metric-card";
+import { SettingsCard } from "@/components/ui/settings-card";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
 import type { TraceEvent } from "@/types";
 
@@ -250,8 +254,42 @@ export function ItemGallery() {
               subtitle="Actions retain the shared height"
               actions={<Button variant="secondary" controlSize="compact" loading>Loading</Button>}
             />
+            <OperationsItem
+              title="Shared selected control"
+              subtitle="Selection styling belongs to the Button primitive"
+              actions={<Button content="icon" selected aria-label="Selected panel"><Hash className="h-4 w-4" /></Button>}
+            />
           </ItemList>
         </div>
+      </section>
+
+      <section aria-labelledby="semantic-surface-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="semantic-surface-register" className="mb-2 text-section-label">Semantic surfaces</h2>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <SettingsCard title="Color theme" description="Shared settings anatomy keeps titles, descriptions, actions, and content aligned.">
+            <ThemeSelector showStatus={false} />
+          </SettingsCard>
+          <div className="grid grid-cols-2 gap-2">
+            <MetricCard label="Online" value={4} tone="success" />
+            <MetricCard label="Waiting" value={2} tone="warning" />
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="feedback-severity-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="feedback-severity-register" className="mb-2 text-section-label">Feedback severity</h2>
+        <div className="grid gap-2 lg:grid-cols-2">
+          <Banner severity="info" icon={Info}>Informational state</Banner>
+          <Banner severity="success" icon={CircleCheck}>Successful persistent state</Banner>
+          <Banner severity="warning" icon={AlertTriangle}>Degraded state that needs attention</Banner>
+          <Banner severity="error" icon={AlertCircle}>Persistent failure in an otherwise usable view</Banner>
+        </div>
+        <ErrorState
+          className="mt-3 bg-zinc-900"
+          title="The current view is unavailable"
+          description="Large failures replace the unusable region and provide a recovery action."
+          action={{ label: "Retry", onClick: () => undefined }}
+        />
       </section>
 
       <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">

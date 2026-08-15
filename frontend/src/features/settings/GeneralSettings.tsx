@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, Palette } from "lucide-react";
 import toast from "react-hot-toast";
 import { ActionButton } from "@/components/ui/action-button";
+import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
 import { ThemeSelector } from "@/components/ui/theme-selector";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/push";
@@ -16,19 +17,14 @@ import {
 
 export function AppearanceCard() {
   return (
-    <section>
-      <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-section text-content-muted">
-        <Palette className="h-3.5 w-3.5" />
-        Appearance
-      </h2>
-      <div className="rounded-sm bg-zinc-900 p-6 max-md:p-4">
-        <p className="text-regular font-medium text-content-secondary">Color theme</p>
-        <p className="mb-4 mt-1 text-compact text-content-muted">
-          Follow your device automatically or keep a fixed appearance on this device.
-        </p>
+    <SettingsSection title="Appearance" icon={Palette}>
+      <SettingsCard
+        title="Color theme"
+        description="Follow your device automatically or keep a fixed appearance on this device."
+      >
         <ThemeSelector />
-      </div>
-    </section>
+      </SettingsCard>
+    </SettingsSection>
   );
 }
 
@@ -37,15 +33,22 @@ export function ServerCard() {
   const logout = useAuthStore((s) => s.logout);
   const base = isTauri() ? getServerBase() : window.location.origin;
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-regular font-medium text-content-secondary">Server</p>
-          <p className="text-compact text-content-muted mt-1 truncate">
-            {base ?? "same origin"}
-          </p>
-        </div>
-        {isTauri() && (
+    <SettingsCard
+      className="mt-4"
+      title="Server"
+      description={
+        <>
+          <span className="block truncate">{base ?? "same origin"}</span>
+          {!isTauri() && (
+            <span className="mt-2 block">
+              Web clients use this origin. Switch servers from the desktop app or by
+              opening a different gateway URL.
+            </span>
+          )}
+        </>
+      }
+      actions={
+        isTauri() ? (
           <ActionButton action="switch" context="settings"
             accessibleLabel="Switch server"
             controlSize="compact"
@@ -57,15 +60,9 @@ export function ServerCard() {
               window.location.reload();
             }}
           />
-        )}
-      </div>
-      {!isTauri() && (
-        <p className="text-compact text-content-muted mt-3">
-          Web clients use this origin. Switch servers from the desktop app or by
-          opening a different gateway URL.
-        </p>
-      )}
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -103,22 +100,19 @@ export function LaunchAtLoginCard() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-sm p-6 mt-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-regular font-medium text-content-secondary">Launch at login</p>
-          <p className="text-compact text-content-muted mt-1">
-            Start Cheers and keep local bot installations available when you sign in to your Mac.
-          </p>
-        </div>
+    <SettingsCard
+      className="mt-4"
+      title="Launch at login"
+      description="Start Cheers and keep local bot installations available when you sign in to your Mac."
+      actions={
         <ActionButton action={enabled ? "disable" : "enable"} context="settings"
           accessibleLabel={`${enabled ? "Turn off" : "Turn on"} launch at login`}
           controlSize="compact"
           disabled={busy || enabled === null}
           onClick={() => void toggle()}
         />
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -283,5 +277,4 @@ export function PushNotificationsCard() {
     </section>
   );
 }
-
 

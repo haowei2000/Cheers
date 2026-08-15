@@ -1,6 +1,7 @@
 import { AudioLines, Bot, FileText, Loader2, SendHorizontal, User, X } from "lucide-react";
 import type { FileInfo } from "@/types";
 import { Button } from "@/components/ui/button";
+import { Banner } from "@/components/ui/banner";
 import { IconButton } from "@/components/ui/icon-button";
 import { ItemChip, NavigationItem } from "@/components/ui/item";
 import { OverflowText } from "@/components/ui/overflow-text";
@@ -104,9 +105,8 @@ export function ComposerVoiceWarning({
   onCancel: () => void;
 }) {
   return (
-    <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-warning-200">
-      <p className="flex items-center gap-2">
-        <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
+    <Banner severity="warning" icon={AudioLines} className="mb-2">
+      <p>
         {botNames.join(", ")} can&apos;t receive audio — without a transcript, it will only see the file name.
       </p>
       {error && <p className="mt-1 text-danger-300">{error}</p>}
@@ -146,6 +146,6 @@ export function ComposerVoiceWarning({
           className="ml-auto text-warning-400/70 hover:text-warning-200"
         />
       </div>
-    </div>
+    </Banner>
   );
 }

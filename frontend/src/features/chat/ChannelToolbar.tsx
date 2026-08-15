@@ -67,7 +67,7 @@ export function ChannelToolbar(props: Props) {
             title="Channel members"
             aria-expanded={membersOpen}
             controlSize="regular"
-            className={membersOpen ? "bg-zinc-800 text-content-primary" : undefined}
+            selected={membersOpen}
           >
             <Users className="w-3.5 h-3.5" aria-hidden="true" />
             {props.memberCount || "Members"}
@@ -98,7 +98,7 @@ export function ChannelToolbar(props: Props) {
           aria-label={label}
           content="icon"
           controlSize="compact"
-          className={open ? "bg-zinc-800 text-content-primary" : undefined}
+          selected={open}
         >
           <Icon className="w-4 h-4" aria-hidden="true" />
         </Button>

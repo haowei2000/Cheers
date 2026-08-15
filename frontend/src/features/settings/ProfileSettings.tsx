@@ -4,8 +4,8 @@ import { Check, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
-import { ActionButton } from "@/components/ui/action-button";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
+import { ErrorState } from "@/components/ui/error-state";
 import { Field, SectionHead } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { InlineEditActions } from "@/components/ui/inline-edit-actions";
@@ -110,16 +110,12 @@ export function ProfileEditCard() {
   // profile that never hydrated would silently wipe the user's real details.
   if (profile.isError) {
     return (
-      <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-content-secondary">Couldn't load your profile</p>
-        <p className="text-compact text-content-muted mt-1">
-          Editing is disabled until it loads so your saved details aren't
-          overwritten. Check your connection and try again.
-        </p>
-        <div className="mt-4">
-          <ActionButton action="retry" context="settings" onClick={() => void profile.refetch()} />
-        </div>
-      </div>
+      <ErrorState
+        className="rounded-sm bg-zinc-900"
+        title="Couldn't load your profile"
+        description="Editing is disabled until it loads so your saved details aren't overwritten. Check your connection and try again."
+        action={{ label: "Retry", onClick: () => void profile.refetch() }}
+      />
     );
   }
 

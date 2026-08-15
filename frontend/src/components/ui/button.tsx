@@ -23,6 +23,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   /** Supplies the shared action identity and a fallback label when no children are provided. */
   action?: ActionKey;
   loading?: boolean;
+  /** Toggle/selector state. Applies shared selected styling and button semantics. */
+  selected?: boolean;
 }
 
 const variantCls: Record<Variant, string> = {
@@ -104,6 +106,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       content = "text",
       action,
       loading,
+      selected = false,
       disabled,
       className,
       children,
@@ -120,9 +123,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       data-button-content={content}
       data-control-width={controlWidth}
       aria-busy={loading || undefined}
+      aria-pressed={selected || undefined}
+      data-selected={selected || undefined}
       className={cn(
         "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
         variantCls[variant],
+        selected && "bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong",
         className,
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses.regular,

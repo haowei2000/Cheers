@@ -53,13 +53,14 @@ export function ErrorState({
             </Button>
           )}
           {secondaryAction && (
-            <button
-              type="button"
+            <Button
+              variant="plain"
+              controlSize="compact"
               onClick={secondaryAction.onClick}
-              className="text-label-primary hover:text-content-strong hover:underline transition-colors"
+              className="text-label-primary hover:text-content-strong hover:underline"
             >
               {secondaryAction.label}
-            </button>
+            </Button>
           )}
         </div>
       )}

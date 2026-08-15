@@ -1,8 +1,8 @@
 import { Inbox, ShieldAlert } from "lucide-react";
 
-import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { ItemSection, OperationsItem } from "@/components/ui/item";
+import { MetricCard } from "@/components/ui/metric-card";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import type { FleetAuditEvent, FleetBot } from "@/api/fleet";
 import { FleetAudit } from "./FleetAudit";
@@ -14,15 +14,6 @@ type FleetSummary = {
   offline: number;
   waiting: number;
 };
-
-function SummaryCard({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  return (
-    <div className="rounded-sm bg-zinc-900/60 px-4 py-3">
-      <p className="text-minimal uppercase tracking-overline text-content-muted">{label}</p>
-      <p className={cn("mt-1 text-comfortable font-semibold tabular-nums text-content-primary", tone)}>{value}</p>
-    </div>
-  );
-}
 
 export function FleetOverview({
   summary,
@@ -48,14 +39,14 @@ export function FleetOverview({
   return (
     <>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-        <SummaryCard label="Online" value={summary.online} />
-        <SummaryCard label="Working" value={summary.working} tone="text-accent-200" />
-        <SummaryCard label="Offline" value={summary.offline} />
-        <SummaryCard label="Waiting" value={summary.waiting} tone={summary.waiting ? "text-warning-300" : undefined} />
-        <SummaryCard
+        <MetricCard label="Online" value={summary.online} />
+        <MetricCard label="Working" value={summary.working} tone="accent" />
+        <MetricCard label="Offline" value={summary.offline} />
+        <MetricCard label="Waiting" value={summary.waiting} tone={summary.waiting ? "warning" : "neutral"} />
+        <MetricCard
           label="Install issues"
           value={installationIssues}
-          tone={installationIssues ? "text-warning-300" : undefined}
+          tone={installationIssues ? "warning" : "neutral"}
         />
       </div>
       {(actionableCount > 0 || installationIssues > 0) && (
