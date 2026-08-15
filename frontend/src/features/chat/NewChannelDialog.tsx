@@ -1,4 +1,4 @@
-import { Input as UiInput } from "@/components/ui/input";
+import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useState } from "react";
 import { Hash, Lock, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -68,17 +68,16 @@ export function NewChannelDialog({
   return (
     <Dialog title="New channel" onClose={onClose}>
       <div className="space-y-3">
-        <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-          <Hash className="w-3.5 h-3.5 text-content-muted" />
-          <UiInput
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
-            placeholder="Channel name…"
-            controlSize="regular" className="flex-1 bg-transparent text-regular text-content-secondary outline-none"
-          />
-        </div>
+        <InputWithLeadingIcon
+          leading={<Hash />}
+          aria-label="Channel name"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
+          placeholder="Channel name…"
+          controlSize="regular"
+        />
 
         <ChoiceGroup
           ariaLabel="Channel visibility"

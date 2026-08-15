@@ -1,5 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 // Activity — the channel's collaboration history as a FLOW LIST. One row per
 // episode (a causal unit: a human's @mention plus the bot turns / approvals /
 // file writes that follow — see activityEpisodes.ts). The collapsed row is a
@@ -23,7 +23,6 @@ import {
   Filter,
   Paperclip,
   Pencil,
-  Search,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -698,16 +697,15 @@ function MemberFilter({
 
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
-          <div className="m-1 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
-            <Search className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-            <UiInput
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search members…"
-              className="flex-1 min-w-0 bg-transparent text-compact text-content-secondary placeholder:text-content-muted outline-none"
-            />
-          </div>
+          <SearchInput
+            containerClassName="m-1 w-auto"
+            aria-label="Search members"
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search members…"
+            className="bg-zinc-800/50 text-content-secondary placeholder:text-content-muted"
+          />
           <div className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
               <div className="px-3 py-3 text-center text-compact text-content-muted">No members match.</div>

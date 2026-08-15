@@ -1,4 +1,4 @@
-import { Input as UiInput } from "@/components/ui/input";
+import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -346,20 +346,20 @@ function AddTab() {
         to copy it from <span className="text-content-secondary">Settings → Profile → User ID</span>.
       </p>
       <div className="flex gap-2 mb-3">
-        <div className="relative flex-1">
-          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-content-muted" />
-          <UiInput
-            value={id}
-            onChange={(e) => {
-              setId(e.target.value);
-              setResult(null);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
-            placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
-            // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-content-primary placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-code"
-          />
-        </div>
+        <InputWithLeadingIcon
+          leading={<Fingerprint />}
+          containerClassName="flex-1"
+          aria-label="User ID"
+          value={id}
+          onChange={(e) => {
+            setId(e.target.value);
+            setResult(null);
+          }}
+          onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
+          placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
+          controlSize="regular"
+          className="bg-zinc-900 font-code"
+        />
         <Button action="lookup" aria-label="Look up user ID" loading={busy} onClick={lookup} disabled={!id.trim()} />
       </div>
       {result === null ? (

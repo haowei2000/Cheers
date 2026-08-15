@@ -1,6 +1,6 @@
-import { Input as UiInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { useEffect, useMemo, useState } from "react";
-import { Forward, Hash, MessageCircle, Search } from "lucide-react";
+import { Forward, Hash, MessageCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { NavigationItem } from "@/components/ui/item";
@@ -97,16 +97,13 @@ export function ForwardDialog({
       }
       onClose={onClose}
     >
-      <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-        <Search className="w-3.5 h-3.5 text-content-muted" />
-        <UiInput
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search channels and DMs…"
-          className="flex-1 bg-transparent text-comfortable md:text-regular text-content-primary outline-none placeholder:text-content-muted"
-        />
-      </div>
+      <SearchInput
+        aria-label="Search channels and direct messages"
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search channels and DMs…"
+      />
 
       <div className="max-h-80 overflow-y-auto">
         {targets === null ? (

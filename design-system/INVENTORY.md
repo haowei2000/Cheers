@@ -12,7 +12,8 @@ primitive but remaining local recipes, **legacy** is still feature-owned, and
 | Presentation environment | shared | shared | shared | Explicit level overrides responsive/container defaults on every client. |
 | Button | partial | partial | partial | Web `IconButton` is shared; direct controls are ratcheted and should migrate by semantic action. Native system buttons remain appropriate but feature-owned visual wrappers must move into primitives. |
 | Choice / segmented selection | shared | partial | unavailable | Web `ChoiceGroup` owns radio semantics, roving focus, icon-text anatomy, and selected state. iOS currently uses platform toggles in channel creation but has no registered shared choice anatomy. |
-| Input / search / select / toggle | partial | legacy | legacy | Web primitives exist. Native clients correctly use system controls but still lack shared field anatomy and error/help slots. |
+| Input / search | shared | partial | partial | Web `Input`, `InputWithLeadingIcon`, and `SearchInput` own field anatomy, icon geometry, focus/error state, and mobile sizing. Native clients retain platform fields but still lack shared error/help slots. |
+| Select / toggle | partial | legacy | legacy | Web primitives exist. Native clients correctly use system controls but do not yet share the registered field anatomy. |
 | Menu / popover / dialog / sheet | partial | partial | partial | Preserve platform-native presentation. Normalize titles, actions, destructive state, and dismissal semantics next. |
 | Chip / badge / presence | partial | partial | shared | Context chips migrated on Web; avatar and unread patterns already exist natively. Consolidate Web's remaining hand-written status chips. |
 | User / member / friend | shared | shared | partial | Web and iOS identity, friend, member, candidate, blocked-user, and workspace-member rows use their shared entity anatomy. Friend management is unavailable on Android. |

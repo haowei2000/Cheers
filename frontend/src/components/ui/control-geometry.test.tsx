@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Button } from "./button";
 import { actionLabels } from "./action-labels";
 import { Input } from "./input";
+import { InputWithLeadingIcon } from "./input-with-leading-icon";
 import { Select } from "./select";
 
 describe("shared control geometry", () => {
@@ -53,8 +54,10 @@ describe("shared control geometry", () => {
     expect(markup).not.toContain(">Set up<");
   });
 
-  it("owns leading-icon field padding inside the Input primitive", () => {
-    const markup = renderToStaticMarkup(<Input inset="leading" aria-label="Search" />);
+  it("owns leading-icon field padding inside the shared input composite", () => {
+    const markup = renderToStaticMarkup(
+      <InputWithLeadingIcon leading={<span aria-hidden>#</span>} aria-label="Channel name" />,
+    );
     expect(markup).toContain("px-3");
     expect(markup).toContain("pl-9");
   });

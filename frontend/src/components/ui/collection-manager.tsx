@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Search } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "./button";
 import { ActionButton } from "./action-button";
-import { controlIconClasses, controlMinHeightClasses } from "./control-size";
-import { Input } from "./input";
+import { controlMinHeightClasses } from "./control-size";
+import { SearchInput } from "./search-input";
 import { ItemList, OperationsItem } from "./item";
 import type { PresentationLevel } from "./presentation";
 import type { ControlSize } from "./control-size";
@@ -67,23 +67,14 @@ export function CollectionManager({
       </header>
 
       <div className="flex min-w-0 items-center gap-2 px-1 pb-2">
-        <label className="relative min-w-0 flex-1">
-          <span className="sr-only">{searchPlaceholder}</span>
-          <Search
-            aria-hidden
-            className={cn(
-              controlIconClasses[controlSize],
-              "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted",
-            )}
-          />
-          <Input
-            controlSize={controlSize}
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={searchPlaceholder}
-            className="pl-9"
-          />
-        </label>
+        <SearchInput
+          containerClassName="flex-1"
+          aria-label={searchPlaceholder}
+          controlSize={controlSize}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={searchPlaceholder}
+        />
         {showAdd && (
           <ActionButton
             action="add"
@@ -125,20 +116,14 @@ export function CollectionPickerItem({
         <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-content-primary">{title}</span>
         <ActionButton action="cancel" context="form" controlSize="compact" onClick={onCancel} />
       </div>
-      <label className="relative mt-1 block min-w-0">
-        <span className="sr-only">{placeholder}</span>
-        <Search
-          aria-hidden
-          className={cn(controlIconClasses.regular, "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted")}
-        />
-        <Input
-          controlSize="regular"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={placeholder}
-          className="pl-9"
-        />
-      </label>
+      <SearchInput
+        containerClassName="mt-1"
+        aria-label={placeholder}
+        controlSize="regular"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder={placeholder}
+      />
       <ItemList presentationLevel="medium" controlSize="regular" className="mt-1 max-h-44 overflow-y-auto">
         {children}
       </ItemList>

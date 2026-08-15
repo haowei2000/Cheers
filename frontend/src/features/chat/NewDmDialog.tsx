@@ -1,7 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { useEffect, useRef, useState } from "react";
-import { Bot, Search, User, X } from "lucide-react";
+import { Bot, User, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { createDm } from "@/api/channels";
 import { searchUsers, type UserSearchResult } from "@/api/users";
@@ -78,15 +78,16 @@ export function NewDmDialog({
   return (
     <Dialog title="New direct message" onClose={onClose}>
       <>
-        <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-          <Search className="w-3.5 h-3.5 text-content-muted" />
-          <UiInput
+        <div className="flex items-center gap-2">
+          <SearchInput
             ref={inputRef}
+            containerClassName="flex-1"
+            aria-label="Search users"
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
-            controlSize="regular" className="flex-1 bg-transparent text-regular text-content-secondary outline-none"
+            controlSize="regular"
           />
           {q && (
             <UiButton variant="plain"

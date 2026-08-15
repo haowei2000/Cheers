@@ -252,47 +252,32 @@ recipes are:
 staged-file chip in `fileView.tsx`, where the dashed outline means "not
 fetched yet"). Don't hand-roll `bg-indigo-600` primaries — use `<Button>`.
 
-### 2.2 Search / filter field — three forms
+### 2.2 Leading-icon and search fields
 
-One visual language, three placements. All use a `Search` (or contextual)
-lucide icon at `w-3.5`–`w-4 text-content-muted` and a transparent inner input.
-
-**A. Dialog picker search** — wrapper carries the style, input is bare.
-Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
-
-```tsx
-<div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
-                focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-  <Search className="w-4 h-4 text-content-muted" />
-  <input className="flex-1 bg-transparent text-regular text-content-secondary outline-none
-                    placeholder:text-content-muted" placeholder="…" />
-</div>
-```
-
-**B. Page-level filter** — self-contained input with an absolutely
-positioned icon. Used by AdminUsers filter, FriendsPage lookup:
+Use `<InputWithLeadingIcon>` for a single-line field with a contextual icon
+such as a channel hash. Use `<SearchInput>` for every search or filter field;
+it fixes `type="search"`, the Search icon, accessible naming, icon geometry,
+and native cancel-button normalization.
 
 ```tsx
-<div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-muted" />
-  <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-comfortable md:text-regular text-content-primary placeholder:text-content-muted
-                    focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
-</div>
+<InputWithLeadingIcon
+  leading={<Hash />}
+  aria-label="Channel name"
+  placeholder="Channel name…"
+/>
+
+<SearchInput
+  aria-label="Search workspace members"
+  placeholder="Search members…"
+/>
 ```
 
-**C. Inline popover filter** — bare input on a divider, no box. Used inside
-dense popovers/panels (ActivityPanel search):
-
-```tsx
-<input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-compact text-content-secondary outline-none placeholder:text-content-muted
-                  focus:border-indigo-500/60" />
-```
-
-Notes: `text-comfortable md:text-regular` on any input reachable on mobile (iOS zoom
-guard). Field background inside dialogs is `bg-zinc-950` (inset look);
-standalone on a `zinc-950` page it is `bg-zinc-900`.
+Both composites render the icon inside the shared `<Input>` boundary. `Input`
+alone owns the fill, radius, neutral inset ring, focus ring, error state,
+ControlSize, mobile zoom guard, and horizontal padding. Business code must not
+wrap an Input in another `focus-within:ring-*` field, manually position a Search
+icon, or add `pl-9`; use `containerClassName` only for layout and `className`
+only for approved surface/tone overrides.
 
 ### 2.3 Text fields
 

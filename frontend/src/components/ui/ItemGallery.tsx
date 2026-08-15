@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
+import { SearchInput } from "@/components/ui/search-input";
 import { MenuOption } from "@/components/ui/menu-option";
 import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
@@ -186,6 +188,15 @@ export function ItemGallery() {
                 <div className="flex items-center gap-2">
                   <Input aria-label={`${size} input`} placeholder="Input" />
                 </div>
+                <InputWithLeadingIcon
+                  leading={<Hash />}
+                  aria-label={`${size} channel name`}
+                  placeholder="Channel name…"
+                />
+                <SearchInput
+                  aria-label={`${size} search`}
+                  placeholder="Search…"
+                />
                 <div role="tablist" className="flex items-center gap-1">
                   <TabOption label="Active" selected />
                   <TabOption label="Archive" selected={false} />

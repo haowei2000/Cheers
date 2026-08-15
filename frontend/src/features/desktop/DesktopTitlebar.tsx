@@ -8,7 +8,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
-  Search,
   Settings,
   Users,
   type LucideIcon,
@@ -16,7 +15,7 @@ import {
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ItemList, NavigationItem } from "@/components/ui/item";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { useAuthStore } from "@/stores/authStore";
@@ -82,7 +81,7 @@ type SearchEntry = {
   label: string;
   detail: string;
   path: string;
-  Icon: typeof Search;
+  Icon: LucideIcon;
 };
 
 function DesktopSearch({ onClose }: { onClose: () => void }) {
@@ -133,18 +132,13 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" aria-hidden="true" />
-          <span className="sr-only">Search pages, workspaces, and channels</span>
-          <Input
-            autoFocus
-            inset="leading"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search pages, workspaces, and channels…"
-            aria-label="Search pages, workspaces, and channels"
-          />
-        </div>
+        <SearchInput
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search pages, workspaces, and channels…"
+          aria-label="Search pages, workspaces, and channels"
+        />
         {visible.length > 0 ? (
           <ItemList presentationLevel="medium" controlSize="regular" className="max-h-80 overflow-y-auto">
             {visible.map((entry) => (

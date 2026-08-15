@@ -1,7 +1,7 @@
 /** @file Discussion-mode channel UI for browsing topics and their reply threads. */
 
 import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   type ReactNode,
   useCallback,
@@ -17,7 +17,6 @@ import {
   Loader2,
   MessageCircle,
   Plus,
-  Search,
   Users,
 } from "lucide-react";
 import {
@@ -278,17 +277,14 @@ export function DiscussionView({
     <section className="flex min-h-0 flex-1 flex-col border-zinc-800 bg-zinc-950/40 md:border-r">
       <div className="border-b border-zinc-800/80 p-3">
         <div className="flex items-center gap-2">
-          <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" />
-            <span className="sr-only">Search discussions</span>
-            <UiInput
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search discussions"
-              inset="leading"
-              className="bg-zinc-900/70 placeholder:text-content-muted"
-            />
-          </label>
+          <SearchInput
+            containerClassName="flex-1"
+            aria-label="Search discussions"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search discussions"
+            className="bg-zinc-900/70 placeholder:text-content-muted"
+          />
           <UiButton content="iconText" action="create" variant="plain"
             type="button"
             onClick={startDiscussion}
