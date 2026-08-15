@@ -21,12 +21,12 @@ export function Field({
     <div className={cn("space-y-2", className)}>
       <label
         htmlFor={htmlFor}
-        className="block text-compact font-medium uppercase tracking-wide text-zinc-400"
+        className="block text-compact font-medium uppercase tracking-label text-content-muted"
       >
         {label}
       </label>
       {children}
-      {hint && <p className="text-compact text-zinc-400">{hint}</p>}
+      {hint && <p className="text-compact text-content-muted">{hint}</p>}
     </div>
   );
 }
@@ -46,7 +46,7 @@ export function MetaRow({
 }) {
   return (
     <div className={cn("flex items-center gap-3 text-compact", className)}>
-      <span className="w-24 shrink-0 text-zinc-400">{label}</span>
+      <span className="w-24 shrink-0 text-content-muted">{label}</span>
       <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
     </div>
   );
@@ -66,7 +66,7 @@ export function SectionHead({
   return (
     <p
       className={cn(
-        "flex items-center gap-2 text-compact font-semibold uppercase tracking-wider text-zinc-400",
+        "flex items-center gap-2 text-compact font-semibold uppercase tracking-section text-content-muted",
         className
       )}
     >

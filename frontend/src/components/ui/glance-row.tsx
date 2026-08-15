@@ -37,13 +37,13 @@ export function GlanceRow({
       className="group flex w-full flex-col gap-1 rounded-sm px-3 py-2 text-left transition-colors hover:bg-zinc-800/60"
     >
       <div className="flex items-center gap-2">
-        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
-        <span className="flex-1 text-compact text-zinc-400">{label}</span>
-        {sub && <span className="text-minimal tabular-nums text-zinc-400">{sub}</span>}
-        <span className="text-compact font-medium tabular-nums text-zinc-100 truncate max-w-[55%] text-right">
+        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+        <span className="flex-1 text-compact text-content-muted">{label}</span>
+        {sub && <span className="text-minimal tabular-nums text-content-muted">{sub}</span>}
+        <span className="text-compact font-medium tabular-nums text-content-primary truncate max-w-[55%] text-right">
           {value}
         </span>
-        <ChevronRight className="w-3.5 h-3.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100" />
+        <ChevronRight className="w-3.5 h-3.5 text-content-muted opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       {bar != null && (
         <div data-design-system-exempt="progress" className="ml-[22px] h-1 overflow-hidden rounded-full bg-zinc-800">
@@ -59,8 +59,8 @@ export function GlanceRow({
 export function DetailLine({ name, figure }: { name: string; figure?: string }) {
   return (
     <div className="flex items-baseline gap-2 text-minimal">
-      <span className="min-w-0 flex-1 truncate text-zinc-400">{name}</span>
-      {figure && <span className="tabular-nums text-zinc-400">{figure}</span>}
+      <span className="min-w-0 flex-1 truncate text-content-muted">{name}</span>
+      {figure && <span className="tabular-nums text-content-muted">{figure}</span>}
     </div>
   );
 }

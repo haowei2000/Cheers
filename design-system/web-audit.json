@@ -43,6 +43,7 @@
     "legacyControlSizeProp": 0,
     "commonActionPresentationOverride": 0,
     "unregisteredFormAction": 0,
+    "nonSemanticTextColor": 0,
     "nonStandardNeutralTextShade": 0,
     "nonStandardDisabledOpacity": 0,
     "nonPrimaryButtonNeutralText": 0,

@@ -43,9 +43,9 @@ export function BotRow({ bot, onSelect }: { bot: FleetBot; onSelect: () => void 
           </UnreadBadge>
         ) : undefined
       }
-      status={<span className="text-compact text-zinc-400">{statusText(bot)}</span>}
+      status={<span className="text-compact text-content-muted">{statusText(bot)}</span>}
       trailing={
-        <span className="flex items-center gap-2 text-compact text-zinc-400">
+        <span className="flex items-center gap-2 text-compact text-content-muted">
           <span>{bot.can_manage ? "Mine" : "Shared"}</span>
           {bot.installation_count ? <span>{bot.installation_count} install.</span> : null}
           {bot.cost_today_usd > 0 ? <span className="tabular-nums">${bot.cost_today_usd.toFixed(2)}</span> : null}

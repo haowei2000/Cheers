@@ -9,9 +9,9 @@ const sizeClasses: Record<ContentSize, string> = {
 };
 
 const toneClasses = {
-  unread: "bg-indigo-600 text-white",
-  mention: "bg-rose-600 text-white",
-  approval: "bg-amber-600 text-white",
+  unread: "bg-indigo-600 text-content-on-accent",
+  mention: "bg-rose-600 text-content-on-accent",
+  approval: "bg-amber-600 text-content-on-accent",
 } as const;
 
 /** Shared circular state counter. ContentSize changes the mark, never its owning hit target. */

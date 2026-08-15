@@ -33,11 +33,11 @@ const expectedIdentityRails = { small: "64px", regular: "96px", large: "128px" }
 const expectedTypeRoles = ["display", "reading", "utility"];
 const expectedTypographySizes = ["minimal", "compact", "regular", "comfortable"];
 const expectedNeutralForegroundLevels = {
-  primary: ["zinc-50", "zinc-100"],
-  secondary: "zinc-200",
-  metadata: "zinc-400",
+  primary: ["content-strong", "content-primary"],
+  secondary: "content-secondary",
+  metadata: "content-muted",
   disabled: "enabled foreground plus opacity-50",
-  inverseExceptions: ["white", "zinc-950"],
+  inverseExceptions: ["content-on-accent", "content-on-light"],
 };
 const expectedCommonActionPresentations = {
   windowChrome: { back: "icon", close: "icon", more: "icon", refresh: "icon" },
@@ -160,7 +160,7 @@ for (const match of webCss.matchAll(/^\s*color:\s*#(?:d4d4d8|71717a|52525b|3f3f4
   fail(`frontend/src/index.css:${line} uses a neutral foreground outside zinc-50/100/200/400`);
 }
 for (const match of webCss.matchAll(/font-size:\s*([^;]+);/g)) {
-  if (/^var\(--type-(?:minimal|compact|regular|comfortable)\)$/.test(match[1].trim())) continue;
+  if (/^var\(--type-(?:minimal|compact|regular|comfortable)-size\)$/.test(match[1].trim())) continue;
   const line = webCss.slice(0, match.index).split("\n").length;
   fail(`frontend/src/index.css:${line} uses a nonstandard font-size declaration`);
 }

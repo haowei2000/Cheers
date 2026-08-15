@@ -86,7 +86,7 @@ export function MessageContextChips({
       <div
         className={`flex items-center flex-wrap gap-2 rounded-sm bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
       >
-        <span className="inline-flex items-center gap-1 text-compact font-medium text-indigo-300">
+        <span className="inline-flex items-center gap-1 text-compact font-medium text-accent-300">
           <CornerDownRight className="w-3.5 h-3.5" />
           Received handoff
         </span>
@@ -162,9 +162,9 @@ export function AttachContextButton({
       title={disabled ? disabledTitle ?? "Unavailable" : added ? ADDED_TO_CONTEXT_TITLE : title}
       className={
  className ??
- "rounded-sm text-zinc-100 hover:text-indigo-300 disabled:opacity-50 disabled:hover:text-zinc-100"}
+ "rounded-sm text-content-primary hover:text-accent-300 disabled:opacity-50 disabled:hover:text-content-primary"}
     >
-      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
+      {added ? <Check className="w-3.5 h-3.5 text-success-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
     </UiButton>
   );
 }
@@ -211,14 +211,14 @@ export function ContextPickBar({
             leading={<Icon className="w-3.5 h-3.5" />}
             controlSize="regular"
             presentationLevel="medium"
-            className={`flex-shrink-0 bg-zinc-800/50 text-zinc-400 ${controlHeightClasses.regular}`}
+            className={`flex-shrink-0 bg-zinc-800/50 text-content-muted ${controlHeightClasses.regular}`}
             actions={<>
             <IconButton
               onClick={() => add(channelId, sg)}
               label={`Add suggested context ${sg.label}`}
               title="Add suggestion"
               controlSize="compact"
-              className="hover:text-indigo-300"
+              className="hover:text-accent-300"
             >
               <MessageSquarePlus className="w-3.5 h-3.5" />
             </IconButton>
@@ -227,7 +227,7 @@ export function ContextPickBar({
               label={`Dismiss suggestion ${sg.label}`}
               title="Dismiss suggestion"
               controlSize="compact"
-              className="text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700"
+              className="text-content-primary hover:text-content-strong hover:bg-zinc-700"
             >
               <X className="w-3.5 h-3.5" />
             </IconButton>
@@ -243,10 +243,10 @@ export function ContextPickBar({
           <ItemChip
             key={it.id}
             label={<OverflowText fullText={it.label} touchDisclosure={false} />}
-            leading={<Icon className="h-4 w-4 flex-shrink-0 text-zinc-400" />}
+            leading={<Icon className="h-4 w-4 flex-shrink-0 text-content-muted" />}
             presentationLevel="medium"
             controlSize="regular"
-            className="bg-zinc-800/60 text-regular text-zinc-200"
+            className="bg-zinc-800/60 text-regular text-content-secondary"
             actions={
               <>
                 {jumpTo && (
@@ -255,7 +255,7 @@ export function ContextPickBar({
                     label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
                     title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
                     controlSize="compact"
-                    className="text-zinc-100 hover:bg-zinc-700 hover:text-indigo-300"
+                    className="text-content-primary hover:bg-zinc-700 hover:text-accent-300"
                   >
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </IconButton>
@@ -265,7 +265,7 @@ export function ContextPickBar({
                   label={`Remove ${it.label}`}
                   title="Remove"
                   controlSize="compact"
-                  className="text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50"
+                  className="text-content-primary hover:bg-zinc-700 hover:text-content-strong"
                 >
                   <X className="h-3.5 w-3.5" />
                 </IconButton>
@@ -288,7 +288,7 @@ export function ContextPickBar({
         </UiButton>
         {open && (
           <PopoverPanel placement="up" align="start" className="w-56 p-1">
-            <p className="px-2 py-1 text-minimal uppercase tracking-wide text-zinc-400">
+            <p className="px-2 py-1 text-minimal uppercase tracking-label text-content-muted">
               Add to context
             </p>
             {QUICK.map((q) => {
@@ -304,14 +304,14 @@ export function ContextPickBar({
                   }}
                   controlSize="regular"
                   label={q.label}
-                  leading={<Icon className="w-3.5 h-3.5 text-zinc-400" />}
+                  leading={<Icon className="w-3.5 h-3.5 text-content-muted" />}
                   trailing={already ? <Check className="h-3.5 w-3.5" /> : undefined}
                 />
               );
             })}
             {(onBrowseWorkbench || onBrowseWorkspace) && (
               <>
-                <p className="px-2 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400 border-t border-zinc-800 mt-1">
+                <p className="px-2 pt-2 pb-1 text-minimal uppercase tracking-label text-content-muted border-t border-zinc-800 mt-1">
                   Browse &amp; attach
                 </p>
                 {onBrowseWorkbench && (
@@ -323,8 +323,8 @@ export function ContextPickBar({
                     title="Open the Workbench to pick a file to attach"
                     controlSize="regular"
                     label="Workbench files"
-                    leading={<PanelRight className="w-3.5 h-3.5 text-zinc-400" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />}
+                    leading={<PanelRight className="w-3.5 h-3.5 text-content-muted" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
                   />
                 )}
                 {onBrowseWorkspace && (
@@ -336,13 +336,13 @@ export function ContextPickBar({
                     title="Open the Remote workspace to pick a file to attach"
                     controlSize="regular"
                     label="Workspace files"
-                    leading={<FolderTree className="w-3.5 h-3.5 text-zinc-400" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />}
+                    leading={<FolderTree className="w-3.5 h-3.5 text-content-muted" />}
+                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
                   />
                 )}
               </>
             )}
-            <p className="px-2 pt-2 pb-1 text-minimal text-zinc-400">
+            <p className="px-2 pt-2 pb-1 text-minimal text-content-muted">
               Or attach a message from its reply action.
             </p>
           </PopoverPanel>

@@ -212,7 +212,7 @@ export default function RegisterPage() {
               </Button>
             </div>
             {errors.email && (
-              <p id="email-error" role="alert" className="text-compact text-red-400">
+              <p id="email-error" role="alert" className="text-compact text-danger-400">
                 {errors.email}
               </p>
             )}
@@ -222,7 +222,7 @@ export default function RegisterPage() {
             <Input
               type="text"
               placeholder="8-character code"
-              className="font-mono tracking-widest uppercase"
+              className="font-mono tracking-overline uppercase"
               value={form.code}
               onChange={set("code")}
             />
@@ -241,7 +241,7 @@ export default function RegisterPage() {
               aria-describedby={errors.password ? "password-error" : undefined}
             />
             {errors.password && (
-              <p id="password-error" role="alert" className="text-compact text-red-400">
+              <p id="password-error" role="alert" className="text-compact text-danger-400">
                 {errors.password}
               </p>
             )}
@@ -260,7 +260,7 @@ export default function RegisterPage() {
               aria-describedby={errors.confirm ? "confirm-error" : undefined}
             />
             {errors.confirm && (
-              <p id="confirm-error" role="alert" className="text-compact text-red-400">
+              <p id="confirm-error" role="alert" className="text-compact text-danger-400">
                 {errors.confirm}
               </p>
             )}
@@ -280,7 +280,7 @@ export default function RegisterPage() {
             Create account
           </Button>
 
-          <p className="text-center text-compact text-zinc-400">
+          <p className="text-center text-compact text-content-muted">
             Already have an account?{" "}
             <Link to="/login" className={publicLinkClass}>
               Sign in

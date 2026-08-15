@@ -47,7 +47,7 @@ export function ConversationModePicker({
           <TabOption
             key={option.value}
             label={option.title}
-            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-400")} />}
+            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-content-primary" : "text-content-muted")} />}
             selected={selected}
             disabled={disabled}
             aria-disabled={disabled}
@@ -58,7 +58,7 @@ export function ConversationModePicker({
             className={cn(
  "min-w-0",
  selected
- ? "bg-zinc-800 text-zinc-100": "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
+ ? "bg-zinc-800 text-content-primary": "text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary",
  )}
           />
         );

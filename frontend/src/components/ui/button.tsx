@@ -27,13 +27,13 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 
 const variantCls: Record<Variant, string> = {
   primary:
-    "bg-indigo-100 text-zinc-950 hover:bg-white active:bg-indigo-300",
+    "bg-indigo-100 text-content-on-light hover:bg-white active:bg-indigo-300",
   ghost:
-    "bg-transparent text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 active:bg-zinc-700",
+    "bg-transparent text-content-primary hover:bg-zinc-800 hover:text-content-strong active:bg-zinc-700",
   danger:
-    "bg-transparent text-red-400 hover:bg-red-950 hover:text-red-300 active:bg-red-900",
+    "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900",
   secondary:
-    "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 active:bg-zinc-600",
+    "bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong active:bg-zinc-600",
   plain:
     "bg-transparent text-inherit hover:bg-zinc-800/70 active:bg-zinc-700/70",
 };

@@ -6,11 +6,11 @@
   "defaultContentSize": "regular",
   "defaultTypographySize": "regular",
   "neutralForegroundLevels": {
-    "primary": ["zinc-50", "zinc-100"],
-    "secondary": "zinc-200",
-    "metadata": "zinc-400",
+    "primary": ["content-strong", "content-primary"],
+    "secondary": "content-secondary",
+    "metadata": "content-muted",
     "disabled": "enabled foreground plus opacity-50",
-    "inverseExceptions": ["white", "zinc-950"]
+    "inverseExceptions": ["content-on-accent", "content-on-light"]
   },
   "visualLanguage": {
     "name": "Editorial Correspondence",

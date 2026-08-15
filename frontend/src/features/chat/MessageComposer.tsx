@@ -1017,20 +1017,20 @@ function MessageComposerImpl({
                 selectCandidate(c);
               }}
               title={c.label}
-              status={c.sublabel ? <span className="truncate text-compact text-zinc-400">@{c.sublabel}</span> : undefined}
+              status={c.sublabel ? <span className="truncate text-compact text-content-muted">@{c.sublabel}</span> : undefined}
               leading={c.type === "bot" ? (
-                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-400" : "text-indigo-400")} />
+                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-content-muted" : "text-accent-400")} />
               ) : (
-                <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <User className="w-4 h-4 text-content-muted flex-shrink-0" />
               )}
-              criticalStatus={c.type === "bot" ? <span className="text-minimal text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
+              criticalStatus={c.type === "bot" ? <span className="text-minimal text-accent-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
               selected={i === picker.index}
               className={cn(
  "border-0 ",
  i === picker.index
- ? "bg-indigo-600/30 text-zinc-100": c.type === "bot" && c.isOnline === false
- ? "text-zinc-400 hover:bg-zinc-800"
- : "text-zinc-200 hover:bg-zinc-800"
+ ? "bg-indigo-600/30 text-content-primary": c.type === "bot" && c.isOnline === false
+ ? "text-content-muted hover:bg-zinc-800"
+ : "text-content-secondary hover:bg-zinc-800"
  )}
             />
           ))}
@@ -1059,9 +1059,9 @@ function MessageComposerImpl({
                   {a.original_filename || a.file_id.slice(0, 8)}
                 </OverflowText>
               }
-              leading={<FileText className="w-3.5 h-3.5 text-indigo-400" />}
+              leading={<FileText className="w-3.5 h-3.5 text-accent-400" />}
               controlSize="regular"
-              className="bg-zinc-800 text-zinc-200"
+              className="bg-zinc-800 text-content-secondary"
               actions={
                 <IconButton
                 onClick={() => removeAttachment(a.file_id)}
@@ -1075,7 +1075,7 @@ function MessageComposerImpl({
             />
           ))}
           {uploading && (
-            <span className="inline-flex items-center text-compact text-zinc-400 px-1">
+            <span className="inline-flex items-center text-compact text-content-muted px-1">
               uploading…
             </span>
           )}
@@ -1101,13 +1101,13 @@ function MessageComposerImpl({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-amber-200">
+        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-warning-200">
           <p className="flex items-center gap-2">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
           </p>
           {voiceWarning.error && (
-            <p className="mt-1 text-red-300">{voiceWarning.error}</p>
+            <p className="mt-1 text-danger-300">{voiceWarning.error}</p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <UiButton variant="secondary"
@@ -1139,7 +1139,7 @@ function MessageComposerImpl({
               controlSize="regular"
               action="cancel"
               aria-label="Cancel audio attachment warning"
-              className="ml-auto text-amber-400/70 hover:text-amber-200"
+              className="ml-auto text-warning-400/70 hover:text-warning-200"
             />
           </div>
         </div>
@@ -1181,7 +1181,7 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-regular"
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-reading text-content-primary outline-none placeholder-zinc-400 md:text-regular"
         />
 
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
@@ -1193,7 +1193,7 @@ function MessageComposerImpl({
             className={cn(
  "disabled:opacity-50",
  dictating
- ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50",
+ ? "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25 animate-pulse": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50",
  )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
@@ -1214,7 +1214,7 @@ function MessageComposerImpl({
               className={cn(
  "disabled:opacity-50",
  attachMenuOpen
- ? "text-zinc-100 bg-zinc-700/50": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
+ ? "text-content-primary bg-zinc-700/50": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
  )}
               title="Attach file"
             >
@@ -1229,7 +1229,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Upload file"
-                  leading={<Upload className="w-3.5 h-3.5 text-zinc-400" />}
+                  leading={<Upload className="w-3.5 h-3.5 text-content-muted" />}
                 />
                 <MenuOption
                   onClick={() => {
@@ -1238,7 +1238,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Channel file"
-                  leading={<FolderOpen className="w-3.5 h-3.5 text-zinc-400" />}
+                  leading={<FolderOpen className="w-3.5 h-3.5 text-content-muted" />}
                 />
                 {isTauri() && (
                   <MenuOption
@@ -1248,7 +1248,7 @@ function MessageComposerImpl({
                     }}
                     controlSize="regular"
                     label="Screenshot"
-                    leading={<Camera className="w-3.5 h-3.5 text-zinc-400" />}
+                    leading={<Camera className="w-3.5 h-3.5 text-content-muted" />}
                   />
                 )}
               </PopoverPanel>
@@ -1260,7 +1260,7 @@ function MessageComposerImpl({
               onClick={openCommandPicker}
               disabled={disabled || sending}
               controlSize="regular"
-              className="disabled:opacity-50 text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
+              className="disabled:opacity-50 text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
               label="Insert a command"
               title="Commands (/)"
             >
@@ -1280,7 +1280,7 @@ function MessageComposerImpl({
               onClick={() => void stopStreaming()}
               disabled={stopping}
               controlSize="regular"
-              className="bg-zinc-700/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-50"
+              className="bg-zinc-700/50 text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
               label={stopTitle}
               title={stopTitle}
             >
@@ -1294,7 +1294,7 @@ function MessageComposerImpl({
               label="Send message"
               className={cn(
  canSend
- ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-100 opacity-50 cursor-not-allowed"
+ ? "bg-indigo-600 text-content-on-accent hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-content-primary opacity-50 cursor-not-allowed"
  )}
               title="Send message"
             >

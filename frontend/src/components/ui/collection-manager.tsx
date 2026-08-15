@@ -55,14 +55,14 @@ export function CollectionManager({
     <section className={cn("min-w-0", className)}>
       <header
         className={cn(
-          "flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400",
+          "flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted",
           controlMinHeightClasses[controlSize],
         )}
       >
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {headerAction}
         {typeof count === "number" && (
-          <span className="font-normal tabular-nums text-zinc-400">{count}</span>
+          <span className="font-normal tabular-nums text-content-muted">{count}</span>
         )}
       </header>
 
@@ -73,7 +73,7 @@ export function CollectionManager({
             aria-hidden
             className={cn(
               controlIconClasses[controlSize],
-              "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400",
+              "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted",
             )}
           />
           <Input
@@ -122,14 +122,14 @@ export function CollectionPickerItem({
   return (
     <div role="listitem" data-collection-mode="add" className="rounded-sm bg-zinc-900/80 px-2 py-2">
       <div className={cn("flex items-center gap-2", controlMinHeightClasses.compact)}>
-        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">{title}</span>
+        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-content-primary">{title}</span>
         <ActionButton action="cancel" context="form" controlSize="compact" onClick={onCancel} />
       </div>
       <label className="relative mt-1 block min-w-0">
         <span className="sr-only">{placeholder}</span>
         <Search
           aria-hidden
-          className={cn(controlIconClasses.regular, "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400")}
+          className={cn(controlIconClasses.regular, "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted")}
         />
         <Input
           controlSize="regular"
@@ -171,10 +171,10 @@ export function CollectionEditorItem({
       className="rounded-sm bg-zinc-900/80 px-2 py-2"
     >
       <div className={cn("flex items-center gap-2", controlMinHeightClasses.compact)}>
-        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-zinc-100">
+        <span className="min-w-0 flex-1 truncate font-utility text-regular font-semibold text-content-primary">
           {title}
         </span>
-        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-zinc-400">
+        <span className="font-utility text-compact font-semibold uppercase tracking-label text-content-muted">
           {mode}
         </span>
       </div>
@@ -214,10 +214,10 @@ export function CollectionDeleteItem({
     <OperationsItem
       presentationLevel="medium"
       controlSize="regular"
-      leading={<AlertTriangle className="h-4 w-4 text-red-400" />}
+      leading={<AlertTriangle className="h-4 w-4 text-danger-400" />}
       title={<span title={String(description)}>{title}</span>}
       criticalStatus={(
-        <span className="font-utility text-compact font-semibold uppercase tracking-wide text-red-400">
+        <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">
           Delete?
         </span>
       )}

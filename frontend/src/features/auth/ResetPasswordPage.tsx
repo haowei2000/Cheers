@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
               type="text"
               placeholder="8-character code"
               autoFocus
-              className="font-mono tracking-widest uppercase"
+              className="font-mono tracking-overline uppercase"
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
@@ -98,7 +98,7 @@ export default function ResetPasswordPage() {
           >
             Reset password
           </Button>
-          <p className="text-center text-compact text-zinc-400">
+          <p className="text-center text-compact text-content-muted">
             <Link to="/login" className={publicLinkClass}>
               Back to sign in
             </Link>

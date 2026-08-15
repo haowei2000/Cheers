@@ -18,7 +18,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         // Filled field with an inset neutral boundary (DESIGN.md §2.3).
         // Focus and error replace the neutral ring with semantic state colors.
         // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-        "w-full rounded-sm px-3 bg-zinc-800 text-zinc-100 placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
+        "w-full rounded-sm px-3 bg-zinc-800 text-content-primary placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
         inset === "leading" && "pl-9",
         controlHeightClasses[size],
         "text-comfortable md:text-regular",

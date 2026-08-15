@@ -240,24 +240,24 @@ export function PermissionCard({
       <div className="flex items-center gap-2 py-1 text-compact">
         <span
           className={cn(
-            expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400"
+            expired ? "text-content-muted" : ok ? "text-content-muted" : "text-danger-400"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
         </span>
         {command && (
-          <code className="font-mono text-zinc-400 truncate min-w-0">
+          <code className="font-mono text-content-muted truncate min-w-0">
             {command}
           </code>
         )}
         {data.resolved_by && (
-          <span className="text-zinc-400 whitespace-nowrap" title={data.resolved_by}>
+          <span className="text-content-muted whitespace-nowrap" title={data.resolved_by}>
             · {resolverName}
           </span>
         )}
         {undelivered && (
           <span
-            className="text-amber-400/90 whitespace-nowrap"
+            className="text-warning-400/90 whitespace-nowrap"
             title="The decision was recorded but couldn't be delivered to the agent (the connector or session may be offline). The agent may not act on it."
           >
             · ⚠ not delivered
@@ -276,9 +276,9 @@ export function PermissionCard({
     return (
       <div className={cn(shell, "flex items-center gap-3 px-3 py-2")}>
         <div className="min-w-0 flex-1">
-          <p className="text-compact font-medium text-zinc-200">{title}</p>
+          <p className="text-compact font-medium text-content-secondary">{title}</p>
           {command && (
-            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-content-muted">
               {command}
             </p>
           )}
@@ -286,7 +286,7 @@ export function PermissionCard({
         <UiButton action="request" variant="plain"
           disabled={busy || requested}
           onClick={onRequestAccess}
-          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-zinc-100 transition-colors hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+          controlSize="compact" className="shrink-0 rounded-sm bg-zinc-800  text-content-primary transition-colors hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
         >
           {requested ? "Requested" : "Request access"}
         </UiButton>
@@ -306,15 +306,15 @@ export function PermissionCard({
  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-left transition-colors hover:bg-zinc-900/70")}
       >
         <div className="min-w-0">
-          <p className="text-compact font-medium text-zinc-200">{title}</p>
+          <p className="text-compact font-medium text-content-secondary">{title}</p>
           {command && (
-            <p className="mt-1 truncate font-mono text-compact text-zinc-400">
+            <p className="mt-1 truncate font-mono text-compact text-content-muted">
               {command}
             </p>
           )}
         </div>
-        <span className="flex items-center gap-2 whitespace-nowrap text-compact text-zinc-400">
-          Details <span className="text-zinc-400">⌄</span>
+        <span className="flex items-center gap-2 whitespace-nowrap text-compact text-content-muted">
+          Details <span className="text-content-muted">⌄</span>
         </span>
       </ControlTrigger>
     );
@@ -324,20 +324,20 @@ export function PermissionCard({
   return (
     <div className={cn(shell, "space-y-2 px-3 py-3")}>
       <div className="flex min-h-7 items-center gap-2">
-        {compact && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />}
+        {compact && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-warning-400/80" />}
         <OverflowText
           fullText={title}
-          className="min-w-0 flex-1 text-compact font-medium text-zinc-200"
+          className="min-w-0 flex-1 text-compact font-medium text-content-secondary"
           touchDisclosure={false}
         />
         {compact && (
-          <span className="shrink-0 text-minimal text-amber-400/90">Needs approval</span>
+          <span className="shrink-0 text-minimal text-warning-400/90">Needs approval</span>
         )}
         {!embedded && (
           <ActionButton action="collapse" context="disclosure"
             onClick={() => setCollapsed(true)}
             accessibleLabel="Collapse approval details"
-            className="shrink-0 leading-none text-zinc-100 transition-colors hover:text-zinc-50"
+            className="shrink-0 leading-none text-content-primary transition-colors hover:text-content-strong"
           />
         )}
       </div>
@@ -347,15 +347,15 @@ export function PermissionCard({
           {compact ? (
             <OverflowText
               fullText={command}
-              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-zinc-200"
+              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-content-secondary"
               touchDisclosure={false}
             />
           ) : (
-            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-relaxed text-zinc-200">
+            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-reading text-content-secondary">
               {command}
             </pre>
           )}
-          {!compact && impact && <p className="mt-2 text-compact text-zinc-400">{impact}</p>}
+          {!compact && impact && <p className="mt-2 text-compact text-content-muted">{impact}</p>}
           {!compact && agentDiff && (
             <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
               <DiffView diff={agentDiff} className="max-h-72" />
@@ -367,21 +367,21 @@ export function PermissionCard({
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-zinc-100 transition-colors hover:bg-zinc-800 hover:text-zinc-50"
+                controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong"
               >
-                <span className="text-zinc-400">±</span>
+                <span className="text-content-muted">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
-                {diffLoading && <span className="text-zinc-400">…</span>}
+                {diffLoading && <span className="text-content-muted">…</span>}
               </UiButton>
               {diffOpen && (
                 <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">
                   {diffLoading ? (
-                    <div className="px-3 py-3 text-compact text-zinc-400">
+                    <div className="px-3 py-3 text-compact text-content-muted">
                       Loading staged diff…
                     </div>
                   ) : diffError ? (
                     <div
-                      className="px-3 py-3 text-compact text-amber-400/80"
+                      className="px-3 py-3 text-compact text-warning-400/80"
                       title={diffError}
                     >
                       Couldn’t load the staged diff
@@ -409,14 +409,14 @@ export function PermissionCard({
               controlSize="regular"
               className={cn(
                 "justify-start bg-zinc-800/55 text-left transition-colors hover:bg-zinc-700/70",
-                reject ? "text-red-300 hover:text-red-200" : "text-zinc-100 hover:text-zinc-50",
+                reject ? "text-danger-300 hover:text-danger-200" : "text-content-primary hover:text-content-strong",
               )}
             >
               <span className="min-w-0 truncate text-compact font-medium">
                 {o.name || o.kind || id}
               </span>
               {!compact && o.description && (
-                <span className="ml-auto min-w-0 truncate text-minimal text-zinc-400">
+                <span className="ml-auto min-w-0 truncate text-minimal text-content-muted">
                   {o.description}
                 </span>
               )}
@@ -426,7 +426,7 @@ export function PermissionCard({
       </div>
 
       {error && (
-        <p role="alert" className="text-compact text-red-400">
+        <p role="alert" className="text-compact text-danger-400">
           {error}
         </p>
       )}

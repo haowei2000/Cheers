@@ -84,7 +84,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
           ? "Auth cancelled"
           : "Auth resolved";
     return (
-      <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-zinc-400">
+      <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-content-muted">
         <span className="inline-flex items-center gap-2">
           <KeyRound className="h-3.5 w-3.5" />
           {label}
@@ -96,10 +96,10 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
   return (
     <div className="rounded-sm bg-amber-500/5 px-3 py-3">
       <div className="flex items-start gap-2">
-        <KeyRound className="mt-1 h-4 w-4 shrink-0 text-amber-400" />
+        <KeyRound className="mt-1 h-4 w-4 shrink-0 text-warning-400" />
         <div className="min-w-0 flex-1">
-          <p className="text-regular font-medium text-zinc-100">{title}</p>
-          <p className="mt-1 whitespace-pre-wrap text-compact leading-relaxed text-zinc-400">
+          <p className="text-regular font-medium text-content-primary">{title}</p>
+          <p className="mt-1 whitespace-pre-wrap text-compact leading-reading text-content-muted">
             {description}
           </p>
           {methods.length > 1 && isOwner && (
@@ -111,14 +111,14 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                   key={method.method_id}
                   className={`flex items-center gap-3 rounded-sm px-3 py-2 ring-1 ring-inset ${
                     selectedMethodId === method.method_id
-                      ? "bg-indigo-500/10 text-zinc-100 ring-indigo-400/60"
+                      ? "bg-indigo-500/10 text-content-primary ring-indigo-400/60"
                       : "bg-zinc-950/30 ring-zinc-700 hover:ring-zinc-600"
                   }`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="font-medium">{method.name?.trim() || method.method_id}</span>
-                    {method.recommended && <span className="ml-2 text-minimal text-indigo-300">Recommended</span>}
-                    {method.description && <span className="mt-1 block text-zinc-400">{method.description}</span>}
+                    {method.recommended && <span className="ml-2 text-minimal text-accent-300">Recommended</span>}
+                    {method.description && <span className="mt-1 block text-content-muted">{method.description}</span>}
                   </span>
                   <UiButton
                     action="choose"
@@ -134,7 +134,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
             </div>
           )}
           {selectedMethod?.method_id && (
-            <p className="mt-1 font-mono text-minimal text-zinc-400">
+            <p className="mt-1 font-mono text-minimal text-content-muted">
               method: {selectedMethod.method_id}
               {selectedMethod.auth_type ? ` · ${selectedMethod.auth_type}` : ""}
             </p>
@@ -144,36 +144,36 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
               href={link}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1 text-compact text-indigo-300 hover:text-indigo-200"
+              className="mt-2 inline-flex items-center gap-1 text-compact text-accent-300 hover:text-accent-200"
             >
               Open login page <ExternalLink className="h-3.5 w-3.5" />
             </a>
           ) : (
-            <div className="mt-2 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact leading-relaxed text-zinc-400">
+            <div className="mt-2 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact leading-reading text-content-muted">
               {data.agent_profile?.login_hint ? (
                 <>
                   <p>{data.agent_profile.login_hint}</p>
                   {data.agent_profile.verified_version_range && (
-                    <p className="mt-1 text-zinc-400">Verified with {data.agent_profile.verified_version_range}.</p>
+                    <p className="mt-1 text-content-muted">Verified with {data.agent_profile.verified_version_range}.</p>
                   )}
                 </>
               ) : envAuth ? (
                 <>
                   No login URL for this method — set{" "}
-                  <code className="text-zinc-200">ANTHROPIC_API_KEY</code> /{" "}
-                  <code className="text-zinc-200">CLAUDE_CODE_OAUTH_TOKEN</code>{" "}
+                  <code className="text-content-secondary">ANTHROPIC_API_KEY</code> /{" "}
+                  <code className="text-content-secondary">CLAUDE_CODE_OAUTH_TOKEN</code>{" "}
                   (or Codex{" "}
-                  <code className="text-zinc-200">OPENAI_API_KEY</code>) in the{" "}
-                  <span className="text-zinc-200">connector service</span> env on
+                  <code className="text-content-secondary">OPENAI_API_KEY</code>) in the{" "}
+                  <span className="text-content-secondary">connector service</span> env on
                   the agent host (systemd{" "}
-                  <code className="text-zinc-200">EnvironmentFile</code>, not
+                  <code className="text-content-secondary">EnvironmentFile</code>, not
                   just your shell), restart the connector, then confirm below.
                 </>
               ) : (
                 <>
                   No login URL from the agent. Finish auth on the connector host
                   (CLI login under the same{" "}
-                  <code className="text-zinc-200">HOME</code>, or vendor API key
+                  <code className="text-content-secondary">HOME</code>, or vendor API key
                   in the connector service env), restart if needed, then confirm
                   below.
                 </>
@@ -186,7 +186,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null || !selectedMethodId}
                 onClick={() => void ack("retry")}
-                controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600  font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-indigo-600  font-medium text-content-on-accent hover:bg-indigo-500 disabled:opacity-50"
               >
                 {busy === "retry" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {link ? "I've signed in" : "Credentials set — retry"}
@@ -195,13 +195,13 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void ack("cancel")}
-                controlSize="regular" className="rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+                controlSize="regular" className="rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 disabled:opacity-50"
               >
                 Cancel
               </UiButton>
             </div>
           ) : (
-            <p className="mt-2 text-compact text-zinc-400">
+            <p className="mt-2 text-compact text-content-muted">
               Waiting for the bot owner to finish agent authentication.
             </p>
           )}

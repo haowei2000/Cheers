@@ -56,7 +56,7 @@ export default function FriendsPage() {
   }, [refreshIncoming]);
 
   return (
-    <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
+    <div className="h-full bg-zinc-950 text-content-primary flex flex-col">
       <RouteChromeHeader>
         <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <IconButton
@@ -126,8 +126,8 @@ function TabBtn({
       className={cn(
  " border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
  active
- ? "border-indigo-500 text-zinc-100"
- : "border-transparent text-zinc-400 hover:text-zinc-200"
+ ? "border-indigo-500 text-content-primary"
+ : "border-transparent text-content-muted hover:text-content-secondary"
  )}
     />
   );
@@ -284,7 +284,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
               id={u.user_id}
               avatar={u.avatar_url}
             >
-              <span className="text-compact text-zinc-400 flex items-center gap-1">
+              <span className="text-compact text-content-muted flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 Pending
               </span>
@@ -341,13 +341,13 @@ function AddTab() {
 
   return (
     <div>
-      <p className="text-compact text-zinc-400 mb-2 leading-relaxed">
-        Add a friend by their exact <span className="text-zinc-200">user ID</span>. Ask them
-        to copy it from <span className="text-zinc-200">Settings → Profile → User ID</span>.
+      <p className="text-compact text-content-muted mb-2 leading-reading">
+        Add a friend by their exact <span className="text-content-secondary">user ID</span>. Ask them
+        to copy it from <span className="text-content-secondary">Settings → Profile → User ID</span>.
       </p>
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
-          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
+          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-content-muted" />
           <UiInput
             value={id}
             onChange={(e) => {
@@ -357,7 +357,7 @@ function AddTab() {
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
+            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-content-primary placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
         <Button action="lookup" aria-label="Look up user ID" loading={busy} onClick={lookup} disabled={!id.trim()} />
@@ -367,7 +367,7 @@ function AddTab() {
       ) : result === "error" ? (
         <div
           role="alert"
-          className="text-regular text-red-400 py-10 text-center"
+          className="text-regular text-danger-400 py-10 text-center"
         >
           Couldn&apos;t look up that ID — check your connection and try again.
         </div>
@@ -382,9 +382,9 @@ function AddTab() {
             avatar={result.avatar_url}
           >
             {sent[result.user_id] === "accepted" ? (
-              <span className="text-compact text-emerald-400">Friends</span>
+              <span className="text-compact text-success-400">Friends</span>
             ) : sent[result.user_id] === "pending" ? (
-              <span className="text-compact text-zinc-400">Requested</span>
+              <span className="text-compact text-content-muted">Requested</span>
             ) : (
               <IconBtn title="Add friend" onClick={() => add(result)} primary>
                 <UserPlus className="w-4 h-4" />
@@ -463,7 +463,7 @@ function Row({
     <ItemRow
       kind="identity"
       title={name}
-      status={<span className="truncate text-compact text-zinc-400">{sub}</span>}
+      status={<span className="truncate text-compact text-content-muted">{sub}</span>}
       leading={<Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />}
       actions={<>{children}</>}
       className="gap-3 hover:bg-zinc-900/60"
@@ -506,5 +506,5 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <div className="text-regular text-zinc-400 py-10 text-center">{children}</div>;
+  return <div className="text-regular text-content-muted py-10 text-center">{children}</div>;
 }

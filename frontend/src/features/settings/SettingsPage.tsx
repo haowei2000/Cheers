@@ -107,8 +107,8 @@ function ServerCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-regular font-medium text-zinc-200">Server</p>
-          <p className="text-compact text-zinc-400 mt-1 truncate">
+          <p className="text-regular font-medium text-content-secondary">Server</p>
+          <p className="text-compact text-content-muted mt-1 truncate">
             {base ?? "same origin"}
           </p>
         </div>
@@ -129,7 +129,7 @@ function ServerCard() {
         )}
       </div>
       {!isTauri() && (
-        <p className="text-compact text-zinc-400 mt-3">
+        <p className="text-compact text-content-muted mt-3">
           Web clients use this origin. Switch servers from the desktop app or by
           opening a different gateway URL.
         </p>
@@ -175,8 +175,8 @@ function LaunchAtLoginCard() {
     <div className="bg-zinc-900 rounded-sm p-6 mt-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-regular font-medium text-zinc-200">Launch at login</p>
-          <p className="text-compact text-zinc-400 mt-1">
+          <p className="text-regular font-medium text-content-secondary">Launch at login</p>
+          <p className="text-compact text-content-muted mt-1">
             Start Cheers and keep local bot installations available when you sign in to your Mac.
           </p>
         </div>
@@ -250,8 +250,8 @@ function AppUpdateCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-regular font-medium text-zinc-200">App updates</p>
-          <p className="text-compact text-zinc-400 mt-1">
+          <p className="text-regular font-medium text-content-secondary">App updates</p>
+          <p className="text-compact text-content-muted mt-1">
             {currentVersion ? `Installed ${currentVersion}. ` : null}
             {update
               ? `Version ${update.version} is available — installing restarts Cheers.`
@@ -332,10 +332,10 @@ function PushNotificationsCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
-            <Bell className="w-4 h-4 text-indigo-400" /> Push notifications
+          <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
+            <Bell className="w-4 h-4 text-accent-400" /> Push notifications
           </p>
-          <p className="text-compact text-zinc-400 mt-1">
+          <p className="text-compact text-content-muted mt-1">
             Approval requests and @mentions reach this device even when Cheers
             isn't open.
             {status === "denied" &&
@@ -393,14 +393,14 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
 
   // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "bg-zinc-800 text-zinc-100";
+    "bg-zinc-800 text-content-primary";
   return (
     <section className="py-5 first:pt-0">
       <div className="mb-4 flex min-w-0 items-start gap-3">
-        <KeyRound className="h-4 w-4 flex-shrink-0 text-indigo-400" />
+        <KeyRound className="h-4 w-4 flex-shrink-0 text-accent-400" />
         <div className="min-w-0 flex-1">
-          <h3 className="font-utility text-regular font-medium text-zinc-200">Change password</h3>
-          <p className="mt-1 font-utility text-compact text-zinc-400">
+          <h3 className="font-utility text-regular font-medium text-content-secondary">Change password</h3>
+          <p className="mt-1 font-utility text-compact text-content-muted">
             Updating your password signs out every other device.
           </p>
         </div>
@@ -529,10 +529,10 @@ function ExternalIdentitiesCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
-        <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
+      <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
+        <Link2 className="w-4 h-4 text-accent-400" /> Sign-in methods
       </p>
-      <p className="text-compact text-zinc-400 mt-1 mb-4">
+      <p className="text-compact text-content-muted mt-1 mb-4">
         Removing a provider signs out other sessions and removes trusted devices.
       </p>
       {loadError ? (
@@ -587,7 +587,7 @@ function ExternalIdentitiesCard() {
         </ItemList>
       )}
       {identities?.some((identity) => !identity.recent_authentication) && (
-        <p className="text-compact text-amber-400 mt-4">
+        <p className="text-compact text-warning-400 mt-4">
           Sign in again before linking or unlinking an identity.
         </p>
       )}
@@ -620,10 +620,10 @@ function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
 
   return (
     <section className="border-t border-red-950/70 py-5">
-      <p className="text-regular font-medium text-red-300 flex items-center gap-2">
+      <p className="text-regular font-medium text-danger-300 flex items-center gap-2">
         <Trash2 className="w-4 h-4" /> Delete account
       </p>
-      <p className="text-compact text-zinc-400 mt-1 mb-4">
+      <p className="text-compact text-content-muted mt-1 mb-4">
         This permanently removes your account. Passwordless accounts must have signed in within the last five minutes.
       </p>
       <div className="grid max-w-2xl grid-cols-2 gap-3 max-md:grid-cols-1">
@@ -673,7 +673,7 @@ function LegalLinks() {
           href={href}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-compact text-zinc-400 hover:text-zinc-200"
+          className="inline-flex items-center gap-1 text-compact text-content-muted hover:text-content-secondary"
         >
           {label} <ExternalLink className="w-3.5 h-3.5" />
         </a>
@@ -718,20 +718,20 @@ function DevicesSessionsCard() {
   return (
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
-        <Laptop className="w-4 h-4 text-zinc-400" />
-        <p className="text-regular font-medium text-zinc-200">Devices and sessions</p>
+        <Laptop className="w-4 h-4 text-content-muted" />
+        <p className="text-regular font-medium text-content-secondary">Devices and sessions</p>
       </div>
       {loading ? (
-        <p className="text-compact text-zinc-400">Loading…</p>
+        <p className="text-compact text-content-muted">Loading…</p>
       ) : sessions.length === 0 ? (
-        <p className="text-compact text-zinc-400">No active sessions.</p>
+        <p className="text-compact text-content-muted">No active sessions.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
           {sessions.map((s) => (
             <OperationsItem
               key={s.session_id}
               title={`${s.device_name || s.client}${s.current ? " · this device" : ""}`}
-              trailing={<span className="text-compact text-zinc-400" title={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}>
+              trailing={<span className="text-compact text-content-muted" title={`Last seen ${new Date(s.last_seen_at).toLocaleString()}`}>
                 {new Date(s.last_seen_at).toLocaleDateString()}
               </span>}
               actions={!s.current ? (
@@ -788,13 +788,13 @@ function ExternalAIPermissionsCard() {
   return (
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
-        <Shield className="w-4 h-4 text-zinc-400" />
-        <p className="text-regular font-medium text-zinc-200">External AI permissions</p>
+        <Shield className="w-4 h-4 text-content-muted" />
+        <p className="text-regular font-medium text-content-secondary">External AI permissions</p>
       </div>
       {loading ? (
-        <p className="text-compact text-zinc-400">Loading…</p>
+        <p className="text-compact text-content-muted">Loading…</p>
       ) : consents.length === 0 ? (
-        <p className="text-compact text-zinc-400">
+        <p className="text-compact text-content-muted">
           No stored consents. When a bot uses an external AI processor, agreements
           appear here.
         </p>
@@ -829,10 +829,10 @@ function BotsMovedCard() {
   return (
     <div className="bg-zinc-900 rounded-sm p-6">
       <div className="flex items-center gap-2 mb-2">
-        <Bot className="w-4 h-4 text-indigo-300" />
-        <p className="text-regular font-medium text-zinc-200">Bots live in Fleet</p>
+        <Bot className="w-4 h-4 text-accent-300" />
+        <p className="text-regular font-medium text-content-secondary">Bots live in Fleet</p>
       </div>
-      <p className="text-compact text-zinc-400 mb-4">
+      <p className="text-compact text-content-muted mb-4">
         Create and manage bots from Fleet — the primary home for your agent roster.
       </p>
       <Button action="open" onClick={() => navigate("/fleet")}>Open Fleet</Button>
@@ -934,8 +934,8 @@ function ProfileEditCard() {
   if (loadError) {
     return (
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-zinc-200">Couldn't load your profile</p>
-        <p className="text-compact text-zinc-400 mt-1">
+        <p className="text-regular font-medium text-content-secondary">Couldn't load your profile</p>
+        <p className="text-compact text-content-muted mt-1">
           Editing is disabled until it loads so your saved details aren't
           overwritten. Check your connection and try again.
         </p>
@@ -980,11 +980,11 @@ function ProfileEditCard() {
           onUpload={handleAvatarUpload}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate font-utility text-regular font-semibold text-zinc-100">
+          <p className="truncate font-utility text-regular font-semibold text-content-primary">
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
             {displayName || user?.username || "Unknown"}
           </p>
-          <p className="truncate font-utility text-compact text-zinc-400">
+          <p className="truncate font-utility text-compact text-content-muted">
             @{handle}
             {statusText ? ` · ${statusText}` : ""}
           </p>
@@ -1044,9 +1044,9 @@ function ProfileEditCard() {
           </Field>
         </div>
       ) : bio ? (
-        <p className="max-w-prose font-reading text-regular leading-relaxed text-zinc-200">{bio}</p>
+        <p className="max-w-prose font-reading text-regular leading-reading text-content-secondary">{bio}</p>
       ) : (
-        <p className="font-utility text-compact text-zinc-400">No bio added.</p>
+        <p className="font-utility text-compact text-content-muted">No bio added.</p>
       )}
 
       <div>
@@ -1056,8 +1056,8 @@ function ProfileEditCard() {
             title={
               <OverflowText fullText={`User ID: ${user?.user_id ?? "—"}`} className="w-full">
                 <span className="block truncate">
-                  <span className="text-zinc-400">User ID</span>
-                  <code className="ml-3 font-utility text-compact font-normal text-zinc-200">
+                  <span className="text-content-muted">User ID</span>
+                  <code className="ml-3 font-utility text-compact font-normal text-content-secondary">
                     {user?.user_id ?? "—"}
                   </code>
                 </span>
@@ -1065,15 +1065,15 @@ function ProfileEditCard() {
             }
             actions={user?.user_id ? (
               <IconButton label="Copy user ID" controlSize="regular" onClick={() => void copyUserId()}>
-                {copiedId ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                {copiedId ? <Check className="h-4 w-4 text-success-400" /> : <Copy className="h-4 w-4" />}
               </IconButton>
             ) : undefined}
           />
           <OperationsItem
             title={
               <span>
-                <span className="text-zinc-400">Role</span>
-                <span className="ml-3 capitalize text-zinc-200">{user?.role ?? "user"}</span>
+                <span className="text-content-muted">Role</span>
+                <span className="ml-3 capitalize text-content-secondary">{user?.role ?? "user"}</span>
               </span>
             }
           />
@@ -1106,7 +1106,7 @@ export default function SettingsPage() {
     // h-full + internal scroll: the app root is overflow-hidden, so the page must own
     // its scrolling (min-h-screen alone would clip anything taller than the viewport,
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
-    <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
+    <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-content-primary">
       <RouteChromeHeader>
         <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
           <UiButton variant="plain"
@@ -1116,7 +1116,7 @@ export default function SettingsPage() {
             onClick={() => navigate("/chat")}
             title="Back to chat"
             aria-label="Back to chat"
-            className="text-zinc-100 hover:text-zinc-50 transition-colors rounded-sm"
+            className="text-content-primary hover:text-content-strong transition-colors rounded-sm"
           >
             <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </UiButton>
@@ -1137,7 +1137,7 @@ export default function SettingsPage() {
                 aria-current={active ? "page" : undefined}
                 controlSize="regular" className={`flex items-center gap-3 rounded-sm shrink-0  font-medium whitespace-nowrap transition-colors ${
  active
- ? "bg-zinc-800 text-zinc-100": "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+ ? "bg-zinc-800 text-content-primary": "text-content-primary hover:bg-zinc-800 hover:text-content-strong"
  }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -1151,7 +1151,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           {section === "profile" && (
             <section>
-              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
                 <User className="w-3.5 h-3.5" />
                 Profile
               </h2>
@@ -1164,7 +1164,7 @@ export default function SettingsPage() {
 
           {section === "server" && (
             <section>
-              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4">
                 Server
               </h2>
               <ServerCard />
@@ -1173,7 +1173,7 @@ export default function SettingsPage() {
 
           {section === "about" && (
             <section>
-              <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4">
                 About
               </h2>
               <AppUpdateCard />
@@ -1189,7 +1189,7 @@ export default function SettingsPage() {
 
           {section === "account" && (
             <section>
-              <h2 className="mb-5 text-compact font-semibold uppercase tracking-wider text-zinc-400">
+              <h2 className="mb-5 text-compact font-semibold uppercase tracking-section text-content-muted">
                 Account
               </h2>
 
@@ -1215,8 +1215,8 @@ export default function SettingsPage() {
                 <section className="border-t border-zinc-600/70 py-5">
                   <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-regular font-medium text-zinc-200">Sign out</p>
-                    <p className="text-compact text-zinc-400 mt-1">
+                    <p className="text-regular font-medium text-content-secondary">Sign out</p>
+                    <p className="text-compact text-content-muted mt-1">
                       Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>

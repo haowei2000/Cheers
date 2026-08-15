@@ -71,9 +71,9 @@ export function AvatarUpload({
       <Avatar name={name} id={id} src={preview || src || undefined} size={size} />
       <span data-design-system-exempt="identity" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
         {busy ? (
-          <Loader2 className={`${contentIconClasses.regular} animate-spin text-white`} />
+          <Loader2 className={`${contentIconClasses.regular} animate-spin text-content-on-accent`} />
         ) : (
-          <Camera className={`${contentIconClasses.regular} text-white`} />
+          <Camera className={`${contentIconClasses.regular} text-content-on-accent`} />
         )}
       </span>
       <input

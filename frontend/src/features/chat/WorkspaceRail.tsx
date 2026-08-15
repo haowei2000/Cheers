@@ -156,7 +156,7 @@ export function WorkspaceRail({
         <IconButton
           label="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="text-zinc-100 hover:text-zinc-50"
+          className="text-content-primary hover:text-content-strong"
         >
           <Plus className={controlIconClasses.comfortable} />
         </IconButton>
@@ -172,7 +172,7 @@ export function WorkspaceRail({
             navigate("/fleet");
           }}
           label="Fleet — bots & status"
-          className="relative text-zinc-100"
+          className="relative text-content-primary"
         >
           <EditorialIcon name="agentMark" contentSize="large" />
         </IconButton>
@@ -183,7 +183,7 @@ export function WorkspaceRail({
             navigate("/friends");
           }}
           label="Friends"
-          className="text-zinc-100"
+          className="text-content-primary"
         >
           <Users className={controlIconClasses.comfortable} />
         </IconButton>
@@ -194,7 +194,7 @@ export function WorkspaceRail({
             navigate("/settings");
           }}
           label="Settings"
-          className="text-zinc-100"
+          className="text-content-primary"
         >
           <Settings className={controlIconClasses.comfortable} />
         </IconButton>

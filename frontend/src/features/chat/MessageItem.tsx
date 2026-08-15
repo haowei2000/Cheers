@@ -87,7 +87,7 @@ const SYSTEM_TYPES = new Set([
 function SystemMessage({ message }: { message: Message }) {
   return (
     <div className="flex justify-center py-3 px-4">
-      <span className="text-compact text-zinc-400 whitespace-nowrap">
+      <span className="text-compact text-content-muted whitespace-nowrap">
         {message.content}
       </span>
     </div>
@@ -135,7 +135,7 @@ function ActionBar({
   mentionLabel?: string;
 }) {
   const actionClass =
-    "text-zinc-100 hover:bg-zinc-700/70 hover:text-zinc-50 focus-visible:ring-indigo-500/70";
+    "text-content-primary hover:bg-zinc-700/70 hover:text-content-strong focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
@@ -204,21 +204,21 @@ function SendStatus({
 }) {
   if (message._status === "sending") {
     return (
-      <div className={cn("mt-1 flex items-center gap-1 text-zinc-400", controlTextClasses.compact)}>
+      <div className={cn("mt-1 flex items-center gap-1 text-content-muted", controlTextClasses.compact)}>
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Sending…
       </div>
     );
   }
   return (
-    <div role="alert" className={cn("mt-1 flex items-center gap-2 text-red-400", controlTextClasses.compact)}>
+    <div role="alert" className={cn("mt-1 flex items-center gap-2 text-danger-400", controlTextClasses.compact)}>
       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
         <UiButton action="retry" content="iconText" variant="plain"
           type="button"
           onClick={() => onRetry(message)}
-          className="inline-flex items-center gap-1 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+          className="inline-flex items-center gap-1 font-medium text-danger-300 underline underline-offset-2 hover:text-danger-200"
         >
           <RotateCw className="w-3.5 h-3.5" />
           Retry
@@ -262,7 +262,7 @@ function ReplyPreview({
   const source = (
     <span className="flex min-w-0 items-center gap-2 py-1">
       {repliedTo && who && (
-        <span className="flex max-w-[45%] shrink-0 items-center gap-2 text-indigo-300 transition-colors group-hover/reply:text-indigo-200">
+        <span className="flex max-w-[45%] shrink-0 items-center gap-2 text-accent-300 transition-colors group-hover/reply:text-accent-200">
           <Avatar
             name={who}
             src={avatarUrl}
@@ -273,7 +273,7 @@ function ReplyPreview({
           <span className="truncate font-semibold">@{who}</span>
         </span>
       )}
-      <span className="truncate text-zinc-400 group-hover/reply:text-zinc-400">
+      <span className="truncate text-content-muted group-hover/reply:text-content-muted">
         {excerpt}
       </span>
     </span>
@@ -332,7 +332,7 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
         className
       )}
     >
-      {selected && <Check className="w-3.5 h-3.5 text-white" />}
+      {selected && <Check className="w-3.5 h-3.5 text-content-on-accent" />}
     </span>
   );
 }
@@ -360,7 +360,7 @@ export const MessageItem = memo(function MessageItem({
       <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-zinc-400 italic text-regular">
+        <span className="text-content-muted italic text-regular">
           This message was deleted
         </span>
       </div>
@@ -642,7 +642,7 @@ export const MessageItem = memo(function MessageItem({
       </UiButton>
       <span
         className={cn(
-          "block w-full truncate text-center font-medium leading-4 text-zinc-200",
+          "block w-full truncate text-center font-medium leading-4 text-content-secondary",
           controlTextClasses.regular,
         )}
         title={name}
@@ -673,7 +673,7 @@ export const MessageItem = memo(function MessageItem({
         type="button"
         role="menuitem"
         onClick={mentionSender}
-        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-accent-300 transition-colors hover:bg-zinc-800 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <AtSign className="h-4 w-4" />
         <span className="min-w-0 truncate">Mention @{name}</span>
@@ -686,7 +686,7 @@ export const MessageItem = memo(function MessageItem({
           setAvatarMenuOpen(false);
           if (anchor) openProfile(anchor);
         }}
-        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-zinc-100 transition-colors hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex items-center gap-3 rounded-sm text-left  text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <UserRound className="h-4 w-4" />
         View profile
@@ -728,7 +728,7 @@ export const MessageItem = memo(function MessageItem({
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       content="icon" controlSize="compact" className={cn(
-        "relative inline-flex items-center justify-center self-start text-zinc-100 hover:bg-zinc-800/70 hover:text-zinc-50 md:hidden",
+        "relative inline-flex items-center justify-center self-start text-content-primary hover:bg-zinc-800/70 hover:text-content-strong md:hidden",
         isOwnAlignedRight && "self-end",
       )}
     >
@@ -738,7 +738,7 @@ export const MessageItem = memo(function MessageItem({
   const detailsSection = detailsMeta.hasDetails && hasOperationalDetails ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {showFailureInline && (
-        <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-red-400", controlTextClasses.compact)}>
+        <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-danger-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
           <IconButton
@@ -746,7 +746,7 @@ export const MessageItem = memo(function MessageItem({
             controlSize="compact"
             type="button"
             onClick={(event) => openInspector(event.currentTarget)}
-            className="text-red-300 hover:bg-red-950/30 hover:text-red-200"
+            className="text-danger-300 hover:bg-red-950/30 hover:text-danger-200"
           >
             <ListTree className={controlIconClasses.compact} aria-hidden />
           </IconButton>
@@ -947,7 +947,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-zinc-100 transition-colors hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-content-primary transition-colors hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3.5 h-3.5" fill="currentColor" />
@@ -990,7 +990,7 @@ function MessageBody({
           <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
         </div>
         {message._trace && (
-          <span className="text-compact text-zinc-400 italic truncate">
+          <span className="text-compact text-content-muted italic truncate">
             {message._trace}
           </span>
         )}
@@ -1002,7 +1002,7 @@ function MessageBody({
   }
 
   if (message.error) {
-    return <p className="text-regular text-red-400 italic">{message.error}</p>;
+    return <p className="text-regular text-danger-400 italic">{message.error}</p>;
   }
 
   // While a bubble is streaming, re-parsing the whole accumulated Markdown +
@@ -1027,11 +1027,11 @@ function MessageBody({
           <PathOpenContext.Provider value={pathOpen}>
             <MarkdownRenderer
               content={content}
-              className="font-reading text-regular font-normal leading-[1.55] tracking-[-0.005em]"
+              className="font-reading text-regular font-normal leading-regular tracking-display"
             />
           </PathOpenContext.Provider>
         ) : (
-          <p className="font-reading text-regular font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
+          <p className="font-reading text-regular font-normal leading-regular tracking-display text-content-secondary whitespace-pre-wrap break-words">
             {content}
           </p>
         ))}
@@ -1039,7 +1039,7 @@ function MessageBody({
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
       )}
       {active && message._trace && (
-        <p className="text-compact text-zinc-400 italic mt-1">{message._trace}</p>
+        <p className="text-compact text-content-muted italic mt-1">{message._trace}</p>
       )}
       {active && isBot && channelId && (
         <div className="mt-1">

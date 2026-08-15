@@ -9,19 +9,19 @@ type Severity = "error" | "warning" | "info" | "success";
 // Soft fills per DESIGN.md §1 color semantics — the banner is a tinted strip in
 // the document flow, never an overlay.
 const severityCls: Record<Severity, string> = {
-  error: "bg-red-950/45 text-red-300",
-  warning: "bg-amber-900/40 text-amber-200",
-  info: "bg-indigo-600/15 text-indigo-200",
-  success: "bg-emerald-500/10 text-emerald-400",
+  error: "bg-red-950/45 text-danger-300",
+  warning: "bg-amber-900/40 text-warning-200",
+  info: "bg-indigo-600/15 text-accent-200",
+  success: "bg-emerald-500/10 text-success-400",
 };
 
 // The action chip sits ON the tinted fill, so it's one step stronger than the
 // §2.1 soft-button recipes (which assume a zinc surface underneath).
 const actionCls: Record<Severity, string> = {
-  error: "bg-red-900/60 text-red-100 hover:bg-red-900/90",
-  warning: "bg-amber-900/70 text-amber-100 hover:bg-amber-900",
-  info: "bg-indigo-600/25 text-indigo-100 hover:bg-indigo-600/40",
-  success: "bg-emerald-900/60 text-emerald-100 hover:bg-emerald-900/90",
+  error: "bg-red-900/60 text-danger-100 hover:bg-red-900/90",
+  warning: "bg-amber-900/70 text-warning-100 hover:bg-amber-900",
+  info: "bg-indigo-600/25 text-accent-100 hover:bg-indigo-600/40",
+  success: "bg-emerald-900/60 text-success-100 hover:bg-emerald-900/90",
 };
 
 // Tier M of the global error system: a persistent status strip pinned to the top

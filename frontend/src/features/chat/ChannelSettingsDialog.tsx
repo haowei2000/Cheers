@@ -273,11 +273,11 @@ export function ChannelSettingsDialog({
                 src={channel.avatar_url}
                 onUpload={uploadAvatar}
               />
-              <span className="text-regular text-zinc-400">Channel avatar</span>
+              <span className="text-regular text-content-muted">Channel avatar</span>
             </div>
           )}
           <div className="flex items-center gap-2">
-            <label htmlFor="channel-settings-name" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">
+            <label htmlFor="channel-settings-name" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">
               Name
             </label>
             {canManage && (
@@ -298,17 +298,17 @@ export function ChannelSettingsDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           ) : (
-            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-200">
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-secondary">
               <span className="truncate">{savedMeta.name}</span>
             </p>
           )}
           {channel.type !== "dm" && (
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 text-compact font-medium uppercase tracking-wide text-zinc-400">
+                <span className="min-w-0 flex-1 text-compact font-medium uppercase tracking-label text-content-muted">
                   Conversation layout
                 </span>
                 {canManage && (
@@ -330,7 +330,7 @@ export function ChannelSettingsDialog({
             </div>
           )}
           <div className="flex items-center gap-2">
-            <label htmlFor="channel-settings-purpose" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">
+            <label htmlFor="channel-settings-purpose" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">
               Purpose
             </label>
             {canManage && (
@@ -351,10 +351,10 @@ export function ChannelSettingsDialog({
               value={purpose}
               placeholder="(Optional) what this channel is for…"
               onChange={(e) => setPurpose(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           ) : (
-            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-400">
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-muted">
               <span className="truncate">{savedMeta.purpose || "No purpose set"}</span>
             </p>
           )}
@@ -401,9 +401,9 @@ export function ChannelSettingsDialog({
                   onClick={() => void addMember(it)}
                   title={it.display_name || it.username || it.member_id.slice(0, 8)}
                   leading={<Avatar name={it.display_name || it.username} src={it.avatar_url} id={it.member_id} size="regular" />}
-                  status={it.member_type === "bot" ? <span className="font-utility text-compact uppercase text-zinc-400">Bot</span> : undefined}
-                  criticalStatus={it.requires_workspace_acceptance ? <span className="font-utility text-compact uppercase text-amber-400">Workspace first</span> : undefined}
-                  trailing={it.already_member ? <span className="font-utility text-compact text-zinc-400">Already in</span> : undefined}
+                  status={it.member_type === "bot" ? <span className="font-utility text-compact uppercase text-content-muted">Bot</span> : undefined}
+                  criticalStatus={it.requires_workspace_acceptance ? <span className="font-utility text-compact uppercase text-warning-400">Workspace first</span> : undefined}
+                  trailing={it.already_member ? <span className="font-utility text-compact text-content-muted">Already in</span> : undefined}
                 />
               ))}
             </CollectionPickerItem>
@@ -438,14 +438,14 @@ export function ChannelSettingsDialog({
                   />
                 )}
                 status={!canChangeRole ? (
-                  <span className="font-utility text-compact uppercase text-zinc-400">
+                  <span className="font-utility text-compact uppercase text-content-muted">
                     {m.member_type === "bot" ? `Bot · ${roleLabel}` : roleLabel}
                   </span>
                 ) : m.member_type === "bot" ? (
-                  <span className="font-utility text-compact uppercase text-zinc-400">Bot</span>
+                  <span className="font-utility text-compact uppercase text-content-muted">Bot</span>
                 ) : undefined}
                 criticalStatus={m.status && m.status !== "active" ? (
-                  <span className="font-utility text-compact uppercase text-amber-400">
+                  <span className="font-utility text-compact uppercase text-warning-400">
                     {m.status === "pending_owner" ? "Waiting for owner" : m.status === "pending_workspace" ? "Waiting for workspace" : "Pending"}
                   </span>
                 ) : undefined}
@@ -507,8 +507,8 @@ export function ChannelSettingsDialog({
         {canManage && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-regular font-medium text-zinc-200">Delete channel</p>
-              <p className="text-compact text-zinc-400 mt-1">Deletes its messages and members too. This cannot be undone.</p>
+              <p className="text-regular font-medium text-content-secondary">Delete channel</p>
+              <p className="text-compact text-content-muted mt-1">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             {confirmingDelete ? (
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -535,8 +535,8 @@ export function ChannelSettingsDialog({
         {myRole && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-regular font-medium text-zinc-200">Leave channel</p>
-              <p className="text-compact text-zinc-400 mt-1">Remove yourself from this channel.</p>
+              <p className="text-regular font-medium text-content-secondary">Leave channel</p>
+              <p className="text-compact text-content-muted mt-1">Remove yourself from this channel.</p>
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 flex-shrink-0">

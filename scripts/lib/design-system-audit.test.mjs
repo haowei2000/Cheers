@@ -35,6 +35,7 @@ const policy = {
     legacyControlSizeProp: 0,
     commonActionPresentationOverride: 0,
     unregisteredFormAction: 0,
+    nonSemanticTextColor: 0,
     nonStandardNeutralTextShade: 0,
     nonStandardDisabledOpacity: 0,
     nonPrimaryButtonNeutralText: 0,
@@ -133,16 +134,18 @@ test("rejects icon-only whole-form saves", () => {
 });
 
 test("enforces the four-level neutral foreground hierarchy", () => {
-  const source = `<><p className="text-zinc-500"/><span className="text-zinc-300"/><Button className="text-zinc-400"/><button className="disabled:opacity-40"/></>`;
+  const source = `<><p className="text-zinc-500"/><span className="text-zinc-300"/><Button className="text-content-muted"/><button className="disabled:opacity-40"/></>`;
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonSemanticTextColor, 2);
   assert.equal(result.violations.nonStandardNeutralTextShade, 2);
   assert.equal(result.violations.nonPrimaryButtonNeutralText, 1);
   assert.equal(result.violations.nonStandardDisabledOpacity, 1);
 });
 
 test("accepts primary, secondary, metadata, and opacity-disabled foregrounds", () => {
-  const source = `<><h1 className="text-zinc-50"/><p className="text-zinc-200"/><span className="text-zinc-400"/><Button className="text-zinc-100 disabled:opacity-50"/></>`;
+  const source = `<><h1 className="text-content-strong"/><p className="text-content-secondary"/><span className="text-content-muted"/><Button className="text-content-primary disabled:opacity-50"/></>`;
   const result = auditSources([{ file: "/repo/frontend/src/features/Good.tsx", source }], ts, policy);
+  assert.equal(result.violations.nonSemanticTextColor, 0);
   assert.equal(result.violations.nonStandardNeutralTextShade, 0);
   assert.equal(result.violations.nonPrimaryButtonNeutralText, 0);
   assert.equal(result.violations.nonStandardDisabledOpacity, 0);
@@ -151,6 +154,7 @@ test("accepts primary, secondary, metadata, and opacity-disabled foregrounds", (
 test("finds dynamic classes and literal low-contrast foregrounds", () => {
   const source = `const label = "text-zinc-500"; const theme = { color: "#71717a" }; const chart = <text fill="#d4d4d8"/>;`;
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.ts", source }], ts, policy);
+  assert.equal(result.violations.nonSemanticTextColor, 1);
   assert.equal(result.violations.nonStandardNeutralTextShade, 1);
   assert.equal(result.violations.nonStandardNeutralForegroundLiteral, 2);
 });

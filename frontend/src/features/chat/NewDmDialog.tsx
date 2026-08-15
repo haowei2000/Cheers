@@ -79,14 +79,14 @@ export function NewDmDialog({
     <Dialog title="New direct message" onClose={onClose}>
       <>
         <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-          <Search className="w-3.5 h-3.5 text-zinc-400" />
+          <Search className="w-3.5 h-3.5 text-content-muted" />
           <UiInput
             ref={inputRef}
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
-            controlSize="regular" className="flex-1 bg-transparent text-regular text-zinc-200 outline-none"
+            controlSize="regular" className="flex-1 bg-transparent text-regular text-content-secondary outline-none"
           />
           {q && (
             <UiButton variant="plain"
@@ -98,7 +98,7 @@ export function NewDmDialog({
                 setQ("");
                 inputRef.current?.focus();
               }}
-              className="rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
+              className="rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
             >
               <X className="w-4 h-4" />
             </UiButton>
@@ -111,12 +111,12 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_user_id: u.user_id }, u.display_name || u.username)}
               title={u.display_name || u.username}
-              leading={<User className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
+              leading={<User className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
               className="border-0"
             />
           ))}
           {bots.length > 0 && (
-            <div className="px-2 pt-2 text-minimal uppercase tracking-wide text-zinc-400">Bots</div>
+            <div className="px-2 pt-2 text-minimal uppercase tracking-label text-content-muted">Bots</div>
           )}
           {bots.map((b) => (
             <NavigationItem
@@ -124,8 +124,8 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_bot_id: b.bot_id }, b.display_name || b.username)}
               title={b.display_name || b.username}
-              leading={<Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
-              status={<span className="text-minimal text-indigo-300">BOT</span>}
+              leading={<Bot className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />}
+              status={<span className="text-minimal text-accent-300">BOT</span>}
               className="border-0"
             />
           ))}

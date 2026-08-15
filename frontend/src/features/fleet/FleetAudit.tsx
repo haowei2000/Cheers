@@ -23,8 +23,8 @@ export function FleetAudit({ events, bots }: { events: FleetAuditEvent[]; bots: 
             subtitle={[event.bot_id ? names.get(event.bot_id) ?? event.bot_id : null, new Date(event.created_at).toLocaleString()]
               .filter(Boolean)
               .join(" · ")}
-            leading={<History className="h-4 w-4 text-zinc-400" />}
-            status={<span className="text-compact capitalize text-zinc-400">{event.source}</span>}
+            leading={<History className="h-4 w-4 text-content-muted" />}
+            status={<span className="text-compact capitalize text-content-muted">{event.source}</span>}
           />
         ))
       )}

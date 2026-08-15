@@ -38,7 +38,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
       {commands.map((c, i) => (
         <Fragment key={`${c.botId}/${c.name}`}>
           {grouped && (i === 0 || commands[i - 1].botId !== c.botId) && (
-            <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400">
+            <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-label text-content-muted">
               {c.botLabel}
             </div>
           )}
@@ -50,18 +50,18 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
             controlSize="regular" className={cn(
  "flex items-center gap-2 text-left ",
  i === activeIndex
- ? "bg-indigo-600/30 text-zinc-100": "text-zinc-100 hover:bg-zinc-800"
+ ? "bg-indigo-600/30 text-content-primary": "text-content-primary hover:bg-zinc-800"
  )}
           >
-            <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <Terminal className="w-4 h-4 text-success-400 flex-shrink-0" />
             <span className="font-medium font-mono">/{c.name}</span>
             {c.description && (
-              <span className="text-compact text-zinc-400 truncate">
+              <span className="text-compact text-content-muted truncate">
                 {c.description}
               </span>
             )}
             {!grouped && (
-              <span className="ml-auto text-minimal px-1 py-1 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
+              <span className="ml-auto text-minimal px-1 py-1 rounded-sm bg-zinc-800 text-content-muted flex-shrink-0">
                 {c.botLabel}
               </span>
             )}

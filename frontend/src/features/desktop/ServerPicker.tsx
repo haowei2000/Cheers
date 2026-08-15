@@ -41,10 +41,10 @@ export function ServerPicker() {
   return (
     <div className="h-full bg-zinc-950 flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-zinc-200 flex items-center gap-2">
-          <Server className="w-4 h-4 text-indigo-400" /> Connect to a Cheers server
+        <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
+          <Server className="w-4 h-4 text-accent-400" /> Connect to a Cheers server
         </p>
-        <p className="text-compact text-zinc-400 mt-1 mb-4">
+        <p className="text-compact text-content-muted mt-1 mb-4">
           The address of the Cheers deployment this app should talk to. You can
           change it later in Settings → Account.
         </p>
@@ -55,7 +55,7 @@ export function ServerPicker() {
           placeholder="https://www.tocheers.com"
           autoFocus
         />
-        {error && <p className="text-compact text-rose-400 mt-2">{error}</p>}
+        {error && <p className="text-compact text-removed-400 mt-2">{error}</p>}
         <div className="mt-4">
           <Button action="connect" onClick={() => void connect()} disabled={busy}>
             {busy ? "Checking…" : "Connect"}

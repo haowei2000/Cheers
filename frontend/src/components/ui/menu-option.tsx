@@ -43,8 +43,8 @@ export const MenuOption = forwardRef<HTMLButtonElement, MenuOptionProps>(
           controlMinHeightClasses[size],
           controlTextClasses[size],
           selected
-            ? "bg-zinc-800 text-zinc-100"
-            : "text-zinc-100 hover:bg-zinc-800/70 hover:text-zinc-50",
+            ? "bg-zinc-800 text-content-primary"
+            : "text-content-primary hover:bg-zinc-800/70 hover:text-content-strong",
           className
         )}
         {...props}

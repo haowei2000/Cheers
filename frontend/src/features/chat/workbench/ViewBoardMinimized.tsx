@@ -156,7 +156,7 @@ function ApprovalsGlance({
           align="start"
           className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-zinc-800 bg-zinc-950 p-2 shadow-xl"
         >
-          <div className="px-2 pb-2 text-compact font-medium text-zinc-400">
+          <div className="px-2 pb-2 text-compact font-medium text-content-muted">
             Pending approvals
           </div>
           <ul className="space-y-2">
@@ -170,7 +170,7 @@ function ApprovalsGlance({
                   <UiButton controlWidth="fill" variant="plain" role="option"
                     type="button"
                     onClick={() => jumpTo(m)}
-                    className="mb-2 block truncate text-left  text-zinc-100 hover:text-indigo-300"
+                    className="mb-2 block truncate text-left  text-content-primary hover:text-accent-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
@@ -186,7 +186,7 @@ function ApprovalsGlance({
                     <UiButton action="open" variant="plain"
                       type="button"
                       onClick={() => jumpTo(m)}
-                      className="mt-1  text-zinc-100 hover:text-zinc-50"
+                      className="mt-1  text-content-primary hover:text-content-strong"
                     >
                       Open in chat
                     </UiButton>
@@ -201,7 +201,7 @@ function ApprovalsGlance({
               setOpen(false);
               onExpandAudit();
             }}
-            controlSize="regular" className="mt-2 rounded-sm text-left  text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+            controlSize="regular" className="mt-2 rounded-sm text-left  text-content-primary hover:bg-zinc-800 hover:text-content-strong"
           >
             Open full Audit board…
           </UiButton>

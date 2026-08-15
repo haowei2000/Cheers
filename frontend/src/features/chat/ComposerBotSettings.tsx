@@ -136,9 +136,9 @@ function BotInlineSettings({
   }
 
   const selBase = "rounded-sm text-compact outline-none";
-  const selOn = `${selBase} bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
+  const selOn = `${selBase} bg-zinc-800 text-content-secondary focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
-  const selOff = `${selBase} bg-zinc-900/30 text-zinc-100 opacity-50 cursor-not-allowed appearance-none`;
+  const selOff = `${selBase} bg-zinc-900/30 text-content-primary opacity-50 cursor-not-allowed appearance-none`;
 
   // Effective current values: optimistic overlay → session override → bot/agent default.
   const mode = localMode ?? targetSession?.session_config?.permission_mode ?? controls.current_mode ?? "";
@@ -147,8 +147,8 @@ function BotInlineSettings({
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-zinc-800/60 px-2 py-1">
       <span className="inline-flex items-center gap-1">
-        <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-400" />
-        <span className="text-compact font-medium text-zinc-200">@{bot.name}</span>
+        <SlidersHorizontal className="w-3.5 h-3.5 text-content-muted" />
+        <span className="text-compact font-medium text-content-secondary">@{bot.name}</span>
       </span>
 
       {hasMode && (
@@ -156,8 +156,8 @@ function BotInlineSettings({
           className="inline-flex items-center gap-1"
           title={controls.can_set_mode ? "Session mode" : "Session mode — read-only (no permission)"}
         >
-          <span className="text-minimal text-zinc-400">mode</span>
-          {!controls.can_set_mode && <Lock className="h-3.5 w-3.5 text-zinc-400" />}
+          <span className="text-minimal text-content-muted">mode</span>
+          {!controls.can_set_mode && <Lock className="h-3.5 w-3.5 text-content-muted" />}
           <UiSelect
             value={mode}
             disabled={!canMode || busy}
@@ -194,8 +194,8 @@ function BotInlineSettings({
             className="inline-flex items-center gap-1"
             title={canCfg ? opt.name : `${opt.name} — read-only (no permission)`}
           >
-            <span className="text-minimal text-zinc-400">{opt.name}</span>
-            {!controls.can_set_config_option && <Lock className="h-3.5 w-3.5 text-zinc-400" />}
+            <span className="text-minimal text-content-muted">{opt.name}</span>
+            {!controls.can_set_config_option && <Lock className="h-3.5 w-3.5 text-content-muted" />}
             <UiSelect
               value={cur}
               disabled={!canCfg || busy}

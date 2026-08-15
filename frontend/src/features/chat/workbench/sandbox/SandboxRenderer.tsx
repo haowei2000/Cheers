@@ -217,8 +217,8 @@ export function SandboxRenderer({
     return () => window.removeEventListener("message", handler);
   }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen, onCompose, dev, pushDev]);
 
-  if (err) return <div className="p-3 text-amber-400 text-compact">Failed to load renderer: {err}</div>;
-  if (bundle === null) return <div className="p-3 text-zinc-400 text-compact">Loading renderer…</div>;
+  if (err) return <div className="p-3 text-warning-400 text-compact">Failed to load renderer: {err}</div>;
+  if (bundle === null) return <div className="p-3 text-content-muted text-compact">Loading renderer…</div>;
   return (
     <div className="relative w-full h-full">
       <iframe
@@ -232,7 +232,7 @@ export function SandboxRenderer({
         style={unsupported !== null ? { display: "none" } : undefined}
       />
       {unsupported !== null && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-compact text-amber-400 bg-zinc-950">
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-compact text-warning-400 bg-zinc-950">
           This renderer can't render this file{unsupported ? `: ${unsupported}` : ""}. Pick another
           renderer from the top-right dropdown, or choose "Raw".
         </div>
@@ -243,32 +243,32 @@ export function SandboxRenderer({
             type="button"
             onClick={() => setDevOpen((v) => !v)}
             title="Protocol inspector (session-loaded plugins only)"
-            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-zinc-100 ring-1 ring-zinc-700 hover:text-white"
+            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-content-primary ring-1 ring-zinc-700 hover:text-content-on-accent"
           >
             {devOpen ? "Hide" : "Dev"} · {devEvents.length}
           </UiButton>
           {devOpen && (
             <div className="absolute inset-x-0 bottom-0 z-10 flex h-1/2 flex-col border-t border-zinc-700 bg-zinc-950/95">
-              <div className="flex items-center justify-between px-2 py-1 text-compact text-zinc-400">
+              <div className="flex items-center justify-between px-2 py-1 text-compact text-content-muted">
                 <span>Protocol inspector · {plugin.plugin_id}</span>
-                <UiButton action="clear" variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-white">
+                <UiButton action="clear" variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-content-on-accent">
                   Clear
                 </UiButton>
               </div>
-              <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-compact leading-relaxed">
+              <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-compact leading-reading">
                 {devEvents.length === 0 ? (
-                  <div className="text-zinc-400">
+                  <div className="text-content-muted">
                     No messages yet. The plugin posts cheers:ready when it boots.
                   </div>
                 ) : (
                   /* design-system-exempt: trace-line — ordered diagnostic output. */
                   devEvents.map((ev) => (
                     <div key={ev.seq} className="flex gap-2 whitespace-pre-wrap break-all">
-                      <span className={ev.dir === "in" ? "text-emerald-400" : "text-sky-400"}>
+                      <span className={ev.dir === "in" ? "text-success-400" : "text-info-400"}>
                         {ev.dir === "in" ? "←" : "→"}
                       </span>
-                      <span className="text-zinc-200">{ev.type}</span>
-                      <span className="text-zinc-400">{ev.detail}</span>
+                      <span className="text-content-secondary">{ev.type}</span>
+                      <span className="text-content-muted">{ev.detail}</span>
                     </div>
                   ))
                 )}

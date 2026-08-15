@@ -51,7 +51,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   const bots = data.bots ?? [];
   if (bots.length === 0) {
     return (
-      <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
+      <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
         <Gauge className="w-4 h-4" />
         No usage reported yet
       </div>
@@ -60,7 +60,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   return (
     <table className="w-full text-compact">
       <thead>
-        <tr className="text-zinc-400 border-b border-zinc-800">
+        <tr className="text-content-muted border-b border-zinc-800">
           <th className="text-left font-normal px-3 py-2">Bot</th>
           <th className="text-left font-normal px-2 py-2">Session</th>
           <th className="text-right font-normal px-2 py-2">Input</th>
@@ -74,11 +74,11 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
         {bots.map((b) => (
           <tr
             key={`${b.bot_id}:${b.session_id ?? "—"}`}
-            className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-200"
+            className="border-b border-zinc-900 hover:bg-zinc-800/40 text-content-secondary"
           >
             {/* Bot reads as avatar + name (full id in the tooltip); session_id is an
                 opaque technical id: short mono form + tooltip. */}
-            <td className="px-3 py-2 text-zinc-200 max-w-[130px]" title={b.bot_id}>
+            <td className="px-3 py-2 text-content-secondary max-w-[130px]" title={b.bot_id}>
               <span className="flex items-center gap-2 min-w-0">
                 <Avatar
                   name={memberLabel(members, b.bot_id)}
@@ -90,28 +90,28 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
               </span>
             </td>
             <td
-              className="px-2 py-2 font-mono text-zinc-400 truncate max-w-[90px]"
+              className="px-2 py-2 font-mono text-content-muted truncate max-w-[90px]"
               title={b.session_id ?? undefined}
             >
               {b.session_id ? b.session_id.slice(0, 8) : "—"}
             </td>
-            <td className="px-2 py-2 text-right tabular-nums text-zinc-400">
+            <td className="px-2 py-2 text-right tabular-nums text-content-muted">
               {fmtInt(b.input_tokens)}
             </td>
-            <td className="px-2 py-2 text-right tabular-nums text-zinc-400">
+            <td className="px-2 py-2 text-right tabular-nums text-content-muted">
               {fmtInt(b.output_tokens)}
             </td>
-            <td className="px-2 py-2 text-right tabular-nums text-zinc-200">
+            <td className="px-2 py-2 text-right tabular-nums text-content-secondary">
               {fmtInt(b.total_tokens)}
             </td>
             {/* context window = latest snapshot; an at-a-glance pressure gauge */}
             <td className="px-2 py-2 text-right tabular-nums">
-              <span className="inline-flex items-center gap-1 text-zinc-400">
-                <Gauge className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="inline-flex items-center gap-1 text-content-muted">
+                <Gauge className="w-3.5 h-3.5 text-content-muted" />
                 {fmtInt(b.context_window)}
               </span>
             </td>
-            <td className="px-3 py-2 text-right tabular-nums text-emerald-400">
+            <td className="px-3 py-2 text-right tabular-nums text-success-400">
               {fmtUsd(b.cost_usd)}
             </td>
           </tr>

@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 // The product historically used Tailwind's electric indigo as its default
 // accent. Keep the semantic class name while existing call sites migrate, but
@@ -28,14 +29,52 @@ export default {
         masthead: ["var(--font-serif)"],
         reading: ["var(--font-serif)"],
         utility: ["var(--font-ui)"],
+        mono: ["var(--font-mono)"],
       },
       fontSize: {
-        minimal: ["var(--type-minimal)", { lineHeight: "1.4" }],
-        compact: ["var(--type-compact)", { lineHeight: "1.45" }],
-        regular: ["var(--type-regular)", { lineHeight: "1.55" }],
-        comfortable: ["var(--type-comfortable)", { lineHeight: "1.4" }],
+        minimal: ["var(--type-minimal-size)", { lineHeight: "var(--type-minimal-leading)", letterSpacing: "var(--type-minimal-tracking)" }],
+        compact: ["var(--type-compact-size)", { lineHeight: "var(--type-compact-leading)", letterSpacing: "var(--type-compact-tracking)" }],
+        regular: ["var(--type-regular-size)", { lineHeight: "var(--type-regular-leading)", letterSpacing: "var(--type-regular-tracking)" }],
+        comfortable: ["var(--type-comfortable-size)", { lineHeight: "var(--type-comfortable-leading)", letterSpacing: "var(--type-comfortable-tracking)" }],
+      },
+      fontWeight: {
+        normal: "var(--weight-regular)",
+        medium: "var(--weight-medium)",
+        semibold: "var(--weight-semibold)",
+        bold: "var(--weight-bold)",
+      },
+      letterSpacing: {
+        display: "var(--tracking-display)",
+        masthead: "var(--tracking-masthead)",
+        label: "var(--tracking-label)",
+        section: "var(--tracking-section)",
+        overline: "var(--tracking-overline)",
+      },
+      lineHeight: {
+        flat: "var(--leading-flat)",
+        heading: "var(--leading-heading)",
+        regular: "var(--leading-regular)",
+        reading: "var(--leading-reading)",
+        masthead: "var(--leading-masthead)",
       },
       colors: {
+        content: {
+          strong: "rgb(var(--text-strong) / <alpha-value>)",
+          primary: "rgb(var(--text-primary) / <alpha-value>)",
+          secondary: "rgb(var(--text-secondary) / <alpha-value>)",
+          muted: "rgb(var(--text-muted) / <alpha-value>)",
+          "on-light": "rgb(var(--text-on-light) / <alpha-value>)",
+          "on-accent": "rgb(var(--text-on-accent) / <alpha-value>)",
+        },
+        accent: editorialInk,
+        danger: colors.red,
+        warning: colors.amber,
+        success: colors.emerald,
+        removed: colors.rose,
+        info: colors.sky,
+        stale: colors.orange,
+        research: colors.violet,
+        category: colors.teal,
         rail: "#0f0f11",
         sidebar: "#18181b",
         indigo: editorialInk,

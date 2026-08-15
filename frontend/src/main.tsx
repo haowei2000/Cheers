@@ -42,10 +42,10 @@ createRoot(document.getElementById("root")!).render(
               // Borderless popover surface (DESIGN.md §2.4): zinc-900 fill separated
               // by shadow, not an outline — matches `shadow-xl shadow-black/40`.
               background: "#18181b",
-              color: "#fafafa",
+              color: "rgb(var(--text-strong))",
               boxShadow:
                 "0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4)",
-              fontSize: "var(--type-regular)",
+              fontSize: "var(--type-regular-size)",
             },
           }}
         />

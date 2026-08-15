@@ -141,7 +141,7 @@ function HealthRow({
           : "";
   return (
     <div className="flex items-center gap-2 text-compact min-w-0">
-      <span className="text-zinc-400 tabular-nums shrink-0">
+      <span className="text-content-muted tabular-nums shrink-0">
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
       {reason && (
@@ -150,7 +150,7 @@ function HealthRow({
           onClick={onRestart}
           disabled={busy}
           title={`${reason} — restart this installation`}
-          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
+          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-warning-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{reason} · Restart</span>
@@ -183,8 +183,8 @@ function IconBtn({
       onClick={onClick}
       content="icon" controlSize="regular" className={`rounded-sm flex items-center justify-center transition-colors disabled:opacity-50 ${
  danger
- ? "text-rose-400 hover:bg-rose-950/50"
- : "text-zinc-100 hover:bg-zinc-700"
+ ? "text-removed-400 hover:bg-rose-950/50"
+ : "text-content-primary hover:bg-zinc-700"
  }`}
     >
       {icon}
@@ -502,7 +502,7 @@ export function ConnectorManager() {
 
   return (
     <section>
-      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
         <Laptop className="w-3.5 h-3.5" />
         Installations
       </h2>
@@ -510,8 +510,8 @@ export function ConnectorManager() {
       <div className="bg-zinc-900 rounded-sm p-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-regular font-medium text-zinc-200">Bots installed on this Mac</p>
-            <p className="mt-1 text-compact text-zinc-400">
+            <p className="text-regular font-medium text-content-secondary">Bots installed on this Mac</p>
+            <p className="mt-1 text-compact text-content-muted">
               Local connector processes. Registered devices and credentials are listed above.
             </p>
           </div>
@@ -526,7 +526,7 @@ export function ConnectorManager() {
         </div>
 
         {instances.length === 0 && (
-          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-zinc-400">
+          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted">
             No connector is running on this Mac. Add an installation or use a pairing code.
           </p>
         )}
@@ -551,7 +551,7 @@ export function ConnectorManager() {
                   title={inst.running ? "running" : "stopped"}
                 />}
                 title={inst.name}
-                status={<span className="truncate text-compact text-zinc-400">
+                status={<span className="truncate text-compact text-content-muted">
                   {inst.running ? `running · pid ${inst.pid}` : inst.config_path ? "stopped" : "stopped · no config"}
                 </span>}
                 className="border-b-0 bg-transparent"
@@ -668,7 +668,7 @@ export function ConnectorManager() {
                   )
                 }
                 controlSize="compact"
-                className="text-compact text-zinc-400"
+                className="text-compact text-content-muted"
               />
             </div>
           ))}
@@ -679,7 +679,7 @@ export function ConnectorManager() {
       {modal?.kind === "redeem" && (
         <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <div className="space-y-3">
-            <p className="text-compact text-zinc-400">
+            <p className="text-compact text-content-muted">
               Paste the one-time code from wherever the bot was created — the
               Cheers app on your phone, the web UI, or a teammate. This Mac
               becomes the machine that runs it.
@@ -690,9 +690,9 @@ export function ConnectorManager() {
               placeholder="agbpair_…"
               autoFocus
               spellCheck={false}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-zinc-100 placeholder:text-zinc-400 outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-content-primary placeholder:text-content-muted outline-none focus:ring-1 focus:ring-indigo-500"
             />
-            <p className="text-compact text-zinc-400">
+            <p className="text-compact text-content-muted">
               Codes are single-use and expire after about 15 minutes. Using one
               activates this installation, so the bot's previously active
               installation will stop.
@@ -753,13 +753,13 @@ export function ConnectorManager() {
           <div className="flex justify-end mb-1">
             <UiButton action="refresh" variant="plain"
               type="button"
-              className=" text-zinc-100 hover:text-zinc-50"
+              className=" text-content-primary hover:text-content-strong"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
             </UiButton>
           </div>
-          <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-200">
+          <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-content-secondary">
             {logs}
           </pre>
         </Dialog>
@@ -767,14 +767,14 @@ export function ConnectorManager() {
 
       {modal?.kind === "workspace" && (
         <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <p className="text-compact text-zinc-400 mb-3">
+          <p className="text-compact text-content-muted mb-3">
             Open the agent's own directories in a local editor or Finder — only
             this desktop app can reach your disk.
           </p>
           {roots === null ? (
-            <p className="text-compact text-zinc-400">Loading…</p>
+            <p className="text-compact text-content-muted">Loading…</p>
           ) : wsDirs.length === 0 ? (
-            <p className="text-compact text-zinc-400">
+            <p className="text-compact text-content-muted">
               No workspace roots on disk (check the config's{" "}
               <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
             </p>
@@ -784,9 +784,9 @@ export function ConnectorManager() {
               {wsDirs.map((dir) => (
                 <div key={dir}>
                   <div className="flex items-center gap-2 mb-1">
-                    <FolderOpen className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0 text-content-muted" />
                     <span
-                      className="truncate text-compact text-zinc-200 min-w-0"
+                      className="truncate text-compact text-content-secondary min-w-0"
                       dir="rtl"
                       style={{ unicodeBidi: "plaintext" }}
                       title={dir}
@@ -794,7 +794,7 @@ export function ConnectorManager() {
                       {dir}
                     </span>
                     {dir === roots?.cwd && (
-                      <span className="text-minimal text-zinc-400 shrink-0">cwd</span>
+                      <span className="text-minimal text-content-muted shrink-0">cwd</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 pl-5">
@@ -803,7 +803,7 @@ export function ConnectorManager() {
                       <UiButton variant="plain" role="menuitem"
                         key={op.key}
                         type="button"
-                        controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors"
+                        controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-content-primary transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
@@ -853,7 +853,7 @@ export function ConnectorManager() {
 
       {modal?.kind === "delete" && (
         <Dialog title="Remove local installation" onClose={() => setModal(null)} maxWidth="max-w-md">
-          <p className="text-regular text-zinc-200">
+          <p className="text-regular text-content-secondary">
             Remove the local installation <b>{modal.inst.name}</b> (stops it and
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
@@ -869,13 +869,13 @@ export function ConnectorManager() {
             checked={keepConfig}
             onChange={(e) => setKeepConfig(e.target.checked)}
             controlSize="compact"
-            className="mt-3 text-compact text-zinc-400"
+            className="mt-3 text-compact text-content-muted"
           />
           <div className="flex gap-2 mt-4">
             <Button action="delete"
               variant="danger"
               controlSize="compact"
-              className="bg-red-950/70 hover:bg-red-900/80 text-red-300"
+              className="bg-red-950/70 hover:bg-red-900/80 text-danger-300"
               disabled={busy === modal.inst.name}
               onClick={() =>
                 void act(
@@ -924,7 +924,7 @@ function AuditTimeline({
   onRefresh: () => void;
 }) {
   const [hidden, setHidden] = useState<Set<AuditEvent["kind"]>>(new Set());
-  if (events === null) return <p className="text-compact text-zinc-400">Loading…</p>;
+  if (events === null) return <p className="text-compact text-content-muted">Loading…</p>;
   const kinds = Array.from(new Set(events.map((e) => e.kind)));
   const shown = events.filter((e) => !hidden.has(e.kind));
   const toggle = (k: AuditEvent["kind"]) =>
@@ -944,7 +944,7 @@ function AuditTimeline({
             type="button"
             onClick={() => toggle(k)}
             controlSize="regular" className={` rounded-sm transition-colors ${
- hidden.has(k) ? "bg-zinc-800 text-zinc-100": "bg-zinc-700 text-zinc-100"
+ hidden.has(k) ? "bg-zinc-800 text-content-primary": "bg-zinc-700 text-content-primary"
  }`}
           >
             <PresenceDot contentSize="small" className={`mr-1 align-middle ${AUDIT_META[k].dot}`} />
@@ -954,13 +954,13 @@ function AuditTimeline({
         <UiButton action="refresh" variant="plain"
           type="button"
           onClick={onRefresh}
-          className=" text-zinc-100 hover:text-zinc-50 ml-auto"
+          className=" text-content-primary hover:text-content-strong ml-auto"
         >
           Refresh
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <p className="text-compact text-zinc-400">
+        <p className="text-compact text-content-muted">
           No audit events yet. Advanced per-command and file detail requires{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
@@ -989,7 +989,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
         onClick={e.extra ? () => setOpen((o) => !o) : undefined}
       />
       {open && e.extra && (
-        <pre className="ml-6 mt-1 mb-1 text-compact bg-zinc-950 rounded-sm p-2 overflow-auto whitespace-pre-wrap text-zinc-400 max-h-48">
+        <pre className="ml-6 mt-1 mb-1 text-compact bg-zinc-950 rounded-sm p-2 overflow-auto whitespace-pre-wrap text-content-muted max-h-48">
           {e.extra}
         </pre>
       )}
@@ -1019,9 +1019,9 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-indigo-100">
+      <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-accent-100">
         <p className="font-medium">Four steps, all on this Mac</p>
-        <p className="mt-1 text-indigo-200/75">
+        <p className="mt-1 text-accent-200/75">
           Choose a bot → check its agent → save its secure installation → start and verify it.
           If startup fails, the installation remains below with recovery and diagnostics.
         </p>
@@ -1031,7 +1031,7 @@ function OnboardForm(props: {
             id="onb-bot"
             value={p.existingBotId}
             onChange={(e) => p.setExistingBotId(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {p.bots.length === 0 && <option value="">No manageable bots</option>}
             {p.bots.map((b) => (
@@ -1041,7 +1041,7 @@ function OnboardForm(props: {
             ))}
           </UiSelect>
         </Field>
-      {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-amber-200">
+      {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-warning-200">
         Create a bot identity first; installations cannot create bots.
         <div className="mt-2"><Button action="open" variant="secondary" controlSize="compact" onClick={() => window.location.assign("/fleet/bots")}>Create bot in Fleet</Button></div>
       </div>}
@@ -1060,10 +1060,10 @@ function OnboardForm(props: {
       <AgentUpdates />
 
       {p.onboardingError && (
-        <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-rose-200">
+        <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-removed-200">
           <p className="font-medium">Setup needs attention</p>
-          <p className="mt-1 break-words text-rose-200/80">{p.onboardingError}</p>
-          <p className="mt-1 text-rose-200/70">
+          <p className="mt-1 break-words text-removed-200/80">{p.onboardingError}</p>
+          <p className="mt-1 text-removed-200/70">
             You can fix the agent or configuration and retry. The saved installation remains on this page.
           </p>
         </div>
@@ -1082,7 +1082,7 @@ function OnboardForm(props: {
       <div>
         <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
           type="button"
-          className=" text-zinc-100 hover:text-zinc-50"
+          className=" text-content-primary hover:text-content-strong"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml

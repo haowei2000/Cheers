@@ -78,20 +78,20 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "bg-zinc-800 text-zinc-100";
+    "bg-zinc-800 text-content-primary";
 
   return (
     <section>
-      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
         <AudioLines className="w-3.5 h-3.5" />
         Speech-to-text
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-compact text-zinc-400 mb-4">
+        <p className="text-compact text-content-muted mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
-          (<code className="text-zinc-400">/audio/transcriptions</code>). Transcripts are shown
+          (<code className="text-content-muted">/audio/transcriptions</code>). Transcripts are shown
           with the message and delivered to bots. Audio leaves this instance for that endpoint —
           only configure a service you trust.
         </p>
@@ -101,11 +101,11 @@ export function AdminSttSettings() {
             label="Enable speech-to-text"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
-            className="text-zinc-200"
+            className="text-content-secondary"
           />
 
           <div>
-            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
               Endpoint (base URL including /v1)
             </label>
             <UiInput
@@ -117,7 +117,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
               Model
             </label>
             <UiInput
@@ -129,10 +129,10 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
               API key{" "}
               {loaded?.api_key_set && !clearKey && (
-                <span className="normal-case text-zinc-400">
+                <span className="normal-case text-content-muted">
                   (saved {loaded.api_key_hint} — leave blank to keep it)
                 </span>
               )}
@@ -156,7 +156,7 @@ export function AdminSttSettings() {
                 checked={clearKey}
                 onChange={(e) => setClearKey(e.target.checked)}
                 controlSize="compact"
-                className="mt-1 text-compact text-zinc-400"
+                className="mt-1 text-compact text-content-muted"
               />
             )}
           </div>
@@ -184,7 +184,7 @@ export function AdminSttSettings() {
 
           {testResult && (
             <p
-              className={`text-compact ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
+              className={`text-compact ${testResult.startsWith("✓") ? "text-success-400" : "text-danger-400"}`}
             >
               {testResult}
             </p>

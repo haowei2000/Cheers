@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 
 const inputCls =
-  "bg-zinc-800 text-zinc-100";
+  "bg-zinc-800 text-content-primary";
 
 /** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
 export function TwoFactorCard() {
@@ -111,19 +111,19 @@ export function TwoFactorCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
-        <ShieldCheck className="w-4 h-4 text-indigo-400" /> Authenticator app
+      <p className="text-regular font-medium text-content-secondary flex items-center gap-2 mb-1">
+        <ShieldCheck className="w-4 h-4 text-accent-400" /> Authenticator app
       </p>
-      <p className="text-compact text-zinc-400 mb-4">
+      <p className="text-compact text-content-muted mb-4">
         Use an authenticator app (or backup codes) when signing in.
       </p>
 
       {phase === "idle" && (
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-regular text-zinc-200">
+            <p className="text-regular text-content-secondary">
               Status:{" "}
-              <span className={enabled ? "text-emerald-400" : "text-zinc-400"}>
+              <span className={enabled ? "text-success-400" : "text-content-muted"}>
                 {enabled == null ? "…" : enabled ? "On" : "Off"}
               </span>
             </p>
@@ -153,11 +153,11 @@ export function TwoFactorCard() {
 
       {phase === "setup" && (
         <div className="space-y-3 max-w-md">
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             Add this account in your authenticator app using the secret below
             (or open the otpauth link).
           </p>
-          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-zinc-100 break-all">
+          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-content-primary break-all">
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -167,7 +167,7 @@ export function TwoFactorCard() {
             {provisioningUri && (
               <a
                 href={provisioningUri}
-                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-2 text-compact text-indigo-300 hover:text-indigo-200"
+                className="inline-flex items-center rounded-sm bg-zinc-800 px-3 py-2 text-compact text-accent-300 hover:text-accent-200"
               >
                 Open otpauth://
               </a>
@@ -199,10 +199,10 @@ export function TwoFactorCard() {
 
       {phase === "backup" && (
         <div className="space-y-3 max-w-md">
-          <p className="text-compact text-amber-200/90">
+          <p className="text-compact text-warning-200/90">
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
-          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-zinc-100 space-y-1">
+          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-content-primary space-y-1">
             {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
             {backupCodes.map((c) => (
               <li key={c}>{c}</li>
@@ -226,7 +226,7 @@ export function TwoFactorCard() {
 
       {phase === "disable" && (
         <div className="space-y-3 max-w-sm">
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             Enter an authenticator or backup code to turn off 2FA.
           </p>
           <Input
@@ -325,34 +325,34 @@ export function PasskeyCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-zinc-200 flex items-center gap-2 mb-1">
-        <Fingerprint className="w-4 h-4 text-indigo-400" /> Passkeys
+      <p className="text-regular font-medium text-content-secondary flex items-center gap-2 mb-1">
+        <Fingerprint className="w-4 h-4 text-accent-400" /> Passkeys
       </p>
-      <p className="text-compact text-zinc-400 mb-4">
+      <p className="text-compact text-content-muted mb-4">
         Sign in with Face ID, Touch ID, or a device passkey when 2FA is required.
       </p>
 
-      <p className="text-regular text-zinc-200 mb-3">
+      <p className="text-regular text-content-secondary mb-3">
         Status:{" "}
-        <span className={available ? "text-emerald-400" : "text-zinc-400"}>
+        <span className={available ? "text-success-400" : "text-content-muted"}>
           {loading ? "…" : available ? "Available" : "Not configured on server"}
         </span>
         {rpId && (
-          <span className="ml-2 font-mono text-compact text-zinc-400">{rpId}</span>
+          <span className="ml-2 font-mono text-compact text-content-muted">{rpId}</span>
         )}
       </p>
 
       {loading ? (
-        <p className="text-compact text-zinc-400">Loading…</p>
+        <p className="text-compact text-content-muted">Loading…</p>
       ) : credentials.length === 0 ? (
-        <p className="text-compact text-zinc-400 mb-3">No passkeys yet.</p>
+        <p className="text-compact text-content-muted mb-3">No passkeys yet.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
             <OperationsItem
               key={c.credential_pk}
               title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
-              trailing={c.last_used_at ? <span className="text-compact text-zinc-400">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
+              trailing={c.last_used_at ? <span className="text-compact text-content-muted">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
               actions={<ActionButton action="delete" context="toolbar" accessibleLabel={`Delete passkey ${c.name}`} onClick={() => void remove(c.credential_pk)} />}
             />
           ))}

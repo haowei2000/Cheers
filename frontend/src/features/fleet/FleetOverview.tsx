@@ -18,8 +18,8 @@ type FleetSummary = {
 function SummaryCard({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
     <div className="rounded-sm bg-zinc-900/60 px-4 py-3">
-      <p className="text-minimal uppercase tracking-[0.1em] text-zinc-400">{label}</p>
-      <p className={cn("mt-1 text-comfortable font-semibold tabular-nums text-zinc-100", tone)}>{value}</p>
+      <p className="text-minimal uppercase tracking-overline text-content-muted">{label}</p>
+      <p className={cn("mt-1 text-comfortable font-semibold tabular-nums text-content-primary", tone)}>{value}</p>
     </div>
   );
 }
@@ -49,13 +49,13 @@ export function FleetOverview({
     <>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
         <SummaryCard label="Online" value={summary.online} />
-        <SummaryCard label="Working" value={summary.working} tone="text-indigo-200" />
+        <SummaryCard label="Working" value={summary.working} tone="text-accent-200" />
         <SummaryCard label="Offline" value={summary.offline} />
-        <SummaryCard label="Waiting" value={summary.waiting} tone={summary.waiting ? "text-amber-300" : undefined} />
+        <SummaryCard label="Waiting" value={summary.waiting} tone={summary.waiting ? "text-warning-300" : undefined} />
         <SummaryCard
           label="Install issues"
           value={installationIssues}
-          tone={installationIssues ? "text-amber-300" : undefined}
+          tone={installationIssues ? "text-warning-300" : undefined}
         />
       </div>
       {(actionableCount > 0 || installationIssues > 0) && (
@@ -64,7 +64,7 @@ export function FleetOverview({
             <OperationsItem
               title={`${actionableCount} waiting on you`}
               subtitle="Review approvals in your personal Activity inbox"
-              leading={<Inbox className="h-4 w-4 text-amber-300" />}
+              leading={<Inbox className="h-4 w-4 text-warning-300" />}
               criticalStatus={
                 <UnreadBadge tone="approval" contentSize="regular">
                   {actionableCount}
@@ -77,7 +77,7 @@ export function FleetOverview({
             <OperationsItem
               title={`${installationIssues} installation issue${installationIssues === 1 ? "" : "s"}`}
               subtitle="MCP authorization or refresh needs attention"
-              leading={<ShieldAlert className="h-4 w-4 text-amber-300" />}
+              leading={<ShieldAlert className="h-4 w-4 text-warning-300" />}
               onClick={onOpenInstallations}
             />
           )}

@@ -69,7 +69,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded-sm bg-zinc-800 text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -186,7 +186,7 @@ function SessionCard({
       <OperationsItem
         presentationLevel="medium"
         selected={Boolean(isSelected)}
-        leading={<Folder className="h-3.5 w-3.5 text-zinc-400" />}
+        leading={<Folder className="h-3.5 w-3.5 text-content-muted" />}
         title={<span
           className="block truncate font-mono text-compact"
           style={{ direction: "rtl" }}
@@ -197,16 +197,16 @@ function SessionCard({
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>}
         criticalStatus={s.is_primary ? (
-          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-1 text-minimal text-indigo-300">
+          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-1 text-minimal text-accent-300">
             primary
           </span>
         ) : undefined}
-        status={<span className="inline-flex shrink-0 items-center gap-1 text-zinc-400">
+        status={<span className="inline-flex shrink-0 items-center gap-1 text-content-muted">
           <CircleDot className={`w-3.5 h-3.5 ${statusColor(s.status)}`} />
           {s.status}
         </span>}
         trailing={<span
-          className="shrink-0 tabular-nums text-zinc-400"
+          className="shrink-0 tabular-nums text-content-muted"
           title={`created ${fmtTime(s.created_at)}`}
         >
           {fmtTime(s.created_at)}
@@ -216,7 +216,7 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-indigo-300": "text-zinc-100 hover:text-zinc-50"}`}
+          className={`shrink-0 ${open ? "text-accent-300": "text-content-primary hover:text-content-strong"}`}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>
@@ -226,7 +226,7 @@ function SessionCard({
             disabled={actionBusy}
             title="Close this session"
             onClick={() => run(() => closeChannelBotSession(channelId, s.bot_id, s.session_id))}
-            className="text-zinc-100 hover:text-red-300 disabled:opacity-50 shrink-0"
+            className="text-content-primary hover:text-danger-300 disabled:opacity-50 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </UiButton>
@@ -237,7 +237,7 @@ function SessionCard({
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-1 text-minimal font-medium text-zinc-950">
+          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-1 text-minimal font-medium text-content-on-light">
             <ArrowUp className="h-3.5 w-3.5" />
             Make primary
           </span>
@@ -247,15 +247,15 @@ function SessionCard({
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
         <div className="mt-1 space-y-2 rounded-sm bg-zinc-900/40 p-2">
-          <div className="flex items-center gap-2 text-minimal text-zinc-400">
+          <div className="flex items-center gap-2 text-minimal text-content-muted">
             <span className="w-12 shrink-0">session</span>
-            <span className="font-mono text-zinc-200" title={s.session_id}>
+            <span className="font-mono text-content-secondary" title={s.session_id}>
               {s.session_id.slice(0, 8)}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-minimal text-zinc-400">
+          <div className="flex items-center gap-2 text-minimal text-content-muted">
             <span className="w-12 shrink-0">last used</span>
-            <span className="tabular-nums text-zinc-200">{fmtTime(s.last_used_at)}</span>
+            <span className="tabular-nums text-content-secondary">{fmtTime(s.last_used_at)}</span>
             {!canMode && mode && <span>· mode {mode}</span>}
           </div>
 
@@ -263,7 +263,7 @@ function SessionCard({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {canMode && (
                 <label className="inline-flex items-center gap-1">
-                  <span className="text-minimal text-zinc-400">mode</span>
+                  <span className="text-minimal text-content-muted">mode</span>
                   <UiSelect
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
                     disabled={actionBusy}
@@ -289,7 +289,7 @@ function SessionCard({
                   const cur = cfgValues[opt.id] ?? opt.currentValue ?? "";
                   return (
                     <label key={opt.id} className="inline-flex items-center gap-1">
-                      <span className="text-minimal text-zinc-400">{opt.name}</span>
+                      <span className="text-minimal text-content-muted">{opt.name}</span>
                       <UiSelect
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
                         disabled={actionBusy}
@@ -316,18 +316,18 @@ function SessionCard({
             </div>
           )}
 
-          <div className="text-minimal text-zinc-400">
+          <div className="text-minimal text-content-muted">
             <div className="flex items-center gap-1">
               <span className="w-12 shrink-0">wd</span>
-              <span className="font-mono text-zinc-200 truncate" title={cwd || "connector default"}>
+              <span className="font-mono text-content-secondary truncate" title={cwd || "connector default"}>
                 {cwd || "default"}
               </span>
               {cwd && <span>· immutable</span>}
             </div>
             {dirsDraft === null ? (
               <div className="flex items-start gap-1 mt-1">
-                <span className="text-zinc-400 w-12 shrink-0">roots</span>
-                <span className="font-mono text-zinc-400 flex-1 break-all">
+                <span className="text-content-muted w-12 shrink-0">roots</span>
+                <span className="font-mono text-content-muted flex-1 break-all">
                   {dirs.length ? dirs.join(", ") : "—"}
                 </span>
                 {canEditRoots && (
@@ -335,7 +335,7 @@ function SessionCard({
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
-                    className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-50 shrink-0"
+                    className="text-accent-300/70 hover:text-accent-200 disabled:opacity-50 shrink-0"
                   >
                     edit
                   </UiButton>
@@ -349,7 +349,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-minimal text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <IconButton label="Save additional roots"
@@ -481,11 +481,11 @@ function BotGroup({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-compact font-medium text-zinc-200 truncate" title={botId}>
+        <BotIcon className="w-3.5 h-3.5 text-accent-400 shrink-0" />
+        <span className="text-compact font-medium text-content-secondary truncate" title={botId}>
           {label}
         </span>
-        <span className="text-minimal text-zinc-400">
+        <span className="text-minimal text-content-muted">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -620,7 +620,7 @@ function SessionsBody({
   return (
     <div className="p-2 space-y-3">
       <div className="flex items-center gap-2 px-1">
-        <span className="text-compact text-zinc-400">
+        <span className="text-compact text-content-muted">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
         <div className="flex-1" />
@@ -630,13 +630,13 @@ function SessionsBody({
             onClick={() => setDialogOpen(true)}
             accessibleLabel="New session"
             controlSize="regular"
-            className="rounded-sm bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30"
+            className="rounded-sm bg-indigo-600/15 text-accent-200 hover:bg-indigo-600/30"
           />
         )}
       </div>
 
       {sessions.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
+        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
           <Layers className="w-4 h-4" />
           No sessions yet
         </div>

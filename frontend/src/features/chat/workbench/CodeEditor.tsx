@@ -43,22 +43,21 @@ const theme = EditorView.theme(
     "&": {
       height: "100%",
       backgroundColor: "#09090b", // zinc-950
-      color: "#e4e4e7", // zinc-200
-      fontSize: "var(--type-compact)",
+      color: "rgb(var(--text-secondary))",
+      fontSize: "var(--type-compact-size)",
     },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": {
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-      lineHeight: "1.6",
+      fontFamily: "var(--font-mono)",
+      lineHeight: "var(--leading-reading)",
     },
     ".cm-content": { padding: "12px 0", caretColor: "#d4d4d8" /* editorial ink */ },
     ".cm-gutters": {
       backgroundColor: "#09090b",
-      color: "#a1a1aa", // zinc-400 metadata
+      color: "rgb(var(--text-muted))",
       border: "none",
     },
-    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "#a1a1aa" /* zinc-400 */ },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "rgb(var(--text-muted))" },
     ".cm-activeLine": { backgroundColor: "#18181b40" /* zinc-900/25 */ },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#d4d4d8" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
@@ -73,18 +72,18 @@ const theme = EditorView.theme(
 );
 
 const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "#c4b5a5" }, // muted umber
-  { tag: [t.string, t.special(t.string)], color: "#a8b5a2" }, // muted sage
-  { tag: [t.number, t.bool, t.null, t.atom], color: "#c4a484" }, // muted ochre
-  { tag: [t.propertyName], color: "#aab5c4" }, // muted blue-grey (json keys)
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "#a1a1aa", fontStyle: "italic" }, // zinc-400 metadata
-  { tag: [t.heading], color: "#e4e4e7", fontWeight: "bold" },
-  { tag: [t.link, t.url], color: "#b8bec7", textDecoration: "underline" },
+  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "rgb(var(--syntax-keyword))" },
+  { tag: [t.string, t.special(t.string)], color: "rgb(var(--syntax-string))" },
+  { tag: [t.number, t.bool, t.null, t.atom], color: "rgb(var(--syntax-number))" },
+  { tag: [t.propertyName], color: "rgb(var(--syntax-function))" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "rgb(var(--text-muted))", fontStyle: "italic" },
+  { tag: [t.heading], color: "rgb(var(--text-secondary))", fontWeight: "bold" },
+  { tag: [t.link, t.url], color: "rgb(var(--syntax-link))", textDecoration: "underline" },
   { tag: [t.emphasis], fontStyle: "italic" },
   { tag: [t.strong], fontWeight: "bold" },
-  { tag: [t.monospace], color: "#c7b4b4" }, // muted rose (inline code)
-  { tag: [t.punctuation, t.separator], color: "#a1a1aa" }, // zinc-400
-  { tag: [t.invalid], color: "#f87171" }, // red-400
+  { tag: [t.monospace], color: "rgb(var(--syntax-code))" },
+  { tag: [t.punctuation, t.separator], color: "rgb(var(--text-muted))" },
+  { tag: [t.invalid], color: "rgb(var(--syntax-invalid))" },
 ]);
 
 // Language pack by extension. text/toml/xml fall through to no highlighting (plain text) —

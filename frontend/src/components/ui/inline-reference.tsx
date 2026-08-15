@@ -18,7 +18,7 @@ export const InlineReference = forwardRef<HTMLAnchorElement, InlineReferenceProp
       href={`#workspace-ref-${encodeURIComponent(reference)}`}
       data-inline-reference=""
       className={cn(
-        "inline cursor-pointer rounded-sm bg-zinc-800 px-1 py-0 align-baseline font-mono text-inherit text-indigo-300 underline decoration-indigo-400/60 decoration-dotted underline-offset-2 transition-colors hover:bg-zinc-700 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+        "inline cursor-pointer rounded-sm bg-zinc-800 px-1 py-0 align-baseline font-mono text-inherit text-accent-300 underline decoration-indigo-400/60 decoration-dotted underline-offset-2 transition-colors hover:bg-zinc-700 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
         className,
       )}
       onClick={(event) => {

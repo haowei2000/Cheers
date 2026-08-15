@@ -95,13 +95,13 @@ export function ItemRow({
           {level !== "minimal" && status}
         </span>
         {level !== "minimal" && subtitle && (
-          <span className={cn("mt-1 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{subtitle}</span>
+          <span className={cn("mt-1 block truncate text-content-muted", controlSupportingTextClasses[size])}>{subtitle}</span>
         )}
         {level === "max" && metadata && (
-          <span className={cn("mt-1 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{metadata}</span>
+          <span className={cn("mt-1 block truncate text-content-muted", controlSupportingTextClasses[size])}>{metadata}</span>
         )}
         {level === "max" && preview && (
-          <span className={cn("mt-1 block line-clamp-2 font-reading leading-relaxed text-zinc-200", controlSupportingTextClasses[size])}>
+          <span className={cn("mt-1 block line-clamp-2 font-reading leading-reading text-content-secondary", controlSupportingTextClasses[size])}>
             {preview}
           </span>
         )}
@@ -120,9 +120,9 @@ export function ItemRow({
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
       ? kind === "navigation"
-        ? "border-l-zinc-200 bg-zinc-800 text-zinc-100"
-        : "border-l-zinc-200 bg-zinc-900 text-zinc-100"
-      : "border-l-transparent text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
+        ? "border-l-zinc-200 bg-zinc-800 text-content-primary"
+        : "border-l-zinc-200 bg-zinc-900 text-content-primary"
+      : "border-l-transparent text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
     disabled && "pointer-events-none opacity-50",
     className
   );
@@ -244,12 +244,12 @@ export function ItemSection({
       data-control-size={size}
       className={cn("min-w-0 space-y-1", className)}
     >
-      <header className={cn("flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400", controlMinHeightClasses[headerControlSize])}>
+      <header className={cn("flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted", controlMinHeightClasses[headerControlSize])}>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {action}
       </header>
       {description && (
-        <p className="px-1 font-utility text-compact leading-relaxed text-zinc-400">{description}</p>
+        <p className="px-1 font-utility text-compact leading-reading text-content-muted">{description}</p>
       )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
@@ -285,9 +285,9 @@ export function FileTreeItem({
       data-control-size={size}
       aria-selected={selected || undefined}
       className={cn(
-        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
+        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
         controlMinHeightClasses[size],
-        selected && "bg-zinc-900 text-zinc-100"
+        selected && "bg-zinc-900 text-content-primary"
       )}
       style={{ paddingLeft: depth * 12 + 8 }}
     >
@@ -329,12 +329,12 @@ export function DiffLineItem({
       className={cn(
         "flex whitespace-pre px-2 font-mono text-compact",
         controlMinHeightClasses[size],
-        tone === "add" && "bg-emerald-950/30 text-emerald-200",
-        tone === "remove" && "bg-rose-950/30 text-rose-200",
-        tone === "context" && "text-zinc-400"
+        tone === "add" && "bg-emerald-950/30 text-success-200",
+        tone === "remove" && "bg-rose-950/30 text-removed-200",
+        tone === "context" && "text-content-muted"
       )}
     >
-      {lineNumber && <span className="mr-2 w-10 select-none text-right text-zinc-400">{lineNumber}</span>}
+      {lineNumber && <span className="mr-2 w-10 select-none text-right text-content-muted">{lineNumber}</span>}
       {marker && <span className="mr-2 flex-shrink-0 select-none">{marker}</span>}
       <span>{content}</span>
     </div>
@@ -366,7 +366,7 @@ export function ItemChip({
       data-presentation-level={level}
       data-control-size={size}
       className={cn(
-        "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-tight text-zinc-400",
+        "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-display text-content-muted",
         controlMinHeightClasses[size],
         level === "max" ? "gap-2 px-2 text-compact" : level === "medium" ? "gap-1 px-2 text-compact" : "gap-1 px-1 text-minimal",
         className

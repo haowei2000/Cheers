@@ -40,7 +40,7 @@ const ActivityPage = lazy(() => import("@/features/activity/ActivityPage"));
 function Spinner() {
   return (
     <div className="h-full bg-zinc-950 flex items-center justify-center">
-      <LoadingIcon contentSize="large" className="text-zinc-400" />
+      <LoadingIcon contentSize="large" className="text-content-muted" />
     </div>
   );
 }

@@ -279,14 +279,14 @@ export function DiscussionView({
       <div className="border-b border-zinc-800/80 p-3">
         <div className="flex items-center gap-2">
           <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" />
             <span className="sr-only">Search discussions</span>
             <UiInput
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search discussions"
               inset="leading"
-              className="bg-zinc-900/70 placeholder:text-zinc-400"
+              className="bg-zinc-900/70 placeholder:text-content-muted"
             />
           </label>
           <UiButton content="iconText" action="create" variant="plain"
@@ -294,7 +294,7 @@ export function DiscussionView({
             onClick={startDiscussion}
             aria-label="Create a new discussion"
             controlSize="regular"
-            className="shrink-0 bg-indigo-500 text-white hover:bg-indigo-400 focus-visible:ring-indigo-400"
+            className="shrink-0 bg-indigo-500 text-content-on-accent hover:bg-indigo-400 focus-visible:ring-indigo-400"
           >
             <Plus className="h-4 w-4" />
           </UiButton>
@@ -302,14 +302,14 @@ export function DiscussionView({
       </div>
       <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
         {loadingTopics && topics.length === 0 ? (
-          <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-zinc-400" /></div>
+          <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-content-muted" /></div>
         ) : topicError && topics.length === 0 ? (
           <ErrorState title="Couldn't load discussions" description={topicError} action={{ label: "Retry", onClick: refreshTopics }} />
         ) : topics.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <MessageCircle className="h-5 w-5 text-zinc-400" />
-            <div><p className="text-regular font-medium text-zinc-200">No discussions yet</p><p className="mt-1 text-compact text-zinc-400">Start a topic for the channel.</p></div>
-            <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
+            <MessageCircle className="h-5 w-5 text-content-muted" />
+            <div><p className="text-regular font-medium text-content-secondary">No discussions yet</p><p className="mt-1 text-compact text-content-muted">Start a topic for the channel.</p></div>
+            <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-accent-300 hover:text-accent-200">Start the first discussion</UiButton>
           </div>
         ) : (
           <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
@@ -333,15 +333,15 @@ export function DiscussionView({
                     {copy.title}{copy.preview ? ` — ${copy.preview}` : ""}
                   </span>}
                   status={(
-                    <span className={cn("inline-flex shrink-0 items-center gap-2 text-zinc-400", controlTextClasses.compact)}>
+                    <span className={cn("inline-flex shrink-0 items-center gap-2 text-content-muted", controlTextClasses.compact)}>
                       <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
                       <span className="inline-flex items-center gap-1"><Users className={controlIconClasses.compact} />{topic.participant_count}</span>
                     </span>
                   )}
                   trailing={(
-                    <span className={cn("inline-flex items-center gap-1 tabular-nums text-zinc-400", controlTextClasses.compact)}>
+                    <span className={cn("inline-flex items-center gap-1 tabular-nums text-content-muted", controlTextClasses.compact)}>
                       {relativeActivity(topic.last_activity_at)}
-                      <ChevronRight className={cn(controlIconClasses.regular, "text-zinc-400 transition-transform group-hover/item:translate-x-0.5")} />
+                      <ChevronRight className={cn(controlIconClasses.regular, "text-content-muted transition-transform group-hover/item:translate-x-0.5")} />
                     </span>
                   )}
                   className={cn(
@@ -352,7 +352,7 @@ export function DiscussionView({
               );
             })}
             {nextCursor && (
-              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className=" text-zinc-100 hover:bg-zinc-900 hover:text-zinc-50">
+              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className=" text-content-primary hover:bg-zinc-900 hover:text-content-strong">
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
               </UiButton>
             )}
@@ -365,17 +365,17 @@ export function DiscussionView({
   const detailPane = (
     <section className="flex min-h-0 flex-[1.5] flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
-        <UiButton action="start" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-zinc-100 hover:bg-zinc-900 focus-visible:ring-inset">
+        <UiButton action="start" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-content-primary hover:bg-zinc-900 focus-visible:ring-inset">
           <ArrowLeft className="h-4 w-4" />Discussions
         </UiButton>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
       {creating ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
-          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-indigo-400" /><h2 className="mt-4 text-comfortable font-semibold text-zinc-100">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-zinc-400">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
+          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-accent-400" /><h2 className="mt-4 text-comfortable font-semibold text-content-primary">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-content-muted">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
         </div>
       ) : loadingDetail ? (
-        <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-zinc-400" /></div>
+        <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-content-muted" /></div>
       ) : detailError ? (
         <ErrorState className="flex-1" title="Couldn't open discussion" description={detailError} action={{ label: "Retry", onClick: () => void refreshDetail() }} />
       ) : detail ? (
@@ -385,10 +385,10 @@ export function DiscussionView({
               <div className="flex items-start gap-3">
                 <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />
                 <div className="min-w-0 flex-1">
-                  <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-[-0.015em] text-zinc-100">{titleAndPreview(detail.root).title}</h2>
-                  <p className="mt-1 font-utility text-compact text-zinc-400">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
+                  <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-display text-content-primary">{titleAndPreview(detail.root).title}</h2>
+                  <p className="mt-1 font-utility text-compact text-content-muted">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
                   {titleAndPreview(detail.root).preview && (
-                    <p className="mt-2 line-clamp-3 font-reading text-regular font-normal leading-6 text-zinc-400">{titleAndPreview(detail.root).preview}</p>
+                    <p className="mt-2 line-clamp-3 font-reading text-regular font-normal leading-6 text-content-muted">{titleAndPreview(detail.root).preview}</p>
                   )}
                 </div>
               </div>
@@ -397,12 +397,12 @@ export function DiscussionView({
           <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto py-3">
             <div className="mx-auto flex max-w-[56rem] flex-col gap-1 px-2 md:px-4">
               {detail.meta.has_more_before && (
-                <UiButton action="more" variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto  text-zinc-100 hover:bg-zinc-900 hover:text-zinc-50">
+                <UiButton action="more" variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto  text-content-primary hover:bg-zinc-900 hover:text-content-strong">
                   {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
                 </UiButton>
               )}
               {detail.replies.length === 0 ? (
-                <div className="py-16 text-center text-regular text-zinc-400">No replies yet. Continue the discussion below.</div>
+                <div className="py-16 text-center text-regular text-content-muted">No replies yet. Continue the discussion below.</div>
               ) : detail.replies.map((message, index) => (
                 <div key={message.msg_id} data-msg-id={message.msg_id}>
                   <MessageItem
@@ -421,7 +421,7 @@ export function DiscussionView({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-zinc-400" /><p className="mt-3 text-regular font-medium text-zinc-200">Select a discussion</p><p className="mt-1 text-compact text-zinc-400">Open a topic to read and reply.</p></div></div>
+        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-content-muted" /><p className="mt-3 text-regular font-medium text-content-secondary">Select a discussion</p><p className="mt-1 text-compact text-content-muted">Open a topic to read and reply.</p></div></div>
       )}
       </div>
       {(selectedId || creating) && footer}

@@ -69,9 +69,9 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           toast.error("Clipboard unavailable — select and copy manually");
         }
       }}
-      className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50 transition-colors"
+      className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong transition-colors"
     >
-      {done ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+      {done ? <Check className="w-3.5 h-3.5 text-success-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
     </UiButton>
   );
@@ -185,18 +185,18 @@ export function BotDetailPanel({
           />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-zinc-100 truncate">
+          <p className="font-semibold text-content-primary truncate">
             {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
             {name}
           </p>
-          <p className="text-regular text-zinc-400 truncate">
+          <p className="text-regular text-content-muted truncate">
             @{bot.username}
             {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
         </div>
         <div className="ml-auto flex flex-shrink-0 items-center gap-3">
           {bot.is_disabled && (
-            <span className="inline-flex items-center gap-1 text-compact text-red-400">
+            <span className="inline-flex items-center gap-1 text-compact text-danger-400">
               <Ban className="w-3.5 h-3.5" />
               Disabled
             </span>
@@ -204,7 +204,7 @@ export function BotDetailPanel({
           <span
             className={cn(
               "inline-flex items-center gap-1 text-compact",
-              bot.is_online ? "text-emerald-400" : "text-zinc-400"
+              bot.is_online ? "text-success-400" : "text-content-muted"
             )}
             title={bot.is_online ? "An installation is online" : "No installation is online"}
           >
@@ -226,7 +226,7 @@ export function BotDetailPanel({
               controlSize="regular" className={cn(
  "inline-flex items-center gap-2  font-medium border-b-2 -mb-px transition-colors",
  active
- ? "border-indigo-500 text-zinc-100": "border-transparent text-zinc-100 hover:text-zinc-50"
+ ? "border-indigo-500 text-content-primary": "border-transparent text-content-primary hover:text-content-strong"
  )}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -261,7 +261,7 @@ export function BotDetailPanel({
               onAddInstallation={onAddInstallation}
             />
           ) : (
-            <p className="text-compact text-zinc-400">Only the bot owner or an administrator can view installations.</p>
+            <p className="text-compact text-content-muted">Only the bot owner or an administrator can view installations.</p>
           )
         )}
         {tab === "events" && (
@@ -319,7 +319,7 @@ function BotInstallationsSection({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <SectionHead>Installations</SectionHead>
-          <p className="mt-1 max-w-2xl text-compact text-zinc-400">
+          <p className="mt-1 max-w-2xl text-compact text-content-muted">
             An installation is this bot running on a specific device. Each one has its own
             credential, agent, workspace, and connection state. One installation is active at a time.
           </p>
@@ -333,7 +333,7 @@ function BotInstallationsSection({
         />
       </div>
       {items.length === 0 && (
-        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-zinc-400">
+        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted">
           This bot has no installations yet. Add one to choose where the bot runs.
         </p>
       )}
@@ -343,19 +343,19 @@ function BotInstallationsSection({
             <OperationsItem
               containerRole="presentation"
               title={item.device_name}
-              leading={<Laptop className="h-4 w-4 text-zinc-400" />}
+              leading={<Laptop className="h-4 w-4 text-content-muted" />}
               subtitle={`${item.agent_type} · runtime ${item.connector_version ?? "version unknown"} · ${item.credential_prefix}`}
               metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
               status={(
-                <span className={cn("text-compact", item.online ? "text-emerald-400" : "text-zinc-400")}>
+                <span className={cn("text-compact", item.online ? "text-success-400" : "text-content-muted")}>
                   {item.revoked_at ? "revoked" : item.online ? "online" : item.status}
                 </span>
               )}
             />
-            <div className="mx-2 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-minimal text-zinc-400">
+            <div className="mx-2 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-minimal text-content-muted">
               <span className={cn(
-                item.mcp_connection_state === "connected" ? "text-emerald-400" :
-                  item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed" ? "text-amber-400" : "text-zinc-400"
+                item.mcp_connection_state === "connected" ? "text-success-400" :
+                  item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed" ? "text-warning-400" : "text-content-muted"
               )}>MCP: {item.mcp_connection_state.replaceAll("_", " ")}</span>
               {item.mcp_last_seen_at && <span>Last MCP request {new Date(item.mcp_last_seen_at).toLocaleString()}</span>}
               {item.agent_profile?.verified_version_range && (
@@ -363,7 +363,7 @@ function BotInstallationsSection({
               )}
             </div>
             {item.mcp_connection_state !== "connected" && item.agent_profile?.login_hint && (
-              <p className="mx-2 mb-2 rounded-sm bg-zinc-950/50 px-2 py-2 text-compact text-zinc-400">
+              <p className="mx-2 mb-2 rounded-sm bg-zinc-950/50 px-2 py-2 text-compact text-content-muted">
                 {item.agent_profile.login_hint}
               </p>
             )}
@@ -406,7 +406,7 @@ function BotInstallationsSection({
               </div>
             )}
             {issued?.id === item.installation_id && (
-              <div className="mx-2 mb-2 rounded-sm bg-amber-950/40 p-2 text-compact text-amber-100">
+              <div className="mx-2 mb-2 rounded-sm bg-amber-950/40 p-2 text-compact text-warning-100">
                 <p>This credential is shown once. Replace the installation credential file before reconnecting.</p>
                 <code className="mt-1 block break-all select-all">{issued.credential}</code>
                 <CopyButton value={issued.credential} />
@@ -507,7 +507,7 @@ function BotOverview({
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
-          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-zinc-400">
+          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-content-muted">
             {bot.bot_id}
           </code>
           <CopyButton value={bot.bot_id} label="" />
@@ -565,7 +565,7 @@ function BotOverview({
                   controlSize="regular" className={cn(
  "inline-flex items-center gap-2 rounded-sm  transition-colors disabled:opacity-50",
  bot.is_disabled
- ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50": "bg-red-950/40 text-red-300 hover:bg-red-950/70"
+ ? "bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong": "bg-red-950/40 text-danger-300 hover:bg-red-950/70"
  )}
                 >
                   {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
@@ -580,7 +580,7 @@ function BotOverview({
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-red-300 hover:bg-red-950/70 disabled:opacity-50 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-danger-300 hover:bg-red-950/70 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
@@ -795,7 +795,7 @@ function BotStatusEditor({
           label="Sends channel data to an external AI provider"
           checked={externalProcessor}
           onChange={(e) => setExternalProcessor(e.target.checked)}
-          className="text-zinc-200"
+          className="text-content-secondary"
         />
         {externalProcessor && (
           <>
@@ -803,7 +803,7 @@ function BotStatusEditor({
             <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
             <Field label="Data use shown to members"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
             <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
-            <p className="text-compact text-zinc-400">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
+            <p className="text-compact text-content-muted">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
           </>
         )}
       </div>
@@ -818,7 +818,7 @@ function BotStatusEditor({
         <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
         {auto && (
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-compact text-zinc-400">Every</span>
+            <span className="text-compact text-content-muted">Every</span>
             <Input
               type="number"
               min={5}
@@ -828,7 +828,7 @@ function BotStatusEditor({
               className="text-center"
               aria-label="Interval minutes"
             />
-            <span className="text-compact text-zinc-400">min</span>
+            <span className="text-compact text-content-muted">min</span>
             <Tip
               align="end"
               content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
@@ -848,7 +848,7 @@ function BotStatusEditor({
         )}
       </div>
 
-      {promptError && <p className="text-compact text-red-400">{promptError}</p>}
+      {promptError && <p className="text-compact text-danger-400">{promptError}</p>}
 
       <div className="flex items-center gap-2">
         <ActionButton action="save" context="form" accessibleLabel="Save bot profile" controlSize="compact" onClick={() => void save()} disabled={busy} />
@@ -869,7 +869,7 @@ function BotStatusEditor({
       </div>
 
       {refreshPhase === "timeout" && (
-        <p className="text-compact text-amber-400/80 leading-snug">
+        <p className="text-compact text-warning-400/80 leading-heading">
           The agent hasn't responded yet — it may still be working. Its status will update
           here on its own once it writes back.
         </p>
@@ -885,7 +885,7 @@ function BotStatusEditor({
             autoFocus
             aria-label="Status update prompt"
           />
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             The bot answers this prompt on the schedule and the reply becomes its status.
             Save the profile to apply your changes.
           </p>

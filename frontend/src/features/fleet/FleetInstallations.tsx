@@ -73,9 +73,9 @@ export function FleetInstallations({
               metadata={`Last seen ${
                 item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"
               } · MCP ${item.mcp_connection_state.replaceAll("_", " ")}`}
-              leading={<Laptop className="h-4 w-4 text-zinc-400" />}
+              leading={<Laptop className="h-4 w-4 text-content-muted" />}
               status={
-                <span className={cn("text-compact", item.online ? "text-emerald-400" : "text-zinc-400")}>
+                <span className={cn("text-compact", item.online ? "text-success-400" : "text-content-muted")}>
                   {item.revoked_at ? "Revoked" : item.online ? "Online" : item.status}
                 </span>
               }
@@ -147,8 +147,8 @@ export function FleetInstallations({
       {isTauri() && (
         <section className="space-y-3">
           <div>
-            <h2 className="font-utility text-compact font-semibold uppercase tracking-[0.1em] text-zinc-400">This Mac</h2>
-            <p className="mt-1 text-compact text-zinc-400">Local connector processes, logs, workspaces, and runtime health.</p>
+            <h2 className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">This Mac</h2>
+            <p className="mt-1 text-compact text-content-muted">Local connector processes, logs, workspaces, and runtime health.</p>
           </div>
           <ConnectorManager />
         </section>
@@ -156,8 +156,8 @@ export function FleetInstallations({
       {issued && (
         <Dialog title={`Credential for ${issued.device}`} onClose={() => setIssued(null)} maxWidth="max-w-lg">
           <div className="space-y-3">
-            <p className="text-compact text-amber-200">This credential is shown once. Replace the installation credential before reconnecting.</p>
-            <code className="block break-all rounded-sm bg-zinc-950 p-3 text-compact text-zinc-200 select-all">
+            <p className="text-compact text-warning-200">This credential is shown once. Replace the installation credential before reconnecting.</p>
+            <code className="block break-all rounded-sm bg-zinc-950 p-3 text-compact text-content-secondary select-all">
               {issued.credential}
             </code>
             <CopyButton value={issued.credential} />

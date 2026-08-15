@@ -83,10 +83,10 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
           /* clipboard blocked */
         }
       }}
-      className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50 transition-colors"
+      className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong transition-colors"
     >
       {done ? (
-        <Check className="w-3.5 h-3.5 text-emerald-400" />
+        <Check className="w-3.5 h-3.5 text-success-400" />
       ) : (
         <Copy className="w-3.5 h-3.5" />
       )}
@@ -115,13 +115,13 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
           <span
             className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-compact font-semibold ${
               i <= step
-                ? "bg-indigo-600 text-white"
-                : "bg-zinc-800 text-zinc-400"
+                ? "bg-indigo-600 text-content-on-accent"
+                : "bg-zinc-800 text-content-muted"
             }`}
           >
             {i + 1}
           </span>
-          <span className={i <= step ? "text-zinc-200" : "text-zinc-400"}>
+          <span className={i <= step ? "text-content-secondary" : "text-content-muted"}>
             {label}
           </span>
           {i < labels.length - 1 && (
@@ -142,7 +142,7 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
 function ReachabilityNote({ reachability }: { reachability: { configured: boolean } }) {
   if (reachability.configured) return null;
   return (
-    <p className="flex items-start gap-2 text-compact text-amber-400">
+    <p className="flex items-start gap-2 text-compact text-warning-400">
       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
@@ -239,7 +239,7 @@ export function CreateInstallationWizard({
     <Dialog
       title={
         <span className="flex items-center gap-2">
-          <Laptop className="w-5 h-5 text-indigo-400" /> Create an installation
+          <Laptop className="w-5 h-5 text-accent-400" /> Create an installation
         </span>
       }
       onClose={onClose}
@@ -248,34 +248,34 @@ export function CreateInstallationWizard({
       <Stepper step={step} />
       <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-3">
         {error && (
-          <p className="text-compact text-red-400 break-words">{error}</p>
+          <p className="text-compact text-danger-400 break-words">{error}</p>
         )}
 
         {/* ── Step 0: choose an existing bot and installation agent ─── */}
         {step === 0 && (
           <div className="space-y-3">
-            <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-indigo-100">
+            <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-accent-100">
               <p className="font-medium">Create a runtime installation for an existing bot.</p>
-              <p className="mt-1 text-indigo-200/75">
+              <p className="mt-1 text-accent-200/75">
                 The bot identity stays unchanged. This installation chooses its own agent and device.
               </p>
             </div>
             <div>
-              <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot identity</label>
-              <UiSelect value={existingId} disabled={Boolean(initialBotId)} onChange={(e) => setExistingId(e.target.value)} controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">Bot identity</label>
+              <UiSelect value={existingId} disabled={Boolean(initialBotId)} onChange={(e) => setExistingId(e.target.value)} controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 {bots.map((b) => <option key={b.bot_id} value={b.bot_id}>{b.display_name || b.username} (@{b.username})</option>)}
               </UiSelect>
-              {!bots.length && <p className="mt-2 text-compact text-amber-300">Create a bot identity before adding an installation.</p>}
+              {!bots.length && <p className="mt-2 text-compact text-warning-300">Create a bot identity before adding an installation.</p>}
             </div>
 
             <div>
-              <label className="text-compact font-medium text-zinc-400 uppercase tracking-wide block mb-1">
+              <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
                 Agent type
               </label>
               <UiSelect
                 value={agentType}
                 onChange={(e) => setAgentType(e.target.value)}
-                controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -304,16 +304,16 @@ export function CreateInstallationWizard({
         {/* ── Step 1: pick a mode ───────────────────────────────────── */}
         {step === 1 && (
           <div className="space-y-3">
-            <p className="text-compact text-zinc-400">
+            <p className="text-compact text-content-muted">
               Connecting{" "}
-              <span className="text-zinc-200">
+              <span className="text-content-secondary">
                 @{bot?.username}
               </span>
               . Choose how the device that runs this bot will receive its secure pairing code.
             </p>
             <div className="grid gap-2">
               <ModeCard
-                icon={<Terminal className="w-5 h-5 text-indigo-300" />}
+                icon={<Terminal className="w-5 h-5 text-accent-300" />}
                 title="Run one command on the host"
                 badge="Easiest"
                 desc="Recommended. One command pairs the bot and keeps its installation running in the background."
@@ -321,7 +321,7 @@ export function CreateInstallationWizard({
                 disabled={busy}
               />
               <ModeCard
-                icon={<Sparkles className="w-5 h-5 text-indigo-300" />}
+                icon={<Sparkles className="w-5 h-5 text-accent-300" />}
                 title="Ask an agent on the host to set it up"
                 desc="Copy a prompt to an agent that has terminal access on the host. It follows the same guided installer."
                 onClick={() => pickMode("agent")}
@@ -332,7 +332,7 @@ export function CreateInstallationWizard({
               <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
+                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </UiButton>
@@ -357,7 +357,7 @@ export function CreateInstallationWizard({
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
+                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
               </UiButton>
@@ -411,19 +411,19 @@ function ConnectionWatch({ botId, username }: { botId: string; username: string 
 
   if (online === null) {
     return (
-      <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-zinc-400">
+      <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-content-muted">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Checking whether @{username} is connected…
       </p>
     );
   }
   return online ? (
-    <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-compact text-emerald-300">
+    <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-compact text-success-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
       @{username} is online — this installation reached Cheers. You're done.
     </p>
   ) : (
-    <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-zinc-400">
+    <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-content-muted">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
       Waiting for @{username}'s installation — finish setup on the device that
       runs the agent. This updates on its own.
@@ -457,7 +457,7 @@ function ModeCard({
         {icon}
       </div>}
       title={<span title={`${title} — ${desc}`}>{title} — {desc}</span>}
-      status={badge ? <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-zinc-400">{badge}</span> : undefined}
+      status={badge ? <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-content-muted">{badge}</span> : undefined}
     />
   );
 }
@@ -484,8 +484,8 @@ function ManualPanel({
   const tokenFile = config?.credential_file ?? `secrets/${accountId}.token`;
   return (
     <div className="space-y-3">
-      <p className="text-compact text-zinc-400">
-        Manual setup for <span className="text-zinc-200">@{bot.username}</span>{" "}
+      <p className="text-compact text-content-muted">
+        Manual setup for <span className="text-content-secondary">@{bot.username}</span>{" "}
         ({agentType}). Two pieces: a settings file (safe to keep) and an installation credential
         (a password — save it so only you can read it, and never commit it).
       </p>
@@ -493,14 +493,14 @@ function ManualPanel({
       {/* 1. config */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             1. Connector config
           </span>
           <UiButton action="create" variant="plain"
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 disabled:opacity-50"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -510,7 +510,7 @@ function ManualPanel({
           <>
             <ReachabilityNote reachability={config.reachability} />
             <div className="rounded-sm bg-zinc-950 p-3 max-h-48 overflow-y-auto">
-              <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+              <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
                 {config.config_toml}
               </pre>
             </div>
@@ -524,12 +524,12 @@ function ManualPanel({
                     config.config_toml
                   )
                 }
-                className="inline-flex items-center gap-1  text-zinc-100 hover:text-zinc-50"
+                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </UiButton>
-              <span className="text-compact text-zinc-400">
-                save as <code className="text-zinc-400">{configFile}</code>
+              <span className="text-compact text-content-muted">
+                save as <code className="text-content-muted">{configFile}</code>
               </span>
             </div>
           </>
@@ -539,7 +539,7 @@ function ManualPanel({
       {/* 2. installation credential */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             2. Installation credential
           </span>
           <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
@@ -549,17 +549,17 @@ function ManualPanel({
         </div>
         {token && (
           <>
-            <p className="text-compact text-amber-400">
+            <p className="text-compact text-warning-400">
               {token.note ?? "Shown once. Rotating replaces this installation's previous credential."}
             </p>
             <div className="rounded-sm bg-zinc-950 p-3">
-              <code className="text-compact text-emerald-300 break-all">
+              <code className="text-compact text-success-300 break-all">
                 {token.token}
               </code>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-compact text-zinc-400">
-                write to <code className="text-zinc-400">~/.cheers/{tokenFile}</code> (chmod 600)
+              <span className="text-compact text-content-muted">
+                write to <code className="text-content-muted">~/.cheers/{tokenFile}</code> (chmod 600)
               </span>
               <CopyBtn value={token.token} label="Copy credential" />
             </div>
@@ -569,9 +569,9 @@ function ManualPanel({
 
       {/* 3. run */}
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <span className="text-compact font-semibold text-zinc-200">3. Start it</span>
+        <span className="text-compact font-semibold text-content-secondary">3. Start it</span>
         <div className="rounded-sm bg-zinc-950 p-3">
-          <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+          <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
 # (save the config + credential from above into the paths shown)
 cce-acp-connector start --config ${configFile} --name ${accountId}
@@ -579,12 +579,12 @@ cce-acp-connector status --name ${accountId}`}
           </pre>
         </div>
         <div className="space-y-2 pt-1">
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             Need the connector binary? Cheers requires an Agent adapter with native HTTP MCP OAuth
             support. Unsupported adapters fail closed; no stdio sidecar is installed.
           </p>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <pre className="text-compact leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+            <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
               {CONNECTOR_DOWNLOAD_CMD}
             </pre>
           </div>
@@ -593,16 +593,16 @@ cce-acp-connector status --name ${accountId}`}
               href={`https://github.com/${CONNECTOR_RELEASES_REPO}/releases/tag/${CONNECTOR_RELEASE_TAG}`}
               target="_blank"
               rel="noreferrer"
-              className="text-compact text-indigo-300 hover:text-indigo-200 underline underline-offset-2"
+              className="text-compact text-accent-300 hover:text-accent-200 underline underline-offset-2"
             >
               All platforms &amp; versions on GitHub Releases
             </a>
             <CopyBtn value={CONNECTOR_DOWNLOAD_CMD} label="Copy command" />
           </div>
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             Or build from source:{" "}
-            <code className="text-zinc-400">cargo build --release</code> in{" "}
-            <code className="text-zinc-400">packages/cheers-acp-connector-rs</code>.
+            <code className="text-content-muted">cargo build --release</code> in{" "}
+            <code className="text-content-muted">packages/cheers-acp-connector-rs</code>.
           </p>
         </div>
       </div>
@@ -665,16 +665,16 @@ function ScriptPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-compact text-zinc-400">
+      <p className="text-compact text-content-muted">
         One command on the agent's machine for{" "}
-        <span className="text-zinc-200">@{bot.username}</span> ({agentType}). It
+        <span className="text-content-secondary">@{bot.username}</span> ({agentType}). It
         trades the code below for an installation credential, saves both files, and installs the
         connector so it restarts on its own after a reboot.
       </p>
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             1. Create a pending installation
           </span>
           <div className="flex items-center gap-2">
@@ -683,7 +683,7 @@ function ScriptPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
@@ -699,7 +699,7 @@ function ScriptPanel({
           </div>
         </div>
         {code && (
-          <p className="text-compact text-amber-400">
+          <p className="text-compact text-warning-400">
             Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.{" "}
             {code.live_pairings} pending installation{code.live_pairings === 1 ? "" : "s"} for this bot.
           </p>
@@ -708,25 +708,25 @@ function ScriptPanel({
 
       {code && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             2. Run on the agent's machine
           </span>
           <div className="rounded-sm bg-zinc-950 p-3">
-            <pre className="text-compact leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
+            <pre className="text-compact leading-reading text-success-300 whitespace-pre-wrap break-all">
               {command}
             </pre>
           </div>
           {needsApiKeyHint && (
             <div className="rounded-sm bg-amber-500/5 px-3 py-2 space-y-2">
-              <p className="text-compact leading-relaxed text-amber-200/90">
+              <p className="text-compact leading-reading text-warning-200/90">
                 Headless API-key auth: export{" "}
-                <code className="text-amber-100">{apiKeyVar}</code> in the{" "}
-                <span className="text-amber-100">same</span> command so
+                <code className="text-warning-100">{apiKeyVar}</code> in the{" "}
+                <span className="text-warning-100">same</span> command so
                 install.sh wires it into systemd/launchd. A key only in your
                 shell profile will not reach the connector — and Cheers will not
                 show a login URL for EnvVar methods.
               </p>
-              <pre className="text-compact leading-relaxed text-emerald-300/90 whitespace-pre-wrap break-all">
+              <pre className="text-compact leading-reading text-success-300/90 whitespace-pre-wrap break-all">
                 {commandWithKey}
               </pre>
               <div className="flex justify-end">
@@ -734,15 +734,15 @@ function ScriptPanel({
               </div>
             </div>
           )}
-          <p className="text-compact text-zinc-400">
+          <p className="text-compact text-content-muted">
             No terminal handy? If that machine has the Cheers desktop app, open{" "}
-            <span className="text-zinc-200">Settings → Installations → I have a code</span>{" "}
+            <span className="text-content-secondary">Settings → Installations → I have a code</span>{" "}
             and paste the code there instead.
           </p>
           <div className="flex items-center justify-between">
-            <span className="text-compact text-zinc-400">
+            <span className="text-compact text-content-muted">
               Tip: prepend a space so the code stays out of shell history
-              (<code className="text-zinc-400">HISTCONTROL=ignorespace</code>).
+              (<code className="text-content-muted">HISTCONTROL=ignorespace</code>).
             </span>
             <CopyBtn value={command} label="Copy command" />
           </div>
@@ -808,22 +808,22 @@ function AgentPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-compact text-zinc-400">
+      <p className="text-compact text-content-muted">
         Hand your own agent a prompt and it runs the installer for you. Honest
         framing: this is the install script (mode 2), driven by your agent — so
         it must leave a background service running, or{" "}
-        <span className="text-zinc-200">@{bot.username}</span> goes offline when
+        <span className="text-content-secondary">@{bot.username}</span> goes offline when
         the agent's turn ends.
       </p>
       {guidanceError && (
-        <p className="text-compact text-red-400 break-words">
+        <p className="text-compact text-danger-400 break-words">
           Failed to load the agent prompt template: {guidanceError}
         </p>
       )}
 
       <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             1. Create a pending installation
           </span>
           <div className="flex items-center gap-2">
@@ -832,7 +832,7 @@ function AgentPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </UiButton>
@@ -848,7 +848,7 @@ function AgentPanel({
           </div>
         </div>
         {code && (
-          <p className="text-compact text-amber-400">
+          <p className="text-compact text-warning-400">
             Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.
           </p>
         )}
@@ -856,11 +856,11 @@ function AgentPanel({
 
       {code && guidance && (
         <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-          <span className="text-compact font-semibold text-zinc-200">
+          <span className="text-compact font-semibold text-content-secondary">
             2. Paste this to your agent
           </span>
           <div className="rounded-sm bg-zinc-950 p-3 max-h-56 overflow-y-auto">
-            <pre className="text-compact leading-relaxed text-zinc-200 whitespace-pre-wrap break-words">
+            <pre className="text-compact leading-reading text-content-secondary whitespace-pre-wrap break-words">
               {prompt}
             </pre>
           </div>

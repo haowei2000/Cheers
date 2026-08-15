@@ -61,16 +61,24 @@
 
 ### 排版
 
+所有生产文字只使用 `text-minimal`、`text-compact`、`text-regular`、
+`text-comfortable` 四档语义字号。字体族、光学变体、字号、行高、字距、字重、
+前景层级和状态颜色均在全局 token 中定义。中性文字使用
+`text-content-strong`、`text-content-primary`、`text-content-secondary`、
+`text-content-muted`；状态文字使用 `text-accent-*`、`text-danger-*`、
+`text-warning-*`、`text-success-*`、`text-info-*`、`text-removed-*`。
+生产代码不直接使用 `text-zinc-*`、`text-red-*` 等原始色板前景类。
+
 | 角色 | 写法 |
 |---|---|
-| 页面 H1 | `text-lg font-semibold` |
-| 弹窗 / 面板标题 | `text-sm font-semibold text-zinc-100` |
-| 正文 | `text-sm text-zinc-200/300` |
-| 表单 label | `text-xs font-medium text-zinc-400 uppercase tracking-wide` |
-| 区块标题 | `text-xs font-semibold text-zinc-400 uppercase tracking-wider` |
-| 面板内分组标签 | `text-[10px] uppercase tracking-wide text-zinc-400` |
-| 提示 / 帮助文字 | `text-xs text-zinc-400`（更暗用 `zinc-600`） |
-| 密集面板 mini 阶 | `text-[11px]` / `text-[10px]` —— 下限 10px |
+| 页面 H1 | `text-comfortable font-semibold` |
+| 弹窗 / 面板标题 | `text-regular font-semibold text-content-primary` |
+| 正文 | `text-regular text-content-secondary` |
+| 表单 label | `text-compact font-medium text-content-muted uppercase tracking-label` |
+| 区块标题 | `text-compact font-semibold text-content-muted uppercase tracking-section` |
+| 面板内分组标签 | `text-minimal uppercase tracking-label text-content-muted` |
+| 提示 / 帮助文字 | `text-compact text-content-muted`（有意义文字的最低对比层级） |
+| 密集面板 mini 阶 | `text-compact` / `text-minimal` —— 下限 10px |
 
 ### 形状与状态
 
@@ -107,10 +115,10 @@ Back / Cancel 使用文字；弹窗底部 Back / Cancel 使用文字；破坏性
 
 | 类型 | 写法 |
 |---|---|
-| 中性软底 | `rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100` |
-| indigo 软底 | `rounded-lg bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30` |
-| 危险软底 | `rounded-lg bg-red-950/40 text-red-300 hover:bg-red-950/70` |
-| 警告软底 | `rounded bg-amber-900/40 text-amber-200 hover:bg-amber-900/60` |
+| 中性软底 | `rounded-lg bg-zinc-800 text-content-secondary hover:bg-zinc-700 hover:text-content-primary` |
+| indigo 软底 | `rounded-lg bg-indigo-600/15 text-accent-200 hover:bg-indigo-600/30` |
+| 危险软底 | `rounded-lg bg-red-950/40 text-danger-300 hover:bg-red-950/70` |
+| 警告软底 | `rounded bg-amber-900/40 text-warning-200 hover:bg-amber-900/60` |
 
 **禁止**：任何按钮上出现 `border border-*`（唯一例外：`fileView.tsx` 的虚线
 staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 主按钮——用
@@ -119,7 +127,7 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 ### 2.2 搜索 / 过滤框 —— 三种形态
 
 同一套视觉语言，三种放置方式。图标统一用 lucide `Search`（或语境图标），
-`w-3.5`–`w-4 text-zinc-400`，内部 input 透明。
+`w-3.5`–`w-4 text-content-muted`，内部 input 透明。
 
 **A. 弹窗内选择器搜索** —— 样式在 wrapper 上，input 裸写。
 用于 NewChannelDialog、NewDmDialog、频道设置的成员搜索：
@@ -127,9 +135,9 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 ```tsx
 <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
                 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-  <Search className="w-4 h-4 text-zinc-400" />
-  <input className="flex-1 bg-transparent text-sm text-zinc-200 outline-none
-                    placeholder:text-zinc-400" placeholder="…" />
+  <Search className="w-4 h-4 text-content-muted" />
+  <input className="flex-1 bg-transparent text-regular text-content-secondary outline-none
+                    placeholder:text-content-muted" placeholder="…" />
 </div>
 ```
 
@@ -138,9 +146,9 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 
 ```tsx
 <div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-muted" />
   <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-base md:text-sm text-zinc-100 placeholder:text-zinc-400
+                    text-comfortable md:text-regular text-content-primary placeholder:text-content-muted
                     focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
 </div>
 ```
@@ -150,11 +158,11 @@ staged-file chip，虚线表达"尚未拉取"）。禁止手写 `bg-indigo-600` 
 
 ```tsx
 <input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-xs text-zinc-200 outline-none placeholder:text-zinc-400
+                  text-compact text-content-secondary outline-none placeholder:text-content-muted
                   focus:border-indigo-500/60" />
 ```
 
-注意：移动端可达的 input 一律 `text-base md:text-sm`（防 iOS 聚焦自动缩放）。
+注意：移动端可达的 input 一律 `text-comfortable md:text-regular`（防 iOS 聚焦自动缩放）。
 弹窗内字段底色用 `bg-zinc-950`（内凹感）；`zinc-950` 页面上独立出现时用
 `bg-zinc-900`。
 
@@ -166,7 +174,7 @@ select / textarea 镜像同一写法：
 
 ```tsx
 // 字段标准写法（input / select / textarea）—— 无影响布局的边框
-className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400
+className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-content-primary placeholder:text-content-muted
            ring-1 ring-inset ring-zinc-600
            focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
@@ -188,18 +196,18 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 
 ### 2.5 Chip（composer、文件）
 
-无边框软胶囊：`rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px]`。
-可交互的加 `hover:bg-zinc-800 hover:text-zinc-200`；激活/展开态切换为
-`bg-indigo-600/15 text-indigo-200`。
+无边框软胶囊：`rounded-lg bg-zinc-800/60 px-2 py-1 text-compact`。
+可交互的加 `hover:bg-zinc-800 hover:text-content-secondary`；激活/展开态切换为
+`bg-indigo-600/15 text-accent-200`。
 
 ### 2.6 徽标与计数
 
 | 徽标 | 写法 |
 |---|---|
-| BOT 标签 | `text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
-| 未读计数 | `text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
+| BOT 标签 | `text-minimal px-1 py-0.5 rounded bg-indigo-900/60 text-accent-300 font-medium` |
+| 未读计数 | `text-minimal font-bold bg-indigo-600 text-content-on-accent rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
 | 提及计数 | 同上形状，`bg-rose-600` |
-| 角色 / 状态标签 | 名字旁纯文字 `text-[10px] text-zinc-400`（不做 pill） |
+| 角色 / 状态标签 | 名字旁纯文字 `text-minimal text-content-muted`（不做 pill） |
 
 ### 2.7 在线状态点
 
@@ -211,12 +219,12 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 
 - **下划线 Tab**（页面与详情导航——FriendsPage、BotDetailPanel）：
   容器 `flex gap-1 border-b border-zinc-800`；项
-  `px-3 py-2 text-sm border-b-2 -mb-px transition-colors`，激活
-  `border-indigo-500 text-zinc-100`，未激活
-  `border-transparent text-zinc-400 hover:text-zinc-200`。
+  `px-3 py-2 text-regular border-b-2 -mb-px transition-colors`，激活
+  `border-indigo-500 text-content-primary`，未激活
+  `border-transparent text-content-muted hover:text-content-secondary`。
 - **胶囊 Tab**（密集面板工具栏——ViewBoard）：
-  `rounded-md px-2 py-1 text-xs`，激活 `bg-zinc-800 text-zinc-100`，
-  未激活 `text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200`。
+  `rounded-md px-2 py-1 text-compact`，激活 `bg-zinc-800 text-content-primary`，
+  未激活 `text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary`。
 
 不要引入第三种；分段控件（segmented control）复用胶囊写法放进 `bg-zinc-800` 容器。
 
@@ -226,30 +234,30 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
-  <SomeIcon className="w-5 h-5 text-zinc-400 mb-2" />
-  <p className="text-xs text-zinc-400">Nothing here yet</p>
-  <p className="text-[11px] text-zinc-400 mt-0.5">It appears when …</p>
+  <SomeIcon className="w-5 h-5 text-content-muted mb-2" />
+  <p className="text-compact text-content-muted">Nothing here yet</p>
+  <p className="text-compact text-content-muted mt-0.5">It appears when …</p>
 </div>
 ```
 
-紧凑列表可用单行版：`text-xs text-zinc-400 py-4 text-center`。
+紧凑列表可用单行版：`text-compact text-content-muted py-4 text-center`。
 
 ### 2.10 加载态
 
 - 行内 / 操作中：`Loader2` 图标 + `animate-spin`，颜色继承 `currentColor`。
-- 整面加载：`Loader2 w-5 h-5 text-zinc-400 animate-spin` 居中。
+- 整面加载：`Loader2 w-5 h-5 text-content-muted animate-spin` 居中。
 - 按钮：用 `<Button>` 自带的 `loading` prop。
 - 禁止手写 CSS border 圆环 spinner；等待不长时不要 spinner + "Loading…" 双重表达。
 
 ### 2.11 关闭按钮
 
-`text-zinc-400 hover:text-zinc-200`，`X w-4 h-4`，右上角。抽屉和浮动面板可加
+`text-content-muted hover:text-content-secondary`，`X w-4 h-4`，右上角。抽屉和浮动面板可加
 `rounded p-0.5 hover:bg-zinc-800`。hover 目标色是 `zinc-300`——不是 `zinc-200`。
 
 ### 2.12 列表行
 
-可选择行：`px-2.5 py-1.5 rounded-md text-sm hover:bg-zinc-800`；
-选中 `bg-zinc-800 text-zinc-100`（导航列表可按 §2.8 的激活胶囊加 indigo 着色）。
+可选择行：`px-2.5 py-1.5 rounded-md text-regular hover:bg-zinc-800`；
+选中 `bg-zinc-800 text-content-primary`（导航列表可按 §2.8 的激活胶囊加 indigo 着色）。
 所有可交互行必须有 hover 态。
 
 ### 2.17 错误提示——三级体系
@@ -280,7 +288,7 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 
 状态 → 级别速查：`401` → L 接管（自动）· 路由级 `403`/`404` → 面板内
 `<ErrorState>` · 校验 `409`/`422` → 优先字段旁 inline（§2.3 错误 ring +
-`text-red-400`），无表单才 toast · `429`/`5xx`/网络 → `notify.error`，可重试
+`text-danger-400`），无表单才 toast · `429`/`5xx`/网络 → `notify.error`，可重试
 就带 Retry 动作 · ws 断开 → M 级 banner。错误有锚点（某条消息、某个字段）时
 inline 优先于 toast——保留 `MessageItem` 式的「Failed to send + Retry」行。
 

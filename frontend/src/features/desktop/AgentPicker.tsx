@@ -86,10 +86,10 @@ export function AgentPicker({
                   <Terminal className="w-4 h-4" />
                 )}
               </span>
-              <span className="text-compact text-zinc-200 truncate w-full text-center">
+              <span className="text-compact text-content-secondary truncate w-full text-center">
                 {a.label}
               </span>
-              <span className="text-minimal text-zinc-400">
+              <span className="text-minimal text-content-muted">
                 {a.installed ? "installed" : a.installable ? "not installed" : "unavailable"}
               </span>
             </UiButton>
@@ -99,7 +99,7 @@ export function AgentPicker({
                 title={`Install ${a.label}`}
                 disabled={installing !== null}
                 onClick={() => void install(a.key)}
-                content="icon" controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
+                content="icon" controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-content-on-accent flex items-center justify-center"
               >
                 {installing === a.key ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -121,11 +121,11 @@ export function AgentPicker({
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
-        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-zinc-200`}>
+        <span data-design-system-exempt="identity" className={`${avatarSizeClasses.regular} flex items-center justify-center rounded-full bg-zinc-700 text-content-secondary`}>
           <Wrench className="w-4 h-4" />
         </span>
-        <span className="text-compact text-zinc-200">Custom</span>
-        <span className="text-minimal text-zinc-400">command</span>
+        <span className="text-compact text-content-secondary">Custom</span>
+        <span className="text-minimal text-content-muted">command</span>
       </UiButton>
       </div>
     </div>

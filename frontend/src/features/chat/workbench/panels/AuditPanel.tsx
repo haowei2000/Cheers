@@ -151,27 +151,27 @@ function tone(e: AuditEvent): Tone {
   if (d.startsWith("allow") || et.includes("allow") || et === "access_granted")
     return {
       Icon: Check,
-      text: "text-emerald-400",
+      text: "text-success-400",
       label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Approved",
       raw,
     };
   if (d.startsWith("reject") || d.startsWith("deny") || et.includes("reject") || et.includes("deny") || et === "access_revoked")
     return {
       Icon: X,
-      text: "text-red-400",
+      text: "text-danger-400",
       label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Denied",
       raw,
     };
   if (et.includes("expire") || et === "timeout")
     return {
       Icon: Clock,
-      text: "text-zinc-400",
+      text: "text-content-muted",
       label: EVENT_TYPE_LABEL[et] ?? "Expired",
       raw,
     };
   return {
     Icon: ShieldQuestion,
-    text: "text-amber-400",
+    text: "text-warning-400",
     label: e.event_type ? EVENT_TYPE_LABEL[et] ?? humanize(e.event_type) : "Request",
     raw,
   };
@@ -187,7 +187,7 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
   return (
     <span className="inline-flex items-center gap-1 min-w-0">
       <Avatar name={name} src={member?.avatar_url ?? undefined} id={id} size="small" />
-      <span className="truncate text-zinc-400">{name}</span>
+      <span className="truncate text-content-muted">{name}</span>
     </span>
   );
 }
@@ -195,8 +195,8 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-2">
-      <span className="text-minimal uppercase tracking-wide text-zinc-400 w-14 flex-shrink-0 pt-px">{label}</span>
-      <span className="min-w-0 flex-1 text-compact text-zinc-400 break-words">{children}</span>
+      <span className="text-minimal uppercase tracking-label text-content-muted w-14 flex-shrink-0 pt-px">{label}</span>
+      <span className="min-w-0 flex-1 text-compact text-content-muted break-words">{children}</span>
     </div>
   );
 }
@@ -244,12 +244,12 @@ function AuditRow({
         subtitle={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
           <span className={`flex-shrink-0 font-medium ${t.text}`}>{t.label}</span>
           {e.actor_id && <MemberChip id={e.actor_id} member={approver} />}
-          {target && <><span className="text-zinc-400">·</span><MemberChip id={e.target_user_id} member={target} /></>}
+          {target && <><span className="text-content-muted">·</span><MemberChip id={e.target_user_id} member={target} /></>}
         </span>}
         trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-zinc-100 hover:text-indigo-300">
+            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-content-primary hover:text-accent-300">
               <MessageSquareText className="h-3.5 w-3.5" />
             </UiButton>
           )}
@@ -260,7 +260,7 @@ function AuditRow({
             title={open ? "Hide audit details" : "Show audit details"}
             aria-expanded={open}
             onClick={onToggleDetails}
-            className="text-zinc-100 hover:text-zinc-50"
+            className="text-content-primary hover:text-content-strong"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
           </UiButton>
@@ -274,7 +274,7 @@ function AuditRow({
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
-                {e.option_id && <span className="text-zinc-400 font-mono"> · {e.option_id}</span>}
+                {e.option_id && <span className="text-content-muted font-mono"> · {e.option_id}</span>}
               </DetailRow>
             )}
             {toolTitle && !command && (
@@ -284,7 +284,7 @@ function AuditRow({
             )}
             {command && (
               <DetailRow label="Command">
-                <span className="font-mono text-zinc-200 whitespace-pre-wrap">{command}</span>
+                <span className="font-mono text-content-secondary whitespace-pre-wrap">{command}</span>
               </DetailRow>
             )}
             {paths.length > 0 && (
@@ -300,7 +300,7 @@ function AuditRow({
             {kind && <DetailRow label="Kind">{kind}</DetailRow>}
             {e.request_id && (
               <DetailRow label="Request">
-                <span className="font-mono text-zinc-400">{short(e.request_id)}</span>
+                <span className="font-mono text-content-muted">{short(e.request_id)}</span>
               </DetailRow>
             )}
           </div>
@@ -344,9 +344,9 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   return (
     <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
       {events == null ? (
-        <div className="px-3 py-6 text-compact text-zinc-400">Loading…</div>
+        <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
       ) : events.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-zinc-400 flex items-center gap-2">
+        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
           <ShieldCheck className="w-4 h-4" />
           No permission decisions yet
         </div>

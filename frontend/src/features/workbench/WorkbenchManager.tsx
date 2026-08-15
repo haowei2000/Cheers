@@ -157,7 +157,7 @@ export function WorkbenchManager() {
 
   return (
     <section>
-      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
         <Blocks className="w-3.5 h-3.5" />
         Workbench extensions
       </h2>
@@ -189,7 +189,7 @@ export function WorkbenchManager() {
               type="button"
               onClick={() => pluginRef.current?.click()}
               controlSize="compact"
-              className="text-amber-400 hover:text-amber-300"
+              className="text-warning-400 hover:text-warning-300"
             >
               <Upload className="w-3.5 h-3.5" /> Upload HTML
             </UiButton>
@@ -212,11 +212,11 @@ export function WorkbenchManager() {
               <WorkbenchItem
                 key={p.plugin_id}
                 title={<span title={`${p.title} · ${p.plugin_id}`}>{p.title} · {p.plugin_id}</span>}
-                leading={<Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />}
+                leading={<Puzzle className="w-3.5 h-3.5 text-warning-400/70 flex-shrink-0" />}
                 status={p.origin === "system" ? (
                   <span
                     title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
-                    className="text-minimal px-2 py-1 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                    className="text-minimal px-2 py-1 rounded-sm bg-indigo-500/15 text-accent-300 flex-shrink-0"
                   >
                     Official
                   </span>
@@ -234,7 +234,7 @@ export function WorkbenchManager() {
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-100 hover:text-red-400"
+                  className="text-content-primary hover:text-danger-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
@@ -256,7 +256,7 @@ export function WorkbenchManager() {
               type="button"
               onClick={() => tplRef.current?.click()}
               controlSize="compact"
-              className="text-indigo-400 hover:text-indigo-300"
+              className="text-accent-400 hover:text-accent-300"
             >
               <Upload className="w-3.5 h-3.5" /> Upload JSON
             </UiButton>
@@ -281,15 +281,15 @@ export function WorkbenchManager() {
               <WorkbenchItem
                 key={t.id}
                 title={t.title}
-                status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={t.id}>{t.id}</span>}
-                leading={<Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />}
+                status={<span className="max-w-32 truncate font-mono text-minimal text-content-muted" title={t.id}>{t.id}</span>}
+                leading={<Package className="w-3.5 h-3.5 text-accent-400/70 flex-shrink-0" />}
                 actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${t.title}`} variant="plain"
                   onClick={async () => {
                     await deleteGlobalTemplate(t.id);
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-100 hover:text-red-400"
+                  className="text-content-primary hover:text-danger-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
@@ -310,7 +310,7 @@ export function WorkbenchManager() {
                 type="button"
                 onClick={() => personalRef.current?.click()}
                 controlSize="compact"
-                className="text-emerald-400 hover:text-emerald-300"
+                className="text-success-400 hover:text-success-300"
               >
                 <Upload className="w-3.5 h-3.5" /> Install HTML
               </UiButton>
@@ -335,15 +335,15 @@ export function WorkbenchManager() {
                 <WorkbenchItem
                   key={p.id}
                   title={p.title}
-                  status={<span className="max-w-32 truncate font-mono text-minimal text-zinc-400" title={p.id}>{p.id}</span>}
-                  leading={<Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />}
+                  status={<span className="max-w-32 truncate font-mono text-minimal text-content-muted" title={p.id}>{p.id}</span>}
+                  leading={<Laptop className="w-3.5 h-3.5 text-success-400/70 flex-shrink-0" />}
                   actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                     onClick={async () => {
                       await removePersonalPlugin(p.id);
                       await reloadPersonal();
                     }}
                     title="Uninstall from this Mac"
-                    className="text-zinc-100 hover:text-red-400"
+                    className="text-content-primary hover:text-danger-400"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </UiButton>}

@@ -168,7 +168,7 @@ export function ChannelSelectionState({
   if (pending) {
     return (
       <div
-        className="flex flex-1 items-center justify-center text-zinc-400"
+        className="flex flex-1 items-center justify-center text-content-muted"
         aria-busy="true"
         aria-label="Loading channels"
       >
@@ -178,11 +178,11 @@ export function ChannelSelectionState({
   }
 
   return (
-    <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-regular flex-col gap-3">
+    <div className="relative flex-1 flex items-center justify-center text-content-muted text-regular flex-col gap-3">
       {sidebarToggle && (
         <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
       )}
-      <Hash className="h-5 w-5 text-zinc-400" aria-hidden="true" />
+      <Hash className="h-5 w-5 text-content-muted" aria-hidden="true" />
       <span>Select a channel to start chatting</span>
     </div>
   );
@@ -1737,7 +1737,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
@@ -1782,14 +1782,14 @@ export function ChannelView({
           actions={null}
         />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <Hash className="h-5 w-5 text-zinc-400" />
-          <div className="text-zinc-100 font-semibold text-comfortable">
+          <Hash className="h-5 w-5 text-content-muted" />
+          <div className="text-content-primary font-semibold text-comfortable">
             #{channel.name}
           </div>
           {channel.purpose && (
-            <p className="text-regular text-zinc-400 max-w-md">{channel.purpose}</p>
+            <p className="text-regular text-content-muted max-w-md">{channel.purpose}</p>
           )}
-          <p className="text-regular text-zinc-400">
+          <p className="text-regular text-content-muted">
             You&apos;re not a member of this channel yet. Join to read and send
             messages.
           </p>
@@ -1797,7 +1797,7 @@ export function ChannelView({
             type="button"
             onClick={() => void handleJoin()}
             disabled={joining}
-            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50  font-medium text-white"
+            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50  font-medium text-content-on-accent"
           >
             {joining && <Loader2 className="w-4 h-4 animate-spin" />}
             Join channel
@@ -1817,15 +1817,15 @@ export function ChannelView({
 
   const channelToolbar = (
     <>
-      <div className="hidden md:flex items-center gap-3 text-compact text-zinc-400">
+      <div className="hidden md:flex items-center gap-3 text-compact text-content-muted">
         <div className="relative" ref={membersRootRef}>
           <ControlTrigger controlWidth="slot"
             type="button"
             onClick={() => setMembersOpen((v) => !v)}
             title="Channel members"
             aria-expanded={membersOpen}
-            controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-zinc-50 hover:bg-zinc-800 transition-colors ${
- membersOpen ? "text-zinc-100 bg-zinc-800": ""
+            controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-content-strong hover:bg-zinc-800 transition-colors ${
+ membersOpen ? "text-content-primary bg-zinc-800": ""
  }`}
           >
             <Users className="w-3.5 h-3.5" aria-hidden="true" />
@@ -1859,7 +1859,7 @@ export function ChannelView({
         aria-label="Channel files"
         content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  filesOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
  }`}
       >
         <Paperclip className="w-4 h-4" aria-hidden="true" />
@@ -1876,7 +1876,7 @@ export function ChannelView({
         aria-label="Remote workspace"
         content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wsOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
  }`}
       >
         <FolderTree className="w-4 h-4" aria-hidden="true" />
@@ -1892,7 +1892,7 @@ export function ChannelView({
         aria-label="ViewBoard"
         content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  vbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
  }`}
       >
         <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
@@ -1909,7 +1909,7 @@ export function ChannelView({
         aria-label="Workbench"
         content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
  wbOpen
- ? "text-zinc-100 bg-zinc-800": "text-zinc-100 hover:text-zinc-50"
+ ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
  }`}
       >
         <PanelRight className="w-4 h-4" aria-hidden="true" />
@@ -1919,7 +1919,7 @@ export function ChannelView({
           onClick={() => setSettingsOpen(true)}
           title="Channel settings"
           aria-label="Channel settings"
-          content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 flex-shrink-0"
+          content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0"
         >
           <Settings className="w-4 h-4" aria-hidden="true" />
         </UiButton>
@@ -2056,7 +2056,7 @@ export function ChannelView({
                 </ResolveRefContext.Provider>
               ) : loading ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
+                  <Loader2 className="w-5 h-5 text-content-muted animate-spin" />
                 </div>
               ) : loadError ? (
                 <ErrorState
@@ -2088,10 +2088,10 @@ export function ChannelView({
               {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
               {selectMode && (
                 <div className="mx-4 mt-2 flex items-center gap-2 rounded-sm bg-zinc-900/80 px-3 py-2 text-compact">
-                  <span className="text-zinc-200 font-medium">
+                  <span className="text-content-secondary font-medium">
                     {selectedIds.size} selected
                   </span>
-                  <span className="text-zinc-400">
+                  <span className="text-content-muted">
                     · click messages to toggle
                   </span>
                   <div className="flex-1" />
@@ -2099,7 +2099,7 @@ export function ChannelView({
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() => void copySelected()}
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Copy
@@ -2113,7 +2113,7 @@ export function ChannelView({
                         count: selectedMessages.length,
                       })
                     }
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-zinc-50 disabled:opacity-50"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
                   >
                     <Forward className="w-3.5 h-3.5" />
                     Forward
@@ -2121,7 +2121,7 @@ export function ChannelView({
                   <UiButton action="cancel" content="iconText" variant="plain"
                     type="button"
                     onClick={clearSelection}
-                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-zinc-100 hover:text-zinc-50"
+                    controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-content-primary hover:text-content-strong"
                   >
                     <X className="w-3.5 h-3.5" />
                     Cancel

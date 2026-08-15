@@ -308,8 +308,8 @@ export function SessionChip({
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
       "flex w-full items-center gap-2 px-3 py-2 rounded-sm text-regular text-left transition-colors",
-      i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-200 hover:bg-zinc-800",
-      isSelected && "text-indigo-200"
+      i === activeIndex ? "bg-zinc-800 text-content-primary" : "text-content-secondary hover:bg-zinc-800",
+      isSelected && "text-accent-200"
     );
 
   return (
@@ -328,14 +328,14 @@ export function SessionChip({
         aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
         className={cn(
           selected || open
-            ? "bg-indigo-600/15 text-indigo-200"
-            : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            ? "bg-indigo-600/15 text-accent-200"
+            : "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary"
         )}
       >
         {selected ? (
-          <ArrowRight className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <ArrowRight className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
         ) : (
-          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-indigo-400" : "text-zinc-400")} />
+          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-accent-400" : "text-content-muted")} />
         )}
         <span>{selected ? "Session" : "Auto"}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
@@ -348,8 +348,8 @@ export function SessionChip({
             return (
               <NavigationItem
                 title="Auto · @mention → primary"
-                leading={<Layers className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />}
-                trailing={!value ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
+                leading={<Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
+                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
                 selected={!value}
                 role="option"
                 aria-selected={!value}
@@ -366,7 +366,7 @@ export function SessionChip({
 
           {groups.map((g) => (
             <div key={g.botId}>
-              <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wide text-zinc-400">
+              <div className="px-3 pt-2 pb-1 text-minimal uppercase tracking-label text-content-muted">
                 {g.botName}
               </div>
               {g.sessions.map((s) => {
@@ -379,8 +379,8 @@ export function SessionChip({
                       {tagOf(s)} · {s.cwd || "default"}
                     </span>}
                     leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
-                    status={<span className="text-compact text-zinc-400">{s.status}</span>}
-                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
+                    status={<span className="text-compact text-content-muted">{s.status}</span>}
+                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
                     selected={isSel}
                     role="option"
                     aria-selected={isSel}
@@ -398,7 +398,7 @@ export function SessionChip({
           ))}
 
           {loaded && entries.length === 0 && (
-            <p className="px-3 py-2 text-compact text-zinc-400">
+            <p className="px-3 py-2 text-compact text-content-muted">
               No sessions yet — one is created when a bot first responds.
             </p>
           )}
@@ -418,7 +418,7 @@ export function SessionChip({
                   onMouseEnter={() => setActiveIndex(idx)}
                   className={rowCls(idx, false)}
                 >
-                  <Plus className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
+                  <Plus className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
                   New session…
                 </UiButton>
               );
@@ -436,7 +436,7 @@ export function SessionChip({
                 onMouseEnter={() => setActiveIndex(idx)}
                 className={rowCls(idx, false)}
               >
-                <LayoutDashboard className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
+                <LayoutDashboard className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
                 Manage sessions…
               </UiButton>
             );

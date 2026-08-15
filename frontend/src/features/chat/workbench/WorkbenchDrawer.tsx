@@ -539,7 +539,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           {...(float ? drag.handleProps : {})}
           className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
         >
-          <span className="text-regular font-semibold text-zinc-100">Workbench</span>
+          <span className="text-regular font-semibold text-content-primary">Workbench</span>
           {!minimized && (
           <>
           <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
@@ -553,7 +553,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               controlSize="regular" className={cn(
  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
- ? "bg-indigo-500/15 text-indigo-200": "bg-zinc-800/70 text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+ ? "bg-indigo-500/15 text-accent-200": "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
  )}
             >
               {rawMode ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : <Folder className="h-4 w-4" aria-hidden="true" />}
@@ -565,7 +565,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             disabled={busy}
             aria-label="Load template or extension"
             title="Load template or extension"
-            className="text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
+            className="text-content-primary hover:text-content-strong disabled:opacity-50"
           >
             <Upload className="h-4 w-4" aria-hidden="true" />
           </UiButton>
@@ -577,7 +577,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 onClick={stopWatch}
                 aria-label={`Stop watching ${watching}`}
                 title="Stop watching extension"
-                className="text-emerald-400 hover:text-emerald-300"
+                className="text-success-400 hover:text-success-300"
               >
                 <EyeOff className="h-4 w-4" aria-hidden="true" />
               </UiButton>
@@ -589,7 +589,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 disabled={busy}
                 aria-label="Watch an extension file on disk"
                 title="Watch extension file"
-                className="text-zinc-100 hover:text-zinc-50 disabled:opacity-50"
+                className="text-content-primary hover:text-content-strong disabled:opacity-50"
               >
                 <Eye className="h-4 w-4" aria-hidden="true" />
               </UiButton>
@@ -603,17 +603,17 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                   aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
                   aria-expanded={pinMenu}
                   title="Manage pinned files"
-                  className="relative text-amber-400/80 hover:text-amber-300"
+                  className="relative text-warning-400/80 hover:text-warning-300"
                 >
                   <Pin className="h-4 w-4" aria-hidden="true" />
-                  <span aria-hidden="true" className="absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-zinc-950">
+                  <span aria-hidden="true" className="absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light">
                     {pinned.length > 9 ? "9+" : pinned.length}
                   </span>
                 </UiButton>
               </Tip>
               {pinMenu && (
                 <div className="absolute left-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
-                  <div className="px-2 py-1 text-minimal uppercase tracking-wider text-zinc-400">
+                  <div className="px-2 py-1 text-minimal uppercase tracking-section text-content-muted">
                     Pinned (injected into every prompt)
                   </div>
                   <ItemList presentationLevel="minimal" controlSize="compact">{pinned.map((p) => (
@@ -624,7 +624,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                       actions={<UiButton action="unpin" content="icon" variant="plain" aria-label={`Unpin ${p}`}
                         onClick={() => togglePin(p)}
                         title="Unpin"
-                        className="text-zinc-100 hover:text-red-400 flex-shrink-0"
+                        className="text-content-primary hover:text-danger-400 flex-shrink-0"
                       >
                         <X className="w-3.5 h-3.5" />
                       </UiButton>}
@@ -652,27 +652,27 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             accessibleLabel={minimized ? "Expand Workbench" : "Minimize Workbench"}
             onClick={toggleCollapsed}
             controlSize="compact"
-            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 max-md:hidden"
+            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong max-md:hidden"
           />
           <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
         </div>
 
         {!minimized && notice && (
-          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-amber-400/90">
+          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
             <span className="flex-1">{notice}</span>
             <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize="compact" onClick={() => setNotice(null)} />
           </div>
         )}
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-zinc-400">
-            <Package className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-content-muted">
+            <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
             <span className="flex-1">
               No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
             </span>
             <UiButton action="create" variant="plain"
               onClick={() => loadTemporary(JSON.stringify(researchExample))}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 flex-shrink-0"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
             >
               Try it now: Research
             </UiButton>

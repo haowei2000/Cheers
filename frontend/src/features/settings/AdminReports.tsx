@@ -24,15 +24,15 @@ export function AdminReports() {
 
   return (
     <div className="space-y-4">
-      <div><h2 className="text-comfortable font-semibold text-zinc-100">Safety reports</h2><p className="text-regular text-zinc-400">Review user and message reports. IDs remain available for audit without exposing unrelated channel content.</p></div>
-      {loading && <p className="text-regular text-zinc-400">Loading…</p>}
-      {!loading && reports.length === 0 && <p className="text-regular text-zinc-400">No reports.</p>}
+      <div><h2 className="text-comfortable font-semibold text-content-primary">Safety reports</h2><p className="text-regular text-content-muted">Review user and message reports. IDs remain available for audit without exposing unrelated channel content.</p></div>
+      {loading && <p className="text-regular text-content-muted">Loading…</p>}
+      {!loading && reports.length === 0 && <p className="text-regular text-content-muted">No reports.</p>}
       {reports.map((report) => (
         <OperationsItem key={report.report_id} presentationLevel="medium"
           title={<span title={`${report.reason} · ${report.target_type} · ${report.target_id}${report.channel_id ? ` · Channel ${report.channel_id}` : ""}${report.details ? ` · ${report.details}` : ""}`}>
             {report.reason} · {report.target_type}
           </span>}
-          criticalStatus={<span className="text-compact text-zinc-400">{report.status}</span>}
+          criticalStatus={<span className="text-compact text-content-muted">{report.status}</span>}
           actions={<>
             <Button action="review" aria-label={`Review report ${report.report_id}`} controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "reviewing")} />
             <Button action="resolve" aria-label={`Resolve report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "resolved")} />

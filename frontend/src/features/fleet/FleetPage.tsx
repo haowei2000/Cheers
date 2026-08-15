@@ -127,7 +127,7 @@ export default function FleetPage() {
 
   const headerActions = <><AddMenu onNewBot={() => setCreateBotOpen(true)} onInstallation={() => openInstallation()} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
 
-  return <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
+  return <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-content-primary">
     <RouteChromeHeader actions={headerActions}>
       <header className="flex items-center gap-4 px-6 py-5 max-md:px-4">
         <UiButton
@@ -138,14 +138,14 @@ export default function FleetPage() {
           onClick={() => navigate("/chat")}
           title="Back to chat"
           aria-label="Back to chat"
-          className="rounded-sm text-zinc-100 transition-colors hover:text-zinc-50"
+          className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </UiButton>
-        <Radar className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+        <Radar className="h-4 w-4 text-accent-400" aria-hidden="true" />
         <div>
           <h1 className="text-comfortable font-semibold leading-none">Fleet</h1>
-          <p className="mt-1 hidden text-minimal text-zinc-400 sm:block">Personal bot cockpit</p>
+          <p className="mt-1 hidden text-minimal text-content-muted sm:block">Personal bot cockpit</p>
         </div>
         <div className="ml-auto flex items-center gap-1">{headerActions}</div>
       </header>
@@ -169,8 +169,8 @@ export default function FleetPage() {
               className={cn(
                 "flex shrink-0 items-center gap-3 rounded-sm font-medium whitespace-nowrap transition-colors",
                 active
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50",
+                  ? "bg-zinc-800 text-content-primary"
+                  : "text-content-primary hover:bg-zinc-800 hover:text-content-strong",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
