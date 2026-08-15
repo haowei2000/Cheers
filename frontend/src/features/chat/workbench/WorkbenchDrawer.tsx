@@ -1,9 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Tip } from "@/components/ui/tip";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Folder, LayoutGrid, Package, Pin, Upload, X } from "lucide-react";
+import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
@@ -559,40 +560,47 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               {rawMode ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : <Folder className="h-4 w-4" aria-hidden="true" />}
             </ControlTrigger>
           </Tip>
-          <Tip content="Load a temporary template or renderer extension for this session.">
-          <UiButton action="upload" content="icon" variant="plain"
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+          <Tip content="Load a temporary template or renderer extension for this session." className="flex min-w-0 flex-1">
+          <ResponsiveActionButton
+            action="upload"
+            context="toolbar"
+            wideLabel="Load extension"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
             aria-label="Load template or extension"
             title="Load template or extension"
+            containerClassName="min-w-0 flex-1"
             className="text-content-primary hover:text-content-strong disabled:opacity-50"
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-          </UiButton>
+          />
           </Tip>
           {canWatch &&
             (watching ? (
-              <Tip content="Stop watching the current extension file.">
-              <UiButton action="stop" content="icon" variant="plain"
+              <Tip content="Stop watching the current extension file." className="flex min-w-0 flex-1">
+              <ResponsiveActionButton
+                action="stop"
+                context="toolbar"
+                wideLabel="Stop watching"
                 onClick={stopWatch}
                 aria-label={`Stop watching ${watching}`}
                 title="Stop watching extension"
+                containerClassName="min-w-0 flex-1"
                 className="text-success-400 hover:text-success-300"
-              >
-                <EyeOff className="h-4 w-4" aria-hidden="true" />
-              </UiButton>
+              />
               </Tip>
             ) : (
-              <Tip content="Watch an extension file and reload it after every editor save.">
-              <UiButton action="watch" content="icon" variant="plain"
+              <Tip content="Watch an extension file and reload it after every editor save." className="flex min-w-0 flex-1">
+              <ResponsiveActionButton
+                action="watch"
+                context="toolbar"
+                wideLabel="Watch extension"
                 onClick={() => void startWatch()}
                 disabled={busy}
                 aria-label="Watch an extension file on disk"
                 title="Watch extension file"
+                containerClassName="min-w-0 flex-1"
                 className="text-content-primary hover:text-content-strong disabled:opacity-50"
-              >
-                <Eye className="h-4 w-4" aria-hidden="true" />
-              </UiButton>
+              />
               </Tip>
             ))}
           {pinned.length > 0 && (
@@ -621,13 +629,11 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                       key={p}
                       title={p}
                       controlSize="compact"
-                      actions={<UiButton action="unpin" content="icon" variant="plain" aria-label={`Unpin ${p}`}
+                      actions={<ActionButton action="unpin" context="toolbar" aria-label={`Unpin ${p}`}
                         onClick={() => togglePin(p)}
                         title="Unpin"
                         className="text-content-primary hover:text-danger-400 flex-shrink-0"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </UiButton>}
+                      />}
                       className="border-0"
                     />
                   ))}</ItemList>
@@ -635,6 +641,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               )}
             </div>
           )}
+          </div>
           </>
           )}
           {/* design-system-native: file-input */}

@@ -23,6 +23,7 @@ import { registerLens, type LensProps } from "./registry";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
+import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -103,9 +104,10 @@ function TableLens({ data, config, onChange }: LensProps) {
                 </td>
               ))}
               <td className="p-1">
-                <ActionButton
+                <ResponsiveActionButton
                   action="delete"
                   context="toolbar"
+                  wideLabel="Delete"
                   accessibleLabel={`Delete row ${i + 1}`}
                   controlSize="compact"
                   onClick={() => del(i)}
@@ -120,12 +122,13 @@ function TableLens({ data, config, onChange }: LensProps) {
           )}
         </tbody>
       </table>
-      <ActionButton
+      <ResponsiveActionButton
         action="add"
         context="toolbar"
+        wideLabel="Add row"
         accessibleLabel="Add row"
         onClick={add}
-        className="mt-2"
+        containerClassName="mt-2 w-full"
       />
     </div>
   );
@@ -202,11 +205,13 @@ function KanbanLens({ data, onChange }: LensProps) {
                 placeholder="+ Task"
                 className="bg-transparent flex-1 text-content-secondary outline-none placeholder:text-content-muted"
               />
-              <ActionButton
+              <ResponsiveActionButton
                 action="add"
                 context="toolbar"
+                wideLabel="Add task"
                 accessibleLabel={`Add task to ${c.name}`}
                 controlSize="compact"
+                containerClassName="flex-shrink-0"
                 onClick={() => addItem(ci)}
               />
             </div>

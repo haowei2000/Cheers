@@ -7,6 +7,8 @@ import {
   ChevronRight,
   Copy,
   Ellipsis,
+  Eye,
+  EyeOff,
   Fingerprint,
   KeyRound,
   Link2,
@@ -23,6 +25,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Trash2,
+  Upload,
   Unlink,
   X,
   type LucideIcon,
@@ -76,10 +79,14 @@ export type CommonActionKey = Extract<
   | "save"
   | "setup"
   | "signOut"
+  | "stop"
   | "switch"
   | "test"
   | "unlink"
+  | "unpin"
   | "update"
+  | "upload"
+  | "watch"
 >;
 
 type Presentation = {
@@ -103,6 +110,10 @@ const commonActionPresentations = {
     delete: { content: "icon", icon: Trash2, variant: "danger" },
     expand: { content: "icon", icon: Maximize2, variant: "plain" },
     remove: { content: "icon", icon: X, variant: "danger" },
+    stop: { content: "icon", icon: EyeOff, variant: "plain" },
+    unpin: { content: "icon", icon: X, variant: "danger" },
+    upload: { content: "icon", icon: Upload, variant: "plain" },
+    watch: { content: "icon", icon: Eye, variant: "plain" },
   },
   disclosure: {
     collapse: { content: "icon", icon: ChevronDown, variant: "plain" },
@@ -176,6 +187,8 @@ export type ActionButtonProps = Omit<
 > & CommonActionIntent & {
   /** Adds object-specific context to icon-only accessible names, e.g. "Save profile". */
   accessibleLabel?: string;
+  /** Overrides an icon-only presentation when a responsive parent has room for text. */
+  wideLabel?: string;
 };
 
 /**
@@ -183,12 +196,12 @@ export type ActionButtonProps = Omit<
  * this registry owns icon/text presentation, tone, and the visible action label.
  */
 export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
-  ({ action, context, accessibleLabel, controlSize, type = "button", ...props }, ref) => {
+  ({ action, context, accessibleLabel, controlSize, type = "button", wideLabel, ...props }, ref) => {
     const presentation = (commonActionPresentations[context] as Partial<Record<CommonActionKey, Presentation>>)[action] as Presentation;
     const resolvedSize = useControlSize(controlSize);
     const Icon = presentation.icon;
     const label = accessibleLabel ?? actionLabel(action);
-    const visibleLabel = presentation.label;
+    const visibleLabel = presentation.label ?? wideLabel;
     const icon = Icon ? <Icon className={controlIconClasses[resolvedSize]} aria-hidden="true" /> : null;
 
     return (
@@ -197,7 +210,7 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
         type={type}
         action={visibleLabel ? undefined : action}
         label={visibleLabel}
-        content={presentation.content}
+        content={visibleLabel ? "iconText" : presentation.content}
         variant={presentation.variant}
         controlSize={resolvedSize}
         {...props}
