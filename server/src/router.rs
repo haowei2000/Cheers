@@ -233,7 +233,8 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/workspaces/:workspace_id/members",
-            get(api::workspaces::list_workspace_members),
+            get(api::workspaces::list_workspace_members)
+                .post(api::workspaces::add_workspace_member),
         )
         // Fleet view: workspace-level approvals inbox + bot roster (docs/design/FLEET_VIEW.md)
         .route(
@@ -573,6 +574,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/installations/:installation_id/reconnect",
             post(api::installations::reconnect_installation),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/installations/:installation_id/record",
+            delete(api::installations::delete_installation_record),
         )
         .route(
             "/api/v1/bots/:bot_id/installations/:installation_id",

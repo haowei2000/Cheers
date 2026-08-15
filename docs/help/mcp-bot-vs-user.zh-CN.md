@@ -116,6 +116,10 @@ bot 永远**归属**于某个用户（`bot_accounts.created_by`），是一个*�
 在两张身份表之上，所有关系型数据都是共享的，以 `(member_id, member_type)` 为键，
 `member_type ∈ {'user', 'bot'}`。所以 bot 是**一等成员（first-class member）**，不是外挂的特例：
 
+- Workspace 与 Channel 都使用统一成员请求：`member_id + member_type + role`。
+- 邀请入口分别是 `POST /workspaces/{id}/members` 与 `POST /channels/{id}/members`；
+  Bot 不通过 Installation 接口加入空间或频道。
+
 - **成员关系**——同一张 `channel_memberships` 表。bot 通过与用户**相同**的统一邀请入口被邀请
   （`search_invitable` 把用户和 bot 一起返回），只是多一道授权闸（平台管理员 / bot owner / 持有该 bot
   `cheers/session_create` 授权者——默认拒绝、fail-closed）。

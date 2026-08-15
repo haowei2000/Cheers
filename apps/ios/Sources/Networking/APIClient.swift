@@ -692,6 +692,30 @@ struct APIClient: Sendable {
         )
     }
 
+    func addWorkspaceMember(
+        workspaceId: String,
+        memberId: String,
+        memberType: String,
+        role: String
+    ) async throws {
+        struct Body: Encodable {
+            let memberId: String
+            let memberType: String
+            let role: String
+
+            enum CodingKeys: String, CodingKey {
+                case memberId = "member_id"
+                case memberType = "member_type"
+                case role
+            }
+        }
+        _ = try await postJSON(
+            "/workspaces/\(workspaceId)/members",
+            body: Body(memberId: memberId, memberType: memberType, role: role),
+            as: JSONValue.self
+        )
+    }
+
     func setWorkspaceMemberRole(workspaceId: String, userId: String, role: String) async throws {
         struct Body: Encodable { let role: String }
         _ = try await patchJSON(

@@ -1100,6 +1100,16 @@ async fn bind_bot_to_channel_tx(
     cwd: Option<String>,
     additional_dirs: Vec<String>,
 ) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO workspace_bot_memberships (workspace_id, bot_id, role, added_by)
+         SELECT workspace_id, $2, 'member', $3 FROM channels WHERE channel_id = $1 AND type <> 'dm'
+         ON CONFLICT (workspace_id, bot_id) DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(bot_id)
+    .bind(added_by)
+    .execute(&mut **tx)
+    .await?;
     let written = sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, 'bot', $3, $4)
