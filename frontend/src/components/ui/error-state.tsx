@@ -41,9 +41,9 @@ export function ErrorState({
           tone === "error" ? "text-danger-400" : "text-warning-400"
         )}
       />
-      <p className="text-regular font-semibold text-content-primary">{title}</p>
+      <p className="text-title">{title}</p>
       {description && (
-        <p className="text-compact text-content-muted mt-1 max-w-xs">{description}</p>
+        <p className="text-caption mt-1 max-w-xs">{description}</p>
       )}
       {(action || secondaryAction) && (
         <div className="flex items-center gap-3 mt-4">
@@ -56,7 +56,7 @@ export function ErrorState({
             <button
               type="button"
               onClick={secondaryAction.onClick}
-              className="text-compact text-content-primary hover:text-content-strong hover:underline transition-colors"
+              className="text-label-primary hover:text-content-strong hover:underline transition-colors"
             >
               {secondaryAction.label}
             </button>

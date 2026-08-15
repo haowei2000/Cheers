@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Hash } from "lucide-react";
-import { DesktopTitlebarChrome, resolveDesktopTitlebarContext } from "./DesktopTitlebar";
+import {
+  DesktopTitlebarChrome,
+  resolveDesktopParentPath,
+  resolveDesktopTitlebarContext,
+} from "./DesktopTitlebar";
 
 describe("DesktopTitlebar", () => {
   it("shows the current workspace and channel in chat", () => {
@@ -16,6 +20,18 @@ describe("DesktopTitlebar", () => {
     expect(resolveDesktopTitlebarContext("/activity", {})).toEqual({ title: "Activity" });
   });
 
+  it("navigates through the information hierarchy instead of browser history", () => {
+    expect(resolveDesktopParentPath("/chat/workspace/channel")).toBe("/chat/workspace");
+    expect(resolveDesktopParentPath("/chat/workspace")).toBeNull();
+    expect(resolveDesktopParentPath("/chat")).toBeNull();
+    expect(resolveDesktopParentPath("/fleet/bots/bot-id/overview")).toBe("/fleet/bots");
+    expect(resolveDesktopParentPath("/fleet/installations")).toBe("/fleet");
+    expect(resolveDesktopParentPath("/settings/account")).toBe("/settings");
+    expect(resolveDesktopParentPath("/fleet")).toBe("/chat");
+    expect(resolveDesktopParentPath("/activity")).toBe("/chat");
+    expect(resolveDesktopParentPath("/login")).toBeNull();
+  });
+
   it("keeps drag regions separate from interactive controls", () => {
     const markup = renderToStaticMarkup(
       <DesktopTitlebarChrome
@@ -23,12 +39,10 @@ describe("DesktopTitlebar", () => {
         contextIcon={Hash}
         authenticated
         activePath="/chat/workspace/channel"
-        canBack
-        canForward={false}
+        canNavigateUp
         sidebarOpen
         onToggleSidebar={() => {}}
-        onBack={() => {}}
-        onForward={() => {}}
+        onNavigateUp={() => {}}
       />
     );
     expect(markup).toContain("data-tauri-drag-region");
@@ -37,9 +51,12 @@ describe("DesktopTitlebar", () => {
     expect(markup).toContain('data-window-chrome="macos-overlay"');
     expect(markup).toContain("bg-sidebar");
     expect(markup).toContain("bg-zinc-950");
-    expect(markup).toContain('class="w-14 bg-rail"');
-    expect(markup).toContain('class="w-60 bg-sidebar"');
+    expect(markup).toContain('data-window-sidebar-surface="true"');
+    expect(markup).toContain('style="width:296px"');
+    expect(markup).not.toContain("bg-rail");
     expect(markup).toContain('aria-label="Hide channel sidebar (Command B)"');
+    expect(markup).toContain('aria-label="Up one level"');
+    expect(markup).not.toContain('aria-label="Forward"');
     expect(markup).not.toContain("border-b border-zinc-800");
     expect(markup).not.toContain('aria-label="Activity"');
     expect(markup).not.toContain('aria-label="Fleet"');
@@ -53,19 +70,15 @@ describe("DesktopTitlebar", () => {
         contextIcon={Hash}
         authenticated
         activePath="/chat/workspace/channel"
-        canBack={false}
-        canForward={false}
+        canNavigateUp={false}
         sidebarOpen={false}
         onToggleSidebar={() => {}}
-        onBack={() => {}}
-        onForward={() => {}}
+        onNavigateUp={() => {}}
       />
     );
 
     expect(markup).toMatch(/class="[^"]*h-full[^"]*w-24[^"]*"/);
-    expect(markup).not.toContain('class="w-24 bg-sidebar"');
-    expect(markup).not.toContain('class="w-14 bg-rail"');
-    expect(markup).not.toContain('class="w-60 bg-sidebar"');
+    expect(markup).not.toContain('data-window-sidebar-surface="true"');
     expect(markup).toContain('aria-label="Show channel sidebar (Command B)"');
   });
 
@@ -76,10 +89,8 @@ describe("DesktopTitlebar", () => {
         contextIcon={Hash}
         authenticated
         activePath="/fleet"
-        canBack
-        canForward={false}
-        onBack={() => {}}
-        onForward={() => {}}
+        canNavigateUp
+        onNavigateUp={() => {}}
       />
     );
 
@@ -94,13 +105,11 @@ describe("DesktopTitlebar", () => {
         contextIcon={Hash}
         authenticated
         activePath="/chat/workspace"
-        canBack={false}
-        canForward={false}
+        canNavigateUp={false}
         windowState={{ active: true, fullscreen: true, maximized: false, scaleFactor: 2 }}
         sidebarOpen={false}
         onToggleSidebar={() => {}}
-        onBack={() => {}}
-        onForward={() => {}}
+        onNavigateUp={() => {}}
       />
     );
 
@@ -116,14 +125,12 @@ describe("DesktopTitlebar", () => {
         contextIcon={Hash}
         authenticated
         activePath="/chat/workspace/channel"
-        canBack
-        canForward={false}
+        canNavigateUp
         platform="windows"
         variant="desktop-commandbar"
         sidebarOpen
         onToggleSidebar={() => {}}
-        onBack={() => {}}
-        onForward={() => {}}
+        onNavigateUp={() => {}}
       />
     );
 

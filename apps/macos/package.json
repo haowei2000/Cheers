@@ -1,7 +1,7 @@
 {
   "name": "cheers-macos",
   "private": true,
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Cheers desktop shell for macOS (Tauri): hosts the web frontend and manages local connector daemons.",
   "scripts": {
     "tauri": "tauri",

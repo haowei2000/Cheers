@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 // The canonical empty state (DESIGN.md §2.9): centered icon + primary line +
 // optional secondary hint. Compact lists may still use a one-liner
-// (`text-compact text-content-muted py-4 text-center`) instead.
+// (`text-caption py-4 text-center`) instead.
 export function EmptyState({
   icon: Icon,
   title,
@@ -23,8 +23,8 @@ export function EmptyState({
       )}
     >
       {Icon && <Icon className="w-5 h-5 text-content-muted mb-2" />}
-      <p className="text-compact text-content-muted">{title}</p>
-      {hint && <p className="text-compact text-content-muted mt-1">{hint}</p>}
+      <p className="text-caption">{title}</p>
+      {hint && <p className="text-caption mt-1">{hint}</p>}
     </div>
   );
 }

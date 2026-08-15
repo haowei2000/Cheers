@@ -2,7 +2,7 @@ import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, LogOut } from "lucide-react";
+import { Bot, Trash2, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/collection-manager";
 import {
   listWorkspaceMembers,
-  inviteWorkspaceMember,
+  addWorkspaceMember,
   removeWorkspaceMember,
   searchWorkspaceInvitable,
   updateWorkspace,
@@ -145,14 +145,22 @@ export function WorkspaceSettingsDialog({
   }
 
   // Every membership requires the invitee's consent — there is no consent-free
-  // "add directly" path anymore. This sends a pending invite they must accept.
+  // People receive a pending invitation; bots join immediately under the same
+  // polymorphic member contract.
   async function invite(u: WorkspaceInvitable) {
     try {
-      const res = await inviteWorkspaceMember(workspace.workspace_id, {
-        identifier: u.user_id,
-        role,
+      const res = await addWorkspaceMember(workspace.workspace_id, {
+        member_id: u.member_id,
+        member_type: u.member_type,
+        role: u.member_type === "bot" ? "member" : role,
       });
-      toast.success(res.status === "exists" ? "Already a member" : "Invite sent");
+      toast.success(
+        res.status === "exists"
+          ? "Already a member"
+          : u.member_type === "bot"
+            ? "Bot added to workspace"
+            : "Invite sent"
+      );
       setQuery("");
       setResults([]);
       setMemberMode({ kind: "browse" });
@@ -164,7 +172,7 @@ export function WorkspaceSettingsDialog({
 
   async function removeMember(m: WorkspaceMember) {
     try {
-      await removeWorkspaceMember(workspace.workspace_id, m.user_id);
+      await removeWorkspaceMember(workspace.workspace_id, m.member_id);
       await refreshMembers();
       setMemberMode({ kind: "browse" });
     } catch (e) {
@@ -186,7 +194,7 @@ export function WorkspaceSettingsDialog({
 
   async function changeRole(m: WorkspaceMember, role: string) {
     try {
-      await setWorkspaceMemberRole(workspace.workspace_id, m.user_id, role);
+      await setWorkspaceMemberRole(workspace.workspace_id, m.member_id, role);
       await refreshMembers();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to change role");
@@ -270,7 +278,7 @@ export function WorkspaceSettingsDialog({
                   title="Invite workspace member"
                   query={query}
                   onQueryChange={setQuery}
-                  placeholder="Search friends, username, or email…"
+                  placeholder="Search people or your bots…"
                   onCancel={() => setMemberMode({ kind: "browse" })}
                 >
                   <OperationsItem
@@ -293,15 +301,19 @@ export function WorkspaceSettingsDialog({
                   {!searching && query.trim().length >= 2 && results.length === 0 && <OperationsItem title="No matching members" />}
                   {!searching && results.map((candidate) => (
                     <EntityItem
-                      key={candidate.user_id}
+                      key={`${candidate.member_type}:${candidate.member_id}`}
                       disabled={Boolean(candidate.membership)}
                       onClick={() => void invite(candidate)}
                       title={candidate.display_name || candidate.username}
-                      leading={<Avatar name={candidate.display_name || candidate.username} id={candidate.user_id} size="regular" />}
+                      leading={candidate.member_type === "bot"
+                        ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
+                        : <Avatar name={candidate.display_name || candidate.username} id={candidate.member_id} size="regular" />}
                       status={candidate.membership ? (
                         <span className="font-utility text-compact uppercase text-content-muted">
                           {candidate.membership === "pending" ? "Invited" : "Member"}
                         </span>
+                      ) : candidate.member_type === "bot" ? (
+                        <span className="font-utility text-compact uppercase text-accent-300">Bot</span>
                       ) : undefined}
                     />
                   ))}
@@ -309,24 +321,28 @@ export function WorkspaceSettingsDialog({
               )}
 
               {visibleMembers.map((member) => {
-                if (memberMode.kind === "delete" && memberMode.id === member.user_id) {
+                if (memberMode.kind === "delete" && memberMode.id === member.member_id) {
                   return (
                     <CollectionDeleteItem
-                      key={member.user_id}
+                      key={`${member.member_type}:${member.member_id}`}
                       title={`Remove ${member.display_name || member.username}?`}
-                      description="They must accept a new invite to rejoin."
+                      description={member.member_type === "bot"
+                        ? "The bot will also be removed from every channel in this workspace."
+                        : "They must accept a new invite to rejoin."}
                       onCancel={() => setMemberMode({ kind: "browse" })}
                       onConfirm={() => void removeMember(member)}
                     />
                   );
                 }
-                const isSelf = member.user_id === me?.user_id;
+                const isSelf = member.member_type === "user" && member.member_id === me?.user_id;
                 const removable = !isSelf && member.role !== "owner";
                 return (
                   <EntityItem
-                    key={member.user_id}
+                    key={`${member.member_type}:${member.member_id}`}
                     title={member.display_name || member.username}
-                    leading={<Avatar name={member.display_name || member.username} id={member.user_id} size="regular" />}
+                    leading={member.member_type === "bot"
+                      ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
+                      : <Avatar name={member.display_name || member.username} id={member.member_id} size="regular" />}
                     status={isSelf ? <span className="font-utility text-compact uppercase text-content-muted">{member.role}</span> : undefined}
                     criticalStatus={member.status === "pending" ? <span className="font-utility text-compact uppercase text-warning-400">Pending</span> : undefined}
                     actions={!isSelf ? (
@@ -337,7 +353,7 @@ export function WorkspaceSettingsDialog({
                           onChange={(event) => void changeRole(member, event.target.value)}
                           controlSize="compact"
                         >
-                          {ROLES.map((candidateRole) => (
+                          {(member.member_type === "bot" ? ["member", "readonly"] : ROLES).map((candidateRole) => (
                             <option key={candidateRole} value={candidateRole}>{candidateRole}</option>
                           ))}
                         </UiSelect>
@@ -346,7 +362,7 @@ export function WorkspaceSettingsDialog({
                             label={`Remove ${member.display_name || member.username}`}
                             tone="danger"
                             controlSize="compact"
-                            onClick={() => setMemberMode({ kind: "delete", id: member.user_id })}
+                            onClick={() => setMemberMode({ kind: "delete", id: member.member_id })}
                           >
                             <Trash2 className={controlIconClasses.compact} />
                           </IconButton>
@@ -392,7 +408,7 @@ export function WorkspaceSettingsDialog({
             Non-admins can't list members but reached this from their own workspace,
             so they're members; a global admin viewing a workspace they're not in has
             the member list loaded without themselves in it → hide. */}
-        {(!canManage || members.some((m) => m.user_id === me?.user_id)) && (
+        {(!canManage || members.some((m) => m.member_type === "user" && m.member_id === me?.user_id)) && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
               <p className="text-regular font-medium text-content-secondary">Leave workspace</p>

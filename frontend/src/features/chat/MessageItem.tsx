@@ -90,7 +90,7 @@ const SYSTEM_TYPES = new Set([
 function SystemMessage({ message }: { message: Message }) {
   return (
     <div className="flex justify-center py-3 px-4">
-      <span className="text-compact text-content-muted whitespace-nowrap">
+      <span className="text-caption whitespace-nowrap">
         {message.content}
       </span>
     </div>
@@ -1002,7 +1002,7 @@ function MessageBody({
           <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
         </div>
         {message._trace && (
-          <span className="text-compact text-content-muted italic truncate">
+          <span className="text-caption-italic truncate">
             {message._trace}
           </span>
         )}
@@ -1014,7 +1014,7 @@ function MessageBody({
   }
 
   if (message.error) {
-    return <p className="text-regular text-danger-400 italic">{message.error}</p>;
+    return <p className="text-message-error">{message.error}</p>;
   }
 
   // While a bubble is streaming, re-parsing the whole accumulated Markdown +
@@ -1039,11 +1039,11 @@ function MessageBody({
           <PathOpenContext.Provider value={pathOpen}>
             <MarkdownRenderer
               content={content}
-              className="font-reading text-regular font-normal leading-regular tracking-display"
+              className="text-message"
             />
           </PathOpenContext.Provider>
         ) : (
-          <p className="font-reading text-regular font-normal leading-regular tracking-display text-content-secondary whitespace-pre-wrap break-words">
+          <p className="text-message whitespace-pre-wrap break-words">
             {content}
           </p>
         ))}
@@ -1051,7 +1051,7 @@ function MessageBody({
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
       )}
       {active && message._trace && (
-        <p className="text-compact text-content-muted italic mt-1">{message._trace}</p>
+        <p className="text-caption-italic mt-1">{message._trace}</p>
       )}
       {active && isBot && channelId && (
         <div className="mt-1">

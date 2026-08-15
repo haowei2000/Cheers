@@ -10,6 +10,7 @@ import { ItemSection, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   activateTerminalInstallation,
+  deleteInstallationRecord,
   reconnectTerminalInstallation,
   revokeTerminalInstallation,
   rotateTerminalCredential,
@@ -80,7 +81,24 @@ export function FleetInstallations({
                 </span>
               }
               actions={
-                item.revoked_at ? undefined : (
+                item.revoked_at ? (
+                  <IconButton
+                    label="Delete installation record"
+                    tone="danger"
+                    disabled={busy === item.installation_id}
+                    onClick={() => {
+                      if (window.confirm(`Delete installation record “${item.device_name}”?`)) {
+                        void act(
+                          item,
+                          () => deleteInstallationRecord(item.bot_id, item.installation_id),
+                          "Installation record deleted",
+                        );
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
+                ) : (
                   <>
                     {item.status === "standby" && (
                       <IconButton

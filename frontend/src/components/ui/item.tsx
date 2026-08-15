@@ -8,7 +8,6 @@ import {
 import {
   ControlSizeProvider,
   controlMinHeightClasses,
-  controlSupportingTextClasses,
   controlTextClasses,
   useControlSize,
   type ControlSize,
@@ -95,13 +94,13 @@ export function ItemRow({
           {level !== "minimal" && status}
         </span>
         {level !== "minimal" && subtitle && (
-          <span className={cn("mt-1 block truncate text-content-muted", controlSupportingTextClasses[size])}>{subtitle}</span>
+          <span className="mt-1 block truncate text-caption">{subtitle}</span>
         )}
         {level === "max" && metadata && (
-          <span className={cn("mt-1 block truncate text-content-muted", controlSupportingTextClasses[size])}>{metadata}</span>
+          <span className="mt-1 block truncate text-caption">{metadata}</span>
         )}
         {level === "max" && preview && (
-          <span className={cn("mt-1 block line-clamp-2 font-reading leading-reading text-content-secondary", controlSupportingTextClasses[size])}>
+          <span className="mt-1 block line-clamp-2 text-message">
             {preview}
           </span>
         )}
@@ -244,12 +243,12 @@ export function ItemSection({
       data-control-size={size}
       className={cn("min-w-0 space-y-1", className)}
     >
-      <header className={cn("flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted", controlMinHeightClasses[headerControlSize])}>
+      <header className={cn("flex items-center gap-2 px-1 text-section-label", controlMinHeightClasses[headerControlSize])}>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {action}
       </header>
       {description && (
-        <p className="px-1 font-utility text-compact leading-reading text-content-muted">{description}</p>
+        <p className="px-1 text-caption">{description}</p>
       )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>

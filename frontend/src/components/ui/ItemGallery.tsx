@@ -105,40 +105,40 @@ export function ItemGallery() {
 
       <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 md:grid-cols-2 md:divide-x md:divide-zinc-700 xl:grid-cols-4">
         <div className="px-3 py-3">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
+          <p className="text-section-label">
             Display · Opsz 60
           </p>
           <h2 id="type-register" className="mt-1 font-display text-comfortable font-semibold tracking-display">
             The Formal Edition · 正式版
           </h2>
-          <p className="mt-1 font-utility text-compact text-content-muted">Introductions · Hero titles · Major headings</p>
+          <p className="mt-1 text-caption">Introductions · Hero titles · Major headings</p>
         </div>
         <div className="border-t border-zinc-700 px-3 py-3 md:border-t-0">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
+          <p className="text-section-label">
             Reading · Opsz 14
           </p>
-          <p className="mt-1 font-reading text-regular leading-6 text-content-secondary">
+          <p className="mt-1 text-message">
             A sturdy classical rhythm keeps long messages calm. 稳健的宋体让长消息正式而易读。
           </p>
-          <p className="mt-1 font-utility text-compact text-content-muted">Messages · Previews · Long-form copy</p>
+          <p className="mt-1 text-caption">Messages · Previews · Long-form copy</p>
         </div>
         <div className="border-t border-zinc-700 px-3 py-3 md:border-l-0 xl:border-l">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
+          <p className="text-section-label">
             Utility · Source Sans 3
           </p>
           <p className="mt-2 font-utility text-compact font-semibold uppercase tracking-overline text-warning-300">
             Channel name · 频道名称 · Warning · Trace active
           </p>
-          <p className="mt-2 font-utility text-compact text-content-muted">Controls · Status · Trace labels</p>
+          <p className="mt-2 text-caption">Controls · Status · Trace labels</p>
         </div>
         <div className="border-t border-zinc-700 px-3 py-3 md:border-l xl:border-t-0">
-          <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
+          <p className="text-section-label">
             Code · System Mono
           </p>
           <code className="mt-2 block overflow-x-auto whitespace-nowrap font-code text-compact text-content-secondary">
             infisical run --env=dev -- cargo run
           </code>
-          <p className="mt-2 font-utility text-compact text-content-muted">Commands · Paths · IDs · Diffs</p>
+          <p className="mt-2 text-caption">Commands · Paths · IDs · Diffs</p>
         </div>
       </section>
 

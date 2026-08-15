@@ -1065,7 +1065,10 @@ struct WorkspaceAdminSheet: View {
     let workspace: WorkspaceDto
     @State private var name: String
     @State private var members: [WorkspaceMemberDto] = []
+    @State private var manageableBots: [BotDto] = []
+    @State private var inviteMemberType = "user"
     @State private var inviteIdentifier = ""
+    @State private var inviteBotId = ""
     @State private var inviteRole = "member"
     @State private var isBusy = false
     @State private var confirmation: Confirmation?
@@ -1086,20 +1089,42 @@ struct WorkspaceAdminSheet: View {
                 }
 
                 Section {
-                    TextField("Exact username or email", text: $inviteIdentifier)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    Picker("Member type", selection: $inviteMemberType) {
+                        Text("Person").tag("user")
+                        Text("Bot").tag("bot")
+                    }
+                    .pickerStyle(.segmented)
+                    if inviteMemberType == "bot" {
+                        Picker("Bot", selection: $inviteBotId) {
+                            Text("Choose a bot").tag("")
+                            ForEach(manageableBots) { bot in
+                                Text(bot.name).tag(bot.botId)
+                            }
+                        }
+                    } else {
+                        TextField("Exact username or email", text: $inviteIdentifier)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
                     Picker("Role", selection: $inviteRole) {
                         Text("Member").tag("member")
-                        Text("Admin").tag("admin")
-                        Text("Owner").tag("owner")
+                        if inviteMemberType == "bot" {
+                            Text("Read only").tag("readonly")
+                        } else {
+                            Text("Admin").tag("admin")
+                            Text("Owner").tag("owner")
+                        }
                     }
-                    Button("Send invitation") { Task { await invite() } }
-                        .disabled(inviteIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
+                    Button(inviteMemberType == "bot" ? "Add bot" : "Send invitation") { Task { await invite() } }
+                        .disabled((inviteMemberType == "bot"
+                            ? inviteBotId.isEmpty
+                            : inviteIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || isBusy)
                 } header: {
                     Text("Invite member")
                 } footer: {
-                    Text("Invitations remain pending until the recipient accepts. Only owners can grant the owner role.")
+                    Text(inviteMemberType == "bot"
+                        ? "Bots and people use the same workspace membership. Bots join immediately."
+                        : "People remain pending until they accept. Only owners can grant the owner role.")
                 }
 
                 Section("Members") {
@@ -1108,11 +1133,13 @@ struct WorkspaceAdminSheet: View {
                         CheersEntityItem(row: CheersItemRow(
                             title: member.name,
                             subtitle: "@\(member.username) · \(member.status)",
-                            leading: AnyView(AvatarView(seedId: member.userId, name: member.name, size: 36)),
+                            leading: member.memberType == "bot"
+                                ? AnyView(Image(systemName: "cpu").foregroundStyle(Theme.accent))
+                                : AnyView(AvatarView(seedId: member.memberId, name: member.name, size: 36)),
                             criticalStatus: member.status == "pending" ? AnyView(Text("PENDING").font(.caption2.bold()).foregroundStyle(Theme.warning)) : nil,
                             status: AnyView(Text(member.role.uppercased()).font(.caption2.bold()).foregroundStyle(Theme.textMuted)),
-                            actions: member.userId == app.session?.userId ? nil : AnyView(Menu(member.role.capitalized) {
-                                    ForEach(["member", "admin", "owner"], id: \.self) { role in
+                            actions: member.memberType == "user" && member.memberId == app.session?.userId ? nil : AnyView(Menu(member.role.capitalized) {
+                                    ForEach(member.memberType == "bot" ? ["member", "readonly"] : ["member", "admin", "owner"], id: \.self) { role in
                                         Button(role.capitalized) { Task { await setRole(member, role: role) } }
                                     }
                                     Divider()
@@ -1135,7 +1162,11 @@ struct WorkspaceAdminSheet: View {
             .navigationTitle("Workspace Admin")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .task { await loadMembers() }
+            .task {
+                await loadMembers()
+                await loadBots()
+            }
+            .onChange(of: inviteMemberType) { _, _ in inviteRole = "member" }
             .confirmationDialog(confirmationTitle, isPresented: Binding(
                 get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }
             ), titleVisibility: .visible) {
@@ -1182,6 +1213,13 @@ struct WorkspaceAdminSheet: View {
         } catch { errorText = apiMessage(error) }
     }
 
+    private func loadBots() async {
+        guard let api = app.api else { return }
+        do {
+            manageableBots = try await api.listBots().filter { ($0.canManage ?? false) && !($0.isDisabled ?? false) }
+        } catch { errorText = apiMessage(error) }
+    }
+
     private func saveName() async {
         guard let api = app.api else { return }
         await run {
@@ -1193,12 +1231,22 @@ struct WorkspaceAdminSheet: View {
     private func invite() async {
         guard let api = app.api else { return }
         await run {
-            try await api.inviteWorkspaceMember(
-                workspaceId: workspace.workspaceId,
-                identifier: inviteIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
-                role: inviteRole
-            )
-            inviteIdentifier = ""
+            if inviteMemberType == "bot" {
+                try await api.addWorkspaceMember(
+                    workspaceId: workspace.workspaceId,
+                    memberId: inviteBotId,
+                    memberType: "bot",
+                    role: inviteRole
+                )
+                inviteBotId = ""
+            } else {
+                try await api.inviteWorkspaceMember(
+                    workspaceId: workspace.workspaceId,
+                    identifier: inviteIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+                    role: inviteRole
+                )
+                inviteIdentifier = ""
+            }
             await loadMembers()
         }
     }

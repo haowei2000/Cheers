@@ -73,6 +73,190 @@
   font-feature-settings: "liga" 0, "calt" 0;
 }
 
+/* Semantic text roles. These sit above the raw scale utilities so product code
+   can name the complete text contract: family + size + rhythm + weight/style +
+   foreground. Use raw font/size/color utilities only for geometry-driven
+   primitives or one-off states that are not yet registered here. */
+.text-message {
+  font-family: var(--font-serif);
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular-size);
+  line-height: 1.6;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-secondary));
+}
+
+.text-message-error {
+  font-family: var(--font-serif);
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular-size);
+  line-height: 1.6;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-body {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
+.text-body-secondary {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-secondary));
+}
+
+.text-body-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-body-warning {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-warning-400));
+}
+
+.text-title {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
+.text-label {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: rgb(var(--text-muted));
+}
+
+.text-label-primary {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: rgb(var(--text-primary));
+}
+
+.text-section-label {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--text-muted));
+}
+
+.text-section-label-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-caption {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-caption-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-caption-italic {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-metadata {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-minimal-size);
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-status {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
 :root {
   /* Typography primitives are the single source of truth for every text role.
      Tailwind's semantic utilities read these values in tailwind.config.ts. */

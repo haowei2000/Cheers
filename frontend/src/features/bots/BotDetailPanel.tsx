@@ -46,12 +46,13 @@ import { IconButton } from "@/components/ui/icon-button";
 import { ItemGroup, ItemList, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
+import { addWorkspaceMember } from "@/api/workspaces";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
 import { BotActivitySection } from "./BotActivitySection";
 import { BotConnectionHistorySection } from "./BotConnectionHistorySection";
-import type { BotItem, Channel } from "@/types";
+import type { BotItem, Channel, Workspace } from "@/types";
 
 export function CopyButton({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -101,6 +102,7 @@ function routeTab(value?: string): Tab {
 export function BotDetailPanel({
   bot,
   channels,
+  workspaces,
   onError,
   onChanged,
   onPoll,
@@ -109,6 +111,7 @@ export function BotDetailPanel({
 }: {
   bot: BotItem;
   channels: Channel[];
+  workspaces: Workspace[];
   onError: (msg: string) => void;
   onChanged: () => void;
   /** Silent background refetch for "live while open" (item 8) — no spinner. */
@@ -241,6 +244,7 @@ export function BotDetailPanel({
           <BotOverview
             bot={bot}
             channels={channels}
+            workspaces={workspaces}
             onError={onError}
             onChanged={onChanged}
             lifecycleActiveRef={refreshLifecycleActive}
@@ -422,18 +426,21 @@ function BotInstallationsSection({
 function BotOverview({
   bot,
   channels,
+  workspaces,
   onError,
   onChanged,
   lifecycleActiveRef,
 }: {
   bot: BotItem;
   channels: Channel[];
+  workspaces: Workspace[];
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
 }) {
   const [channelId, setChannelId] = useState("");
-  const [added, setAdded] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [added, setAdded] = useState<"workspace" | "channel" | null>(null);
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
 
@@ -442,8 +449,29 @@ function BotOverview({
     setBusy(true);
     try {
       await addChannelMember(channelId, { member_id: bot.bot_id, member_type: "bot" });
-      setAdded(true);
-      setTimeout(() => setAdded(false), 1500);
+      setAdded("channel");
+      toast.success("Bot added to channel and workspace");
+      setTimeout(() => setAdded(null), 1500);
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addToWorkspace() {
+    if (!workspaceId || busy) return;
+    setBusy(true);
+    try {
+      const result = await addWorkspaceMember(workspaceId, {
+        member_id: bot.bot_id,
+        member_type: "bot",
+        role: "member",
+      });
+      setAdded("workspace");
+      toast.success(result.status === "exists" ? "Bot is already in this workspace" : "Bot added to workspace");
+      setTimeout(() => setAdded(null), 1500);
+      onChanged();
     } catch (e) {
       onError(String(e));
     } finally {
@@ -512,7 +540,7 @@ function BotOverview({
           </code>
           <CopyButton value={bot.bot_id} label="" />
         </MetaRow>
-        <MetaRow label="Channels">
+        {bot.can_manage && <MetaRow label="Channels">
           <Select
             value={channelId}
             onChange={(e) => setChannelId(e.target.value)}
@@ -520,13 +548,13 @@ function BotOverview({
             controlSize="regular" className="min-w-0 flex-1 text-compact"
           >
             <option value="">Add to channel…</option>
-            {channels.map((c) => (
+            {channels.filter((c) => c.can_manage).map((c) => (
               <option key={c.channel_id} value={c.channel_id}>
                 #{c.name}
               </option>
             ))}
           </Select>
-          {added ? (
+          {added === "channel" ? (
             <IconButton label="Added to channel" tone="success" controlSize="compact" disabled>
               <Check className="h-3.5 w-3.5" />
             </IconButton>
@@ -540,7 +568,39 @@ function BotOverview({
               disabled={!channelId || busy}
             />
           )}
-        </MetaRow>
+        </MetaRow>}
+        {bot.can_manage && <MetaRow label="Spaces">
+          <Select
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            aria-label="Add bot to workspace"
+            controlSize="regular" className="min-w-0 flex-1 text-compact"
+          >
+            <option value="">Add to space…</option>
+            {workspaces.map((workspace) => (
+              <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                {workspace.name}
+              </option>
+            ))}
+          </Select>
+          {added === "workspace" ? (
+            <IconButton label="Added to workspace" tone="success" controlSize="compact" disabled>
+              <Check className="h-3.5 w-3.5" />
+            </IconButton>
+          ) : (
+            <ActionButton
+              action="add"
+              context="toolbar"
+              accessibleLabel="Add bot to workspace"
+              controlSize="compact"
+              onClick={addToWorkspace}
+              disabled={!workspaceId || busy}
+            />
+          )}
+        </MetaRow>}
+        {bot.can_manage && <p className="text-compact text-content-muted">
+          Bots and people use the same membership model. Adding a bot to a channel also adds it to that channel's space.
+        </p>}
       </section>
 
       {/* Danger zone — trailing, one row; consequences in hover help (§2.15) */}
