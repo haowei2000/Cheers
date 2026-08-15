@@ -690,7 +690,7 @@ export function ConnectorManager() {
               placeholder="agbpair_…"
               autoFocus
               spellCheck={false}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-mono text-content-primary placeholder:text-content-muted outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-code text-content-primary placeholder:text-content-muted outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <p className="text-compact text-content-muted">
               Codes are single-use and expire after about 15 minutes. Using one
@@ -985,7 +985,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
         presentationLevel="medium"
         title={e.detail}
         leading={<PresenceDot contentSize="small" className={AUDIT_META[e.kind].dot} />}
-        trailing={<span className="font-mono text-minimal tabular-nums">{time}</span>}
+        trailing={<span className="font-code text-minimal tabular-nums">{time}</span>}
         onClick={e.extra ? () => setOpen((o) => !o) : undefined}
       />
       {open && e.extra && (

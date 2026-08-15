@@ -121,7 +121,7 @@ export function ConnectorConfigForm({
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={16}
-          className="font-mono text-compact"
+          className="font-code text-compact"
           spellCheck={false}
         />
         <div className="flex gap-2">
@@ -219,7 +219,7 @@ export function ConnectorConfigForm({
               value={text(f.adapter_args)}
               onChange={(e) => patch({ adapter_args: lines(e.target.value) })}
               rows={2}
-              className="font-mono text-compact"
+              className="font-code text-compact"
             />
           </Field>
         )}
@@ -229,7 +229,7 @@ export function ConnectorConfigForm({
             value={text(f.allowed_roots)}
             onChange={(e) => patch({ allowed_roots: lines(e.target.value) })}
             rows={3}
-            className="font-mono text-compact"
+            className="font-code text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
           <UiButton action="add" content="iconText" variant="plain"
@@ -313,7 +313,7 @@ export function ConnectorConfigForm({
                 value={text(f.env_allow)}
                 onChange={(e) => patch({ env_allow: lines(e.target.value) })}
                 rows={3}
-                className="font-mono text-compact"
+                className="font-code text-compact"
                 placeholder={"HOME\nPATH\nANTHROPIC_API_KEY"}
               />
             </Field>

@@ -188,7 +188,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
             <ItemGroup key={f.path} className="text-compact">
               <WorkbenchItem containerRole="presentation" title={f.path}
                 leading={<span
-                  className="font-mono text-minimal text-content-muted w-6 shrink-0 uppercase"
+                  className="font-code text-minimal text-content-muted w-6 shrink-0 uppercase"
                   title={f.status}
                 >
                   {f.status.trim() || "?"}

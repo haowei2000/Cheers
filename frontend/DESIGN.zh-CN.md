@@ -68,6 +68,8 @@
 `text-content-muted`；状态文字使用 `text-accent-*`、`text-danger-*`、
 `text-warning-*`、`text-success-*`、`text-info-*`、`text-removed-*`。
 生产代码不直接使用 `text-zinc-*`、`text-red-*` 等原始色板前景类。
+字体角色统一为 `display`、`reading`、`utility` 和 `code`。命令、路径、ID、
+日志及 diff 使用 `font-code`；生产代码不使用通用的 `font-mono`。
 
 | 角色 | 写法 |
 |---|---|
@@ -78,6 +80,7 @@
 | 区块标题 | `text-compact font-semibold text-content-muted uppercase tracking-section` |
 | 面板内分组标签 | `text-minimal uppercase tracking-label text-content-muted` |
 | 提示 / 帮助文字 | `text-compact text-content-muted`（有意义文字的最低对比层级） |
+| 代码 / 路径 / ID | `font-code text-compact` |
 | 密集面板 mini 阶 | `text-compact` / `text-minimal` —— 下限 10px |
 
 ### 形状与状态

@@ -30,7 +30,7 @@ const expectedLevels = ["max", "medium", "minimal"];
 const expectedControlSizes = ["comfortable", "regular", "compact"];
 const expectedContentSizes = ["small", "regular", "large"];
 const expectedIdentityRails = { small: "64px", regular: "96px", large: "128px" };
-const expectedTypeRoles = ["display", "reading", "utility"];
+const expectedTypeRoles = ["code", "display", "reading", "utility"];
 const expectedTypographySizes = ["minimal", "compact", "regular", "comfortable"];
 const expectedNeutralForegroundLevels = {
   primary: ["content-strong", "content-primary"],
@@ -71,7 +71,7 @@ for (const [size, width] of Object.entries(expectedIdentityRails)) {
   }
 }
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()) !== JSON.stringify([...expectedTypeRoles].sort())) {
-  fail("visualLanguage.typography must contain exactly display, reading, and utility");
+  fail("visualLanguage.typography must contain exactly code, display, reading, and utility");
 }
 if (contract.defaultTypographySize !== "regular") fail("defaultTypographySize must remain regular");
 if (JSON.stringify(contract.neutralForegroundLevels) !== JSON.stringify(expectedNeutralForegroundLevels)) {
@@ -143,11 +143,16 @@ for (const finding of websiteAudit.findings) {
   fail(`${path.relative(root, finding.file)}:${finding.line} ${finding.rule} (${finding.token})`);
 }
 const forbiddenTypographyClass = /\btext-(?:xs|sm|base|lg|xl|[2-9]xl|\[[^\]]*(?:px|rem|em|clamp|calc)[^\]]*\])/g;
+const forbiddenGenericCodeFont = /\bfont-mono\b/g;
 const forbiddenInlineFontSize = /\bfontSize\s*(?:=|:)\s*(?:\{\s*)?["']?(?:\d|clamp\(|calc\()/g;
 for (const file of webFiles.filter(({ path: file }) => !/\.(?:test|preview)\.tsx$/.test(file) && !/ItemGallery(?:\.preview)?\.tsx$/.test(file))) {
   for (const match of file.source.matchAll(forbiddenTypographyClass)) {
     const line = file.source.slice(0, match.index).split("\n").length;
     fail(`${path.relative(root, file.path)}:${line} uses a nonstandard typography class; use text-minimal, text-compact, text-regular, or text-comfortable`);
+  }
+  for (const match of file.source.matchAll(forbiddenGenericCodeFont)) {
+    const line = file.source.slice(0, match.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} uses font-mono; use the registered font-code role`);
   }
   for (const match of file.source.matchAll(forbiddenInlineFontSize)) {
     const line = file.source.slice(0, match.index).split("\n").length;

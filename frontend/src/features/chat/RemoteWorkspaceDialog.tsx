@@ -1285,7 +1285,7 @@ export function RemoteWorkspaceDialog({
         <div className="flex items-center gap-2 mb-2 text-compact text-content-muted flex-shrink-0">
           <GitBranch className="w-3.5 h-3.5 text-content-muted shrink-0" />
           <span
-            className="text-content-secondary font-mono truncate"
+            className="text-content-secondary font-code truncate"
             title={git.branch ?? undefined}
           >
             {git.branch || "(detached)"}
@@ -1294,7 +1294,7 @@ export function RemoteWorkspaceDialog({
           {!!git.behind && <span className="text-warning-400">↓{git.behind}</span>}
           {git.upstream && (
             <span
-              className="text-content-muted font-mono truncate"
+              className="text-content-muted font-code truncate"
               title={`Tracking ${git.upstream}`}
             >
               vs {git.upstream}
@@ -1442,7 +1442,7 @@ export function RemoteWorkspaceDialog({
  }`}
                         >
                           <span
-                            className={`w-3 shrink-0 text-center font-mono text-minimal ${mk?.cls ?? "text-content-muted"}`}
+                            className={`w-3 shrink-0 text-center font-code text-minimal ${mk?.cls ?? "text-content-muted"}`}
                           >
                             {mk?.m ?? "•"}
                           </span>
@@ -1509,7 +1509,7 @@ export function RemoteWorkspaceDialog({
                       >
                         <div className="flex items-center gap-2 text-compact">
                           <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                          <span className="font-mono text-minimal text-warning-400 shrink-0">
+                          <span className="font-code text-minimal text-warning-400 shrink-0">
                             {c.hash.slice(0, 7)}
                           </span>
                           <span
@@ -1595,7 +1595,7 @@ export function RemoteWorkspaceDialog({
                           <span className="truncate flex-1">{ent.name}</span>
                           {mk && (
                             <span
-                              className={`shrink-0 font-mono text-minimal ${mk.cls}`}
+                              className={`shrink-0 font-code text-minimal ${mk.cls}`}
                               title={`git: ${mk.m}`}
                             >
                               {mk.m}
@@ -1679,7 +1679,7 @@ export function RemoteWorkspaceDialog({
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                      <span className="font-mono text-compact text-warning-400 shrink-0">
+                      <span className="font-code text-compact text-warning-400 shrink-0">
                         {diff.hash.slice(0, 7)}
                       </span>
                       <span
@@ -1693,7 +1693,7 @@ export function RemoteWorkspaceDialog({
                     <>
                       <GitCompare className="w-3.5 h-3.5 text-content-muted shrink-0" />
                       <span
-                        className="text-content-secondary truncate flex-1 font-mono"
+                        className="text-content-secondary truncate flex-1 font-code"
                         title={diff.path || "(working tree)"}
                       >
                         {diff.path || (diff.staged ? "Staged changes" : "Working tree")}
@@ -1751,7 +1751,7 @@ export function RemoteWorkspaceDialog({
                             )
                           }
                           title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
-                          controlSize="regular" className={`flex items-center gap-1 rounded-sm font-mono ${
+                          controlSize="regular" className={`flex items-center gap-1 rounded-sm font-code ${
  diff.path === f.path
  ? "bg-zinc-700 text-content-primary": "bg-zinc-800/70 text-content-primary hover:text-content-strong"
  }`}

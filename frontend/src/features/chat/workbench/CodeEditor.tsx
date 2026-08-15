@@ -48,7 +48,7 @@ const theme = EditorView.theme(
     },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": {
-      fontFamily: "var(--font-mono)",
+      fontFamily: "var(--font-code)",
       lineHeight: "var(--leading-reading)",
     },
     ".cm-content": { padding: "12px 0", caretColor: "#d4d4d8" /* editorial ink */ },

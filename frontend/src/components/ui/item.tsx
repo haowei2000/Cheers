@@ -327,7 +327,7 @@ export function DiffLineItem({
       data-diff-tone={tone}
       data-control-size={size}
       className={cn(
-        "flex whitespace-pre px-2 font-mono text-compact",
+        "flex whitespace-pre px-2 font-code text-compact",
         controlMinHeightClasses[size],
         tone === "add" && "bg-emerald-950/30 text-success-200",
         tone === "remove" && "bg-rose-950/30 text-removed-200",

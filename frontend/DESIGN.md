@@ -166,10 +166,12 @@ Use `text-content-strong`, `text-content-primary`, `text-content-secondary`, or
 meaningful states; raw palette foregrounds such as `text-zinc-*` and
 `text-red-*` are not production typography APIs.
 
-The Web client has three semantic roles: Source Serif 4 plus Source Han Serif
-CN `display`, the same pair at text optical sizes for `reading`, and Source
-Sans 3 `utility`. The default UI face is utility; entity names, navigation,
+The Web client has four semantic roles: Source Serif 4 plus Source Han Serif
+CN `display`, the same pair at text optical sizes for `reading`, Source Sans 3
+`utility`, and the registered system monospace stack as `code`. The default UI face is utility; entity names, navigation,
 buttons, status, warnings, and trace labels must not inherit the reading serif.
+Commands, paths, identifiers, logs, and diffs use `font-code`; generic
+`font-mono` is not a production typography API.
 The Chinese serif is loaded on demand and excluded from the PWA app-shell
 precache; CJK utility text falls through to the locale-correct platform sans.
 
@@ -182,6 +184,7 @@ precache; CJK utility text falls through to the locale-correct platform sans.
 | Section header | `text-compact font-semibold text-content-muted uppercase tracking-section` |
 | In-panel group label | `text-minimal uppercase tracking-label text-content-muted` |
 | Hint / helper | `text-compact text-content-muted` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
+| Code / path / ID | `font-code text-compact` |
 | Mini scale (dense panels) | `text-compact` / `text-minimal` — floor is 10px |
 
 Sidebar group labels such as Channels, Voice Channels, Private, and Direct

@@ -281,7 +281,7 @@ export function WorkbenchManager() {
               <WorkbenchItem
                 key={t.id}
                 title={t.title}
-                status={<span className="max-w-32 truncate font-mono text-minimal text-content-muted" title={t.id}>{t.id}</span>}
+                status={<span className="max-w-32 truncate font-code text-minimal text-content-muted" title={t.id}>{t.id}</span>}
                 leading={<Package className="w-3.5 h-3.5 text-accent-400/70 flex-shrink-0" />}
                 actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${t.title}`} variant="plain"
                   onClick={async () => {
@@ -335,7 +335,7 @@ export function WorkbenchManager() {
                 <WorkbenchItem
                   key={p.id}
                   title={p.title}
-                  status={<span className="max-w-32 truncate font-mono text-minimal text-content-muted" title={p.id}>{p.id}</span>}
+                  status={<span className="max-w-32 truncate font-code text-minimal text-content-muted" title={p.id}>{p.id}</span>}
                   leading={<Laptop className="w-3.5 h-3.5 text-success-400/70 flex-shrink-0" />}
                   actions={<UiButton action="uninstall" content="icon" aria-label={`Uninstall ${p.title}`} variant="plain"
                     onClick={async () => {

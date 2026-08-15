@@ -274,33 +274,33 @@ function AuditRow({
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
-                {e.option_id && <span className="text-content-muted font-mono"> · {e.option_id}</span>}
+                {e.option_id && <span className="text-content-muted font-code"> · {e.option_id}</span>}
               </DetailRow>
             )}
             {toolTitle && !command && (
               <DetailRow label="Tool">
-                <span className="font-mono">{toolTitle}</span>
+                <span className="font-code">{toolTitle}</span>
               </DetailRow>
             )}
             {command && (
               <DetailRow label="Command">
-                <span className="font-mono text-content-secondary whitespace-pre-wrap">{command}</span>
+                <span className="font-code text-content-secondary whitespace-pre-wrap">{command}</span>
               </DetailRow>
             )}
             {paths.length > 0 && (
               <DetailRow label={paths.length > 1 ? "Files" : "File"}>
-                <span className="font-mono">{paths.join(", ")}</span>
+                <span className="font-code">{paths.join(", ")}</span>
               </DetailRow>
             )}
             {cwd && (
               <DetailRow label="cwd">
-                <span className="font-mono">{cwd}</span>
+                <span className="font-code">{cwd}</span>
               </DetailRow>
             )}
             {kind && <DetailRow label="Kind">{kind}</DetailRow>}
             {e.request_id && (
               <DetailRow label="Request">
-                <span className="font-mono text-content-muted">{short(e.request_id)}</span>
+                <span className="font-code text-content-muted">{short(e.request_id)}</span>
               </DetailRow>
             )}
           </div>

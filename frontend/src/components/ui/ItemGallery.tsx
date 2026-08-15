@@ -89,7 +89,7 @@ export function ItemGallery() {
         </div>
       </header>
 
-      <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
+      <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 md:grid-cols-2 md:divide-x md:divide-zinc-700 xl:grid-cols-4">
         <div className="px-3 py-3">
           <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
             Display · Opsz 60
@@ -99,7 +99,7 @@ export function ItemGallery() {
           </h2>
           <p className="mt-1 font-utility text-compact text-content-muted">Introductions · Hero titles · Major headings</p>
         </div>
-        <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
+        <div className="border-t border-zinc-700 px-3 py-3 md:border-t-0">
           <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
             Reading · Opsz 14
           </p>
@@ -108,7 +108,7 @@ export function ItemGallery() {
           </p>
           <p className="mt-1 font-utility text-compact text-content-muted">Messages · Previews · Long-form copy</p>
         </div>
-        <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
+        <div className="border-t border-zinc-700 px-3 py-3 md:border-l-0 xl:border-l">
           <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
             Utility · Source Sans 3
           </p>
@@ -116,6 +116,15 @@ export function ItemGallery() {
             Channel name · 频道名称 · Warning · Trace active
           </p>
           <p className="mt-2 font-utility text-compact text-content-muted">Controls · Status · Trace labels</p>
+        </div>
+        <div className="border-t border-zinc-700 px-3 py-3 md:border-l xl:border-t-0">
+          <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
+            Code · System Mono
+          </p>
+          <code className="mt-2 block overflow-x-auto whitespace-nowrap font-code text-compact text-content-secondary">
+            infisical run --env=dev -- cargo run
+          </code>
+          <p className="mt-2 font-utility text-compact text-content-muted">Commands · Paths · IDs · Diffs</p>
         </div>
       </section>
 

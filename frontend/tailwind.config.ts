@@ -29,7 +29,6 @@ export default {
         masthead: ["var(--font-serif)"],
         reading: ["var(--font-serif)"],
         utility: ["var(--font-ui)"],
-        mono: ["var(--font-mono)"],
       },
       fontSize: {
         minimal: ["var(--type-minimal-size)", { lineHeight: "var(--type-minimal-leading)", letterSpacing: "var(--type-minimal-tracking)" }],

@@ -157,7 +157,7 @@ export function TwoFactorCard() {
             Add this account in your authenticator app using the secret below
             (or open the otpauth link).
           </p>
-          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-content-primary break-all">
+          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary break-all">
             {secret}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -202,7 +202,7 @@ export function TwoFactorCard() {
           <p className="text-compact text-warning-200/90">
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
-          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-mono text-regular text-content-primary space-y-1">
+          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
             {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
             {backupCodes.map((c) => (
               <li key={c}>{c}</li>
@@ -338,7 +338,7 @@ export function PasskeyCard() {
           {loading ? "…" : available ? "Available" : "Not configured on server"}
         </span>
         {rpId && (
-          <span className="ml-2 font-mono text-compact text-content-muted">{rpId}</span>
+          <span className="ml-2 font-code text-compact text-content-muted">{rpId}</span>
         )}
       </p>
 

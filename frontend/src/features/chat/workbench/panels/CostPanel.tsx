@@ -90,7 +90,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
               </span>
             </td>
             <td
-              className="px-2 py-2 font-mono text-content-muted truncate max-w-[90px]"
+              className="px-2 py-2 font-code text-content-muted truncate max-w-[90px]"
               title={b.session_id ?? undefined}
             >
               {b.session_id ? b.session_id.slice(0, 8) : "—"}

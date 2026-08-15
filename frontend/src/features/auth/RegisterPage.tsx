@@ -222,7 +222,7 @@ export default function RegisterPage() {
             <Input
               type="text"
               placeholder="8-character code"
-              className="font-mono tracking-overline uppercase"
+              className="font-code tracking-overline uppercase"
               value={form.code}
               onChange={set("code")}
             />

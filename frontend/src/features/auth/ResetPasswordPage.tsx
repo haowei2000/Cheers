@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
               type="text"
               placeholder="8-character code"
               autoFocus
-              className="font-mono tracking-overline uppercase"
+              className="font-code tracking-overline uppercase"
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />

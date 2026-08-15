@@ -63,6 +63,16 @@
   font-variation-settings: normal;
 }
 
+/* Code is a semantic role, not a generic monospace decoration. Disable
+   contextual substitutions so commands, paths, identifiers, and diffs retain
+   their exact glyph sequence. */
+.font-code {
+  font-family: var(--font-code);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
 :root {
   /* Typography primitives are the single source of truth for every text role.
      Tailwind's semantic utilities read these values in tailwind.config.ts. */
@@ -70,7 +80,7 @@
     "PingFang SC", sans-serif;
   --font-serif: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC",
     "Songti SC", Georgia, serif;
-  --font-mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  --font-code: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
 
   --type-minimal-size: 0.625rem;
   --type-minimal-leading: 1.4;
@@ -269,7 +279,7 @@ button:not(:disabled) {
   border-radius: var(--radius-control);
   /* Size is owned by the renderer's semantic utility so inline code,
      code blocks, and the backtick-path button all agree — don't override here. */
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
 }
 
 .prose pre {

@@ -255,7 +255,7 @@ export function SandboxRenderer({
                   Clear
                 </UiButton>
               </div>
-              <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-compact leading-reading">
+              <div className="flex-1 overflow-auto px-2 pb-2 font-code text-compact leading-reading">
                 {devEvents.length === 0 ? (
                   <div className="text-content-muted">
                     No messages yet. The plugin posts cheers:ready when it boots.

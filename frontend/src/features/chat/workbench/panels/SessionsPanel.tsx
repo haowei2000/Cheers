@@ -188,7 +188,7 @@ function SessionCard({
         selected={Boolean(isSelected)}
         leading={<Folder className="h-3.5 w-3.5 text-content-muted" />}
         title={<span
-          className="block truncate font-mono text-compact"
+          className="block truncate font-code text-compact"
           style={{ direction: "rtl" }}
           title={cwd || "connector default"}
         >
@@ -249,7 +249,7 @@ function SessionCard({
         <div className="mt-1 space-y-2 rounded-sm bg-zinc-900/40 p-2">
           <div className="flex items-center gap-2 text-minimal text-content-muted">
             <span className="w-12 shrink-0">session</span>
-            <span className="font-mono text-content-secondary" title={s.session_id}>
+            <span className="font-code text-content-secondary" title={s.session_id}>
               {s.session_id.slice(0, 8)}
             </span>
           </div>
@@ -319,7 +319,7 @@ function SessionCard({
           <div className="text-minimal text-content-muted">
             <div className="flex items-center gap-1">
               <span className="w-12 shrink-0">wd</span>
-              <span className="font-mono text-content-secondary truncate" title={cwd || "connector default"}>
+              <span className="font-code text-content-secondary truncate" title={cwd || "connector default"}>
                 {cwd || "default"}
               </span>
               {cwd && <span>· immutable</span>}
@@ -327,7 +327,7 @@ function SessionCard({
             {dirsDraft === null ? (
               <div className="flex items-start gap-1 mt-1">
                 <span className="text-content-muted w-12 shrink-0">roots</span>
-                <span className="font-mono text-content-muted flex-1 break-all">
+                <span className="font-code text-content-muted flex-1 break-all">
                   {dirs.length ? dirs.join(", ") : "—"}
                 </span>
                 {canEditRoots && (
@@ -349,7 +349,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 font-mono text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 font-code text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <IconButton label="Save additional roots"

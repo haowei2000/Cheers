@@ -110,7 +110,7 @@ test("accepts only the four registered typography sizes", () => {
 });
 
 test("rejects business typography overrides on shared buttons", () => {
-  const source = `<><Button className="text-compact"/><UiButton className="font-reading text-comfortable"/><IconButton className="text-regular" label="Open"/></>`;
+  const source = `<><Button className="text-compact"/><UiButton className="font-reading text-comfortable"/><IconButton className="text-regular" label="Open"/><Button className="font-code">/workspace/Cheers</Button></>`;
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
   assert.equal(result.violations.sharedButtonTypographyOverride, 4);
 });

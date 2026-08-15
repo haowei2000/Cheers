@@ -54,7 +54,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
  )}
           >
             <Terminal className="w-4 h-4 text-success-400 flex-shrink-0" />
-            <span className="font-medium font-mono">/{c.name}</span>
+            <span className="font-medium font-code">/{c.name}</span>
             {c.description && (
               <span className="text-compact text-content-muted truncate">
                 {c.description}

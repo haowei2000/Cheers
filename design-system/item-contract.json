@@ -22,9 +22,10 @@
       "Reserve color for interaction and semantic state; ordinary hierarchy stays neutral."
     ],
     "typography": {
+      "code": "The registered Web code stack through font-code, with ligatures disabled and tabular figures enabled for commands, paths, identifiers, logs, and diffs. Native platforms use their system monospace face.",
       "display": "Source Serif 4 at display optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Semibold for Chinese introductions and major headings; Japanese and Korean use locale-correct native serif faces.",
       "reading": "Source Serif 4 at text optical sizes for Latin/Greek/Cyrillic and Source Han Serif CN Regular/Semibold for Chinese messages, previews, and long-form copy; Japanese and Korean use locale-correct native serif faces.",
-      "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts. Monospace is a technical sub-role for code only."
+      "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts."
     },
     "typographySizes": {
       "minimal": "10px",

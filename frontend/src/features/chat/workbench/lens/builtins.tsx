@@ -227,7 +227,7 @@ function MarkdownLens({ data, onChange }: LensProps) {
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"
-      className="h-full resize-none bg-zinc-950 text-content-secondary font-mono text-compact outline-none"
+      className="h-full resize-none bg-zinc-950 text-content-secondary font-code text-compact outline-none"
     />
   );
 }
@@ -633,7 +633,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
         {node.loc && (
           <div className="border-t border-zinc-800 pt-4">
             <dt className="text-minimal font-medium uppercase tracking-section text-content-muted">Source locator</dt>
-            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-4 text-content-secondary">{node.loc}</dd>
+            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-code text-compact leading-4 text-content-secondary">{node.loc}</dd>
           </div>
         )}
       </dl>

@@ -198,7 +198,7 @@ function FileSectionView({ section }: { section: FileSection }) {
         ) : (
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-content-muted" />
         )}
-        <span className="truncate font-mono text-content-secondary">{section.title}</span>
+        <span className="truncate font-code text-content-secondary">{section.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
           {section.binary && <span className="text-content-muted">binary</span>}
           {section.adds > 0 && <span className="text-success-400">+{section.adds}</span>}
@@ -249,7 +249,7 @@ export function DiffView({
 
   return (
     <div className={`overflow-auto ${className ?? ""}`}>
-      <div className="w-max min-w-full font-mono text-regular leading-regular">
+      <div className="w-max min-w-full font-code text-regular leading-regular">
         {/* Diffstat summary — sticky so totals stay visible while scrolling. */}
         <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1 text-compact tabular-nums backdrop-blur-sm">
           <span className="text-content-muted">

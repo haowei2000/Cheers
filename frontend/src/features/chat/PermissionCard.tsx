@@ -246,7 +246,7 @@ export function PermissionCard({
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
         </span>
         {command && (
-          <code className="font-mono text-content-muted truncate min-w-0">
+          <code className="font-code text-content-muted truncate min-w-0">
             {command}
           </code>
         )}
@@ -278,7 +278,7 @@ export function PermissionCard({
         <div className="min-w-0 flex-1">
           <p className="text-compact font-medium text-content-secondary">{title}</p>
           {command && (
-            <p className="mt-1 truncate font-mono text-compact text-content-muted">
+            <p className="mt-1 truncate font-code text-compact text-content-muted">
               {command}
             </p>
           )}
@@ -308,7 +308,7 @@ export function PermissionCard({
         <div className="min-w-0">
           <p className="text-compact font-medium text-content-secondary">{title}</p>
           {command && (
-            <p className="mt-1 truncate font-mono text-compact text-content-muted">
+            <p className="mt-1 truncate font-code text-compact text-content-muted">
               {command}
             </p>
           )}
@@ -347,11 +347,11 @@ export function PermissionCard({
           {compact ? (
             <OverflowText
               fullText={command}
-              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact text-content-secondary"
+              className="w-full rounded-sm bg-zinc-950 px-3 py-2 font-code text-compact text-content-secondary"
               touchDisclosure={false}
             />
           ) : (
-            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-mono text-compact leading-reading text-content-secondary">
+            <pre className="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-zinc-950 px-3 py-2 font-code text-compact leading-reading text-content-secondary">
               {command}
             </pre>
           )}

@@ -357,7 +357,7 @@ function AddTab() {
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-content-primary placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
+            controlSize="regular" className="rounded-sm bg-zinc-900 text-comfortable md:text-regular text-content-primary placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-code"
           />
         </div>
         <Button action="lookup" aria-label="Look up user ID" loading={busy} onClick={lookup} disabled={!id.trim()} />

@@ -134,7 +134,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
             </div>
           )}
           {selectedMethod?.method_id && (
-            <p className="mt-1 font-mono text-minimal text-content-muted">
+            <p className="mt-1 font-code text-minimal text-content-muted">
               method: {selectedMethod.method_id}
               {selectedMethod.auth_type ? ` · ${selectedMethod.auth_type}` : ""}
             </p>

@@ -169,7 +169,7 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <span className="font-mono text-compact text-content-muted">{result.branch ?? "Working tree"}</span>
+        <span className="font-code text-compact text-content-muted">{result.branch ?? "Working tree"}</span>
         {result.clean === true && <span className="text-success-400/80">Clean</span>}
         {countItems.length > 0 && (
           <span className="text-minimal text-content-muted">
@@ -184,10 +184,10 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
             return (
               <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-sm px-1 py-2 hover:bg-zinc-900/60">
                 <span className={cn(
-                  "w-4 shrink-0 font-mono text-minimal",
+                  "w-4 shrink-0 font-code text-minimal",
                   file.state === "conflicted" ? "text-danger-300/80" : file.state === "untracked" ? "text-success-400/80" : "text-content-muted",
                 )}>{marker}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-compact text-content-secondary" title={file.path}>{file.path}</span>
+                <span className="min-w-0 flex-1 truncate font-code text-compact text-content-secondary" title={file.path}>{file.path}</span>
               </div>
             );
           })}
@@ -225,7 +225,7 @@ function DetailValue({ value }: { value: unknown }) {
       : value
     : formatJson(value);
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono">
+    <pre className="whitespace-pre-wrap break-words font-code">
       {rendered}
     </pre>
   );
@@ -255,7 +255,7 @@ function RawEventData({ metadata, data }: { metadata: JsonRecord; data: JsonReco
 
 function DiffDelta({ stats }: { stats: { additions: number; deletions: number } }) {
   return (
-    <span className="shrink-0 font-mono text-minimal tabular-nums">
+    <span className="shrink-0 font-code text-minimal tabular-nums">
       <span className="text-success-400/90">+{stats.additions}</span>
       {" "}
       <span className="text-danger-400/80">−{stats.deletions}</span>
@@ -272,7 +272,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-        <span className="min-w-0 truncate font-mono text-compact text-content-secondary" title={selected.path}>
+        <span className="min-w-0 truncate font-code text-compact text-content-secondary" title={selected.path}>
           {pathBasename(selected.path)}
         </span>
         <DiffDelta stats={diffs.length === 1 ? selectedStats : total} />
@@ -293,7 +293,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
  )}
                 title={diff.path}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-compact">
+                <span className="min-w-0 flex-1 truncate font-code text-compact">
                   {pathBasename(diff.path)}
                 </span>
                 <DiffDelta stats={stats} />
@@ -312,7 +312,7 @@ function FileEditEmptyState({ path }: { path: string | null }) {
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="text-compact text-content-secondary">No file changes</div>
       {path && (
-        <div className="mt-1 truncate font-mono text-compact text-content-muted" title={path}>
+        <div className="mt-1 truncate font-code text-compact text-content-muted" title={path}>
           {path}
         </div>
       )}
@@ -414,10 +414,10 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
             )}
           </div>
           {presentation.command && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-content-secondary">{presentation.command}</pre>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-code text-content-secondary">{presentation.command}</pre>
           )}
           {!presentation.command && presentation.target && (
-            <div className="mt-2 break-all font-mono text-content-secondary">{presentation.target}</div>
+            <div className="mt-2 break-all font-code text-content-secondary">{presentation.target}</div>
           )}
         </div>
       )}
@@ -460,13 +460,13 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {cwd && (
         <div>
           <div className="text-minimal font-medium uppercase tracking-label text-content-muted">Working directory</div>
-          <div className="mt-1 font-mono text-content-secondary">{cwd}</div>
+          <div className="mt-1 font-code text-content-secondary">{cwd}</div>
         </div>
       )}
       {!diffs.length && !showFileEditEmpty && filePath && (
         <div>
           <div className="text-minimal font-medium uppercase tracking-label text-content-muted">File</div>
-          <div className="mt-1 font-mono text-content-secondary">{filePath}</div>
+          <div className="mt-1 font-code text-content-secondary">{filePath}</div>
         </div>
       )}
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
@@ -533,11 +533,11 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       {command && (
         <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-3">
           <p className="mb-2 text-minimal uppercase tracking-label text-content-muted">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-content-secondary">
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-code text-compact text-content-secondary">
             {command}
           </pre>
           {cwd && (
-            <p className="mt-2 truncate font-mono text-compact text-content-muted" title={cwd}>
+            <p className="mt-2 truncate font-code text-compact text-content-muted" title={cwd}>
               {cwd}
             </p>
           )}
@@ -545,7 +545,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       )}
       {!pending && decision && (
         <div className="px-3 py-3 text-compact text-content-muted">
-          Decision: <span className="font-mono text-content-secondary">{decision}</span>
+          Decision: <span className="font-code text-content-secondary">{decision}</span>
         </div>
       )}
     </div>
@@ -648,7 +648,7 @@ function TraceItem({
           {displayTitle}
         </span>
         {preview && (
-          <span className="min-w-0 flex-1 truncate font-mono text-minimal text-content-muted" title={preview}>
+          <span className="min-w-0 flex-1 truncate font-code text-minimal text-content-muted" title={preview}>
             {preview}
           </span>
         )}
