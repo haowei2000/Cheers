@@ -36,6 +36,12 @@ interface Manifest {
 const idPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+function zipEpoch(): Date {
+  // fflate writes ZIP timestamps with local Date fields. Constructing local
+  // midnight keeps the DOS timestamp identical in every runner timezone.
+  return new Date(1980, 0, 1, 0, 0, 0, 0);
+}
+
 export function validateManifest(manifest: Manifest): void {
   if (manifest.schemaVersion !== 1) throw new Error("schemaVersion must be 1");
   if (!idPattern.test(manifest.id)) throw new Error("invalid extension id");
@@ -142,7 +148,7 @@ export async function packExtension(sourceDirectory: string, destination?: strin
   for (const [path, content] of entries) {
     if (path.startsWith("seed/") && content.byteLength > 256 * 1024) throw new Error(`seed file exceeds 256 KiB: ${path}`);
   }
-  const archive = zipSync(ordered, { level: 9, mtime: new Date("1980-01-01T00:00:00Z") });
+  const archive = zipSync(ordered, { level: 9, mtime: zipEpoch(), os: 0, attrs: 0 });
   if (archive.byteLength > 4 * 1024 * 1024) throw new Error("extension exceeds 4 MiB compressed");
   const output = resolve(destination ?? join(dirname(root), `${manifest.id}.cheers-extension`));
   await writeFile(output, archive);
