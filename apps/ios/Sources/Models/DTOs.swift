@@ -689,20 +689,42 @@ struct WorkspaceDto: Codable, Identifiable, Hashable {
 }
 
 struct WorkspaceMemberDto: Decodable, Identifiable, Hashable {
-    let userId: String
+    let memberId: String
+    let memberType: String
     let username: String
     let displayName: String?
     let role: String
     let status: String
 
-    var id: String { userId }
+    var id: String { "\(memberType):\(memberId)" }
+    var userId: String { memberId }
     var name: String { displayName?.isEmpty == false ? displayName! : username }
 
     enum CodingKeys: String, CodingKey {
+        case memberId = "member_id"
+        case memberType = "member_type"
         case userId = "user_id"
+        case botId = "bot_id"
         case username
         case displayName = "display_name"
         case role, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let botId = try values.decodeIfPresent(String.self, forKey: .botId)
+        let genericId = try values.decodeIfPresent(String.self, forKey: .memberId)
+        let legacyUserId = try values.decodeIfPresent(String.self, forKey: .userId)
+        memberId = genericId
+            ?? legacyUserId
+            ?? botId
+            ?? ""
+        memberType = try values.decodeIfPresent(String.self, forKey: .memberType)
+            ?? (botId == nil ? "user" : "bot")
+        username = try values.decode(String.self, forKey: .username)
+        displayName = try values.decodeIfPresent(String.self, forKey: .displayName)
+        role = try values.decode(String.self, forKey: .role)
+        status = try values.decode(String.self, forKey: .status)
     }
 }
 
@@ -2082,17 +2104,58 @@ struct FsWriteResponse: Decodable {
     let version: Int
 }
 
-struct WorkbenchTemplateRow: Decodable, Identifiable {
+struct WorkbenchExtensionSummary: Decodable, Identifiable {
+    let id: String
+    let version: String
+    let title: String
+    let description: String
+    let sha256: String
+    let origin: String
+    let scenes: [WorkbenchExtensionSceneContribution]
+    /// iOS intentionally ignores web renderer contributions and uses native lenses.
+    let renderers: [WorkbenchExtensionRendererContribution]
+}
+
+struct WorkbenchExtensionSceneContribution: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let definition: String
+}
+
+struct WorkbenchExtensionRendererContribution: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let entry: String
+}
+
+struct WorkbenchResolvedScene: Decodable {
+    let id: String
+    let title: String
+    let items: [WorkbenchExtensionSceneItem]
+    let seed: [WorkbenchExtensionSeedFile]
+    let pin: [String]
+}
+
+struct WorkbenchExtensionSceneItem: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let file: String
+    let renderer: String
+    let config: JSONValue?
+}
+
+struct WorkbenchExtensionSeedFile: Decodable {
+    let path: String
+    let content: String
+}
+
+struct WorkbenchTemplateRow: Identifiable {
     let tplId: String
     let title: String
     let manifest: WorkbenchTemplateManifest
     let origin: String?
     var id: String { tplId }
 
-    enum CodingKeys: String, CodingKey {
-        case tplId = "tpl_id"
-        case title, manifest, origin
-    }
 }
 
 struct WorkbenchTemplateManifest: Codable, Identifiable {
@@ -2108,6 +2171,7 @@ struct WorkbenchTemplateView: Codable, Identifiable {
     let title: String
     let file: String
     let lens: String
+    let renderer: String
     let config: JSONValue?
 }
 

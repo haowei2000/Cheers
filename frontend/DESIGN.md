@@ -52,6 +52,19 @@ not choose `content` or `variant`. The registered presentation is:
 | Full form | — | Back, Cancel | Create, Save |
 | Dialog footer | — | Back, Cancel | — |
 | Destructive confirmation | — | Cancel | Delete, Remove |
+| Account security | — | — | Add, Copy, Turn off, Done, Turn on, Link, Revoke, Set up, Unlink, Update |
+| Dark settings | — | Review, Resolve, Dismiss, Test | Check, Turn off, Turn on, Open, Restart, Retry, Save, Sign out, Switch |
+
+Account-security presentation uses one additional tone rule inside the shared
+`ActionButton` registry: Add/Done/Turn on/Set up/Update use the dark-surface
+emphasis tone; Copy/Link are secondary; Turn off/Revoke/Unlink are danger. Every one
+uses the registered utility font, regular type token, icon slot, and visible
+label, including disabled and loading states. Button-like external links are
+not allowed; render them as underlined semantic links.
+
+Settings pages use the `settings` action context. Its completion actions use
+the dark `emphasis` surface instead of the light `primary` surface; supporting
+actions use `secondary`, and sign-out/destructive actions use `danger`.
 
 Use `ControlTrigger` for a disclosure whose label/content is the disclosed
 object itself (for example a diff file heading). `ActionButton` disclosure is
@@ -85,17 +98,19 @@ Use `ItemGallery` as the canonical visual fixture for the three levels.
 
 ## 1. Tokens
 
-### Appearance: dark-only (deliberate)
+### Appearance: system, light, and dark
 
-Cheers ships a **single dark appearance** — this is a product decision, not an
-oversight. `index.css` sets `color-scheme: dark`; there is no light token set
-and no in-app appearance switch. The audience (developers running an
-agent-console chat tool) works dark, and a second theme would double the
-token-maintenance surface for little value. The trade-off we accept: users
-whose OS is set to light still get a dark app. If that ever changes, the
-migration is "lift every `zinc-*` literal into CSS variables + add a
-`prefers-color-scheme` default + a System/Light/Dark setting" — do it as its
-own PR, not piecemeal.
+Cheers supports **System / Light / Dark**, with System as the default. The
+preference is stored per device in `cheers.theme`; System listens to
+`prefers-color-scheme` live, including changes made while the app is open.
+`ThemeProvider` owns state and `index.html` applies the stored preference before
+React starts so the initial frame does not flash the wrong appearance.
+
+The Tailwind `zinc`, neutral `indigo`, status, rail, and sidebar palettes resolve
+through CSS variables in `index.css`. Existing semantic utility classes therefore
+switch globally; product components must not add parallel `dark:` class lists.
+Shared controls and custom renderers consume the same tokens. Brand artwork and
+isolated sandbox documents may retain their authored colors.
 
 ### Four-level neutral foreground hierarchy (non-negotiable)
 
@@ -113,6 +128,30 @@ exactly four semantic levels; `zinc-300/500/600/700` are not foreground colors:
 surfaces. Syntax highlighting may use registered categorical colors. Business
 button call sites may not override an ordinary action to `zinc-200/400`.
 
+### Semantic typography aliases
+
+Use semantic text roles when the role is clear; keep raw size tokens for
+geometry-driven controls and one-off dense layouts. These classes define the
+complete text contract: family, size, line-height, weight/style, and foreground
+color.
+
+| Alias | Use |
+|---|---|
+| `text-message` | Chat messages, markdown copy, long-form previews; defaults to `zinc-200` |
+| `text-message-error` | Error text inside a message; italic red serif |
+| `text-body` | Ordinary UI body copy; defaults to `zinc-50` |
+| `text-body-secondary` | Secondary body copy; defaults to `zinc-200` |
+| `text-body-error` / `text-body-warning` | Body-sized state text |
+| `text-title` | Small dialog/card titles; semibold `zinc-50` |
+| `text-label` | Form labels and compact text actions; defaults to `zinc-400` |
+| `text-label-primary` | Compact primary text actions; defaults to `zinc-50` |
+| `text-section-label` | Uppercase section dividers and group labels; defaults to `zinc-400` |
+| `text-section-label-error` | Uppercase section/error group label |
+| `text-caption` | Hints, metadata, descriptions, empty-state copy; defaults to `zinc-400` |
+| `text-caption-error` / `text-caption-italic` | Caption-sized state or italic variants |
+| `text-metadata` | Minimal-size dense metadata; defaults to `zinc-400` |
+| `text-status` | Status values and compact operational figures; defaults to `zinc-50` |
+
 ### Color semantics
 
 | Role | Token | Notes |
@@ -125,18 +164,24 @@ button call sites may not override an ordinary action to `zinc-200/400`.
 | Grayscale | `zinc` only | Never `gray`, `slate`, `neutral`, `stone` |
 | Categorical (data-coding) | any tinted hue | Badges that encode *identity*, not state — e.g. permission-capability tags (sky/violet), per-bot activity markers, avatar palette, syntax highlighting. Keep them to tinted badges/marks; never use them for interactive chrome, focus rings or buttons. |
 
-### Surfaces (dark theme, back to front)
+### Surfaces (semantic, back to front)
 
 | Layer | Value |
 |---|---|
-| App background | `#09090b` (body) / `bg-zinc-950` |
-| Workspace rail | `bg-rail` (`#0f0f11`) |
-| Sidebar | `bg-sidebar` (`#18181b`) |
+| App background | `bg-zinc-950` |
+| Workspace rail | `bg-rail` |
+| Sidebar | `bg-sidebar` |
 | Cards, dialogs, popovers | `bg-zinc-900` — no border; separation comes from surface contrast + shadow |
 | Fields | `bg-zinc-800 ring-1 ring-inset ring-zinc-600` |
 | Chips, soft buttons | `bg-zinc-800` (or `/60` for chips) |
 | Inset fields inside dialogs | `bg-zinc-950` |
 | Hover on soft surfaces | `bg-zinc-700` |
+
+Settings screens compose `<SettingsSection>` and `<SettingsCard>` rather than
+repeating card padding, title, description, and action anatomy. Compact KPI
+summaries use `<MetricCard>` with a registered semantic `tone`; callers do not
+pass arbitrary foreground classes. All three live in `src/components/ui/` and
+are demonstrated in the Item Gallery.
 
 **Elevation principle — borderless everywhere.** Layers separate by surface
 contrast, shadow, and deliberate spacing, never by layout-affecting box outlines: `border
@@ -158,22 +203,33 @@ Tailwind's legacy size names, arbitrary pixel utilities, relative `em` sizing, o
 literal `fontSize`; use the corresponding CSS variable when an external API
 requires an inline value.
 
-The Web client has three semantic roles: Source Serif 4 plus Source Han Serif
-CN `display`, the same pair at text optical sizes for `reading`, and Source
-Sans 3 `utility`. The default UI face is utility; entity names, navigation,
+Every text property is registered globally: families, optical variants, size,
+line height, tracking, weight, foreground hierarchy, and semantic state color.
+Use `text-content-strong`, `text-content-primary`, `text-content-secondary`, or
+`text-content-muted` for neutral copy. Use `text-accent-*`, `text-danger-*`,
+`text-warning-*`, `text-success-*`, `text-info-*`, and `text-removed-*` for
+meaningful states; raw palette foregrounds such as `text-zinc-*` and
+`text-red-*` are not production typography APIs.
+
+The Web client has four semantic roles: Source Serif 4 plus Source Han Serif
+CN `display`, the same pair at text optical sizes for `reading`, Source Sans 3
+`utility`, and the registered system monospace stack as `code`. The default UI face is utility; entity names, navigation,
 buttons, status, warnings, and trace labels must not inherit the reading serif.
+Commands, paths, identifiers, logs, and diffs use `font-code`; generic
+`font-mono` is not a production typography API.
 The Chinese serif is loaded on demand and excluded from the PWA app-shell
 precache; CJK utility text falls through to the locale-correct platform sans.
 
 | Role | Recipe |
 |---|---|
 | Page H1 | `text-comfortable font-semibold` |
-| Dialog / panel title | `text-regular font-semibold text-zinc-100` |
-| Body | `text-regular text-zinc-200/300` |
-| Form label | `text-compact font-medium text-zinc-400 uppercase tracking-wide` |
-| Section header | `text-compact font-semibold text-zinc-400 uppercase tracking-wider` |
-| In-panel group label | `text-minimal uppercase tracking-wide text-zinc-400` |
-| Hint / helper | `text-compact text-zinc-400` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
+| Dialog / panel title | `text-regular font-semibold text-content-primary` |
+| Body | `text-regular text-content-secondary` |
+| Form label | `text-compact font-medium text-content-muted uppercase tracking-label` |
+| Section header | `text-compact font-semibold text-content-muted uppercase tracking-section` |
+| In-panel group label | `text-minimal uppercase tracking-label text-content-muted` |
+| Hint / helper | `text-compact text-content-muted` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
+| Code / path / ID | `font-code text-compact` |
 | Mini scale (dense panels) | `text-compact` / `text-minimal` — floor is 10px |
 
 Sidebar group labels such as Channels, Voice Channels, Private, and Direct
@@ -217,6 +273,11 @@ control. Label length never determines peer-control width. Business call sites
 must not add `px-*`, `pl-*`, or `pr-*` to shared controls; horizontal padding
 is owned by the primitive or a registered variant.
 
+Toggle and panel-launch controls pass `selected` to `<Button>` or
+`<ControlTrigger>`. The primitive owns the selected fill and exposes
+`aria-pressed` for toggles; disclosure triggers retain `aria-expanded` instead.
+Business call sites must not recreate selected styling with `className`.
+
 Business call sites must not add any local `p-*` to shared controls. Icon actions
 use `square` plus a registered `ControlSize`; text actions use the primitive's
 registered padding. Flex rows and headers that participate in the control rhythm
@@ -232,56 +293,41 @@ recipes are:
 
 | Kind | Recipe |
 |---|---|
-| Neutral soft | `rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-zinc-100` |
-| Indigo soft | `rounded-lg bg-indigo-600/15 text-indigo-200 hover:bg-indigo-600/30` |
-| Danger soft | `rounded-lg bg-red-950/40 text-red-300 hover:bg-red-950/70` |
-| Warning soft | `rounded bg-amber-900/40 text-amber-200 hover:bg-amber-900/60` |
+| Neutral soft | `rounded-lg bg-zinc-800 text-content-secondary hover:bg-zinc-700 hover:text-content-primary` |
+| Indigo soft | `rounded-lg bg-indigo-600/15 text-accent-200 hover:bg-indigo-600/30` |
+| Danger soft | `rounded-lg bg-red-950/40 text-danger-300 hover:bg-red-950/70` |
+| Warning soft | `rounded bg-amber-900/40 text-warning-200 hover:bg-amber-900/60` |
 
 **Don't**: `border border-*` on any button (one exception: the dashed
 staged-file chip in `fileView.tsx`, where the dashed outline means "not
 fetched yet"). Don't hand-roll `bg-indigo-600` primaries — use `<Button>`.
 
-### 2.2 Search / filter field — three forms
+### 2.2 Leading-icon and search fields
 
-One visual language, three placements. All use a `Search` (or contextual)
-lucide icon at `w-3.5`–`w-4 text-zinc-400` and a transparent inner input.
-
-**A. Dialog picker search** — wrapper carries the style, input is bare.
-Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
-
-```tsx
-<div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
-                focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-  <Search className="w-4 h-4 text-zinc-400" />
-  <input className="flex-1 bg-transparent text-regular text-zinc-200 outline-none
-                    placeholder:text-zinc-400" placeholder="…" />
-</div>
-```
-
-**B. Page-level filter** — self-contained input with an absolutely
-positioned icon. Used by AdminUsers filter, FriendsPage lookup:
+Use `<InputWithLeadingIcon>` for a single-line field with a contextual icon
+such as a channel hash. Use `<SearchInput>` for every search or filter field;
+it fixes `type="search"`, the Search icon, accessible naming, icon geometry,
+and native cancel-button normalization.
 
 ```tsx
-<div className="relative">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-  <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
-                    text-comfortable md:text-regular text-zinc-100 placeholder:text-zinc-400
-                    focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
-</div>
+<InputWithLeadingIcon
+  leading={<Hash />}
+  aria-label="Channel name"
+  placeholder="Channel name…"
+/>
+
+<SearchInput
+  aria-label="Search workspace members"
+  placeholder="Search members…"
+/>
 ```
 
-**C. Inline popover filter** — bare input on a divider, no box. Used inside
-dense popovers/panels (ActivityPanel search):
-
-```tsx
-<input className="w-full bg-transparent border-b border-zinc-800 px-1 py-1.5
-                  text-compact text-zinc-200 outline-none placeholder:text-zinc-400
-                  focus:border-indigo-500/60" />
-```
-
-Notes: `text-comfortable md:text-regular` on any input reachable on mobile (iOS zoom
-guard). Field background inside dialogs is `bg-zinc-950` (inset look);
-standalone on a `zinc-950` page it is `bg-zinc-900`.
+Both composites render the icon inside the shared `<Input>` boundary. `Input`
+alone owns the fill, radius, neutral inset ring, focus ring, error state,
+ControlSize, mobile zoom guard, and horizontal padding. Business code must not
+wrap an Input in another `focus-within:ring-*` field, manually position a Search
+icon, or add `pl-9`; use `containerClassName` only for layout and `className`
+only for approved surface/tone overrides.
 
 ### 2.3 Text fields
 
@@ -292,7 +338,7 @@ the same recipe until a shared component exists:
 
 ```tsx
 // field canon (input / select / textarea) — no layout-affecting border
-className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-zinc-100 placeholder:text-zinc-400
+className="rounded-lg bg-zinc-800 px-3 py-2 text-regular text-content-primary placeholder:text-content-muted
            ring-1 ring-inset ring-zinc-600
            focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
@@ -337,8 +383,8 @@ ancestor, portal to `document.body` instead (ProfileHovercard precedent,
 ### 2.5 Chips (composer, files)
 
 Borderless soft pills: `rounded-lg bg-zinc-800/60 px-2 py-1 text-compact`.
-Interactive chips add `hover:bg-zinc-800 hover:text-zinc-200`; an active/open
-chip switches to `bg-indigo-600/15 text-indigo-200`.
+Interactive chips add `hover:bg-zinc-800 hover:text-content-secondary`; an active/open
+chip switches to `bg-indigo-600/15 text-accent-200`.
 
 **Composer toolbar controls** (session target, model — the composer card's
 controls row) use `<ComposerToolbarButton>`. Both consume the same regular
@@ -346,7 +392,7 @@ controls row) use `<ComposerToolbarButton>`. Both consume the same regular
 truncates inside the slot, so content length never changes the button size.
 Use a leading semantic icon and a trailing `ChevronDown` that rotates 180°
 while open. Three states: resting (soft zinc),
-open/targeted (`bg-indigo-600/15 text-indigo-200`, icon `text-indigo-400`),
+open/targeted (`bg-indigo-600/15 text-accent-200`, icon `text-accent-400`),
 mobile touch target via the regular ControlSize mapping. Focus comes from the
 shared Button primitive. The composer card itself
 is the canonical borderless field with the shared 10px Web radius and
@@ -357,10 +403,10 @@ is the canonical borderless field with the shared 10px Web radius and
 
 | Badge | Recipe |
 |---|---|
-| BOT tag | `text-minimal px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium` |
-| Unread count | `text-minimal font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
+| BOT tag | `text-minimal px-1 py-0.5 rounded bg-indigo-900/60 text-accent-300 font-medium` |
+| Unread count | `text-minimal font-bold bg-indigo-600 text-content-on-accent rounded-full px-1.5 py-0.5 min-w-[18px] text-center` |
 | Mention count | same shape, `bg-rose-600` |
-| Role / status label | plain `text-minimal text-zinc-400` next to the name (no pill) |
+| Role / status label | plain `text-minimal text-content-muted` next to the name (no pill) |
 
 ### 2.7 Presence dot
 
@@ -388,14 +434,21 @@ cut-out mask, not a decorative border.)
 - **Underline tabs** (page & detail navigation — FriendsPage, BotDetailPanel):
   container `flex gap-1 border-b border-zinc-800`; item
   `px-3 py-2 text-regular border-b-2 -mb-px transition-colors` with active
-  `border-indigo-500 text-zinc-100`, inactive
-  `border-transparent text-zinc-400 hover:text-zinc-200`.
+  `border-indigo-500 text-content-primary`, inactive
+  `border-transparent text-content-muted hover:text-content-secondary`.
 - **Pill tabs** (dense panel toolbars — ViewBoard):
-  `rounded-md px-2 py-1 text-compact` with active `bg-zinc-800 text-zinc-100`,
-  inactive `text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200`.
+  `rounded-md px-2 py-1 text-compact` with active `bg-zinc-800 text-content-primary`,
+  inactive `text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary`.
 
 Don't introduce a third style; segmented controls reuse the pill recipe
 inside a `bg-zinc-800` container.
+
+Mutually exclusive form choices use `<ChoiceGroup>` and its registered
+`<ChoiceButton>` anatomy, not tabs or feature-owned buttons. The group exposes
+`radiogroup`/`radio` semantics, one roving tab stop, and arrow/Home/End keyboard
+navigation. Each choice uses the shared `iconText` slots at fill width; selected
+state uses a neutral filled surface rather than a resting border or an
+action-colored treatment.
 
 ### 2.9 Empty state
 
@@ -403,32 +456,32 @@ Canon is the Plan panel: centered, icon + primary + secondary line.
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
-  <SomeIcon className="w-5 h-5 text-zinc-400 mb-2" />   {/* decorative glyph: zinc-500 ok */}
-  <p className="text-compact text-zinc-400">Nothing here yet</p>       {/* primary line: meaningful text */}
-  <p className="text-compact text-zinc-400 mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
+  <SomeIcon className="w-5 h-5 text-content-muted mb-2" />   {/* decorative glyph: zinc-500 ok */}
+  <p className="text-compact text-content-muted">Nothing here yet</p>       {/* primary line: meaningful text */}
+  <p className="text-compact text-content-muted mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
 </div>
 ```
 
-Compact lists may use the one-liner `text-compact text-zinc-400 py-4 text-center`.
+Compact lists may use the one-liner `text-compact text-content-muted py-4 text-center`.
 
 ### 2.10 Loading
 
 - Inline / action: `Loader2` icon + `animate-spin`, inheriting `currentColor`.
-- Full surface: `Loader2 w-5 h-5 text-zinc-400 animate-spin` centered.
+- Full surface: `Loader2 w-5 h-5 text-content-muted animate-spin` centered.
 - Buttons: the built-in `loading` prop of `<Button>`.
 - Don't hand-roll CSS border-circle spinners; don't pair a spinner with
   "Loading…" text unless the wait is long.
 
 ### 2.11 Close button
 
-`text-zinc-400 hover:text-zinc-200` with `X w-4 h-4`, top-right. Drawers and
+`text-content-muted hover:text-content-secondary` with `X w-4 h-4`, top-right. Drawers and
 floating panels may add `rounded p-0.5 hover:bg-zinc-800`. Hover target is
 `zinc-300` — not `zinc-200`.
 
 ### 2.12 List rows
 
 Selectable rows use the shared Item geometry and hover fill. Selected
-NavigationItems use `bg-zinc-800 text-zinc-100` plus `aria-current="page"`;
+NavigationItems use `bg-zinc-800 text-content-primary` plus `aria-current="page"`;
 the fill remains visible even when a borderless placement suppresses the
 ordinary left marker. Every interactive row needs a hover state.
 
@@ -447,7 +500,7 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
 ```
 
 `<SectionHead>` (same file) is the in-card divider heading —
-`text-compact font-semibold text-zinc-400 uppercase tracking-wider`, optional
+`text-compact font-semibold text-content-muted uppercase tracking-section`, optional
 leading icon. Don't repeat a heading the surrounding chrome already says (a
 card whose header shows the identity doesn't also need a "Profile" heading).
 
@@ -468,7 +521,7 @@ card, `role="tooltip"`, associated to its trigger via `aria-describedby`.
 ```
 
 **Never hide behind hover** anything the user must see to act correctly:
-validation errors stay inline (`text-red-400` next to the field), and
+validation errors stay inline (`text-danger-400` next to the field), and
 irreversible consequences are confirmed in a dialog, not merely tooltipped.
 Hover help is for "nice to know", not "need to know".
 
@@ -477,7 +530,7 @@ Hover help is for "nice to know", not "need to know".
 Destructive actions (delete, disable) sit in their own trailing section
 behind a `Danger zone` `<SectionHead>`, divider-separated from the form above
 — never inline next to ordinary Save/Add controls. Buttons use the danger
-**soft** recipe (`bg-red-950/40 text-red-300 hover:bg-red-950/70`), never the
+**soft** recipe (`bg-red-950/40 text-danger-300 hover:bg-red-950/70`), never the
 accent fill; the irreversible one gets a `…` suffix (`Delete…`) to signal a
 confirm step follows (§7 reversibility — prefer a confirm dialog to an
 inline red button that fires on first click). Consequences go in a `<Tip>`.
@@ -503,7 +556,7 @@ overlapping avatars, most-relevant first. Used by the Activity ViewBoard
     </button>
   ))}
 </div>
-{overflow > 0 && <span className="ml-1 text-minimal text-zinc-400">+{overflow}</span>}
+{overflow > 0 && <span className="ml-1 text-minimal text-content-muted">+{overflow}</span>}
 ```
 
 The `ring-zinc-900`/`ring-indigo-500` ring doubles as the overlap separator
@@ -544,7 +597,7 @@ Global wiring that already exists — extend it, don't rebuild it:
 
 Status → tier quick map: `401` → L takeover (automatic) · route-level
 `403`/`404` → `<ErrorState>` in the panel · validation `409`/`422` → inline
-field error first (§2.3 error ring + `text-red-400` line), toast only without
+field error first (§2.3 error ring + `text-danger-400` line), toast only without
 a form · `429`/`5xx`/network → `notify.error` with a Retry action when the
 caller can retry · ws drop → M banner. Inline beats toast when the error has
 an anchor (a message, a field): keep `MessageItem`-style "Failed to send +
@@ -597,7 +650,8 @@ the recipes above:
 
 Extracted (were gaps, now shared components): `Select` / `Textarea`
 (mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
-`SectionHead` (§2.13), `Tip` (§2.14).
+`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsSection`, and
+`MetricCard`.
 
 The full audit that produced this doc: visual-consistency reports
 2026-07-10 (static sweep + live review, see PR #134 context).
@@ -609,8 +663,8 @@ The full audit that produced this doc: visual-consistency reports
 Reject in review:
 
 - [ ] `gray-*` / `slate-*` / `neutral-*` / `stone-*` anywhere
-- [ ] `text-zinc-400` on meaningful text — it's below 4.5:1 on every surface; use `zinc-400`, and reserve `zinc-500` for functional icons (§1 contrast floor)
-- [ ] `text-zinc-400` / `text-zinc-400` as a text color — decorative marks (separators, hero glyphs) only
+- [ ] raw palette foregrounds (`text-zinc-*`, `text-red-*`, and peers) instead of semantic text tokens
+- [ ] a foreground below the registered `text-content-muted` contrast floor on meaningful copy
 - [ ] any interactive element with a hit area below 44×44px (pad the target even when the glyph is smaller)
 - [ ] icon-only button without an `aria-label`; `outline-none` without a replacement focus ring; a clickable `<div>` where a `<button>` belongs
 - [ ] `rose-*` for errors (rose is mention-only)

@@ -168,7 +168,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
 
   return (
     <div className="space-y-2">
-      <p className="font-utility text-compact text-zinc-400">
+      <p className="font-utility text-compact text-content-muted">
         Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default.
       </p>
       <CollectionManager
@@ -202,8 +202,8 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               key={id}
               leading={<ShieldCheck className={controlIconClasses.regular} />}
               title={`${kindLabel[rule.grant] ?? rule.grant} → ${rule.subject_id === "*" ? "any bot" : subjectLabel[rule.subject_id] || `${rule.subject_id.slice(0, 8)}…`}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-emerald-300" : "font-utility text-compact uppercase text-red-300"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-amber-400">Expired</span> : undefined}
+              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300" : "font-utility text-compact uppercase text-danger-300"}>{rule.decision}</span>}
+              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
               actions={(
                 <>
                   <IconButton label="Edit bot grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>

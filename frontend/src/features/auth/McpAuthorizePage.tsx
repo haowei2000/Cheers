@@ -67,18 +67,18 @@ export default function McpAuthorizePage() {
       description="Choose the Agent installation whose existing Cheers permissions will bound this connection."
     >
       <div className={`${publicPanelClass} space-y-4`}>
-        {!preview && !error && <Spinner contentSize="large" className="mx-auto text-zinc-400" />}
-        {error && <p role="alert" className="text-regular text-red-300">{error}</p>}
+        {!preview && !error && <Spinner contentSize="large" className="mx-auto text-content-muted" />}
+        {error && <p role="alert" className="text-regular text-danger-300">{error}</p>}
         {preview && (
           <>
             <div className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-indigo-300" />
+              <ShieldCheck className="h-5 w-5 text-accent-300" />
               <div className="min-w-0">
-                <p className="text-regular font-medium text-zinc-100">{preview.client.client_name}</p>
-                <p className="truncate text-compact text-zinc-400">{preview.client.client_id}</p>
+                <p className="text-regular font-medium text-content-primary">{preview.client.client_name}</p>
+                <p className="truncate text-compact text-content-muted">{preview.client.client_id}</p>
               </div>
             </div>
-            <label className="block space-y-1 text-compact text-zinc-400">
+            <label className="block space-y-1 text-compact text-content-muted">
               <span>Act as</span>
               <Select value={installationId} onChange={(event) => setInstallationId(event.target.value)}>
                 {preview.installations.map((installation) => (
@@ -89,12 +89,12 @@ export default function McpAuthorizePage() {
               </Select>
             </label>
             <div>
-              <p className="mb-2 text-compact font-medium text-zinc-200">Requested access</p>
-              <ul className="space-y-1 text-compact text-zinc-400">
+              <p className="mb-2 text-compact font-medium text-content-secondary">Requested access</p>
+              <ul className="space-y-1 text-compact text-content-muted">
                 {preview.scopes.map((scope) => <li key={scope}>• {scopeLabels[scope] ?? scope}</li>)}
               </ul>
             </div>
-            <p className="text-compact text-zinc-400">
+            <p className="text-compact text-content-muted">
               OAuth scopes only reduce access. Channel membership, roles, approvals, installation revocation and audit policy still apply to every operation.
             </p>
             <div className="flex justify-end gap-2">

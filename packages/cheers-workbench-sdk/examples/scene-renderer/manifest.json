@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "example-notes",
+  "version": "1.0.0",
+  "title": "Notes example",
+  "description": "A scene and a personal renderer",
+  "contributes": {
+    "scenes": [{ "id": "notes", "title": "Notes", "definition": "scenes/notes.json" }],
+    "renderers": [{ "id": "notes", "title": "Notes", "entry": "renderers/notes.js", "style": "renderers/notes.css", "match": ["**/*.md"] }],
+    "automations": [{
+      "id": "notes-review",
+      "title": "Review research notes",
+      "description": "Ask a channel bot to summarize open questions in the notes.",
+      "message": "Review the current research notes, summarize unresolved questions, and update the risk section.",
+      "defaultSchedule": { "kind": "daily", "localTime": "09:00" }
+    }]
+  },
+  "permissions": { "file.write": true }
+}

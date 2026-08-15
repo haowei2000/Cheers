@@ -129,8 +129,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
     if (cid) return membersByChannel[cid] ?? [];
     const seen = new Set<string>();
     const out: MemberItem[] = [];
-    for (const list of Object.values(membersByChannel))
-      for (const u of list) if (!seen.has(u.member_id)) (seen.add(u.member_id), out.push(u));
+    for (const list of Object.values(membersByChannel)) {
+      for (const user of list) {
+        if (seen.has(user.member_id)) continue;
+        seen.add(user.member_id);
+        out.push(user);
+      }
+    }
     return out;
   };
 
@@ -200,7 +205,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   );
 
   if (!access) {
-    return <p className="text-compact text-zinc-400 px-1 py-2">Loading grants…</p>;
+    return <p className="text-compact text-content-muted px-1 py-2">Loading grants…</p>;
   }
 
   const editor = (editorMode: "add" | "edit", key?: string) => (
@@ -255,7 +260,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
   return (
     <div className="space-y-3">
-          <p className="font-utility text-compact text-zinc-400">
+          <p className="font-utility text-compact text-content-muted">
             Who is authorized for what. No grant → the default: members may message the bot,
             cancel a running task, and view its activity; agent settings, session controls,
             remote file write, and answering approvals start owner-only. Precedence: user ▸
@@ -268,18 +273,18 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       {access.effective && access.effective.length > 0 && (
         <div className="overflow-hidden rounded-sm ">
           <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/40">
-            <p className="text-compact font-medium text-zinc-200">Effective defaults · Bot-wide</p>
-            <span className="text-minimal text-zinc-400">
-              <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
+            <p className="text-compact font-medium text-content-secondary">Effective defaults · Bot-wide</p>
+            <span className="text-minimal text-content-muted">
+              <span className="text-accent-400">•</span> = set by a grant · channel / user / group
               grants can narrow this per scope
             </span>
           </div>
           <table className="w-full text-compact">
             <thead>
-              <tr className="text-zinc-400">
+              <tr className="text-content-muted">
                 <th className="px-3 py-1 text-left font-normal">Event</th>
                 <th
-                  className="px-2 py-1 text-center font-normal text-indigo-300"
+                  className="px-2 py-1 text-center font-normal text-accent-300"
                   title="The bot owner (you). Do/Answer are always allowed — owner privilege, not revocable by grants. View follows the same rules as everyone else."
                 >
                   you · bot owner
@@ -300,7 +305,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     <tr>
                       <td
                         colSpan={2 + MATRIX_ROLES.length}
-                        className="px-3 pt-2 pb-1 text-minimal uppercase tracking-wider text-zinc-400"
+                        className="px-3 pt-2 pb-1 text-minimal uppercase tracking-section text-content-muted"
                         title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
                         {CAPABILITY_LABEL[cap].label}
@@ -312,7 +317,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                       <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
                         <td className="px-3 py-1">
                           <span
-                            className="text-zinc-200"
+                            className="text-content-secondary"
                             title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}
                           >
                             {gl.label}
@@ -323,10 +328,10 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                             <span
                               className={
                                 c.bot_owner.source === "owner"
-                                  ? "text-indigo-300"
+                                  ? "text-accent-300"
                                   : c.bot_owner.allow
-                                  ? "text-emerald-400"
-                                  : "text-zinc-400"
+                                  ? "text-success-400"
+                                  : "text-content-muted"
                               }
                               title={
                                 c.bot_owner.source === "owner"
@@ -338,18 +343,18 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                             >
                               {c.bot_owner.allow ? "✓" : "✗"}
                               {c.bot_owner.source === "rule" && (
-                                <span className="text-indigo-400">•</span>
+                                <span className="text-accent-400">•</span>
                               )}
                             </span>
                           ) : (
-                            <span className="text-zinc-400">—</span>
+                            <span className="text-content-muted">—</span>
                           )}
                         </td>
                         {MATRIX_ROLES.map((role) => {
                           const d = c.roles[role];
                           if (!d) {
                             return (
-                              <td key={role} className="px-2 py-1 text-center text-zinc-400">
+                              <td key={role} className="px-2 py-1 text-center text-content-muted">
                                 —
                               </td>
                             );
@@ -357,11 +362,11 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                           return (
                             <td key={role} className="px-2 py-1 text-center">
                               <span
-                                className={d.allow ? "text-emerald-400" : "text-zinc-400"}
+                                className={d.allow ? "text-success-400" : "text-content-muted"}
                                 title={d.source === "rule" ? "set by a grant" : "membership default"}
                               >
                                 {d.allow ? "✓" : "✗"}
-                                {d.source === "rule" && <span className="text-indigo-400">•</span>}
+                                {d.source === "rule" && <span className="text-accent-400">•</span>}
                               </span>
                             </td>
                           );
@@ -408,8 +413,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               key={id}
               leading={<ShieldCheck className={controlIconClasses.regular} />}
               title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-emerald-300" : "font-utility text-compact uppercase text-red-300"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-amber-400">Expired</span> : undefined}
+              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300" : "font-utility text-compact uppercase text-danger-300"}>{rule.decision}</span>}
+              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
               actions={(
                 <>
                   <IconButton label="Edit permission grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>

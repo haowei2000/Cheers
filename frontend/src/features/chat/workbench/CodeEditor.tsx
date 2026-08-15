@@ -26,6 +26,7 @@ import { languages } from "@codemirror/language-data";
 import { markdown } from "@codemirror/lang-markdown";
 import { json } from "@codemirror/lang-json";
 import { tags as t } from "@lezer/highlight";
+import { useTheme } from "@/components/ui/theme";
 
 // A small, embeddable code editor for the workbench Raw mode. Like the <textarea> it
 // replaces, it renders content as INERT TEXT (CodeMirror writes into DOM text nodes, never
@@ -38,53 +39,52 @@ import { tags as t } from "@lezer/highlight";
 
 // Theme matches the panel chrome: zinc-950 inset field, zinc-200 text, neutral focus ring
 // (see frontend/DESIGN.md). Syntax colors are tinted "data-coding" hues — never chrome.
-const theme = EditorView.theme(
+const editorTheme = (dark: boolean) => EditorView.theme(
   {
     "&": {
       height: "100%",
-      backgroundColor: "#09090b", // zinc-950
-      color: "#e4e4e7", // zinc-200
-      fontSize: "var(--type-compact)",
+      backgroundColor: "rgb(var(--tone-zinc-950))",
+      color: "rgb(var(--text-secondary))",
+      fontSize: "var(--type-compact-size)",
     },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": {
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-      lineHeight: "1.6",
+      fontFamily: "var(--font-code)",
+      lineHeight: "var(--leading-reading)",
     },
-    ".cm-content": { padding: "12px 0", caretColor: "#d4d4d8" /* editorial ink */ },
+    ".cm-content": { padding: "12px 0", caretColor: "rgb(var(--tone-zinc-300))" },
     ".cm-gutters": {
-      backgroundColor: "#09090b",
-      color: "#a1a1aa", // zinc-400 metadata
+      backgroundColor: "rgb(var(--tone-zinc-950))",
+      color: "rgb(var(--text-muted))",
       border: "none",
     },
-    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "#a1a1aa" /* zinc-400 */ },
-    ".cm-activeLine": { backgroundColor: "#18181b40" /* zinc-900/25 */ },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#d4d4d8" },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "rgb(var(--text-muted))" },
+    ".cm-activeLine": { backgroundColor: "rgb(var(--tone-zinc-900) / 0.5)" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "rgb(var(--tone-zinc-300))" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: "#52525b3d", // zinc-600/24
+      backgroundColor: "rgb(var(--tone-zinc-600) / 0.24)",
     },
     ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
-      backgroundColor: "#71717a33", // zinc-500/20
+      backgroundColor: "rgb(var(--tone-zinc-500) / 0.2)",
       outline: "none",
     },
   },
-  { dark: true }
+  { dark }
 );
 
 const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "#c4b5a5" }, // muted umber
-  { tag: [t.string, t.special(t.string)], color: "#a8b5a2" }, // muted sage
-  { tag: [t.number, t.bool, t.null, t.atom], color: "#c4a484" }, // muted ochre
-  { tag: [t.propertyName], color: "#aab5c4" }, // muted blue-grey (json keys)
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "#a1a1aa", fontStyle: "italic" }, // zinc-400 metadata
-  { tag: [t.heading], color: "#e4e4e7", fontWeight: "bold" },
-  { tag: [t.link, t.url], color: "#b8bec7", textDecoration: "underline" },
+  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "rgb(var(--syntax-keyword))" },
+  { tag: [t.string, t.special(t.string)], color: "rgb(var(--syntax-string))" },
+  { tag: [t.number, t.bool, t.null, t.atom], color: "rgb(var(--syntax-number))" },
+  { tag: [t.propertyName], color: "rgb(var(--syntax-function))" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "rgb(var(--text-muted))", fontStyle: "italic" },
+  { tag: [t.heading], color: "rgb(var(--text-secondary))", fontWeight: "bold" },
+  { tag: [t.link, t.url], color: "rgb(var(--syntax-link))", textDecoration: "underline" },
   { tag: [t.emphasis], fontStyle: "italic" },
   { tag: [t.strong], fontWeight: "bold" },
-  { tag: [t.monospace], color: "#c7b4b4" }, // muted rose (inline code)
-  { tag: [t.punctuation, t.separator], color: "#a1a1aa" }, // zinc-400
-  { tag: [t.invalid], color: "#f87171" }, // red-400
+  { tag: [t.monospace], color: "rgb(var(--syntax-code))" },
+  { tag: [t.punctuation, t.separator], color: "rgb(var(--text-muted))" },
+  { tag: [t.invalid], color: "rgb(var(--syntax-invalid))" },
 ]);
 
 // Language pack by extension. text/toml/xml fall through to no highlighting (plain text) —
@@ -92,6 +92,7 @@ const highlight = HighlightStyle.define([
 // Compartment holding the active language extension, so it can be swapped in place (on a
 // path change, or when an async language pack finishes loading) without rebuilding the view.
 const languageConf = new Compartment();
+const themeConf = new Compartment();
 
 // Synchronous fast path for the workspace's own formats (no async flash on the common case).
 // Everything else resolves via @codemirror/language-data below.
@@ -121,7 +122,7 @@ async function loadLanguageFor(path: string): Promise<Extension | null> {
 // can skip onChange for it — see the listener below.
 const syncAnnotation = Annotation.define<boolean>();
 
-function baseExtensions(path: string, onChange: (v: string) => void): Extension[] {
+function baseExtensions(path: string, onChange: (v: string) => void, dark: boolean): Extension[] {
   return [
     lineNumbers(),
     highlightActiveLine(),
@@ -132,7 +133,7 @@ function baseExtensions(path: string, onChange: (v: string) => void): Extension[
     bracketMatching(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     syntaxHighlighting(highlight),
-    theme,
+    themeConf.of(editorTheme(dark)),
     EditorView.lineWrapping,
     languageConf.of(syncLanguageFor(path)),
     EditorView.updateListener.of((u) => {
@@ -164,6 +165,7 @@ interface CodeEditorProps {
 // equal to the doc, so the sync effect no-ops. onChange/path changes rebuild only the tiny
 // bits that depend on them, not the whole view.
 export function CodeEditor({ value, onChange, path, className, scrollToLine }: CodeEditorProps) {
+  const { resolvedTheme } = useTheme();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Latest callback/path read through refs so the EditorView is built ONCE (not torn down
@@ -178,7 +180,7 @@ export function CodeEditor({ value, onChange, path, className, scrollToLine }: C
     const view = new EditorView({
       state: EditorState.create({
         doc: value,
-        extensions: baseExtensions(pathRef.current, (v) => onChangeRef.current(v)),
+        extensions: baseExtensions(pathRef.current, (v) => onChangeRef.current(v), resolvedTheme === "dark"),
       }),
       parent: hostRef.current,
     });
@@ -198,11 +200,17 @@ export function CodeEditor({ value, onChange, path, className, scrollToLine }: C
     pathRef.current = path;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
-      effects: StateEffect.reconfigure.of(baseExtensions(path, (v) => onChangeRef.current(v))),
+      effects: StateEffect.reconfigure.of(baseExtensions(path, (v) => onChangeRef.current(v), resolvedTheme === "dark")),
       annotations: syncAnnotation.of(true),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, value]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: themeConf.reconfigure(editorTheme(resolvedTheme === "dark")),
+    });
+  }, [resolvedTheme]);
 
   // Async language highlighting for non-md/json files (real repo source in Remote Workspace).
   // The reconfigure above resets the language compartment to the sync value ([] for these);

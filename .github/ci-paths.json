@@ -11,12 +11,18 @@
       "lanes": {
         "gateway": [
           "server/**",
+          "fixtures/workbench/**",
           "packages/cheers-acp-connector-rs/bridge-protocol/**"
         ],
         "frontend": [
           "frontend/**",
           "design-system/**",
+          "extensions/**",
+          "fixtures/workbench/**",
+          "packages/cheers-workbench-sdk/**",
+          "scripts/build-extension-catalog.mjs",
           "scripts/check-design-system.mjs",
+          "scripts/lib/extension-catalog.test.mjs",
           "website/**"
         ],
         "plugin": [
@@ -49,6 +55,10 @@
         ],
         "frontend": [
           "frontend/**",
+          "extensions/**",
+          "packages/cheers-workbench-sdk/**",
+          "scripts/build-extension-catalog.mjs",
+          "scripts/lib/extension-catalog.test.mjs",
           "website/**"
         ]
       }

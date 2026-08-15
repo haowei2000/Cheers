@@ -238,8 +238,8 @@ function ViewBoardDrawerImpl({
         {...(float ? drag.handleProps : {})}
         className="mx-3 mt-2 flex h-9 flex-shrink-0 select-none items-center gap-2 border-y border-zinc-800/90 px-1"
       >
-        <LayoutDashboard className="w-4 h-4 text-zinc-400" />
-        <span className="text-compact font-semibold uppercase tracking-wider text-zinc-400">
+        <LayoutDashboard className="w-4 h-4 text-content-muted" />
+        <span className="text-compact font-semibold uppercase tracking-section text-content-muted">
           ViewBoard
         </span>
         <div className="flex-1" />
@@ -258,7 +258,7 @@ function ViewBoardDrawerImpl({
               });
             }}
             title={addToContextTitle("this board")}
-            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-indigo-300"
+            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-accent-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
@@ -268,7 +268,7 @@ function ViewBoardDrawerImpl({
             content="icon" controlSize="compact"
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
-            className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </UiButton>
@@ -277,7 +277,7 @@ function ViewBoardDrawerImpl({
           content="icon" controlSize="compact"
           onClick={onClose}
           title="Close"
-          className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50"
+          className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
         >
           <X className="w-4 h-4" />
         </UiButton>
@@ -309,7 +309,7 @@ function ViewBoardDrawerImpl({
                   onClick={() => setActive(b.id)}
                   controlSize="regular" className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
  isActive
- ? "border-zinc-200 text-zinc-100": "border-transparent text-zinc-100 hover:text-zinc-50"
+ ? "border-zinc-200 text-content-primary": "border-transparent text-content-primary hover:text-content-strong"
  }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -321,12 +321,12 @@ function ViewBoardDrawerImpl({
 
           {activeBoard?.sessionScoped && (
             <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
-              <Layers className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
-              <span className="text-minimal uppercase tracking-wide text-zinc-400">Scope</span>
+              <Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
+              <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
               <UiSelect
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (

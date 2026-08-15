@@ -19,9 +19,15 @@ pub struct WorkspaceDto {
 
 #[derive(Serialize)]
 pub struct WorkspaceMemberDto {
-    pub user_id: String,
+    pub member_id: String,
+    pub member_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub username: String,
     pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub role: String,
     /// 'active' (joined) or 'pending' (invited, not yet accepted).
     pub status: String,
@@ -53,6 +59,13 @@ pub struct WorkspaceUpdateRequest {
 #[derive(Deserialize)]
 pub struct InviteMemberRequest {
     pub identifier: String,
+    pub role: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AddWorkspaceMemberRequest {
+    pub member_id: String,
+    pub member_type: String,
     pub role: Option<String>,
 }
 
@@ -266,11 +279,18 @@ pub async fn list_workspace_members(
     )
     .await?;
     let rows = sqlx::query(
-        "SELECT u.user_id, u.username, u.display_name, wm.role, wm.status
+        "SELECT u.user_id AS member_id, 'user' AS member_type, u.username,
+                u.display_name, u.avatar_url, wm.role, wm.status
          FROM workspace_memberships wm
          JOIN users u ON u.user_id = wm.user_id
          WHERE wm.workspace_id = $1
-         ORDER BY wm.status, u.username",
+         UNION ALL
+         SELECT b.bot_id AS member_id, 'bot' AS member_type, b.username,
+                b.display_name, b.avatar_url, wbm.role, 'active' AS status
+         FROM workspace_bot_memberships wbm
+         JOIN bot_accounts b ON b.bot_id = wbm.bot_id
+         WHERE wbm.workspace_id = $1
+         ORDER BY status, username",
     )
     .bind(&workspace_id)
     .fetch_all(&state.db)
@@ -278,9 +298,15 @@ pub async fn list_workspace_members(
     Ok(Json(
         rows.into_iter()
             .map(|r| WorkspaceMemberDto {
-                user_id: r.try_get("user_id").unwrap_or_default(),
+                member_id: r.try_get("member_id").unwrap_or_default(),
+                member_type: r.try_get("member_type").unwrap_or_else(|_| "user".into()),
+                user_id: (r.try_get::<String, _>("member_type").ok().as_deref() == Some("user"))
+                    .then(|| r.try_get("member_id").unwrap_or_default()),
+                bot_id: (r.try_get::<String, _>("member_type").ok().as_deref() == Some("bot"))
+                    .then(|| r.try_get("member_id").unwrap_or_default()),
                 username: r.try_get("username").unwrap_or_default(),
                 display_name: r.try_get("display_name").ok(),
+                avatar_url: r.try_get("avatar_url").ok(),
                 role: r.try_get("role").unwrap_or_else(|_| "member".to_string()),
                 status: r.try_get("status").unwrap_or_else(|_| "active".to_string()),
             })
@@ -295,7 +321,12 @@ pub struct InvitableQuery {
 
 #[derive(Serialize)]
 pub struct WorkspaceInvitableDto {
-    pub user_id: String,
+    pub member_id: String,
+    pub member_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub username: String,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
@@ -330,7 +361,8 @@ pub async fn search_workspace_invitable(
     let me = current_user_id(&claims);
     let pattern = format!("%{}%", crate::domain::messages::escape_like_pattern(term));
     let rows = sqlx::query(
-        "SELECT u.user_id, u.username, u.display_name, u.avatar_url, wm.status AS membership
+        "SELECT u.user_id AS member_id, 'user' AS member_type, u.username,
+                u.display_name, u.avatar_url, wm.status AS membership
          FROM users u
          LEFT JOIN workspace_memberships wm
                 ON wm.workspace_id = $1 AND wm.user_id = u.user_id
@@ -349,19 +381,35 @@ pub async fn search_workspace_invitable(
                OR u.username = $4
                OR u.email = $4
            )
-         ORDER BY u.username
+         UNION ALL
+         SELECT b.bot_id AS member_id, 'bot' AS member_type, b.username,
+                b.display_name, b.avatar_url,
+                CASE WHEN wbm.bot_id IS NULL THEN NULL ELSE 'active' END AS membership
+         FROM bot_accounts b
+         LEFT JOIN workspace_bot_memberships wbm
+                ON wbm.workspace_id = $1 AND wbm.bot_id = b.bot_id
+         WHERE b.is_disabled = FALSE
+           AND ($5::boolean OR b.created_by = $2)
+           AND (b.username ILIKE $3 OR b.display_name ILIKE $3 OR b.bot_id = $4)
+         ORDER BY username
          LIMIT 20",
     )
     .bind(&workspace_id)
     .bind(&me)
     .bind(&pattern)
     .bind(term)
+    .bind(matches!(claims.role.as_str(), "system_admin" | "admin"))
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
         rows.into_iter()
             .map(|r| WorkspaceInvitableDto {
-                user_id: r.try_get("user_id").unwrap_or_default(),
+                member_id: r.try_get("member_id").unwrap_or_default(),
+                member_type: r.try_get("member_type").unwrap_or_else(|_| "user".into()),
+                user_id: (r.try_get::<String, _>("member_type").ok().as_deref() == Some("user"))
+                    .then(|| r.try_get("member_id").unwrap_or_default()),
+                bot_id: (r.try_get::<String, _>("member_type").ok().as_deref() == Some("bot"))
+                    .then(|| r.try_get("member_id").unwrap_or_default()),
                 username: r.try_get("username").unwrap_or_default(),
                 display_name: r.try_get("display_name").ok(),
                 avatar_url: r.try_get("avatar_url").ok(),
@@ -381,6 +429,133 @@ async fn resolve_user_id(state: &AppState, identifier: &str) -> Result<String, A
     Ok(row.try_get("user_id").unwrap_or_default())
 }
 
+async fn add_workspace_member_record(
+    state: &AppState,
+    claims: &Claims,
+    workspace_id: &str,
+    member_id: &str,
+    member_type: &str,
+    requested_role: Option<String>,
+) -> Result<serde_json::Value, AppError> {
+    let role = requested_role.unwrap_or_else(|| "member".into());
+    match member_type {
+        "user" => {
+            if !matches!(role.as_str(), "owner" | "admin" | "member") {
+                return Err(AppError::BadRequest(
+                    "a user's workspace role must be owner, admin, or member".into(),
+                ));
+            }
+            if role == "owner" && !caller_workspace_is_owner(state, workspace_id, claims).await? {
+                return Err(AppError::Forbidden(
+                    "only an owner or a system admin can invite a member as owner".into(),
+                ));
+            }
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1 AND is_deleted = FALSE)",
+            )
+            .bind(member_id)
+            .fetch_one(&state.db)
+            .await?;
+            if !exists {
+                return Err(AppError::NotFound);
+            }
+            let written = sqlx::query(
+                "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, invited_by, invited_at)
+                 VALUES ($1, $2, $3, 'pending', $4, NOW())
+                 ON CONFLICT (workspace_id, user_id) DO NOTHING",
+            )
+            .bind(workspace_id).bind(member_id).bind(&role).bind(current_user_id(claims))
+            .execute(&state.db).await?.rows_affected();
+            if written > 0 {
+                crate::api::notifications::deliver_notification_by_id(
+                    state,
+                    member_id,
+                    &format!("workspace:{workspace_id}"),
+                )
+                .await?;
+            }
+            Ok(serde_json::json!({
+                "workspace_id": workspace_id, "member_id": member_id,
+                "member_type": "user", "role": role,
+                "status": if written == 0 { "exists" } else { "pending" },
+            }))
+        }
+        "bot" => {
+            if !matches!(role.as_str(), "member" | "readonly") {
+                return Err(AppError::BadRequest(
+                    "a bot's workspace role must be member or readonly".into(),
+                ));
+            }
+            let bot =
+                sqlx::query("SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1")
+                    .bind(member_id)
+                    .fetch_optional(&state.db)
+                    .await?
+                    .ok_or(AppError::NotFound)?;
+            let owner: Option<String> = bot.try_get("created_by").ok().flatten();
+            if bot.try_get::<bool, _>("is_disabled").unwrap_or(false) {
+                return Err(AppError::BadRequest(
+                    "disabled bot cannot be invited".into(),
+                ));
+            }
+            let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+            if !platform_admin && owner.as_deref() != Some(claims.sub.as_str()) {
+                return Err(AppError::Forbidden(
+                    "only the bot owner or an admin may add this bot to a workspace".into(),
+                ));
+            }
+            let written = sqlx::query(
+                "INSERT INTO workspace_bot_memberships (workspace_id, bot_id, role, added_by)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (workspace_id, bot_id) DO NOTHING",
+            )
+            .bind(workspace_id)
+            .bind(member_id)
+            .bind(&role)
+            .bind(current_user_id(claims))
+            .execute(&state.db)
+            .await?
+            .rows_affected();
+            Ok(serde_json::json!({
+                "workspace_id": workspace_id, "member_id": member_id,
+                "member_type": "bot", "role": role,
+                "status": if written == 0 { "exists" } else { "active" },
+            }))
+        }
+        _ => Err(AppError::BadRequest(
+            "member_type must be user or bot".into(),
+        )),
+    }
+}
+
+/// POST /api/v1/workspaces/{workspace_id}/members — the polymorphic member
+/// endpoint shared by user and bot invitations.
+pub async fn add_workspace_member(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+    Json(body): Json<AddWorkspaceMemberRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ensure_workspace_admin(
+        &state,
+        &workspace_id,
+        &current_user_id(&claims),
+        &claims.role,
+    )
+    .await?;
+    Ok(Json(
+        add_workspace_member_record(
+            &state,
+            &claims,
+            &workspace_id,
+            &body.member_id,
+            &body.member_type,
+            body.role,
+        )
+        .await?,
+    ))
+}
+
 /// POST /api/v1/workspaces/{workspace_id}/invite — an admin invites a user, who must
 /// then accept. Creates a *pending* row that grants no access until accepted (see
 /// `accept_invite`). Every membership now flows through this path — there is no
@@ -398,46 +573,11 @@ pub async fn invite_workspace_member(
         &claims.role,
     )
     .await?;
-    let role = body.role.unwrap_or_else(|| "member".into());
-    if !matches!(role.as_str(), "owner" | "admin" | "member") {
-        return Err(AppError::BadRequest(
-            "role must be owner, admin, or member".into(),
-        ));
-    }
-    if role == "owner" && !caller_workspace_is_owner(&state, &workspace_id, &claims).await? {
-        return Err(AppError::Forbidden(
-            "only an owner or a system admin can invite a member as owner".into(),
-        ));
-    }
     let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
-    // DO NOTHING on conflict: never downgrade an already-active member to pending,
-    // and a repeat invite is idempotent.
-    let res = sqlx::query(
-        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, invited_by, invited_at)
-         VALUES ($1, $2, $3, 'pending', $4, NOW())
-         ON CONFLICT (workspace_id, user_id) DO NOTHING",
-    )
-    .bind(&workspace_id)
-    .bind(&user_id)
-    .bind(&role)
-    .bind(current_user_id(&claims))
-    .execute(&state.db)
-    .await?;
-    let already_member = res.rows_affected() == 0;
-    if !already_member {
-        crate::api::notifications::deliver_notification_by_id(
-            &state,
-            &user_id,
-            &format!("workspace:{workspace_id}"),
-        )
-        .await?;
-    }
-    Ok(Json(serde_json::json!({
-        "workspace_id": workspace_id,
-        "user_id": user_id,
-        "role": role,
-        "status": if already_member { "exists" } else { "pending" },
-    })))
+    Ok(Json(
+        add_workspace_member_record(&state, &claims, &workspace_id, &user_id, "user", body.role)
+            .await?,
+    ))
 }
 
 /// GET /api/v1/workspaces/invites — the caller's pending workspace invites.
@@ -564,7 +704,7 @@ async fn detach_workspace_member(
 pub async fn remove_workspace_member(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((workspace_id, user_id)): Path<(String, String)>,
+    Path((workspace_id, member_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     ensure_workspace_admin(
         &state,
@@ -573,7 +713,31 @@ pub async fn remove_workspace_member(
         &claims.role,
     )
     .await?;
-    detach_workspace_member(&state, &workspace_id, &user_id).await?;
+    let bot_member: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM workspace_bot_memberships WHERE workspace_id = $1 AND bot_id = $2)",
+    ).bind(&workspace_id).bind(&member_id).fetch_one(&state.db).await?;
+    if bot_member {
+        let mut tx = state.db.begin().await?;
+        sqlx::query(
+            "DELETE FROM channel_memberships cm USING channels c
+             WHERE cm.channel_id = c.channel_id AND c.workspace_id = $1
+               AND cm.member_id = $2 AND cm.member_type = 'bot'",
+        )
+        .bind(&workspace_id)
+        .bind(&member_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "DELETE FROM workspace_bot_memberships WHERE workspace_id = $1 AND bot_id = $2",
+        )
+        .bind(&workspace_id)
+        .bind(&member_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+    } else {
+        detach_workspace_member(&state, &workspace_id, &member_id).await?;
+    }
     Ok(Json(serde_json::json!({"removed": true})))
 }
 
@@ -641,7 +805,7 @@ pub async fn leave_workspace(
 pub async fn set_workspace_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((workspace_id, user_id)): Path<(String, String)>,
+    Path((workspace_id, member_id)): Path<(String, String)>,
     Json(body): Json<RoleUpdateRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     ensure_workspace_admin(
@@ -651,6 +815,26 @@ pub async fn set_workspace_member_role(
         &claims.role,
     )
     .await?;
+    let bot_member: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM workspace_bot_memberships WHERE workspace_id = $1 AND bot_id = $2)",
+    ).bind(&workspace_id).bind(&member_id).fetch_one(&state.db).await?;
+    if bot_member {
+        if !matches!(body.role.as_str(), "member" | "readonly") {
+            return Err(AppError::BadRequest(
+                "a bot's workspace role must be member or readonly".into(),
+            ));
+        }
+        let result = sqlx::query(
+            "UPDATE workspace_bot_memberships SET role = $3 WHERE workspace_id = $1 AND bot_id = $2",
+        ).bind(&workspace_id).bind(&member_id).bind(&body.role).execute(&state.db).await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+        return Ok(Json(serde_json::json!({
+            "member_id": member_id, "member_type": "bot", "role": body.role,
+        })));
+    }
+    let user_id = member_id;
     if user_id == current_user_id(&claims) {
         return Err(AppError::BadRequest(
             "use leave or transfer ownership to change your own role".into(),
@@ -729,4 +913,22 @@ pub async fn set_workspace_member_role(
     Ok(Json(
         serde_json::json!({ "user_id": user_id, "role": role }),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AddWorkspaceMemberRequest;
+
+    #[test]
+    fn workspace_member_request_is_polymorphic() {
+        let request: AddWorkspaceMemberRequest = serde_json::from_value(serde_json::json!({
+            "member_id": "bot-id",
+            "member_type": "bot",
+            "role": "member"
+        }))
+        .expect("valid member request");
+        assert_eq!(request.member_id, "bot-id");
+        assert_eq!(request.member_type, "bot");
+        assert_eq!(request.role.as_deref(), Some("member"));
+    }
 }

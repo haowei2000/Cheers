@@ -156,7 +156,7 @@ export function ActivityCenter() {
       <IconButton
         onClick={() => navigate("/activity")}
         label="Activity — approvals & invites"
-        className="relative text-zinc-100"
+        className="relative text-content-primary"
       >
         <Bell className="w-4 h-4" />
         {badge > 0 && (
@@ -188,13 +188,13 @@ export function ActivityCenter() {
                 presentationLevel="medium"
                 controlSize="regular"
                 label={<span className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-amber-400" />
+                  <Shield className="w-3.5 h-3.5 text-warning-400" />
                   Needs approval
                 </span>}
               >
                   {approvals.map((a) => (
                     <div role="listitem" key={a.message_id} className="space-y-1 py-1">
-                      <p className="text-minimal uppercase tracking-wide text-zinc-400 mb-1">
+                      <p className="text-minimal uppercase tracking-label text-content-muted mb-1">
                         {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
                       </p>
                       <PermissionCard
@@ -217,7 +217,7 @@ export function ActivityCenter() {
                     <OperationsItem
                       key={key}
                       title={`${kindLabel(n)} · ${label(n)}${n.actor_name ? ` · from ${n.actor_name}` : ""}`}
-                      status={<span className="max-w-36 truncate text-compact text-zinc-400" title={[n.role ? `Role ${n.role}` : "Needs your response", n.bot_name, n.requested_cwd].filter(Boolean).join(" · ")}>
+                      status={<span className="max-w-36 truncate text-compact text-content-muted" title={[n.role ? `Role ${n.role}` : "Needs your response", n.bot_name, n.requested_cwd].filter(Boolean).join(" · ")}>
                         {n.role ? `Role ${n.role}` : "Response required"}
                       </span>}
                       actions={<><Button action="accept"

@@ -54,4 +54,64 @@ describe("ActionButton", () => {
     expect(markup).toContain('data-button-content="icon"');
     expect(markup).not.toContain('data-button-slot="label"');
   });
+
+  it("keeps disabled security actions labelled and legible", () => {
+    const markup = renderToStaticMarkup(
+      <ActionButton
+        action="update"
+        context="security"
+        accessibleLabel="Update account password"
+        disabled
+      />,
+    );
+    expect(markup).toContain('data-button-content="iconText"');
+    expect(markup).toContain(">Update</span>");
+    expect(markup).toContain("font-utility");
+    expect(markup).toContain("text-regular");
+    expect(markup).toContain("bg-emphasis");
+    expect(markup).toContain("text-content-on-accent");
+    expect(markup).not.toContain("bg-indigo-100");
+    expect(markup).toContain("disabled:opacity-50");
+  });
+
+  it("keeps settings actions on dark surfaces", () => {
+    const enable = renderToStaticMarkup(
+      <ActionButton action="enable" context="settings" accessibleLabel="Turn on notifications" />,
+    );
+    const retry = renderToStaticMarkup(
+      <ActionButton action="retry" context="settings" />,
+    );
+    expect(enable).toContain("bg-emphasis");
+    expect(enable).toContain("text-content-on-accent");
+    expect(enable).not.toContain("text-content-on-light");
+    expect(retry).toContain("bg-control");
+  });
+
+  it("uses secondary and danger tones for security row actions", () => {
+    const link = renderToStaticMarkup(
+      <ActionButton action="link" context="security" accessibleLabel="Link Google" />,
+    );
+    const unlink = renderToStaticMarkup(
+      <ActionButton action="unlink" context="security" accessibleLabel="Unlink Google" />,
+    );
+    expect(link).toContain("bg-control");
+    expect(link).toContain(">Link</span>");
+    expect(unlink).toContain("text-danger-400");
+    expect(unlink).toContain(">Unlink</span>");
+  });
+
+  it("uses registered full labels for account action launchers", () => {
+    const changePassword = renderToStaticMarkup(
+      <ActionButton action="changePassword" context="security" controlWidth="fill" />,
+    );
+    const twoFactor = renderToStaticMarkup(
+      <ActionButton action="manageTwoFactor" context="security" controlWidth="fill" />,
+    );
+
+    expect(changePassword).toContain(">Change password</span>");
+    expect(changePassword).toContain("w-full");
+    expect(changePassword).toContain('data-button-slot="icon"');
+    expect(changePassword).toContain('data-button-slot="label"');
+    expect(twoFactor).toContain(">2FA settings</span>");
+  });
 });

@@ -48,32 +48,32 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-zinc-200">Connection history</span>
-        <span className="text-compact text-zinc-400">
+        <span className="text-compact font-medium text-content-secondary">Connection history</span>
+        <span className="text-compact text-content-muted">
           bridge connects/disconnects (newest first)
         </span>
         <IconButton
           label="Refresh connection history"
           onClick={load}
-          className="ml-auto text-zinc-100 hover:text-zinc-50"
+          className="ml-auto text-content-primary hover:text-content-strong"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
         </IconButton>
       </div>
       {events.length === 0 ? (
-        <p className="text-compact text-zinc-400">
+        <p className="text-compact text-content-muted">
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
             <WorkbenchItem key={i} title={`${e.event}${e.reason ? ` · ${reasonLabel[e.reason] ?? e.reason}` : ""}`}
-              trailing={<span className="text-compact tabular-nums text-zinc-400">{time(e.created_at)}</span>} leading={e.event === "connected" ? (
-                <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+              trailing={<span className="text-compact tabular-nums text-content-muted">{time(e.created_at)}</span>} leading={e.event === "connected" ? (
+                <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-success-400" />
               ) : (
-                <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-              )} status={<span className="shrink-0 rounded-sm px-2 py-1 text-minimal bg-zinc-800 text-zinc-400">
+                <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-content-muted" />
+              )} status={<span className="shrink-0 rounded-sm px-2 py-1 text-minimal bg-zinc-800 text-content-muted">
                 {e.stream}
               </span>} presentationLevel="medium" className="border-0 bg-zinc-950/30" />
           ))}

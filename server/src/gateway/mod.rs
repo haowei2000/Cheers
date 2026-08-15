@@ -13,6 +13,7 @@ pub mod reclaimer;
 pub mod redis_registry;
 pub mod registry;
 pub mod resource_effects;
+pub mod scheduled_message_scheduler;
 pub mod stream;
 pub mod task_claim_scheduler;
 pub mod transcription_worker;

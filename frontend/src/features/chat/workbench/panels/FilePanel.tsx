@@ -3,7 +3,6 @@ import { IconButton } from "@/components/ui/icon-button";
 import { ActionButton } from "@/components/ui/action-button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
-import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -34,7 +33,7 @@ import {
   selectionLineRange,
   rangedFileContextItem,
 } from "@/features/chat/context/contextPick";
-import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
+import { previewOptions } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
@@ -122,12 +121,13 @@ function basename(path: string) {
 // when nothing matches). Raw content is rendered ONLY inside a <UiTextarea> (inert text —
 // no HTML execution), so stored content cannot XSS co-channel users.
 export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
-  const { fs, plugins, bindings, setBinding, configs, pinned, togglePin } = ctx;
+  const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   // "auto" = preview when a renderer matches, raw otherwise; user toggle overrides
   // for the currently selected file (resets on selection change).
   const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
+  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const addContext = useContextPickStore((s) => s.add);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
@@ -187,7 +187,16 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
   const editor = useFileEditor(fs, selected ?? "");
 
-  useEffect(() => setMode("auto"), [selected]);
+  useEffect(() => {
+    setMode("auto");
+    if (!selected) return;
+    setFailedRenderers((current) => {
+      if (!current[selected]) return current;
+      const next = { ...current };
+      delete next[selected];
+      return next;
+    });
+  }, [selected]);
 
   const refresh = useCallback(async () => {
     try {
@@ -318,7 +327,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const createInput = (depth: number) => (
     <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
-      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
+      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
       <UiInput
         autoFocus
         value={newName}
@@ -336,7 +345,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           if (!newName.trim()) setCreatingIn(null);
         }}
         placeholder={creatingIn ? "File name" : "Path, e.g. notes/todo.md"}
-        controlSize="regular" className="flex-1 bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none"
+        controlSize="regular" className="flex-1 bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none"
       />
     </div>
   );
@@ -355,7 +364,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => void doDelete(path, recursive)}
           className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <Check className="w-3.5 h-3.5 text-red-400 hover:text-red-300" />
+          <Check className="w-3.5 h-3.5 text-danger-400 hover:text-danger-300" />
         </UiButton>
         <UiButton variant="plain"
           type="button"
@@ -365,7 +374,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setConfirmDel(null)}
           className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <X className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
+          <X className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
       </span>
     ) : (
@@ -377,7 +386,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         onClick={() => setConfirmDel(path)}
         className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
-        <Trash2 className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
+        <Trash2 className="w-3.5 h-3.5 text-content-muted hover:text-danger-400" />
       </UiButton>
     );
 
@@ -396,11 +405,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 onClick={() => toggleCollapse(node.path)}
                 expanded={!isCollapsed}
                 disclosure={isCollapsed ? (
-                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
+                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
                 ) : (
-                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
+                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
                 )}
-                leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />}
+                leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-accent-400/70" />}
                 actions={<><UiButton variant="plain"
                 type="button"
                 content="icon" controlSize="compact"
@@ -412,7 +421,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 }}
                 className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
-                <Plus className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
+                <Plus className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
               </UiButton>
               {deleteControl(node.path, true)}
               </>}
@@ -432,7 +441,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           depth={depth}
           title={node.name}
           selected={selected === node.path}
-          leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />}
+          leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />}
           actions={deleteControl(node.path, false)}
           onClick={() => pickFile(node.path)}
         />
@@ -466,7 +475,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           title="Refresh"
           className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <RefreshCw className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
+          <RefreshCw className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
         <UiButton variant="plain"
           type="button"
@@ -476,13 +485,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           title="Hide file tree"
           className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <PanelLeftClose className="w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200" />
+          <PanelLeftClose className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
       </div>
       <div className="flex-1 overflow-auto py-1">
         {creatingIn === "" && createInput(0)}
         {tree.length === 0 && creatingIn === null && (
-          <div className="px-2 py-3 text-compact text-zinc-400">No files</div>
+          <div className="px-2 py-3 text-compact text-content-muted">No files</div>
         )}
         {renderNodes(tree, 0)}
       </div>
@@ -500,7 +509,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-zinc-100 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -518,18 +527,21 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       {/* selected file: preview (matching renderer) or raw (textarea fallback) */}
       <div className="flex-1 flex flex-col min-w-0">
         {selected === null ? (
-          <div className="flex-1 flex items-center justify-center text-zinc-400 text-compact gap-2">
+          <div className="flex-1 flex items-center justify-center text-content-muted text-compact gap-2">
             <FolderOpen className="w-4 h-4" /> Select a file
           </div>
         ) : (
           (() => {
             // content-aware: only renderers that ACCEPT this file's content are offered.
             // The user's explicit binding (if resolvable) leads; otherwise best match.
-            const candidates = candidatesFor(selected, editor.content, plugins);
-            const bound = bindings[selected] ? getRenderer(bindings[selected], plugins) : undefined;
-            const options = [bound, ...candidates.filter((c) => c.id !== bound?.id)].filter(
-              (r): r is RendererDesc => !!r
+            const options = previewOptions(
+              selected,
+              editor.content,
+              rendererExtensions,
+              bindings[selected],
+              failedRenderers[selected]
             );
+            const bound = bindings[selected] ? options.find((renderer) => renderer.id === bindings[selected]) : undefined;
             const previewRenderer = options[0];
             // no matching renderer => raw, whatever the toggle says — header (Save,
             // dirty dot) and body must agree on which mode is actually showing
@@ -545,7 +557,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   }}
                   title="Download this file (export)"
                   content="icon" controlSize="compact"
-                  className="text-zinc-100 hover:text-zinc-50"
+                  className="text-content-primary hover:text-content-strong"
                 >
                   <Download className="w-3.5 h-3.5" />
                 </UiButton>
@@ -586,7 +598,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
                     setMoreOpen(false);
                   }}
-                  className="rounded-sm text-zinc-100 hover:text-indigo-300 disabled:opacity-50 disabled:hover:text-zinc-100"
+                  className="rounded-sm text-content-primary hover:text-accent-300 disabled:opacity-50 disabled:hover:text-content-primary"
                 >
                   <TextQuote className="w-3.5 h-3.5" />
                 </UiButton>
@@ -601,17 +613,20 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     tight ? "min-h-9 flex-wrap py-1" : "h-9"
                   )}
                 >
-                  <span className="text-compact text-zinc-200 truncate min-w-0" title={selected}>
+                  <span className="text-compact text-content-secondary truncate min-w-0" title={selected}>
                     {pathLabel}
                   </span>
                   {effMode === "raw" && editor.dirty && (
-                    <span className="text-minimal text-amber-400 flex-shrink-0">●</span>
+                    <span className="text-minimal text-warning-400 flex-shrink-0">●</span>
                   )}
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
                   <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
                     <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"}
-                      onClick={() => setMode("preview")}
+                      onClick={() => {
+                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                        setMode("preview");
+                      }}
                       disabled={!previewRenderer}
                       title={
                         previewRenderer
@@ -620,8 +635,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       }
                       controlSize="regular" className={`disabled:opacity-50 ${
  effMode === "preview"
- ? "bg-zinc-700 text-zinc-100"
- : "text-zinc-100 hover:text-zinc-50"
+ ? "bg-zinc-700 text-content-primary"
+ : "text-content-primary hover:text-content-strong"
  }`}
                     >
                       Preview
@@ -630,8 +645,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       onClick={() => setMode("raw")}
                       controlSize="regular" className={`${
  effMode === "raw"
- ? "bg-zinc-700 text-zinc-100"
- : "text-zinc-100 hover:text-zinc-50"
+ ? "bg-zinc-700 text-content-primary"
+ : "text-content-primary hover:text-content-strong"
  }`}
                     >
                       Raw
@@ -643,15 +658,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   {effMode === "preview" && (bound || options.length > 1) && !tight && (
                     <UiSelect
                       value={bound?.id ?? ""}
-                      onChange={(e) => setBinding(selected, e.target.value || null)}
+                      onChange={(e) => {
+                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                        setBinding(selected, e.target.value || null);
+                      }}
                       title="Renderer for Preview (Auto = best content match)"
-                      controlSize="regular" className="bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none max-w-[110px]"
+                      controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
                     >
                       <option value="">Auto</option>
                       {options.map((r) => {
                         const p =
-                          r.source === "plugin"
-                            ? plugins.find((pl) => pl.plugin_id === r.pluginId)
+                          r.source === "extension"
+                            ? rendererExtensions.find((pl) => pl.extensionId === r.extensionId)
                             : undefined;
                         const mark = p?.transient
                           ? "⏱ "
@@ -662,7 +680,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           <option key={r.id} value={r.id}>
                             {mark}
                             {r.title}
-                            {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
+                            {r.source === "extension" ? ` · ${r.extensionId}` : ""}
                           </option>
                         );
                       })}
@@ -677,7 +695,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         aria-expanded={moreOpen}
                         aria-label="More file actions"
                         title="More"
-                        className="rounded-sm text-zinc-100 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        className="rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </UiButton>
@@ -686,9 +704,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           {effMode === "preview" && (bound || options.length > 1) && (
                             <UiSelect
                               value={bound?.id ?? ""}
-                              onChange={(e) => setBinding(selected, e.target.value || null)}
+                              onChange={(e) => {
+                                setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                                setBinding(selected, e.target.value || null);
+                              }}
                               title="Renderer for Preview (Auto = best content match)"
-                              controlSize="regular" className="bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none max-w-[110px]"
+                              controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
                             >
                               <option value="">Auto</option>
                               {options.map((r) => (
@@ -723,6 +744,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       path={selected}
                       renderer={previewRenderer}
                       config={configs[selected]}
+                      onFailure={(rendererId, reason) => {
+                        setFailedRenderers((current) => ({
+                          ...current,
+                          [selected]: [...new Set([...(current[selected] ?? []), rendererId])],
+                        }));
+                        setStatus(`${previewRenderer.title} failed: ${reason}. Switched to the next available renderer.`);
+                      }}
                     />
                   </div>
                 ) : (
@@ -746,7 +774,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {(editor.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-zinc-400"
+            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-content-muted"
           >
             {editor.status || status}
           </div>

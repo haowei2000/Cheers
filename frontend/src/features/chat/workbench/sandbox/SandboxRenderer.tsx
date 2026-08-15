@@ -1,282 +1,318 @@
-import { Button as UiButton } from "@/components/ui/button";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
-import { fetchBundle, type PluginMeta } from "./api";
 import { formatOf } from "../renderers/registry";
+import type { RendererExtension } from "./rendererExtension";
+import { reportRendererStatus } from "../extensions/runtime";
+import {
+  createScheduledMessage,
+  deleteScheduledMessage,
+  listScheduledMessages,
+  runScheduledMessageNow,
+  updateScheduledMessage,
+  type ScheduledMessageInput,
+} from "@/api/scheduledMessages";
 
-// Render-mode sandbox host — the RENDERER_PLUGIN.md `render/save` protocol.
-// Unlike the legacy panels SandboxPanel (which gave a plugin its own plugins/<id>/
-// folder), this hands the plugin exactly ONE file (path + content) and lets it save
-// THAT file back — the tightest capability: it can't touch any other path or channel.
-//
-//   host → plugin : cheers:render { path, format, content, version, rendererId }
-//   plugin → host : cheers:ready                 (loaded — send me the file)
-//   plugin → host : cheers:save   { content }    (write this one file back)
-//   host → plugin : cheers:saved  { ok, version, error? }
-
-/** One line in the dev protocol inspector (session-loaded plugins only). */
-interface DevEvent {
-  seq: number;
-  dir: "in" | "out";
-  type: string;
-  detail: string;
-  at: number;
+interface RpcRequest {
+  jsonrpc: "2.0";
+  id?: number | string;
+  method: string;
+  params?: Record<string, unknown>;
 }
 
-/** Keep the inspector bounded — a chatty plugin must not grow the tab's heap. */
-const DEV_MAX_EVENTS = 200;
+interface RpcResponse {
+  jsonrpc: "2.0";
+  id: number | string;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
 
-/** One-line, non-throwing summary of a protocol message for the inspector. Content and
- *  resource payloads are truncated: this is a traffic log, not a data viewer. Exported
- *  for tests — it must never throw on plugin-controlled input (cyclic objects included),
- *  or a malformed message would take the panel down instead of being logged. */
-export function summarize(m: Record<string, unknown>): string {
-  const clip = (s: string, n = 80) => (s.length > n ? `${s.slice(0, n)}…` : s);
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(m)) {
-    if (k === "type") continue;
-    if (v === undefined) continue;
-    if (typeof v === "string") parts.push(`${k}=${JSON.stringify(clip(v))}`);
-    else if (typeof v === "number" || typeof v === "boolean") parts.push(`${k}=${v}`);
-    else {
-      let s: string;
-      try {
-        s = JSON.stringify(v) ?? String(v);
-      } catch {
-        s = "[unserializable]";
-      }
-      parts.push(`${k}=${clip(s)}`);
-    }
-  }
-  return parts.join(" ");
+export function summarize(message: Record<string, unknown>): string {
+  const clip = (value: string) => value.length > 80 ? `${value.slice(0, 80)}…` : value;
+  return Object.entries(message).flatMap(([key, value]) => {
+    if (key === "type" || value === undefined) return [];
+    if (typeof value === "string") return [`${key}=${JSON.stringify(clip(value))}`];
+    if (typeof value === "number" || typeof value === "boolean") return [`${key}=${value}`];
+    try { return [`${key}=${clip(JSON.stringify(value) ?? String(value))}`]; }
+    catch { return [`${key}=[unserializable]`]; }
+  }).join(" ");
+}
+
+const escapeScript = (source: string) => source.replace(/<\/script/gi, "<\\/script");
+
+export function rendererCsp(network: "unrestricted" | undefined, nonce: string): string {
+  const remote = network === "unrestricted";
+  return [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    `style-src 'nonce-${nonce}'`,
+    remote ? "connect-src http: https: ws: wss:" : "connect-src 'none'",
+    remote ? "img-src http: https: data: blob:" : "img-src data: blob:",
+    remote ? "media-src http: https: data: blob:" : "media-src data: blob:",
+    "font-src data:",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "navigate-to 'none'",
+  ].join("; ");
+}
+
+export function buildRendererDocument(extension: RendererExtension, rendererId: string): string {
+  const renderer = extension.manifest.renderers?.find((candidate) => candidate.id === rendererId);
+  if (!renderer) throw new Error(`Renderer not found: ${rendererId}`);
+  if (!renderer.entry) throw new Error(`Renderer entry is missing: ${rendererId}`);
+  const code = extension.assets?.[renderer.entry];
+  if (!code) throw new Error(`Renderer entry is missing: ${renderer.entry}`);
+  const css = renderer.style ? extension.assets?.[renderer.style] ?? "" : "";
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const bridge = `
+    (() => {
+      let seq = 0;
+      let disposer;
+      let renderHandler;
+      const pending = new Map();
+      const send = (method, params) => new Promise((resolve, reject) => {
+        const id = ++seq; pending.set(id, { resolve, reject });
+        parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+      });
+      const ctx = {
+        file: {
+          onRender(handler) { renderHandler = handler; },
+          save(content) { return send("file.save", { content }); }
+        },
+        channel: { read(resource, params = {}) { return send("channel.read", { resource, params }); } },
+        navigation: { open(uri) { return send("navigation.open", { uri }); } },
+        composer: { prefill(text) { return send("composer.prefill", { text }); } },
+        automation: {
+          list() { return send("automation.list", {}); },
+          create(automationId, input) { return send("automation.create", { automationId, input }); },
+          update(taskId, input) { return send("automation.update", { taskId, input }); },
+          delete(taskId) { return send("automation.delete", { taskId }); },
+          run(taskId) { return send("automation.run", { taskId }); }
+        },
+        log(level, message) { parent.postMessage({ jsonrpc: "2.0", method: "log", params: { level, message } }, "*"); }
+      };
+      globalThis.__CHEERS_RENDERER_CONTEXT__ = ctx;
+      addEventListener("message", async (event) => {
+        if (event.source !== parent || !event.data || event.data.jsonrpc !== "2.0") return;
+        const message = event.data;
+        if (message.id != null && !message.method) {
+          const callback = pending.get(message.id); if (!callback) return;
+          pending.delete(message.id);
+          message.error ? callback.reject(new Error(message.error.message)) : callback.resolve(message.result);
+          return;
+        }
+        if (message.method === "file.render") {
+          try { await renderHandler?.(message.params); parent.postMessage({ jsonrpc: "2.0", id: message.id, result: null }, "*"); }
+          catch (error) { parent.postMessage({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: String(error) } }, "*"); }
+        }
+        if (message.method === "lifecycle.dispose") {
+          try { await disposer?.(); parent.postMessage({ jsonrpc: "2.0", id: message.id, result: null }, "*"); }
+          catch (error) { parent.postMessage({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: String(error) } }, "*"); }
+        }
+      });
+      globalThis.__CHEERS_START_RENDERER__ = async () => {
+        const renderer = globalThis.CheersWorkbenchRenderer;
+        if (!renderer || typeof renderer.activate !== "function") throw new Error("Renderer must call defineRenderer()");
+        disposer = await renderer.activate(ctx);
+        parent.postMessage({ jsonrpc: "2.0", method: "renderer.ready" }, "*");
+      };
+      addEventListener("pagehide", () => { try { disposer?.(); } catch {} });
+    })();`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(extension.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0;}\n${css}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
 }
 
 export function SandboxRenderer({
   fs,
-  plugin,
+  extension,
   rendererId,
   path,
   readChannel,
   onOpen,
   onCompose,
+  onFailure,
+  active = true,
 }: {
   fs: FsClient;
-  plugin: PluginMeta;
+  extension: RendererExtension;
   rendererId: string;
   path: string;
-  // host API: a whitelisted, channel-scoped reader for channel.* verbs (info/members/…)
   readChannel: (resource: string, params: Record<string, unknown>) => Promise<unknown>;
-  /** host API: navigate the USER's view to a `cheers:` locator (cheers:open). Pure UI
-   *  routing — the host parses/validates the locator and every read behind the jump
-   *  still passes the existing authz; the plugin gains no data access from this. */
   onOpen?: (uri: string) => void;
-  /** host API: PREFILL the channel composer (cheers:compose). Never sends — the human
-   *  reviews and presses send, which is what turns the suggestion into an action. */
   onCompose?: (text: string) => void;
+  onFailure?: (reason: string) => void;
+  active?: boolean;
 }) {
-  const [bundle, setBundle] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const versionRef = useRef<number>(0); // last-known version for optimistic writes
+  const versionRef = useRef(0);
+  const requestRef = useRef(0);
+  const failedRef = useRef(false);
+  const pendingRef = useRef(new Map<number | string, {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+  }>());
+  const callbacksRef = useRef({ readChannel, onOpen, onCompose, onFailure });
+  callbacksRef.current = { readChannel, onOpen, onCompose, onFailure };
+  const [status, setStatus] = useState<"ready" | "running" | "failed">("ready");
+  const [error, setError] = useState("");
+  const document = useMemo(() => buildRendererDocument(extension, rendererId), [extension, rendererId]);
 
-  // Dev protocol inspector — ON for session-loaded plugins only (the ⏱ dev loop). The
-  // sandbox has an opaque origin, so a plugin's uncaught errors and console output never
-  // reach the host: this log (plus the SDK's cheers:log forwarding) is the only way an
-  // author can see what their renderer actually exchanged with the host. Installed
-  // plugins stay silent — this is a development affordance, not telemetry.
-  const dev = plugin.transient === true;
-  const [devEvents, setDevEvents] = useState<DevEvent[]>([]);
-  const [devOpen, setDevOpen] = useState(false);
-  const devSeq = useRef(0);
-  const pushDev = useCallback((dir: "in" | "out", type: string, detail: string) => {
-    setDevEvents((prev) => {
-      const next = prev.concat({ seq: ++devSeq.current, dir, type, detail, at: Date.now() });
-      return next.length > DEV_MAX_EVENTS ? next.slice(next.length - DEV_MAX_EVENTS) : next;
-    });
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    setBundle(null);
-    setErr(null);
-    // A changed bundle means a hot reload (or a different plugin): the iframe reboots,
-    // so start the inspector log fresh rather than interleaving two runs.
-    setDevEvents([]);
-    // Session-loaded (transient) plugins carry their bundle inline — no server fetch.
-    if (plugin.bundle != null) {
-      setBundle(plugin.bundle);
+  useLayoutEffect(() => {
+    if (!active) {
+      failedRef.current = false;
+      setStatus("ready");
+      setError("");
+      reportRendererStatus(extension.extensionId, "ready");
       return;
     }
-    fetchBundle(plugin.plugin_id)
-      .then((b) => alive && setBundle(b))
-      .catch((e) => alive && setErr(String(e)));
-    return () => {
-      alive = false;
+    let alive = true;
+    let disposed = false;
+    const pendingRequests = pendingRef.current;
+    failedRef.current = false;
+    const respond = (message: RpcRequest, result?: unknown, errorMessage?: string) => {
+      if (message.id == null) return;
+      const response: RpcResponse = errorMessage
+        ? { jsonrpc: "2.0", id: message.id, error: { code: -32000, message: errorMessage } }
+        : { jsonrpc: "2.0", id: message.id, result };
+      iframeRef.current?.contentWindow?.postMessage(response, "*");
     };
-  }, [plugin.plugin_id, plugin.bundle]);
-
-  useEffect(() => {
-    // Every host → plugin message goes through here so the inspector sees the same
-    // traffic the plugin does.
-    const post = (win: Window, msg: Record<string, unknown>) => {
-      if (dev) pushDev("out", String(msg.type ?? "?"), summarize(msg));
-      win.postMessage(msg, "*");
+    const extensionTasks = async () =>
+      (await listScheduledMessages()).filter((task) => task.sourceExtensionId === extension.extensionId);
+    const automationInput = (value: unknown, automationId: string): ScheduledMessageInput => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("automation input must be an object");
+      }
+      return {
+        ...(value as ScheduledMessageInput),
+        sourceExtensionId: extension.extensionId,
+        sourceAutomationId: automationId,
+      };
     };
-
-    // Read the assigned file and tell the plugin to render it. A missing file renders
-    // empty (version 0); the plugin's first save then creates it (if_version=0).
-    async function sendRender(win: Window) {
+    const request = (method: string, params?: Record<string, unknown>, timeoutMs = 2_000) => {
+      const id = ++requestRef.current;
+      return new Promise<unknown>((resolve, reject) => {
+        pendingRef.current.set(id, { resolve, reject });
+        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        window.setTimeout(() => {
+          if (!pendingRef.current.delete(id)) return;
+          reject(new Error(`${method} timed out`));
+        }, timeoutMs);
+      });
+    };
+    const dispose = async () => {
+      if (disposed) return;
+      disposed = true;
+      try { await request("lifecycle.dispose", undefined, 500); }
+      catch { /* pagehide remains the synchronous last-resort cleanup path */ }
+    };
+    const fail = async (reason: string) => {
+      if (failedRef.current) return;
+      failedRef.current = true;
+      await dispose();
+      if (!alive) return;
+      setError(reason);
+      setStatus("failed");
+      reportRendererStatus(extension.extensionId, "failed", reason);
+      callbacksRef.current.onFailure?.(reason);
+    };
+    const sendRender = async () => {
       let content = "";
       let version = 0;
       try {
-        const f = await fs.read(path);
-        content = f.content;
-        version = f.version;
-      } catch (e) {
-        if (!(e instanceof ResourceError && e.code === "NOT_FOUND")) throw e;
+        const file = await fs.read(path);
+        content = file.content;
+        version = file.version;
+      } catch (reason) {
+        if (!(reason instanceof ResourceError && reason.code === "NOT_FOUND")) throw reason;
       }
       versionRef.current = version;
-      post(win, { type: "cheers:render", path, format: formatOf(path), content, version, rendererId });
-    }
-
-    const handler = (e: MessageEvent) => {
-      const win = iframeRef.current?.contentWindow;
-      if (!win || e.source !== win) return; // only THIS iframe
-      const m = e.data as {
-        type?: string;
-        content?: string;
-        reason?: string;
-        reqId?: number;
-        resource?: string;
-        params?: Record<string, unknown>;
-        uri?: string;
-        text?: string;
-        level?: string;
-        message?: string;
-      };
-      if (!m || typeof m !== "object") return;
-      if (dev) pushDev("in", String(m.type ?? "?"), summarize(m as Record<string, unknown>));
-      if (m.type === "cheers:log") {
-        // Dev-loop diagnostics: the SDK forwards console output and uncaught errors here
-        // because an opaque-origin sandbox can't surface them any other way. Host-side
-        // this is inert — shape-gated, capped, and only ever rendered as text in the
-        // inspector. Unknown to older hosts, which ignore it (protocol 1 growth rule).
+      await request("file.render", { path, format: formatOf(path), content, version, rendererId });
+      setStatus("running");
+      reportRendererStatus(extension.extensionId, "running");
+    };
+    const handler = (event: MessageEvent<RpcRequest | RpcResponse>) => {
+      if (event.source !== iframeRef.current?.contentWindow || event.data?.jsonrpc !== "2.0") return;
+      const message = event.data;
+      if (message.id != null && !("method" in message)) {
+        const pending = pendingRef.current.get(message.id);
+        if (!pending) return;
+        pendingRef.current.delete(message.id);
+        if (message.error) pending.reject(new Error(message.error.message));
+        else pending.resolve(message.result);
         return;
       }
-      if (m.type === "cheers:ready") {
-        setUnsupported(null);
-        void sendRender(win);
-      } else if (m.type === "cheers:resource") {
-        // host API: whitelisted channel.* read, scoped to THIS channel (forced by readChannel)
-        readChannel(m.resource ?? "", m.params ?? {})
-          .then((data) => post(win, { type: "cheers:resource:result", reqId: m.reqId, ok: true, data }))
-          .catch((rerr) =>
-            post(win, {
-              type: "cheers:resource:result",
-              reqId: m.reqId,
-              ok: false,
-              error: rerr instanceof Error ? rerr.message : "error",
-            })
-          );
-      } else if (m.type === "cheers:open") {
-        // host API: navigate the user's view to a cheers: locator. Shape-gated here
-        // (string, scheme prefix, sane length); the handler parses strictly and shows
-        // a clear error for anything unresolvable. No-op when the host didn't wire a
-        // handler — pre-existing plugins may send this before every surface supports it.
-        const uri = typeof m.uri === "string" ? m.uri.trim() : "";
-        if (onOpen && uri.startsWith("cheers:") && uri.length <= 2048) onOpen(uri);
-      } else if (m.type === "cheers:compose") {
-        // host API: PREFILL the channel composer — never send. Shape-gated (string,
-        // control chars stripped, length cap); the human reviews and presses send.
-        const text =
-          typeof m.text === "string"
-            ? // eslint-disable-next-line no-control-regex
-              m.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim()
-            : "";
-        if (onCompose && text && text.length <= 4000) onCompose(text);
-      } else if (m.type === "cheers:unsupported") {
-        // the renderer inspected the content and can't render it (its final judgment)
-        setUnsupported(typeof m.reason === "string" ? m.reason : "");
-      } else if (m.type === "cheers:save") {
-        // Always write the ASSIGNED path — the plugin cannot choose another file.
-        fs.write(path, String(m.content ?? ""), versionRef.current)
-          .then((r) => {
-            versionRef.current = r.version;
-            post(win, { type: "cheers:saved", ok: true, version: r.version });
-          })
-          .catch((werr) => {
-            post(win, { type: "cheers:saved", ok: false, error: werr instanceof Error ? werr.message : "error" });
-            // On a version conflict, re-render the latest so the plugin re-syncs.
-            if (werr instanceof ResourceError && werr.code === "VERSION_CONFLICT") void sendRender(win);
-          });
+      if (!("method" in message)) return;
+      const params = message.params ?? {};
+      if (message.method === "renderer.ready") void sendRender().catch((reason) => void fail(String(reason)));
+      else if (message.method === "file.save") {
+        if (!extension.manifest.permissions?.["file.write"]) return respond(message, undefined, "file.write permission denied");
+        fs.write(path, String(params.content ?? ""), versionRef.current)
+          .then((result) => { versionRef.current = result.version; respond(message, result); })
+          .catch((reason) => respond(message, undefined, reason instanceof Error ? reason.message : String(reason)));
+      } else if (message.method === "channel.read") {
+        const resource = String(params.resource ?? "");
+        if (!extension.manifest.permissions?.["channel.resources"]?.includes(resource)) return respond(message, undefined, "channel resource permission denied");
+        callbacksRef.current.readChannel(resource, (params.params as Record<string, unknown>) ?? {}).then((result) => respond(message, result)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "navigation.open") {
+        if (!extension.manifest.permissions?.["navigation.open"]) return respond(message, undefined, "navigation.open permission denied");
+        callbacksRef.current.onOpen?.(String(params.uri ?? "")); respond(message, null);
+      } else if (message.method === "composer.prefill") {
+        if (!extension.manifest.permissions?.["composer.prefill"]) return respond(message, undefined, "composer.prefill permission denied");
+        callbacksRef.current.onCompose?.(String(params.text ?? "").slice(0, 4000)); respond(message, null);
+      } else if (message.method === "automation.list") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        void extensionTasks().then((tasks) => respond(message, tasks)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "automation.create") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const automationId = String(params.automationId ?? "");
+        const contribution = extension.manifest.automations?.find((automation) => automation.id === automationId);
+        if (!contribution) return respond(message, undefined, "unknown automation contribution");
+        if (!window.confirm(`Create scheduled task from ${extension.title}: ${contribution.title}?`)) return respond(message, undefined, "user cancelled automation creation");
+        try {
+          void createScheduledMessage(automationInput(params.input, automationId)).then((task) => respond(message, task)).catch((reason) => respond(message, undefined, String(reason)));
+        } catch (reason) { respond(message, undefined, String(reason)); }
+      } else if (message.method === "automation.update") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const taskId = String(params.taskId ?? "");
+        void extensionTasks().then(async (tasks) => {
+          const current = tasks.find((task) => task.id === taskId);
+          if (!current?.sourceAutomationId) throw new Error("scheduled task is not owned by this extension");
+          if (!window.confirm(`Update scheduled task "${current.title}"?`)) throw new Error("user cancelled automation update");
+          return updateScheduledMessage(taskId, automationInput(params.input, current.sourceAutomationId));
+        }).then((task) => respond(message, task)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "automation.delete" || message.method === "automation.run") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const taskId = String(params.taskId ?? "");
+        void extensionTasks().then(async (tasks) => {
+          const current = tasks.find((task) => task.id === taskId);
+          if (!current) throw new Error("scheduled task is not owned by this extension");
+          const action = message.method === "automation.delete" ? "Delete" : "Run";
+          if (!window.confirm(`${action} scheduled task "${current.title}"?`)) throw new Error(`user cancelled automation ${action.toLowerCase()}`);
+          if (message.method === "automation.delete") {
+            await deleteScheduledMessage(taskId);
+            return null;
+          }
+          return runScheduledMessageNow(taskId);
+        }).then((result) => respond(message, result)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "renderer.unsupported") {
+        respond(message, null); void fail(String(params.reason ?? "Unsupported content"));
+      } else if (message.method === "renderer.failed") {
+        void fail(String(params.message ?? "Activation failed"));
       }
     };
     window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen, onCompose, dev, pushDev]);
+    return () => {
+      alive = false;
+      void dispose();
+      for (const pending of pendingRequests.values()) pending.reject(new Error("renderer disposed"));
+      pendingRequests.clear();
+      window.removeEventListener("message", handler);
+      if (!failedRef.current) reportRendererStatus(extension.extensionId, "ready");
+    };
+  }, [active, fs, path, rendererId, extension]);
 
-  if (err) return <div className="p-3 text-amber-400 text-compact">Failed to load renderer: {err}</div>;
-  if (bundle === null) return <div className="p-3 text-zinc-400 text-compact">Loading renderer…</div>;
-  return (
-    <div className="relative w-full h-full">
-      <iframe
-        ref={iframeRef}
-        // allow-scripts WITHOUT allow-same-origin => opaque (null) origin: the plugin
-        // cannot read the host's token / cookies / localStorage.
-        sandbox="allow-scripts"
-        srcDoc={bundle}
-        title={plugin.title}
-        className="w-full h-full border-0 bg-white"
-        style={unsupported !== null ? { display: "none" } : undefined}
-      />
-      {unsupported !== null && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-compact text-amber-400 bg-zinc-950">
-          This renderer can't render this file{unsupported ? `: ${unsupported}` : ""}. Pick another
-          renderer from the top-right dropdown, or choose "Raw".
-        </div>
-      )}
-      {dev && (
-        <>
-          <UiButton action={devOpen ? "collapse" : "expand"} variant="plain"
-            type="button"
-            onClick={() => setDevOpen((v) => !v)}
-            title="Protocol inspector (session-loaded plugins only)"
-            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90  text-zinc-100 ring-1 ring-zinc-700 hover:text-white"
-          >
-            {devOpen ? "Hide" : "Dev"} · {devEvents.length}
-          </UiButton>
-          {devOpen && (
-            <div className="absolute inset-x-0 bottom-0 z-10 flex h-1/2 flex-col border-t border-zinc-700 bg-zinc-950/95">
-              <div className="flex items-center justify-between px-2 py-1 text-compact text-zinc-400">
-                <span>Protocol inspector · {plugin.plugin_id}</span>
-                <UiButton action="clear" variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-white">
-                  Clear
-                </UiButton>
-              </div>
-              <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-compact leading-relaxed">
-                {devEvents.length === 0 ? (
-                  <div className="text-zinc-400">
-                    No messages yet. The plugin posts cheers:ready when it boots.
-                  </div>
-                ) : (
-                  /* design-system-exempt: trace-line — ordered diagnostic output. */
-                  devEvents.map((ev) => (
-                    <div key={ev.seq} className="flex gap-2 whitespace-pre-wrap break-all">
-                      <span className={ev.dir === "in" ? "text-emerald-400" : "text-sky-400"}>
-                        {ev.dir === "in" ? "←" : "→"}
-                      </span>
-                      <span className="text-zinc-200">{ev.type}</span>
-                      <span className="text-zinc-400">{ev.detail}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
+  if (!active) return null;
+  if (status === "failed") return <div className="p-3 text-warning-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;
+  return <iframe ref={iframeRef} sandbox="allow-scripts" srcDoc={document} title={`${extension.title} (${status})`} className="h-full w-full border-0 bg-white" />;
 }

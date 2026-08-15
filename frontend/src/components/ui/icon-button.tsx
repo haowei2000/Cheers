@@ -12,10 +12,10 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
 }
 
 const toneClasses: Record<IconButtonTone, string> = {
-  neutral: "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50",
-  danger: "text-zinc-100 hover:bg-red-950/60 hover:text-red-400",
-  success: "text-emerald-400 hover:bg-emerald-500/10",
-  accent: "text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50",
+  neutral: "text-content-primary hover:bg-zinc-800 hover:text-content-strong",
+  danger: "text-content-primary hover:bg-red-950/60 hover:text-danger-400",
+  success: "text-success-400 hover:bg-emerald-500/10",
+  accent: "text-content-primary hover:bg-zinc-800 hover:text-content-strong",
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(

@@ -1,7 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
 // ViewBoard — the channel's instrument / observability plane, SEPARATE from the
 // Workbench. The Workbench is a *file-based workspace* (context_files, fs.*, editable,
-// rendered via lenses/plugins). A ViewBoard is NOT file-based: it renders a live,
+// rendered via lenses/extensions). A ViewBoard is NOT file-based: it renders a live,
 // read-only *projection* of agent activity / session state from a resource verb
 // (*.read), keyed by channel + optionally the selected session. Truth lives in the
 // event/session/usage stores, not in a file. Maps to the two-class data model:
@@ -16,7 +16,7 @@ import type { SendResourceReq } from "./fsClient";
 import { useResourceQuery } from "./useResourceQuery";
 
 /** The minimal context a ViewBoard needs — channel + resource client + the selected
- *  session. No files / pins / plugins (that's the Workbench's PanelContext). */
+ *  session. No files / pins / extensions (that's the Workbench's PanelContext). */
 export interface ViewBoardContext {
   channelId: string;
   sendResourceReq: SendResourceReq;
@@ -171,14 +171,14 @@ export function ViewBoardShell({
   return (
     <div className="flex flex-col h-full text-regular">
       <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
-        {Icon && <Icon className="w-3.5 h-3.5 text-zinc-400" />}
-        <span className="text-compact text-zinc-200">{title}</span>
+        {Icon && <Icon className="w-3.5 h-3.5 text-content-muted" />}
+        <span className="text-compact text-content-secondary">{title}</span>
         <div className="flex-1" />
-        {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
+        {loading && <span className="text-minimal text-content-muted">Loading…</span>}
         {onRefresh && (
           <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${title}`} title="Refresh" disabled={loading}>
             <RefreshCw
-              className={`w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200 ${loading ? "animate-spin" : ""}`}
+              className={`w-3.5 h-3.5 text-content-muted hover:text-content-secondary ${loading ? "animate-spin" : ""}`}
             />
           </UiButton>
         )}
@@ -210,23 +210,23 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
     return (
       <div className="flex flex-col h-full text-regular">
         <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
-          {Icon && <Icon className="w-3.5 h-3.5 text-zinc-400" />}
-          <span className="text-compact text-zinc-200">{def.title}</span>
+          {Icon && <Icon className="w-3.5 h-3.5 text-content-muted" />}
+          <span className="text-compact text-content-secondary">{def.title}</span>
           <div className="flex-1" />
-          {loading && <span className="text-minimal text-zinc-400">Loading…</span>}
+          {loading && <span className="text-minimal text-content-muted">Loading…</span>}
           <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${def.title}`} title="Refresh" disabled={loading}>
             <RefreshCw
-              className={`w-3.5 h-3.5 text-zinc-400 hover:text-zinc-200 ${loading ? "animate-spin" : ""}`}
+              className={`w-3.5 h-3.5 text-content-muted hover:text-content-secondary ${loading ? "animate-spin" : ""}`}
             />
           </UiButton>
         </div>
 
         <div className="flex-1 overflow-auto">
           {error ? (
-            <div className="px-3 py-3 text-compact text-red-400">{error}</div>
+            <div className="px-3 py-3 text-compact text-danger-400">{error}</div>
           ) : data == null ? (
             // First load (no data yet) — neutral hint, not the board's "empty" state.
-            <div className="px-3 py-6 text-compact text-zinc-400">Loading…</div>
+            <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
           ) : (
             def.render(data, ctx, refetch)
           )}

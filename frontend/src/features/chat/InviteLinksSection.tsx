@@ -193,10 +193,10 @@ export function InviteLinksSection({
               leading={<Link2 className={controlIconClasses.regular} />}
               title={linkTitle(link, Boolean(channelId))}
               status={inactive ? undefined : (
-                <span className="font-utility text-compact uppercase tracking-wide text-zinc-400">Active</span>
+                <span className="font-utility text-compact uppercase tracking-label text-content-muted">Active</span>
               )}
               criticalStatus={inactive ? (
-                <span className="font-utility text-compact font-semibold uppercase tracking-wide text-amber-400">
+                <span className="font-utility text-compact font-semibold uppercase tracking-label text-warning-400">
                   {link.status === "expired" ? "Expired" : "Used up"}
                 </span>
               ) : undefined}

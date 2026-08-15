@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useState, type ReactNode, type RefCallback } from "react";
 import {
   ArrowLeft,
-  ArrowRight,
   Bell,
   Building2,
   Hash,
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
-  Search,
   Settings,
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ItemList, NavigationItem } from "@/components/ui/item";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { useAuthStore } from "@/stores/authStore";
@@ -37,6 +35,7 @@ import {
   macosNativeControlsInset,
   type WindowChromePaneGeometry,
 } from "./WindowChromeModel";
+import { useShallow } from "zustand/react/shallow";
 import type { Channel, Workspace as WorkspaceModel } from "@/types";
 
 type TitlebarContext = {
@@ -77,18 +76,49 @@ export function resolveDesktopTitlebarContext(pathname: string, chat: ChatContex
   return { title: pageTitles[section] ?? "Cheers" };
 }
 
+export function resolveDesktopParentPath(pathname: string): string | null {
+  const segments = pathname.split("/").filter(Boolean);
+  const [section] = segments;
+
+  if (section === "chat") {
+    if (segments.length >= 3) return `/chat/${segments[1]}`;
+    return null;
+  }
+
+  if (section === "fleet") {
+    if (segments[1] === "bots" && segments.length > 2) return "/fleet/bots";
+    if (segments.length > 1) return "/fleet";
+    return "/chat";
+  }
+
+  if (section === "settings" || section === "friends") {
+    if (segments.length > 1) return `/${section}`;
+    return "/chat";
+  }
+
+  if (section === "activity") return "/chat";
+  return null;
+}
+
 type SearchEntry = {
   id: string;
   label: string;
   detail: string;
   path: string;
-  Icon: typeof Search;
+  Icon: LucideIcon;
 };
 
 function DesktopSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+    })),
+  );
 
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
@@ -133,18 +163,13 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
-          <span className="sr-only">Search pages, workspaces, and channels</span>
-          <Input
-            autoFocus
-            inset="leading"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search pages, workspaces, and channels…"
-            aria-label="Search pages, workspaces, and channels"
-          />
-        </div>
+        <SearchInput
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search pages, workspaces, and channels…"
+          aria-label="Search pages, workspaces, and channels"
+        />
         {visible.length > 0 ? (
           <ItemList presentationLevel="medium" controlSize="regular" className="max-h-80 overflow-y-auto">
             {visible.map((entry) => (
@@ -152,13 +177,13 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
                 key={entry.id}
                 title={entry.label}
                 subtitle={entry.detail}
-                leading={<entry.Icon className="h-4 w-4 text-zinc-400" aria-hidden="true" />}
+                leading={<entry.Icon className="h-4 w-4 text-content-muted" aria-hidden="true" />}
                 onClick={() => open(entry.path)}
               />
             ))}
           </ItemList>
         ) : (
-          <p className="py-5 text-center text-compact text-zinc-400">No matching destination</p>
+          <p className="py-5 text-center text-compact text-content-muted">No matching destination</p>
         )}
       </div>
     </Dialog>
@@ -182,12 +207,17 @@ export function DesktopTitlebar({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const navigationType = useNavigationType();
   const user = useAuthStore((state) => state.user);
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      selectedChannelId: state.selectedChannelId,
+    })),
+  );
   const [searchOpen, setSearchOpen] = useState(false);
-  const historyIndex = Number((window.history.state as { idx?: number } | null)?.idx ?? 0);
-  const [maxHistoryIndex, setMaxHistoryIndex] = useState(historyIndex);
 
   const workspace =
     selectedWorkspaceId === personalWorkspace?.workspace_id
@@ -203,13 +233,7 @@ export function DesktopTitlebar({
     settings: Settings,
   };
   const ContextIcon = section === "chat" ? (channel ? Hash : Building2) : (contextIcons[section] ?? Building2);
-  const hasRouteFallback = !!user && section !== "chat";
-
-  useEffect(() => {
-    setMaxHistoryIndex((current) =>
-      navigationType === "PUSH" ? historyIndex : Math.max(current, historyIndex)
-    );
-  }, [historyIndex, navigationType]);
+  const parentPath = user ? resolveDesktopParentPath(location.pathname) : null;
 
   useEffect(() => {
     if (!user) return;
@@ -231,18 +255,15 @@ export function DesktopTitlebar({
         contextIcon={ContextIcon}
         authenticated={!!user}
         activePath={location.pathname}
-        canBack={historyIndex > 0 || hasRouteFallback}
-        canForward={historyIndex < maxHistoryIndex}
+        canNavigateUp={!!parentPath}
         platform={platform}
         variant={variant}
         windowState={windowState}
         panes={panes}
         onToggleSidebar={onToggleSidebar}
-        onBack={() => {
-          if (historyIndex > 0) window.history.back();
-          else navigate("/chat");
+        onNavigateUp={() => {
+          if (parentPath) navigate(parentPath);
         }}
-        onForward={() => window.history.forward()}
         actionsRef={actionsRef}
       />
       {searchOpen && <DesktopSearch onClose={() => setSearchOpen(false)} />}
@@ -255,24 +276,21 @@ export function DesktopTitlebarChrome({
   contextIcon: ContextIcon,
   authenticated,
   activePath,
-  canBack,
-  canForward,
+  canNavigateUp,
   platform = "macos",
   variant = "macos-overlay",
   windowState,
   panes,
   sidebarOpen,
   onToggleSidebar,
-  onBack,
-  onForward,
+  onNavigateUp,
   actionsRef,
 }: {
   context: TitlebarContext;
   contextIcon: LucideIcon;
   authenticated: boolean;
   activePath: string;
-  canBack: boolean;
-  canForward: boolean;
+  canNavigateUp: boolean;
   platform?: DesktopPlatform;
   variant?: Exclude<WindowChromeVariant, "inline">;
   windowState?: DesktopWindowState;
@@ -280,8 +298,7 @@ export function DesktopTitlebarChrome({
   /** Compatibility input for focused renderer tests; frames pass `panes`. */
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
-  onBack: () => void;
-  onForward: () => void;
+  onNavigateUp: () => void;
   actionsRef?: RefCallback<HTMLElement>;
 }) {
   const resolvedWindowState = windowState ?? {
@@ -300,17 +317,19 @@ export function DesktopTitlebarChrome({
 
   return (
     <header
-      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center bg-zinc-950 text-zinc-100"
+      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center bg-zinc-950 text-content-primary"
       data-window-chrome={variant}
       data-window-active={resolvedWindowState.active ? "true" : "false"}
       data-window-fullscreen={resolvedWindowState.fullscreen ? "true" : "false"}
       aria-label={isMacOverlay ? "Window toolbar" : "Application toolbar"}
     >
       {resolvedPanes?.sidebarOpen && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex" aria-hidden="true">
-          <div className="w-14 bg-rail" />
-          <div className="w-60 bg-sidebar" />
-        </div>
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 bg-sidebar"
+          style={{ width: resolvedPanes.railWidth + resolvedPanes.sidebarWidth }}
+          data-window-sidebar-surface="true"
+          aria-hidden="true"
+        />
       )}
       <div
         {...dragRegion}
@@ -333,21 +352,18 @@ export function DesktopTitlebarChrome({
             )}
           </IconButton>
         )}
-        <IconButton label="Back" controlSize="regular" disabled={!canBack} onClick={onBack}>
+        <IconButton label="Up one level" controlSize="regular" disabled={!canNavigateUp} onClick={onNavigateUp}>
           <ArrowLeft className={controlIconClasses.regular} aria-hidden="true" />
-        </IconButton>
-        <IconButton label="Forward" controlSize="regular" disabled={!canForward} onClick={onForward}>
-          <ArrowRight className={controlIconClasses.regular} aria-hidden="true" />
         </IconButton>
       </nav>
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">
-          <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-zinc-400" aria-hidden="true" />
+          <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
           <span {...dragRegion} className="truncate font-semibold">{context.title}</span>
           {context.subtitle && (
             <>
-              <span {...dragRegion} className="text-zinc-400" aria-hidden="true">/</span>
-              <span {...dragRegion} className="truncate text-zinc-400">{context.subtitle}</span>
+              <span {...dragRegion} className="text-content-muted" aria-hidden="true">/</span>
+              <span {...dragRegion} className="truncate text-content-muted">{context.subtitle}</span>
             </>
           )}
         </div>

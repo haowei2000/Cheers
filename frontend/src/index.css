@@ -37,7 +37,7 @@
 /* Semantic typography roles. Family, optical size, and intended use travel
    together so pages cannot quietly create a fourth visual voice. */
 .font-display {
-  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 60;
 }
@@ -45,34 +45,403 @@
 /* Mastheads need a broader, sturdier cut than ordinary display headings. This
    remains a display variant, not a fourth typography role. */
 .font-masthead {
-  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 32;
-  letter-spacing: 0.005em;
+  letter-spacing: var(--tracking-masthead);
 }
 
 .font-reading {
-  font-family: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 14;
 }
 
 .font-utility {
-  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
-    "PingFang SC", sans-serif;
+  font-family: var(--font-ui);
   font-optical-sizing: auto;
   font-variation-settings: normal;
 }
 
+/* Code is a semantic role, not a generic monospace decoration. Disable
+   contextual substitutions so commands, paths, identifiers, and diffs retain
+   their exact glyph sequence. */
+.font-code {
+  font-family: var(--font-code);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+/* Semantic text roles. These sit above the raw scale utilities so product code
+   can name the complete text contract: family + size + rhythm + weight/style +
+   foreground. Use raw font/size/color utilities only for geometry-driven
+   primitives or one-off states that are not yet registered here. */
+.text-message {
+  font-family: var(--font-serif);
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular-size);
+  line-height: 1.6;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-secondary));
+}
+
+.text-message-error {
+  font-family: var(--font-serif);
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 14;
+  font-size: var(--type-regular-size);
+  line-height: 1.6;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-body {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
+.text-body-secondary {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-secondary));
+}
+
+.text-body-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-body-warning {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.55;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-warning-400));
+}
+
+.text-title {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-regular-size);
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
+.text-label {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: rgb(var(--text-muted));
+}
+
+.text-label-primary {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: rgb(var(--text-primary));
+}
+
+.text-section-label {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--text-muted));
+}
+
+.text-section-label-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-caption {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-caption-error {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--tone-danger-400));
+}
+
+.text-caption-italic {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-metadata {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-minimal-size);
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: rgb(var(--text-muted));
+}
+
+.text-status {
+  font-family: var(--font-ui);
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+  font-size: var(--type-compact-size);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: rgb(var(--text-primary));
+}
+
 :root {
-  --type-minimal: 0.625rem;
-  --type-compact: 0.75rem;
-  --type-regular: 0.875rem;
-  --type-comfortable: 1rem;
+  /* Typography primitives are the single source of truth for every text role.
+     Tailwind's semantic utilities read these values in tailwind.config.ts. */
+  --font-ui: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+    "PingFang SC", sans-serif;
+  --font-serif: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC",
+    "Songti SC", Georgia, serif;
+  --font-code: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+
+  --type-minimal-size: 0.625rem;
+  --type-minimal-leading: 1.4;
+  --type-minimal-tracking: 0.01em;
+  --type-compact-size: 0.75rem;
+  --type-compact-leading: 1.45;
+  --type-compact-tracking: 0;
+  --type-regular-size: 0.875rem;
+  --type-regular-leading: 1.55;
+  --type-regular-tracking: 0;
+  --type-comfortable-size: 1rem;
+  --type-comfortable-leading: 1.4;
+  --type-comfortable-tracking: -0.005em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --tracking-label: 0.025em;
+  --tracking-section: 0.05em;
+  --tracking-overline: 0.1em;
+  --tracking-display: -0.015em;
+  --tracking-masthead: 0.005em;
+  --leading-flat: 1;
+  --leading-heading: 1.3;
+  --leading-regular: 1.55;
+  --leading-reading: 1.6;
+  --leading-masthead: 0.98;
+
+  /* Theme palettes are semantic even where legacy Tailwind class names still
+     say zinc/indigo. Changing these values recolors the whole application;
+     feature components never carry a second set of light-mode classes. */
+  --tone-zinc-50: 250 250 250;
+  --tone-zinc-100: 244 244 245;
+  --tone-zinc-200: 228 228 231;
+  --tone-zinc-300: 212 212 216;
+  --tone-zinc-400: 180 180 188;
+  --tone-zinc-500: 149 149 158;
+  --tone-zinc-600: 133 133 143;
+  --tone-zinc-700: 74 74 82;
+  --tone-zinc-800: 48 48 53;
+  --tone-zinc-900: 28 28 32;
+  --tone-zinc-950: 9 9 11;
+  --surface-canvas: 9 9 11;
+  --surface-panel: 28 28 32;
+  --surface-control: 48 48 53;
+  --surface-control-hover: 74 74 82;
+  --surface-control-active: 133 133 143;
+  --surface-rail: 15 15 17;
+  --surface-sidebar: 24 24 27;
+  --surface-emphasis: 74 74 82;
+  --surface-emphasis-hover: 82 82 91;
+  --surface-emphasis-active: 48 48 53;
+
+  /* Semantic foreground hierarchy. Components describe meaning instead of
+     selecting a zinc shade; state colors are registered beside these tokens. */
+  --text-strong: 250 250 250;
+  --text-primary: 244 244 245;
+  --text-secondary: 228 228 231;
+  --text-muted: 180 180 188;
+  --text-on-light: 9 9 11;
+  --text-on-accent: 255 255 255;
+  --syntax-keyword: 196 181 165;
+  --syntax-string: 168 181 162;
+  --syntax-number: 196 164 132;
+  --syntax-function: 170 181 196;
+  --syntax-type: 194 174 189;
+  --syntax-operator: 148 163 184;
+  --syntax-link: 184 190 199;
+  --syntax-code: 199 180 180;
+  --syntax-invalid: 248 113 113;
   color-scheme: dark;
   /* One Web shape system: 10px ordinary corners; nested surfaces add their
      actual inset so parent and child arcs remain concentric. */
   --radius-control: 10px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --tone-zinc-50: 9 9 11;
+  --tone-zinc-100: 24 24 27;
+  --tone-zinc-200: 39 39 42;
+  --tone-zinc-300: 63 63 70;
+  --tone-zinc-400: 82 82 91;
+  --tone-zinc-500: 113 113 122;
+  --tone-zinc-600: 161 161 170;
+  --tone-zinc-700: 212 212 216;
+  --tone-zinc-800: 228 228 231;
+  --tone-zinc-900: 255 255 255;
+  --tone-zinc-950: 244 244 245;
+  /* Light mode needs elevation by tone, not white-on-off-white ambiguity:
+     canvas < panel < control < hover/active. Legacy zinc utilities map to
+     the same values while feature code migrates to these semantic surfaces. */
+  --surface-canvas: 244 244 245;
+  --surface-panel: 255 255 255;
+  --surface-control: 228 228 231;
+  --surface-control-hover: 212 212 216;
+  --surface-control-active: 161 161 170;
+  --surface-rail: 228 228 231;
+  --surface-sidebar: 255 255 255;
+  --surface-emphasis: 39 39 42;
+  --surface-emphasis-hover: 63 63 70;
+  --surface-emphasis-active: 24 24 27;
+
+  --text-strong: 9 9 11;
+  --text-primary: 24 24 27;
+  --text-secondary: 63 63 70;
+  --text-muted: 82 82 91;
+  --text-on-light: 255 255 255;
+  --text-on-accent: 255 255 255;
+
+  /* Neutral ink doubles as the focus/selection scale. Filled actions stay
+     dark while quiet selected surfaces become light in the light theme. */
+  --tone-ink-50: 9 9 11;
+  --tone-ink-100: 24 24 27;
+  --tone-ink-200: 39 39 42;
+  --tone-ink-300: 63 63 70;
+  --tone-ink-400: 82 82 91;
+  --tone-ink-500: 82 82 91;
+  --tone-ink-600: 82 82 91;
+  --tone-ink-700: 161 161 170;
+  --tone-ink-800: 212 212 216;
+  --tone-ink-900: 228 228 231;
+  --tone-ink-950: 244 244 245;
+
+  /* Status palettes use pale resting surfaces and darker foreground shades so
+     success/warning/error text keeps AA contrast on white. */
+  --tone-danger-100: 127 29 29;
+  --tone-danger-200: 153 27 27;
+  --tone-danger-300: 185 28 28;
+  --tone-danger-400: 185 28 28;
+  --tone-danger-500: 220 38 38;
+  --tone-danger-900: 254 226 226;
+  --tone-danger-950: 254 242 242;
+  --tone-warning-100: 120 53 15;
+  --tone-warning-200: 120 53 15;
+  --tone-warning-300: 146 64 14;
+  --tone-warning-400: 161 98 7;
+  --tone-warning-500: 217 119 6;
+  --tone-warning-600: 217 119 6;
+  --tone-warning-700: 180 83 9;
+  --tone-warning-800: 253 230 138;
+  --tone-warning-900: 254 243 199;
+  --tone-warning-950: 255 251 235;
+  --tone-success-100: 6 78 59;
+  --tone-success-200: 6 95 70;
+  --tone-success-300: 4 120 87;
+  --tone-success-400: 4 120 87;
+  --tone-success-500: 5 150 105;
+  --tone-success-600: 5 150 105;
+  --tone-success-700: 4 120 87;
+  --tone-success-900: 209 250 229;
+  --tone-success-950: 236 253 245;
+  --tone-removed-200: 159 18 57;
+  --tone-removed-300: 190 18 60;
+  --tone-removed-400: 190 18 60;
+  --tone-removed-500: 225 29 72;
+  --tone-removed-600: 225 29 72;
+  --tone-removed-950: 255 241 242;
+  --tone-info-300: 3 105 161;
+  --tone-info-400: 3 105 161;
+  --tone-stale-400: 194 65 12;
+  --tone-research-300: 109 40 217;
+  --tone-research-400: 109 40 217;
+  --tone-research-600: 124 58 237;
+  --tone-category-300: 15 118 110;
+  --tone-category-400: 15 118 110;
+
+  --syntax-keyword: 120 53 15;
+  --syntax-string: 6 95 70;
+  --syntax-number: 154 52 18;
+  --syntax-function: 30 64 175;
+  --syntax-type: 134 25 143;
+  --syntax-operator: 51 65 85;
+  --syntax-link: 55 65 81;
+  --syntax-code: 127 29 29;
+  --syntax-invalid: 185 28 28;
 }
 
 /* Progressive enhancement: browsers without CSS corner-shape keep the same
@@ -128,10 +497,9 @@ body,
 }
 
 body {
-  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
-    "PingFang SC", sans-serif;
-  background: #09090b;
-  color: #fafafa;
+  font-family: var(--font-ui);
+  background: rgb(var(--tone-zinc-950));
+  color: rgb(var(--text-primary));
   -webkit-font-smoothing: antialiased;
 }
 
@@ -144,11 +512,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: rgb(var(--tone-zinc-700));
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: rgb(var(--tone-zinc-600));
 }
 
 /* The message timeline is content, not a scroll control. Preserve wheel, touch,
@@ -185,8 +553,8 @@ button:not(:disabled) {
 
 /* Prose / markdown */
 .prose {
-  color: #e4e4e7;
-  line-height: 1.6;
+  color: rgb(var(--text-secondary));
+  line-height: var(--leading-reading);
   word-break: break-word;
 }
 
@@ -198,35 +566,35 @@ button:not(:disabled) {
 }
 
 .prose strong {
-  color: #fafafa;
-  font-weight: 600;
+  color: rgb(var(--text-strong));
+  font-weight: var(--weight-semibold);
 }
 
 .prose em {
-  color: #e4e4e7;
+  color: rgb(var(--text-secondary));
 }
 
 .prose a {
-  color: #e4e4e7;
+  color: rgb(var(--text-secondary));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .prose a:hover {
-  color: #fafafa;
+  color: rgb(var(--text-strong));
 }
 
 .prose code {
-  background: #27272a;
-  color: #e4e4e7;
+  background: rgb(var(--tone-zinc-800));
+  color: rgb(var(--text-secondary));
   padding: 0.15em 0.4em;
   border-radius: var(--radius-control);
-  /* Size is owned by the renderer's utility class (text-sm) so inline code,
+  /* Size is owned by the renderer's semantic utility so inline code,
      code blocks, and the backtick-path button all agree — don't override here. */
-  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-family: var(--font-code);
 }
 
 .prose pre {
-  background: #18181b;
+  background: rgb(var(--tone-zinc-900));
   border-radius: var(--radius-control);
   padding: 1em;
   overflow-x: auto;
@@ -248,59 +616,59 @@ button:not(:disabled) {
 }
 
 .prose blockquote {
-  border-left: 3px solid #3f3f46;
+  border-left: 3px solid rgb(var(--tone-zinc-700));
   margin: 0.5em 0;
   padding-left: 1em;
-  color: #a1a1aa;
+  color: rgb(var(--text-muted));
 }
 
 .prose h1,
 .prose h2,
 .prose h3,
 .prose h4 {
-  color: #fafafa;
-  font-weight: 600;
+  color: rgb(var(--text-strong));
+  font-weight: var(--weight-semibold);
   margin: 0.75em 0 0.4em;
-  line-height: 1.3;
+  line-height: var(--leading-heading);
 }
 .prose h1 {
-  font-size: var(--type-comfortable);
+  font-size: var(--type-comfortable-size);
 }
 .prose h2 {
-  font-size: var(--type-comfortable);
+  font-size: var(--type-comfortable-size);
 }
 .prose h3 {
-  font-size: var(--type-regular);
+  font-size: var(--type-regular-size);
 }
 .prose h4 {
-  font-size: var(--type-regular);
+  font-size: var(--type-regular-size);
 }
 
 .prose table {
   border-collapse: collapse;
   width: 100%;
   margin: 0.5em 0;
-  font-size: var(--type-compact);
+  font-size: var(--type-compact-size);
 }
 .prose th,
 .prose td {
   border: 0;
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid rgb(var(--tone-zinc-800));
   padding: 0.5em 0.75em;
   text-align: left;
 }
 .prose th {
-  background: #27272a;
-  color: #fafafa;
-  font-weight: 600;
+  background: rgb(var(--tone-zinc-800));
+  color: rgb(var(--text-strong));
+  font-weight: var(--weight-semibold);
 }
 .prose tr:nth-child(even) td {
-  background: #18181b;
+  background: rgb(var(--tone-zinc-900));
 }
 
 .prose hr {
   border: none;
-  border-top: 1px solid #27272a;
+  border-top: 1px solid rgb(var(--tone-zinc-800));
   margin: 1em 0;
 }
 
@@ -316,40 +684,40 @@ button:not(:disabled) {
 /* Highlight.js theme */
 .hljs {
   background: transparent !important;
-  color: #e4e4e7 !important;
+  color: rgb(var(--text-secondary)) !important;
 }
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-built_in {
-  color: #c4b5a5 !important;
+  color: rgb(var(--syntax-keyword)) !important;
 }
 .hljs-string,
 .hljs-attr,
 .hljs-attribute {
-  color: #a8b5a2 !important;
+  color: rgb(var(--syntax-string)) !important;
 }
 .hljs-number,
 .hljs-literal {
-  color: #c4a484 !important;
+  color: rgb(var(--syntax-number)) !important;
 }
 .hljs-comment {
-  color: #a1a1aa !important;
+  color: rgb(var(--text-muted)) !important;
   font-style: italic;
 }
 .hljs-function,
 .hljs-title {
-  color: #aab5c4 !important;
+  color: rgb(var(--syntax-function)) !important;
 }
 .hljs-type,
 .hljs-class {
-  color: #c2aebd !important;
+  color: rgb(var(--syntax-type)) !important;
 }
 .hljs-variable,
 .hljs-params {
-  color: #e4e4e7 !important;
+  color: rgb(var(--text-secondary)) !important;
 }
 .hljs-operator {
-  color: #94a3b8 !important;
+  color: rgb(var(--syntax-operator)) !important;
 }
 
 /* Public/auth edition: the editorial language uses ink and rules. The workspace
@@ -357,21 +725,20 @@ button:not(:disabled) {
    public edition's reversed primary-action treatment. */
 .public-edition button,
 .public-edition input {
-  font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
-    "PingFang SC", sans-serif;
+  font-family: var(--font-ui);
 }
 
 .public-edition button.bg-indigo-600 {
   border: 0;
-  background: #e4e4e7;
-  color: #09090b;
+  background: rgb(var(--tone-zinc-200));
+  color: rgb(var(--text-on-light));
 }
 
 .public-edition button.bg-indigo-600:hover:not(:disabled) {
   background: transparent;
-  color: #f4f4f5;
+  color: rgb(var(--text-primary));
 }
 
 .public-edition input:focus {
-  --tw-ring-color: #d4d4d8;
+  --tw-ring-color: rgb(var(--tone-zinc-300));
 }

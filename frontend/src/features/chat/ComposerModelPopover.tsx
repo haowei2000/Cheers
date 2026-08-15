@@ -89,8 +89,8 @@ export function ComposerModelPopover({
         aria-haspopup="dialog"
         className={cn(
           open
-            ? "bg-indigo-600/15 text-indigo-200"
-            : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            ? "bg-indigo-600/15 text-accent-200"
+            : "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary"
         )}
       >
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />

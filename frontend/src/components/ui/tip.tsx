@@ -46,7 +46,7 @@ export function Tip({
         label={label}
         controlSize="compact"
         aria-describedby={id}
-        className="-m-1 text-zinc-100 transition-colors hover:text-zinc-50"
+        className="-m-1 text-content-primary transition-colors hover:text-content-strong"
       >
         <Info className="h-3.5 w-3.5" />
       </IconButton>
@@ -69,7 +69,7 @@ export function Tip({
           align={align}
           id={id}
           role="tooltip"
-          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-3 py-2 text-left text-compact font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
+          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-3 py-2 text-left text-compact font-normal normal-case leading-heading tracking-normal text-content-primary shadow-xl shadow-black/40"
         >
           {content}
         </FloatingLayer>

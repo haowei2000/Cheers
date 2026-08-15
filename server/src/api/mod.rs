@@ -23,6 +23,7 @@ pub mod oauth;
 pub mod pairing;
 pub mod passkey;
 pub mod push;
+pub mod scheduled_messages;
 pub mod session_control;
 pub mod stt_settings;
 pub mod task_claims;

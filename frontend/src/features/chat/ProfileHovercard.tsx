@@ -190,16 +190,16 @@ function ProfileCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-zinc-100 truncate">{name}</span>
+            <span className="font-semibold text-content-primary truncate">{name}</span>
             {isBot && (
-              <span className="text-minimal px-1 py-1 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className="text-minimal px-1 py-1 rounded-sm bg-indigo-900/60 text-accent-300 font-medium">
                 BOT
               </span>
             )}
           </div>
-          {handle && <p className="text-compact text-zinc-400 truncate">{handle}</p>}
+          {handle && <p className="text-compact text-content-muted truncate">{handle}</p>}
           {(member.status_emoji || member.status_text) && (
-            <p className="mt-1 text-compact text-zinc-200 truncate">
+            <p className="mt-1 text-compact text-content-secondary truncate">
               {member.status_emoji && <span className="mr-1">{member.status_emoji}</span>}
               {member.status_text}
             </p>
@@ -207,7 +207,7 @@ function ProfileCard({
           {member.status_updated_at &&
             (member.status_emoji || member.status_text) &&
             relativeTime(member.status_updated_at) && (
-              <p className="mt-1 text-minimal text-zinc-400">
+              <p className="mt-1 text-minimal text-content-muted">
                 updated {relativeTime(member.status_updated_at)}
               </p>
             )}
@@ -216,14 +216,14 @@ function ProfileCard({
 
       {member.bio && (
         <div>
-          <p className="text-compact text-zinc-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          <p className="text-compact text-content-muted whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
             {member.bio}
           </p>
         </div>
       )}
       {member.role && member.role !== "member" && (
         <div>
-          <span className="text-minimal uppercase tracking-wide text-zinc-400">
+          <span className="text-minimal uppercase tracking-label text-content-muted">
             {member.role}
           </span>
         </div>
@@ -232,7 +232,7 @@ function ProfileCard({
         <UiButton action="mention" content="iconText" controlWidth="fill" variant="plain"
           type="button"
           onClick={onMention}
-          controlSize="comfortable" className="flex items-center justify-center gap-2 rounded-sm bg-indigo-500/12  font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          controlSize="comfortable" className="flex items-center justify-center gap-2 rounded-sm bg-indigo-500/12  font-medium text-accent-300 transition-colors hover:bg-indigo-500/20 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
         >
           <AtSign className="h-4 w-4" />
           Mention {name}

@@ -6,12 +6,13 @@ import {
   listBots,
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
+import { listWorkspaces } from "@/api/workspaces";
 import { ActionButton } from "@/components/ui/action-button";
 import { EntityItem } from "@/components/ui/item";
 import { CreateBotDialog } from "./CreateBotDialog";
 import { CreateInstallationWizard } from "./CreateInstallationWizard";
 import { BotDetailPanel } from "./BotDetailPanel";
-import type { BotItem, Channel } from "@/types";
+import type { BotItem, Channel, Workspace } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -31,23 +32,23 @@ function BotRow({
       selected={active}
       title={`${bot.display_name || bot.username} · @${bot.username}`}
       leading={<div className={`flex flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
-        <Bot className="w-4 h-4 text-indigo-300" />
+        <Bot className="w-4 h-4 text-accent-300" />
       </div>}
       criticalStatus={bot.is_disabled ? (
         <Ban
-          className="w-3.5 h-3.5 text-red-400 flex-shrink-0"
+          className="w-3.5 h-3.5 text-danger-400 flex-shrink-0"
           role="img"
           aria-label="Disabled"
         />
       ) : bot.is_online ? (
         <Circle
-          className="w-3.5 h-3.5 flex-shrink-0 fill-emerald-400 text-emerald-400"
+          className="w-3.5 h-3.5 flex-shrink-0 fill-emerald-400 text-success-400"
           role="img"
           aria-label="Online"
         />
       ) : (
         <CircleDot
-          className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400"
+          className="w-3.5 h-3.5 flex-shrink-0 text-content-muted"
           role="img"
           aria-label="Offline"
         />
@@ -60,6 +61,7 @@ function BotRow({
 export function BotsManager() {
   const [bots, setBots] = useState<BotItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
@@ -69,9 +71,10 @@ export function BotsManager() {
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
-      const [b, c] = await Promise.all([listBots(), listChannels()]);
+      const [b, c, w] = await Promise.all([listBots(), listChannels(), listWorkspaces()]);
       setBots(b);
       setChannels(c);
+      setWorkspaces(w);
       setLoadFailed(false);
     } catch (e) {
       // Background polls stay quiet — a transient blip shouldn't toast.
@@ -106,7 +109,7 @@ export function BotsManager() {
 
   return (
     <section>
-      <h2 className="text-compact font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
         <ActionButton
@@ -122,7 +125,7 @@ export function BotsManager() {
         <IconButton
           label="Refresh bots"
           onClick={() => void refresh()}
-          className="text-zinc-100 hover:text-zinc-50"
+          className="text-content-primary hover:text-content-strong"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -131,12 +134,12 @@ export function BotsManager() {
 
       {bots.length === 0 && !loading ? (
         loadFailed ? (
-          <p className="text-regular text-red-400 px-1">
+          <p className="text-regular text-danger-400 px-1">
             Couldn't load bots — check the gateway connection, then press refresh.
           </p>
         ) : (
-          <p className="text-regular text-zinc-400 px-1">
-            No bots yet. Click <span className="text-zinc-200">Add bot</span> to create one, then
+          <p className="text-regular text-content-muted px-1">
+            No bots yet. Click <span className="text-content-secondary">Add bot</span> to create one, then
             connect it to the machine that will run it.
           </p>
         )
@@ -161,6 +164,7 @@ export function BotsManager() {
                 key={selected.bot_id}
                 bot={selected}
                 channels={channels}
+                workspaces={workspaces}
                 onError={(m) => toast.error(m)}
                 onChanged={refresh}
                 onPoll={pollRefresh}
@@ -169,7 +173,7 @@ export function BotsManager() {
                 }}
               />
             ) : (
-              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-regular text-zinc-400">
+              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-regular text-content-muted">
                 Select a bot to manage it.
               </div>
             )}

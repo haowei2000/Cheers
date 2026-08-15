@@ -1,33 +1,38 @@
 import { parse as yamlParse } from "yaml";
-import { PLUGIN_PROTOCOL, type PluginMeta, type RendererMatch } from "../sandbox/api";
+import type { RendererExtension, RendererMatch } from "../sandbox/rendererExtension";
 
 // A renderer turns ONE file's content into an interactive UI. Renderers come from two
-// places, kept uniform here: built-in (compiled lenses) and plugins (sandboxed code).
+// places, kept uniform here: built-in lenses and personal extensions (sandboxed code).
 // A file declares NO type — the renderer declares what it ACCEPTS (format + structure),
 // and is only offered for files whose content passes that. The real "can I render this"
 // judgment still lives inside the renderer (it may reply cheers:unsupported at render).
 // Which renderer opens a file is a binding (path -> renderer id) in .workbench.json.
 export interface RendererDesc {
-  id: string; // composite, unique, stored in bindings: "builtin:markdown" | "plugin:<pid>:<rid>"
+  id: string; // composite, unique: "builtin:markdown" | "personal:<extension>:<renderer>"
   title: string;
   format: string[]; // coarse formats accepted: "markdown" | "json" | "yaml" | "toml" | "xml" | "text"
-  source: "builtin" | "plugin";
+  source: "builtin" | "extension";
   match: RendererMatch; // acceptance spec (host-evaluated for the candidate list)
   lensId?: string; // builtin: which compiled lens
-  pluginId?: string; // plugin: installed plugin id
-  rendererId?: string; // plugin: the renderer's id WITHIN the plugin (sent to the iframe)
+  extensionId?: string; // extension: installed extension id
+  rendererId?: string; // extension: the renderer's id WITHIN the extension (sent to the iframe)
   // false => resolvable (getRenderer) but NOT offered in the File-panel picker. Used for
   // lenses that need external config (table columns) — only reachable via a template's view.
   pickable?: boolean;
   // BUILTIN-ONLY structural refinement past the declarative `match` vocabulary,
   // evaluated on the parsed structured data. Not manifest-expressible (a JSON manifest
-  // can't carry a predicate) — plugins get the same effect via cheers:unsupported.
+  // can't carry a predicate) — extensions get the same effect via cheers:unsupported.
   acceptsData?: (data: unknown) => boolean;
 }
 
 // Manifest `match.format` accepts a string or a list; absent = "text" (catch-all).
 function formatsOf(m: RendererMatch): string[] {
   return m.format === undefined ? ["text"] : Array.isArray(m.format) ? m.format : [m.format];
+}
+
+function normalizedMatch(value: string[] | RendererMatch | undefined): RendererMatch {
+  if (Array.isArray(value)) return value.length ? { glob: value[0] } : {};
+  return value ?? {};
 }
 
 // A file's coarse format, by extension. No extension / unknown => "text" (catch-all).
@@ -46,7 +51,8 @@ function globToRegExp(glob: string): RegExp {
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "\u0000") // ** => any (incl. /)
     .replace(/\*/g, "[^/]*") // *  => any within a segment
-    .replace(/\u0000/g, ".*");
+    .split("\u0000")
+    .join(".*");
   return new RegExp("^" + esc + "$");
 }
 
@@ -68,7 +74,7 @@ function hasKeys(data: unknown, keys: string[]): boolean {
   return keys.every((k) => k in (data as Record<string, unknown>));
 }
 
-// Does this renderer accept this file's content? Cheap, host-side, no plugin boot.
+// Does this renderer accept this file's content? Cheap, host-side, no extension boot.
 export function accepts(desc: RendererDesc, path: string, content: string): boolean {
   if (!desc.format.includes("text") && !desc.format.includes(formatOf(path))) return false;
   const m = desc.match;
@@ -105,7 +111,7 @@ const BUILTINS: RendererDesc[] = [
   {
     // Array-of-rows table. Columns come from a template config when present, else the
     // lens infers them from the union of row keys — so it needs no external config and
-    // IS pickable. This is also the official answer for YAML arrays (sandboxed plugins
+    // IS pickable. This is also the official answer for YAML arrays (sandboxed extensions
     // would have to inline their own YAML parser; the builtin gets it from the Format
     // layer). Offered only when EVERY row is a plain object: YAML parses `- alpha` to a
     // string row and a bare `-` to null, for which a table has nothing honest to show
@@ -155,31 +161,24 @@ const BUILTINS: RendererDesc[] = [
   },
 ];
 
-export function pluginRenderers(plugins: PluginMeta[]): RendererDesc[] {
-  return plugins.flatMap((p) => {
-    // A manifest declaring a protocol this host doesn't implement is skipped whole —
-    // half-speaking its messages would be worse than not offering it at all.
-    const proto = p.manifest.protocol ?? PLUGIN_PROTOCOL;
-    if (proto !== PLUGIN_PROTOCOL) {
-      console.warn(
-        `workbench: skipping plugin ${p.plugin_id} — manifest protocol ${proto}, host implements ${PLUGIN_PROTOCOL}`
-      );
-      return [];
-    }
-    return (p.manifest.renderers ?? []).map((r) => ({
-      id: `plugin:${p.plugin_id}:${r.id}`,
+export function extensionRenderers(extensions: RendererExtension[]): RendererDesc[] {
+  return extensions.flatMap((p) => {
+    return (p.manifest.renderers ?? []).map((r) => {
+      const match = normalizedMatch(r.match);
+      return {
+      id: `personal:${p.extensionId}:${r.id}`,
       title: r.title,
-      format: formatsOf(r.match ?? {}),
-      source: "plugin" as const,
-      match: r.match ?? {},
-      pluginId: p.plugin_id,
+      format: formatsOf(match),
+      source: "extension" as const,
+      match,
+      extensionId: p.extensionId,
       rendererId: r.id,
-    }));
+    }});
   });
 }
 
-function allRenderers(plugins: PluginMeta[]): RendererDesc[] {
-  return [...BUILTINS, ...pluginRenderers(plugins)];
+function allRenderers(extensions: RendererExtension[]): RendererDesc[] {
+  return [...BUILTINS, ...extensionRenderers(extensions)];
 }
 
 // CSS-like specificity: the more (and stronger) constraints a renderer declares, the
@@ -195,7 +194,7 @@ export function specificity(desc: RendererDesc): number {
   if (m.dataKind) s += 1;
   if (m.requireAny?.length) s += 1;
   if (m.glob) s += 1;
-  if (desc.source === "plugin") s += 0.5; // a specialized plugin edges out a generic builtin on ties
+  if (desc.source === "extension") s += 0.5; // a specialized extension edges out a generic builtin on ties
   return s;
 }
 
@@ -203,12 +202,29 @@ export function specificity(desc: RendererDesc): number {
 // Content-aware, so a renderer needing `## ` headings won't be offered for prose.
 // Multiple matches are NOT a conflict — they're a ranked candidate list; the user picks
 // one and the choice persists as a binding.
-export function candidatesFor(path: string, content: string, plugins: PluginMeta[]): RendererDesc[] {
-  return allRenderers(plugins)
+export function candidatesFor(path: string, content: string, extensions: RendererExtension[]): RendererDesc[] {
+  return allRenderers(extensions)
     .filter((r) => r.pickable !== false && accepts(r, path, content))
-    .sort((a, b) => specificity(b) - specificity(a)); // stable: ties keep builtin-then-plugin order
+    .sort((a, b) => specificity(b) - specificity(a)); // stable: ties keep builtin-then-extension order
 }
 
-export function getRenderer(id: string, plugins: PluginMeta[]): RendererDesc | undefined {
-  return allRenderers(plugins).find((r) => r.id === id);
+export function getRenderer(id: string, extensions: RendererExtension[]): RendererDesc | undefined {
+  return allRenderers(extensions).find((r) => r.id === id);
+}
+
+/** Ordered Preview choices after excluding renderers that failed for this file. */
+export function previewOptions(
+  path: string,
+  content: string,
+  extensions: RendererExtension[],
+  boundId?: string,
+  failedIds: Iterable<string> = []
+): RendererDesc[] {
+  const failed = new Set(failedIds);
+  const resolvedBound = boundId ? getRenderer(boundId, extensions) : undefined;
+  const bound = resolvedBound && !failed.has(resolvedBound.id) ? resolvedBound : undefined;
+  const candidates = candidatesFor(path, content, extensions).filter((renderer) => !failed.has(renderer.id));
+  return [bound, ...candidates.filter((candidate) => candidate.id !== bound?.id)].filter(
+    (renderer): renderer is RendererDesc => renderer !== undefined
+  );
 }

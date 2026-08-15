@@ -239,7 +239,11 @@ export function buildEpisodes(
     }
     let best: string | null = ep.triggerActorId ?? null;
     let bestN = -1;
-    for (const [id, c] of tally) if (c > bestN) ((best = id), (bestN = c));
+    for (const [id, count] of tally) {
+      if (count <= bestN) continue;
+      best = id;
+      bestN = count;
+    }
     ep.dominantActorId = best;
     if (!ep.title) ep.title = ""; // filled by the panel from actor name
   }

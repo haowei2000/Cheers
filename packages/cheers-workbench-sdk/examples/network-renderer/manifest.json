@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "example-network",
+  "version": "1.0.0",
+  "title": "Network example",
+  "description": "Demonstrates the explicit unrestricted-network warning",
+  "contributes": {
+    "scenes": [],
+    "renderers": [{ "id": "status", "title": "Remote status", "entry": "renderers/status.js", "match": ["status.json"] }]
+  },
+  "permissions": { "network": "unrestricted" }
+}

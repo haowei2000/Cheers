@@ -31,8 +31,8 @@ export const TabOption = forwardRef<HTMLButtonElement, TabOptionProps>(
           controlMinHeightClasses[size],
           controlTextClasses[size],
           selected
-            ? "border-zinc-100 text-zinc-100"
-            : "border-transparent text-zinc-100 hover:text-zinc-50",
+            ? "border-zinc-100 text-content-primary"
+            : "border-transparent text-content-primary hover:text-content-strong",
           className
         )}
         {...props}
