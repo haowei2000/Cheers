@@ -99,9 +99,10 @@ Expo（React Native）代码；两个原生分支作为已验证的 API/协议�
   `apps/ios` + `apps/android`。~~ **（2026-07-19）** 作废。`apps/ios` 是长期移动客户端，
   按长期资产投入；`apps/android` 冻结但保留（只修 bug）。
 - **前端待优化项**（评审时发现，与本决策分开跟踪，但与移动 Web 线相关）：
-  - React Query 已配置但**完全没用**（0 处 `useQuery`，19 个文件手写
-    `useEffect` + `apiJson`）—— 收益最高的重构，零 bundle 成本。
-  - 测试覆盖近乎为零（整个前端只有 1 个测试文件）。
+  - **2026-08-15 更新：** React Query 已接管设置页中的 REST 服务端状态
+    （个人资料、外部身份、登录会话、AI 授权）；Zustand 只保留认证、导航/UI
+    状态与实时投影，其余手写 REST 状态后续按功能逐步迁移。
+  - 前端已有单元测试、设计系统、CSP 和依赖安全检查；浏览器级端到端测试仍是下一缺口。
   - `highlight.js` 全量打包（969 KB）—— 改用 `lib/core` + 按需注册语言。
   - 巨型组件（`RemoteWorkspaceDialog.tsx` 1309 行）。
 
@@ -120,7 +121,7 @@ Expo（React Native）代码；两个原生分支作为已验证的 API/协议�
 2. ✅ 三个分支合进 `develop`（按上面的顺序）。
 3. ~~用 Expo 起 `apps/mobile/` 脚手架~~ —— **2026-07-19 取消，从未开工。**
 4. ~~达到功能对齐后，下线 `apps/ios` + `apps/android`。~~ —— **作废。**
-5. 并行把网页数据层迁到 React Query（移动 Web 同样受益）。
+5. 🚧 分阶段把网页 REST 数据层迁到 React Query（账户设置已完成，其余功能待迁移）。
 
 **修订后的路线图（2026-07-19）**
 

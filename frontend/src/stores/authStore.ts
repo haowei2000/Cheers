@@ -3,6 +3,7 @@ import type { User } from "@/types";
 import { apiBase, getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
 import { clearClientSessionData } from "@/lib/clientSession";
+import { queryClient } from "@/lib/queryClient";
 
 interface AuthState {
   user: User | null;
@@ -30,6 +31,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
       markSessionExpired: () => set({ sessionExpired: true }),
       logout: () => {
         clearClientSessionData();
+        queryClient.clear();
         set({ user: null, token: null, sessionExpired: false });
       },
       restoreSession: async () => {

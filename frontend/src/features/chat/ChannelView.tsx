@@ -1,5 +1,4 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { ControlTrigger } from "@/components/ui/control-trigger";
 import {
   useState,
   useCallback,
@@ -8,26 +7,17 @@ import {
   useMemo,
   lazy,
   Suspense,
-  type ReactNode,
 } from "react";
 import {
-  Hash,
-  Users,
   Loader2,
-  PanelRight,
   PanelLeftClose,
   PanelLeftOpen,
-  Paperclip,
-  FolderTree,
-  Settings,
-  LayoutDashboard,
   X,
   Copy,
   Forward,
   WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { PresenceDot } from "@/components/ui/presence-dot";
 import { listMessages, sendMessage } from "@/api/messages";
 import {
   useContextPickStore,
@@ -36,25 +26,16 @@ import {
   type ContextItem,
 } from "./context/contextPick";
 import { ContextPickBar } from "./context/ContextPickBar";
-import {
-  listChannelMembers,
-  listVoiceTranscript,
-  markChannelRead,
-  joinChannel,
-} from "@/api/channels";
-import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
 import { ReplyComposerBanner } from "./ReplyComposerBanner";
-import { MembersPopover } from "./MembersPopover";
 import { ForwardDialog } from "./ForwardDialog";
 import type { MessageActionHandlers } from "./MessageItem";
 import {
   MessageComposer,
   type MentionCandidate,
   type CommandCandidate,
-  type ComposerPrefill,
 } from "./MessageComposer";
 import { SessionChip } from "./SessionChip";
 import { ComposerModelPopover } from "./ComposerModelPopover";
@@ -65,18 +46,14 @@ import {
   setActivePushChannel,
 } from "@/lib/push";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
-import { coalesceTraceEvents } from "./traceEvent";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { LaneZones } from "./workbench/LaneZones";
 import { LaneResizer } from "./workbench/LaneResizer";
-import { LANE_TARGET, type SpawnKind } from "./workbench/laneSnap";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
-import { Button } from "@/components/ui/button";
-import { usePopoverDismiss } from "@/components/ui/popover";
 import { ChannelChrome } from "./ChannelChrome";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
@@ -101,7 +78,7 @@ const VoiceRoomPanel = lazy(() =>
   import("./VoiceRoomPanel").then((m) => ({ default: m.VoiceRoomPanel })),
 );
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
-import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
+import { ProfileCardProvider } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { parseLocator } from "./locator";
 import { locateWorkspaceFile } from "./wsLocate";
@@ -110,41 +87,17 @@ import type {
   Message,
   Channel,
   PermissionContentData,
-  MemberItem,
-  TraceEvent,
-  VoiceTranscriptSegment,
 } from "@/types";
 import { messageSessionId } from "./messageTree";
+import { mergeMessages, sortMessages, upsertMessage } from "./messageCollection";
+import { ChannelSelectionState } from "./ChannelSelectionState";
+import { ChannelPreview } from "./ChannelPreview";
+import { ChannelToolbar } from "./ChannelToolbar";
+import { useChannelRoster } from "./hooks/useChannelRoster";
+import { useChannelInstruments } from "./hooks/useChannelInstruments";
+import { useChannelMessages } from "./hooks/useChannelMessages";
 
-// In-flight bot placeholders arrive with `channel_seq: null`; they are the
-// newest thing in the channel until finalized, so order them last. Stable sort
-// preserves arrival order among equal keys.
-const SEQ_MAX = Number.MAX_SAFE_INTEGER;
-function seqKey(m: Message): number {
-  return typeof m.channel_seq === "number" ? m.channel_seq : SEQ_MAX;
-}
-function sortMessages(msgs: Message[]): Message[] {
-  return [...msgs].sort((a, b) => seqKey(a) - seqKey(b));
-}
-
-function upsertMessage(
-  msgs: Message[],
-  incoming: Partial<Message> & { msg_id: string },
-): Message[] {
-  const idx = msgs.findIndex((m) => m.msg_id === incoming.msg_id);
-  if (idx === -1) return sortMessages([...msgs, incoming as Message]);
-  const reorder =
-    incoming.channel_seq !== undefined &&
-    msgs[idx].channel_seq !== incoming.channel_seq;
-  const next = msgs.map((m, i) => (i === idx ? { ...m, ...incoming } : m));
-  return reorder ? sortMessages(next) : next;
-}
-
-function mergeMessages(msgs: Message[], incoming: Message[]): Message[] {
-  let out = msgs;
-  for (const m of incoming) out = upsertMessage(out, m);
-  return out;
-}
+export { ChannelSelectionState } from "./ChannelSelectionState";
 
 interface Props {
   channel: Channel | null;
@@ -156,36 +109,6 @@ interface Props {
   sidebarOpen?: boolean;
   /** Desktop: collapse/expand the channel sidebar (renders a header toggle). */
   onToggleSidebar?: () => void;
-}
-
-export function ChannelSelectionState({
-  pending,
-  sidebarToggle,
-}: {
-  pending: boolean;
-  sidebarToggle: ReactNode;
-}) {
-  if (pending) {
-    return (
-      <div
-        className="flex flex-1 items-center justify-center text-content-muted"
-        aria-busy="true"
-        aria-label="Loading channels"
-      >
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative flex-1 flex items-center justify-center text-content-muted text-regular flex-col gap-3">
-      {sidebarToggle && (
-        <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
-      )}
-      <Hash className="h-5 w-5 text-content-muted" aria-hidden="true" />
-      <span>Select a channel to start chatting</span>
-    </div>
-  );
 }
 
 export function ChannelView({
@@ -203,24 +126,53 @@ export function ChannelView({
   // flips this off and lets the normal effects run.
   const isPreview =
     !!channel && channel.type !== "dm" && channel.is_member === false;
-  const [joining, setJoining] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  // Distinguishes a failed initial history load from a genuinely empty channel —
-  // without it a network/server failure renders the "No messages yet" empty state.
-  const [loadError, setLoadError] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
-  // Full channel members (with bio/status) — powers the profile hovercard by id.
-  const [members, setMembers] = useState<MemberItem[]>([]);
+  const activeChannelRef = useRef<string | null>(channel?.channel_id ?? null);
+  activeChannelRef.current = channel?.channel_id ?? null;
+  const {
+    mentionables,
+    setMembers,
+    memberById,
+    voiceSpeakerNames,
+    voiceTranscripts,
+    setVoiceTranscripts,
+    loadVoiceTranscript,
+  } = useChannelRoster({ channel, preview: isPreview, activeChannelRef });
+  const permissionResolvedRef = useRef<() => void>(() => {});
+  const onPermissionResolved = useCallback(
+    () => permissionResolvedRef.current(),
+    [],
+  );
+  const {
+    messages,
+    setMessages,
+    loading,
+    loadError,
+    hasMore,
+    setHasMore,
+    loadingMore,
+    loadingRef,
+    pendingCatchUpRef,
+    pendingDeltas,
+    catchUp,
+    loadHistory,
+    loadMore,
+    handleMessage,
+    handleStreamDelta,
+    handleStreamDone,
+    handleBotTrace,
+    handleDeleted,
+    handleFileTranscribed,
+  } = useChannelMessages({
+    channel,
+    preview: isPreview,
+    activeChannelRef,
+    patchChannel,
+    onPermissionResolved,
+  });
   // Slash-commands advertised by the channel's bots (⑦ command palette). Flat
   // list across all bots; refreshed on channel open and on reconnect catch-up.
   const [commands, setCommands] = useState<CommandCandidate[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [voiceTranscripts, setVoiceTranscripts] = useState<
-    VoiceTranscriptSegment[]
-  >([]);
   // Workspace presence: who else is viewing which bot's workspace (from the `presence`
   // frame's `focus` array). Surfaced as viewer chips in the RemoteWorkspaceDialog.
   const [workspaceFocus, setWorkspaceFocus] = useState<PresenceFocus[]>([]);
@@ -235,10 +187,6 @@ export function ChannelView({
   // mode/config controls inline when the caller is allowed to change them.
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
   // Header members dropdown (read-only list; management stays in settings).
-  const [membersOpen, setMembersOpen] = useState(false);
-  const membersRootRef = useRef<HTMLDivElement>(null);
-  const closeMembers = useCallback(() => setMembersOpen(false), []);
-  usePopoverDismiss(membersOpen, closeMembers, membersRootRef);
   // Message actions: reply target, multi-select set, pending forward payload.
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [discussionComposerRoot, setDiscussionComposerRoot] =
@@ -312,7 +260,6 @@ export function ChannelView({
     setSelectedSessionBotId(null);
     setMentionedBots([]);
     setCommands([]);
-    setMembersOpen(false);
     setReplyTo(null);
     setDiscussionComposerRoot(null);
     setCreatingDiscussion(false);
@@ -320,21 +267,7 @@ export function ChannelView({
     setSelectMode(false);
     setSelectedIds(new Set());
     setForward(null);
-    pendingDeltas.current.clear();
-    if (flushHandle.current !== null) {
-      cancelAnimationFrame(flushHandle.current);
-      flushHandle.current = null;
-    }
   }, [channel?.channel_id]);
-
-  // Cancel any scheduled delta flush on unmount.
-  useEffect(
-    () => () => {
-      if (flushHandle.current !== null)
-        cancelAnimationFrame(flushHandle.current);
-    },
-    [],
-  );
 
   // Esc backs out of the transient message-action states (reply draft / selection).
   // Composer popups (mention/command picker, attach menu) preventDefault their own
@@ -365,414 +298,6 @@ export function ChannelView({
     for (const m of mentionables) map.set(m.id, m.label);
     return map;
   }, [mentionables]);
-
-  // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
-  const lastSeqRef = useRef(0);
-  useEffect(() => {
-    let max = 0;
-    for (const m of messages) {
-      if (typeof m.channel_seq === "number" && m.channel_seq > max)
-        max = m.channel_seq;
-    }
-    lastSeqRef.current = max;
-  }, [messages]);
-
-  // The channel whose async responses are still welcome — a response landing
-  // after a switch must be dropped, not merged into the new channel's state.
-  const activeChannelRef = useRef<string | null>(null);
-  activeChannelRef.current = channel?.channel_id ?? null;
-  // Which channel the `messages` state currently belongs to. Set inside the
-  // setMessages updater (it runs with the commit that applies the seed), so the
-  // cache write-back effect can never attribute one channel's rows to another
-  // during the one commit where `channel` has switched but `messages` hasn't.
-  const msgsOwnerRef = useRef<string | null>(null);
-  // `loading` mirrored for stable callbacks (handleReady's catch-up dedup).
-  const loadingRef = useRef(false);
-  const pendingCatchUpRef = useRef(false);
-  const catchUpInFlightRef = useRef(false);
-  // A catch-up requested while one is already in flight used to be silently
-  // dropped with no retry — if that request was healing the only gap covering
-  // a message (e.g. a resubscribe racing a reconnect), the message could stay
-  // permanently missing even though it persisted server-side (#330). Coalesce
-  // instead: remember the latest overlapping request and run exactly one more
-  // pass (with the freshest cursor) right after the in-flight one finishes.
-  const catchUpPendingRef = useRef(false);
-  const catchUpPendingSinceRef = useRef<number | undefined>(undefined);
-
-  // Reconnect/refresh self-heal: pull everything past our last seq and merge.
-  // `sinceSeq` overrides the ref when the caller just seeded state (the ref
-  // effect above only updates after that commit).
-  const catchUp = useCallback(
-    async (sinceSeq?: number) => {
-      if (!channel) return;
-      if (catchUpInFlightRef.current) {
-        catchUpPendingRef.current = true;
-        catchUpPendingSinceRef.current = sinceSeq;
-        return;
-      }
-      const cid = channel.channel_id;
-      catchUpInFlightRef.current = true;
-      try {
-        const res = await listMessages(cid, {
-          since_seq: sinceSeq ?? lastSeqRef.current,
-        });
-        if (activeChannelRef.current !== cid) return;
-        const incoming = res.messages ?? res.data ?? [];
-        if (incoming.length)
-          setMessages((prev) => mergeMessages(prev, incoming));
-      } catch {
-        /* best-effort; the live stream still delivers new frames */
-      } finally {
-        catchUpInFlightRef.current = false;
-        if (catchUpPendingRef.current) {
-          catchUpPendingRef.current = false;
-          const rerunSince = catchUpPendingSinceRef.current;
-          catchUpPendingSinceRef.current = undefined;
-          void catchUp(rerunSince);
-        }
-      }
-    },
-    [channel],
-  );
-
-  // Initial history load (backend returns ascending: oldest first). Warm path:
-  // re-entering a cached channel seeds instantly from memory (Telegram-style),
-  // then a since-seq catch-up merges anything that landed while we were away.
-  // Cold path: fetch the newest page; a failure sets loadError so the render
-  // shows a retryable error region instead of the "No messages yet" empty state
-  // (a failed fetch must not masquerade as empty).
-  const loadHistory = useCallback(() => {
-    if (!channel || isPreview) return;
-    const cid = channel.channel_id;
-    setLoadError(false);
-    pendingCatchUpRef.current = false;
-
-    const seeded = seedFromCache(cid);
-    if (seeded) {
-      let maxSeq = 0;
-      for (const m of seeded.messages) {
-        if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
-          maxSeq = m.channel_seq;
-      }
-      lastSeqRef.current = maxSeq;
-      setLoading(false);
-      loadingRef.current = false;
-      setMessages(() => {
-        msgsOwnerRef.current = cid;
-        return seeded.messages;
-      });
-      setHasMore(seeded.hasMore);
-      void catchUp(maxSeq);
-      return;
-    }
-
-    setLoading(true);
-    loadingRef.current = true;
-    msgsOwnerRef.current = null;
-    setMessages([]);
-    setHasMore(false);
-    listMessages(cid, { limit: 50 })
-      .then((res) => {
-        if (activeChannelRef.current !== cid) return;
-        const msgs = sortMessages(res.messages ?? res.data ?? []);
-        let maxSeq = 0;
-        for (const m of msgs) {
-          if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
-            maxSeq = m.channel_seq;
-        }
-        lastSeqRef.current = maxSeq;
-        setMessages(() => {
-          msgsOwnerRef.current = cid;
-          return msgs;
-        });
-        setHasMore(res.meta?.has_more_before ?? false);
-        // A subscribe ack raced the initial load → run the deferred catch-up now
-        // that the real seq cursor is known (a since_seq=0 catch-up would have
-        // re-fetched the very page this load just delivered).
-        if (pendingCatchUpRef.current) {
-          pendingCatchUpRef.current = false;
-          void catchUp(maxSeq);
-        }
-      })
-      .catch(() => {
-        if (activeChannelRef.current === cid) setLoadError(true);
-      })
-      .finally(() => {
-        if (activeChannelRef.current === cid) {
-          setLoading(false);
-          loadingRef.current = false;
-        }
-      });
-  }, [channel, isPreview, catchUp]);
-
-  useEffect(() => {
-    if (!channel || isPreview) {
-      msgsOwnerRef.current = null;
-      setMessages([]);
-      setLoadError(false);
-      return;
-    }
-    loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel?.channel_id, isPreview]);
-
-  // Write-through: keep the per-channel cache current so the next entry into
-  // this channel renders instantly. The owner guard makes the mid-switch commit
-  // (new channel, previous channel's rows) a no-op.
-  useEffect(() => {
-    const cid = channel?.channel_id;
-    if (!cid || msgsOwnerRef.current !== cid) return;
-    setChannelCache(cid, { messages, hasMore });
-  }, [messages, hasMore, channel?.channel_id]);
-
-  // Opening a channel marks it read: clear the unread + mention badges
-  // optimistically, then stamp last_read_at server-side so list_channels stops
-  // counting either (both are gated on last_read_at).
-  useEffect(() => {
-    if (!channel || isPreview) return;
-    if ((channel.unread_count ?? 0) > 0 || (channel.mention_count ?? 0) > 0)
-      patchChannel(channel.channel_id, { unread_count: 0, mention_count: 0 });
-    markChannelRead(channel.channel_id).catch(() => {});
-  }, [channel?.channel_id, isPreview]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Mention candidates = channel members (users + bots). Warm path: seed from
-  // the per-channel cache so mentions/hovercards work instantly, then refresh
-  // in the background and write through.
-  useEffect(() => {
-    if (!channel || isPreview) {
-      setMentionables([]);
-      setMembers([]);
-      return;
-    }
-    const cid = channel.channel_id;
-    const apply = (rows: MemberItem[]) => {
-      setMembers(rows);
-      setMentionables(
-        rows
-          .filter((m) => m.member_type === "user" || m.member_type === "bot")
-          .map((m) => ({
-            id: m.member_id,
-            type:
-              m.member_type === "bot" ? ("bot" as const) : ("user" as const),
-            label: m.display_name || m.username || m.member_id.slice(0, 8),
-            sublabel: m.username,
-            // Bots: whether the agent can hear audio prompts (null/undefined =
-            // unknown → the composer treats it as "can't", fail-safe).
-            canReceiveAudio: m.can_receive_audio ?? false,
-            isOnline: m.is_online,
-          })),
-      );
-    };
-    const cached = getChannelCache(cid)?.members;
-    if (cached) apply(cached);
-    listChannelMembers(cid)
-      .then((rows) => {
-        if (activeChannelRef.current !== cid) return;
-        setChannelCache(cid, { members: rows });
-        apply(rows);
-      })
-      .catch(() => {
-        // A failed refresh keeps serving the cached roster; only clear when
-        // there was nothing to show in the first place.
-        if (activeChannelRef.current === cid && !cached) {
-          setMembers([]);
-          setMentionables([]);
-        }
-      });
-  }, [channel?.channel_id, isPreview]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // id → member profile, so a message avatar/name click can open the hovercard
-  // even though the message itself carries no bio/status.
-  const memberById = useMemo<Map<string, ProfileData>>(
-    () => new Map(members.map((m) => [m.member_id, m])),
-    [members],
-  );
-  const voiceSpeakerNames = useMemo(
-    () =>
-      Object.fromEntries(
-        members.map((member) => [
-          member.member_id,
-          member.display_name || member.username || "Member",
-        ]),
-      ),
-    [members],
-  );
-
-  const loadVoiceTranscript = useCallback(async () => {
-    if (!channel || channel.kind !== "voice" || isPreview) {
-      setVoiceTranscripts([]);
-      return;
-    }
-    const channelId = channel.channel_id;
-    try {
-      const segments = await listVoiceTranscript(channelId);
-      if (activeChannelRef.current === channelId) setVoiceTranscripts(segments);
-    } catch {
-      if (activeChannelRef.current === channelId) setVoiceTranscripts([]);
-    }
-  }, [channel, isPreview]);
-
-  useEffect(() => {
-    void loadVoiceTranscript();
-  }, [loadVoiceTranscript]);
-
-  const loadMore = useCallback(async () => {
-    if (!channel || loadingMore || !hasMore) return;
-    const oldest = messages[0];
-    if (!oldest) return;
-    setLoadingMore(true);
-    try {
-      const res = await listMessages(channel.channel_id, {
-        before: oldest.msg_id,
-        limit: 50,
-      });
-      if (activeChannelRef.current !== channel.channel_id) return;
-      setMessages((prev) =>
-        mergeMessages(prev, res.messages ?? res.data ?? []),
-      );
-      setHasMore(res.meta?.has_more_before ?? false);
-    } catch {
-      // hasMore stays true, so scrolling up again retries this page. Stable id so a
-      // momentum-scroll at the top that re-fires loadMore collapses to one toast.
-      toast.error("Couldn't load older messages — scroll up to try again", {
-        id: "load-older-failed",
-      });
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [channel, messages, hasMore, loadingMore]);
-
-  const handleMessage = useCallback((msg: Message) => {
-    setMessages((prev) => upsertMessage(prev, msg));
-    // A resolved approval landing → nudge the Audit board to re-fetch live.
-    if (
-      msg.msg_type === "permission" &&
-      (msg.content_data as PermissionContentData | null | undefined)
-        ?.resolved === true
-    ) {
-      setBoardTick((t) => ({ ...t, audit: (t.audit ?? 0) + 1 }));
-    }
-  }, []);
-
-  // Stream deltas arrive one WS frame per token chunk (tens/sec). Applying a
-  // setMessages per frame runs a full channel render + O(N) list rebuild each time.
-  // Instead buffer per-msg_id text and flush once per animation frame: the final
-  // rendered content is byte-identical, only intermediate paint frequency drops from
-  // token-rate to display-refresh-rate.
-  const pendingDeltas = useRef<Map<string, string>>(new Map());
-  const flushHandle = useRef<number | null>(null);
-
-  const flushDeltas = useCallback(() => {
-    flushHandle.current = null;
-    const batch = pendingDeltas.current;
-    if (batch.size === 0) return;
-    pendingDeltas.current = new Map();
-    setMessages((prev) => {
-      let out = prev;
-      let copied = false; // true once `out` is a fresh array safe to mutate in place
-      for (const [msgId, delta] of batch) {
-        const idx = out.findIndex((m) => m.msg_id === msgId);
-        if (idx === -1) {
-          // Defensive: a delta beat its placeholder bubble — synthesize one.
-          out = upsertMessage(out, {
-            msg_id: msgId,
-            sender_type: "bot",
-            content: delta,
-            is_partial: true,
-            _streaming: true,
-          });
-          copied = true; // upsertMessage returns a fresh array
-        } else {
-          if (!copied) {
-            out = out.slice();
-            copied = true;
-          }
-          out[idx] = {
-            ...out[idx],
-            content: (out[idx].content ?? "") + delta,
-            _streaming: true,
-          };
-        }
-      }
-      return out;
-    });
-  }, []);
-
-  const handleStreamDelta = useCallback(
-    (msgId: string, delta: string) => {
-      const pending = pendingDeltas.current;
-      pending.set(msgId, (pending.get(msgId) ?? "") + delta);
-      if (flushHandle.current === null) {
-        flushHandle.current = requestAnimationFrame(flushDeltas);
-      }
-    },
-    [flushDeltas],
-  );
-
-  const handleStreamDone = useCallback(
-    (update: Partial<Message> & { msg_id: string }) => {
-      // The done frame carries the full final content and overwrites wholesale, so
-      // any buffered deltas for this message are stale — drop them (flushing first
-      // would either duplicate text or append after finalize).
-      pendingDeltas.current.delete(update.msg_id);
-      setMessages((prev) =>
-        upsertMessage(prev, { ...update, _streaming: false, _trace: null }),
-      );
-    },
-    [],
-  );
-
-  const handleBotTrace = useCallback(
-    (event: TraceEvent) => {
-      setMessages((prev) => {
-        const current = prev.find((message) => message.msg_id === event.msg_id);
-        const traceEvents = coalesceTraceEvents(
-          current?._trace_events ?? [],
-          [event],
-        );
-        return upsertMessage(prev, {
-          msg_id: event.msg_id,
-          _trace: event.title ?? event.status ?? null,
-          _trace_events: traceEvents,
-        });
-      });
-    },
-    [],
-  );
-
-  const handleDeleted = useCallback((msgId: string) => {
-    pendingDeltas.current.delete(msgId);
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.msg_id === msgId ? { ...m, is_deleted: true, content: "" } : m,
-      ),
-    );
-  }, []);
-
-  // Transcription finished (or terminally failed) → patch every rendered message
-  // carrying that file so the audio tile updates in place, no reload needed.
-  const handleFileTranscribed = useCallback(
-    (fileId: string, status: string, summary: string | null) => {
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (!m.files?.some((f) => f.file_id === fileId)) return m;
-          return {
-            ...m,
-            files: m.files.map((f) =>
-              f.file_id === fileId
-                ? {
-                    ...f,
-                    summary: summary ?? f.summary,
-                    transcript_status: status,
-                  }
-                : f,
-            ),
-          };
-        }),
-      );
-    },
-    [],
-  );
 
   // Refresh the slash-command palette from `channel.commands.read`. Bot-produced
   // command names/descriptions are untrusted — they only ever render as inert
@@ -817,7 +342,7 @@ export function ChannelView({
     else void catchUp();
     void loadCommands();
     void loadVoiceTranscript();
-  }, [catchUp, loadCommands, loadVoiceTranscript]);
+  }, [catchUp, loadCommands, loadVoiceTranscript, loadingRef, pendingCatchUpRef]);
 
 
   const {
@@ -950,128 +475,46 @@ export function ChannelView({
         ? prev.map((m) => (m._streaming ? { ...m, _streaming: false } : m))
         : prev,
     );
-  }, [rtStatus]);
+  }, [rtStatus, setMessages]);
 
   // Re-flatten the palette when bot labels resolve after the initial fetch.
   useEffect(() => {
     void loadCommands();
   }, [loadCommands]);
-  const [wbOpen, setWbOpen] = useState(false);
-  // ViewBoard open/minimal survive reloads and channel switches (it's a channel-agnostic
-  // viewing preference, like a theme — the boards themselves re-scope per channel).
-  const [vbOpen, setVbOpen] = useState(
-    () => localStorage.getItem("cheers.viewboard.open") === "1",
-  );
-  // Minimal ViewBoard: a compact content-height card in a narrower column (vs the full
-  // full-height column). Still reserves its own column so it never covers the chat.
-  const [vbMinimal, setVbMinimal] = useState(
-    () => localStorage.getItem("cheers.viewboard.minimal") === "1",
-  );
-  useEffect(() => {
-    localStorage.setItem("cheers.viewboard.open", vbOpen ? "1" : "0");
-  }, [vbOpen]);
-  useEffect(() => {
-    localStorage.setItem("cheers.viewboard.minimal", vbMinimal ? "1" : "0");
-  }, [vbMinimal]);
-  // Live-push: per-board tick bumped by board_signal frames (and new messages for
-  // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
-  const [boardTick, setBoardTick] = useState<Record<string, number>>({});
-  // "workspace" ticks additionally carry the emitting bot (turn-complete signal), so
-  // the workspace dialog can ignore turns finished by bots it isn't browsing.
-  const [workspaceTick, setWorkspaceTick] = useState<
-    { seq: number; botId: string | null } | undefined
-  >(undefined);
-  // Live-watch: latest bot-scoped workspace change signal (from `workspace_signal`).
-  // `seq` monotonically bumps so the dialog re-reacts even to repeat signals for the
-  // same paths; the dialog routes on `botId` (a channel may span several machines).
-  const [workspaceSignal, setWorkspaceSignal] = useState<{
-    botId: string;
-    root: string;
-    paths: string[];
-    seq: number;
-  } | null>(null);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [wsOpen, setWsOpen] = useState(false);
-  const [wsInit, setWsInit] = useState<{
-    botId?: string;
-    path?: string;
-    line?: number;
-  }>({});
-  // Composer prefill (a plugin's cheers:compose — G4): suggestion only, never a send.
-  const [composePrefill, setComposePrefill] =
-    useState<ComposerPrefill | null>(null);
-  const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
-
-  // The work lane is the bounded canvas the instrument windows drag/resize +
-  // snap inside. Track its element as state (not a ref) so panels re-render with
-  // the real bounds once it mounts; getLaneBounds is read live on every
-  // drag/resize. MUST stay above any early-return so the hook order never changes.
-  const [laneEl, setLaneEl] = useState<HTMLElement | null>(null);
-  const getLaneBounds = useCallback(
-    () => laneEl?.getBoundingClientRect() ?? null,
-    [laneEl],
-  );
-  // User-adjustable lane width (px), dragged via the splitter between the chat
-  // column and the lane. CSS min/max on the <aside> clamp a stale value against
-  // the current row so neither column can collapse; the splitter also clamps
-  // live. Persisted so the split survives reloads/channel switches.
-  const [laneWidth, setLaneWidth] = useState<number>(() => {
-    const v = Number(localStorage.getItem("cheers.lane.width"));
-    return Number.isFinite(v) && v > 0 ? v : 520;
-  });
-  const laneWidthRef = useRef(laneWidth);
-  laneWidthRef.current = laneWidth;
-  const commitLaneWidth = useCallback(() => {
-    try {
-      localStorage.setItem("cheers.lane.width", String(laneWidthRef.current));
-    } catch {
-      /* private mode — width just won't persist */
-    }
-  }, []);
-  // When a file-heavy instrument opens into a too-narrow lane, expand toward a
-  // reading-friendly target (clamped so chat keeps its floor). Mid-width desktop
-  // windows (just above md) otherwise crush the preview/editor strip.
-  const ensureLaneFor = useCallback(
-    (kind: SpawnKind) => {
-      const target = LANE_TARGET[kind];
-      const row = laneEl?.parentElement;
-      const rowW = row?.getBoundingClientRect().width ?? window.innerWidth;
-      // Adaptive chat floor: below ~1100px total, allow a tighter chat column so
-      // the lane can actually reach the reading target.
-      const minChat = rowW < 1100 ? 320 : 384;
-      const maxLane = Math.max(280, rowW - minChat);
-      const next = Math.min(Math.max(target, laneWidthRef.current), maxLane);
-      if (next <= laneWidthRef.current) return;
-      setLaneWidth(next);
-      laneWidthRef.current = next;
-      try {
-        localStorage.setItem("cheers.lane.width", String(next));
-      } catch {
-        /* ignore */
-      }
-    },
-    [laneEl]
-  );
-  const openInstrument = useCallback(
-    (kind: SpawnKind, toggleOrOpen: "open" | "toggle", currentlyOpen: boolean) => {
-      const willOpen = toggleOrOpen === "open" || !currentlyOpen;
-      if (willOpen) ensureLaneFor(kind);
-      return willOpen;
-    },
-    [ensureLaneFor]
-  );
-  // The lane also resizes without a window resize event — collapsing the sidebar
-  // reflows its width via CSS. Re-clamp the floating windows on any lane box
-  // change so one can't get stranded in the lane's overflow-hidden clip.
-  useEffect(() => {
-    if (!laneEl || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() =>
-      window.dispatchEvent(new Event("resize")),
-    );
-    ro.observe(laneEl);
-    return () => ro.disconnect();
-  }, [laneEl]);
+  const {
+    wbOpen,
+    setWbOpen,
+    vbOpen,
+    setVbOpen,
+    vbMinimal,
+    setVbMinimal,
+    boardTick,
+    setBoardTick,
+    workspaceTick,
+    setWorkspaceTick,
+    workspaceSignal,
+    setWorkspaceSignal,
+    filesOpen,
+    setFilesOpen,
+    settingsOpen,
+    setSettingsOpen,
+    wsOpen,
+    setWsOpen,
+    wsInit,
+    setWsInit,
+    composePrefill,
+    setComposePrefill,
+    filesFocus,
+    setFilesFocus,
+    setLaneEl,
+    getLaneBounds,
+    laneWidth,
+    setLaneWidth,
+    commitLaneWidth,
+    openInstrument,
+  } = useChannelInstruments();
+  permissionResolvedRef.current = () =>
+    setBoardTick((ticks) => ({ ...ticks, audit: (ticks.audit ?? 0) + 1 }));
 
   const [wbTarget, setWbTarget] = useState<string | undefined>(undefined);
   const [refError, setRefError] = useState<string | null>(null);
@@ -1133,7 +576,7 @@ export function ChannelView({
         jumpBackfillRef.current = false;
       }
     },
-    [channel],
+    [channel, setHasMore, setMessages],
   );
   // Web Push integration: report the open channel to the SW bridge (so a
   // notification for a channel the user is already viewing is suppressed), and
@@ -1174,7 +617,7 @@ export function ChannelView({
       id: "sessions",
       nonce: (prev?.nonce ?? 0) + 1,
     }));
-  }, [openInstrument]);
+  }, [openInstrument, setVbMinimal, setVbOpen]);
 
   // Add-context menu → open a side surface (untargeted) so the user can pick a
   // file to attach from its own panel.
@@ -1182,12 +625,12 @@ export function ChannelView({
     setWbTarget(undefined);
     openInstrument("workbench", "open", true);
     setWbOpen(true);
-  }, [openInstrument]);
+  }, [openInstrument, setWbOpen]);
   const browseWorkspace = useCallback(() => {
     setWsInit({});
     openInstrument("workspace", "open", true);
     setWsOpen(true);
-  }, [openInstrument]);
+  }, [openInstrument, setWsInit, setWsOpen]);
   // A pending context chip → jump to where that resource actually lives: a
   // Workbench file (`fs.read`) opens the Workbench focused on it; a bot's
   // workspace file (`workspace.read`) opens the Remote workspace at that path.
@@ -1211,14 +654,17 @@ export function ChannelView({
         setWsOpen(true);
       }
     },
-    [openInstrument]
+    [openInstrument, setWbOpen, setWsInit, setWsOpen]
   );
 
   // Stable handlers for the memoized drawers so a streaming re-render of ChannelView
   // doesn't hand them fresh closures (which would defeat React.memo).
-  const closeViewBoard = useCallback(() => setVbOpen(false), []);
-  const toggleViewBoardMinimal = useCallback(() => setVbMinimal((m) => !m), []);
-  const closeWorkbench = useCallback(() => setWbOpen(false), []);
+  const closeViewBoard = useCallback(() => setVbOpen(false), [setVbOpen]);
+  const toggleViewBoardMinimal = useCallback(
+    () => setVbMinimal((m) => !m),
+    [setVbMinimal],
+  );
+  const closeWorkbench = useCallback(() => setWbOpen(false), [setWbOpen]);
 
   // Hoisted so the memoized MessageComposer isn't handed a fresh `toolbar` element
   // on every streaming delta render. Null when there's no channel (composer unmounted).
@@ -1359,7 +805,16 @@ export function ChannelView({
         );
       }
     },
-    [channel, botLabels, openInstrument],
+    [
+      channel,
+      botLabels,
+      openInstrument,
+      setFilesFocus,
+      setFilesOpen,
+      setWbOpen,
+      setWsInit,
+      setWsOpen,
+    ],
   );
 
   // Resolve a `cheers:` locator (the DETERMINISTIC cousin of resolveAndOpenRef's
@@ -1451,7 +906,16 @@ export function ChannelView({
         );
       }
     },
-    [channel, botLabels, openInstrument],
+    [
+      channel,
+      botLabels,
+      openInstrument,
+      setFilesFocus,
+      setFilesOpen,
+      setWbOpen,
+      setWsInit,
+      setWsOpen,
+    ],
   );
 
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
@@ -1462,7 +926,7 @@ export function ChannelView({
       text,
       seq: (p?.seq ?? 0) + 1,
     }));
-  }, []);
+  }, [setComposePrefill]);
 
   const handleSend = useCallback(
     async (
@@ -1553,7 +1017,7 @@ export function ChannelView({
         toast.error("Still couldn't send — check your connection");
       }
     },
-    [channel],
+    [channel, setMessages],
   );
 
   // ── Message actions: reply / copy / forward / multi-select ────────────────
@@ -1655,7 +1119,7 @@ export function ChannelView({
         if (ctx) useContextPickStore.getState().add(channel.channel_id, ctx);
       }
     },
-    [messages, mentionables, channel?.channel_id],
+    [messages, mentionables, channel?.channel_id, setComposePrefill],
   );
 
   const mentionMember = useCallback(
@@ -1673,7 +1137,7 @@ export function ChannelView({
         seq: (previous?.seq ?? 0) + 1,
       }));
     },
-    [mentionables, user?.user_id],
+    [mentionables, user?.user_id, setComposePrefill],
   );
 
   // Stable identity: selection state deliberately NOT captured here (it travels
@@ -1759,51 +1223,8 @@ export function ChannelView({
   // Public channel the caller hasn't joined: a join prompt instead of the chat.
   // No history/members/composer — those are membership-gated server-side.
   if (isPreview) {
-    const handleJoin = async () => {
-      setJoining(true);
-      try {
-        await joinChannel(channel.channel_id);
-        // Store patch flips is_member → the normal effects load the channel.
-        patchChannel(channel.channel_id, { is_member: true });
-        toast.success(`Joined #${channel.name}`);
-      } catch {
-        toast.error("Couldn't join the channel — please try again");
-      } finally {
-        setJoining(false);
-      }
-    };
     return (
-      <div className="flex flex-col h-full">
-        <ChannelChrome
-          title={channel.name}
-          isDm={false}
-          sidebarToggle={sidebarToggle}
-          onBack={onBack}
-          actions={null}
-        />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <Hash className="h-5 w-5 text-content-muted" />
-          <div className="text-content-primary font-semibold text-comfortable">
-            #{channel.name}
-          </div>
-          {channel.purpose && (
-            <p className="text-regular text-content-muted max-w-md">{channel.purpose}</p>
-          )}
-          <p className="text-regular text-content-muted">
-            You&apos;re not a member of this channel yet. Join to read and send
-            messages.
-          </p>
-          <UiButton action="join" variant="plain"
-            type="button"
-            onClick={() => void handleJoin()}
-            disabled={joining}
-            controlSize="regular" className="mt-2 inline-flex items-center gap-2 rounded-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50  font-medium text-content-on-accent"
-          >
-            {joining && <Loader2 className="w-4 h-4 animate-spin" />}
-            Join channel
-          </UiButton>
-        </div>
-      </div>
+      <ChannelPreview channel={channel} sidebarToggle={sidebarToggle} onBack={onBack} />
     );
   }
 
@@ -1816,115 +1237,44 @@ export function ChannelView({
     : channel.name;
 
   const channelToolbar = (
-    <>
-      <div className="hidden md:flex items-center gap-3 text-compact text-content-muted">
-        <div className="relative" ref={membersRootRef}>
-          <ControlTrigger controlWidth="slot"
-            type="button"
-            onClick={() => setMembersOpen((v) => !v)}
-            title="Channel members"
-            aria-expanded={membersOpen}
-            controlSize="regular" className={`flex items-center gap-2 rounded-sm hover:text-content-strong hover:bg-zinc-800 transition-colors ${
- membersOpen ? "text-content-primary bg-zinc-800": ""
- }`}
-          >
-            <Users className="w-3.5 h-3.5" aria-hidden="true" />
-            {mentionables.length || "Members"}
-            {onlineCount > 0 && (
-              <span className="flex items-center gap-2 ml-1">
-                <PresenceDot contentSize="small" className="bg-emerald-500" />
-                {onlineCount} online
-              </span>
-            )}
-          </ControlTrigger>
-          {membersOpen && (
-            <MembersPopover
-              channelId={channel.channel_id}
-              isDm={channel.type === "dm"}
-              onManage={() => setSettingsOpen(true)}
-              onClose={() => setMembersOpen(false)}
-            />
-          )}
-        </div>
-      </div>
-      <UiButton variant="plain"
-        onClick={() => {
-          setFilesFocus(undefined);
-          setFilesOpen((v) => {
-            if (!v) openInstrument("files", "open", false);
-            return !v;
-          });
-        }}
-        title="Channel files"
-        aria-label="Channel files"
-        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- filesOpen
- ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
- }`}
-      >
-        <Paperclip className="w-4 h-4" aria-hidden="true" />
-      </UiButton>
-      <UiButton variant="plain"
-        onClick={() => {
-          setWsInit({});
-          setWsOpen((v) => {
-            if (!v) openInstrument("workspace", "open", false);
-            return !v;
-          });
-        }}
-        title="Remote workspace"
-        aria-label="Remote workspace"
-        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- wsOpen
- ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
- }`}
-      >
-        <FolderTree className="w-4 h-4" aria-hidden="true" />
-      </UiButton>
-      <UiButton variant="plain"
-        onClick={() =>
-          setVbOpen((v) => {
-            if (!v) openInstrument("viewboard", "open", false);
-            return !v;
-          })
-        }
-        title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-        aria-label="ViewBoard"
-        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- vbOpen
- ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
- }`}
-      >
-        <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
-      </UiButton>
-      <UiButton variant="plain"
-        onClick={() => {
-          setWbTarget(undefined);
-          setWbOpen((v) => {
-            if (!v) openInstrument("workbench", "open", false);
-            return !v;
-          });
-        }}
-        title="Workbench — file workspace"
-        aria-label="Workbench"
-        content="icon" controlSize="compact" className={`flex items-center justify-center rounded-sm hover:bg-zinc-800 flex-shrink-0 ${
- wbOpen
- ? "text-content-primary bg-zinc-800": "text-content-primary hover:text-content-strong"
- }`}
-      >
-        <PanelRight className="w-4 h-4" aria-hidden="true" />
-      </UiButton>
-      {channel.type !== "dm" && (
-        <UiButton variant="plain"
-          onClick={() => setSettingsOpen(true)}
-          title="Channel settings"
-          aria-label="Channel settings"
-          content="icon" controlSize="compact" className="ml-2 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0"
-        >
-          <Settings className="w-4 h-4" aria-hidden="true" />
-        </UiButton>
-      )}
-    </>
+    <ChannelToolbar
+      channelId={channel.channel_id}
+      isDm={channel.type === "dm"}
+      memberCount={mentionables.length}
+      onlineCount={onlineCount}
+      filesOpen={filesOpen}
+      workspaceOpen={wsOpen}
+      viewBoardOpen={vbOpen}
+      workbenchOpen={wbOpen}
+      onManage={() => setSettingsOpen(true)}
+      onToggleFiles={() => {
+        setFilesFocus(undefined);
+        setFilesOpen((open) => {
+          if (!open) openInstrument("files", "open", false);
+          return !open;
+        });
+      }}
+      onToggleWorkspace={() => {
+        setWsInit({});
+        setWsOpen((open) => {
+          if (!open) openInstrument("workspace", "open", false);
+          return !open;
+        });
+      }}
+      onToggleViewBoard={() =>
+        setVbOpen((open) => {
+          if (!open) openInstrument("viewboard", "open", false);
+          return !open;
+        })
+      }
+      onToggleWorkbench={() => {
+        setWbTarget(undefined);
+        setWbOpen((open) => {
+          if (!open) openInstrument("workbench", "open", false);
+          return !open;
+        });
+      }}
+    />
   );
 
   return (
