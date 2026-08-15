@@ -242,24 +242,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 className="rounded-sm border-0"
               />
             ))}
-            {dms.length === 0 && (
-              <div role="listitem" className={cn("px-2 py-1 text-content-muted", controlTextClasses.compact)}>Use + to start a direct message</div>
-            )}
           </Section>
-        )}
-
-        {channels.length === 0 && (
-          <div className="px-3 py-4 text-center">
-            <p className={cn("text-content-muted", controlTextClasses.compact)}>No channels yet</p>
-            <UiButton action="create" variant="plain"
-              type="button"
-              onClick={() => setChannelOpen(true)}
-              controlSize="compact"
-              className="mt-1 font-medium text-accent-400 hover:text-accent-300 transition-colors"
-            >
-              Create a channel
-            </UiButton>
-          </div>
         )}
       </div>
       {dmOpen && (
