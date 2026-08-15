@@ -214,6 +214,10 @@ async fn main() -> anyhow::Result<()> {
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
     tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
 
+    // User-owned scheduled messages use durable PostgreSQL state and leases, so
+    // multiple gateway replicas can poll without posting the same run twice.
+    gateway::scheduled_message_scheduler::spawn(state.clone());
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);

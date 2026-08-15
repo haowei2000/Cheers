@@ -6,6 +6,7 @@ use std::{
     path::{Component, Path},
 };
 
+use chrono::NaiveTime;
 use regex::Regex;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,8 @@ pub struct Contributions {
     pub scenes: Vec<SceneContribution>,
     #[serde(default)]
     pub renderers: Vec<RendererContribution>,
+    #[serde(default)]
+    pub automations: Vec<AutomationContribution>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +64,29 @@ pub struct RendererContribution {
     pub style: Option<String>,
     #[serde(default, rename = "match")]
     pub matches: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationContribution {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    pub message: String,
+    pub default_schedule: AutomationSchedule,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationSchedule {
+    pub kind: String,
+    #[serde(default)]
+    pub every_minutes: Option<i32>,
+    #[serde(default)]
+    pub local_time: Option<String>,
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -394,6 +420,52 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
             ));
         }
     }
+    let mut automation_ids = HashSet::new();
+    for automation in &manifest.contributes.automations {
+        validate_id("automation", &automation.id)?;
+        if !automation_ids.insert(automation.id.as_str()) {
+            return Err(format!("duplicate automation id `{}`", automation.id));
+        }
+        if automation.title.trim().is_empty() || automation.title.chars().count() > 120 {
+            return Err(format!(
+                "automation `{}` title must be between 1 and 120 characters",
+                automation.id
+            ));
+        }
+        if automation.message.trim().is_empty() || automation.message.chars().count() > 4_000 {
+            return Err(format!(
+                "automation `{}` message must be between 1 and 4000 characters",
+                automation.id
+            ));
+        }
+        match automation.default_schedule.kind.as_str() {
+            "interval"
+                if automation.default_schedule.local_time.is_none()
+                    && automation.default_schedule.timezone.is_none()
+                    && automation
+                        .default_schedule
+                        .every_minutes
+                        .is_some_and(|minutes| (5..=10_080).contains(&minutes)) => {}
+            "daily"
+                if automation.default_schedule.every_minutes.is_none()
+                    && automation
+                        .default_schedule
+                        .local_time
+                        .as_deref()
+                        .is_some_and(|time| NaiveTime::parse_from_str(time, "%H:%M").is_ok())
+                    && automation
+                        .default_schedule
+                        .timezone
+                        .as_deref()
+                        .is_none_or(|zone| !zone.trim().is_empty() && zone.len() <= 64) => {}
+            _ => {
+                return Err(format!(
+                    "automation `{}` has an invalid defaultSchedule",
+                    automation.id
+                ));
+            }
+        }
+    }
     if !allow_code
         && (!manifest.contributes.renderers.is_empty()
             || manifest.permissions.file_write
@@ -504,6 +576,7 @@ pub async fn list(db: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
             'description', description, 'sha256', sha256, 'origin', origin,
             'scenes', COALESCE(manifest->'manifest'->'contributes'->'scenes', '[]'::jsonb),
             'renderers', COALESCE(manifest->'manifest'->'contributes'->'renderers', '[]'::jsonb),
+            'automations', COALESCE(manifest->'manifest'->'contributes'->'automations', '[]'::jsonb),
             'permissions', COALESCE(manifest->'manifest'->'permissions', '{}'::jsonb),
             'updatedAt', updated_at
          )
@@ -678,5 +751,32 @@ mod tests {
         assert!(validate_package(&raw, false)
             .unwrap_err()
             .contains("invalid manifest.json"));
+    }
+
+    #[test]
+    fn validates_declarative_automation() {
+        let mut value = manifest(json!([]));
+        value["contributes"]["automations"] = json!([{
+            "id": "deadline-watch",
+            "title": "Deadline watch",
+            "message": "Review upcoming submission deadlines.",
+            "defaultSchedule": { "kind": "interval", "everyMinutes": 1440 }
+        }]);
+        let raw = package(value, &[]);
+        let parsed = validate_package(&raw, false).unwrap();
+        assert_eq!(parsed.manifest.contributes.automations.len(), 1);
+    }
+
+    #[test]
+    fn validates_daily_automation_template() {
+        let mut value = manifest(json!([]));
+        value["contributes"]["automations"] = json!([{
+            "id": "morning-review",
+            "title": "Morning review",
+            "message": "Review today's deadlines.",
+            "defaultSchedule": { "kind": "daily", "localTime": "09:00" }
+        }]);
+        let raw = package(value, &[]);
+        assert!(validate_package(&raw, false).is_ok());
     }
 }

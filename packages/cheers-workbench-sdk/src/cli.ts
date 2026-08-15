@@ -13,6 +13,15 @@ interface Manifest {
   contributes: {
     scenes?: Array<{ id: string; title: string; definition: string }>;
     renderers?: Array<{ id: string; title: string; entry: string; style?: string; match?: string[] }>;
+    automations?: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      message: string;
+      defaultSchedule:
+        | { kind: "interval"; everyMinutes: number }
+        | { kind: "daily"; localTime: string; timezone?: string };
+    }>;
   };
   permissions?: { network?: "unrestricted" } & Record<string, unknown>;
 }
@@ -31,6 +40,17 @@ function validateManifest(manifest: Manifest): void {
   for (const renderer of manifest.contributes?.renderers ?? []) {
     if (!idPattern.test(renderer.id) || renderer.entry !== `renderers/${renderer.id}.js`) throw new Error(`invalid renderer contribution: ${renderer.id}`);
     if (renderer.style && renderer.style !== `renderers/${renderer.id}.css`) throw new Error(`invalid renderer style: ${renderer.id}`);
+  }
+  for (const automation of manifest.contributes?.automations ?? []) {
+    if (!idPattern.test(automation.id)) throw new Error(`invalid automation contribution: ${automation.id}`);
+    if (!automation.title?.trim() || automation.title.length > 120) throw new Error(`invalid automation title: ${automation.id}`);
+    if (!automation.message?.trim() || automation.message.length > 4000) throw new Error(`invalid automation message: ${automation.id}`);
+    const schedule = automation.defaultSchedule;
+    const validInterval = schedule?.kind === "interval" && Number.isInteger(schedule.everyMinutes) && schedule.everyMinutes >= 5 && schedule.everyMinutes <= 10080;
+    const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone === undefined || (schedule.timezone.trim().length > 0 && schedule.timezone.length <= 64));
+    if (!validInterval && !validDaily) {
+      throw new Error(`invalid automation schedule: ${automation.id}`);
+    }
   }
   if (manifest.permissions?.network !== undefined && manifest.permissions.network !== "unrestricted") {
     throw new Error("network may only be omitted or set to unrestricted");

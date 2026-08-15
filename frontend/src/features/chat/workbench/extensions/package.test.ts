@@ -49,4 +49,37 @@ describe("parseExtensionPackage", () => {
     const bytes = archive(base, { "seed/main/../secret": "x" });
     await expect(parseExtensionPackage(bytes, "global")).rejects.toThrow(/Unsafe ZIP path/);
   });
+
+  it("accepts declarative automation templates in global packages", async () => {
+    const bytes = archive({
+      ...base,
+      contributes: {
+        scenes: [],
+        renderers: [],
+        automations: [{
+          id: "deadline-watch",
+          title: "Deadline watch",
+          message: "Review upcoming submission deadlines.",
+          defaultSchedule: { kind: "interval", everyMinutes: 1440 },
+        }],
+      },
+    });
+    const parsed = await parseExtensionPackage(bytes, "global");
+    expect(parsed.manifest.contributes.automations?.[0].id).toBe("deadline-watch");
+  });
+
+  it("accepts a daily automation template without fixing the user's timezone", async () => {
+    const bytes = archive({
+      ...base,
+      contributes: {
+        scenes: [], renderers: [],
+        automations: [{
+          id: "morning-review", title: "Morning review", message: "Review today's deadlines.",
+          defaultSchedule: { kind: "daily", localTime: "09:00" },
+        }],
+      },
+    });
+    const parsed = await parseExtensionPackage(bytes, "global");
+    expect(parsed.manifest.contributes.automations?.[0].defaultSchedule.kind).toBe("daily");
+  });
 });

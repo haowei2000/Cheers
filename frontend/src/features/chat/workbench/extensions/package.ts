@@ -30,6 +30,16 @@ export interface RendererContribution {
   match?: string[] | RendererMatch;
 }
 
+export interface AutomationContribution {
+  id: string;
+  title: string;
+  description?: string;
+  message: string;
+  defaultSchedule:
+    | { kind: "interval"; everyMinutes: number }
+    | { kind: "daily"; localTime: string; timezone?: string };
+}
+
 export interface ExtensionManifest {
   schemaVersion: 1;
   id: string;
@@ -39,6 +49,7 @@ export interface ExtensionManifest {
   contributes: {
     scenes?: SceneContribution[];
     renderers?: RendererContribution[];
+    automations?: AutomationContribution[];
   };
   permissions?: ExtensionPermissions;
 }
@@ -153,6 +164,24 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
     rendererIds.add(renderer.id);
     if (renderer.entry !== `renderers/${renderer.id}.js`) throw new Error(`Non-canonical renderer path: ${renderer.id}`);
     if (renderer.style && renderer.style !== `renderers/${renderer.id}.css`) throw new Error(`Non-canonical renderer style: ${renderer.id}`);
+  }
+  const automationIds = new Set<string>();
+  for (const automation of manifest.contributes.automations ?? []) {
+    requireId("automation", automation.id);
+    if (automationIds.has(automation.id)) throw new Error(`Duplicate automation id: ${automation.id}`);
+    automationIds.add(automation.id);
+    if (typeof automation.title !== "string" || !automation.title.trim() || automation.title.length > 120) {
+      throw new Error(`Invalid automation title: ${automation.id}`);
+    }
+    if (typeof automation.message !== "string" || !automation.message.trim() || automation.message.length > 4000) {
+      throw new Error(`Invalid automation message: ${automation.id}`);
+    }
+    const schedule = automation.defaultSchedule;
+    const validInterval = schedule?.kind === "interval" && Number.isInteger(schedule.everyMinutes) && schedule.everyMinutes >= 5 && schedule.everyMinutes <= 10080;
+    const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone === undefined || (schedule.timezone.trim().length > 0 && schedule.timezone.length <= 64));
+    if (!validInterval && !validDaily) {
+      throw new Error(`Invalid automation schedule: ${automation.id}`);
+    }
   }
   const allowedResources = new Set(["channel.info", "channel.members", "channel.messages", "channel.activity.read", "channel.messages.index"]);
   for (const resource of manifest.permissions?.channelResources ?? []) {

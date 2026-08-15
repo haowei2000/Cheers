@@ -21,4 +21,6 @@ test("TypeScript scene example packs deterministically with canonical files", as
   assert.ok(files["seed/notes/notes/readme.md"]);
   assert.ok(files["renderers/notes.js"]);
   assert.ok(files["renderers/notes.css"]);
+  const manifest = JSON.parse(new TextDecoder().decode(files["manifest.json"]));
+  assert.equal(manifest.contributes.automations[0].id, "notes-review");
 });

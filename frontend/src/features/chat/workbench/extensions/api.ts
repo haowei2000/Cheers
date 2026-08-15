@@ -2,6 +2,7 @@ import { apiFetch, apiJson } from "@/api/client";
 import type { TemplateManifest } from "../manifest";
 import {
   EXTENSION_MEDIA_TYPE,
+  type AutomationContribution,
   type ExtensionManifest,
   type ExtensionPermissions,
   type RendererContribution,
@@ -17,6 +18,7 @@ export interface ExtensionSummary {
   origin: "admin" | "system";
   scenes: SceneContribution[];
   renderers: RendererContribution[];
+  automations: AutomationContribution[];
   permissions: ExtensionPermissions;
   updatedAt: string;
 }

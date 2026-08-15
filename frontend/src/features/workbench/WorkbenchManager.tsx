@@ -123,7 +123,7 @@ export function WorkbenchManager() {
             key={`global:${extension.id}`}
             title={`${extension.title} · ${extension.version}`}
             leading={<Package className="h-3.5 w-3.5 text-indigo-300" />}
-            status={<span className="text-minimal text-zinc-400">{extension.origin === "system" ? "Official" : "Global"} · Installed · Ready · {extension.scenes.length} Scenes</span>}
+            status={<span className="text-minimal text-zinc-400">{extension.origin === "system" ? "Official" : "Global"} · Installed · Ready · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
             actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.title}`} title="Uninstall" onClick={async () => { await deleteExtension(extension.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
           />
         ))}
@@ -133,7 +133,7 @@ export function WorkbenchManager() {
             key={`personal:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Laptop className="h-3.5 w-3.5 text-emerald-300" />}
-            status={<span className="text-minimal text-zinc-400" title={permissions.join(", ") || "No permissions"}>This Mac · Installed · Ready · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer</span>}
+            status={<span className="text-minimal text-zinc-400" title={permissions.join(", ") || "No permissions"}>This Mac · Installed · Ready · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations</span>}
             actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}

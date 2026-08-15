@@ -170,6 +170,22 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::workbench::get_scene),
         )
         .route(
+            "/api/v1/scheduled-messages",
+            get(api::scheduled_messages::list).post(api::scheduled_messages::create),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id",
+            put(api::scheduled_messages::update).delete(api::scheduled_messages::delete),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id/runs",
+            get(api::scheduled_messages::list_runs),
+        )
+        .route(
+            "/api/v1/scheduled-messages/:task_id/run",
+            post(api::scheduled_messages::run_now),
+        )
+        .route(
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),
         )
