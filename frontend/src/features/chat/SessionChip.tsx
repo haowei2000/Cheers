@@ -278,7 +278,7 @@ export function SessionChip({
     setOpen(true);
   }
 
-  // Same keyboard model as the composer's @/​/ picker: arrows wrap, Enter
+  // Same keyboard model as the composer's mention/command picker: arrows wrap, Enter
   // activates, Escape (via usePopoverDismiss) closes. Focus stays on the trigger.
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!open) {

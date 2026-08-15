@@ -129,8 +129,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
     if (cid) return membersByChannel[cid] ?? [];
     const seen = new Set<string>();
     const out: MemberItem[] = [];
-    for (const list of Object.values(membersByChannel))
-      for (const u of list) if (!seen.has(u.member_id)) (seen.add(u.member_id), out.push(u));
+    for (const list of Object.values(membersByChannel)) {
+      for (const user of list) {
+        if (seen.has(user.member_id)) continue;
+        seen.add(user.member_id);
+        out.push(user);
+      }
+    }
     return out;
   };
 

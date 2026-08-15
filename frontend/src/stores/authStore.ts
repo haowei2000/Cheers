@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { User } from "@/types";
 import { apiBase, getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
+import { clearClientSessionData } from "@/lib/clientSession";
 
 interface AuthState {
   user: User | null;
@@ -27,7 +28,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
       setAuth: (user, token) => set({ user, token, sessionExpired: false }),
       setToken: (token) => set({ token, sessionExpired: false }),
       markSessionExpired: () => set({ sessionExpired: true }),
-      logout: () => set({ user: null, token: null, sessionExpired: false }),
+      logout: () => {
+        clearClientSessionData();
+        set({ user: null, token: null, sessionExpired: false });
+      },
       restoreSession: async () => {
         try {
           if (isTauri()) {

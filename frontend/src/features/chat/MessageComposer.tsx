@@ -185,6 +185,10 @@ interface DraftState {
 const draftsByChannel = new Map<string, DraftState>();
 const draftKey = (channelId: string) => `cheers.draft.${channelId}`;
 
+function clearComposerDrafts() {
+  draftsByChannel.clear();
+}
+
 function stashDraft(channelId: string, d: DraftState) {
   if (d.text || d.attachments.length) draftsByChannel.set(channelId, d);
   else draftsByChannel.delete(channelId);
@@ -240,6 +244,11 @@ function MessageComposerImpl({
   const systemRecognitionRef = useRef<SystemSpeechRecognition | null>(null);
   const [dictating, setDictating] = useState(false);
   const [transcribingDictation, setTranscribingDictation] = useState(false);
+
+  useEffect(() => {
+    window.addEventListener("cheers:session-cleared", clearComposerDrafts);
+    return () => window.removeEventListener("cheers:session-cleared", clearComposerDrafts);
+  }, []);
 
   // External prefill (see Props.prefill): fill empty / append to typed, register any
   // @label mentions so routing works, focus with the cursor at the end. NEVER sends.

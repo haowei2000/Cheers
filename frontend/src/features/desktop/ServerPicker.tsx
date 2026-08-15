@@ -16,7 +16,9 @@ export function ServerPicker() {
   async function connect() {
     const base = normalizeBase(value);
     if (!base) {
-      setError("Enter a server address, e.g. https://www.tocheers.com");
+      setError(
+        "Enter an HTTPS server address. HTTP is only allowed for localhost development.",
+      );
       return;
     }
     setBusy(true);

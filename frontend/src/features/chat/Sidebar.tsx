@@ -14,6 +14,7 @@ import { UnreadBadge } from "@/components/ui/unread-badge";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
+import { useShallow } from "zustand/react/shallow";
 
 interface SectionProps {
   label: string;
@@ -133,7 +134,15 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
     selectChannel,
     selectedWorkspaceId,
     voicePresenceByChannel,
-  } = useChatStore();
+  } = useChatStore(
+    useShallow((state) => ({
+      channels: state.channels,
+      selectedChannelId: state.selectedChannelId,
+      selectChannel: state.selectChannel,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      voicePresenceByChannel: state.voicePresenceByChannel,
+    })),
+  );
   const [dmOpen, setDmOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);

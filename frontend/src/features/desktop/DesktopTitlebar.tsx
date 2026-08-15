@@ -36,6 +36,7 @@ import {
   macosNativeControlsInset,
   type WindowChromePaneGeometry,
 } from "./WindowChromeModel";
+import { useShallow } from "zustand/react/shallow";
 import type { Channel, Workspace as WorkspaceModel } from "@/types";
 
 type TitlebarContext = {
@@ -87,7 +88,14 @@ type SearchEntry = {
 function DesktopSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+    })),
+  );
 
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
@@ -178,7 +186,15 @@ export function DesktopTitlebar({
   const navigate = useNavigate();
   const navigationType = useNavigationType();
   const user = useAuthStore((state) => state.user);
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      selectedChannelId: state.selectedChannelId,
+    })),
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const historyIndex = Number((window.history.state as { idx?: number } | null)?.idx ?? 0);
   const [maxHistoryIndex, setMaxHistoryIndex] = useState(historyIndex);

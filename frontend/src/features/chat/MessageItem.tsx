@@ -32,7 +32,10 @@ import { IconButton } from "@/components/ui/icon-button";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
-import { usePresentationLevel } from "@/components/ui/presentation";
+import {
+  usePresentationLevel,
+  type PresentationLevel,
+} from "@/components/ui/presentation";
 import { MessageRecordInspector } from "./MessageRecordInspector";
 import { identityRailWidthClasses } from "@/components/ui/content-size";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -337,7 +340,60 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
   );
 }
 
-export const MessageItem = memo(function MessageItem({
+export const MessageItem = memo(function MessageItem(props: Props) {
+  const presentationLevel = usePresentationLevel();
+  const { message, isConsecutive } = props;
+
+  if (message.is_deleted) {
+    return (
+      <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
+        {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
+        {isConsecutive && <div className="w-9 flex-shrink-0" />}
+        <span className="text-content-muted italic text-regular">
+          This message was deleted
+        </span>
+      </div>
+    );
+  }
+
+  if (message.msg_type === "permission") {
+    return (
+      <div className="flex items-start gap-3 px-4 py-1">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <PermissionCard
+            message={message}
+            channelId={props.channelId}
+            currentUserId={props.currentUserId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (message.msg_type === "auth_required" || message.msg_type === "elicitation") {
+    return (
+      <div className="flex items-start gap-3 px-4 py-1">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <AgentInteractionCard
+            message={message}
+            channelId={props.channelId}
+            currentUserId={props.currentUserId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (message.msg_type && SYSTEM_TYPES.has(message.msg_type)) {
+    return <SystemMessage message={message} />;
+  }
+
+  return <RegularMessageItem {...props} presentationLevel={presentationLevel} />;
+});
+
+function RegularMessageItem({
   message,
   isConsecutive,
   nested = false,
@@ -353,52 +409,8 @@ export const MessageItem = memo(function MessageItem({
   nameOf,
   pendingApprovals,
   focusRequestId,
-}: Props) {
-  const presentationLevel = usePresentationLevel();
-  if (message.is_deleted) {
-    return (
-      <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
-        {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
-        {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-content-muted italic text-regular">
-          This message was deleted
-        </span>
-      </div>
-    );
-  }
-
-  if (message.msg_type === "permission") {
-    // Orphan permission cards (no source_msg_id) stay as their own row.
-    // Anchored approvals render inside the source bot turn's Agent steps.
-    return (
-      <div className="flex items-start gap-3 px-4 py-1">
-        <div className="w-9 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <PermissionCard
-            message={message}
-            channelId={channelId}
-            currentUserId={currentUserId}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (message.msg_type === "auth_required" || message.msg_type === "elicitation") {
-    return (
-      <div className="flex items-start gap-3 px-4 py-1">
-        <div className="w-9 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <AgentInteractionCard message={message} channelId={channelId} currentUserId={currentUserId} />
-        </div>
-      </div>
-    );
-  }
-
-  if (message.msg_type && SYSTEM_TYPES.has(message.msg_type)) {
-    return <SystemMessage message={message} />;
-  }
-
+  presentationLevel,
+}: Props & { presentationLevel: PresentationLevel }) {
   const isOwn = message.sender_id === currentUserId;
   const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
   const name =
@@ -921,7 +933,7 @@ export const MessageItem = memo(function MessageItem({
       {inspector}
     </div>
   );
-});
+}
 
 /**
  * Per-message "Stop" control for an in-flight bot turn. Sends the ACP

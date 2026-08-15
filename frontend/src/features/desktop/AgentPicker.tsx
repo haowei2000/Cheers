@@ -70,7 +70,7 @@ export function AgentPicker({
                     : `${a.label} can't be connected yet`
               }
               onClick={() => a.installed && onPick(a.key, a.path)}
-              controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
+              controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-[background-color,box-shadow,opacity] ${
  selected
  ? "ring-2 ring-indigo-500 bg-zinc-800": "bg-zinc-800/60 hover:bg-zinc-800"
  } ${a.installed ? "" : "opacity-50"}`}
@@ -116,7 +116,7 @@ export function AgentPicker({
         type="button"
         title="Use a custom command"
         onClick={() => onPick("custom", null)}
-        controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-all ${
+        controlSize="regular" className={`flex flex-col items-center gap-1 rounded-sm transition-[background-color,box-shadow,opacity] ${
  value === "custom"? "ring-2 ring-indigo-500 bg-zinc-800"
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}

@@ -424,7 +424,7 @@ function ParticipantStrip({
               content="icon"
               controlSize="compact"
               className={cn(
- "relative rounded-full ring-2 transition-all",
+ "relative rounded-full ring-2 transition-[box-shadow,opacity]",
  active ? "ring-indigo-500": "ring-zinc-900",
  dim && !active && "opacity-50 hover:opacity-100"
  )}

@@ -334,10 +334,12 @@ function ChartLens({ data }: LensProps) {
     // magnitude-relative: a fixed ±0.5 is float-absorbed at large |x| (range stays
     // zero-width and every coordinate divides to NaN)
     const xPad = Math.max(0.5, Math.abs(x1) * 1e-9);
-    (x0 -= xPad), (x1 += xPad);
+    x0 -= xPad;
+    x1 += xPad;
   }
   const yPad = (y1 - y0) * 0.08 || Math.abs(y1) * 0.1 || 0.5;
-  (y0 -= yPad), (y1 += yPad);
+  y0 -= yPad;
+  y1 += yPad;
   const sx = (x: number) => PAD.l + ((x - x0) / (x1 - x0)) * (CW - PAD.l - PAD.r);
   const sy = (y: number) => CH - PAD.b - ((y - y0) / (y1 - y0)) * (CH - PAD.t - PAD.b);
   const color = (i: number) => CHART_COLORS[i % CHART_COLORS.length];
