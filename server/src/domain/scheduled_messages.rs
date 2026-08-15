@@ -18,6 +18,7 @@ pub const MAX_INTERVAL_MINUTES: i32 = 7 * 24 * 60;
 const MAX_CONTENT_CHARS: usize = 4_000;
 const MAX_TITLE_CHARS: usize = 120;
 const MAX_MENTIONS: usize = 16;
+const MAX_SAFE_RETRIES: i32 = 3;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -87,6 +88,7 @@ pub struct ScheduledMessageDto {
     pub last_run_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
     pub consecutive_failures: i32,
+    pub retry_attempt: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -98,6 +100,7 @@ pub struct ScheduledMessageRunDto {
     pub scheduled_for: DateTime<Utc>,
     pub trigger: String,
     pub status: String,
+    pub attempt: i32,
     pub message_id: Option<String>,
     pub error: Option<String>,
     pub started_at: DateTime<Utc>,
@@ -126,6 +129,7 @@ pub struct ClaimedTask {
     pub local_time: Option<NaiveTime>,
     pub timezone: Option<String>,
     pub scheduled_for: DateTime<Utc>,
+    pub retry_attempt: i32,
 }
 
 async fn normalize_schedule(
@@ -404,7 +408,7 @@ pub async fn update(
         "UPDATE scheduled_messages SET channel_id=$3,title=$4,content=$5,mention_ids=$6,
          schedule_kind=$7,run_at=$8,interval_minutes=$9,local_time=$10,timezone=$11,
          next_run_at=$12,enabled=$13,source_extension_id=$14,source_automation_id=$15,
-         lease_until=NULL,last_error=NULL,
+         lease_until=NULL,last_error=NULL,retry_attempt=0,retry_scheduled_for=NULL,
          consecutive_failures=0,updated_at=NOW()
          WHERE task_id=$1 AND created_by=$2",
     )
@@ -507,6 +511,7 @@ pub async fn list_runs(
                 scheduled_for: row.try_get("scheduled_for")?,
                 trigger: row.try_get("trigger")?,
                 status: row.try_get("status")?,
+                attempt: row.try_get("attempt")?,
                 message_id: row.try_get("message_id")?,
                 error: row.try_get("error")?,
                 started_at: row.try_get("started_at")?,
@@ -545,6 +550,7 @@ fn row_to_dto(row: sqlx::postgres::PgRow) -> Result<ScheduledMessageDto, AppErro
         last_run_at: row.try_get("last_run_at")?,
         last_error: row.try_get("last_error")?,
         consecutive_failures: row.try_get("consecutive_failures")?,
+        retry_attempt: row.try_get("retry_attempt")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
@@ -561,7 +567,8 @@ pub async fn claim_due(db: &PgPool) -> Result<Vec<ClaimedTask>, AppError> {
          UPDATE scheduled_messages s SET lease_until=NOW()+INTERVAL '2 minutes'
          FROM due WHERE s.task_id=due.task_id
          RETURNING s.task_id,s.created_by,s.channel_id,s.content,s.mention_ids,
-                   s.schedule_kind,s.interval_minutes,s.local_time,s.timezone,s.next_run_at",
+                   s.schedule_kind,s.interval_minutes,s.local_time,s.timezone,
+                   COALESCE(s.retry_scheduled_for,s.next_run_at) AS scheduled_for,s.retry_attempt",
     )
     .fetch_all(db)
     .await?;
@@ -594,7 +601,8 @@ pub async fn claim_due(db: &PgPool) -> Result<Vec<ClaimedTask>, AppError> {
                 interval_minutes: row.try_get("interval_minutes")?,
                 local_time: row.try_get("local_time")?,
                 timezone: row.try_get("timezone")?,
-                scheduled_for: row.try_get("next_run_at")?,
+                scheduled_for: row.try_get("scheduled_for")?,
+                retry_attempt: row.try_get("retry_attempt")?,
             })
         })
         .collect()
@@ -637,7 +645,8 @@ async fn finish_schedule(
         Ok(_) => {
             sqlx::query(
                 "UPDATE scheduled_messages SET next_run_at=$2,enabled=$3,lease_until=NULL,
-                 last_run_at=NOW(),last_error=NULL,consecutive_failures=0,updated_at=NOW()
+                 retry_attempt=0,retry_scheduled_for=NULL,last_run_at=NOW(),last_error=NULL,
+                 consecutive_failures=0,updated_at=NOW()
                  WHERE task_id=$1",
             )
             .bind(&task.id)
@@ -648,9 +657,26 @@ async fn finish_schedule(
         }
         Err(error) => {
             let message = error.to_string();
+            if retryable_before_persist(error) && task.retry_attempt < MAX_SAFE_RETRIES {
+                let delay_seconds = [60_i64, 300, 900][task.retry_attempt as usize];
+                sqlx::query(
+                    "UPDATE scheduled_messages SET next_run_at=NOW()+($2 * INTERVAL '1 second'),
+                     retry_attempt=retry_attempt+1,retry_scheduled_for=$3,lease_until=NULL,
+                     last_run_at=NOW(),last_error=$4,consecutive_failures=consecutive_failures+1,
+                     updated_at=NOW() WHERE task_id=$1",
+                )
+                .bind(&task.id)
+                .bind(delay_seconds)
+                .bind(task.scheduled_for)
+                .bind(message.chars().take(500).collect::<String>())
+                .execute(db)
+                .await?;
+                return Ok(());
+            }
             sqlx::query(
                 "UPDATE scheduled_messages SET next_run_at=$2,enabled=$3,lease_until=NULL,
-                 last_run_at=NOW(),last_error=$4,consecutive_failures=consecutive_failures+1,
+                 retry_attempt=0,retry_scheduled_for=NULL,last_run_at=NOW(),last_error=$4,
+                 consecutive_failures=consecutive_failures+1,
                  updated_at=NOW() WHERE task_id=$1",
             )
             .bind(&task.id)
@@ -662,6 +688,10 @@ async fn finish_schedule(
         }
     }
     Ok(())
+}
+
+fn retryable_before_persist(error: &AppError) -> bool {
+    matches!(error, AppError::Conflict(message) if message == "the mentioned bot is currently offline")
 }
 
 async fn execute(state: &AppState, task: &ClaimedTask, trigger: &str) -> Result<String, AppError> {
@@ -701,12 +731,14 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
     let run_id = Uuid::new_v4().to_string();
     let inserted = sqlx::query(
         "INSERT INTO scheduled_message_runs
-         (run_id,task_id,scheduled_for,trigger,status) VALUES ($1,$2,$3,'schedule','running')
-         ON CONFLICT (task_id,scheduled_for,trigger) DO NOTHING",
+         (run_id,task_id,scheduled_for,trigger,status,attempt)
+         VALUES ($1,$2,$3,'schedule','running',$4)
+         ON CONFLICT (task_id,scheduled_for,trigger,attempt) DO NOTHING",
     )
     .bind(&run_id)
     .bind(&task.id)
     .bind(task.scheduled_for)
+    .bind(task.retry_attempt + 1)
     .execute(&state.db)
     .await?
     .rows_affected();
@@ -717,12 +749,13 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
         );
         sqlx::query(
             "UPDATE scheduled_message_runs SET status='failed',error=$4,finished_at=NOW()
-             WHERE task_id=$1 AND scheduled_for=$2 AND trigger=$3 AND status='running'",
+             WHERE task_id=$1 AND scheduled_for=$2 AND trigger=$3 AND attempt=$5 AND status='running'",
         )
         .bind(&task.id)
         .bind(task.scheduled_for)
         .bind("schedule")
         .bind(interrupted.to_string())
+        .bind(task.retry_attempt + 1)
         .execute(&state.db)
         .await?;
         finish_schedule(&state.db, &task, &Err(interrupted)).await?;
@@ -783,6 +816,7 @@ pub async fn run_now(state: &AppState, user_id: Uuid, id: &str) -> Result<String
         local_time: row.try_get("local_time")?,
         timezone: row.try_get("timezone")?,
         scheduled_for: Utc::now(),
+        retry_attempt: 0,
     };
     let run_id = Uuid::new_v4().to_string();
     sqlx::query(
@@ -859,5 +893,18 @@ mod tests {
     fn interval_bounds_are_stable() {
         assert!(!(MIN_INTERVAL_MINUTES..=MAX_INTERVAL_MINUTES).contains(&1));
         assert!((MIN_INTERVAL_MINUTES..=MAX_INTERVAL_MINUTES).contains(&1440));
+    }
+
+    #[test]
+    fn retries_only_known_pre_persistence_failures() {
+        assert!(retryable_before_persist(&AppError::Conflict(
+            "the mentioned bot is currently offline".into()
+        )));
+        assert!(!retryable_before_persist(&AppError::Db(
+            sqlx::Error::RowNotFound
+        )));
+        assert!(!retryable_before_persist(&AppError::Forbidden(
+            "membership revoked".into()
+        )));
     }
 }

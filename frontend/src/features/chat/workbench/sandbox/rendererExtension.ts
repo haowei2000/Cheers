@@ -17,18 +17,20 @@ export interface RendererRuntimeManifest {
     style?: string;
     match?: string[] | RendererMatch;
   }>;
+  automations?: Array<{ id: string; title: string }>;
   permissions?: {
-    fileWrite?: boolean;
-    channelResources?: string[];
-    navigationOpen?: boolean;
-    composerPrefill?: boolean;
+    "file.write"?: boolean;
+    "channel.resources"?: string[];
+    "navigation.open"?: boolean;
+    "composer.prefill"?: boolean;
+    "automation.manage"?: boolean;
     network?: "unrestricted";
   };
 }
 
 /** A parsed personal or temporary macOS extension ready for sandbox execution. */
-export interface PluginMeta {
-  plugin_id: string;
+export interface RendererExtension {
+  extensionId: string;
   title: string;
   manifest: RendererRuntimeManifest;
   origin?: "personal" | "temporary";

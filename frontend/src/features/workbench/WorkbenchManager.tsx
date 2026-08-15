@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Power, PowerOff, Trash2, Upload, X } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
@@ -21,6 +21,14 @@ import {
   permissionSummary,
   type ParsedExtension,
 } from "@/features/chat/workbench/extensions/package";
+import {
+  isPersonalExtensionDisabled,
+  listTemporaryExtensions,
+  personalExtensionStatus,
+  removeTemporaryExtension,
+  setPersonalExtensionDisabled,
+  subscribeExtensionRuntime,
+} from "@/features/chat/workbench/extensions/runtime";
 
 function fromBase64(value: string): Uint8Array {
   const binary = atob(value);
@@ -34,12 +42,13 @@ export function WorkbenchManager() {
   const [personal, setPersonal] = useState<ParsedExtension[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [, setRuntimeRevision] = useState(0);
   const globalRef = useRef<HTMLInputElement>(null);
   const personalRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
     try {
-      if (isAdmin) setGlobal(await listExtensions());
+      setGlobal(await listExtensions());
       if (desktop) {
         const stored = await listPersonalExtensions();
         const parsed = await Promise.all(
@@ -50,11 +59,13 @@ export function WorkbenchManager() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [desktop, isAdmin]);
+  }, [desktop]);
 
   useEffect(() => {
-    if (isAdmin || desktop) void reload();
-  }, [desktop, isAdmin, reload]);
+    void reload();
+  }, [reload]);
+
+  useEffect(() => subscribeExtensionRuntime(() => setRuntimeRevision((value) => value + 1)), []);
 
   const installGlobal = useCallback(async (file: File) => {
     setError(null);
@@ -90,7 +101,6 @@ export function WorkbenchManager() {
     }
   }, [reload]);
 
-  if (!isAdmin && !desktop) return null;
   return (
     <section>
       <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-wider text-zinc-400">
@@ -129,15 +139,31 @@ export function WorkbenchManager() {
         ))}
         {personal.map((extension) => {
           const permissions = permissionSummary(extension.manifest);
+          const disabled = isPersonalExtensionDisabled(extension.manifest.id);
+          const runtime = personalExtensionStatus(extension.manifest.id);
+          const status = disabled ? "Disabled" : runtime.status === "failed" ? "Failed" : runtime.status === "running" ? "Running" : "Ready";
           return <WorkbenchItem
             key={`personal:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Laptop className="h-3.5 w-3.5 text-emerald-300" />}
-            status={<span className="text-minimal text-zinc-400" title={permissions.join(", ") || "No permissions"}>This Mac · Installed · Ready · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations</span>}
-            actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
+            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-red-400" : "text-minimal text-zinc-400"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
+            actions={<div className="flex items-center gap-1">
+              <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-zinc-100 hover:text-zinc-50">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
+              <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { setPersonalExtensionDisabled(extension.manifest.id, false); await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-zinc-100 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
+            </div>}
           />;
         })}
-        {global.length === 0 && personal.length === 0 && <WorkbenchItem title="No extensions installed" />}
+        {listTemporaryExtensions().map(({ extension, status, error: runtimeError }) => {
+          const permissions = permissionSummary(extension.manifest);
+          return <WorkbenchItem
+            key={`temporary:${extension.manifest.id}`}
+            title={`${extension.manifest.title} · ${extension.manifest.version}`}
+            leading={<Upload className="h-3.5 w-3.5 text-amber-300" />}
+            status={<span className={status === "failed" ? "text-minimal text-red-400" : "text-minimal text-zinc-400"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
+            actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-zinc-100 hover:text-red-400"><X className="h-3.5 w-3.5" /></UiButton>}
+          />;
+        })}
+        {global.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
     </section>
   );

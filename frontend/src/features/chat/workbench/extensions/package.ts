@@ -1,6 +1,6 @@
 import { unzipSync } from "fflate";
 import type { TemplateManifest, ViewDef } from "../manifest";
-import type { PluginMeta, RendererMatch } from "../sandbox/pluginManifest";
+import type { RendererExtension } from "../sandbox/rendererExtension";
 
 export const EXTENSION_MEDIA_TYPE = "application/vnd.cheers.extension+zip";
 export const MAX_EXTENSION_COMPRESSED = 4 * 1024 * 1024;
@@ -9,10 +9,11 @@ export const MAX_EXTENSION_FILES = 128;
 export const MAX_SEED_BYTES = 256 * 1024;
 
 export interface ExtensionPermissions {
-  fileWrite?: boolean;
-  channelResources?: string[];
-  navigationOpen?: boolean;
-  composerPrefill?: boolean;
+  "file.write"?: boolean;
+  "channel.resources"?: string[];
+  "navigation.open"?: boolean;
+  "composer.prefill"?: boolean;
+  "automation.manage"?: boolean;
   network?: "unrestricted";
 }
 
@@ -27,7 +28,7 @@ export interface RendererContribution {
   title: string;
   entry: string;
   style?: string;
-  match?: string[] | RendererMatch;
+  match?: string[];
 }
 
 export interface AutomationContribution {
@@ -69,7 +70,7 @@ interface PackageSceneDefinition {
 export interface ParsedExtension {
   manifest: ExtensionManifest;
   scenes: TemplateManifest[];
-  rendererPlugin: PluginMeta | null;
+  rendererExtension: RendererExtension | null;
   bytes: Uint8Array;
   sha256: string;
 }
@@ -77,6 +78,22 @@ export interface ParsedExtension {
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+function requireObject(value: unknown, label: string): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+}
+
+function requireKnownKeys(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
+  const known = new Set(allowed);
+  const unknown = Object.keys(value).find((key) => !known.has(key));
+  if (unknown) throw new Error(`${label} contains unknown field: ${unknown}`);
+}
+
+function validateWorkspacePath(path: unknown, label: string): asserts path is string {
+  if (typeof path !== "string" || !path || path.startsWith("/") || path.includes("\\") || path.includes("..")) {
+    throw new Error(`Unsafe workspace path: ${label}`);
+  }
+}
 
 function text(bytes: Uint8Array, name: string): string {
   try {
@@ -145,28 +162,46 @@ function requireId(kind: string, value: unknown): asserts value is string {
 
 function parseManifest(bytes: Uint8Array): ExtensionManifest {
   const manifest = JSON.parse(text(bytes, "manifest.json")) as ExtensionManifest;
+  requireObject(manifest, "manifest");
+  requireKnownKeys(manifest, ["schemaVersion", "id", "version", "title", "description", "contributes", "permissions"], "manifest");
   if (manifest.schemaVersion !== 1) throw new Error("manifest schemaVersion must be 1");
   requireId("extension", manifest.id);
   if (!SEMVER.test(manifest.version)) throw new Error("manifest version must be SemVer");
   if (typeof manifest.title !== "string" || !manifest.title.trim()) throw new Error("manifest title is required");
   if (!manifest.contributes || typeof manifest.contributes !== "object") throw new Error("manifest contributes is required");
+  requireObject(manifest.contributes, "manifest contributes");
+  requireKnownKeys(manifest.contributes, ["scenes", "renderers", "automations"], "manifest contributes");
+  if (manifest.contributes.scenes !== undefined && !Array.isArray(manifest.contributes.scenes)) throw new Error("manifest scenes must be an array");
+  if (manifest.contributes.renderers !== undefined && !Array.isArray(manifest.contributes.renderers)) throw new Error("manifest renderers must be an array");
+  if (manifest.contributes.automations !== undefined && !Array.isArray(manifest.contributes.automations)) throw new Error("manifest automations must be an array");
   const sceneIds = new Set<string>();
   for (const scene of manifest.contributes.scenes ?? []) {
+    requireObject(scene, "scene contribution");
+    requireKnownKeys(scene, ["id", "title", "definition"], "scene contribution");
     requireId("scene", scene.id);
+    if (typeof scene.title !== "string" || !scene.title.trim()) throw new Error(`Scene title is required: ${scene.id}`);
     if (sceneIds.has(scene.id)) throw new Error(`Duplicate scene id: ${scene.id}`);
     sceneIds.add(scene.id);
     if (scene.definition !== `scenes/${scene.id}.json`) throw new Error(`Non-canonical scene path: ${scene.id}`);
   }
   const rendererIds = new Set<string>();
   for (const renderer of manifest.contributes.renderers ?? []) {
+    requireObject(renderer, "renderer contribution");
+    requireKnownKeys(renderer, ["id", "title", "entry", "style", "match"], "renderer contribution");
     requireId("renderer", renderer.id);
+    if (typeof renderer.title !== "string" || !renderer.title.trim()) throw new Error(`Renderer title is required: ${renderer.id}`);
     if (rendererIds.has(renderer.id)) throw new Error(`Duplicate renderer id: ${renderer.id}`);
     rendererIds.add(renderer.id);
     if (renderer.entry !== `renderers/${renderer.id}.js`) throw new Error(`Non-canonical renderer path: ${renderer.id}`);
     if (renderer.style && renderer.style !== `renderers/${renderer.id}.css`) throw new Error(`Non-canonical renderer style: ${renderer.id}`);
+    if (renderer.match !== undefined && (!Array.isArray(renderer.match) || renderer.match.some((glob) => typeof glob !== "string" || !glob.trim()))) {
+      throw new Error(`Invalid renderer match: ${renderer.id}`);
+    }
   }
   const automationIds = new Set<string>();
   for (const automation of manifest.contributes.automations ?? []) {
+    requireObject(automation, "automation contribution");
+    requireKnownKeys(automation, ["id", "title", "description", "message", "defaultSchedule"], "automation contribution");
     requireId("automation", automation.id);
     if (automationIds.has(automation.id)) throw new Error(`Duplicate automation id: ${automation.id}`);
     automationIds.add(automation.id);
@@ -177,6 +212,8 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
       throw new Error(`Invalid automation message: ${automation.id}`);
     }
     const schedule = automation.defaultSchedule;
+    requireObject(schedule, `automation schedule: ${automation.id}`);
+    requireKnownKeys(schedule, ["kind", "everyMinutes", "localTime", "timezone"], `automation schedule: ${automation.id}`);
     const validInterval = schedule?.kind === "interval" && Number.isInteger(schedule.everyMinutes) && schedule.everyMinutes >= 5 && schedule.everyMinutes <= 10080;
     const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone === undefined || (schedule.timezone.trim().length > 0 && schedule.timezone.length <= 64));
     if (!validInterval && !validDaily) {
@@ -184,7 +221,19 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
     }
   }
   const allowedResources = new Set(["channel.info", "channel.members", "channel.messages", "channel.activity.read", "channel.messages.index"]);
-  for (const resource of manifest.permissions?.channelResources ?? []) {
+  requireObject(manifest.permissions ?? {}, "manifest permissions");
+  const permissionKeys = new Set(["file.write", "channel.resources", "navigation.open", "composer.prefill", "automation.manage", "network"]);
+  for (const key of Object.keys(manifest.permissions ?? {})) {
+    if (!permissionKeys.has(key)) throw new Error(`Unknown permission: ${key}`);
+  }
+  for (const key of ["file.write", "navigation.open", "composer.prefill", "automation.manage"] as const) {
+    const value = manifest.permissions?.[key];
+    if (value !== undefined && typeof value !== "boolean") throw new Error(`${key} must be boolean`);
+  }
+  if (manifest.permissions?.["channel.resources"] !== undefined && !Array.isArray(manifest.permissions["channel.resources"])) {
+    throw new Error("channel.resources must be an array");
+  }
+  for (const resource of manifest.permissions?.["channel.resources"] ?? []) {
     if (!allowedResources.has(resource)) throw new Error(`Channel resource is not allowed: ${resource}`);
   }
   if (manifest.permissions?.network !== undefined && manifest.permissions.network !== "unrestricted") {
@@ -197,10 +246,11 @@ function hasCode(manifest: ExtensionManifest): boolean {
   const p = manifest.permissions ?? {};
   return (
     (manifest.contributes.renderers?.length ?? 0) > 0 ||
-    !!p.fileWrite ||
-    !!p.channelResources?.length ||
-    !!p.navigationOpen ||
-    !!p.composerPrefill ||
+    !!p["file.write"] ||
+    !!p["channel.resources"]?.length ||
+    !!p["navigation.open"] ||
+    !!p["composer.prefill"] ||
+    !!p["automation.manage"] ||
     p.network !== undefined
   );
 }
@@ -234,8 +284,18 @@ export async function parseExtensionPackage(
     const sceneBytes = files[contribution.definition];
     if (!sceneBytes) throw new Error(`Missing scene definition: ${contribution.definition}`);
     const definition = JSON.parse(text(sceneBytes, contribution.definition)) as PackageSceneDefinition;
+    requireObject(definition, `scene ${contribution.id}`);
+    requireKnownKeys(definition, ["items", "seed", "pin"], `scene ${contribution.id}`);
     if (!Array.isArray(definition.items)) throw new Error(`Scene ${contribution.id} items must be an array`);
+    const itemIds = new Set<string>();
     const views: ViewDef[] = definition.items.map((item) => {
+      requireObject(item, `scene item in ${contribution.id}`);
+      requireKnownKeys(item, ["id", "title", "file", "renderer", "config"], `scene item in ${contribution.id}`);
+      requireId("scene item", item.id);
+      if (itemIds.has(item.id)) throw new Error(`Duplicate scene item id: ${item.id}`);
+      itemIds.add(item.id);
+      if (typeof item.title !== "string" || !item.title.trim()) throw new Error(`Scene item title is required: ${item.id}`);
+      validateWorkspacePath(item.file, `${contribution.id}/${item.id}`);
       const renderer = item.renderer ?? "auto";
       const selfId = renderer.startsWith("self:") ? renderer.slice(5) : null;
       if (!(renderer === "auto" || renderer.startsWith("builtin:") || (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId)))) {
@@ -251,13 +311,22 @@ export async function parseExtensionPackage(
       };
     });
     const seed: Record<string, string> = {};
+    const seedPaths = new Set<string>();
+    if (definition.seed !== undefined && !Array.isArray(definition.seed)) throw new Error(`Scene ${contribution.id} seed must be an array`);
     for (const ref of definition.seed ?? []) {
+      requireObject(ref, `seed reference in ${contribution.id}`);
+      requireKnownKeys(ref, ["path", "source"], `seed reference in ${contribution.id}`);
+      validateWorkspacePath(ref.path, `${contribution.id} seed`);
+      if (seedPaths.has(ref.path)) throw new Error(`Duplicate seed path: ${ref.path}`);
+      seedPaths.add(ref.path);
       if (!ref.source.startsWith(`seed/${contribution.id}/`)) throw new Error(`Invalid seed source: ${ref.source}`);
       const content = files[ref.source];
       if (!content) throw new Error(`Missing seed source: ${ref.source}`);
       if (content.byteLength > MAX_SEED_BYTES) throw new Error(`Seed file exceeds 256 KiB: ${ref.source}`);
       seed[ref.path] = text(content, ref.source);
     }
+    if (definition.pin !== undefined && !Array.isArray(definition.pin)) throw new Error(`Scene ${contribution.id} pin must be an array`);
+    for (const path of definition.pin ?? []) validateWorkspacePath(path, `${contribution.id} pin`);
     scenes.push({
       id: `${scope === "global" ? "extension" : "personal"}:${manifest.id}:${contribution.id}`,
       title: contribution.title,
@@ -268,11 +337,15 @@ export async function parseExtensionPackage(
   }
 
   const renderers = manifest.contributes.renderers ?? [];
-  const rendererPlugin: PluginMeta | null = renderers.length
+  const rendererExtension: RendererExtension | null = renderers.length
     ? {
-        plugin_id: manifest.id,
+        extensionId: manifest.id,
         title: manifest.title,
-        manifest: { renderers, permissions: manifest.permissions ?? {} },
+        manifest: {
+          renderers,
+          automations: (manifest.contributes.automations ?? []).map(({ id, title }) => ({ id, title })),
+          permissions: manifest.permissions ?? {},
+        },
         origin: scope === "temporary" ? "temporary" : "personal",
         assets: Object.fromEntries(
           renderers.flatMap((renderer) => [
@@ -283,16 +356,17 @@ export async function parseExtensionPackage(
         transient: scope === "temporary",
       }
     : null;
-  return { manifest, scenes, rendererPlugin, bytes, sha256: await digest(bytes) };
+  return { manifest, scenes, rendererExtension, bytes, sha256: await digest(bytes) };
 }
 
 export function permissionSummary(manifest: ExtensionManifest): string[] {
   const p = manifest.permissions ?? {};
   return [
-    p.fileWrite && "Write file",
-    p.channelResources?.length && `Read channel (${p.channelResources.length})`,
-    p.navigationOpen && "Open navigation",
-    p.composerPrefill && "Prefill composer",
+    p["file.write"] && "Write file",
+    p["channel.resources"]?.length && `Read channel (${p["channel.resources"].length})`,
+    p["navigation.open"] && "Open navigation",
+    p["composer.prefill"] && "Prefill composer",
+    p["automation.manage"] && "Manage scheduled tasks",
     p.network === "unrestricted" && "Unrestricted network",
   ].filter((value): value is string => Boolean(value));
 }

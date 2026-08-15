@@ -1,7 +1,9 @@
 //! Personal `.cheers-extension` package store for this Mac.
 
 use std::{
-    fs,
+    fs::{self, OpenOptions},
+    io::Write,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -118,11 +120,29 @@ fn install_in(
     }
     fs::create_dir_all(dir).map_err(|error| format!("create {}: {error}", dir.display()))?;
     let target = dir.join(format!("{id}.cheers-extension"));
-    let temporary = dir.join(format!(".{id}.{}.tmp", std::process::id()));
-    fs::write(&temporary, bytes)
-        .map_err(|error| format!("write {}: {error}", temporary.display()))?;
-    fs::rename(&temporary, &target)
-        .map_err(|error| format!("replace {}: {error}", target.display()))
+    let nonce = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let temporary = dir.join(format!(".{id}.{}.{nonce}.tmp", std::process::id()));
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .map_err(|error| format!("create {}: {error}", temporary.display()))?;
+        file.write_all(&bytes)
+            .map_err(|error| format!("write {}: {error}", temporary.display()))?;
+        file.sync_all()
+            .map_err(|error| format!("sync {}: {error}", temporary.display()))?;
+        fs::rename(&temporary, &target)
+            .map_err(|error| format!("replace {}: {error}", target.display()))?;
+        fs::File::open(dir)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| format!("sync {}: {error}", dir.display()))
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result
 }
 
 fn remove_in(dir: &Path, id: &str) -> Result<(), String> {
@@ -173,11 +193,17 @@ mod tests {
         let dir = scratch("roundtrip");
         let bytes = b"PK\x03\x04binary";
         install_in(&dir, "example", &STANDARD.encode(bytes), &sha256(bytes)).unwrap();
+        let updated = b"PK\x03\x04updated";
+        install_in(&dir, "example", &STANDARD.encode(updated), &sha256(updated)).unwrap();
         let listed = list_in(&dir).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(STANDARD.decode(&listed[0].content_base64).unwrap(), bytes);
-        assert_eq!(listed[0].sha256, sha256(bytes));
-        assert!(!dir.join(".example.tmp").exists());
+        assert_eq!(STANDARD.decode(&listed[0].content_base64).unwrap(), updated);
+        assert_eq!(listed[0].sha256, sha256(updated));
+        assert!(fs::read_dir(&dir).unwrap().flatten().all(|entry| entry
+            .path()
+            .extension()
+            .and_then(|value| value.to_str())
+            != Some("tmp")));
         remove_in(&dir, "example").unwrap();
         assert!(list_in(&dir).unwrap().is_empty());
         let _ = fs::remove_dir_all(dir);

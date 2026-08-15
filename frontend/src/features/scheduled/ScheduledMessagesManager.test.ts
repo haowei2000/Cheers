@@ -38,9 +38,31 @@ describe("scheduled task presentation", () => {
       lastRunAt: "2026-01-01T08:00:01Z",
       lastError: null,
       consecutiveFailures: 0,
+      retryAttempt: 0,
       createdAt: "2026-01-01T07:00:00Z",
       updatedAt: "2026-01-01T08:00:01Z",
     } satisfies ScheduledMessage;
     expect(scheduleLabel(task)).toBe("Completed");
+  });
+
+  it("surfaces a safe retry attempt and wake-up time", () => {
+    const task = {
+      id: "task-retry",
+      title: "Retry",
+      channelId: "channel-1",
+      channelName: "general",
+      content: "Try again",
+      mentionIds: ["bot-1"],
+      schedule: { kind: "daily", localTime: "09:00", timezone: "UTC" },
+      enabled: true,
+      nextRunAt: "2026-01-01T09:01:00Z",
+      lastRunAt: "2026-01-01T09:00:00Z",
+      lastError: "bot offline",
+      consecutiveFailures: 1,
+      retryAttempt: 1,
+      createdAt: "2026-01-01T08:00:00Z",
+      updatedAt: "2026-01-01T09:00:00Z",
+    } satisfies ScheduledMessage;
+    expect(scheduleLabel(task)).toContain("Retry 1/3");
   });
 });

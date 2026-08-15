@@ -34,7 +34,7 @@ import {
   selectionLineRange,
   rangedFileContextItem,
 } from "@/features/chat/context/contextPick";
-import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
+import { previewOptions, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
@@ -122,12 +122,13 @@ function basename(path: string) {
 // when nothing matches). Raw content is rendered ONLY inside a <UiTextarea> (inert text —
 // no HTML execution), so stored content cannot XSS co-channel users.
 export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
-  const { fs, plugins, bindings, setBinding, configs, pinned, togglePin } = ctx;
+  const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   // "auto" = preview when a renderer matches, raw otherwise; user toggle overrides
   // for the currently selected file (resets on selection change).
   const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
+  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const addContext = useContextPickStore((s) => s.add);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
@@ -187,7 +188,16 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
   const editor = useFileEditor(fs, selected ?? "");
 
-  useEffect(() => setMode("auto"), [selected]);
+  useEffect(() => {
+    setMode("auto");
+    if (!selected) return;
+    setFailedRenderers((current) => {
+      if (!current[selected]) return current;
+      const next = { ...current };
+      delete next[selected];
+      return next;
+    });
+  }, [selected]);
 
   const refresh = useCallback(async () => {
     try {
@@ -525,11 +535,14 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           (() => {
             // content-aware: only renderers that ACCEPT this file's content are offered.
             // The user's explicit binding (if resolvable) leads; otherwise best match.
-            const candidates = candidatesFor(selected, editor.content, plugins);
-            const bound = bindings[selected] ? getRenderer(bindings[selected], plugins) : undefined;
-            const options = [bound, ...candidates.filter((c) => c.id !== bound?.id)].filter(
-              (r): r is RendererDesc => !!r
+            const options = previewOptions(
+              selected,
+              editor.content,
+              rendererExtensions,
+              bindings[selected],
+              failedRenderers[selected]
             );
+            const bound = bindings[selected] ? options.find((renderer) => renderer.id === bindings[selected]) : undefined;
             const previewRenderer = options[0];
             // no matching renderer => raw, whatever the toggle says — header (Save,
             // dirty dot) and body must agree on which mode is actually showing
@@ -611,7 +624,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
                   <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
                     <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"}
-                      onClick={() => setMode("preview")}
+                      onClick={() => {
+                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                        setMode("preview");
+                      }}
                       disabled={!previewRenderer}
                       title={
                         previewRenderer
@@ -643,15 +659,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   {effMode === "preview" && (bound || options.length > 1) && !tight && (
                     <UiSelect
                       value={bound?.id ?? ""}
-                      onChange={(e) => setBinding(selected, e.target.value || null)}
+                      onChange={(e) => {
+                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                        setBinding(selected, e.target.value || null);
+                      }}
                       title="Renderer for Preview (Auto = best content match)"
                       controlSize="regular" className="bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none max-w-[110px]"
                     >
                       <option value="">Auto</option>
                       {options.map((r) => {
                         const p =
-                          r.source === "plugin"
-                            ? plugins.find((pl) => pl.plugin_id === r.pluginId)
+                          r.source === "extension"
+                            ? rendererExtensions.find((pl) => pl.extensionId === r.extensionId)
                             : undefined;
                         const mark = p?.transient
                           ? "⏱ "
@@ -662,7 +681,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           <option key={r.id} value={r.id}>
                             {mark}
                             {r.title}
-                            {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
+                            {r.source === "extension" ? ` · ${r.extensionId}` : ""}
                           </option>
                         );
                       })}
@@ -686,7 +705,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           {effMode === "preview" && (bound || options.length > 1) && (
                             <UiSelect
                               value={bound?.id ?? ""}
-                              onChange={(e) => setBinding(selected, e.target.value || null)}
+                              onChange={(e) => {
+                                setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                                setBinding(selected, e.target.value || null);
+                              }}
                               title="Renderer for Preview (Auto = best content match)"
                               controlSize="regular" className="bg-zinc-800 text-zinc-200 text-compact rounded-sm outline-none max-w-[110px]"
                             >
@@ -723,6 +745,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       path={selected}
                       renderer={previewRenderer}
                       config={configs[selected]}
+                      onFailure={(rendererId, reason) => {
+                        setFailedRenderers((current) => ({
+                          ...current,
+                          [selected]: [...new Set([...(current[selected] ?? []), rendererId])],
+                        }));
+                        setStatus(`${previewRenderer.title} failed: ${reason}. Switched to the next available renderer.`);
+                      }}
                     />
                   </div>
                 ) : (

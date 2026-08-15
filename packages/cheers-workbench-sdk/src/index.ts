@@ -16,6 +16,13 @@ export interface RendererContext {
   };
   navigation: { open(uri: string): Promise<void> };
   composer: { prefill(text: string): Promise<void> };
+  automation: {
+    list<T = unknown>(): Promise<T[]>;
+    create<T = unknown>(automationId: string, input: unknown): Promise<T>;
+    update<T = unknown>(taskId: string, input: unknown): Promise<T>;
+    delete(taskId: string): Promise<void>;
+    run(taskId: string): Promise<string>;
+  };
   log(level: "debug" | "info" | "warn" | "error", message: string): void;
 }
 

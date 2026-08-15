@@ -17,3 +17,7 @@ an ID, title, message, and either an interval or daily `defaultSchedule`. Daily 
 may omit the timezone so Cheers uses the creating user's local IANA timezone.
 Installation never starts an Automation; a user selects the channel, optional bot, and
 schedule in Cheers. The scene-renderer example includes a daily notes-review template.
+
+Personal macOS renderers may request `automation.manage`. The SDK then exposes
+`ctx.automation`; the host confirms every create, update, delete, or immediate-run action
+and only returns tasks owned by the calling extension.

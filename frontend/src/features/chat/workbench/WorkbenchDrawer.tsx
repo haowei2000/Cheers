@@ -19,7 +19,11 @@ import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { listGlobalScenes } from "./extensions/api";
 import { parseExtensionPackage } from "./extensions/package";
-import type { PluginMeta } from "./sandbox/pluginManifest";
+import {
+  isPersonalExtensionDisabled,
+  registerTemporaryExtension,
+} from "./extensions/runtime";
+import type { RendererExtension } from "./sandbox/rendererExtension";
 import { listPersonalExtensions, pickDevelopmentExtension, readDevelopmentExtension } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 import "./lens/builtins";
@@ -76,6 +80,10 @@ const WB_DOC =
   "scene_state = enabled scenario order/titles and their file-path navigation indexes; " +
   "Files themselves are pure content — how a file renders is decided by this config, never written into the file.";
 
+function sceneBelongsToExtension(sceneId: string, extensionId: string): boolean {
+  return sceneId.startsWith(`personal:${extensionId}:`) || sceneId.startsWith(`extension:${extensionId}:`);
+}
+
 // Known-keys parse + one-time migration: the retired `views` tab list carried each
 // scenario view's renderer/config — collapse those into bindings/configs (create-only,
 // an explicit binding wins) so pre-refactor channels keep their table/kanban previews.
@@ -116,9 +124,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
+  const [personalTemplates, setPersonalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
-  const [personalPlugins, setPersonalPlugins] = useState<PluginMeta[]>([]);
-  const [sessionPlugins, setSessionPlugins] = useState<PluginMeta[]>([]);
+  const [personalRendererExtensions, setPersonalRendererExtensions] = useState<RendererExtension[]>([]);
+  const [sessionRendererExtensions, setSessionRendererExtensions] = useState<RendererExtension[]>([]);
   const [extensionsRevision, setExtensionsRevision] = useState(0);
   const localBindingKey = `cheers.workbench.personal-bindings.${channelId}`;
   const [localBindings, setLocalBindings] = useState<Record<string, string>>(() => {
@@ -137,8 +146,17 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
   useEffect(() => {
     const changed = () => setExtensionsRevision((revision) => revision + 1);
+    const removed = (event: Event) => {
+      const id = (event as CustomEvent<{ id: string }>).detail.id;
+      setSessionTemplates((current) => current.filter((scene) => !sceneBelongsToExtension(scene.id, id)));
+      setSessionRendererExtensions((current) => current.filter((extension) => extension.extensionId !== id));
+    };
     window.addEventListener("cheers:extensions-changed", changed);
-    return () => window.removeEventListener("cheers:extensions-changed", changed);
+    window.addEventListener("cheers:temporary-extension-removed", removed);
+    return () => {
+      window.removeEventListener("cheers:extensions-changed", changed);
+      window.removeEventListener("cheers:temporary-extension-removed", removed);
+    };
   }, []);
 
   useEffect(() => {
@@ -167,11 +185,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           return parseExtensionPackage(bytes, "personal");
         })).then((extensions) => {
           if (!alive) return;
-          setPersonalPlugins(extensions.flatMap((extension) => extension.rendererPlugin ? [extension.rendererPlugin] : []));
-          setSessionTemplates((current) => [
-            ...current.filter((scene) => !scene.id.startsWith("personal:")),
-            ...extensions.flatMap((extension) => extension.scenes),
-          ]);
+          const enabled = extensions.filter((extension) => !isPersonalExtensionDisabled(extension.manifest.id));
+          setPersonalRendererExtensions(enabled.flatMap((extension) => extension.rendererExtension ? [extension.rendererExtension] : []));
+          setPersonalTemplates(enabled.flatMap((extension) => extension.scenes));
         });
       })
       .catch(() => {});
@@ -311,8 +327,12 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         return;
       }
       void file.arrayBuffer().then((bytes) => parseExtensionPackage(bytes, isTauri() ? "temporary" : "global")).then((extension) => {
-        setSessionTemplates((current) => [...extension.scenes, ...current.filter((scene) => !extension.scenes.some((next) => next.id === scene.id))]);
-        if (extension.rendererPlugin) setSessionPlugins((current) => [extension.rendererPlugin!, ...current.filter((plugin) => plugin.plugin_id !== extension.manifest.id)]);
+        registerTemporaryExtension(extension);
+        setSessionTemplates((current) => [
+          ...extension.scenes,
+          ...current.filter((scene) => !sceneBelongsToExtension(scene.id, extension.manifest.id)),
+        ]);
+        if (extension.rendererExtension) setSessionRendererExtensions((current) => [extension.rendererExtension!, ...current.filter((candidate) => candidate.extensionId !== extension.manifest.id)]);
         const first = extension.scenes[0];
         if (first) void activate(first);
         setNotice(`Loaded temporarily: ${extension.manifest.title}`);
@@ -323,8 +343,12 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
   const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
     void parseExtensionPackage(bytes, isTauri() ? "temporary" : "global").then((extension) => {
-      setSessionTemplates((current) => [...extension.scenes, ...current.filter((scene) => !extension.scenes.some((next) => next.id === scene.id))]);
-      if (extension.rendererPlugin) setSessionPlugins((current) => [extension.rendererPlugin!, ...current.filter((plugin) => plugin.plugin_id !== extension.manifest.id)]);
+      registerTemporaryExtension(extension);
+      setSessionTemplates((current) => [
+        ...extension.scenes,
+        ...current.filter((scene) => !sceneBelongsToExtension(scene.id, extension.manifest.id)),
+      ]);
+      if (extension.rendererExtension) setSessionRendererExtensions((current) => [extension.rendererExtension!, ...current.filter((candidate) => candidate.extensionId !== extension.manifest.id)]);
       setNotice(`Loaded temporarily: ${title}`);
     }).catch((reason) => setNotice(errMsg(reason)));
   }, []);
@@ -351,8 +375,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // ---- Hot reload: watch the extension file on disk and re-load it on every save ----
   // The dev loop used to be "edit, drag the file in again" — dozens of round trips while
   // tuning a renderer's UI. With the File System Access API we keep the picked handle and
-  // poll its mtime, so saving in your editor re-loads the plugin in place: the session
-  // plugin is replaced, SandboxRenderer sees a new bundle, and the iframe reboots.
+  // poll its mtime, so saving in your editor reloads the extension in place: the session
+  // renderer is replaced, SandboxRenderer sees a new bundle, and the iframe reboots.
   // Chromium-only (Firefox/Safari lack showOpenFilePicker) — the button hides elsewhere
   // and drag-drop remains the universal path.
   const [watching, setWatching] = useState<string | null>(null);
@@ -435,18 +459,18 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // Session templates first so a temporary upload overrides a same-id global for this session.
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
-    for (const e of [...sessionTemplates, ...globalTemplates])
+    for (const e of [...sessionTemplates, ...personalTemplates, ...globalTemplates])
       if (!byId.has(e.id)) byId.set(e.id, e);
     return [...byId.values()];
-  }, [sessionTemplates, globalTemplates]);
+  }, [sessionTemplates, personalTemplates, globalTemplates]);
 
   // A temporary package shadows a same-id personal extension for the dev loop.
-  const plugins = useMemo(() => {
-    const byId = new Map<string, PluginMeta>();
-    for (const p of [...sessionPlugins, ...personalPlugins])
-      if (!byId.has(p.plugin_id)) byId.set(p.plugin_id, p);
+  const rendererExtensions = useMemo(() => {
+    const byId = new Map<string, RendererExtension>();
+    for (const p of [...sessionRendererExtensions, ...personalRendererExtensions])
+      if (!byId.has(p.extensionId)) byId.set(p.extensionId, p);
     return [...byId.values()];
-  }, [sessionPlugins, personalPlugins]);
+  }, [sessionRendererExtensions, personalRendererExtensions]);
 
   const selectedId = cfg.environment ?? null;
 
@@ -478,12 +502,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
   const ctx: WorkbenchContext = useMemo(
     () => ({
+      active: open,
       channelId,
       fs,
       sendResourceReq,
       pinned,
       togglePin,
-      plugins,
+      rendererExtensions,
       bindings,
       setBinding,
       configs,
@@ -492,7 +517,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       openLocator: onOpenLocator,
       composeMessage: onCompose,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
+    [open, channelId, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
   );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but

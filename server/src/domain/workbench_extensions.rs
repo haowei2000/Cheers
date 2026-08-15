@@ -92,14 +92,16 @@ pub struct AutomationSchedule {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Permissions {
-    #[serde(default)]
+    #[serde(default, rename = "file.write")]
     pub file_write: bool,
-    #[serde(default)]
+    #[serde(default, rename = "channel.resources")]
     pub channel_resources: Vec<String>,
-    #[serde(default)]
+    #[serde(default, rename = "navigation.open")]
     pub navigation_open: bool,
-    #[serde(default)]
+    #[serde(default, rename = "composer.prefill")]
     pub composer_prefill: bool,
+    #[serde(default, rename = "automation.manage")]
+    pub automation_manage: bool,
     #[serde(default)]
     pub network: Option<NetworkPermission>,
 }
@@ -328,8 +330,12 @@ pub fn validate_files(
         let definition: SceneDefinition = serde_json::from_slice(bytes)
             .map_err(|e| format!("invalid scene `{}`: {e}", contribution.id))?;
         let mut seed = Vec::new();
+        let mut seed_paths = HashSet::new();
         for reference in &definition.seed {
             validate_workspace_path(&reference.path)?;
+            if !seed_paths.insert(reference.path.as_str()) {
+                return Err(format!("duplicate seed path `{}`", reference.path));
+            }
             let expected_prefix = format!("seed/{}/", contribution.id);
             if !reference.source.starts_with(&expected_prefix) {
                 return Err(format!(
@@ -349,7 +355,15 @@ pub fn validate_files(
                     .map_err(|_| format!("seed source `{}` must be UTF-8", reference.source))?,
             });
         }
+        let mut item_ids = HashSet::new();
         for item in &definition.items {
+            validate_id("scene item", &item.id)?;
+            if !item_ids.insert(item.id.as_str()) {
+                return Err(format!("duplicate scene item id `{}`", item.id));
+            }
+            if item.title.trim().is_empty() {
+                return Err(format!("scene item `{}` title is required", item.id));
+            }
             validate_workspace_path(&item.file)?;
             validate_renderer_reference(&item.renderer, allow_code, &manifest)?;
         }
@@ -387,6 +401,9 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
     let mut ids = HashSet::new();
     for scene in &manifest.contributes.scenes {
         validate_id("scene", &scene.id)?;
+        if scene.title.trim().is_empty() {
+            return Err(format!("scene `{}` title is required", scene.id));
+        }
         if !ids.insert(scene.id.as_str()) {
             return Err(format!("duplicate scene id `{}`", scene.id));
         }
@@ -400,6 +417,9 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
     let mut renderer_ids = HashSet::new();
     for renderer in &manifest.contributes.renderers {
         validate_id("renderer", &renderer.id)?;
+        if renderer.title.trim().is_empty() {
+            return Err(format!("renderer `{}` title is required", renderer.id));
+        }
         if !renderer_ids.insert(renderer.id.as_str()) {
             return Err(format!("duplicate renderer id `{}`", renderer.id));
         }
@@ -416,6 +436,12 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
         {
             return Err(format!(
                 "renderer `{}` has a non-canonical style path",
+                renderer.id
+            ));
+        }
+        if renderer.matches.iter().any(|glob| glob.trim().is_empty()) {
+            return Err(format!(
+                "renderer `{}` contains an empty match rule",
                 renderer.id
             ));
         }
@@ -472,6 +498,7 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
             || !manifest.permissions.channel_resources.is_empty()
             || manifest.permissions.navigation_open
             || manifest.permissions.composer_prefill
+            || manifest.permissions.automation_manage
             || manifest.permissions.network.is_some())
     {
         return Err(
@@ -695,11 +722,32 @@ mod tests {
     }
 
     #[test]
+    fn sdk_shared_fixture_obeys_server_contract() {
+        let raw = include_bytes!("../../../fixtures/workbench/scene-renderer.cheers-extension");
+        let parsed = validate_package(raw, true).expect("SDK fixture must pass server validation");
+        assert_eq!(parsed.manifest.id, "example-notes");
+        assert_eq!(parsed.manifest.contributes.scenes.len(), 1);
+        assert_eq!(parsed.manifest.contributes.renderers.len(), 1);
+        assert_eq!(parsed.manifest.contributes.automations.len(), 1);
+    }
+
+    #[test]
     fn global_package_rejects_renderer_code() {
         let raw = package(
             manifest(json!([{"id":"demo","title":"Demo","entry":"renderers/demo.js","match":[]}])),
             &[("renderers/demo.js", b"console.log('no')")],
         );
+        assert!(validate_package(&raw, false)
+            .unwrap_err()
+            .contains("declarative"));
+        assert!(validate_package(&raw, true).is_ok());
+    }
+
+    #[test]
+    fn global_package_rejects_automation_management_code_permission() {
+        let mut value = manifest(json!([]));
+        value["permissions"] = json!({"automation.manage": true});
+        let raw = package(value, &[]);
         assert!(validate_package(&raw, false)
             .unwrap_err()
             .contains("declarative"));

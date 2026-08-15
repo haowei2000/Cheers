@@ -18,8 +18,12 @@ renderers/<renderer-id>.js
 renderers/<renderer-id>.css
 ```
 
-Global extensions are declarative and may contain scenes and seed files only. Browser and iOS clients never execute extension code. A personal extension installed on macOS may contain renderers; the package is stored in `~/.cheers/extensions` and runs only after a renderer is selected.
+Global extensions are declarative and may contain scenes, seed files, and inert Automation templates. Browser and iOS clients never execute extension code. A personal extension installed on macOS may contain renderers; the package is stored in `~/.cheers/extensions` and runs only after a renderer is selected.
 
 Renderer source exports no HTML document. Call `defineRenderer({ activate(ctx) { ... } })`; `activate` may return a disposer. The packer bundles TypeScript and ordinary dependencies into a single IIFE. Runtime imports between extensions are unsupported.
+
+Request `automation.manage` only when the renderer needs `ctx.automation`. The host scopes
+all returned tasks to the calling extension and confirms every create, update, delete,
+or run operation.
 
 See [WORKBENCH.md](../arch/WORKBENCH.md) and [RENDERER_PLUGIN.md](../arch/RENDERER_PLUGIN.md) for the package and sandbox contracts.

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseExtensionPackage } from "./package";
 
 function archive(manifest: object, files: Record<string, string> = {}): Uint8Array {
@@ -19,6 +21,15 @@ const base = {
 };
 
 describe("parseExtensionPackage", () => {
+  it("parses the same deterministic fixture as the SDK and server", async () => {
+    const path = fileURLToPath(new URL("../../../../../../fixtures/workbench/scene-renderer.cheers-extension", import.meta.url));
+    const parsed = await parseExtensionPackage(new Uint8Array(readFileSync(path)), "personal");
+    expect(parsed.manifest.id).toBe("example-notes");
+    expect(parsed.scenes).toHaveLength(1);
+    expect(parsed.rendererExtension?.manifest.renderers).toHaveLength(1);
+    expect(parsed.manifest.contributes.automations).toHaveLength(1);
+  });
+
   it("resolves scenes, seed files, and stable global ids", async () => {
     const bytes = archive(
       { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
@@ -42,7 +53,20 @@ describe("parseExtensionPackage", () => {
       { "renderers/r.js": "console.log('no')" }
     );
     await expect(parseExtensionPackage(bytes, "global")).rejects.toThrow(/declarative/);
-    await expect(parseExtensionPackage(bytes, "personal")).resolves.toMatchObject({ rendererPlugin: { plugin_id: "example" } });
+    await expect(parseExtensionPackage(bytes, "personal")).resolves.toMatchObject({ rendererExtension: { extensionId: "example" } });
+  });
+
+  it("rejects automation management in browser/global scope", async () => {
+    const bytes = archive({ ...base, permissions: { "automation.manage": true } });
+    await expect(parseExtensionPackage(bytes, "global")).rejects.toThrow(/declarative/);
+    await expect(parseExtensionPackage(bytes, "personal")).resolves.toBeDefined();
+  });
+
+  it("rejects legacy or unknown permission names", async () => {
+    await expect(parseExtensionPackage(
+      archive({ ...base, permissions: { fileWrite: true } }),
+      "personal"
+    )).rejects.toThrow(/Unknown permission/);
   });
 
   it("rejects traversal before inflation", async () => {

@@ -12,6 +12,9 @@ Host and renderer communicate with JSON-RPC 2.0 messages carrying request IDs. M
 - `channel.read`
 - `navigation.open`
 - `composer.prefill`
+- `automation.list`, `automation.create`, `automation.update`, `automation.delete`, and
+  `automation.run` behind `automation.manage`; every mutating call requires host
+  confirmation and is scoped to tasks owned by that extension
 - `renderer.unsupported`
 - `log`
 - `lifecycle.dispose`

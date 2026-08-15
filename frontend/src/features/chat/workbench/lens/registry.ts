@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 // A Lens is a generic, reusable renderer: (data, config) -> editable UI.
 // Templates pick lenses declaratively (data), so a lens is the compiled "vocabulary"
-// that makes data-only plugins possible. Adding a NEW kind of UI = add a lens (code);
+// that makes data-only extensions possible. Adding a NEW kind of UI = add a lens (code);
 // using existing UI = pure data in a manifest (no code).
 export interface LensProps {
   data: unknown;

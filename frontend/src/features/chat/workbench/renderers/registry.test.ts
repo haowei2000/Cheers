@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import type { PluginMeta } from "../sandbox/pluginManifest";
-import { accepts, candidatesFor, formatOf, getRenderer, specificity } from "./registry";
+import type { RendererExtension } from "../sandbox/rendererExtension";
+import { accepts, candidatesFor, formatOf, getRenderer, previewOptions, specificity } from "./registry";
 
 // A renderer plugin that only accepts markdown containing task lines.
-const checklist: PluginMeta = {
-  plugin_id: "md-checklist",
+const checklist: RendererExtension = {
+  extensionId: "md-checklist",
   title: "Markdown checklist",
   manifest: {
     renderers: [
@@ -14,16 +14,16 @@ const checklist: PluginMeta = {
 };
 
 // A renderer plugin that only accepts JSON with a top-level `columns` key.
-const kanban: PluginMeta = {
-  plugin_id: "kb",
+const kanban: RendererExtension = {
+  extensionId: "kb",
   title: "KB",
   manifest: {
     renderers: [{ id: "board", title: "Board", match: { format: "json", jsonHas: ["columns"] } }],
   },
 };
 
-const idsOf = (path: string, content: string, plugins: PluginMeta[]) =>
-  candidatesFor(path, content, plugins).map((r) => r.id);
+const idsOf = (path: string, content: string, extensions: RendererExtension[]) =>
+  candidatesFor(path, content, extensions).map((r) => r.id);
 
 describe("formatOf", () => {
   it("maps by extension; unknown => text", () => {
@@ -38,7 +38,7 @@ describe("formatOf", () => {
 });
 
 describe("accepts — declared acceptance", () => {
-  const desc = (m: PluginMeta) => getRenderer(`personal:${m.plugin_id}:${m.manifest.renderers![0].id}`, [m])!;
+  const desc = (m: RendererExtension) => getRenderer(`personal:${m.extensionId}:${m.manifest.renderers![0].id}`, [m])!;
 
   it("requireAny gates on content", () => {
     const r = desc(checklist);
@@ -55,8 +55,8 @@ describe("accepts — declared acceptance", () => {
   });
 
   it("glob narrows by path", () => {
-    const p: PluginMeta = {
-      plugin_id: "g",
+    const p: RendererExtension = {
+      extensionId: "g",
       title: "g",
       manifest: { renderers: [{ id: "r", title: "r", match: { format: "markdown", glob: "reviews/*.md" } }] },
     };
@@ -67,8 +67,8 @@ describe("accepts — declared acceptance", () => {
   });
 
   it("** in a glob crosses path segments (the \\u0000 placeholder path)", () => {
-    const p: PluginMeta = {
-      plugin_id: "g2",
+    const p: RendererExtension = {
+      extensionId: "g2",
       title: "g2",
       manifest: {
         renderers: [{ id: "r", title: "r", match: { format: "markdown", glob: "reviews/**/*.md" } }],
@@ -143,8 +143,8 @@ describe("yaml as a structured format", () => {
   });
 
   it("jsonHas stays frozen to JSON — it never matches YAML", () => {
-    const p: PluginMeta = {
-      plugin_id: "jh",
+    const p: RendererExtension = {
+      extensionId: "jh",
       title: "jh",
       manifest: {
         renderers: [{ id: "r", title: "R", match: { format: ["json", "yaml"], jsonHas: ["columns"] } }],
@@ -165,12 +165,12 @@ describe("getRenderer", () => {
 });
 
 describe("protocol-1 match vocabulary", () => {
-  const plug = (id: string, match: object): PluginMeta => ({
-    plugin_id: id,
+  const plug = (id: string, match: object): RendererExtension => ({
+    extensionId: id,
     title: id,
     manifest: { renderers: [{ id: "r", title: "R", match }] },
   });
-  const one = (p: PluginMeta) => getRenderer(`personal:${p.plugin_id}:r`, [p])!;
+  const one = (p: RendererExtension) => getRenderer(`personal:${p.extensionId}:r`, [p])!;
 
   it("format accepts a list of coarse formats", () => {
     const r = one(plug("multi", { format: ["markdown", "json"] }));
@@ -210,4 +210,18 @@ describe("protocol-1 match vocabulary", () => {
     expect(specificity(keys)).toBeGreaterThan(specificity(kind));
   });
 
+});
+
+describe("previewOptions", () => {
+  it("falls back from a failed personal renderer to a matching builtin", () => {
+    const plugin: RendererExtension = {
+      extensionId: "fallback",
+      title: "Fallback",
+      manifest: {
+        renderers: [{ id: "r", title: "R", match: { format: "markdown" } }],
+      },
+    };
+    const failed = "personal:fallback:r";
+    expect(previewOptions("notes.md", "# Notes", [plugin], failed, [failed])[0]?.id).toBe("builtin:markdown");
+  });
 });

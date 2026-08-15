@@ -51,7 +51,7 @@ nodes:
   shared.renderer_registry:
     kind: module
     label: Renderer registry
-    summary: Resolves native and plugin renderers from bindings and content.
+    summary: Resolves native and extension renderers from bindings and content.
     status: stale
     tags: [renderer]
 `,
@@ -99,6 +99,7 @@ localStorage.setItem("cheers.workbench.preview.scene", "cheers-code-project");
 localStorage.setItem("cheers.workbench.preview.item.cheers-code-project", "codemap/map.yaml");
 
 const context: WorkbenchContext = {
+  active: true,
   channelId: "preview",
   fs: {
     ls: async () => ({ path: "", entries }),
@@ -109,7 +110,7 @@ const context: WorkbenchContext = {
   sendResourceReq: async () => ({}),
   pinned: [],
   togglePin: () => undefined,
-  plugins: [],
+  rendererExtensions: [],
   bindings: {
     "dev/plan.yaml": "builtin:kanban",
     "dev/issues.yaml": "builtin:table",

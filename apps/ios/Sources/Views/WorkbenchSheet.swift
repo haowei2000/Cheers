@@ -523,25 +523,7 @@ struct WorkbenchSheet: View {
                 } catch ResourceError.server(let code, _) where code == "VERSION_CONFLICT" {}
             }
             try await updateConfiguration { next in
-                var nextBindings = next["bindings"]?.objectValue ?? [:]
-                var nextConfigs = next["configs"]?.objectValue ?? [:]
-                for view in manifest.views {
-                    if nextBindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
-                        nextBindings[view.file] = .string(view.renderer)
-                    }
-                    if nextConfigs[view.file] == nil, let value = view.config { nextConfigs[view.file] = value }
-                }
-                var state = WorkbenchSceneState(next["scene_state"])
-                state.order.removeAll { $0 == manifest.id }
-                state.order.append(manifest.id)
-                state.titles[manifest.id] = manifest.title
-                state.items[manifest.id] = manifest.views.map(\.file)
-                let pins = Set((next["pinned"]?.arrayValue?.compactMap(\.stringValue) ?? []) + (manifest.pin ?? []))
-                next["environment"] = .string(manifest.id)
-                next["bindings"] = .object(nextBindings)
-                next["configs"] = .object(nextConfigs)
-                next["pinned"] = .array(pins.sorted().map(JSONValue.string))
-                next["scene_state"] = state.jsonValue
+                next = workbenchConfiguration(applying: manifest, to: next)
             }
             showSceneManager = false
             await load(showSpinner: false)
@@ -618,6 +600,35 @@ func inferNativeLens(path: String, data: JSONValue?) -> String? {
        columns.allSatisfy({ $0.objectValue != nil && $0["items"]?.arrayValue != nil }) { return "kanban" }
     if let rows = data.arrayValue, !rows.isEmpty, rows.allSatisfy({ $0.objectValue != nil }) { return "table" }
     return nil
+}
+
+/// Merge a declarative scene into shared Workbench state. Web renderer references are
+/// deliberately omitted from bindings so iOS can infer a native lens or use Raw.
+func workbenchConfiguration(
+    applying manifest: WorkbenchTemplateManifest,
+    to original: [String: JSONValue]
+) -> [String: JSONValue] {
+    var next = original
+    var bindings = next["bindings"]?.objectValue ?? [:]
+    var configs = next["configs"]?.objectValue ?? [:]
+    for view in manifest.views {
+        if bindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
+            bindings[view.file] = .string(view.renderer)
+        }
+        if configs[view.file] == nil, let value = view.config { configs[view.file] = value }
+    }
+    var state = WorkbenchSceneState(next["scene_state"])
+    state.order.removeAll { $0 == manifest.id }
+    state.order.append(manifest.id)
+    state.titles[manifest.id] = manifest.title
+    state.items[manifest.id] = manifest.views.map(\.file)
+    let pins = Set((next["pinned"]?.arrayValue?.compactMap(\.stringValue) ?? []) + (manifest.pin ?? []))
+    next["environment"] = .string(manifest.id)
+    next["bindings"] = .object(bindings)
+    next["configs"] = .object(configs)
+    next["pinned"] = .array(pins.sorted().map(JSONValue.string))
+    next["scene_state"] = state.jsonValue
+    return next
 }
 
 /// Workbench — the channel's file workspace with native, inert renderers.

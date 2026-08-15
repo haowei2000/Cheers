@@ -10,6 +10,11 @@ match `^[a-z0-9][a-z0-9._-]{0,63}$`; versions are SemVer. Scene definitions cont
 `items`, `seed`, and `pin`. Renderer references are `auto`, `builtin:<id>`, or
 `self:<id>`; `self:` is valid only for personal macOS packages.
 
+Renderer capabilities are denied unless declared in `permissions`: `file.write`,
+allowlisted `channel.resources`, `navigation.open`, `composer.prefill`,
+`automation.manage`, and `network: "unrestricted"`. Global extensions may contribute
+Automation templates but cannot request code capabilities.
+
 Packages are limited to 4 MiB compressed, 8 MiB expanded, 128 files, and 256 KiB per seed file. Parsers reject traversal, absolute paths, backslashes, symlinks, duplicate paths, encrypted entries, and unknown executable files.
 
 ## Scope
@@ -23,8 +28,15 @@ Stable scene IDs are `extension:<extension-id>:<scene-id>` and `personal:<extens
 
 `.workbench.json` stores shared scene state and built-in renderer bindings. Personal renderer bindings stay in device-local settings. Uninstalling an extension leaves seeded channel files intact.
 
+The settings list presents Official, Global, This Mac, and Temporary extensions together.
+Personal extensions can be disabled locally. Renderer state is reported as Ready, Running,
+or Failed; a failed or missing renderer is excluded from the current file's candidates so
+the host selects the next built-in match or displays inert Raw content.
+
 Automation contributions are inert templates. Users instantiate them as durable
 scheduled channel messages and choose the channel, optional bot, and cadence explicitly.
+Personal renderers with `automation.manage` may manage only their extension-owned tasks,
+and every mutating request requires a host confirmation.
 See [Scheduled Messages](SCHEDULED_MESSAGES.md).
 
 ## API

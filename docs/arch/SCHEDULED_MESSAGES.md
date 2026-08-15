@@ -15,8 +15,8 @@ composer.
 - Tasks can be paused, resumed, edited, deleted, or run immediately.
 - The API exposes the latest 50 runs for each task.
 
-Cron, RRULE, weekly/monthly recurrences, event triggers, retries, and webhooks are
-intentionally not part of this release.
+Cron, RRULE, weekly/monthly recurrences, event triggers, and webhooks are intentionally
+not part of this release.
 
 ## Persistence
 
@@ -32,6 +32,11 @@ The worker polls every 15 seconds and claims at most 20 due tasks with
 the same task. If the process dies after creating the run record, the next worker marks
 that run failed and advances the schedule rather than risking a duplicate message. This
 is deliberate at-most-once delivery.
+
+Failures proven to occur before message persistence, currently an unavailable mentioned
+bot, retry after 1, 5, and 15 minutes. Each attempt has its own run record while retaining
+the original scheduled timestamp. Ambiguous failures are never retried because doing so
+could duplicate a message that was already committed.
 
 ## API
 

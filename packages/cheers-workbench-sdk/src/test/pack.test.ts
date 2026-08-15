@@ -15,6 +15,8 @@ test("TypeScript scene example packs deterministically with canonical files", as
   const firstBytes = new Uint8Array(await readFile(first));
   const secondBytes = new Uint8Array(await readFile(second));
   assert.deepEqual(firstBytes, secondBytes);
+  const sharedFixture = new Uint8Array(await readFile(resolve("../../fixtures/workbench/scene-renderer.cheers-extension")));
+  assert.deepEqual(firstBytes, sharedFixture);
   const files = unzipSync(firstBytes);
   assert.ok(files["manifest.json"]);
   assert.ok(files["scenes/notes.json"]);

@@ -23,7 +23,14 @@ interface Manifest {
         | { kind: "daily"; localTime: string; timezone?: string };
     }>;
   };
-  permissions?: { network?: "unrestricted" } & Record<string, unknown>;
+  permissions?: {
+    "file.write"?: boolean;
+    "channel.resources"?: string[];
+    "navigation.open"?: boolean;
+    "composer.prefill"?: boolean;
+    "automation.manage"?: boolean;
+    network?: "unrestricted";
+  };
 }
 
 const idPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -54,6 +61,19 @@ function validateManifest(manifest: Manifest): void {
   }
   if (manifest.permissions?.network !== undefined && manifest.permissions.network !== "unrestricted") {
     throw new Error("network may only be omitted or set to unrestricted");
+  }
+  const permissions = manifest.permissions ?? {};
+  const permissionKeys = new Set(["file.write", "channel.resources", "navigation.open", "composer.prefill", "automation.manage", "network"]);
+  for (const key of Object.keys(permissions)) {
+    if (!permissionKeys.has(key)) throw new Error(`unknown permission: ${key}`);
+  }
+  for (const key of ["file.write", "navigation.open", "composer.prefill", "automation.manage"] as const) {
+    if (permissions[key] !== undefined && typeof permissions[key] !== "boolean") throw new Error(`${key} must be boolean`);
+  }
+  const resources = permissions["channel.resources"] ?? [];
+  const allowedResources = new Set(["channel.info", "channel.members", "channel.messages", "channel.activity.read", "channel.messages.index"]);
+  if (!Array.isArray(resources) || resources.some((resource) => typeof resource !== "string" || !allowedResources.has(resource))) {
+    throw new Error("channel.resources contains an unsupported resource");
   }
 }
 

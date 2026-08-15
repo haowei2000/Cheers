@@ -112,6 +112,7 @@ function editForm(task: ScheduledMessage): FormState {
 }
 
 export function scheduleLabel(task: ScheduledMessage): string {
+  if (task.retryAttempt > 0 && task.nextRunAt) return `Retry ${task.retryAttempt}/3 · ${new Date(task.nextRunAt).toLocaleString()}`;
   if (task.schedule.kind === "once" && !task.nextRunAt && task.lastRunAt) return task.lastError ? "Failed" : "Completed";
   if (!task.enabled) return task.lastError ? "Failed" : "Paused";
   if (!task.nextRunAt) return "Completed";
@@ -293,7 +294,7 @@ export function ScheduledMessagesManager() {
             {history.runs.map((run) => <WorkbenchItem
               key={run.id}
               title={run.status === "succeeded" ? "Message sent" : run.status === "failed" ? "Run failed" : "Running"}
-              subtitle={`${run.trigger === "manual" ? "Manual" : "Scheduled"} · ${new Date(run.scheduledFor).toLocaleString()}`}
+              subtitle={`${run.trigger === "manual" ? "Manual" : "Scheduled"} · Attempt ${run.attempt} · ${new Date(run.scheduledFor).toLocaleString()}`}
               metadata={run.messageId ? `Message ${run.messageId}` : undefined}
               preview={run.error ?? undefined}
               status={<span className={run.status === "failed" ? "text-red-400" : run.status === "succeeded" ? "text-emerald-400" : "text-amber-400"}>{run.status}</span>}

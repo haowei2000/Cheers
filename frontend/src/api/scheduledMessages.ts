@@ -28,6 +28,7 @@ export interface ScheduledMessage extends Omit<ScheduledMessageInput, "schedule"
   lastRunAt?: string | null;
   lastError?: string | null;
   consecutiveFailures: number;
+  retryAttempt: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +38,7 @@ export interface ScheduledMessageRun {
   scheduledFor: string;
   trigger: "schedule" | "manual";
   status: "running" | "succeeded" | "failed";
+  attempt: number;
   messageId?: string | null;
   error?: string | null;
   startedAt: string;

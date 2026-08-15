@@ -32,6 +32,32 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(state.items["code"], ["dev/plan.yaml"])
     }
 
+    func testGlobalSceneActivationKeepsOnlyNativeRendererBindings() {
+        let manifest = WorkbenchTemplateManifest(
+            id: "extension:example:main",
+            title: "Research",
+            views: [
+                WorkbenchTemplateView(
+                    id: "notes", title: "Notes", file: "notes.md",
+                    lens: "markdown", renderer: "builtin:markdown", config: nil),
+                WorkbenchTemplateView(
+                    id: "web", title: "Web", file: "custom.data",
+                    lens: "auto", renderer: "self:web", config: nil),
+            ],
+            seed: nil,
+            pin: ["notes.md"])
+
+        let config = workbenchConfiguration(applying: manifest, to: [:])
+        let state = WorkbenchSceneState(config["scene_state"])
+        let bindings = config["bindings"]?.objectValue
+
+        XCTAssertEqual(state.order, ["extension:example:main"])
+        XCTAssertEqual(state.items[manifest.id], ["notes.md", "custom.data"])
+        XCTAssertEqual(bindings?["notes.md"], .string("builtin:markdown"))
+        XCTAssertNil(bindings?["custom.data"])
+        XCTAssertNil(inferNativeLens(path: "custom.data", data: nil))
+    }
+
     func testWorkbenchNativeRendererMatchingUsesParsedData() {
         XCTAssertEqual(inferNativeLens(path: "notes.md", data: nil), "markdown")
         XCTAssertEqual(inferNativeLens(path: "rows.yaml", data: .array([

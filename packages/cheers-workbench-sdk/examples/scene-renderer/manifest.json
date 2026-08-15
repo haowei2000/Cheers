@@ -15,5 +15,5 @@
       "defaultSchedule": { "kind": "daily", "localTime": "09:00" }
     }]
   },
-  "permissions": { "fileWrite": true }
+  "permissions": { "file.write": true }
 }

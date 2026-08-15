@@ -123,3 +123,40 @@ async fn daily_task_preserves_wall_clock_and_timezone(db: PgPool) {
     assert!(next > Utc::now());
     assert!(next < Utc::now() + Duration::hours(26));
 }
+
+#[sqlx::test]
+async fn retry_claim_preserves_original_occurrence_and_advances_attempt(db: PgPool) {
+    let task = seed_due_task(&db).await;
+    let original = chrono::DateTime::from_timestamp_micros(
+        (Utc::now() - Duration::minutes(10)).timestamp_micros(),
+    )
+    .unwrap();
+    sqlx::query(
+        "UPDATE scheduled_messages SET retry_attempt=2,retry_scheduled_for=$2,
+         next_run_at=NOW()-INTERVAL '1 second' WHERE task_id=$1",
+    )
+    .bind(&task)
+    .bind(original)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let claimed = scheduled_messages::claim_due(&db).await.unwrap();
+    assert_eq!(claimed[0].retry_attempt, 2);
+    assert_eq!(claimed[0].scheduled_for, original);
+
+    for attempt in [1, 2, 3] {
+        sqlx::query(
+            "INSERT INTO scheduled_message_runs
+             (run_id,task_id,scheduled_for,trigger,status,attempt)
+             VALUES ($1,$2,$3,'schedule','failed',$4)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(&task)
+        .bind(original)
+        .bind(attempt)
+        .execute(&db)
+        .await
+        .unwrap();
+    }
+}

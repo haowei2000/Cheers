@@ -1,8 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
 import { formatOf } from "../renderers/registry";
-import type { PluginMeta } from "./pluginManifest";
+import type { RendererExtension } from "./rendererExtension";
+import { reportRendererStatus } from "../extensions/runtime";
+import {
+  createScheduledMessage,
+  deleteScheduledMessage,
+  listScheduledMessages,
+  runScheduledMessageNow,
+  updateScheduledMessage,
+  type ScheduledMessageInput,
+} from "@/api/scheduledMessages";
 
 interface RpcRequest {
   jsonrpc: "2.0";
@@ -49,13 +58,13 @@ export function rendererCsp(network: "unrestricted" | undefined, nonce: string):
   ].join("; ");
 }
 
-export function buildRendererDocument(plugin: PluginMeta, rendererId: string): string {
-  const renderer = plugin.manifest.renderers?.find((candidate) => candidate.id === rendererId);
+export function buildRendererDocument(extension: RendererExtension, rendererId: string): string {
+  const renderer = extension.manifest.renderers?.find((candidate) => candidate.id === rendererId);
   if (!renderer) throw new Error(`Renderer not found: ${rendererId}`);
   if (!renderer.entry) throw new Error(`Renderer entry is missing: ${rendererId}`);
-  const code = plugin.assets?.[renderer.entry];
+  const code = extension.assets?.[renderer.entry];
   if (!code) throw new Error(`Renderer entry is missing: ${renderer.entry}`);
-  const css = renderer.style ? plugin.assets?.[renderer.style] ?? "" : "";
+  const css = renderer.style ? extension.assets?.[renderer.style] ?? "" : "";
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const bridge = `
     (() => {
@@ -75,6 +84,13 @@ export function buildRendererDocument(plugin: PluginMeta, rendererId: string): s
         channel: { read(resource, params = {}) { return send("channel.read", { resource, params }); } },
         navigation: { open(uri) { return send("navigation.open", { uri }); } },
         composer: { prefill(text) { return send("composer.prefill", { text }); } },
+        automation: {
+          list() { return send("automation.list", {}); },
+          create(automationId, input) { return send("automation.create", { automationId, input }); },
+          update(taskId, input) { return send("automation.update", { taskId, input }); },
+          delete(taskId) { return send("automation.delete", { taskId }); },
+          run(taskId) { return send("automation.run", { taskId }); }
+        },
         log(level, message) { parent.postMessage({ jsonrpc: "2.0", method: "log", params: { level, message } }, "*"); }
       };
       globalThis.__CHEERS_RENDERER_CONTEXT__ = ctx;
@@ -104,40 +120,100 @@ export function buildRendererDocument(plugin: PluginMeta, rendererId: string): s
       };
       addEventListener("pagehide", () => { try { disposer?.(); } catch {} });
     })();`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(plugin.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0}${css}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(extension.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0;}\n${css}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
 }
 
 export function SandboxRenderer({
   fs,
-  plugin,
+  extension,
   rendererId,
   path,
   readChannel,
   onOpen,
   onCompose,
+  onFailure,
+  active = true,
 }: {
   fs: FsClient;
-  plugin: PluginMeta;
+  extension: RendererExtension;
   rendererId: string;
   path: string;
   readChannel: (resource: string, params: Record<string, unknown>) => Promise<unknown>;
   onOpen?: (uri: string) => void;
   onCompose?: (text: string) => void;
+  onFailure?: (reason: string) => void;
+  active?: boolean;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const versionRef = useRef(0);
   const requestRef = useRef(0);
+  const failedRef = useRef(false);
+  const pendingRef = useRef(new Map<number | string, {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+  }>());
+  const callbacksRef = useRef({ readChannel, onOpen, onCompose, onFailure });
+  callbacksRef.current = { readChannel, onOpen, onCompose, onFailure };
   const [status, setStatus] = useState<"ready" | "running" | "failed">("ready");
   const [error, setError] = useState("");
-  const document = useMemo(() => buildRendererDocument(plugin, rendererId), [plugin, rendererId]);
+  const document = useMemo(() => buildRendererDocument(extension, rendererId), [extension, rendererId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active) {
+      failedRef.current = false;
+      setStatus("ready");
+      setError("");
+      reportRendererStatus(extension.extensionId, "ready");
+      return;
+    }
+    let alive = true;
+    let disposed = false;
+    failedRef.current = false;
     const respond = (message: RpcRequest, result?: unknown, errorMessage?: string) => {
       if (message.id == null) return;
       const response: RpcResponse = errorMessage
         ? { jsonrpc: "2.0", id: message.id, error: { code: -32000, message: errorMessage } }
         : { jsonrpc: "2.0", id: message.id, result };
       iframeRef.current?.contentWindow?.postMessage(response, "*");
+    };
+    const extensionTasks = async () =>
+      (await listScheduledMessages()).filter((task) => task.sourceExtensionId === extension.extensionId);
+    const automationInput = (value: unknown, automationId: string): ScheduledMessageInput => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("automation input must be an object");
+      }
+      return {
+        ...(value as ScheduledMessageInput),
+        sourceExtensionId: extension.extensionId,
+        sourceAutomationId: automationId,
+      };
+    };
+    const request = (method: string, params?: Record<string, unknown>, timeoutMs = 2_000) => {
+      const id = ++requestRef.current;
+      return new Promise<unknown>((resolve, reject) => {
+        pendingRef.current.set(id, { resolve, reject });
+        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        window.setTimeout(() => {
+          if (!pendingRef.current.delete(id)) return;
+          reject(new Error(`${method} timed out`));
+        }, timeoutMs);
+      });
+    };
+    const dispose = async () => {
+      if (disposed) return;
+      disposed = true;
+      try { await request("lifecycle.dispose", undefined, 500); }
+      catch { /* pagehide remains the synchronous last-resort cleanup path */ }
+    };
+    const fail = async (reason: string) => {
+      if (failedRef.current) return;
+      failedRef.current = true;
+      await dispose();
+      if (!alive) return;
+      setError(reason);
+      setStatus("failed");
+      reportRendererStatus(extension.extensionId, "failed", reason);
+      callbacksRef.current.onFailure?.(reason);
     };
     const sendRender = async () => {
       let content = "";
@@ -150,45 +226,91 @@ export function SandboxRenderer({
         if (!(reason instanceof ResourceError && reason.code === "NOT_FOUND")) throw reason;
       }
       versionRef.current = version;
-      iframeRef.current?.contentWindow?.postMessage(
-        { jsonrpc: "2.0", id: ++requestRef.current, method: "file.render", params: { path, format: formatOf(path), content, version, rendererId } },
-        "*"
-      );
+      await request("file.render", { path, format: formatOf(path), content, version, rendererId });
       setStatus("running");
+      reportRendererStatus(extension.extensionId, "running");
     };
-    const handler = (event: MessageEvent<RpcRequest>) => {
+    const handler = (event: MessageEvent<RpcRequest | RpcResponse>) => {
       if (event.source !== iframeRef.current?.contentWindow || event.data?.jsonrpc !== "2.0") return;
       const message = event.data;
+      if (message.id != null && !("method" in message)) {
+        const pending = pendingRef.current.get(message.id);
+        if (!pending) return;
+        pendingRef.current.delete(message.id);
+        message.error ? pending.reject(new Error(message.error.message)) : pending.resolve(message.result);
+        return;
+      }
+      if (!("method" in message)) return;
       const params = message.params ?? {};
-      if (message.method === "renderer.ready") void sendRender().catch((reason) => { setError(String(reason)); setStatus("failed"); });
+      if (message.method === "renderer.ready") void sendRender().catch((reason) => void fail(String(reason)));
       else if (message.method === "file.save") {
-        if (!plugin.manifest.permissions?.fileWrite) return respond(message, undefined, "file.write permission denied");
+        if (!extension.manifest.permissions?.["file.write"]) return respond(message, undefined, "file.write permission denied");
         fs.write(path, String(params.content ?? ""), versionRef.current)
           .then((result) => { versionRef.current = result.version; respond(message, result); })
           .catch((reason) => respond(message, undefined, reason instanceof Error ? reason.message : String(reason)));
       } else if (message.method === "channel.read") {
         const resource = String(params.resource ?? "");
-        if (!plugin.manifest.permissions?.channelResources?.includes(resource)) return respond(message, undefined, "channel resource permission denied");
-        readChannel(resource, (params.params as Record<string, unknown>) ?? {}).then((result) => respond(message, result)).catch((reason) => respond(message, undefined, String(reason)));
+        if (!extension.manifest.permissions?.["channel.resources"]?.includes(resource)) return respond(message, undefined, "channel resource permission denied");
+        callbacksRef.current.readChannel(resource, (params.params as Record<string, unknown>) ?? {}).then((result) => respond(message, result)).catch((reason) => respond(message, undefined, String(reason)));
       } else if (message.method === "navigation.open") {
-        if (!plugin.manifest.permissions?.navigationOpen) return respond(message, undefined, "navigation.open permission denied");
-        onOpen?.(String(params.uri ?? "")); respond(message, null);
+        if (!extension.manifest.permissions?.["navigation.open"]) return respond(message, undefined, "navigation.open permission denied");
+        callbacksRef.current.onOpen?.(String(params.uri ?? "")); respond(message, null);
       } else if (message.method === "composer.prefill") {
-        if (!plugin.manifest.permissions?.composerPrefill) return respond(message, undefined, "composer.prefill permission denied");
-        onCompose?.(String(params.text ?? "").slice(0, 4000)); respond(message, null);
+        if (!extension.manifest.permissions?.["composer.prefill"]) return respond(message, undefined, "composer.prefill permission denied");
+        callbacksRef.current.onCompose?.(String(params.text ?? "").slice(0, 4000)); respond(message, null);
+      } else if (message.method === "automation.list") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        void extensionTasks().then((tasks) => respond(message, tasks)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "automation.create") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const automationId = String(params.automationId ?? "");
+        const contribution = extension.manifest.automations?.find((automation) => automation.id === automationId);
+        if (!contribution) return respond(message, undefined, "unknown automation contribution");
+        if (!window.confirm(`Create scheduled task from ${extension.title}: ${contribution.title}?`)) return respond(message, undefined, "user cancelled automation creation");
+        try {
+          void createScheduledMessage(automationInput(params.input, automationId)).then((task) => respond(message, task)).catch((reason) => respond(message, undefined, String(reason)));
+        } catch (reason) { respond(message, undefined, String(reason)); }
+      } else if (message.method === "automation.update") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const taskId = String(params.taskId ?? "");
+        void extensionTasks().then(async (tasks) => {
+          const current = tasks.find((task) => task.id === taskId);
+          if (!current?.sourceAutomationId) throw new Error("scheduled task is not owned by this extension");
+          if (!window.confirm(`Update scheduled task "${current.title}"?`)) throw new Error("user cancelled automation update");
+          return updateScheduledMessage(taskId, automationInput(params.input, current.sourceAutomationId));
+        }).then((task) => respond(message, task)).catch((reason) => respond(message, undefined, String(reason)));
+      } else if (message.method === "automation.delete" || message.method === "automation.run") {
+        if (!extension.manifest.permissions?.["automation.manage"]) return respond(message, undefined, "automation.manage permission denied");
+        const taskId = String(params.taskId ?? "");
+        void extensionTasks().then(async (tasks) => {
+          const current = tasks.find((task) => task.id === taskId);
+          if (!current) throw new Error("scheduled task is not owned by this extension");
+          const action = message.method === "automation.delete" ? "Delete" : "Run";
+          if (!window.confirm(`${action} scheduled task "${current.title}"?`)) throw new Error(`user cancelled automation ${action.toLowerCase()}`);
+          if (message.method === "automation.delete") {
+            await deleteScheduledMessage(taskId);
+            return null;
+          }
+          return runScheduledMessageNow(taskId);
+        }).then((result) => respond(message, result)).catch((reason) => respond(message, undefined, String(reason)));
       } else if (message.method === "renderer.unsupported") {
-        setError(String(params.reason ?? "Unsupported content")); setStatus("failed"); respond(message, null);
+        respond(message, null); void fail(String(params.reason ?? "Unsupported content"));
       } else if (message.method === "renderer.failed") {
-        setError(String(params.message ?? "Activation failed")); setStatus("failed");
+        void fail(String(params.message ?? "Activation failed"));
       }
     };
     window.addEventListener("message", handler);
     return () => {
-      iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id: ++requestRef.current, method: "lifecycle.dispose" }, "*");
+      alive = false;
+      void dispose();
+      for (const pending of pendingRef.current.values()) pending.reject(new Error("renderer disposed"));
+      pendingRef.current.clear();
       window.removeEventListener("message", handler);
+      if (!failedRef.current) reportRendererStatus(extension.extensionId, "ready");
     };
-  }, [fs, path, rendererId, plugin, readChannel, onOpen, onCompose]);
+  }, [active, fs, path, rendererId, extension]);
 
+  if (!active) return null;
   if (status === "failed") return <div className="p-3 text-amber-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;
-  return <iframe ref={iframeRef} sandbox="allow-scripts" srcDoc={document} title={`${plugin.title} (${status})`} className="h-full w-full border-0 bg-white" />;
+  return <iframe ref={iframeRef} sandbox="allow-scripts" srcDoc={document} title={`${extension.title} (${status})`} className="h-full w-full border-0 bg-white" />;
 }
