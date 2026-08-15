@@ -24,6 +24,7 @@ import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
+import { workbenchControlSize } from "../workbench-control";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -93,13 +94,13 @@ function TableLens({ data, config, onChange }: LensProps) {
                     // edit that update() must refuse. Delete (index-based) still works.
                     <span className="text-content-muted">—</span>
                   ) : c.options ? (
-                    <UiSelect value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-content-secondary rounded-sm outline-none">
+                    <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-content-secondary rounded-sm outline-none">
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
                     </UiSelect>
                   ) : (
-                    <UiInput value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent text-content-secondary outline-none" />
+                    <UiInput controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent text-content-secondary outline-none" />
                   )}
                 </td>
               ))}
@@ -109,7 +110,7 @@ function TableLens({ data, config, onChange }: LensProps) {
                   context="toolbar"
                   wideLabel="Delete"
                   accessibleLabel={`Delete row ${i + 1}`}
-                  controlSize="compact"
+                  controlSize={workbenchControlSize.rowAction}
                   onClick={() => del(i)}
                 />
               </td>
@@ -127,6 +128,7 @@ function TableLens({ data, config, onChange }: LensProps) {
         context="toolbar"
         wideLabel="Add row"
         accessibleLabel="Add row"
+        controlSize={workbenchControlSize.data}
         onClick={add}
         containerClassName="mt-2 w-full"
       />
@@ -179,17 +181,17 @@ function KanbanLens({ data, onChange }: LensProps) {
                 presentationLevel="minimal"
                 title={it}
                 actions={<>
-                <UiButton content="icon" variant="plain" aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
+                  <UiButton content="icon" variant="plain" controlSize={workbenchControlSize.rowAction} aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
                 </UiButton>
-                <UiButton content="icon" variant="plain" aria-label="Move right" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
+                <UiButton content="icon" variant="plain" controlSize={workbenchControlSize.rowAction} aria-label="Move right" onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
                   <ChevronRight className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
                 </UiButton>
                 <ActionButton
                   action="remove"
                   context="toolbar"
                   accessibleLabel={`Remove ${it}`}
-                  controlSize="compact"
+                  controlSize={workbenchControlSize.rowAction}
                   onClick={() => delItem(ci, ii)}
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
@@ -199,6 +201,7 @@ function KanbanLens({ data, onChange }: LensProps) {
             ))}
             <div className="flex items-center gap-1 pt-1">
               <UiInput
+                controlSize={workbenchControlSize.data}
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
@@ -210,7 +213,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 context="toolbar"
                 wideLabel="Add task"
                 accessibleLabel={`Add task to ${c.name}`}
-                controlSize="compact"
+                controlSize={workbenchControlSize.rowAction}
                 containerClassName="flex-shrink-0"
                 onClick={() => addItem(ci)}
               />

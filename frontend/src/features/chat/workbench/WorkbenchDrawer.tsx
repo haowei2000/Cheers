@@ -18,6 +18,7 @@ import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegi
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
+import { workbenchControlSize } from "./workbench-control";
 import { listGlobalTemplates } from "./templatesApi";
 import { listPlugins, parsePluginHtml, MAX_PLUGIN_BUNDLE_BYTES, type PluginMeta } from "./sandbox/api";
 import { listPersonalPlugins } from "@/lib/desktop";
@@ -551,7 +552,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
               aria-pressed={rawMode}
               title={rawMode ? "Show scenes" : "Show raw workspace files"}
-              controlSize="regular" className={cn(
+              controlSize={workbenchControlSize.toolbar} className={cn(
  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
  ? "bg-indigo-500/15 text-accent-200": "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
@@ -569,6 +570,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 action="upload"
                 context="toolbar"
                 wideLabel="Load extension"
+                controlSize={workbenchControlSize.toolbar}
                 onClick={() => fileRef.current?.click()}
                 disabled={busy}
                 aria-label="Load template or extension"
@@ -587,6 +589,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     action="stop"
                     context="toolbar"
                     wideLabel="Stop watching"
+                    controlSize={workbenchControlSize.toolbar}
                     onClick={stopWatch}
                     aria-label={`Stop watching ${watching}`}
                     title="Stop watching extension"
@@ -603,6 +606,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     action="watch"
                     context="toolbar"
                     wideLabel="Watch extension"
+                    controlSize={workbenchControlSize.toolbar}
                     onClick={() => void startWatch()}
                     disabled={busy}
                     aria-label="Watch an extension file on disk"
@@ -680,7 +684,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             context="toolbar"
             accessibleLabel={minimized ? "Expand Workbench" : "Minimize Workbench"}
             onClick={toggleCollapsed}
-            controlSize="compact"
+            controlSize={workbenchControlSize.chrome}
             className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong max-md:hidden"
           />
           <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
@@ -689,7 +693,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         {!minimized && notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
             <span className="flex-1">{notice}</span>
-            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize="compact" onClick={() => setNotice(null)} />
+            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize={workbenchControlSize.chrome} onClick={() => setNotice(null)} />
           </div>
         )}
 

@@ -19,6 +19,7 @@ import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
 import { candidatesFor, getRenderer, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
+import { workbenchControlSize } from "./workbench-control";
 
 const OTHER_SCENE = "__other__";
 
@@ -59,7 +60,7 @@ function AddSceneControl({
             if (manifest) onSelect(manifest);
             event.currentTarget.value = "";
           }}
-          controlSize="regular"
+          controlSize={workbenchControlSize.tab}
           controlWidth="icon"
           className="cursor-pointer appearance-none bg-zinc-900 text-transparent hover:bg-zinc-800"
         >
@@ -290,7 +291,7 @@ export function SceneWorkbench({
               if (manifest) void onAddScene(manifest);
               event.currentTarget.value = "";
             }}
-            controlSize="regular" className="rounded-sm bg-indigo-600 text-compact font-medium text-content-on-accent outline-none"
+            controlSize={workbenchControlSize.tab} className="rounded-sm bg-indigo-600 text-compact font-medium text-content-on-accent outline-none"
           >
             <option value="" disabled>Add a scene…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
@@ -311,7 +312,7 @@ export function SceneWorkbench({
               key={id}
               type="button"
               onClick={() => setActiveScene(id)}
-              controlSize="regular" className={cn(
+              controlSize={workbenchControlSize.tab} className={cn(
  "flex flex-shrink-0 items-center gap-2 rounded-sm  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  activeScene === id ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
  )}
@@ -337,7 +338,7 @@ export function SceneWorkbench({
                   type="button"
                   onClick={() => setActiveScene(id)}
                   aria-pressed={selected}
-                  controlSize="comfortable" className={cn(
+                  controlSize={workbenchControlSize.navigation} className={cn(
  "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  selected ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
  )}
@@ -364,7 +365,7 @@ export function SceneWorkbench({
                     type="button"
                     onClick={() => selectPath(path)}
                     aria-current={selected ? "page" : undefined}
-                    controlSize="comfortable" className={cn(
+                    controlSize={workbenchControlSize.tab} className={cn(
  "relative flex-shrink-0  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
  selected ? "text-accent-300": "text-content-primary hover:text-content-strong"
  )}
