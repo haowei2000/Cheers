@@ -55,6 +55,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "externalBin": ["binaries/cce-acp-connector"],
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "fileAssociations": [
       {
         "ext": ["png", "jpg", "jpeg", "gif", "webp", "pdf", "txt", "md"],
