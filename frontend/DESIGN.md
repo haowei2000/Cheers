@@ -53,13 +53,18 @@ not choose `content` or `variant`. The registered presentation is:
 | Dialog footer | — | Back, Cancel | — |
 | Destructive confirmation | — | Cancel | Delete, Remove |
 | Account security | — | — | Add, Copy, Turn off, Done, Turn on, Link, Revoke, Set up, Unlink, Update |
+| Dark settings | — | Review, Resolve, Dismiss, Test | Check, Turn off, Turn on, Open, Restart, Retry, Save, Sign out, Switch |
 
 Account-security presentation uses one additional tone rule inside the shared
-`ActionButton` registry: Add/Done/Turn on/Set up/Update are primary completion
-actions; Copy/Link are secondary; Turn off/Revoke/Unlink are danger. Every one
+`ActionButton` registry: Add/Done/Turn on/Set up/Update use the dark-surface
+emphasis tone; Copy/Link are secondary; Turn off/Revoke/Unlink are danger. Every one
 uses the registered utility font, regular type token, icon slot, and visible
 label, including disabled and loading states. Button-like external links are
 not allowed; render them as underlined semantic links.
+
+Settings pages use the `settings` action context. Its completion actions use
+the dark `emphasis` surface instead of the light `primary` surface; supporting
+actions use `secondary`, and sign-out/destructive actions use `danger`.
 
 Use `ControlTrigger` for a disclosure whose label/content is the disclosed
 object itself (for example a diff file heading). `ActionButton` disclosure is

@@ -68,9 +68,23 @@ describe("ActionButton", () => {
     expect(markup).toContain(">Update</span>");
     expect(markup).toContain("font-utility");
     expect(markup).toContain("text-regular");
-    expect(markup).toContain("bg-indigo-100");
-    expect(markup).toContain("text-content-on-light");
+    expect(markup).toContain("bg-zinc-700");
+    expect(markup).toContain("text-content-strong");
+    expect(markup).not.toContain("bg-indigo-100");
     expect(markup).toContain("disabled:opacity-50");
+  });
+
+  it("keeps settings actions on dark surfaces", () => {
+    const enable = renderToStaticMarkup(
+      <ActionButton action="enable" context="settings" accessibleLabel="Turn on notifications" />,
+    );
+    const retry = renderToStaticMarkup(
+      <ActionButton action="retry" context="settings" />,
+    );
+    expect(enable).toContain("bg-zinc-700");
+    expect(enable).toContain("text-content-strong");
+    expect(enable).not.toContain("text-content-on-light");
+    expect(retry).toContain("bg-zinc-800");
   });
 
   it("uses secondary and danger tones for security row actions", () => {

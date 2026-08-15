@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { listReports, updateReport, type ContentReport } from "@/api/reports";
-import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { OperationsItem } from "@/components/ui/item";
 
 export function AdminReports() {
@@ -34,9 +34,9 @@ export function AdminReports() {
           </span>}
           criticalStatus={<span className="text-compact text-content-muted">{report.status}</span>}
           actions={<>
-            <Button action="review" aria-label={`Review report ${report.report_id}`} controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "reviewing")} />
-            <Button action="resolve" aria-label={`Resolve report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "resolved")} />
-            <Button action="dismiss" aria-label={`Dismiss report ${report.report_id}`} controlSize="compact" variant="secondary" onClick={() => void setStatus(report, "dismissed")} />
+            <ActionButton action="review" context="settings" accessibleLabel={`Review report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "reviewing")} />
+            <ActionButton action="resolve" context="settings" accessibleLabel={`Resolve report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "resolved")} />
+            <ActionButton action="dismiss" context="settings" accessibleLabel={`Dismiss report ${report.report_id}`} controlSize="compact" onClick={() => void setStatus(report, "dismissed")} />
           </>}
           className="border-0 bg-zinc-900"
         />

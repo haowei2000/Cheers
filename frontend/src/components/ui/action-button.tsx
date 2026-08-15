@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Check,
   ChevronDown,
   ChevronRight,
@@ -9,6 +10,7 @@ import {
   Fingerprint,
   KeyRound,
   Link2,
+  LogOut,
   Maximize2,
   Minimize2,
   Pencil,
@@ -17,6 +19,8 @@ import {
   Save,
   ShieldCheck,
   ShieldOff,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Unlink,
   X,
@@ -34,30 +38,41 @@ export type CommonActionContext =
   | "form"
   | "dialog"
   | "confirmation"
-  | "security";
+  | "security"
+  | "settings";
 
 export type CommonActionKey = Extract<
   ActionKey,
   | "back"
   | "add"
   | "cancel"
+  | "check"
   | "close"
   | "collapse"
   | "copy"
   | "create"
   | "delete"
   | "disable"
+  | "dismiss"
   | "done"
   | "edit"
   | "enable"
   | "expand"
   | "link"
   | "more"
+  | "open"
   | "refresh"
+  | "resolve"
+  | "restart"
+  | "retry"
+  | "review"
   | "remove"
   | "revoke"
   | "save"
   | "setup"
+  | "signOut"
+  | "switch"
+  | "test"
   | "unlink"
   | "update"
 >;
@@ -109,16 +124,31 @@ const commonActionPresentations = {
     remove: { content: "iconText", icon: Trash2, variant: "danger" },
   },
   security: {
-    add: { content: "iconText", icon: Fingerprint, variant: "primary" },
+    add: { content: "iconText", icon: Fingerprint, variant: "emphasis" },
     copy: { content: "iconText", icon: Copy, variant: "secondary" },
     disable: { content: "iconText", icon: ShieldOff, variant: "danger" },
-    done: { content: "iconText", icon: Check, variant: "primary" },
-    enable: { content: "iconText", icon: ShieldCheck, variant: "primary" },
+    done: { content: "iconText", icon: Check, variant: "emphasis" },
+    enable: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
     link: { content: "iconText", icon: Link2, variant: "secondary" },
     revoke: { content: "iconText", icon: X, variant: "danger" },
-    setup: { content: "iconText", icon: ShieldCheck, variant: "primary" },
+    setup: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
     unlink: { content: "iconText", icon: Unlink, variant: "danger" },
-    update: { content: "iconText", icon: KeyRound, variant: "primary" },
+    update: { content: "iconText", icon: KeyRound, variant: "emphasis" },
+  },
+  settings: {
+    check: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    disable: { content: "iconText", icon: ToggleLeft, variant: "secondary" },
+    dismiss: { content: "text", variant: "secondary" },
+    enable: { content: "iconText", icon: ToggleRight, variant: "emphasis" },
+    open: { content: "iconText", icon: ArrowUpRight, variant: "secondary" },
+    resolve: { content: "text", variant: "emphasis" },
+    restart: { content: "iconText", icon: RefreshCw, variant: "emphasis" },
+    retry: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    review: { content: "text", variant: "secondary" },
+    save: { content: "iconText", icon: Save, variant: "emphasis" },
+    signOut: { content: "iconText", icon: LogOut, variant: "danger" },
+    switch: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    test: { content: "text", variant: "secondary" },
   },
 } as const satisfies Record<CommonActionContext, Partial<Record<CommonActionKey, Presentation>>>;
 

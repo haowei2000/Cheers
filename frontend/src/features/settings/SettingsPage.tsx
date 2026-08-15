@@ -54,7 +54,6 @@ import {
 import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
-import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
@@ -114,8 +113,8 @@ function ServerCard() {
           </p>
         </div>
         {isTauri() && (
-          <Button action="switch"
-            variant="secondary"
+          <ActionButton action="switch" context="settings"
+            accessibleLabel="Switch server"
             controlSize="compact"
             onClick={() => {
               // Order matters: drop the session first (the token belongs to the
@@ -124,9 +123,7 @@ function ServerCard() {
               setServerBase(null);
               window.location.reload();
             }}
-          >
-            Switch server
-          </Button>
+          />
         )}
       </div>
       {!isTauri() && (
@@ -181,14 +178,12 @@ function LaunchAtLoginCard() {
             Start Cheers and keep local bot installations available when you sign in to your Mac.
           </p>
         </div>
-        <Button action="disable"
-          variant={enabled ? "secondary" : "primary"}
+        <ActionButton action={enabled ? "disable" : "enable"} context="settings"
+          accessibleLabel={`${enabled ? "Turn off" : "Turn on"} launch at login`}
           controlSize="compact"
           disabled={busy || enabled === null}
           onClick={() => void toggle()}
-        >
-          {enabled === null ? "…" : enabled ? "Turn off" : "Turn on"}
-        </Button>
+        />
       </div>
     </div>
   );
@@ -260,18 +255,18 @@ function AppUpdateCard() {
           </p>
         </div>
         {update ? (
-          <Button
-            variant="primary"
+          <ActionButton
             action="restart"
-            aria-label="Install update and restart Cheers"
+            context="settings"
+            accessibleLabel="Install update and restart Cheers"
             loading={installing}
             onClick={() => void install()}
           />
         ) : (
-          <Button
-            variant="secondary"
+          <ActionButton
             action="check"
-            aria-label="Check for Cheers updates"
+            context="settings"
+            accessibleLabel="Check for Cheers updates"
             loading={checking}
             onClick={() => void check()}
           />
@@ -343,10 +338,10 @@ function PushNotificationsCard() {
               " Currently blocked in your browser's site settings."}
           </p>
         </div>
-        <Button
-          variant={enabled ? "secondary" : "primary"}
+        <ActionButton
           action={enabled ? "disable" : "enable"}
-          aria-label={`${enabled ? "Turn off" : "Turn on"} push notifications`}
+          context="settings"
+          accessibleLabel={`${enabled ? "Turn off" : "Turn on"} push notifications`}
           loading={busy || status === "loading"}
           disabled={busy || status === "loading"}
           onClick={() => void toggle()}
@@ -535,7 +530,7 @@ function ExternalIdentitiesCard() {
         Removing a provider signs out other sessions and removes trusted devices.
       </p>
       {loadError ? (
-        <Button variant="secondary" action="retry" aria-label="Retry loading sign-in methods" onClick={() => setReloadKey((value) => value + 1)} />
+        <ActionButton action="retry" context="settings" accessibleLabel="Retry loading sign-in methods" onClick={() => setReloadKey((value) => value + 1)} />
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
           {(identities ?? []).map((identity) => {
@@ -835,7 +830,7 @@ function BotsMovedCard() {
       <p className="text-compact text-content-muted mb-4">
         Create and manage bots from Fleet — the primary home for your agent roster.
       </p>
-      <Button action="open" onClick={() => navigate("/fleet")}>Open Fleet</Button>
+      <ActionButton action="open" context="settings" accessibleLabel="Open Fleet" onClick={() => navigate("/fleet")} />
     </div>
   );
 }
@@ -940,9 +935,7 @@ function ProfileEditCard() {
           overwritten. Check your connection and try again.
         </p>
         <div className="mt-4">
-          <Button action="retry" variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
-            Retry
-          </Button>
+          <ActionButton action="retry" context="settings" onClick={() => setReloadKey((k) => k + 1)} />
         </div>
       </div>
     );
@@ -1220,10 +1213,10 @@ export default function SettingsPage() {
                       Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>
-                  <Button
-                    variant="danger"
+                  <ActionButton
                     action="signOut"
-                    aria-label="Sign out of Cheers"
+                    context="settings"
+                    accessibleLabel="Sign out of Cheers"
                     onClick={async () => {
                       // Push first (the DELETE needs the auth token), then
                       // best-effort server revocation, then clear local state

@@ -9,7 +9,7 @@ import {
   type ControlSize,
 } from "./control-size";
 
-type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
+type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill";
 export type ButtonContent = "icon" | "text" | "iconText";
 
@@ -28,6 +28,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 const variantCls: Record<Variant, string> = {
   primary:
     "bg-indigo-100 text-content-on-light hover:bg-white active:bg-indigo-300",
+  emphasis:
+    "bg-zinc-700 text-content-strong hover:bg-zinc-600 active:bg-zinc-800",
   ghost:
     "bg-transparent text-content-primary hover:bg-zinc-800 hover:text-content-strong active:bg-zinc-700",
   danger:

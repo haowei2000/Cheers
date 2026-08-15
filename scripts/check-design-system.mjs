@@ -47,6 +47,7 @@ const expectedCommonActionPresentations = {
   dialog: { back: "text", cancel: "text" },
   confirmation: { cancel: "text", delete: "iconText", remove: "iconText" },
   security: { add: "iconText", copy: "iconText", disable: "iconText", done: "iconText", enable: "iconText", link: "iconText", revoke: "iconText", setup: "iconText", unlink: "iconText", update: "iconText" },
+  settings: { check: "iconText", disable: "iconText", dismiss: "text", enable: "iconText", open: "iconText", resolve: "text", restart: "iconText", retry: "iconText", review: "text", save: "iconText", signOut: "iconText", switch: "iconText", test: "text" },
 };
 if (contract.defaultPresentationLevel !== "medium") {
   fail("defaultPresentationLevel must remain medium");

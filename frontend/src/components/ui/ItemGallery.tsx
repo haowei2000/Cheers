@@ -407,6 +407,15 @@ export function ItemGallery() {
               <ActionButton action="enable" context="security" accessibleLabel="Enable authenticator" disabled />
             </div>
           </div>
+          <div className="space-y-2">
+            <p className="font-utility text-compact text-content-muted">Dark settings · fixed tones</p>
+            <div className="flex flex-wrap gap-2">
+              <ActionButton action="save" context="settings" accessibleLabel="Save speech settings" />
+              <ActionButton action="enable" context="settings" accessibleLabel="Turn on notifications" />
+              <ActionButton action="retry" context="settings" />
+              <ActionButton action="signOut" context="settings" accessibleLabel="Sign out" />
+            </div>
+          </div>
         </div>
       </section>
 

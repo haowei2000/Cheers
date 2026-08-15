@@ -162,7 +162,7 @@ export function AdminSttSettings() {
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <ActionButton action="save" context="form" accessibleLabel="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null} loading={busy === "save"} />
+            <ActionButton action="save" context="settings" accessibleLabel="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null} loading={busy === "save"} />
             <Button action="test"
               variant="secondary"
               onClick={() => void test()}
