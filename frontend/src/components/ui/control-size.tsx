@@ -23,7 +23,8 @@ export function ControlSizeProvider({
 }
 
 export function useControlSize(explicit?: ControlSize): ControlSize {
-  return explicit ?? useContext(ControlSizeContext);
+  const inherited = useContext(ControlSizeContext);
+  return explicit ?? inherited;
 }
 
 export const controlHeightClasses: Record<ControlSize, string> = {

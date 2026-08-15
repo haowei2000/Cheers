@@ -23,19 +23,19 @@ export function ReplyComposerBanner({
         role="status"
         aria-label={`Replying to ${preview.sender}`}
       >
-        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-indigo-300">
+        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
           <Reply className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-compact font-medium text-indigo-300">
+          <p className="text-compact font-medium text-accent-300">
             Replying to {preview.sender}
           </p>
-          <p className="truncate text-compact text-zinc-400">{preview.excerpt}</p>
+          <p className="truncate text-compact text-content-muted">{preview.excerpt}</p>
         </div>
         <UiButton variant="plain"
           type="button"
           onClick={onCancel}
-          content="icon" controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-zinc-100 transition-colors hover:bg-zinc-800/70 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          content="icon" controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-content-primary transition-colors hover:bg-zinc-800/70 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
           aria-label="Cancel reply"
           title="Cancel reply (Esc)"
         >

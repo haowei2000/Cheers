@@ -46,8 +46,8 @@ export function MembersPopover({
     <>
       <PopoverPanel placement="down" align="end" className="w-72 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-950/60">
-          <Users className="w-3.5 h-3.5 text-zinc-400" />
-          <span className="text-compact font-medium text-zinc-200">
+          <Users className="w-3.5 h-3.5 text-content-muted" />
+          <span className="text-compact font-medium text-content-secondary">
             Members{members ? ` · ${members.length}` : ""}
           </span>
         </div>
@@ -74,8 +74,8 @@ export function MembersPopover({
                   }}
                   title={name}
                   leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="regular" online={m.is_online ?? undefined} />}
-                  status={m.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-indigo-400" /> : undefined}
-                  trailing={m.role && m.role !== "member" ? <span className="text-minimal capitalize text-zinc-400">{m.role}</span> : undefined}
+                  status={m.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-accent-400" /> : undefined}
+                  trailing={m.role && m.role !== "member" ? <span className="text-minimal capitalize text-content-muted">{m.role}</span> : undefined}
                 />
               );
             })
@@ -89,7 +89,7 @@ export function MembersPopover({
               onClose();
               onManage();
             }}
-            controlSize="regular" className="flex items-center gap-2  text-zinc-100 hover:text-zinc-50 hover:bg-zinc-800 border-t border-zinc-800"
+            controlSize="regular" className="flex items-center gap-2  text-content-primary hover:text-content-strong hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
             Manage members…

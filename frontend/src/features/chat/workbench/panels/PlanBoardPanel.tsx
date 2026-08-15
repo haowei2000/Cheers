@@ -50,10 +50,10 @@ function groupFor(status?: string | null): string {
 
 function StatusIcon({ group }: { group: string }) {
   if (group === "in_progress")
-    return <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />;
+    return <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-warning-400" />;
   if (group === "completed")
-    return <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-500" />;
-  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />;
+    return <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-success-500" />;
+  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />;
 }
 
 function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
@@ -82,16 +82,16 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             id={plan.bot_id}
             size="small"
           />
-          <span className="text-compact text-zinc-200 font-medium truncate" title={plan.bot_id}>
+          <span className="text-compact text-content-secondary font-medium truncate" title={plan.bot_id}>
             {memberLabel(members, plan.bot_id)}
           </span>
           {plan.session_id ? (
-            <span className="text-minimal text-zinc-400 truncate" title={plan.session_id}>
+            <span className="text-minimal text-content-muted truncate" title={plan.session_id}>
               · {plan.session_id.slice(0, 8)}
             </span>
           ) : null}
           <div className="flex-1" />
-          <span className="text-compact text-zinc-400 tabular-nums flex-shrink-0">
+          <span className="text-compact text-content-muted tabular-nums flex-shrink-0">
             {completed}/{total}
           </span>
         </div>
@@ -110,7 +110,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
           if (items.length === 0) return null;
           return (
             <div key={g.key} className="mb-2 last:mb-0">
-              <div className="px-1 mb-1 text-minimal uppercase tracking-wide text-zinc-400">
+              <div className="px-1 mb-1 text-minimal uppercase tracking-label text-content-muted">
                 {g.label} · {items.length}
               </div>
               <ItemList presentationLevel="medium" controlSize="regular">
@@ -119,9 +119,9 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
                     key={`${g.key}-${i}`}
                     title={e.content}
                     leading={<StatusIcon group={g.key} />}
-                    trailing={e.priority ? <span className="text-minimal text-zinc-400">{e.priority}</span> : undefined}
+                    trailing={e.priority ? <span className="text-minimal text-content-muted">{e.priority}</span> : undefined}
                     presentationLevel="minimal"
-                    className={g.key === "completed"? "border-0 text-zinc-400 line-through" : "border-0"}
+                    className={g.key === "completed"? "border-0 text-content-muted line-through" : "border-0"}
                   />
                 ))}
               </ItemList>
@@ -138,10 +138,10 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext
   const plans = data.plans ?? [];
   if (plans.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-400">
+      <div className="h-full flex flex-col items-center justify-center gap-2 text-content-muted">
         <ClipboardList className="w-5 h-5" />
-        <span className="text-compact text-zinc-400">No plan yet</span>
-        <span className="text-compact text-zinc-400">
+        <span className="text-compact text-content-muted">No plan yet</span>
+        <span className="text-compact text-content-muted">
           A plan appears here when an agent shares one.
         </span>
       </div>

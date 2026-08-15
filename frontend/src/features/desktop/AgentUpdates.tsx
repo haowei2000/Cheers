@@ -51,13 +51,13 @@ export function AgentUpdates() {
   return (
     <div className="rounded-sm bg-zinc-800/60 p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <ArrowUpCircle className="w-4 h-4 text-indigo-400 shrink-0" />
-        <p className="text-compact font-medium text-zinc-200">
+        <ArrowUpCircle className="w-4 h-4 text-accent-400 shrink-0" />
+        <p className="text-compact font-medium text-content-secondary">
           {outdated.length} adapter update{outdated.length > 1 ? "s" : ""} available
         </p>
         <UiButton action="refresh" variant="plain"
           type="button"
-          className=" text-zinc-100 hover:text-zinc-50 ml-auto"
+          className=" text-content-primary hover:text-content-strong ml-auto"
           onClick={() => void check()}
           disabled={busy}
         >

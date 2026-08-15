@@ -40,7 +40,7 @@ function CodeBlock({
   return (
     <pre className="rounded-sm bg-zinc-900 p-4 overflow-x-auto my-2">
       <code
-        className={cn("hljs text-regular leading-relaxed", language && `language-${language}`)}
+        className={cn("hljs text-regular leading-reading", language && `language-${language}`)}
         dangerouslySetInnerHTML={{ __html: highlighted }}
       />
     </pre>

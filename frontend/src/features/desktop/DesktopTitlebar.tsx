@@ -7,7 +7,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
-  Search,
   Settings,
   Users,
   type LucideIcon,
@@ -15,7 +14,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ItemList, NavigationItem } from "@/components/ui/item";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { useAuthStore } from "@/stores/authStore";
@@ -36,6 +35,7 @@ import {
   macosNativeControlsInset,
   type WindowChromePaneGeometry,
 } from "./WindowChromeModel";
+import { useShallow } from "zustand/react/shallow";
 import type { Channel, Workspace as WorkspaceModel } from "@/types";
 
 type TitlebarContext = {
@@ -105,13 +105,20 @@ type SearchEntry = {
   label: string;
   detail: string;
   path: string;
-  Icon: typeof Search;
+  Icon: LucideIcon;
 };
 
 function DesktopSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+    })),
+  );
 
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
@@ -156,18 +163,13 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
-          <span className="sr-only">Search pages, workspaces, and channels</span>
-          <Input
-            autoFocus
-            inset="leading"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search pages, workspaces, and channels…"
-            aria-label="Search pages, workspaces, and channels"
-          />
-        </div>
+        <SearchInput
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search pages, workspaces, and channels…"
+          aria-label="Search pages, workspaces, and channels"
+        />
         {visible.length > 0 ? (
           <ItemList presentationLevel="medium" controlSize="regular" className="max-h-80 overflow-y-auto">
             {visible.map((entry) => (
@@ -175,13 +177,13 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
                 key={entry.id}
                 title={entry.label}
                 subtitle={entry.detail}
-                leading={<entry.Icon className="h-4 w-4 text-zinc-400" aria-hidden="true" />}
+                leading={<entry.Icon className="h-4 w-4 text-content-muted" aria-hidden="true" />}
                 onClick={() => open(entry.path)}
               />
             ))}
           </ItemList>
         ) : (
-          <p className="py-5 text-center text-compact text-zinc-400">No matching destination</p>
+          <p className="py-5 text-center text-compact text-content-muted">No matching destination</p>
         )}
       </div>
     </Dialog>
@@ -206,7 +208,15 @@ export function DesktopTitlebar({
   const location = useLocation();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore();
+  const { workspaces, personalWorkspace, channels, selectedWorkspaceId, selectedChannelId } = useChatStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      personalWorkspace: state.personalWorkspace,
+      channels: state.channels,
+      selectedWorkspaceId: state.selectedWorkspaceId,
+      selectedChannelId: state.selectedChannelId,
+    })),
+  );
   const [searchOpen, setSearchOpen] = useState(false);
 
   const workspace =
@@ -307,7 +317,7 @@ export function DesktopTitlebarChrome({
 
   return (
     <header
-      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center bg-zinc-950 text-zinc-100"
+      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center bg-zinc-950 text-content-primary"
       data-window-chrome={variant}
       data-window-active={resolvedWindowState.active ? "true" : "false"}
       data-window-fullscreen={resolvedWindowState.fullscreen ? "true" : "false"}
@@ -348,12 +358,12 @@ export function DesktopTitlebarChrome({
       </nav>
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">
-          <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-zinc-400" aria-hidden="true" />
+          <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
           <span {...dragRegion} className="truncate font-semibold">{context.title}</span>
           {context.subtitle && (
             <>
-              <span {...dragRegion} className="text-zinc-400" aria-hidden="true">/</span>
-              <span {...dragRegion} className="truncate text-zinc-400">{context.subtitle}</span>
+              <span {...dragRegion} className="text-content-muted" aria-hidden="true">/</span>
+              <span {...dragRegion} className="truncate text-content-muted">{context.subtitle}</span>
             </>
           )}
         </div>

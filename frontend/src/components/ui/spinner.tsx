@@ -18,7 +18,7 @@ export function Spinner({
 export function SurfaceSpinner({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center justify-center py-8", className)}>
-      <Spinner contentSize="large" className="text-zinc-400" />
+      <Spinner contentSize="large" className="text-content-muted" />
     </div>
   );
 }

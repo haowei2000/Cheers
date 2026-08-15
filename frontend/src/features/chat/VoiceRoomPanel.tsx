@@ -358,7 +358,7 @@ export function VoiceRoomPanel({
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
       <div className="flex min-h-[64px] items-center gap-3 px-3 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-2 text-compact font-medium text-zinc-200">
+          <div className="flex shrink-0 items-center gap-2 text-compact font-medium text-content-secondary">
             <PresenceDot
               contentSize="regular"
               className={connected ? "bg-emerald-400" : "bg-zinc-600"}
@@ -368,10 +368,10 @@ export function VoiceRoomPanel({
             </span>
           </div>
           <div className="min-w-0 border-l border-zinc-800 pl-3">
-            <p className="truncate text-regular font-medium text-zinc-100">
+            <p className="truncate text-regular font-medium text-content-primary">
               {connected ? "Meeting in progress" : "Voice meeting ready"}
             </p>
-            <p className="truncate text-compact text-zinc-400">
+            <p className="truncate text-compact text-content-muted">
               {reconnecting
                 ? "Reconnecting…"
                 : connected
@@ -389,14 +389,14 @@ export function VoiceRoomPanel({
                     key={name}
                     className={`flex max-w-32 items-center gap-2 rounded-sm  px-2 py-1 text-compact transition-colors ${
                       speaking
-                        ? "border-indigo-500/60 bg-indigo-500/10 text-indigo-200"
-                        : "border-transparent bg-zinc-800/70 text-zinc-400"
+                        ? "border-indigo-500/60 bg-indigo-500/10 text-accent-200"
+                        : "border-transparent bg-zinc-800/70 text-content-muted"
                     }`}
                   >
                     {speaking ? (
                       <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse" />
                     ) : (
-                      <Users className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      <Users className="h-3.5 w-3.5 shrink-0 text-content-muted" />
                     )}
                     <span className="truncate">{name}</span>
                   </div>
@@ -432,7 +432,7 @@ export function VoiceRoomPanel({
               aria-pressed={micEnabled}
               controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm  font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 ${
  micEnabled
- ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700": "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+ ? "bg-zinc-800 text-content-primary hover:bg-zinc-700": "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25"
  }`}
             >
               {micEnabled ? (
@@ -447,7 +447,7 @@ export function VoiceRoomPanel({
               onClick={() => void disconnect()}
               title="Leave voice"
               aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40  font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40  font-medium text-removed-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>
@@ -457,17 +457,17 @@ export function VoiceRoomPanel({
       </div>
 
       <div className="flex min-h-7 items-center gap-2 border-t border-zinc-800/80 px-3 py-2 text-compact">
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-content-muted">
           <Captions
             className={`h-3.5 w-3.5 shrink-0 ${
-              transcriptionStatus === "active" ? "text-indigo-300" : ""
+              transcriptionStatus === "active" ? "text-accent-300" : ""
             }`}
           />
           {speakingName && captionText ? (
             <p className="truncate" aria-live="polite">
-              <span className="font-medium text-indigo-300">{speakingName}</span>
-              <span className="mx-1 text-zinc-400">·</span>
-              <span className={latestInterim ? "italic text-zinc-400" : "text-zinc-400"}>
+              <span className="font-medium text-accent-300">{speakingName}</span>
+              <span className="mx-1 text-content-muted">·</span>
+              <span className={latestInterim ? "italic text-content-muted" : "text-content-muted"}>
                 {captionText}
               </span>
             </p>
@@ -490,7 +490,7 @@ export function VoiceRoomPanel({
             onClick={() => void toggleTranscription()}
             title={!connected ? "Join the room first" : undefined}
             aria-pressed={transcriptionStatus === "active"}
-            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-zinc-100 transition-colors hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {changingTranscription ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -504,14 +504,14 @@ export function VoiceRoomPanel({
 
       {consentRequired && connected && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-compact">
-          <p className="min-w-0 flex-1 text-zinc-200">
+          <p className="min-w-0 flex-1 text-content-secondary">
             Live captions send final spoken text to this channel; audio is not recorded.
           </p>
           <UiButton action="accept" variant="plain"
             type="button"
             disabled={consenting}
             onClick={() => void grantConsent()}
-            controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+            controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 font-medium text-content-on-accent hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
           >
             {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
             Accept &amp; speak
@@ -520,14 +520,14 @@ export function VoiceRoomPanel({
             type="button"
             disabled={consenting}
             onClick={() => setConsentRequired(false)}
-            controlSize="comfortable" className="rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+            controlSize="comfortable" className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
           >
             Listen only
           </UiButton>
         </div>
       )}
       {!canPublish && connected && !consentRequired && (
-        <p className="border-t border-zinc-800/80 px-3 py-2 text-compact text-zinc-400">
+        <p className="border-t border-zinc-800/80 px-3 py-2 text-compact text-content-muted">
           You have listen-only access in this channel.
         </p>
       )}

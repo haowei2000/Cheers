@@ -360,6 +360,28 @@ fn action_allowed(allowed: &[String], action: &str) -> bool {
     false
 }
 
+fn resource_allowed(allowed: &[String], resource: Option<&str>) -> bool {
+    if allowed.iter().any(|v| v == CAPABILITY_ACTION_WILDCARD) {
+        return true;
+    }
+
+    let Some(resource) = resource else {
+        return false;
+    };
+
+    allowed.iter().any(|v| v == resource)
+}
+
+fn extract_frame_resource(frame: &Value) -> Option<String> {
+    frame
+        .get("resource")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| extract_channel_id(frame))
+}
+
 fn extract_channel_id(frame: &Value) -> Option<String> {
     frame
         .get("channel_id")
@@ -902,6 +924,7 @@ pub async fn authorize_data_frame(
     let delegation_id = Uuid::parse_str(&envelope.delegation_id)
         .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?;
     let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
+    let resource = extract_frame_resource(frame);
     validate_public_key(&delegation.algorithm, &delegation.public_key)?;
     verify_signature(&delegation, frame_type, &envelope, frame)?;
     verify_scope(
@@ -911,7 +934,7 @@ pub async fn authorize_data_frame(
         &delegation,
         frame,
         action,
-        None,
+        resource.as_deref(),
         request_id,
     )
     .await?;
@@ -924,7 +947,21 @@ pub async fn authorize_data_frame(
         )));
     }
 
-    consume_nonce_and_bump(db, &delegation_id, &envelope, frame_type, None).await?;
+    if !resource_allowed(&delegation.allowed_resources, resource.as_deref()) {
+        return Err(CapabilityError::Denied(format!(
+            "resource not allowed: {}",
+            resource.as_deref().unwrap_or("<none>")
+        )));
+    }
+
+    consume_nonce_and_bump(
+        db,
+        &delegation_id,
+        &envelope,
+        frame_type,
+        resource.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -1196,5 +1233,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_resource_allowed() {
+        assert!(resource_allowed(&["*".to_string()], None));
+        assert!(resource_allowed(
+            &["channel-1".to_string()],
+            Some("channel-1")
+        ));
+        assert!(!resource_allowed(
+            &["channel-1".to_string()],
+            Some("channel-2")
+        ));
+        assert!(!resource_allowed(&["channel-1".to_string()], None));
+        assert!(!resource_allowed(&[], Some("channel-1")));
+    }
+
+    #[test]
+    fn test_extract_frame_resource() {
+        assert_eq!(
+            extract_frame_resource(&json!({"resource":"fs.ls","channel_id":"c-1"})),
+            Some("fs.ls".to_string())
+        );
+        assert_eq!(
+            extract_frame_resource(&json!({"channel_id":"c-1"})),
+            Some("c-1".to_string())
+        );
+        assert_eq!(
+            extract_frame_resource(&json!({"params":{"channel_id":"c-2"}})),
+            Some("c-2".to_string())
+        );
+        assert_eq!(extract_frame_resource(&json!({})), None);
     }
 }

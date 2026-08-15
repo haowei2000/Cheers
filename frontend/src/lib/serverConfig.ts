@@ -51,10 +51,24 @@ export function normalizeBase(input: string): string | null {
   if (!trimmed) return null;
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
-    return new URL(withScheme).origin;
+    const url = new URL(withScheme);
+    if (url.protocol !== "https:" && !isLoopbackHttp(url)) return null;
+    return url.origin;
   } catch {
     return null;
   }
+}
+
+/** Plain HTTP is only safe for a gateway on the same machine. */
+function isLoopbackHttp(url: URL): boolean {
+  if (url.protocol !== "http:") return false;
+  const hostname = url.hostname.toLowerCase();
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(hostname)
+  );
 }
 
 /** REST base, e.g. "https://host/api/v1" or the same-origin "/api/v1". */

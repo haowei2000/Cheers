@@ -218,14 +218,14 @@ export function WorkspaceSettingsDialog({
     <Dialog title={`Workspace settings · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {!canManage && (
-          <p className="text-compact text-amber-400/80 bg-amber-950/30 rounded-sm px-3 py-2">
+          <p className="text-compact text-warning-400/80 bg-amber-950/30 rounded-sm px-3 py-2">
             You are not an admin of this workspace, so you can only view its name.
           </p>
         )}
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <label htmlFor="workspace-settings-name" className="min-w-0 flex-1 text-compact font-medium text-zinc-400 uppercase tracking-wide">Name</label>
+            <label htmlFor="workspace-settings-name" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">Name</label>
             {canManage && (
               <InlineEditActions
                 label="workspace name"
@@ -244,10 +244,10 @@ export function WorkspaceSettingsDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 text-regular text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
           ) : (
-            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-zinc-200">
+            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-secondary">
               <span className="truncate">{savedName}</span>
             </p>
           )}
@@ -306,14 +306,14 @@ export function WorkspaceSettingsDialog({
                       onClick={() => void invite(candidate)}
                       title={candidate.display_name || candidate.username}
                       leading={candidate.member_type === "bot"
-                        ? <Bot className="h-4 w-4 text-indigo-300" aria-hidden="true" />
+                        ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
                         : <Avatar name={candidate.display_name || candidate.username} id={candidate.member_id} size="regular" />}
                       status={candidate.membership ? (
-                        <span className="font-utility text-compact uppercase text-zinc-400">
+                        <span className="font-utility text-compact uppercase text-content-muted">
                           {candidate.membership === "pending" ? "Invited" : "Member"}
                         </span>
                       ) : candidate.member_type === "bot" ? (
-                        <span className="font-utility text-compact uppercase text-indigo-300">Bot</span>
+                        <span className="font-utility text-compact uppercase text-accent-300">Bot</span>
                       ) : undefined}
                     />
                   ))}
@@ -341,10 +341,10 @@ export function WorkspaceSettingsDialog({
                     key={`${member.member_type}:${member.member_id}`}
                     title={member.display_name || member.username}
                     leading={member.member_type === "bot"
-                      ? <Bot className="h-4 w-4 text-indigo-300" aria-hidden="true" />
+                      ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
                       : <Avatar name={member.display_name || member.username} id={member.member_id} size="regular" />}
-                    status={isSelf ? <span className="font-utility text-compact uppercase text-zinc-400">{member.role}</span> : undefined}
-                    criticalStatus={member.status === "pending" ? <span className="font-utility text-compact uppercase text-amber-400">Pending</span> : undefined}
+                    status={isSelf ? <span className="font-utility text-compact uppercase text-content-muted">{member.role}</span> : undefined}
+                    criticalStatus={member.status === "pending" ? <span className="font-utility text-compact uppercase text-warning-400">Pending</span> : undefined}
                     actions={!isSelf ? (
                       <>
                         <UiSelect
@@ -382,8 +382,8 @@ export function WorkspaceSettingsDialog({
 
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
               <div>
-                <p className="text-regular font-medium text-zinc-200">Delete workspace</p>
-                <p className="text-compact text-zinc-400 mt-1">Deletes its channels too. This cannot be undone.</p>
+                <p className="text-regular font-medium text-content-secondary">Delete workspace</p>
+                <p className="text-compact text-content-muted mt-1">Deletes its channels too. This cannot be undone.</p>
               </div>
               <Button action="delete" content="iconText"
                 variant="danger"
@@ -411,8 +411,8 @@ export function WorkspaceSettingsDialog({
         {(!canManage || members.some((m) => m.member_type === "user" && m.member_id === me?.user_id)) && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-regular font-medium text-zinc-200">Leave workspace</p>
-              <p className="text-compact text-zinc-400 mt-1">Remove yourself from this workspace.</p>
+              <p className="text-regular font-medium text-content-secondary">Leave workspace</p>
+              <p className="text-compact text-content-muted mt-1">Remove yourself from this workspace.</p>
             </div>
             <Button action="leave" content="iconText"
               variant="secondary"
@@ -442,7 +442,7 @@ export function WorkspaceSettingsDialog({
         }}
         maxWidth="max-w-sm"
       >
-        <p className="text-regular text-zinc-200">{confirmState.message}</p>
+        <p className="text-regular text-content-secondary">{confirmState.message}</p>
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel"
             variant="secondary"

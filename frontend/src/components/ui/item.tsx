@@ -119,9 +119,9 @@ export function ItemRow({
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
       ? kind === "navigation"
-        ? "border-l-zinc-200 bg-zinc-800 text-zinc-100"
-        : "border-l-zinc-200 bg-zinc-900 text-zinc-100"
-      : "border-l-transparent text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
+        ? "border-l-zinc-200 bg-zinc-800 text-content-primary"
+        : "border-l-zinc-200 bg-zinc-900 text-content-primary"
+      : "border-l-transparent text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
     disabled && "pointer-events-none opacity-50",
     className
   );
@@ -284,9 +284,9 @@ export function FileTreeItem({
       data-control-size={size}
       aria-selected={selected || undefined}
       className={cn(
-        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
+        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
         controlMinHeightClasses[size],
-        selected && "bg-zinc-900 text-zinc-100"
+        selected && "bg-zinc-900 text-content-primary"
       )}
       style={{ paddingLeft: depth * 12 + 8 }}
     >
@@ -326,14 +326,14 @@ export function DiffLineItem({
       data-diff-tone={tone}
       data-control-size={size}
       className={cn(
-        "flex whitespace-pre px-2 font-mono text-compact",
+        "flex whitespace-pre px-2 font-code text-compact",
         controlMinHeightClasses[size],
-        tone === "add" && "bg-emerald-950/30 text-emerald-200",
-        tone === "remove" && "bg-rose-950/30 text-rose-200",
-        tone === "context" && "text-zinc-400"
+        tone === "add" && "bg-emerald-950/30 text-success-200",
+        tone === "remove" && "bg-rose-950/30 text-removed-200",
+        tone === "context" && "text-content-muted"
       )}
     >
-      {lineNumber && <span className="mr-2 w-10 select-none text-right text-zinc-400">{lineNumber}</span>}
+      {lineNumber && <span className="mr-2 w-10 select-none text-right text-content-muted">{lineNumber}</span>}
       {marker && <span className="mr-2 flex-shrink-0 select-none">{marker}</span>}
       <span>{content}</span>
     </div>
@@ -365,7 +365,7 @@ export function ItemChip({
       data-presentation-level={level}
       data-control-size={size}
       className={cn(
-        "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-tight text-zinc-400",
+        "inline-flex min-w-0 items-center rounded-sm bg-transparent font-utility tracking-display text-content-muted",
         controlMinHeightClasses[size],
         level === "max" ? "gap-2 px-2 text-compact" : level === "medium" ? "gap-1 px-2 text-compact" : "gap-1 px-1 text-minimal",
         className

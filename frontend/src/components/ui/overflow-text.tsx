@@ -123,7 +123,7 @@ export function OverflowText({
           align="start"
           id={id}
           role="tooltip"
-          className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap rounded-sm bg-zinc-700 px-3 py-2 font-utility text-regular text-zinc-100 shadow-xl shadow-black/40 [overflow-wrap:anywhere]"
+          className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap rounded-sm bg-zinc-700 px-3 py-2 font-utility text-regular text-content-primary shadow-xl shadow-black/40 [overflow-wrap:anywhere]"
         >
           {fullText}
         </FloatingLayer>

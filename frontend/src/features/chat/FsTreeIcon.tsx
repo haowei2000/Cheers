@@ -18,7 +18,7 @@ export function FsTreeIcon({
   size?: number;
 }) {
   if (isDir) {
-    return <Folder className="text-sky-400 shrink-0" style={{ width: size, height: size }} />;
+    return <Folder className="text-info-400 shrink-0" style={{ width: size, height: size }} />;
   }
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
   const style = defaultStyles[ext as DefaultExtensionType] ?? {};

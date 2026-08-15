@@ -14,6 +14,7 @@ import { disablePush } from "@/lib/push";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
 import { NotificationCenter } from "./NotificationCenter";
 import type { Workspace } from "@/types";
+import { useShallow } from "zustand/react/shallow";
 
 // Shared rail-button shell: the left selection indicator bar + hover state. Children are
 // the inner visual (a workspace Avatar, or the personal/brand icon box).
@@ -41,7 +42,7 @@ function RailButton({
     >
       <div
         className={cn(
-          "absolute left-0 w-1 rounded-r-full bg-zinc-100 transition-all duration-150",
+          "absolute left-0 w-1 rounded-r-full bg-zinc-100 transition-[height,transform] duration-150",
           selected ? "h-5" : "h-0 group-hover:h-2"
         )}
       />
@@ -85,8 +86,17 @@ export function WorkspaceRail({
 } = {}) {
   const navigate = useNavigate();
   const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
-    useChatStore();
-  const { user, logout } = useAuthStore();
+    useChatStore(
+      useShallow((state) => ({
+        workspaces: state.workspaces,
+        personalWorkspace: state.personalWorkspace,
+        selectedWorkspaceId: state.selectedWorkspaceId,
+        selectWorkspace: state.selectWorkspace,
+      })),
+    );
+  const { user, logout } = useAuthStore(
+    useShallow((state) => ({ user: state.user, logout: state.logout })),
+  );
 
   async function handleLogout() {
     // Drop the push subscription while the auth token is still valid — a
@@ -156,7 +166,7 @@ export function WorkspaceRail({
         <IconButton
           label="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="text-zinc-100 hover:text-zinc-50"
+          className="text-content-primary hover:text-content-strong"
         >
           <Plus className={controlIconClasses.comfortable} />
         </IconButton>
@@ -172,7 +182,7 @@ export function WorkspaceRail({
             navigate("/fleet");
           }}
           label="Fleet — bots & status"
-          className="relative text-zinc-100"
+          className="relative text-content-primary"
         >
           <EditorialIcon name="agentMark" contentSize="large" />
         </IconButton>
@@ -183,7 +193,7 @@ export function WorkspaceRail({
             navigate("/friends");
           }}
           label="Friends"
-          className="text-zinc-100"
+          className="text-content-primary"
         >
           <Users className={controlIconClasses.comfortable} />
         </IconButton>
@@ -194,7 +204,7 @@ export function WorkspaceRail({
             navigate("/settings");
           }}
           label="Settings"
-          className="text-zinc-100"
+          className="text-content-primary"
         >
           <Settings className={controlIconClasses.comfortable} />
         </IconButton>

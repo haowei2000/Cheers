@@ -1,17 +1,32 @@
 import { forwardRef } from "react";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   Ellipsis,
+  Eye,
+  EyeOff,
+  Fingerprint,
+  KeyRound,
+  Link2,
+  LogOut,
+  MailQuestion,
   Maximize2,
   Minimize2,
   Pencil,
   Plus,
   RefreshCw,
   Save,
+  ShieldCheck,
+  ShieldOff,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
+  Upload,
+  Unlink,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -26,28 +41,59 @@ export type CommonActionContext =
   | "inlineEdit"
   | "form"
   | "dialog"
-  | "confirmation";
+  | "confirmation"
+  | "security"
+  | "settings";
 
 export type CommonActionKey = Extract<
   ActionKey,
   | "back"
   | "add"
   | "cancel"
+  | "check"
+  | "changePassword"
   | "close"
   | "collapse"
+  | "copy"
   | "create"
   | "delete"
+  | "disable"
+  | "dismiss"
+  | "done"
   | "edit"
+  | "enable"
   | "expand"
+  | "forgotPassword"
+  | "link"
+  | "manageTwoFactor"
   | "more"
+  | "open"
   | "refresh"
+  | "request"
+  | "resolve"
+  | "restart"
+  | "retry"
+  | "review"
   | "remove"
+  | "revoke"
   | "save"
+  | "setup"
+  | "signOut"
+  | "stop"
+  | "switch"
+  | "test"
+  | "unlink"
+  | "unpin"
+  | "update"
+  | "upload"
+  | "watch"
 >;
 
 type Presentation = {
   content: ButtonContent;
   icon?: LucideIcon;
+  /** Registered longer copy for fill-width launchers; compact ActionKey labels stay slot-safe. */
+  label?: string;
   variant: NonNullable<ButtonProps["variant"]>;
 };
 
@@ -64,6 +110,10 @@ const commonActionPresentations = {
     delete: { content: "icon", icon: Trash2, variant: "danger" },
     expand: { content: "icon", icon: Maximize2, variant: "plain" },
     remove: { content: "icon", icon: X, variant: "danger" },
+    stop: { content: "icon", icon: EyeOff, variant: "plain" },
+    unpin: { content: "icon", icon: X, variant: "danger" },
+    upload: { content: "icon", icon: Upload, variant: "plain" },
+    watch: { content: "icon", icon: Eye, variant: "plain" },
   },
   disclosure: {
     collapse: { content: "icon", icon: ChevronDown, variant: "plain" },
@@ -91,6 +141,37 @@ const commonActionPresentations = {
     delete: { content: "iconText", icon: Trash2, variant: "danger" },
     remove: { content: "iconText", icon: Trash2, variant: "danger" },
   },
+  security: {
+    add: { content: "iconText", icon: Fingerprint, variant: "emphasis" },
+    changePassword: { content: "iconText", icon: KeyRound, label: "Change password", variant: "secondary" },
+    copy: { content: "iconText", icon: Copy, variant: "secondary" },
+    disable: { content: "iconText", icon: ShieldOff, variant: "danger" },
+    done: { content: "iconText", icon: Check, variant: "emphasis" },
+    enable: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
+    forgotPassword: { content: "iconText", icon: MailQuestion, label: "Forgot password", variant: "secondary" },
+    link: { content: "iconText", icon: Link2, variant: "secondary" },
+    manageTwoFactor: { content: "iconText", icon: ShieldCheck, label: "2FA settings", variant: "secondary" },
+    request: { content: "iconText", icon: MailQuestion, variant: "emphasis" },
+    revoke: { content: "iconText", icon: X, variant: "danger" },
+    setup: { content: "iconText", icon: ShieldCheck, variant: "emphasis" },
+    unlink: { content: "iconText", icon: Unlink, variant: "danger" },
+    update: { content: "iconText", icon: KeyRound, variant: "emphasis" },
+  },
+  settings: {
+    check: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    disable: { content: "iconText", icon: ToggleLeft, variant: "secondary" },
+    dismiss: { content: "text", variant: "secondary" },
+    enable: { content: "iconText", icon: ToggleRight, variant: "emphasis" },
+    open: { content: "iconText", icon: ArrowUpRight, variant: "secondary" },
+    resolve: { content: "text", variant: "emphasis" },
+    restart: { content: "iconText", icon: RefreshCw, variant: "emphasis" },
+    retry: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    review: { content: "text", variant: "secondary" },
+    save: { content: "iconText", icon: Save, variant: "emphasis" },
+    signOut: { content: "iconText", icon: LogOut, variant: "danger" },
+    switch: { content: "iconText", icon: RefreshCw, variant: "secondary" },
+    test: { content: "text", variant: "secondary" },
+  },
 } as const satisfies Record<CommonActionContext, Partial<Record<CommonActionKey, Presentation>>>;
 
 type CommonActionIntent = {
@@ -102,10 +183,12 @@ type CommonActionIntent = {
 
 export type ActionButtonProps = Omit<
   ButtonProps,
-  "action" | "children" | "content" | "variant"
+  "action" | "children" | "content" | "label" | "variant"
 > & CommonActionIntent & {
   /** Adds object-specific context to icon-only accessible names, e.g. "Save profile". */
   accessibleLabel?: string;
+  /** Overrides an icon-only presentation when a responsive parent has room for text. */
+  wideLabel?: string;
 };
 
 /**
@@ -113,19 +196,21 @@ export type ActionButtonProps = Omit<
  * this registry owns icon/text presentation, tone, and the visible action label.
  */
 export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
-  ({ action, context, accessibleLabel, controlSize, type = "button", ...props }, ref) => {
+  ({ action, context, accessibleLabel, controlSize, type = "button", wideLabel, ...props }, ref) => {
     const presentation = (commonActionPresentations[context] as Partial<Record<CommonActionKey, Presentation>>)[action] as Presentation;
     const resolvedSize = useControlSize(controlSize);
     const Icon = presentation.icon;
     const label = accessibleLabel ?? actionLabel(action);
+    const visibleLabel = presentation.label ?? wideLabel;
     const icon = Icon ? <Icon className={controlIconClasses[resolvedSize]} aria-hidden="true" /> : null;
 
     return (
       <Button
         ref={ref}
         type={type}
-        action={action}
-        content={presentation.content}
+        action={visibleLabel ? undefined : action}
+        label={visibleLabel}
+        content={visibleLabel ? "iconText" : presentation.content}
         variant={presentation.variant}
         controlSize={resolvedSize}
         {...props}

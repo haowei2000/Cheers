@@ -60,14 +60,14 @@ export default function InvitePage() {
   const dead =
     failed || (preview && preview.status !== "valid") ? (
       <>
-        <h1 className="text-comfortable font-semibold text-zinc-100">
+        <h1 className="text-comfortable font-semibold text-content-primary">
           {preview?.status === "expired"
             ? "This invite link has expired"
             : preview?.status === "exhausted"
               ? "This invite link has been used up"
               : "This invite link is invalid"}
         </h1>
-        <p className="text-regular text-zinc-400">
+        <p className="text-regular text-content-muted">
           Ask whoever shared it with you for a new link.
         </p>
         <Link
@@ -86,7 +86,7 @@ export default function InvitePage() {
       description="Review the invitation before entering the shared workspace."
     >
         <div className={`${publicPanelClass} flex flex-col items-center gap-3 text-center`}>
-          {!preview && !failed && <Spinner contentSize="large" className="text-zinc-400 my-6" />}
+          {!preview && !failed && <Spinner contentSize="large" className="text-content-muted my-6" />}
 
           {dead}
 
@@ -99,14 +99,14 @@ export default function InvitePage() {
                 size="large"
               />
               <div>
-                <p className="text-regular text-zinc-400">
+                <p className="text-regular text-content-muted">
                   {preview.inviter ?? "Someone"} invited you to join
                 </p>
-                <h1 className="text-comfortable font-semibold text-zinc-100 mt-1">
+                <h1 className="text-comfortable font-semibold text-content-primary mt-1">
                   {preview.workspace_name}
                 </h1>
               </div>
-              <div className="flex items-center gap-3 text-compact text-zinc-400">
+              <div className="flex items-center gap-3 text-compact text-content-muted">
                 <span className="inline-flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
                   {preview.member_count ?? 0} member{(preview.member_count ?? 0) === 1 ? "" : "s"}
@@ -131,7 +131,7 @@ export default function InvitePage() {
                   >
                     Create an account to join
                   </Button>
-                  <p className="text-compact text-zinc-400">
+                  <p className="text-compact text-content-muted">
                     Already have an account?{" "}
                     <Link
                       to={`/login?redirect=${encodeURIComponent(`/invite/${token}`)}`}

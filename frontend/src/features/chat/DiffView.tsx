@@ -171,7 +171,7 @@ export function parseSections(diff: string): FileSection[] {
 function Gutter({ line }: { line: DiffLine }) {
   const num = (n?: number) => (n == null ? "" : String(n));
   return (
-    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-2 text-right text-zinc-400">
+    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-2 text-right text-content-muted">
       <span className="inline-block w-10">{num(line.oldNo)}</span>
       <span className="inline-block w-10">{num(line.newNo)}</span>
     </span>
@@ -194,15 +194,15 @@ function FileSectionView({ section }: { section: FileSection }) {
         title={section.title}
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-content-muted" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-content-muted" />
         )}
-        <span className="truncate font-mono text-zinc-200">{section.title}</span>
+        <span className="truncate font-code text-content-secondary">{section.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
-          {section.binary && <span className="text-zinc-400">binary</span>}
-          {section.adds > 0 && <span className="text-emerald-400">+{section.adds}</span>}
-          {section.dels > 0 && <span className="text-rose-400">−{section.dels}</span>}
+          {section.binary && <span className="text-content-muted">binary</span>}
+          {section.adds > 0 && <span className="text-success-400">+{section.adds}</span>}
+          {section.dels > 0 && <span className="text-removed-400">−{section.dels}</span>}
         </span>
       </ControlTrigger>
       {lines.map((l, i) => (
@@ -220,7 +220,7 @@ function FileSectionView({ section }: { section: FileSection }) {
       {open && hidden > 0 && (
         <ControlTrigger controlWidth="fill"
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          controlSize="regular" className="block text-left  italic text-zinc-100 hover:bg-zinc-900 hover:text-zinc-50"
+          controlSize="regular" className="block text-left  italic text-content-primary hover:bg-zinc-900 hover:text-content-strong"
         >
           … show more ({hidden} hidden lines)
         </ControlTrigger>
@@ -240,7 +240,7 @@ export function DiffView({
 
   if (!diff.trim()) {
     return (
-      <div className="px-3 py-4 text-compact text-zinc-400">No changes.</div>
+      <div className="px-3 py-4 text-compact text-content-muted">No changes.</div>
     );
   }
 
@@ -249,14 +249,14 @@ export function DiffView({
 
   return (
     <div className={`overflow-auto ${className ?? ""}`}>
-      <div className="w-max min-w-full font-mono text-regular leading-[1.55]">
+      <div className="w-max min-w-full font-code text-regular leading-regular">
         {/* Diffstat summary — sticky so totals stay visible while scrolling. */}
         <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1 text-compact tabular-nums backdrop-blur-sm">
-          <span className="text-zinc-400">
+          <span className="text-content-muted">
             {sections.length} file{sections.length === 1 ? "" : "s"}
           </span>
-          <span className="text-emerald-400">+{totalAdds}</span>
-          <span className="text-rose-400">−{totalDels}</span>
+          <span className="text-success-400">+{totalAdds}</span>
+          <span className="text-removed-400">−{totalDels}</span>
         </div>
         {sections.map((s, i) => (
           <FileSectionView key={`${s.title}:${i}`} section={s} />

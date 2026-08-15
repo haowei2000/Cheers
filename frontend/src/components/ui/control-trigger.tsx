@@ -15,10 +15,22 @@ export interface ControlTriggerProps extends ButtonHTMLAttributes<HTMLButtonElem
   controlSize?: ControlSize;
   controlWidth?: "slot" | "fill";
   square?: boolean;
+  /** Open/selected state for selectors and disclosure controls. */
+  selected?: boolean;
 }
 
 export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>(
-  ({ controlSize, controlWidth = "slot", square = false, className, children, ...props }, ref) => {
+  ({
+    controlSize,
+    controlWidth = "slot",
+    square = false,
+    selected = false,
+    className,
+    children,
+    role,
+    "aria-expanded": ariaExpanded,
+    ...props
+  }, ref) => {
     const size = useControlSize(controlSize);
     return (
       <button
@@ -26,10 +38,15 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
         type="button"
         data-control-trigger=""
         data-control-size={size}
+        data-selected={selected || undefined}
+        role={role}
+        aria-expanded={ariaExpanded}
+        aria-pressed={role === "tab" || ariaExpanded !== undefined ? undefined : selected || undefined}
         className={cn(
           "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden rounded-sm font-utility text-regular font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
           square ? controlSquareClasses[size] : controlHeightClasses[size],
           !square && (controlWidth === "fill" ? "w-full" : "w-24 max-w-full px-3"),
+          selected && "bg-control text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
           className,
         )}
         {...props}

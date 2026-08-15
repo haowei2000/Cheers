@@ -27,7 +27,7 @@ export function TaskClaimConfirmationCard({ message, channelId, currentUserId }:
   // renders the avatar, sender header, reply quote and text exactly like any
   // other bot reply; this is only the small action footer attached to it.
   if (resolved) {
-    return <p className="mt-2 text-compact text-zinc-400">Claim response recorded</p>;
+    return <p className="mt-2 text-compact text-content-muted">Claim response recorded</p>;
   }
   if (!actionable) return null;
   return <div className="mt-3 flex items-center gap-2">

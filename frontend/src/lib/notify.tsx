@@ -29,10 +29,10 @@ const ICONS: Record<Severity, ComponentType<{ className?: string }>> = {
 };
 
 const ICON_CLS: Record<Severity, string> = {
-  error: "text-red-400",
-  warning: "text-amber-400",
-  success: "text-emerald-400",
-  info: "text-indigo-400",
+  error: "text-danger-400",
+  warning: "text-warning-400",
+  success: "text-success-400",
+  info: "text-accent-400",
 };
 
 const DURATION: Record<Severity, number> = {
@@ -56,7 +56,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
         }`}
       >
         <Icon className={`mt-1 h-4 w-4 flex-shrink-0 ${ICON_CLS[severity]}`} />
-        <div className="min-w-0 text-regular text-zinc-200">
+        <div className="min-w-0 text-regular text-content-secondary">
           <span className="break-words">{message}</span>
           {opts?.action && (
             <div className="mt-1">
@@ -67,7 +67,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
                   toast.dismiss(t.id);
                   opts.action!.onClick();
                 }}
-                className=" font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
+                className=" font-semibold text-accent-400 hover:text-accent-300 hover:underline"
               >
                 {opts.action.label}
               </Button>
@@ -78,7 +78,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           onClick={() => toast.dismiss(t.id)}
           label="Dismiss"
           controlSize="compact"
-          className="-my-1 -mr-1 flex-shrink-0 text-zinc-100 transition-colors hover:text-zinc-50"
+          className="-my-1 -mr-1 flex-shrink-0 text-content-primary transition-colors hover:text-content-strong"
         >
           <X className="h-4 w-4" />
         </IconButton>

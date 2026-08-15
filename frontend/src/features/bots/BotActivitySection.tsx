@@ -6,10 +6,10 @@ import { getBotAcpEvents, type AcpEventRow } from "@/api/bots";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
 
 const homeCls: Record<string, string> = {
-  cheers: "bg-indigo-950/60 border-indigo-900 text-indigo-200",
-  observe: "bg-zinc-800 border-zinc-700 text-zinc-200",
-  connector: "bg-amber-950/50 border-amber-900 text-amber-200",
-  agent: "bg-zinc-800 border-zinc-700 text-zinc-400",
+  cheers: "bg-indigo-950/60 border-indigo-900 text-accent-200",
+  observe: "bg-zinc-800 border-zinc-700 text-content-secondary",
+  connector: "bg-amber-950/50 border-amber-900 text-warning-200",
+  agent: "bg-zinc-800 border-zinc-700 text-content-muted",
 };
 
 const shortName = (n: string) =>
@@ -48,27 +48,27 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-zinc-200">Recent activity</span>
-        <span className="text-compact text-zinc-400">
+        <span className="text-compact font-medium text-content-secondary">Recent activity</span>
+        <span className="text-compact text-content-muted">
           every event the bot emitted (newest first)
         </span>
         <IconButton
           label="Refresh bot activity"
           onClick={load}
-          className="ml-auto text-zinc-100 hover:text-zinc-50"
+          className="ml-auto text-content-primary hover:text-content-strong"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
         </IconButton>
       </div>
       {events.length === 0 ? (
-        <p className="text-compact text-zinc-400">
+        <p className="text-compact text-content-muted">
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
-            <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} trailing={<span className="text-compact tabular-nums text-zinc-400">{time(e.created_at)}</span>}
+            <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} trailing={<span className="text-compact tabular-nums text-content-muted">{time(e.created_at)}</span>}
               status={<span
                 className={`shrink-0 rounded-sm px-2 py-1 text-minimal ${homeCls[e.home] ?? homeCls.observe}`}
                 title={`home: ${e.home || "unclassified"}`}

@@ -71,23 +71,23 @@ type EventVisual = { Icon: LucideIcon; tone: string; label: string };
 // The Gateway event type is the only tool-display routing input. Adding a new
 // visual treatment requires a new backend event type and an explicit entry here.
 const TOOL_EVENT_META: Record<ToolEventType, EventVisual> = {
-  file_read: { Icon: FileSearch, tone: "text-zinc-400", label: "Read" },
-  file_edit: { Icon: Pencil, tone: "text-zinc-400", label: "Edit" },
-  file_write: { Icon: FilePlus2, tone: "text-zinc-400", label: "Write" },
-  file_delete: { Icon: XCircle, tone: "text-red-400/70", label: "Delete" },
-  file_move: { Icon: Wrench, tone: "text-zinc-400", label: "Move" },
-  file_access: { Icon: FileSearch, tone: "text-zinc-400", label: "File" },
-  shell_command: { Icon: Terminal, tone: "text-zinc-400", label: "Run" },
-  web_search: { Icon: Search, tone: "text-zinc-400", label: "Web search" },
-  web_fetch: { Icon: Search, tone: "text-zinc-400", label: "Web fetch" },
-  search_results: { Icon: Search, tone: "text-zinc-400", label: "Search" },
-  git_status: { Icon: GitBranch, tone: "text-zinc-400", label: "Git status" },
-  git_diff: { Icon: GitBranch, tone: "text-zinc-400", label: "Git diff" },
-  git_show: { Icon: GitCommit, tone: "text-zinc-400", label: "Git show" },
-  git_log: { Icon: GitCommit, tone: "text-zinc-400", label: "Git log" },
-  git_commit: { Icon: GitCommit, tone: "text-zinc-400", label: "Git commit" },
-  git_remote: { Icon: GitBranch, tone: "text-zinc-400", label: "Git remote" },
-  git_command: { Icon: GitBranch, tone: "text-zinc-400", label: "Git command" },
+  file_read: { Icon: FileSearch, tone: "text-content-muted", label: "Read" },
+  file_edit: { Icon: Pencil, tone: "text-content-muted", label: "Edit" },
+  file_write: { Icon: FilePlus2, tone: "text-content-muted", label: "Write" },
+  file_delete: { Icon: XCircle, tone: "text-danger-400/70", label: "Delete" },
+  file_move: { Icon: Wrench, tone: "text-content-muted", label: "Move" },
+  file_access: { Icon: FileSearch, tone: "text-content-muted", label: "File" },
+  shell_command: { Icon: Terminal, tone: "text-content-muted", label: "Run" },
+  web_search: { Icon: Search, tone: "text-content-muted", label: "Web search" },
+  web_fetch: { Icon: Search, tone: "text-content-muted", label: "Web fetch" },
+  search_results: { Icon: Search, tone: "text-content-muted", label: "Search" },
+  git_status: { Icon: GitBranch, tone: "text-content-muted", label: "Git status" },
+  git_diff: { Icon: GitBranch, tone: "text-content-muted", label: "Git diff" },
+  git_show: { Icon: GitCommit, tone: "text-content-muted", label: "Git show" },
+  git_log: { Icon: GitCommit, tone: "text-content-muted", label: "Git log" },
+  git_commit: { Icon: GitCommit, tone: "text-content-muted", label: "Git commit" },
+  git_remote: { Icon: GitBranch, tone: "text-content-muted", label: "Git remote" },
+  git_command: { Icon: GitBranch, tone: "text-content-muted", label: "Git command" },
 };
 
 const GIT_EVENT_TYPES = new Set<ToolEventType>([
@@ -106,34 +106,34 @@ function eventMeta(e: TraceEvent): EventVisual {
     if (ak === "resolved") {
       const ok = (e.decision ?? "").startsWith("allow");
       return ok
-        ? { Icon: Check, tone: "text-zinc-400", label: "Approved" }
-        : { Icon: X, tone: "text-red-400/70", label: "Denied" };
+        ? { Icon: Check, tone: "text-content-muted", label: "Approved" }
+        : { Icon: X, tone: "text-danger-400/70", label: "Denied" };
     }
     if (ak === "expired" || ak === "rejected") {
-      return { Icon: X, tone: "text-zinc-400", label: ak === "expired" ? "Expired" : "Rejected" };
+      return { Icon: X, tone: "text-content-muted", label: ak === "expired" ? "Expired" : "Rejected" };
     }
     if (ak === "auto_allowed") {
-      return { Icon: Check, tone: "text-zinc-400", label: "Auto-allowed" };
+      return { Icon: Check, tone: "text-content-muted", label: "Auto-allowed" };
     }
-    return { Icon: ShieldCheck, tone: "text-amber-400/70", label: "Approval" };
+    return { Icon: ShieldCheck, tone: "text-warning-400/70", label: "Approval" };
   }
   const presentation = toolPresentationFromTrace(e);
   if (presentation) return TOOL_EVENT_META[presentation.event_type];
   switch (e.phase) {
     case "tool_call":
     case "tool_call_update":
-      return { Icon: Wrench, tone: "text-zinc-400", label: "Tool" };
+      return { Icon: Wrench, tone: "text-content-muted", label: "Tool" };
     case "plan":
-      return { Icon: ListTodo, tone: "text-zinc-400", label: "Plan" };
+      return { Icon: ListTodo, tone: "text-content-muted", label: "Plan" };
     case "prompt_finished":
-      return { Icon: Check, tone: "text-zinc-400", label: "Done" };
+      return { Icon: Check, tone: "text-content-muted", label: "Done" };
     case "prompt_started":
-      return { Icon: Zap, tone: "text-zinc-400", label: "Start" };
+      return { Icon: Zap, tone: "text-content-muted", label: "Start" };
     case "prompt_failed":
     case "terminal_ack_failed":
-      return { Icon: XCircle, tone: "text-red-400/70", label: "Failed" };
+      return { Icon: XCircle, tone: "text-danger-400/70", label: "Failed" };
     default:
-      return { Icon: Clock, tone: "text-zinc-400", label: e.phase || "Event" };
+      return { Icon: Clock, tone: "text-content-muted", label: e.phase || "Event" };
   }
 }
 
@@ -169,10 +169,10 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <span className="font-mono text-compact text-zinc-400">{result.branch ?? "Working tree"}</span>
-        {result.clean === true && <span className="text-emerald-400/80">Clean</span>}
+        <span className="font-code text-compact text-content-muted">{result.branch ?? "Working tree"}</span>
+        {result.clean === true && <span className="text-success-400/80">Clean</span>}
         {countItems.length > 0 && (
-          <span className="text-minimal text-zinc-400">
+          <span className="text-minimal text-content-muted">
             {countItems.map(([name, count]) => `${count} ${name}`).join(" · ")}
           </span>
         )}
@@ -184,18 +184,18 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
             return (
               <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-sm px-1 py-2 hover:bg-zinc-900/60">
                 <span className={cn(
-                  "w-4 shrink-0 font-mono text-minimal",
-                  file.state === "conflicted" ? "text-red-300/80" : file.state === "untracked" ? "text-emerald-400/80" : "text-zinc-400",
+                  "w-4 shrink-0 font-code text-minimal",
+                  file.state === "conflicted" ? "text-danger-300/80" : file.state === "untracked" ? "text-success-400/80" : "text-content-muted",
                 )}>{marker}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-compact text-zinc-200" title={file.path}>{file.path}</span>
+                <span className="min-w-0 flex-1 truncate font-code text-compact text-content-secondary" title={file.path}>{file.path}</span>
               </div>
             );
           })}
         </div>
       )}
-      {result.truncated && <div className="mt-2 text-zinc-400">More files omitted.</div>}
+      {result.truncated && <div className="mt-2 text-content-muted">More files omitted.</div>}
       {presentation.compound && (
-        <div className="mt-2 text-minimal text-zinc-400">
+        <div className="mt-2 text-minimal text-content-muted">
           Status summary extracted from compound shell output.
         </div>
       )}
@@ -225,7 +225,7 @@ function DetailValue({ value }: { value: unknown }) {
       : value
     : formatJson(value);
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono">
+    <pre className="whitespace-pre-wrap break-words font-code">
       {rendered}
     </pre>
   );
@@ -243,7 +243,7 @@ function RawEventData({ metadata, data }: { metadata: JsonRecord; data: JsonReco
   const [open, setOpen] = useState(false);
   return (
     <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="cursor-pointer select-none text-zinc-400 hover:text-zinc-200">Raw event data</summary>
+      <summary className="cursor-pointer select-none text-content-muted hover:text-content-secondary">Raw event data</summary>
       {open && (
         <div className="mt-2 max-h-64 overflow-auto">
           <DetailValue value={{ ...metadata, ...(data ? { data } : {}) }} />
@@ -255,10 +255,10 @@ function RawEventData({ metadata, data }: { metadata: JsonRecord; data: JsonReco
 
 function DiffDelta({ stats }: { stats: { additions: number; deletions: number } }) {
   return (
-    <span className="shrink-0 font-mono text-minimal tabular-nums">
-      <span className="text-emerald-400/90">+{stats.additions}</span>
+    <span className="shrink-0 font-code text-minimal tabular-nums">
+      <span className="text-success-400/90">+{stats.additions}</span>
       {" "}
-      <span className="text-red-400/80">−{stats.deletions}</span>
+      <span className="text-danger-400/80">−{stats.deletions}</span>
     </span>
   );
 }
@@ -272,7 +272,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-        <span className="min-w-0 truncate font-mono text-compact text-zinc-200" title={selected.path}>
+        <span className="min-w-0 truncate font-code text-compact text-content-secondary" title={selected.path}>
           {pathBasename(selected.path)}
         </span>
         <DiffDelta stats={diffs.length === 1 ? selectedStats : total} />
@@ -289,11 +289,11 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular" className={cn(
  "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-800",
- active ? "bg-indigo-600/15 text-indigo-200": "text-zinc-100 hover:text-zinc-50",
+ active ? "bg-indigo-600/15 text-accent-200": "text-content-primary hover:text-content-strong",
  )}
                 title={diff.path}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-compact">
+                <span className="min-w-0 flex-1 truncate font-code text-compact">
                   {pathBasename(diff.path)}
                 </span>
                 <DiffDelta stats={stats} />
@@ -310,13 +310,13 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
 function FileEditEmptyState({ path }: { path: string | null }) {
   return (
     <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
-      <div className="text-compact text-zinc-200">No file changes</div>
+      <div className="text-compact text-content-secondary">No file changes</div>
       {path && (
-        <div className="mt-1 truncate font-mono text-compact text-zinc-400" title={path}>
+        <div className="mt-1 truncate font-code text-compact text-content-muted" title={path}>
           {path}
         </div>
       )}
-      <div className="mt-1 text-minimal text-zinc-400">
+      <div className="mt-1 text-minimal text-content-muted">
         The edit reported identical before/after content.
       </div>
     </div>
@@ -395,29 +395,29 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
   };
 
   return (
-    <div className="space-y-3 p-3 text-compact text-zinc-400">
+    <div className="space-y-3 p-3 text-compact text-content-muted">
       {presentation && (
         <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-zinc-200">
+            <span className="font-medium text-content-secondary">
               {TOOL_EVENT_META[presentation.event_type].label}
             </span>
             {presentation.risk && (
-              <span className="text-minimal text-zinc-400">
+              <span className="text-minimal text-content-muted">
                 {presentation.risk.replace(/_/g, " ")}
               </span>
             )}
             {presentation.compound && (
-              <span className="text-minimal text-amber-300/80">
+              <span className="text-minimal text-warning-300/80">
                 compound shell command
               </span>
             )}
           </div>
           {presentation.command && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-zinc-200">{presentation.command}</pre>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-code text-content-secondary">{presentation.command}</pre>
           )}
           {!presentation.command && presentation.target && (
-            <div className="mt-2 break-all font-mono text-zinc-200">{presentation.target}</div>
+            <div className="mt-2 break-all font-code text-content-secondary">{presentation.target}</div>
           )}
         </div>
       )}
@@ -429,7 +429,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {presentation && hasGitStatus && <GitStatusInspector presentation={presentation} />}
       {planEntries && (
         <div className="space-y-2">
-          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">Plan</div>
+          <div className="text-minimal font-medium uppercase tracking-label text-content-muted">Plan</div>
           {planEntries.length > 0 ? (
             <ol className="space-y-1 pl-4 list-decimal">
               {planEntries.map((entry, index) => {
@@ -441,9 +441,9 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                 const status = typeof item?.status === "string" ? item.status : null;
                 return (
                   <li key={`${index}-${content}`} className="break-words">
-                    <span className="text-zinc-200">{content}</span>
+                    <span className="text-content-secondary">{content}</span>
                     {status && (
-                      <span className="ml-2 text-zinc-400">
+                      <span className="ml-2 text-content-muted">
                         {statusLabel(status)}
                       </span>
                     )}
@@ -459,20 +459,20 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
 
       {cwd && (
         <div>
-          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">Working directory</div>
-          <div className="mt-1 font-mono text-zinc-200">{cwd}</div>
+          <div className="text-minimal font-medium uppercase tracking-label text-content-muted">Working directory</div>
+          <div className="mt-1 font-code text-content-secondary">{cwd}</div>
         </div>
       )}
       {!diffs.length && !showFileEditEmpty && filePath && (
         <div>
-          <div className="text-minimal font-medium uppercase tracking-wide text-zinc-400">File</div>
-          <div className="mt-1 font-mono text-zinc-200">{filePath}</div>
+          <div className="text-minimal font-medium uppercase tracking-label text-content-muted">File</div>
+          <div className="mt-1 font-code text-content-secondary">{filePath}</div>
         </div>
       )}
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
         <div>
-          <div className="mb-1 text-minimal font-medium uppercase tracking-wide text-zinc-400">Output</div>
-          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-zinc-200"><DetailValue value={output} /></div>
+          <div className="mb-1 text-minimal font-medium uppercase tracking-label text-content-muted">Output</div>
+          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-3 py-2 text-content-secondary"><DetailValue value={output} /></div>
         </div>
       )}
       <RawEventData metadata={metadata} data={data} />
@@ -508,8 +508,8 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
     <div className="overflow-hidden rounded-sm bg-zinc-950/45">
       <header className="flex items-start justify-between gap-3 px-3 py-3 border-b border-zinc-800">
         <div className="min-w-0">
-          <p className="text-regular font-medium text-zinc-200">{title}</p>
-          <p className="mt-1 text-compact text-zinc-400">
+          <p className="text-regular font-medium text-content-secondary">{title}</p>
+          <p className="mt-1 text-compact text-content-muted">
             {pending
               ? "Waiting for a decision."
               : expired
@@ -524,7 +524,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         <span
           className={cn(
             "shrink-0 text-compact",
-            pending ? "text-amber-400/90" : ok ? "text-zinc-400" : denied || expired ? "text-red-400" : "text-zinc-400",
+            pending ? "text-warning-400/90" : ok ? "text-content-muted" : denied || expired ? "text-danger-400" : "text-content-muted",
           )}
         >
           {pending ? "Needs approval" : expired ? "Expired" : ok ? "Approved" : denied ? "Denied" : statusLabel(event.status ?? "Done")}
@@ -532,20 +532,20 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       </header>
       {command && (
         <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-3">
-          <p className="mb-2 text-minimal uppercase tracking-wide text-zinc-400">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-mono text-compact text-zinc-200">
+          <p className="mb-2 text-minimal uppercase tracking-label text-content-muted">Command</p>
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-2 font-code text-compact text-content-secondary">
             {command}
           </pre>
           {cwd && (
-            <p className="mt-2 truncate font-mono text-compact text-zinc-400" title={cwd}>
+            <p className="mt-2 truncate font-code text-compact text-content-muted" title={cwd}>
               {cwd}
             </p>
           )}
         </div>
       )}
       {!pending && decision && (
-        <div className="px-3 py-3 text-compact text-zinc-400">
-          Decision: <span className="font-mono text-zinc-200">{decision}</span>
+        <div className="px-3 py-3 text-compact text-content-muted">
+          Decision: <span className="font-code text-content-secondary">{decision}</span>
         </div>
       )}
     </div>
@@ -590,12 +590,12 @@ function TraceItem({
       !(pendingApproval.content_data as PermissionContentData | null | undefined)?.resolved,
   );
   const statusTone = needsAction
-    ? "text-amber-400/90"
+    ? "text-warning-400/90"
     : event.status === "failed"
-      ? "text-red-400/80"
+      ? "text-danger-400/80"
       : presentation && GIT_EVENT_TYPES.has(presentation.event_type) && event.status === "completed"
-        ? "text-emerald-400/80"
-        : "text-zinc-400";
+        ? "text-success-400/80"
+        : "text-content-muted";
   const statusText = needsAction
     ? "Needs approval"
     : event.status
@@ -639,16 +639,16 @@ function TraceItem({
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
- "justify-start gap-2 text-left text-zinc-100 transition-colors hover:bg-zinc-900/70",
+ "justify-start gap-2 text-left text-content-primary transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
  )}
       >
         <Icon className={cn("h-3.5 w-3.5 shrink-0", tone)} />
-        <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-zinc-200">
+        <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-content-secondary">
           {displayTitle}
         </span>
         {preview && (
-          <span className="min-w-0 flex-1 truncate font-mono text-minimal text-zinc-400" title={preview}>
+          <span className="min-w-0 flex-1 truncate font-code text-minimal text-content-muted" title={preview}>
             {preview}
           </span>
         )}
@@ -659,8 +659,8 @@ function TraceItem({
         )}
         <ChevronRight
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform",
-            active && "rotate-90 text-zinc-200",
+            "h-3.5 w-3.5 shrink-0 text-content-muted transition-transform",
+            active && "rotate-90 text-content-secondary",
           )}
         />
       </ControlTrigger>
@@ -922,7 +922,7 @@ export function BotTracePanel({
           aria-expanded={expanded}
           aria-label={expanded ? "Hide agent steps" : "Show agent steps"}
           title={expanded ? "Hide agent steps" : "Show agent steps"}
-          className="w-auto justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
+          className="w-auto justify-start text-content-primary transition-colors hover:bg-zinc-900/70 hover:text-content-strong"
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -938,12 +938,12 @@ export function BotTracePanel({
                 : ""}
           </span>
           {pendingCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-amber-400/80">
+            <span className="inline-flex items-center gap-1 text-warning-400/80">
               <ShieldCheck className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
           ) : approvalCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-zinc-400">
+            <span className="inline-flex items-center gap-1 text-content-muted">
               <ShieldCheck className="w-3.5 h-3.5" />
               {approvalCount}
             </span>
@@ -953,7 +953,7 @@ export function BotTracePanel({
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
-        <div className="flex items-center gap-2 text-compact text-zinc-400">
+        <div className="flex items-center gap-2 text-compact text-content-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading steps…
         </div>
@@ -989,7 +989,7 @@ export function BotTracePanel({
               type="button"
               onClick={() => setShowAll(true)}
               aria-label={`Show all ${timeline.length} agent steps`}
-              className="mt-1 w-auto self-start justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
+              className="mt-1 w-auto self-start justify-start text-content-primary transition-colors hover:bg-zinc-900/70 hover:text-content-strong"
             >
               Show all {timeline.length} steps
             </ControlTrigger>
@@ -999,7 +999,7 @@ export function BotTracePanel({
               type="button"
               onClick={() => setShowAll(false)}
               aria-label="Show the latest agent step only"
-              className="mt-1 w-auto self-start justify-start text-zinc-100 transition-colors hover:bg-zinc-900/70 hover:text-zinc-50"
+              className="mt-1 w-auto self-start justify-start text-content-primary transition-colors hover:bg-zinc-900/70 hover:text-content-strong"
             >
               Show latest only
             </ControlTrigger>
@@ -1008,18 +1008,18 @@ export function BotTracePanel({
       )}
 
       {expanded && events && !hasRows && !loading && !error && (
-        <div className="mt-1 px-3 text-compact text-zinc-400">
+        <div className="mt-1 px-3 text-compact text-content-muted">
           No steps recorded.
         </div>
       )}
 
       {expanded && error && !loading && (
-        <div className="mt-1 px-3 flex items-center gap-2 text-compact text-red-400">
+        <div className="mt-1 px-3 flex items-center gap-2 text-compact text-danger-400">
           <span>Failed to load steps.</span>
           <UiButton action="retry" variant="plain"
             type="button"
             onClick={() => void load()}
-            className="text-zinc-100 hover:text-zinc-50 underline underline-offset-2"
+            className="text-content-primary hover:text-content-strong underline underline-offset-2"
           >
             Retry
           </UiButton>

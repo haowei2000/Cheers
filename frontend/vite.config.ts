@@ -78,8 +78,10 @@ export default defineConfig({
         name: "Cheers",
         short_name: "Cheers",
         description: "Multi-agent chat workspace",
-        theme_color: "#0f172a",
-        background_color: "#0f172a",
+        // The installed shell starts neutral-dark; the runtime meta color then
+        // follows the user's System/Light/Dark preference.
+        theme_color: "#09090b",
+        background_color: "#09090b",
         display: "standalone",
         start_url: "/",
         icons: [

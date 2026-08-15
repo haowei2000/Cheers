@@ -110,18 +110,18 @@ export function ConnectorConfigForm({
   }
 
   if (!f) {
-    return <p className="text-compact text-zinc-400 mt-3">Loading config…</p>;
+    return <p className="text-compact text-content-muted mt-3">Loading config…</p>;
   }
 
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-compact text-zinc-400">Raw TOML — full control.</p>
+        <p className="text-compact text-content-muted">Raw TOML — full control.</p>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={16}
-          className="font-mono text-compact"
+          className="font-code text-compact"
           spellCheck={false}
         />
         <div className="flex gap-2">
@@ -170,7 +170,7 @@ export function ConnectorConfigForm({
 
   return (
     <div className="mt-3 space-y-4">
-      <p className="text-compact text-zinc-400">
+      <p className="text-compact text-content-muted">
         Editing <b>{name}</b> — account <code className="bg-zinc-800 rounded-sm px-1">{f.account_id}</code>.
       </p>
 
@@ -206,7 +206,7 @@ export function ConnectorConfigForm({
             onClick={() => setArgsOpen((o) => !o)}
             controlSize="regular" className={`shrink-0 rounded-sm  flex items-center gap-1 ${
  argsOpen || f.adapter_args.length
- ? "bg-zinc-700 text-zinc-100": "bg-zinc-800 text-zinc-100 hover:text-zinc-50"
+ ? "bg-zinc-700 text-content-primary": "bg-zinc-800 text-content-primary hover:text-content-strong"
  }`}
           >
             <Settings2 className="w-3.5 h-3.5" /> Args
@@ -219,7 +219,7 @@ export function ConnectorConfigForm({
               value={text(f.adapter_args)}
               onChange={(e) => patch({ adapter_args: lines(e.target.value) })}
               rows={2}
-              className="font-mono text-compact"
+              className="font-code text-compact"
             />
           </Field>
         )}
@@ -229,12 +229,12 @@ export function ConnectorConfigForm({
             value={text(f.allowed_roots)}
             onChange={(e) => patch({ allowed_roots: lines(e.target.value) })}
             rows={3}
-            className="font-mono text-compact"
+            className="font-code text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
           <UiButton action="add" content="iconText" variant="plain"
             type="button"
-            className="mt-1  text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            className="mt-1  text-accent-400 hover:text-accent-300 flex items-center gap-1"
             onClick={() =>
               void pickFolder().then((p) => {
                 if (p && !f.allowed_roots.includes(p)) {
@@ -263,12 +263,12 @@ export function ConnectorConfigForm({
             </Button>
           </div>
           {cwdUnderRoot === false && f.default_cwd?.trim() && (
-            <p className="mt-1 text-compact text-amber-400">
+            <p className="mt-1 text-compact text-warning-400">
               This directory is not under any workspace root — the connector will
               refuse to start.{" "}
               <UiButton action="add" variant="plain"
                 type="button"
-                className="underline hover:text-amber-300"
+                className="underline hover:text-warning-300"
                 onClick={() => {
                   const cwd = f.default_cwd?.trim();
                   if (cwd && !f.allowed_roots.includes(cwd)) {
@@ -294,7 +294,7 @@ export function ConnectorConfigForm({
       <div>
         <UiButton action="more" variant="plain"
           type="button"
-          className=" text-zinc-100 hover:text-zinc-50"
+          className=" text-content-primary hover:text-content-strong"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
@@ -313,7 +313,7 @@ export function ConnectorConfigForm({
                 value={text(f.env_allow)}
                 onChange={(e) => patch({ env_allow: lines(e.target.value) })}
                 rows={3}
-                className="font-mono text-compact"
+                className="font-code text-compact"
                 placeholder={"HOME\nPATH\nANTHROPIC_API_KEY"}
               />
             </Field>
@@ -335,7 +335,7 @@ export function ConnectorConfigForm({
                 <UiSelect
                   value={f.on_timeout}
                   onChange={(e) => patch({ on_timeout: e.target.value })}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="cancel">cancel</option>
                   <option value="reject">reject</option>

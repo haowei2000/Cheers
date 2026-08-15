@@ -37,13 +37,13 @@ export function GlanceRow({
       className="group flex w-full flex-col gap-1 rounded-sm px-3 py-2 text-left transition-colors hover:bg-zinc-800/60"
     >
       <div className="flex items-center gap-2">
-        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-400" />
+        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
         <span className="flex-1 text-caption">{label}</span>
         {sub && <span className="text-metadata tabular-nums">{sub}</span>}
         <span className="text-status tabular-nums truncate max-w-[55%] text-right">
           {value}
         </span>
-        <ChevronRight className="w-3.5 h-3.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100" />
+        <ChevronRight className="w-3.5 h-3.5 text-content-muted opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       {bar != null && (
         <div data-design-system-exempt="progress" className="ml-[22px] h-1 overflow-hidden rounded-full bg-zinc-800">

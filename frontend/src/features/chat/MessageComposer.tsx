@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import {
   memo,
   useState,
@@ -12,15 +11,10 @@ import {
 } from "react";
 import {
   SendHorizontal,
-  Bot,
-  User,
   Paperclip,
-  X,
-  FileText,
   Upload,
   FolderOpen,
   Camera,
-  AudioLines,
   Mic,
   Loader2,
   Square,
@@ -28,7 +22,6 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
-import { NavigationItem } from "@/components/ui/item";
 import { isComposing } from "@/lib/ime";
 import { isTauri } from "@/lib/serverConfig";
 import {
@@ -38,7 +31,6 @@ import {
   releaseQuickAttach,
 } from "@/lib/desktopQuick";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
-import { getDictationCapability, transcribeDictation } from "@/api/channels";
 import type { FileInfo } from "@/types";
 import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
@@ -46,9 +38,21 @@ import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { appendMentionToken } from "./mentionInsertion";
 import { IconButton } from "@/components/ui/icon-button";
-import { ItemChip } from "@/components/ui/item";
-import { OverflowText } from "@/components/ui/overflow-text";
 import { MenuOption } from "@/components/ui/menu-option";
+import {
+  ComposerAttachments,
+  ComposerMentionPicker,
+  ComposerVoiceWarning,
+} from "./ComposerOverlays";
+import { useComposerDictation } from "./useComposerDictation";
+import {
+  clearComposerDrafts,
+  getComposerDraft,
+  persistComposerText,
+  restoreComposerText,
+  stashComposerDraft,
+  type ComposerDraft,
+} from "./composerDrafts";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -137,70 +141,6 @@ interface PickerState {
   index: number;
 }
 
-type SystemSpeechRecognition = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: ((event: {
-    results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
-  }) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  onend: (() => void) | null;
-};
-
-type SystemSpeechRecognitionConstructor = new () => SystemSpeechRecognition;
-
-interface StepFunCapture {
-  context: AudioContext;
-  source: MediaStreamAudioSourceNode;
-  processor: ScriptProcessorNode;
-  chunks: Float32Array[];
-  sampleRate: number;
-  channelId: string;
-}
-
-function systemSpeechRecognition(): SystemSpeechRecognitionConstructor | null {
-  const browser = window as unknown as {
-    SpeechRecognition?: SystemSpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SystemSpeechRecognitionConstructor;
-  };
-  return browser.SpeechRecognition ?? browser.webkitSpeechRecognition ?? null;
-}
-
-// Per-channel draft stash. One composer instance survives channel switches, so
-// without this a half-typed draft — and worse, channel A's uploaded attachments —
-// leaks into channel B. In-memory for the tab's lifetime; `text` additionally
-// mirrors into sessionStorage so a reload doesn't eat a half-typed message
-// (attachments/mentions stay memory-only — file metadata isn't trusted across
-// reloads).
-interface DraftState {
-  text: string;
-  attachments: FileInfo[];
-  picked: MentionCandidate[];
-  transcribedIds: Set<string>;
-}
-const draftsByChannel = new Map<string, DraftState>();
-const draftKey = (channelId: string) => `cheers.draft.${channelId}`;
-
-function stashDraft(channelId: string, d: DraftState) {
-  if (d.text || d.attachments.length) draftsByChannel.set(channelId, d);
-  else draftsByChannel.delete(channelId);
-}
-
-function restoredText(channelId?: string): string {
-  if (!channelId) return "";
-  const mem = draftsByChannel.get(channelId);
-  if (mem) return mem.text;
-  try {
-    return sessionStorage.getItem(draftKey(channelId)) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 function MessageComposerImpl({
   channelId,
   channelName,
@@ -216,15 +156,15 @@ function MessageComposerImpl({
   onStopStreaming,
   onSend,
 }: Props) {
-  const [text, setText] = useState(() => restoredText(channelId));
+  const [text, setText] = useState(() => restoreComposerText(channelId));
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<FileInfo[]>(
-    () => (channelId && draftsByChannel.get(channelId)?.attachments) || []
+    () => getComposerDraft(channelId)?.attachments ?? []
   );
   const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>(
-    () => (channelId && draftsByChannel.get(channelId)?.picked) || []
+    () => getComposerDraft(channelId)?.picked ?? []
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
@@ -232,14 +172,33 @@ function MessageComposerImpl({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dictationRecorderRef = useRef<MediaRecorder | null>(null);
-  const dictationStreamRef = useRef<MediaStream | null>(null);
-  const dictationChunksRef = useRef<Blob[]>([]);
-  const discardDictationRef = useRef(false);
-  const stepFunCaptureRef = useRef<StepFunCapture | null>(null);
-  const systemRecognitionRef = useRef<SystemSpeechRecognition | null>(null);
-  const [dictating, setDictating] = useState(false);
-  const [transcribingDictation, setTranscribingDictation] = useState(false);
+  const adjustHeight = useCallback(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+  }, []);
+  const {
+    dictating,
+    transcribingDictation,
+    startDictation,
+    stopDictation,
+  } = useComposerDictation({
+    channelId,
+    disabled,
+    sending,
+    uploading,
+    setText,
+    textareaRef,
+    adjustHeight,
+  });
+  const stopDictationRef = useRef(stopDictation);
+  stopDictationRef.current = stopDictation;
+
+  useEffect(() => {
+    window.addEventListener("cheers:session-cleared", clearComposerDrafts);
+    return () => window.removeEventListener("cheers:session-cleared", clearComposerDrafts);
+  }, []);
 
   // External prefill (see Props.prefill): fill empty / append to typed, register any
   // @label mentions so routing works, focus with the cursor at the end. NEVER sends.
@@ -279,7 +238,7 @@ function MessageComposerImpl({
   // Voice-to-deaf-bot guard state (used further below): audio attachments the
   // transcribe-then-send flow completed, and the paused-send warning.
   const [transcribedIds, setTranscribedIds] = useState<Set<string>>(
-    () => (channelId && draftsByChannel.get(channelId)?.transcribedIds) || new Set()
+    () => getComposerDraft(channelId)?.transcribedIds ?? new Set()
   );
   const [voiceWarning, setVoiceWarning] = useState<{
     deafBots: string[];
@@ -289,7 +248,7 @@ function MessageComposerImpl({
 
   // Live snapshot of the stashable draft (read by the channel-switch effect and
   // the unmount stash below — refreshed every render, so always current).
-  const draftRef = useRef<DraftState>({ text, attachments, picked, transcribedIds });
+  const draftRef = useRef<ComposerDraft>({ text, attachments, picked, transcribedIds });
   draftRef.current = { text, attachments, picked, transcribedIds };
   const prevChannelRef = useRef(channelId);
 
@@ -300,9 +259,9 @@ function MessageComposerImpl({
     const prev = prevChannelRef.current;
     if (prev === channelId) return;
     prevChannelRef.current = channelId;
-    if (prev) stashDraft(prev, draftRef.current);
-    const mem = channelId ? draftsByChannel.get(channelId) : undefined;
-    setText(restoredText(channelId));
+    if (prev) stashComposerDraft(prev, draftRef.current);
+    const mem = getComposerDraft(channelId);
+    setText(restoreComposerText(channelId));
     setAttachments(mem?.attachments ?? []);
     setPicked(mem?.picked ?? []);
     setTranscribedIds(mem?.transcribedIds ?? new Set());
@@ -310,7 +269,7 @@ function MessageComposerImpl({
     setAttachMenuOpen(false);
     setLibraryOpen(false);
     setVoiceWarning(null);
-    stopDictation(true);
+    stopDictationRef.current(true);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
@@ -323,7 +282,7 @@ function MessageComposerImpl({
   useEffect(
     () => () => {
       const prev = prevChannelRef.current;
-      if (prev) stashDraft(prev, draftRef.current);
+      if (prev) stashComposerDraft(prev, draftRef.current);
     },
     []
   );
@@ -332,12 +291,7 @@ function MessageComposerImpl({
   // on a channel switch the restore reads sessionStorage before this rewrites it).
   useEffect(() => {
     if (!channelId) return;
-    try {
-      if (text) sessionStorage.setItem(draftKey(channelId), text);
-      else sessionStorage.removeItem(draftKey(channelId));
-    } catch {
-      /* quota / private mode — the in-memory stash still covers switches */
-    }
+    persistComposerText(channelId, text);
   }, [channelId, text]);
 
   // Bots whose "@label" token still survives in the draft — the live mention set
@@ -396,242 +350,6 @@ function MessageComposerImpl({
     }
   }
 
-  function appendDictation(transcript: string) {
-    const spoken = transcript.trim();
-    if (!spoken) {
-      toast("No speech was detected");
-      return;
-    }
-    setText((draft) => (draft.trim() ? `${draft.trimEnd()} ${spoken}` : spoken));
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      adjustHeight();
-    });
-  }
-
-  function releaseDictationStream() {
-    dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
-    dictationStreamRef.current = null;
-  }
-
-  function releaseStepFunCapture() {
-    const capture = stepFunCaptureRef.current;
-    stepFunCaptureRef.current = null;
-    if (capture) {
-      capture.processor.disconnect();
-      capture.source.disconnect();
-      void capture.context.close();
-    }
-    releaseDictationStream();
-  }
-
-  function pcm16leAt16k(capture: StepFunCapture): Blob {
-    const sourceLength = capture.chunks.reduce((total, chunk) => total + chunk.length, 0);
-    const source = new Float32Array(sourceLength);
-    let offset = 0;
-    for (const chunk of capture.chunks) {
-      source.set(chunk, offset);
-      offset += chunk.length;
-    }
-    const ratio = capture.sampleRate / 16_000;
-    const output = new Int16Array(Math.max(1, Math.floor(source.length / ratio)));
-    for (let index = 0; index < output.length; index += 1) {
-      const position = index * ratio;
-      const before = Math.floor(position);
-      const after = Math.min(before + 1, source.length - 1);
-      const fraction = position - before;
-      const sample = (source[before] ?? 0) * (1 - fraction) + (source[after] ?? 0) * fraction;
-      output[index] = Math.max(-1, Math.min(1, sample)) * 0x7fff;
-    }
-    return new Blob([output.buffer as ArrayBuffer], { type: "audio/pcm" });
-  }
-
-  async function finishStepFunDictation(capture: StepFunCapture, targetChannelId: string) {
-    stepFunCaptureRef.current = null;
-    capture.processor.disconnect();
-    capture.source.disconnect();
-    void capture.context.close();
-    releaseDictationStream();
-    setDictating(false);
-    if (!capture.chunks.length) {
-      toast("No speech was detected");
-      return;
-    }
-    setTranscribingDictation(true);
-    try {
-      const result = await transcribeDictation(targetChannelId, pcm16leAt16k(capture));
-      appendDictation(result.transcript);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Dictation failed");
-    } finally {
-      setTranscribingDictation(false);
-    }
-  }
-
-  function stopDictation(discard = false) {
-    const recognition = systemRecognitionRef.current;
-    if (recognition) {
-      systemRecognitionRef.current = null;
-      if (discard) recognition.abort();
-      else recognition.stop();
-    }
-    const stepFunCapture = stepFunCaptureRef.current;
-    if (stepFunCapture) {
-      if (discard) {
-        releaseStepFunCapture();
-        setDictating(false);
-      } else {
-        void finishStepFunDictation(stepFunCapture, stepFunCapture.channelId);
-      }
-      return;
-    }
-    const recorder = dictationRecorderRef.current;
-    if (recorder && recorder.state !== "inactive") {
-      if (discard) {
-        discardDictationRef.current = true;
-        dictationChunksRef.current = [];
-      }
-      recorder.stop();
-    } else if (discard) {
-      releaseDictationStream();
-      setDictating(false);
-    }
-  }
-
-  function startSystemDictation() {
-    const Recognition = systemSpeechRecognition();
-    if (!Recognition) {
-      toast.error("No speech adapter is configured and this browser has no built-in dictation");
-      return;
-    }
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = navigator.language || "en-US";
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .filter((result) => result.isFinal)
-        .map((result) => result[0]?.transcript ?? "")
-        .join(" ");
-      appendDictation(transcript);
-    };
-    recognition.onerror = (event) => {
-      if (event.error !== "aborted" && event.error !== "no-speech") {
-        toast.error("System dictation failed — check microphone and speech permissions");
-      }
-    };
-    recognition.onend = () => {
-      if (systemRecognitionRef.current === recognition) {
-        systemRecognitionRef.current = null;
-        setDictating(false);
-      }
-    };
-    systemRecognitionRef.current = recognition;
-    setDictating(true);
-    try {
-      recognition.start();
-    } catch {
-      systemRecognitionRef.current = null;
-      setDictating(false);
-      toast.error("Couldn't start system dictation");
-    }
-  }
-
-  async function startAdapterDictation() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      toast.error("This browser cannot record audio for the configured speech adapter");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredType = "audio/webm;codecs=opus";
-      const recorder = MediaRecorder.isTypeSupported(preferredType)
-        ? new MediaRecorder(stream, { mimeType: preferredType })
-        : new MediaRecorder(stream);
-      dictationStreamRef.current = stream;
-      dictationChunksRef.current = [];
-      discardDictationRef.current = false;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) dictationChunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        const chunks = dictationChunksRef.current;
-        const discard = discardDictationRef.current;
-        dictationChunksRef.current = [];
-        dictationRecorderRef.current = null;
-        releaseDictationStream();
-        setDictating(false);
-        if (discard || !chunks.length) return;
-        setTranscribingDictation(true);
-        void transcribeDictation(channelId!, new Blob(chunks, { type: recorder.mimeType || "audio/webm" }))
-          .then((result) => appendDictation(result.transcript))
-          .catch((error: unknown) =>
-            toast.error(error instanceof Error ? error.message : "Dictation failed"),
-          )
-          .finally(() => setTranscribingDictation(false));
-      };
-      recorder.onerror = () => toast.error("Dictation recording failed");
-      dictationRecorderRef.current = recorder;
-      recorder.start(1_000);
-      setDictating(true);
-    } catch {
-      releaseDictationStream();
-      toast.error("Couldn't access your microphone — check browser permission");
-    }
-  }
-
-  async function startStepFunDictation() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
-      toast.error("This browser cannot capture PCM audio for StepFun dictation");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const context = new AudioContext();
-      const source = context.createMediaStreamSource(stream);
-      // ScriptProcessor is supported by Chrome and Safari and lets us send the
-      // exact PCM format required by StepFun without uploading a media file.
-      const processor = context.createScriptProcessor(4096, 1, 1);
-      const capture: StepFunCapture = {
-        context,
-        source,
-        processor,
-        chunks: [],
-        sampleRate: context.sampleRate,
-        channelId: channelId!,
-      };
-      processor.onaudioprocess = (event) => {
-        capture.chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
-      };
-      source.connect(processor);
-      processor.connect(context.destination);
-      dictationStreamRef.current = stream;
-      stepFunCaptureRef.current = capture;
-      await context.resume();
-      setDictating(true);
-    } catch {
-      releaseStepFunCapture();
-      toast.error("Couldn't access your microphone — check browser permission");
-    }
-  }
-
-  async function startDictation() {
-    if (!channelId || disabled || sending || uploading || dictating || transcribingDictation) return;
-    try {
-      const capability = await getDictationCapability(channelId);
-      if (capability.adapter_kind === "stepfun") await startStepFunDictation();
-      else if (capability.adapter_configured) await startAdapterDictation();
-      else startSystemDictation();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn't start dictation");
-    }
-  }
-
-  useEffect(
-    () => () => stopDictation(true),
-    [],
-  );
-
   async function takeScreenshot() {
     try {
       const file = await captureScreenshot();
@@ -688,13 +406,6 @@ function MessageComposerImpl({
   // Close the attach menu on outside click / Escape.
   const closeAttachMenu = useCallback(() => setAttachMenuOpen(false), []);
   usePopoverDismiss(attachMenuOpen, closeAttachMenu, attachRef);
-
-  const adjustHeight = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, []);
 
   // Recompute the active picker token from the text up to the caret. The picker
   // opens on whichever trigger ("@" mention or "/" command) most recently starts
@@ -1007,34 +718,11 @@ function MessageComposerImpl({
     // above the on-screen keyboard.
     <div className="relative mx-auto w-full max-w-[72rem] px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-sm bg-zinc-900 shadow-xl shadow-black/40 z-10">
-          {filteredMentions.map((c, i) => (
-            <NavigationItem
-              key={c.id}
-              onClick={(e) => { if (e.detail === 0) selectCandidate(c); }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                selectCandidate(c);
-              }}
-              title={c.label}
-              status={c.sublabel ? <span className="truncate text-compact text-zinc-400">@{c.sublabel}</span> : undefined}
-              leading={c.type === "bot" ? (
-                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-400" : "text-indigo-400")} />
-              ) : (
-                <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-              )}
-              criticalStatus={c.type === "bot" ? <span className="text-minimal text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
-              selected={i === picker.index}
-              className={cn(
- "border-0 ",
- i === picker.index
- ? "bg-indigo-600/30 text-zinc-100": c.type === "bot" && c.isOnline === false
- ? "text-zinc-400 hover:bg-zinc-800"
- : "text-zinc-200 hover:bg-zinc-800"
- )}
-            />
-          ))}
-        </div>
+        <ComposerMentionPicker
+          candidates={filteredMentions}
+          activeIndex={picker.index}
+          onSelect={selectCandidate}
+        />
       )}
 
       {picker?.kind === "command" && filteredCommands.length > 0 && (
@@ -1046,46 +734,17 @@ function MessageComposerImpl({
         />
       )}
 
-      {(attachments.length > 0 || uploading) && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {attachments.map((a) => (
-            <ItemChip
-              key={a.file_id}
-              label={
-                <OverflowText
-                  fullText={a.original_filename || a.file_id}
-                  touchDisclosure={false}
-                >
-                  {a.original_filename || a.file_id.slice(0, 8)}
-                </OverflowText>
-              }
-              leading={<FileText className="w-3.5 h-3.5 text-indigo-400" />}
-              controlSize="regular"
-              className="bg-zinc-800 text-zinc-200"
-              actions={
-                <IconButton
-                onClick={() => removeAttachment(a.file_id)}
-                label={`Remove attachment ${a.original_filename || a.file_id}`}
-                title="Remove attachment"
-                controlSize="compact"
-              >
-                <X className="w-3.5 h-3.5" />
-                </IconButton>
-              }
-            />
-          ))}
-          {uploading && (
-            <span className="inline-flex items-center text-compact text-zinc-400 px-1">
-              uploading…
-            </span>
-          )}
-        </div>
-      )}
+      <ComposerAttachments
+        attachments={attachments}
+        uploading={uploading}
+        onRemove={removeAttachment}
+      />
 
       {/* design-system-native: file-input */}
       <input
         ref={fileInputRef}
         type="file"
+        aria-label="Attach files"
         multiple
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
@@ -1101,48 +760,14 @@ function MessageComposerImpl({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-compact text-amber-200">
-          <p className="flex items-center gap-2">
-            <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
-            {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
-          </p>
-          {voiceWarning.error && (
-            <p className="mt-1 text-red-300">{voiceWarning.error}</p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <UiButton variant="secondary"
-              type="button"
-              onClick={() => void transcribeThenSend()}
-              disabled={transcribing}
-              controlSize="regular"
-              content="iconText"
-              action="transcribe"
-              aria-label="Transcribe the audio attachment, then send the message"
-            >
-              {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
-            </UiButton>
-            <UiButton variant="secondary"
-              type="button"
-              onClick={() => void submit(true)}
-              disabled={transcribing}
-              controlSize="regular"
-              content="iconText"
-              action="send"
-              aria-label="Send the audio attachment without a transcript"
-            >
-              <SendHorizontal className="h-3.5 w-3.5" />
-            </UiButton>
-            <UiButton variant="plain"
-              type="button"
-              onClick={() => setVoiceWarning(null)}
-              disabled={transcribing}
-              controlSize="regular"
-              action="cancel"
-              aria-label="Cancel audio attachment warning"
-              className="ml-auto text-amber-400/70 hover:text-amber-200"
-            />
-          </div>
-        </div>
+        <ComposerVoiceWarning
+          botNames={voiceWarning.deafBots}
+          error={voiceWarning.error}
+          transcribing={transcribing}
+          onTranscribe={() => void transcribeThenSend()}
+          onSendWithoutTranscript={() => void submit(true)}
+          onCancel={() => setVoiceWarning(null)}
+        />
       )}
 
       {/* Unified composer card (DESIGN.md §2.3 borderless field): the textarea on
@@ -1164,6 +789,7 @@ function MessageComposerImpl({
         {/* design-system-native: composer-editor */}
         <textarea
           ref={textareaRef}
+          aria-label="Message"
           rows={1}
           value={text}
           onInput={handleInput}
@@ -1181,7 +807,7 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-regular"
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-reading text-content-primary outline-none placeholder-zinc-400 md:text-regular"
         />
 
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
@@ -1193,7 +819,7 @@ function MessageComposerImpl({
             className={cn(
  "disabled:opacity-50",
  dictating
- ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50",
+ ? "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25 animate-pulse": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50",
  )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
@@ -1214,7 +840,7 @@ function MessageComposerImpl({
               className={cn(
  "disabled:opacity-50",
  attachMenuOpen
- ? "text-zinc-100 bg-zinc-700/50": "text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
+ ? "text-content-primary bg-zinc-700/50": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
  )}
               title="Attach file"
             >
@@ -1229,7 +855,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Upload file"
-                  leading={<Upload className="w-3.5 h-3.5 text-zinc-400" />}
+                  leading={<Upload className="w-3.5 h-3.5 text-content-muted" />}
                 />
                 <MenuOption
                   onClick={() => {
@@ -1238,7 +864,7 @@ function MessageComposerImpl({
                   }}
                   controlSize="regular"
                   label="Channel file"
-                  leading={<FolderOpen className="w-3.5 h-3.5 text-zinc-400" />}
+                  leading={<FolderOpen className="w-3.5 h-3.5 text-content-muted" />}
                 />
                 {isTauri() && (
                   <MenuOption
@@ -1248,7 +874,7 @@ function MessageComposerImpl({
                     }}
                     controlSize="regular"
                     label="Screenshot"
-                    leading={<Camera className="w-3.5 h-3.5 text-zinc-400" />}
+                    leading={<Camera className="w-3.5 h-3.5 text-content-muted" />}
                   />
                 )}
               </PopoverPanel>
@@ -1260,7 +886,7 @@ function MessageComposerImpl({
               onClick={openCommandPicker}
               disabled={disabled || sending}
               controlSize="regular"
-              className="disabled:opacity-50 text-zinc-100 hover:text-zinc-50 hover:bg-zinc-700/50"
+              className="disabled:opacity-50 text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
               label="Insert a command"
               title="Commands (/)"
             >
@@ -1280,7 +906,7 @@ function MessageComposerImpl({
               onClick={() => void stopStreaming()}
               disabled={stopping}
               controlSize="regular"
-              className="bg-zinc-700/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-50"
+              className="bg-zinc-700/50 text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
               label={stopTitle}
               title={stopTitle}
             >
@@ -1294,7 +920,7 @@ function MessageComposerImpl({
               label="Send message"
               className={cn(
  canSend
- ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-zinc-100 opacity-50 cursor-not-allowed"
+ ? "bg-indigo-600 text-content-on-accent hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-content-primary opacity-50 cursor-not-allowed"
  )}
               title="Send message"
             >
