@@ -104,7 +104,8 @@
     "Peer text controls use a shared width slot or an explicit fill mode; content length never determines control width.",
     "Horizontal control padding belongs to the shared primitive and cannot be overridden by business call sites.",
     "Presentation level and control size inherit and override independently.",
-    "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior."
+    "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior.",
+    "Mutually exclusive form choices use a semantic selection control with a visible non-color-only selected state and platform-standard keyboard or assistive interaction."
   ],
   "semanticActions": {
     "create": "plus",
@@ -137,6 +138,7 @@
     { "id": "search", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "select", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "toggle", "category": "control", "platforms": ["web", "ios", "android"] },
+    { "id": "choice", "category": "control", "platforms": ["web", "ios"] },
     { "id": "tabs", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "menu", "category": "control", "platforms": ["web", "ios", "android"] },
     { "id": "popover", "category": "control", "platforms": ["web"] },

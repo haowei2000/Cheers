@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { useState } from "react";
 import { Hash, Lock, Volume2 } from "lucide-react";
@@ -6,8 +5,8 @@ import toast from "react-hot-toast";
 import { createChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/cn";
+import { ActionButton } from "@/components/ui/action-button";
+import { ChoiceGroup } from "@/components/ui/choice-button";
 import { isComposing } from "@/lib/ime";
 import {
   ConversationModePicker,
@@ -81,27 +80,15 @@ export function NewChannelDialog({
           />
         </div>
 
-        <div className="flex gap-2">
-          {/* design-system-exempt: menu-option — native segmented form choice. */}
-          {(["public", "private"] as const).map((t) => (
-            <UiButton variant="plain" role="option" aria-selected={type === t}
-              key={t}
-              onClick={() => setType(t)}
-              controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
- type === t
- ? "border-indigo-500 bg-indigo-500/10 text-content-primary hover:bg-indigo-500/15": "border-zinc-800 text-content-primary hover:bg-zinc-800/60"
- )}
-            >
-              {t === "public" ? (
-                <Hash className="w-3.5 h-3.5" />
-              ) : (
-                <Lock className="w-3.5 h-3.5" />
-              )}
-              {t === "public" ? "Public" : "Private"}
-            </UiButton>
-          ))}
-        </div>
+        <ChoiceGroup
+          ariaLabel="Channel visibility"
+          value={type}
+          onChange={setType}
+          options={[
+            { value: "public", label: "Public", leading: <Hash /> },
+            { value: "private", label: "Private", leading: <Lock /> },
+          ]}
+        />
 
         <div className="space-y-2">
           <p className="text-compact font-medium uppercase tracking-label text-content-muted">
@@ -110,36 +97,25 @@ export function NewChannelDialog({
           <ConversationModePicker value={conversationMode} onChange={setConversationMode} />
         </div>
 
-        <div className="flex gap-2">
-          {/* design-system-exempt: menu-option — native segmented form choice. */}
-          {(["text", "voice"] as const).map((value) => (
-            <UiButton variant="plain" role="option" aria-selected={kind === value}
-              type="button"
-              key={value}
-              onClick={() => setKind(value)}
-              controlSize="regular" className={cn(
- "flex-1 flex items-center justify-center gap-2 rounded-sm border  transition-colors",
- kind === value
- ? "border-indigo-500 bg-indigo-500/10 text-content-primary hover:bg-indigo-500/15": "border-zinc-800 text-content-primary hover:bg-zinc-800/60"
- )}
-            >
-              {value === "text" ? (
-                <Hash className="w-3.5 h-3.5" />
-              ) : (
-                <Volume2 className="w-3.5 h-3.5" />
-              )}
-              {value === "text" ? "Text" : "Voice"}
-            </UiButton>
-          ))}
-        </div>
+        <ChoiceGroup
+          ariaLabel="Channel kind"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: "text", label: "Text", leading: <Hash /> },
+            { value: "voice", label: "Voice", leading: <Volume2 /> },
+          ]}
+        />
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button action="cancel" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button action="create" disabled={!name.trim() || busy} onClick={() => void submit()}>
-            Create
-          </Button>
+          <ActionButton action="cancel" context="dialog" onClick={onClose} />
+          <ActionButton
+            action="create"
+            context="form"
+            disabled={!name.trim() || busy}
+            loading={busy}
+            onClick={() => void submit()}
+          />
         </div>
       </div>
     </Dialog>

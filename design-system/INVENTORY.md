@@ -11,6 +11,7 @@ primitive but remaining local recipes, **legacy** is still feature-owned, and
 |---|---|---|---|---|
 | Presentation environment | shared | shared | shared | Explicit level overrides responsive/container defaults on every client. |
 | Button | partial | partial | partial | Web `IconButton` is shared; direct controls are ratcheted and should migrate by semantic action. Native system buttons remain appropriate but feature-owned visual wrappers must move into primitives. |
+| Choice / segmented selection | shared | partial | unavailable | Web `ChoiceGroup` owns radio semantics, roving focus, icon-text anatomy, and selected state. iOS currently uses platform toggles in channel creation but has no registered shared choice anatomy. |
 | Input / search / select / toggle | partial | legacy | legacy | Web primitives exist. Native clients correctly use system controls but still lack shared field anatomy and error/help slots. |
 | Menu / popover / dialog / sheet | partial | partial | partial | Preserve platform-native presentation. Normalize titles, actions, destructive state, and dismissal semantics next. |
 | Chip / badge / presence | partial | partial | shared | Context chips migrated on Web; avatar and unread patterns already exist natively. Consolidate Web's remaining hand-written status chips. |

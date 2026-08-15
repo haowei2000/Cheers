@@ -1,9 +1,7 @@
 /** @file Accessible two-option control for selecting chat or discussion layout. */
 
-import { TabOption } from "@/components/ui/tab-option";
-import { controlIconClasses } from "@/components/ui/control-size";
+import { ChoiceGroup } from "@/components/ui/choice-button";
 import { MessageCircle, MessagesSquare } from "lucide-react";
-import { cn } from "@/lib/cn";
 import type { ConversationMode } from "./conversationMode";
 
 export type { ConversationMode } from "./conversationMode";
@@ -39,30 +37,21 @@ export function ConversationModePicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Conversation layout">
-      {OPTIONS.map((option) => {
-        const selected = value === option.value;
+    <ChoiceGroup
+      ariaLabel="Conversation layout"
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      controlSize="regular"
+      options={OPTIONS.map((option) => {
         const Icon = option.icon;
-        return (
-          <TabOption
-            key={option.value}
-            label={option.title}
-            leading={<Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-content-primary" : "text-content-muted")} />}
-            selected={selected}
-            disabled={disabled}
-            aria-disabled={disabled}
-            aria-label={`${option.title}: ${option.description}`}
-            title={option.description}
-            onClick={() => onChange(option.value)}
-            controlSize="regular"
-            className={cn(
- "min-w-0",
- selected
- ? "bg-zinc-800 text-content-primary": "text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary",
- )}
-          />
-        );
+        return {
+          value: option.value,
+          label: option.title,
+          description: option.description,
+          leading: <Icon />,
+        };
       })}
-    </div>
+    />
   );
 }

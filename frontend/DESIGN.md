@@ -408,6 +408,13 @@ cut-out mask, not a decorative border.)
 Don't introduce a third style; segmented controls reuse the pill recipe
 inside a `bg-zinc-800` container.
 
+Mutually exclusive form choices use `<ChoiceGroup>` and its registered
+`<ChoiceButton>` anatomy, not tabs or feature-owned buttons. The group exposes
+`radiogroup`/`radio` semantics, one roving tab stop, and arrow/Home/End keyboard
+navigation. Each choice uses the shared `iconText` slots at fill width; selected
+state uses a neutral filled surface rather than a resting border or an
+action-colored treatment.
+
 ### 2.9 Empty state
 
 Canon is the Plan panel: centered, icon + primary + secondary line.

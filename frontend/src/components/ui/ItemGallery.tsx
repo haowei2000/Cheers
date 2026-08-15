@@ -1,4 +1,4 @@
-import { AlertTriangle, DollarSign, MessageSquarePlus, Plus, User, X } from "lucide-react";
+import { AlertTriangle, DollarSign, Hash, Lock, MessageSquarePlus, Plus, User, X } from "lucide-react";
 import {
   EditorialIcon,
   editorialIconNames,
@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { MenuOption } from "@/components/ui/menu-option";
 import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { ChoiceGroup } from "@/components/ui/choice-button";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
@@ -189,6 +190,15 @@ export function ItemGallery() {
                   <TabOption label="Active" selected />
                   <TabOption label="Archive" selected={false} />
                 </div>
+                <ChoiceGroup
+                  ariaLabel={`${size} visibility choice`}
+                  value="public"
+                  onChange={() => undefined}
+                  options={[
+                    { value: "public", label: "Public", leading: <Hash /> },
+                    { value: "private", label: "Private", leading: <Lock /> },
+                  ]}
+                />
                 <div role="menu">
                   <MenuOption label="Open correspondence" leading={<EditorialIcon name="correspondence" contentSize="regular" />} />
                 </div>
