@@ -732,6 +732,16 @@ mod tests {
     }
 
     #[test]
+    fn official_research_planner_fixture_is_globally_declarative() {
+        let raw = include_bytes!("../../../fixtures/workbench/research-planner.cheers-extension");
+        let parsed = validate_package(raw, false).expect("official catalog data package validates");
+        assert_eq!(parsed.manifest.id, "research-planner");
+        assert_eq!(parsed.manifest.contributes.scenes.len(), 1);
+        assert!(parsed.manifest.contributes.renderers.is_empty());
+        assert_eq!(parsed.manifest.contributes.automations.len(), 1);
+    }
+
+    #[test]
     fn global_package_rejects_renderer_code() {
         let raw = package(
             manifest(json!([{"id":"demo","title":"Demo","entry":"renderers/demo.js","match":[]}])),

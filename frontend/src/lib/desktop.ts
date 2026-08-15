@@ -33,6 +33,25 @@ export interface PersonalExtension {
   sha256: string;
 }
 
+export interface DownloadedExtension {
+  contentBase64: string;
+  sha256: string;
+  source: string;
+}
+
+function bytesFromBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+/** Fetch inert package bytes through the native official-catalog downloader. */
+export async function downloadCatalogExtension(source: string, sha256: string): Promise<Uint8Array> {
+  if (!isTauri()) throw new Error("Official one-click installation requires Cheers for Mac");
+  const extension = await invokeDesktop<DownloadedExtension>("extension_catalog_download", { source, sha256 });
+  if (extension.sha256 !== sha256 || extension.source !== source) throw new Error("Downloaded extension metadata mismatch");
+  return bytesFromBase64(extension.contentBase64);
+}
+
 /** Personal extensions installed on this machine. Empty in the browser. */
 export async function listPersonalExtensions(): Promise<PersonalExtension[]> {
   if (!isTauri()) return [];

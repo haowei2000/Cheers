@@ -41,6 +41,20 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(self.selected("ci", files), {"frontend"})
         self.assertEqual(self.selected("cd", files), {"frontend"})
 
+    def test_extension_source_runs_catalog_frontend_and_gateway_contracts(self):
+        self.assertEqual(
+            self.selected("ci", ["extensions/official/research-planner/manifest.json"]),
+            {"frontend"},
+        )
+        self.assertEqual(
+            self.selected("ci", ["fixtures/workbench/research-planner.cheers-extension"]),
+            {"gateway", "frontend"},
+        )
+        self.assertEqual(
+            self.selected("cd", ["extensions/catalog.json"]),
+            {"frontend"},
+        )
+
     def test_ios_and_project_checker_share_a_lane(self):
         self.assertEqual(
             self.selected("ci", ["scripts/check-pbxproj.py"]), {"ios"}

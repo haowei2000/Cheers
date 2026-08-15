@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./editorial.css?v=20260815-1" />
+  <title>Cheers 官方扩展</title>
+  <meta name="description" content="浏览 Cheers 官方 Workbench 扩展、下载经过校验的扩展包，并一键添加到 Cheers for Mac。" />
+  <script defer src="./extensions/catalog.js"></script>
+  <script defer src="./extensions.js"></script>
+</head>
+<body class="extensions-page">
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./index.zh-CN.html"><span class="glass">C</span> Cheers</a>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="./index.zh-CN.html#features">功能</a>
+        <a href="./plugins.zh-CN.html" aria-current="page">扩展</a>
+        <a href="./plugin-dev.html">开发</a>
+        <a href="./docs.zh-CN.html">文档</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-ghost" href="./plugins.html" lang="en">EN</a>
+        <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="catalog-hero">
+      <div class="catalog-hero-copy">
+        <div class="eyebrow">官方目录</div>
+        <h1>为共享工作添加能力</h1>
+        <p>通过一个经过验证的 <code>.cheers-extension</code> 包安装场景、定时工作流和受沙箱保护的 macOS Renderer。</p>
+      </div>
+      <figure class="catalog-shot">
+        <img src="./imgs/workbench.png" alt="Cheers Workbench 展示共享频道文件和渲染视图" />
+      </figure>
+    </section>
+
+    <section aria-labelledby="catalog-title">
+      <div class="section-head">
+        <div class="eyebrow">Cheers 官方精选</div>
+        <h2 id="catalog-title">扩展目录</h2>
+      </div>
+      <div class="catalog-toolbar" role="search">
+        <label><span>搜索</span><input id="extensionSearch" type="search" autocomplete="off" placeholder="名称、分类或能力" /></label>
+        <label><span>类型</span><select id="extensionFilter"><option value="all">全部扩展</option><option value="package">可安装扩展包</option><option value="builtin">Cheers 内置</option></select></label>
+      </div>
+      <div id="extensionStatus" class="catalog-status" aria-live="polite"></div>
+      <div id="extensionCatalog" class="extension-grid" aria-live="polite">
+        <p class="catalog-empty">正在加载经过验证的扩展…</p>
+      </div>
+    </section>
+
+    <section class="catalog-guidance" aria-label="安装说明">
+      <div><h2>Mac</h2><p>“添加到 Mac”会打开 Cheers，核对固定 SHA-256，并在安装前展示扩展申请的全部权限。</p></div>
+      <div><h2>浏览器</h2><p>下载无代码扩展包后，由管理员在“设置 → Workbench → 全局安装”中导入。</p></div>
+      <div><h2>可信边界</h2><p>扩展由 CI 从本仓库源码构建。安装不会执行 Renderer；只有用户选择 Renderer 后才会启动。</p></div>
+    </section>
+  </main>
+
+  <footer><div class="foot-inner"><span>Cheers 官方扩展</span><div class="foot-links"><a href="./plugin-dev.html">开发扩展</a><a href="./support.zh-CN.html">支持</a><a href="https://github.com/haowei2000/Cheers">源码</a></div></div></footer>
+</body>
+</html>

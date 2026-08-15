@@ -212,6 +212,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Build and verify official extension catalog
+        working-directory: .
+        run: |
+          npm --prefix packages/cheers-workbench-sdk ci
+          npm --prefix packages/cheers-workbench-sdk test
+          node --test scripts/lib/extension-catalog.test.mjs
+
       - name: Validate cross-platform item contract
         run: npm run design-system:check
 

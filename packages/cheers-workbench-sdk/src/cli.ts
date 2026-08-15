@@ -3,7 +3,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { strToU8, zipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 interface Manifest {
   schemaVersion: number;
@@ -36,7 +36,13 @@ interface Manifest {
 const idPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
-function validateManifest(manifest: Manifest): void {
+function zipEpoch(): Date {
+  // fflate writes ZIP timestamps with local Date fields. Constructing local
+  // midnight keeps the DOS timestamp identical in every runner timezone.
+  return new Date(1980, 0, 1, 0, 0, 0, 0);
+}
+
+export function validateManifest(manifest: Manifest): void {
   if (manifest.schemaVersion !== 1) throw new Error("schemaVersion must be 1");
   if (!idPattern.test(manifest.id)) throw new Error("invalid extension id");
   if (!semverPattern.test(manifest.version)) throw new Error("version must be SemVer");
@@ -75,6 +81,24 @@ function validateManifest(manifest: Manifest): void {
   if (!Array.isArray(resources) || resources.some((resource) => typeof resource !== "string" || !allowedResources.has(resource))) {
     throw new Error("channel.resources contains an unsupported resource");
   }
+}
+
+/** Read and validate the manifest from an already packed extension. Catalog and
+ * release tooling use this instead of trusting presentation metadata. */
+export function readPackedManifest(bytes: Uint8Array): Manifest {
+  const files = unzipSync(bytes);
+  const manifestBytes = files["manifest.json"];
+  if (!manifestBytes) throw new Error("extension is missing manifest.json");
+  const manifest = JSON.parse(strFromU8(manifestBytes)) as Manifest;
+  validateManifest(manifest);
+  for (const scene of manifest.contributes.scenes ?? []) {
+    if (!files[scene.definition]) throw new Error(`missing scene definition: ${scene.definition}`);
+  }
+  for (const renderer of manifest.contributes.renderers ?? []) {
+    if (!files[renderer.entry]) throw new Error(`missing renderer entry: ${renderer.entry}`);
+    if (renderer.style && !files[renderer.style]) throw new Error(`missing renderer style: ${renderer.style}`);
+  }
+  return manifest;
 }
 
 async function collect(root: string, directory: string, output: Record<string, Uint8Array>): Promise<void> {
@@ -124,7 +148,7 @@ export async function packExtension(sourceDirectory: string, destination?: strin
   for (const [path, content] of entries) {
     if (path.startsWith("seed/") && content.byteLength > 256 * 1024) throw new Error(`seed file exceeds 256 KiB: ${path}`);
   }
-  const archive = zipSync(ordered, { level: 9, mtime: new Date("1980-01-01T00:00:00Z") });
+  const archive = zipSync(ordered, { level: 9, mtime: zipEpoch(), os: 0, attrs: 0 });
   if (archive.byteLength > 4 * 1024 * 1024) throw new Error("extension exceeds 4 MiB compressed");
   const output = resolve(destination ?? join(dirname(root), `${manifest.id}.cheers-extension`));
   await writeFile(output, archive);

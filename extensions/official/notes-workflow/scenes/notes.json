@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "open-questions",
+      "title": "Open questions",
+      "file": "notes/open-questions.md",
+      "renderer": "self:notes"
+    }
+  ],
+  "seed": [
+    {
+      "path": "notes/open-questions.md",
+      "source": "seed/notes/notes/open-questions.md"
+    }
+  ],
+  "pin": ["notes/open-questions.md"]
+}

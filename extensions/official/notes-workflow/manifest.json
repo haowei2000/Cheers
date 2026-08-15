@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "notes-workflow",
+  "version": "1.0.0",
+  "title": "Notes workflow",
+  "description": "A focused Markdown notes renderer with a daily review template",
+  "contributes": {
+    "scenes": [
+      { "id": "notes", "title": "Notes", "definition": "scenes/notes.json" }
+    ],
+    "renderers": [
+      {
+        "id": "notes",
+        "title": "Focused notes",
+        "entry": "renderers/notes.js",
+        "style": "renderers/notes.css",
+        "match": ["notes/**/*.md"]
+      }
+    ],
+    "automations": [
+      {
+        "id": "daily-review",
+        "title": "Review open questions",
+        "description": "Ask a channel bot to summarize unresolved questions and planning risks.",
+        "message": "Review the shared notes, summarize unresolved questions and planning risks, and update notes/open-questions.md with concrete next steps.",
+        "defaultSchedule": { "kind": "daily", "localTime": "09:00" }
+      }
+    ]
+  },
+  "permissions": { "file.write": true }
+}
