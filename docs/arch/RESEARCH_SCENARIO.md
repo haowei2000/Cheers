@@ -370,12 +370,10 @@ zinc-950 surface (all checks pass — contrast ≥3:1, worst adjacent CVD ΔE 23
 for ≥2 series + direct end-labels for ≤4 (identity never color-alone), hover
 crosshair + tooltip, recessive hairline grid, tabular numerals.
 
-### 6.3 Knowledge graph — sandbox plugin (Phase 2)
-Paper/citation graph fits the sandboxed iframe plugin renderer
-(`workbench/sandbox/`, table `workbench_plugins`, current-protocol example
-`sandbox/examples/lit-review.html`): the host assigns one `context_files` JSON
-over the render/save postMessage protocol, the plugin draws client-side,
-network-isolated by the sandbox.
+### 6.3 Knowledge graph — personal extension (Phase 2)
+Paper/citation graph fits a macOS personal renderer extension. The host assigns one
+workspace file over JSON-RPC, the renderer draws client-side in an opaque-origin iframe,
+and its manifest permissions determine available host capabilities and network CSP.
 
 ### 6.4 Daily recommendation / email — out of scope
 SMTP exists, but no scheduler/cron. A recurring digest needs new backend work; excluded
@@ -421,9 +419,9 @@ from the MVP. If wanted later, trigger the agent from an external cron hitting a
 
 ## 9. Open questions
 
-1. **Install as a *global* template?** Global templates are admin-installed
-   (`workbench_templates`, `server/src/api/workbench.rs`), shared by every channel;
-   session/temp templates are ephemeral. For a shipped example, global is the right home.
+1. **Install as a global extension?** Declarative global extensions are admin-installed
+   through the unified Workbench API and shared by every client; temporary packages are
+   ephemeral. For a shipped scene, global is the right home.
 2. **How much AutoSci know-how to port into the convention?** AutoSci's skill pack is
    Claude-Code-only and cannot be loaded into Codex (§4.2). The lifecycle know-how must
    be carried by `prompts/lab-conventions.md` (small — see the pinned-size limit) and/or

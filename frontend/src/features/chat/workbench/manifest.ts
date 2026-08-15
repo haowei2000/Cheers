@@ -16,6 +16,8 @@ export interface ViewDef {
   title: string;
   file: string; // path in the channel workspace (context_files)
   lens: string; // a registered lens id ("table" | "kanban" | "markdown" | ...)
+  /** Stable renderer binding from an extension scene. */
+  renderer?: string;
   config?: unknown; // lens-specific config (e.g. table columns)
 }
 

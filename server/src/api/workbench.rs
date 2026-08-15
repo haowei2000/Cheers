@@ -1,14 +1,9 @@
-//! Workbench extension APIs — two deliberately separate kinds (see docs/arch/WORKBENCH.md):
-//! - PLUGINS — server-level, CODE (sandboxed bundle).
-//!   list (auth) · bundle (auth) · install/update (admin) · delete (admin).
-//! - TEMPLATES — server-level (global), DATA (declarative manifest, no code).
-//!   list (auth) · install/update (admin) · delete (admin). No sandbox: it's inert data.
-//!   (Ad-hoc/one-off templates never touch this API — they live only in the browser
-//!   session; see the frontend's temporary-upload path.)
+//! Unified global Workbench extension API. Global packages are declarative only.
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
-    response::Html,
+    http::{header, HeaderMap},
     Extension, Json,
 };
 use serde_json::{json, Value};
@@ -20,173 +15,85 @@ fn require_admin(claims: &Claims) -> Result<(), AppError> {
         Ok(())
     } else {
         Err(AppError::Forbidden(
-            "installing a workbench plugin requires admin".into(),
+            "installing a global Workbench extension requires admin".into(),
         ))
     }
 }
 
-/// GET /api/v1/workbench/plugins — installed plugins (metadata; bundle fetched separately).
-pub async fn list_plugins(
+/// GET /api/v1/workbench/extensions
+pub async fn list_extensions(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    Ok(Json(domain::workbench_plugins::list(&state.db).await?))
+    Ok(Json(domain::workbench_extensions::list(&state.db).await?))
 }
 
-/// GET /api/v1/workbench/plugins/:id/bundle — the sandboxed HTML/JS (for iframe srcdoc).
-pub async fn get_bundle(
+/// GET /api/v1/workbench/extensions/:id/scenes/:scene_id
+pub async fn get_scene(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
-    Path(plugin_id): Path<String>,
-) -> Result<Html<String>, AppError> {
-    let bundle = domain::workbench_plugins::get_bundle(&state.db, &plugin_id)
+    Path((id, scene_id)): Path<(String, String)>,
+) -> Result<Json<Value>, AppError> {
+    let scene = domain::workbench_extensions::get_scene(&state.db, &id, &scene_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    Ok(Html(bundle))
+    Ok(Json(scene))
 }
 
-/// PUT /api/v1/workbench/plugins/:id — install/update (admin). Body: { title, manifest, bundle }.
-/// The manifest is validated against the protocol-1 shape (docs/developer/PLUGIN_DEVELOPMENT.md);
-/// a broken/legacy plugin is rejected here with a named reason, never served half-working.
-pub async fn install_plugin(
+/// PUT /api/v1/workbench/extensions/:id
+pub async fn put_extension(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path(plugin_id): Path<String>,
-    Json(body): Json<Value>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<Value>, AppError> {
     require_admin(&claims)?;
-    // Official (gateway-seeded) plugins are managed by releases — an admin PUT here
-    // would be silently clobbered on the next version bump. Refuse instead.
-    if domain::workbench_plugins::get_origin(&state.db, &plugin_id)
-        .await?
-        .as_deref()
-        == Some("system")
-    {
-        return Err(AppError::BadRequest(
-            "official plugin — managed by gateway releases; copy it under a new id to customize"
-                .into(),
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .map(str::trim);
+    if content_type != Some(domain::workbench_extensions::MEDIA_TYPE) {
+        return Err(AppError::BadRequest(format!(
+            "Content-Type must be {}",
+            domain::workbench_extensions::MEDIA_TYPE
+        )));
+    }
+    if body.len() > domain::workbench_extensions::MAX_COMPRESSED_BYTES {
+        return Err(AppError::PayloadTooLarge(
+            "extension exceeds the 4 MiB compressed limit".into(),
         ));
     }
-    let manifest = body
-        .get("manifest")
-        .ok_or_else(|| AppError::BadRequest("plugin manifest is required".into()))?;
-    domain::workbench_plugins::validate_manifest(&plugin_id, manifest)
+    if domain::workbench_extensions::is_official_id(&state.db, &id).await? {
+        return Err(AppError::BadRequest(
+            "official extension is managed by gateway releases; use another id".into(),
+        ));
+    }
+    let package = domain::workbench_extensions::validate_package(&body, false)
         .map_err(AppError::BadRequest)?;
-    let manifest_str = manifest.to_string();
-    if manifest_str.len() > domain::workbench_plugins::MAX_MANIFEST_BYTES {
-        return Err(AppError::PayloadTooLarge(
-            "plugin manifest exceeds 64 KiB".into(),
-        ));
+    if package.manifest.id != id {
+        return Err(AppError::BadRequest("URL id must match manifest id".into()));
     }
-    let bundle = body.get("bundle").and_then(Value::as_str).unwrap_or("");
-    if bundle.trim().is_empty() {
-        return Err(AppError::BadRequest("plugin bundle is required".into()));
-    }
-    if bundle.len() > domain::workbench_plugins::MAX_BUNDLE_BYTES {
-        return Err(AppError::PayloadTooLarge(
-            "plugin bundle exceeds 2 MiB".into(),
-        ));
-    }
-    // validate_manifest guarantees a non-empty manifest.title; it wins over body.title
-    // (the two came apart only because the upload UI sends both).
-    let title = manifest
-        .get("title")
-        .and_then(Value::as_str)
-        .unwrap_or(&plugin_id)
-        .to_string();
-    domain::workbench_plugins::install(
-        &state.db,
-        &plugin_id,
-        &title,
-        &manifest_str,
-        bundle,
-        &claims.sub,
-        "admin",
-    )
-    .await?;
-    Ok(Json(json!({ "plugin_id": plugin_id, "ok": true })))
+    domain::workbench_extensions::install(&state.db, &package, &claims.sub, "admin").await?;
+    Ok(Json(json!({
+        "id": id,
+        "version": package.manifest.version,
+        "sha256": package.sha256,
+        "ok": true
+    })))
 }
 
-/// DELETE /api/v1/workbench/plugins/:id — uninstall (admin).
-pub async fn delete_plugin(
+/// DELETE /api/v1/workbench/extensions/:id
+pub async fn delete_extension(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path(plugin_id): Path<String>,
+    Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     require_admin(&claims)?;
-    let n = domain::workbench_plugins::delete(&state.db, &plugin_id).await?;
-    if n == 0 {
+    let deleted = domain::workbench_extensions::delete(&state.db, &id).await?;
+    if deleted == 0 {
         return Err(AppError::NotFound);
     }
-    Ok(Json(json!({ "deleted": n })))
-}
-
-// ── Global templates (DATA, no code) ────────────────────────────────────────────────
-
-/// GET /api/v1/workbench/templates — installed global templates (manifest included; it's
-/// small inert data, unlike a plugin bundle which is fetched separately).
-pub async fn list_templates(
-    State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
-) -> Result<Json<Vec<Value>>, AppError> {
-    Ok(Json(domain::workbench_templates::list(&state.db).await?))
-}
-
-/// PUT /api/v1/workbench/templates/:id — install/update a global template (admin).
-/// Body: { title, manifest }.
-pub async fn put_template(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(tpl_id): Path<String>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>, AppError> {
-    require_admin(&claims)?;
-    let title = body
-        .get("title")
-        .and_then(Value::as_str)
-        .unwrap_or(&tpl_id)
-        .to_string();
-    let manifest = body
-        .get("manifest")
-        .ok_or_else(|| AppError::BadRequest("template manifest is required".into()))?;
-    if !manifest.is_object() {
-        return Err(AppError::BadRequest(
-            "manifest must be a JSON object".into(),
-        ));
-    }
-    // Official ids belong to the binary (same rule as plugins): delete-then-reclaim is
-    // allowed, silent overwrite is not.
-    let origin: Option<String> =
-        sqlx::query_scalar("SELECT origin FROM workbench_templates WHERE tpl_id = $1")
-            .bind(&tpl_id)
-            .fetch_optional(&state.db)
-            .await?;
-    if origin.as_deref() == Some("system") {
-        return Err(AppError::BadRequest(
-            "this id is an official template; copy it under a new id to customize".into(),
-        ));
-    }
-    domain::workbench_templates::put(
-        &state.db,
-        &tpl_id,
-        &title,
-        &manifest.to_string(),
-        &claims.sub,
-    )
-    .await?;
-    Ok(Json(json!({ "tpl_id": tpl_id, "ok": true })))
-}
-
-/// DELETE /api/v1/workbench/templates/:id — uninstall a global template (admin).
-pub async fn delete_template(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(tpl_id): Path<String>,
-) -> Result<Json<Value>, AppError> {
-    require_admin(&claims)?;
-    let n = domain::workbench_templates::delete(&state.db, &tpl_id).await?;
-    if n == 0 {
-        return Err(AppError::NotFound);
-    }
-    Ok(Json(json!({ "deleted": n })))
+    Ok(Json(json!({"deleted": deleted})))
 }

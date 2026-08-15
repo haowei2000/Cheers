@@ -219,37 +219,33 @@ scheme、锁定当前频道后才路由——不增加任何新的数据访问�
 ③ 一键激活的分发形态（admin 全局 / 抽屉临时）。首次 Preview 时 codemap 插件靠
 特异性排序自动排第一（`dataHas` 两键 + glob + 插件 0.5 加成），用户选择一次即持久绑定。
 
-### 5.2 渲染器插件 `codemap.plugin.html`（代码，协议 1）——**已实现**
+### 5.2 Codemap Renderer（个人扩展）
 
-**成品在 [docs/arch/examples/codemap.plugin.html](./examples/codemap.plugin.html)**，
-可直接拖进工作台抽屉（session 通道）试用。要点：内联 SDK + 受限 YAML 子集解析器
-（超出子集 → `cheers:unsupported`）；空文件给「初始化」按钮（写入 §5.3 骨架）；
-直接双击打开 = standalone 演示模式（喂样例数据，便于不连 host 预览）；节点点击
-会前瞻性地向 host 发 `cheers:open {uri}`（G2 落地即自动生效），当前以「复制
-locator」兜底。会话内可拖动整理版面（坐标暂不持久化，等 host 的 configs 通道）。
+Codemap 的自定义 UI 使用 TypeScript SDK 打包为 `.cheers-extension`，只在 macOS
+个人作用域运行。浏览器和 iOS 使用内置 `builtin:codemap` Lens，不执行扩展代码。
 
 ```json
 {
+  "schemaVersion": 1,
   "id": "codemap",
+  "version": "1.0.0",
   "title": "Codemap",
-  "protocol": 1,
-  "renderers": [
-    { "id": "map", "title": "代码地图",
-      "match": { "format": "yaml", "glob": "codemap/*.yaml", "dataHas": ["codemap", "nodes"] } }
-  ]
+  "contributes": {
+    "renderers": [{ "id": "map", "title": "代码地图",
+      "entry": "renderers/map.js", "match": ["codemap/*.yaml"] }]
+  }
 }
 ```
 
-发布路径按平台现有三级走：**开发期**拖进抽屉 session 加载（⏱ 会话级、遮蔽同 id
-已装版本，改完刷新即弃）→ **团队用** admin 装进 `workbench_plugins` → **成熟后**
-进官方插件集（gateway 播种，`origin: system`）。bundle ≤ 2 MiB，手写 SVG 远用不满。
+开发期在 macOS 抽屉临时加载重新打包后的文件；稳定后安装到 This Mac。含代码的包
+不能安装为 Global 或 Official。
 
 **写回策略（保注释）**：渲染器持有整份 YAML 文本；侧栏改摘要/状态时做**行级
 patch**（定位该节点块内的 `summary:` / `status:` 行，只替换那一行，其余字节原样
-保留）再 `cheers:save`——和 bot 的 `desk_edit` 是同一哲学，注释永不受伤。
+保留）再调用 `file.save`——和 bot 的 `desk_edit` 是同一哲学，注释永不受伤。
 不 bundle YAML 库（解析用手写的受限子集：本 schema 只需要两层 map + 行内数组）。
 
-- **单个自包含 .html**，手写 SVG（无外部依赖，不引 CDN）。
+- **单文件 IIFE Renderer**，由 SDK pack CLI 从 TypeScript 构建。
 - **形态：节点 + 地图**（node-link 画布，见 `codemap-mockup.html` 设计稿）：
   可拖拽平移、滚轮缩放的无限画布；区域（area）画成半透明 hull 底图；模块是
   画布上的节点，双击展开**卫星文件节点**；右下角 minimap 定位，左下角缩放控件；

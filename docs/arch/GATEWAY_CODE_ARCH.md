@@ -50,7 +50,7 @@ gateway/
     │   ├── messages.rs         ← 消息 CRUD、触发 bot 判断
     │   ├── sessions.rs / chains.rs / channel_seq.rs / mentions.rs
     │   ├── dms.rs / workspaces.rs / acp_capability.rs
-    │   └── workbench_plugins.rs / workbench_templates.rs / seed.rs
+    │   └── workbench_extensions.rs / workbench_official_extensions.rs / seed.rs
     │
     ├── gateway/                ── 【Bot 连接 + 浏览器 WS 管理】（旧文档称 acp_bridge/）──
     │   ├── mod.rs

@@ -13,16 +13,16 @@ import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
-import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
-import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
+import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
+import { seedManifest, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
-import { listGlobalTemplates } from "./templatesApi";
-import { listPlugins, parsePluginHtml, MAX_PLUGIN_BUNDLE_BYTES, type PluginMeta } from "./sandbox/api";
-import { listPersonalPlugins } from "@/lib/desktop";
-import researchExample from "./examples/research.json";
+import { listGlobalScenes } from "./extensions/api";
+import { parseExtensionPackage } from "./extensions/package";
+import type { PluginMeta } from "./sandbox/pluginManifest";
+import { listPersonalExtensions, pickDevelopmentExtension, readDevelopmentExtension } from "@/lib/desktop";
+import { isTauri } from "@/lib/serverConfig";
 import "./lens/builtins";
-import "./environments";
 
 interface Props {
   open: boolean;
@@ -34,11 +34,11 @@ interface Props {
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the
    *  tree and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;
-  /** Navigate the user's view to a `cheers:` locator (the renderer plugins' cheers:open
+  /** Navigate the user's view to a `cheers:` locator (a personal renderer capability
    *  host API). Owned by ChannelView — it holds every jump surface (workspace dialog,
    *  channel files, this drawer's own deep-link). */
   onOpenLocator?: (uri: string) => void;
-  /** Prefill the channel composer (the renderer plugins' cheers:compose host API).
+  /** Prefill the channel composer (a personal renderer capability).
    *  Never sends — owned by ChannelView, which holds the composer. */
   onCompose?: (text: string) => void;
 }
@@ -88,7 +88,9 @@ export function parseCfg(content: string): WbConfig {
     _doc: raw._doc,
     environment: raw.environment,
     pinned: raw.pinned,
-    bindings: raw.bindings,
+    bindings: raw.bindings
+      ? Object.fromEntries(Object.entries(raw.bindings).filter(([, renderer]) => renderer.startsWith("builtin:")))
+      : undefined,
     configs: raw.configs,
     scene_state: raw.scene_state,
   };
@@ -108,22 +110,20 @@ export function parseCfg(content: string): WbConfig {
 
 // Right-side per-channel workbench: scenes contain native content tabs; Raw is the
 // explicit escape hatch to the complete file browser.
-// Scenarios come from three places:
-//  - GLOBAL templates (DATA, admin-installed, lens-rendered) — shared by every channel
-//  - SESSION templates (DATA, temporarily uploaded here, this browser session only)
-//  - SERVER-LEVEL plugins (CODE, sandboxed iframe renderers): admin-installed or
-//    official (seeded by the gateway release, origin='system')
-// Installing global templates / plugins lives in Settings → Workbench extensions (admin);
-// the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone
-// (.json template or .html plugin — the plugin dev loop).
+// Scenes come from global, personal, or temporary `.cheers-extension` packages. Only
+// personal/temporary macOS packages may contribute sandboxed renderers.
 function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator, onCompose }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
-  const [serverPlugins, setServerPlugins] = useState<PluginMeta[]>([]);
   const [personalPlugins, setPersonalPlugins] = useState<PluginMeta[]>([]);
   const [sessionPlugins, setSessionPlugins] = useState<PluginMeta[]>([]);
+  const [extensionsRevision, setExtensionsRevision] = useState(0);
+  const localBindingKey = `cheers.workbench.personal-bindings.${channelId}`;
+  const [localBindings, setLocalBindings] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(localBindingKey) ?? "{}"); } catch { return {}; }
+  });
   const [busy, setBusy] = useState(false);
   /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
   const [dragOver, setDragOver] = useState(false);
@@ -134,6 +134,12 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
    *  activated scenario's first file — whichever happened most recently wins. */
   const [focus, setFocus] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const changed = () => setExtensionsRevision((revision) => revision + 1);
+    window.addEventListener("cheers:extensions-changed", changed);
+    return () => window.removeEventListener("cheers:extensions-changed", changed);
+  }, []);
 
   useEffect(() => {
     if (openFilePath) setFocus(openFilePath);
@@ -147,34 +153,37 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     fs.read(WORKBENCH_CONFIG_PATH)
       .then((f) => alive && setCfg(parseCfg(f.content)))
       .catch(() => alive && setCfg({}));
-    listGlobalTemplates()
+    listGlobalScenes()
       .then((t) => alive && setGlobalTemplates(t))
       .catch(() => {});
-    listPlugins()
-      .then((p) => alive && setServerPlugins(p))
-      .catch(() => {});
-    // Desktop only: renderer plugins the user installed on this Mac
-    // (~/.cheers/plugins). Each carries its bundle inline, so it renders with no
-    // server round-trip — a same-id session/admin plugin still shadows it below.
-    listPersonalPlugins()
+    // Desktop only: personal extensions stored under ~/.cheers/extensions. Renderer
+    // assets stay local and need no server round-trip.
+    listPersonalExtensions()
       .then((ps) => {
         if (!alive) return;
-        const metas: PluginMeta[] = [];
-        for (const p of ps) {
-          try {
-            const { id, title, manifest } = parsePluginHtml(p.content);
-            metas.push({ plugin_id: id, title, manifest, bundle: p.content, origin: "personal" });
-          } catch {
-            // A malformed bundle on disk simply isn't offered — don't fail the list.
-          }
-        }
-        setPersonalPlugins(metas);
+        return Promise.all(ps.map(async (p) => {
+          const binary = atob(p.contentBase64);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          return parseExtensionPackage(bytes, "personal");
+        })).then((extensions) => {
+          if (!alive) return;
+          setPersonalPlugins(extensions.flatMap((extension) => extension.rendererPlugin ? [extension.rendererPlugin] : []));
+          setSessionTemplates((current) => [
+            ...current.filter((scene) => !scene.id.startsWith("personal:")),
+            ...extensions.flatMap((extension) => extension.scenes),
+          ]);
+        });
       })
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [open, fs]);
+  }, [open, fs, extensionsRevision]);
+
+  useEffect(() => {
+    try { setLocalBindings(JSON.parse(localStorage.getItem(localBindingKey) ?? "{}")); }
+    catch { setLocalBindings({}); }
+  }, [localBindingKey]);
 
   const writeCfg = useCallback(
     async (next: WbConfig) => {
@@ -209,15 +218,24 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     [cfg, pinned, writeCfg]
   );
 
-  const bindings = useMemo(() => cfg.bindings ?? {}, [cfg.bindings]);
+  const bindings = useMemo(() => ({ ...(cfg.bindings ?? {}), ...localBindings }), [cfg.bindings, localBindings]);
   const setBinding = useCallback(
     (path: string, rendererId: string | null) => {
-      const next = { ...bindings };
-      if (rendererId) next[path] = rendererId;
-      else delete next[path];
-      void writeCfg({ ...cfg, bindings: next });
+      if (rendererId?.startsWith("personal:")) {
+        const next = { ...localBindings, [path]: rendererId };
+        setLocalBindings(next);
+        localStorage.setItem(localBindingKey, JSON.stringify(next));
+        const shared = { ...(cfg.bindings ?? {}) }; delete shared[path];
+        void writeCfg({ ...cfg, bindings: shared });
+      } else {
+        const local = { ...localBindings }; delete local[path];
+        setLocalBindings(local); localStorage.setItem(localBindingKey, JSON.stringify(local));
+        const shared = { ...(cfg.bindings ?? {}) };
+        if (rendererId) shared[path] = rendererId; else delete shared[path];
+        void writeCfg({ ...cfg, bindings: shared });
+      }
     },
-    [cfg, bindings, writeCfg]
+    [cfg, localBindings, localBindingKey, writeCfg]
   );
 
   const configs = useMemo(() => cfg.configs ?? {}, [cfg.configs]);
@@ -243,7 +261,15 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         const nextBindings = { ...(base.bindings ?? {}) };
         const nextConfigs = { ...(base.configs ?? {}) };
         for (const v of manifest.views) {
-          if (!nextBindings[v.file]) nextBindings[v.file] = `builtin:${v.lens}`;
+          const renderer = v.renderer ?? `builtin:${v.lens}`;
+          if (renderer.startsWith("personal:")) {
+            setLocalBindings((current) => {
+              if (current[v.file]) return current;
+              const next = { ...current, [v.file]: renderer };
+              localStorage.setItem(localBindingKey, JSON.stringify(next));
+              return next;
+            });
+          } else if (!nextBindings[v.file] && renderer !== "auto") nextBindings[v.file] = renderer;
           if (v.config !== undefined && nextConfigs[v.file] === undefined) nextConfigs[v.file] = v.config;
         }
         const sceneState: WorkbenchSceneState = {
@@ -270,7 +296,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         setBusy(false);
       }
     },
-    [fs, cfg, writeCfg]
+    [fs, cfg, writeCfg, localBindingKey]
   );
 
   // Temporary upload: validate a manifest, keep it in THIS session only (never persisted,
@@ -278,63 +304,30 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // the channel — that's the point of opening the scenario — but the template DEFINITION
   // is ephemeral. To share a template across channels/users, an admin installs it as a
   // global template in Settings → Workbench extensions.
-  const loadTemporary = useCallback(
-    (text: string) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        setNotice("Not valid JSON");
+  const loadExtensionFile = useCallback(
+    (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".cheers-extension")) {
+        setNotice("Choose a .cheers-extension package");
         return;
       }
-      if (!validateManifest(parsed)) {
-        setNotice("Invalid template: missing id/title/views, or references an unknown lens");
-        return;
-      }
-      const m = parsed;
-      setSessionTemplates((prev) => [m, ...prev.filter((x) => x.id !== m.id)]);
-      void (async () => {
-        if (await activate(m))
-          setNotice(`Loaded temporarily: ${m.title} (this session only; to share globally go to Settings → Workbench extensions)`);
-      })();
+      void file.arrayBuffer().then((bytes) => parseExtensionPackage(bytes, isTauri() ? "temporary" : "global")).then((extension) => {
+        setSessionTemplates((current) => [...extension.scenes, ...current.filter((scene) => !extension.scenes.some((next) => next.id === scene.id))]);
+        if (extension.rendererPlugin) setSessionPlugins((current) => [extension.rendererPlugin!, ...current.filter((plugin) => plugin.plugin_id !== extension.manifest.id)]);
+        const first = extension.scenes[0];
+        if (first) void activate(first);
+        setNotice(`Loaded temporarily: ${extension.manifest.title}`);
+      }).catch((reason) => setNotice(errMsg(reason)));
     },
     [activate]
   );
 
-  // Temporary plugin: parse the .html's embedded manifest and keep it in THIS session
-  // only (bundle inline, never installed) — the plugin dev loop, no admin needed. A
-  // same-id session plugin shadows the installed one for this session, so existing
-  // bindings transparently resolve to the fresh bundle while you iterate.
-  const loadTemporaryPlugin = useCallback((html: string) => {
-    const byteLength = new TextEncoder().encode(html).length;
-    if (byteLength > MAX_PLUGIN_BUNDLE_BYTES) {
-      setNotice("Plugin bundle too large (max 2 MiB)");
-      return;
-    }
-    try {
-      const { id, title, manifest } = parsePluginHtml(html);
-      setSessionPlugins((prev) => [
-        { plugin_id: id, title, manifest, bundle: html, transient: true },
-        ...prev.filter((p) => p.plugin_id !== id),
-      ]);
-      setNotice(
-        `Loaded plugin temporarily: ${title} (this session only; to install globally go to Settings → Workbench extensions)`
-      );
-    } catch (e) {
-      setNotice(errMsg(e));
-    }
+  const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
+    void parseExtensionPackage(bytes, isTauri() ? "temporary" : "global").then((extension) => {
+      setSessionTemplates((current) => [...extension.scenes, ...current.filter((scene) => !extension.scenes.some((next) => next.id === scene.id))]);
+      if (extension.rendererPlugin) setSessionPlugins((current) => [extension.rendererPlugin!, ...current.filter((plugin) => plugin.plugin_id !== extension.manifest.id)]);
+      setNotice(`Loaded temporarily: ${title}`);
+    }).catch((reason) => setNotice(errMsg(reason)));
   }, []);
-
-  // One extension entry point, routed by extension: .json => template, .html => plugin.
-  const loadExtensionFile = useCallback(
-    (file: File) => {
-      const name = file.name.toLowerCase();
-      if (name.endsWith(".json")) void file.text().then(loadTemporary);
-      else if (name.endsWith(".html") || name.endsWith(".htm")) void file.text().then(loadTemporaryPlugin);
-      else setNotice("Drop a .json template or a .html/.htm renderer plugin");
-    },
-    [loadTemporary, loadTemporaryPlugin]
-  );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -364,7 +357,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // and drag-drop remains the universal path.
   const [watching, setWatching] = useState<string | null>(null);
   const watchTimer = useRef<number | null>(null);
-  const canWatch = typeof (window as { showOpenFilePicker?: unknown }).showOpenFilePicker === "function";
+  const canWatch = isTauri() || typeof (window as { showOpenFilePicker?: unknown }).showOpenFilePicker === "function";
 
   const stopWatch = useCallback(() => {
     if (watchTimer.current !== null) {
@@ -375,6 +368,25 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   }, []);
 
   const startWatch = useCallback(async () => {
+    if (isTauri()) {
+      const selected = await pickDevelopmentExtension();
+      if (!selected) return;
+      const decode = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+      let lastSeen = selected.sha256;
+      loadExtensionBytes(decode(selected.contentBase64), selected.id);
+      setWatching(selected.path.split("/").pop() ?? selected.id);
+      if (watchTimer.current !== null) window.clearInterval(watchTimer.current);
+      watchTimer.current = window.setInterval(() => {
+        void readDevelopmentExtension(selected.path)
+          .then((next) => {
+            if (next.sha256 === lastSeen) return;
+            lastSeen = next.sha256;
+            loadExtensionBytes(decode(next.contentBase64), next.id);
+          })
+          .catch(() => { stopWatch(); setNotice("Stopped watching: the package is no longer readable"); });
+      }, 1000);
+      return;
+    }
     interface PickedFile {
       getFile: () => Promise<File>;
     }
@@ -388,7 +400,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         types: [
           {
             description: "Workbench extension",
-            accept: { "text/html": [".html", ".htm"], "application/json": [".json"] },
+            accept: { "application/vnd.cheers.extension+zip": [".cheers-extension"] },
           },
         ],
       });
@@ -416,30 +428,25 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           setNotice("Stopped watching: the file is no longer readable");
         });
     }, 1000);
-  }, [loadExtensionFile, stopWatch]);
+  }, [loadExtensionFile, loadExtensionBytes, stopWatch]);
 
   useEffect(() => stopWatch, [stopWatch]);
 
   // Session templates first so a temporary upload overrides a same-id global for this session.
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
-    for (const e of [...sessionTemplates, ...globalTemplates, ...getBuiltinEnvironments()])
+    for (const e of [...sessionTemplates, ...globalTemplates])
       if (!byId.has(e.id)) byId.set(e.id, e);
     return [...byId.values()];
   }, [sessionTemplates, globalTemplates]);
 
-  // Session plugins first: a temporary upload shadows a same-id installed plugin for
-  // this session. Dedup at the PluginMeta level — renderer ids are composite
-  // (plugin:<pid>:<rid>), so it must happen before renderer expansion.
-  // Precedence: session (live dev override) > personal (this Mac) > server
-  // (global admin). First writer wins in the dedup, so a temp upload shadows a
-  // personal install, which shadows a same-id admin plugin.
+  // A temporary package shadows a same-id personal extension for the dev loop.
   const plugins = useMemo(() => {
     const byId = new Map<string, PluginMeta>();
-    for (const p of [...sessionPlugins, ...personalPlugins, ...serverPlugins])
+    for (const p of [...sessionPlugins, ...personalPlugins])
       if (!byId.has(p.plugin_id)) byId.set(p.plugin_id, p);
     return [...byId.values()];
-  }, [sessionPlugins, personalPlugins, serverPlugins]);
+  }, [sessionPlugins, personalPlugins]);
 
   const selectedId = cfg.environment ?? null;
 
@@ -641,7 +648,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 <input
             ref={fileRef}
             type="file"
-            accept=".json,.html,.htm,application/json,text/html"
+            accept=".cheers-extension,application/vnd.cheers.extension+zip"
             onChange={onPickFile}
             className="hidden"
           />
@@ -668,13 +675,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-zinc-400">
             <Package className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
             <span className="flex-1">
-              No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
+              No scenes yet. Load a .cheers-extension package or install one in Settings.
             </span>
             <UiButton action="create" variant="plain"
-              onClick={() => loadTemporary(JSON.stringify(researchExample))}
+              onClick={() => setNotice("Install an extension from Settings or load a temporary package")}
               controlSize="regular" className="rounded-sm bg-zinc-800 text-zinc-100 hover:bg-zinc-700 flex-shrink-0"
             >
-              Try it now: Research
+              Open Settings
             </UiButton>
           </div>
         )}

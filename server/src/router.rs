@@ -157,27 +157,17 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/auth/passkey/credentials/:credential_pk",
             delete(api::passkey::delete_credential),
         )
-        // Server-level workbench plugin store (install = admin; list/bundle = any member).
         .route(
-            "/api/v1/workbench/plugins",
-            get(api::workbench::list_plugins),
+            "/api/v1/workbench/extensions",
+            get(api::workbench::list_extensions),
         )
         .route(
-            "/api/v1/workbench/plugins/:plugin_id",
-            put(api::workbench::install_plugin).delete(api::workbench::delete_plugin),
+            "/api/v1/workbench/extensions/:extension_id",
+            put(api::workbench::put_extension).delete(api::workbench::delete_extension),
         )
         .route(
-            "/api/v1/workbench/plugins/:plugin_id/bundle",
-            get(api::workbench::get_bundle),
-        )
-        // Global workbench templates (DATA; install/delete = admin, list = any member).
-        .route(
-            "/api/v1/workbench/templates",
-            get(api::workbench::list_templates),
-        )
-        .route(
-            "/api/v1/workbench/templates/:tpl_id",
-            put(api::workbench::put_template).delete(api::workbench::delete_template),
+            "/api/v1/workbench/extensions/:extension_id/scenes/:scene_id",
+            get(api::workbench::get_scene),
         )
         .route(
             "/api/v1/workspaces",

@@ -1,0 +1,5 @@
+{
+  "items": [{ "id": "notes", "title": "Notes", "file": "notes/readme.md", "renderer": "self:notes" }],
+  "seed": [{ "path": "notes/readme.md", "source": "seed/notes/notes/readme.md" }],
+  "pin": []
+}

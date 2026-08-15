@@ -526,7 +526,9 @@ struct WorkbenchSheet: View {
                 var nextBindings = next["bindings"]?.objectValue ?? [:]
                 var nextConfigs = next["configs"]?.objectValue ?? [:]
                 for view in manifest.views {
-                    if nextBindings[view.file] == nil { nextBindings[view.file] = .string("builtin:\(view.lens)") }
+                    if nextBindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
+                        nextBindings[view.file] = .string(view.renderer)
+                    }
                     if nextConfigs[view.file] == nil, let value = view.config { nextConfigs[view.file] = value }
                 }
                 var state = WorkbenchSceneState(next["scene_state"])
@@ -857,7 +859,9 @@ private struct LegacyWorkbenchSheet: View {
             var bindings = config["bindings"]?.objectValue ?? [:]
             var configs = config["configs"]?.objectValue ?? [:]
             for view in manifest.views {
-                if bindings[view.file] == nil { bindings[view.file] = .string("builtin:\(view.lens)") }
+                if bindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
+                    bindings[view.file] = .string(view.renderer)
+                }
                 if configs[view.file] == nil, let viewConfig = view.config { configs[view.file] = viewConfig }
                 lensBindings[view.file] = view.lens
             }

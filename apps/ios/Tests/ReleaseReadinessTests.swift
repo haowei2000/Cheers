@@ -2,6 +2,21 @@ import XCTest
 @testable import Cheers
 
 final class ReleaseReadinessTests: XCTestCase {
+    func testWorkbenchExtensionDTOsDecodeScenesAndIgnoreWebRendererDetails() throws {
+        let summary = try JSONDecoder().decode(
+            WorkbenchExtensionSummary.self,
+            from: Data("""
+            {"id":"example","version":"1.0.0","title":"Example","description":"",
+             "sha256":"abc","origin":"admin",
+             "scenes":[{"id":"main","title":"Main","definition":"scenes/main.json"}],
+             "renderers":[{"id":"web","title":"Web","entry":"renderers/web.js","match":["**/*.md"]}]}
+            """.utf8))
+
+        XCTAssertEqual(summary.scenes.map(\.id), ["main"])
+        XCTAssertEqual(summary.renderers.map(\.id), ["web"])
+        XCTAssertEqual(inferNativeLens(path: "notes.md", data: nil), "markdown")
+    }
+
     func testWorkbenchSceneStateDecodesSharedNavigationIndex() {
         let value = JSONValue.object([
             "version": .number(1),

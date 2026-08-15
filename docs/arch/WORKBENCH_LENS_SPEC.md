@@ -158,8 +158,8 @@ on a deprecation path (it is already `pickable: false`).
 
 ### 4.1 What is NOT covered — found by doing this
 
-- **Arbitrary custom UI.** `codemap.plugin.html` (60 KB, pan/zoom node graph, inline YAML
-  subset parser) is not expressible and never will be. This is why §7 exists.
+- **Arbitrary custom UI.** A TypeScript renderer with a pan/zoom node graph is not
+  expressible as a built-in lens. This is why the personal extension runtime exists.
 - **Author-defined text conventions.** Under this spec a user cannot invent a *new* plain
   text convention and have it parsed. YAML-first is what makes that acceptable: there is
   nothing to invent, because the structure is already explicit.

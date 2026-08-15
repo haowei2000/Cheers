@@ -70,9 +70,8 @@ native clients can run lenses at all.
 
 **To render a table or a list, a client must first parse the YAML.** `apps/ios` has a
 zero-dependency policy and Foundation ships **no YAML parser** — only `JSONSerialization`.
-So a native client would need either a hand-written YAML subset parser (the trap
-`codemap.plugin.html` already fell into, and a guaranteed source of drift from the server's
-full parser) or a new third-party dependency.
+So a native client would need either a hand-written YAML subset parser, a guaranteed
+source of drift from the server's full parser, or a new third-party dependency.
 
 **Decision: `fs.read` also returns a parsed representation.** The gateway parses the YAML
 and returns the data as JSON alongside the raw `content` it already sends:

@@ -1,14 +1,14 @@
 import { parse as yamlParse } from "yaml";
-import { PLUGIN_PROTOCOL, type PluginMeta, type RendererMatch } from "../sandbox/api";
+import type { PluginMeta, RendererMatch } from "../sandbox/pluginManifest";
 
 // A renderer turns ONE file's content into an interactive UI. Renderers come from two
-// places, kept uniform here: built-in (compiled lenses) and plugins (sandboxed code).
+// places, kept uniform here: built-in lenses and personal extensions (sandboxed code).
 // A file declares NO type — the renderer declares what it ACCEPTS (format + structure),
 // and is only offered for files whose content passes that. The real "can I render this"
 // judgment still lives inside the renderer (it may reply cheers:unsupported at render).
 // Which renderer opens a file is a binding (path -> renderer id) in .workbench.json.
 export interface RendererDesc {
-  id: string; // composite, unique, stored in bindings: "builtin:markdown" | "plugin:<pid>:<rid>"
+  id: string; // composite, unique: "builtin:markdown" | "personal:<extension>:<renderer>"
   title: string;
   format: string[]; // coarse formats accepted: "markdown" | "json" | "yaml" | "toml" | "xml" | "text"
   source: "builtin" | "plugin";
@@ -28,6 +28,11 @@ export interface RendererDesc {
 // Manifest `match.format` accepts a string or a list; absent = "text" (catch-all).
 function formatsOf(m: RendererMatch): string[] {
   return m.format === undefined ? ["text"] : Array.isArray(m.format) ? m.format : [m.format];
+}
+
+function normalizedMatch(value: string[] | RendererMatch | undefined): RendererMatch {
+  if (Array.isArray(value)) return value.length ? { glob: value[0] } : {};
+  return value ?? {};
 }
 
 // A file's coarse format, by extension. No extension / unknown => "text" (catch-all).
@@ -157,24 +162,17 @@ const BUILTINS: RendererDesc[] = [
 
 export function pluginRenderers(plugins: PluginMeta[]): RendererDesc[] {
   return plugins.flatMap((p) => {
-    // A manifest declaring a protocol this host doesn't implement is skipped whole —
-    // half-speaking its messages would be worse than not offering it at all.
-    const proto = p.manifest.protocol ?? PLUGIN_PROTOCOL;
-    if (proto !== PLUGIN_PROTOCOL) {
-      console.warn(
-        `workbench: skipping plugin ${p.plugin_id} — manifest protocol ${proto}, host implements ${PLUGIN_PROTOCOL}`
-      );
-      return [];
-    }
-    return (p.manifest.renderers ?? []).map((r) => ({
-      id: `plugin:${p.plugin_id}:${r.id}`,
+    return (p.manifest.renderers ?? []).map((r) => {
+      const match = normalizedMatch(r.match);
+      return {
+      id: `personal:${p.plugin_id}:${r.id}`,
       title: r.title,
-      format: formatsOf(r.match ?? {}),
+      format: formatsOf(match),
       source: "plugin" as const,
-      match: r.match ?? {},
+      match,
       pluginId: p.plugin_id,
       rendererId: r.id,
-    }));
+    }});
   });
 }
 
