@@ -224,6 +224,11 @@ pub async fn list_installations_all(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
     let admin = is_admin(&claims);
+    // A revoked pending installation never held a credential and is not a runtime
+    // location — it is an abandoned pairing attempt, kept only until the reaper
+    // clears it with its code (up to a day). Listing it as a device is noise, and
+    // replacing a code in the setup wizard leaves one behind every time. The
+    // management audit log keeps the trail.
     let rows = sqlx::query(
         "SELECT i.installation_id, i.bot_id,
                 COALESCE(b.display_name, b.username) AS bot_name,
@@ -234,7 +239,8 @@ pub async fn list_installations_all(
                 i.mcp_connected_at, i.mcp_last_seen_at
          FROM terminal_installations i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
-         WHERE $1 OR b.created_by = $2
+         WHERE ($1 OR b.created_by = $2)
+           AND NOT (i.status = 'pending' AND i.revoked_at IS NOT NULL)
          ORDER BY i.created_at DESC",
     )
     .bind(admin)
