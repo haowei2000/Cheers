@@ -33,6 +33,17 @@ fail() {
   exit 1
 }
 
+# Last CHEERS_CONNECTOR_RELEASE_VERSION= line in the env file — quoted
+# (managed block, written by this script) preferred over a legacy unquoted
+# stray from before the pin was CI-managed. Empty when the gateway is
+# deliberately unpinned.
+current_connector_pin() {
+  {
+    sed -n 's/^CHEERS_CONNECTOR_RELEASE_VERSION=\([0-9][0-9.]*\)$/\1/p' "$1"
+    sed -n "s/^CHEERS_CONNECTOR_RELEASE_VERSION='\(.*\)'$/\1/p" "$1"
+  } | tail -n 1
+}
+
 decode_field() {
   local key="$1"
   local encoded="$2"
@@ -86,7 +97,8 @@ sync_auth_environment() {
         GOOGLE_WEB_CLIENT_ID | \
         GOOGLE_WEB_CLIENT_SECRET | \
         GOOGLE_WEB_REDIRECT_URI | \
-        OAUTH_WEB_RETURN_URL)
+        OAUTH_WEB_RETURN_URL | \
+        CHEERS_CONNECTOR_RELEASE_VERSION)
         ;;
       *)
         fail "field is not allowlisted"
@@ -141,6 +153,18 @@ sync_auth_environment() {
       fail "GOOGLE_WEB_CLIENT_SECRET contains an unsupported newline"
   fi
 
+  # The connector release pin is optional in the payload (only the connector
+  # release workflow sends it). When absent, keep whatever the server already
+  # has — a regular gateway deploy must never silently unpin, because an
+  # unpinned gateway stops advertising latest_connector_version to
+  # self-updating connectors.
+  if [[ -z "${values[CHEERS_CONNECTOR_RELEASE_VERSION]:-}" ]]; then
+    values[CHEERS_CONNECTOR_RELEASE_VERSION]="$(current_connector_pin "$ENV_FILE")"
+  fi
+  [[ -z "${values[CHEERS_CONNECTOR_RELEASE_VERSION]:-}" ]] ||
+    [[ "${values[CHEERS_CONNECTOR_RELEASE_VERSION]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    fail "CHEERS_CONNECTOR_RELEASE_VERSION is not a strict major.minor.patch version"
+
   PRIVATE_KEY_FILE="$(mktemp "${DEPLOY_ROOT}/.apple-private-key.XXXXXX")"
   printf '%s\n' "${values[APPLE_PRIVATE_KEY_P8]}" > "$PRIVATE_KEY_FILE"
   grep -q '^-----BEGIN PRIVATE KEY-----$' "$PRIVATE_KEY_FILE" ||
@@ -169,10 +193,18 @@ sync_auth_environment() {
       printf "GOOGLE_WEB_REDIRECT_URI='%s'\n" "${values[GOOGLE_WEB_REDIRECT_URI]}"
     fi
     printf "OAUTH_WEB_RETURN_URL='%s'\n" "${values[OAUTH_WEB_RETURN_URL]}"
+    # Empty (deliberately unpinned) omits the line entirely.
+    if [[ -n "${values[CHEERS_CONNECTOR_RELEASE_VERSION]:-}" ]]; then
+      printf "CHEERS_CONNECTOR_RELEASE_VERSION='%s'\n" \
+        "${values[CHEERS_CONNECTOR_RELEASE_VERSION]}"
+    fi
     printf '%s\n' "$MANAGED_END"
   } > "$MANAGED_BLOCK_FILE"
 
   ENV_CANDIDATE="$(mktemp "${DEPLOY_ROOT}/.env.candidate.XXXXXX")"
+  # Outside the managed block, stray connector-pin lines are dropped: the pin
+  # predates CI management and was hand-added, and the carried-forward value
+  # is re-emitted inside the fresh block — leaving both would define it twice.
   awk \
     -v begin="$MANAGED_BEGIN" \
     -v end="$MANAGED_END" \
@@ -188,7 +220,7 @@ sync_auth_environment() {
         skipping = 0
         next
       }
-      !skipping { print }
+      !skipping && $0 !~ /^CHEERS_CONNECTOR_RELEASE_VERSION=/ { print }
       END {
         if (skipping) exit 44
       }
