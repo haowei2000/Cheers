@@ -8,9 +8,16 @@ name: release-desktop
 # Apple-silicon only for now (macos-14 runner = arm64): an Intel build needs a
 # cross-compiled sidecar + universal bundle, deferred until someone asks.
 #
-# UNSIGNED (Gatekeeper): there is no Developer ID signing/notarization yet, so
-# Gatekeeper will warn on first launch. The release notes carry the right-click
-# → Open escape hatch. Signing lands with a proper release pipeline later.
+# SIGNED (Gatekeeper): Developer ID Application signing + Apple notarization,
+# from the `production` environment — DEVELOPER_ID_APPLICATION_P12 /
+# _PASSWORD (base64 p12) plus the App Store Connect API key the iOS workflow
+# already uses (ASC_API_KEY_ID / ASC_API_ISSUER_ID / ASC_API_PRIVATE_KEY_P8).
+# tauri-cli consumes them as APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD /
+# APPLE_SIGNING_IDENTITY and APPLE_API_KEY / APPLE_API_ISSUER /
+# APPLE_API_KEY_PATH: it imports its own temp keychain, signs, notarizes, and
+# staples. tauri.conf.json keeps signingIdentity "-" so local builds stay
+# ad-hoc; the env vars override it in CI only. The post-build codesign/spctl
+# gate fails the release if signing silently fell back to ad-hoc.
 #
 # SIGNED (updater): separate from Gatekeeper. The .app.tar.gz and latest.json
 # are signed with the minisign updater key (secret DESKTOP_UPDATER_KEY, public
@@ -33,6 +40,7 @@ jobs:
   build:
     name: build macOS (arm64)
     runs-on: macos-14
+    environment: production
     steps:
       - uses: actions/checkout@v5
 
@@ -59,16 +67,50 @@ jobs:
           npm --prefix frontend ci
           npm --prefix apps/macos ci
 
+      # tauri-cli's notarytool integration wants the key at a path (the file
+      # name carries the key ID for notarytool's private_keys lookup); the
+      # secret itself stays base64 in the environment store.
+      - name: Stage the notarization key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY_P8 }}
+        run: |
+          printf '%s' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+
       # npm run build = build-sidecar.sh (stages the Connector Tauri sidecar) +
       # tauri build (whose beforeBuildCommand builds the frontend).
       # createUpdaterArtifacts makes tauri build emit the updater tarball and its
       # .sig; the signing key must be present here or the build produces an
       # unsigned bundle that no installed client will accept.
+      # The APPLE_* vars are tauri-cli's native macOS pipeline: p12 import into
+      # a temp keychain, Developer ID signing, notarytool submit + staple.
       - name: Build the app
         run: npm --prefix apps/macos run build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.DESKTOP_UPDATER_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          APPLE_CERTIFICATE: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: "Developer ID Application"
+          APPLE_API_KEY: ${{ secrets.ASC_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.ASC_API_ISSUER_ID }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ secrets.ASC_API_KEY_ID }}.p8
+
+      # Fail loud: a silent ad-hoc fallback would ship a dmg Gatekeeper calls
+      # damaged (the pre-0.1.18 bug). spctl only passes a signed, notarized,
+      # stapled bundle, so this is the end-to-end Gatekeeper proof.
+      - name: Verify Developer ID signature + notarization
+        run: |
+          APP="apps/macos/src-tauri/target/release/bundle/macos/Cheers.app"
+          codesign --verify --strict "$APP"
+          codesign -dv "$APP" 2>&1 | tee /tmp/codesign.txt
+          grep -q '^Authority=Developer ID Application' /tmp/codesign.txt || {
+            echo "::error::bundle is not Developer ID signed — did APPLE_SIGNING_IDENTITY not override the '-' conf?"
+            exit 1
+          }
+          spctl --assess --type execute --verbose "$APP"
+          xcrun stapler validate "$APP"
 
       - name: Package assets
         run: |
@@ -122,8 +164,9 @@ jobs:
             **For:** an Apple-silicon Mac (M1/M2/M3…) on **macOS 11+**.
             Intel Macs are **not** built yet.
 
-            **Unsigned preview** — on first launch, right-click Cheers → Open
-            (or clear quarantine: `xattr -dr com.apple.quarantine /Applications/Cheers.app`).
+            **Signed & notarized** — Developer ID Application certificate +
+            Apple notarization: it opens on first launch with no Gatekeeper
+            warning.
 
             **Install:** open `Cheers-macOS-AppleSilicon.dmg` and drag Cheers to
             Applications. The `cheers://` link scheme and Finder "Open With →
@@ -139,3 +182,7 @@ jobs:
             | `Cheers-macOS-AppleSilicon.dmg` | macOS 11+, Apple Silicon — installer |
             | `Cheers-macOS-AppleSilicon.app.tar.gz` | macOS 11+, Apple Silicon — bare .app (also the updater payload) |
             | `latest.json` | the in-app update feed — not a download |
+
+      - name: Remove the staged notarization key
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/AuthKey_${{ secrets.ASC_API_KEY_ID }}.p8"
