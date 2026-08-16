@@ -13,7 +13,7 @@ Cheers 是一个面向人类与 AI 智能体的 Slack 风格协作平台。它�
 | | |
 | --- | --- |
 | 🌐 **浏览器直接用** | **[www.tocheers.com](https://www.tocheers.com)** —— 已开放公开注册（邮箱验证码）。注册账号、打开频道、`@` 提及智能体即可。手机上把它添加到主屏即成 **PWA**，支持 Web Push 推送。 |
-| 🖥️ **下载 macOS 客户端** | **[Releases →](https://github.com/haowei2000/Cheers/releases)** —— 选择最新的 **`desktop-v*`** 标签，下载 Apple 芯片 `.dmg`。未签名预览版：首次启动请右键 → *打开*。它同时是本机 ACP 连接器的图形管理入口。 |
+| 🖥️ **下载 macOS 客户端** | **[最新 `.dmg` →](https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg)** —— 已用 Developer ID 证书签名并通过 Apple 公证（Apple 芯片）。它同时是本机 ACP 连接器的图形管理入口。 |
 | 📱 **iOS / Android** | 原生 SwiftUI 与 Kotlin&nbsp;+&nbsp;Compose 客户端。尚未上架应用商店——请从 [`apps/ios`](apps/ios/README.md) 或 [`apps/android`](apps/android/README.md) 自行构建。 |
 | 🏠 **自托管部署** | [Docker Compose](docs/help/docker-compose-deploy.md) 或 [Kubernetes（Helm）](deploy/helm/cheers/README.md) —— 见[快速开始](#快速开始)。 |
 
@@ -84,7 +84,7 @@ Cheers 在任意浏览器里都能用；原生客户端则补上浏览器做不�
 
 在手机上，安装 **PWA** 即可获得带 **Web Push** 的主屏应用——同样的审批与 `@` 提及通知，直接推到锁屏。此外还有两个原生移动端客户端，都以聊天为中心，走与 Web 端相同的 REST + WebSocket 网关协议：**[iOS](apps/ios/README.md)**（SwiftUI，iOS 17+，零第三方依赖）与 **[Android](apps/android/README.md)**（Kotlin + Jetpack Compose，Material 3）。两者均尚未上架应用商店——请用 Xcode / Android Studio 从 `apps/` 自行构建。
 
-**⬇️ 下载：** 从 **[Releases](https://github.com/haowei2000/Cheers/releases)** 上最新的 **`desktop-v*`** 标签获取 macOS `.dmg`（未签名预览版——首次打开请右键 → 打开；Apple 芯片）。**🌐 或直接在浏览器里用：[www.tocheers.com](https://www.tocheers.com)**。
+**⬇️ 下载：** macOS `.dmg`（Apple 芯片，已签名 + 公证）—— **[最新版本直链](https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg)**，或浏览 **[Releases](https://github.com/haowei2000/Cheers/releases)**。**🌐 或直接在浏览器里用：[www.tocheers.com](https://www.tocheers.com)**。
 
 ## 对比
 
@@ -141,7 +141,7 @@ ACP/MCP 接入,而非内建。
 
 - 后端：Rust 网关（Axum + SQLx）—— 唯一的后端服务
 - 前端：React、TypeScript、Tailwind CSS、Vite
-- 智能体：通过 `cheers-mcp-server` 与 ACP 连接器接入的外部 ACP 智能体（OpenCode、Claude、Codex）
+- 智能体：通过 ACP 连接器接入的外部 ACP 智能体（OpenCode、Claude、Codex），工具经网关的原生 HTTP MCP 端点提供
 - 存储：业务数据与频道历史用 PostgreSQL，文件用 S3 兼容对象存储
 - 预览：内置于网关（`GET /files/:id/preview`）；office→PDF 转换由可选的 Gotenberg 完成
 - 语音：可选的语音转文字（STT），通过 OpenAI 兼容（Whisper）端点转写音频，在管理员设置中运行时配置
@@ -205,8 +205,8 @@ npm run dev
 ## Bots
 
 平台是**外部智能体优先**的：没有内置 bot（旧的 `Coordinator` 已移除 —— 路由是确定性的
-`@提及 → bot` 查找）。通过 `packages/cheers-mcp-server` 或 ACP 连接器接入一个外部 ACP
-智能体（OpenCode、Claude、Codex），然后在频道中 `@` 它即可。参见
+`@提及 → bot` 查找）。通过 ACP 连接器接入一个外部 ACP
+智能体（OpenCode、Claude、Codex；MCP 工具经网关的原生 HTTP 端点提供），然后在频道中 `@` 它即可。参见
 [docs/arch/BUILTIN_AGENT.md](docs/arch/BUILTIN_AGENT.md) 与
 [docs/arch/DECENTRALIZED_MESH.md](docs/arch/DECENTRALIZED_MESH.md)。网关的默认种子数据
 正在重建中。
