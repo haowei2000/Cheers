@@ -13,6 +13,11 @@ The macOS desktop app is released separately under `desktop-v*` tags; the
 entries below marked **(desktop)** ship in `desktop-v0.1.1`.
 
 ### Added
+- **Bot setup runs through to a connected device.** Creating a bot continues
+  into the installation wizard with that bot already chosen, the wizard mints
+  its pairing code on arrival instead of behind another button, and the code
+  carries a live countdown that says so when it expires — rather than leaving a
+  command on screen that fails on the far machine.
 - **iOS: channel management.** The native client gained a members sheet, a
   channel settings sheet, and the Viewboards surface (plan / cost / sessions /
   audit / activity), bringing it in line with the web client.
@@ -26,6 +31,31 @@ entries below marked **(desktop)** ship in `desktop-v0.1.1`.
   in the hero and at the top of the README.
 
 ### Fixed
+- **Destructive bot and installation actions asked with a browser dialog.**
+  Revoking an installation, deleting its record, and deleting a bot went through
+  `window.confirm`, whose OK is the reflexive Enter default, and stated their
+  consequences only in hover help. They now use a shared confirm dialog that
+  spells out what happens. Disabling a bot — which disconnects whatever is
+  running at that moment — asked nothing at all; it now asks.
+- **Installation management drifted between the two places that offer it.** A
+  bot's Installations tab and Fleet → Installations implemented the same
+  operations separately: the same trash icon meant "revoke" in one row and
+  "delete permanently" in another, "reconnect" and "rotate credential" shared an
+  icon, and a revoked installation could only be cleared from Fleet. Both now
+  render one component, and statuses read as words ("Active, not connected",
+  "Waiting for pairing") instead of raw column values.
+- **Abandoned pairing attempts were listed as devices.** A revoked pending
+  installation never held a credential, but stayed in the installation lists for
+  the reaper's day-long retention window — one per replaced code.
+- **Comparing installation modes minted a second pairing code.** The "run a
+  command" and "ask an agent" panels each owned their own code, so switching
+  between them left the first live and spent two of the five codes a bot may
+  have pending. Both modes now present the same code.
+- **Bot usernames were only checked for being non-empty.** A name over 64
+  characters came back as a 500 "internal error", and names with spaces or `@`
+  were stored despite not matching their own `@mention` or the connector account
+  id derived from them. Creation now rejects them with a message that says how
+  to fix it, in the dialog and at the API.
 - **(desktop) Connector restarts dropped `--config`.** A restarted connector
   daemon came back up without its config file, silently losing its configured
   workspace roots and adapter settings.

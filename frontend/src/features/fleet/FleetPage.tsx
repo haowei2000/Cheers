@@ -209,7 +209,16 @@ export default function FleetPage() {
       </main>
     </div>
     {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} workspaces={workspaces} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
-    {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => { setCreateBotOpen(false); void refresh(true); openBot(bot.bot_id); }} />}
+    {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
+      setCreateBotOpen(false);
+      // Seed from the POST response (it carries can_manage) rather than waiting
+      // on the Fleet refetch: the wizard resolves its bot out of manageableBots.
+      setCatalog((prev) => (prev.some((b) => b.bot_id === bot.bot_id) ? prev : [bot, ...prev]));
+      // A bot identity can't do anything until a device runs it — continue there
+      // instead of ending the flow on a row that has no runtime behind it.
+      openInstallation(bot.bot_id);
+      void refresh(true);
+    }} />}
     {installationBotId !== undefined && <CreateInstallationWizard bots={manageableBots} initialBotId={installationBotId || undefined} onClose={() => setInstallationBotId(undefined)} onDone={() => void refresh()} />}
   </div>;
 }

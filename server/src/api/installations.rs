@@ -26,6 +26,11 @@ pub async fn list_installations(
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let bot_uuid = Uuid::parse_str(&bot_id).map_err(|_| AppError::NotFound)?;
     let bot_online = state.bot_locator.is_online(bot_uuid).await;
+    // A revoked pending installation never held a credential and is not a runtime
+    // location — it is an abandoned pairing attempt, kept only until the reaper
+    // clears it with its code (up to a day). Listing it as a device is noise, and
+    // replacing a code in the setup wizard leaves one behind every time. The
+    // management audit log keeps the trail.
     let rows = sqlx::query(
         "SELECT installation_id, device_name, agent_type, credential_prefix, status,
                 connector_version, capabilities, last_seen_at, connected_at,
@@ -34,6 +39,7 @@ pub async fn list_installations(
                 mcp_last_seen_at
          FROM terminal_installations
          WHERE bot_id = $1
+           AND NOT (status = 'pending' AND revoked_at IS NOT NULL)
          ORDER BY created_at DESC",
     )
     .bind(&bot_id)
