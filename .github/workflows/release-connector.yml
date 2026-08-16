@@ -161,3 +161,115 @@ jobs:
             connector-manifest.json.sig
           make_latest: false
           fail_on_unmatched_files: true
+
+  # Sync the gateway's CHEERS_CONNECTOR_RELEASE_VERSION pin to this tag. The
+  # pin is what the download proxy serves and what self-updating connectors
+  # target; leaving it as a manual, outside-repo step is exactly how the #538
+  # incident happened (new-schema config + stale 0.1.36 binary → installs
+  # crash-looped; the gateway now refuses below the config-schema floor, see
+  # MIN_CONNECTOR_VERSION in server/src/api/pairing.rs). Must run only after
+  # `manifest` succeeded: the pin is the update signal, and auto-update
+  # requires the signed manifest. Payload construction mirrors the deploy job
+  # in cd.yml — keep the two in step.
+  sync-pin:
+    name: sync gateway release pin
+    needs: manifest
+    if: |
+      startsWith(github.ref, 'refs/tags/connector-v') &&
+      vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Sync pin via SSH deploy
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ vars.APPLE_KEY_ID }}
+          APPLE_CLIENT_ID: ${{ vars.APPLE_CLIENT_ID }}
+          APPLE_PRIVATE_KEY_P8: ${{ secrets.APPLE_PRIVATE_KEY_P8 }}
+          APPLE_WEB_CLIENT_ID: ${{ vars.APPLE_WEB_CLIENT_ID }}
+          APPLE_WEB_REDIRECT_URI: ${{ vars.APPLE_WEB_REDIRECT_URI }}
+          GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-gateway:main
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-frontend:main
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
+          GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}
+          OAUTH_WEB_RETURN_URL: ${{ vars.OAUTH_WEB_RETURN_URL }}
+          CONNECTOR_VERSION: ${{ github.ref_name }}
+        run: |
+          set +x
+          VERSION="${CONNECTOR_VERSION#connector-v}"
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::tag $CONNECTOR_VERSION is not connector-v<major.minor.patch>" >&2; exit 1 ;;
+          esac
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          for name in \
+            APPLE_TEAM_ID \
+            APPLE_KEY_ID \
+            APPLE_CLIENT_ID \
+            APPLE_PRIVATE_KEY_P8 \
+            APPLE_WEB_CLIENT_ID \
+            APPLE_WEB_REDIRECT_URI \
+            OAUTH_WEB_RETURN_URL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "required production auth setting is missing: $name" >&2
+              exit 1
+            fi
+          done
+
+          google_count=0
+          for name in GOOGLE_WEB_CLIENT_ID GOOGLE_WEB_CLIENT_SECRET GOOGLE_WEB_REDIRECT_URI; do
+            if [ -n "${!name:-}" ]; then
+              google_count=$((google_count + 1))
+            fi
+          done
+          if [ "$google_count" -ne 0 ] && [ "$google_count" -ne 3 ]; then
+            echo "Google OAuth settings must be configured together" >&2
+            exit 1
+          fi
+
+          payload="$(mktemp)"
+          trap 'rm -f "$payload"' EXIT
+          chmod 600 "$payload"
+          printf '%s\n' 'CHEERS_DEPLOY_AUTH_ENV_V1' > "$payload"
+
+          append_payload_field() {
+            name="$1"
+            value="$2"
+            encoded="$(printf '%s' "$value" | base64 | tr -d '\n')"
+            printf '%s=%s\n' "$name" "$encoded" >> "$payload"
+          }
+
+          append_payload_field APPLE_TEAM_ID "$APPLE_TEAM_ID"
+          append_payload_field APPLE_KEY_ID "$APPLE_KEY_ID"
+          append_payload_field APPLE_CLIENT_ID "$APPLE_CLIENT_ID"
+          append_payload_field APPLE_PRIVATE_KEY_P8 "$APPLE_PRIVATE_KEY_P8"
+          append_payload_field APPLE_WEB_CLIENT_ID "$APPLE_WEB_CLIENT_ID"
+          append_payload_field APPLE_WEB_REDIRECT_URI "$APPLE_WEB_REDIRECT_URI"
+          append_payload_field GATEWAY_IMAGE "$GATEWAY_IMAGE"
+          append_payload_field FRONTEND_IMAGE "$FRONTEND_IMAGE"
+          if [ "$google_count" -eq 3 ]; then
+            append_payload_field GOOGLE_WEB_CLIENT_ID "$GOOGLE_WEB_CLIENT_ID"
+            append_payload_field GOOGLE_WEB_CLIENT_SECRET "$GOOGLE_WEB_CLIENT_SECRET"
+            append_payload_field GOOGLE_WEB_REDIRECT_URI "$GOOGLE_WEB_REDIRECT_URI"
+          fi
+          append_payload_field OAUTH_WEB_RETURN_URL "$OAUTH_WEB_RETURN_URL"
+          append_payload_field CHEERS_CONNECTOR_RELEASE_VERSION "$VERSION"
+
+          # Forced-command key on the server: the requested command is
+          # ignored, and the fixed deploy script accepts only the versioned,
+          # allowlisted payload on stdin.
+          ssh -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              "$USER@$HOST" deploy < "$payload"
