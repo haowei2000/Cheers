@@ -6,12 +6,12 @@
 
 use std::sync::Arc;
 
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use server::gateway::realtime::manager::ConnectionManager;
 use server::gateway::stream::StreamRegistry;
-use server::{gateway, infra, router, AppState, Config};
+use server::{api, gateway, infra, router, AppState, Config};
 
 /// Start the HTTP/WebSocket gateway service.
 ///
@@ -40,6 +40,19 @@ async fn main() -> anyhow::Result<()> {
     // Bootstrap in startup order: config -> db -> migrations -> gateway services.
     let config = Arc::new(Config::from_env());
     info!(port = config.port, "starting server");
+    // Fail loud on a stale release pin (#539): install.sh already writes the
+    // current config schema, and the download proxy refuses binaries that
+    // cannot parse it. Better an operator reads this than machines crash-loop.
+    if let Some(pin) = &config.connector_release_version {
+        if api::pairing::connector_version_below_floor(pin) {
+            error!(
+                pin = %pin,
+                floor = api::pairing::MIN_CONNECTOR_VERSION,
+                "CHEERS_CONNECTOR_RELEASE_VERSION is below the connector config-schema floor; \
+                 connector downloads and install.sh will be refused until it is bumped"
+            );
+        }
+    }
 
     let db = infra::db::create_pool(&config.database_url).await?;
     info!("database pool ready");

@@ -1275,19 +1275,21 @@ pub async fn refresh_bot_status(
     })))
 }
 
+/// Parse a strict semver triple "major.minor.patch"; tolerates a leading `v`.
+pub(crate) fn version_triple(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.trim().trim_start_matches('v').splitn(3, '.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next()?.parse().ok()?;
+    let patch = it.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
 /// Strict semver-triple "is `candidate` newer than `current`" — used for the
 /// connector `update_available` flag. Tolerates a leading `v`; anything that
 /// isn't three dot-separated integers compares as "not newer" (fail quiet:
 /// a garbled version must never nag every bot owner to update).
 fn version_is_newer(candidate: &str, current: &str) -> bool {
-    fn triple(s: &str) -> Option<(u64, u64, u64)> {
-        let mut it = s.trim().trim_start_matches('v').splitn(3, '.');
-        let major = it.next()?.parse().ok()?;
-        let minor = it.next()?.parse().ok()?;
-        let patch = it.next()?.parse().ok()?;
-        Some((major, minor, patch))
-    }
-    match (triple(candidate), triple(current)) {
+    match (version_triple(candidate), version_triple(current)) {
         (Some(a), Some(b)) => a > b,
         _ => false,
     }

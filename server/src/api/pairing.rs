@@ -26,7 +26,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    api::bots::ensure_bot_owner_or_admin,
+    api::bots::{ensure_bot_owner_or_admin, version_triple},
     api::middleware::Claims,
     app_state::AppState,
     domain::connector_config::{
@@ -536,13 +536,20 @@ fn resolve_api_base(state: &AppState, headers: &HeaderMap) -> String {
 pub async fn install_script(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
+    // Refuse while a below-floor pin is set so a pairing code isn't redeemed
+    // by an install that can only fail at binary download anyway.
+    if let Some(pin) = &state.config.connector_release_version {
+        if connector_version_below_floor(pin) {
+            return Err(connector_floor_error(pin));
+        }
+    }
     let api_base = resolve_api_base(&state, &headers);
     let body = INSTALL_SCRIPT.replace("__CHEERS_API_BASE__", &api_base);
-    (
+    Ok((
         [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
         body,
-    )
+    ))
 }
 
 /// Allowlisted release-asset names the gateway will proxy — exactly the
@@ -578,9 +585,57 @@ mod connector_asset_tests {
         assert!(is_known_connector_asset("connector-manifest.json"));
         assert!(!is_known_connector_asset("cheers-mcp-server-darwin-arm64"));
     }
+
+    #[cfg(test)]
+    mod version_floor_tests {
+        use crate::api::pairing::{connector_version_below_floor, MIN_CONNECTOR_VERSION};
+
+        /// The prod incident (#538): 0.1.36 cannot parse the config schema
+        /// 0.1.37 introduced — must be refused, along with anything unparsable.
+        #[test]
+        fn floor_rejects_older_and_malformed_versions() {
+            assert!(connector_version_below_floor("0.1.36"));
+            assert!(connector_version_below_floor("0.1.0"));
+            assert!(connector_version_below_floor("latest"));
+            assert!(connector_version_below_floor(""));
+        }
+
+        #[test]
+        fn floor_accepts_current_and_newer_versions() {
+            assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
+            assert!(!connector_version_below_floor("0.1.38"));
+            assert!(!connector_version_below_floor("v0.1.37"));
+        }
+    }
 }
 
 static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+/// Minimum connector release that can parse the config this gateway's
+/// install.sh generates (`installation_credential_file` arrived in 0.1.37).
+/// Bump it in the same change that adds a config field older binaries reject;
+/// the download proxy refuses anything below it (#539) so a forgotten
+/// `CHEERS_CONNECTOR_RELEASE_VERSION` bump fails loudly at the server instead
+/// of crash-looping on user machines.
+pub const MIN_CONNECTOR_VERSION: &str = "0.1.37";
+
+/// True when `v` must not be distributed: strictly older than
+/// [`MIN_CONNECTOR_VERSION`], or not a semver triple at all — a garbled pin
+/// fails loud rather than guessing.
+pub fn connector_version_below_floor(v: &str) -> bool {
+    match (version_triple(v), version_triple(MIN_CONNECTOR_VERSION)) {
+        (Some(pin), Some(floor)) => pin < floor,
+        _ => true,
+    }
+}
+
+fn connector_floor_error(version: &str) -> AppError {
+    AppError::ServiceUnavailable(format!(
+        "connector release {version} is below this gateway's config-schema floor \
+         {MIN_CONNECTOR_VERSION}: bump CHEERS_CONNECTOR_RELEASE_VERSION (install.sh now \
+         writes config the older binary cannot parse)"
+    ))
+}
 
 /// GET /api/v1/connector/download/{asset} — PUBLIC. Same-origin proxy for the
 /// prebuilt connector release binaries. A host onboarding a bot has already
@@ -604,15 +659,26 @@ pub async fn connector_download(
             .unwrap_or_else(|_| reqwest::Client::new())
     });
     let repo = &state.config.connector_release_repo;
-    let url = match &state.config.connector_release_version {
-        Some(v) => {
-            format!("https://github.com/{repo}/releases/download/connector-v{v}/{asset}")
-        }
+    let (version, url) = match &state.config.connector_release_version {
+        Some(v) => (
+            v.clone(),
+            format!("https://github.com/{repo}/releases/download/connector-v{v}/{asset}"),
+        ),
         // Do NOT use /releases/latest — that pointer is owned by the desktop
         // app (connector tags publish with make_latest:false). When unset, resolve
         // the newest connector-v* tag via the GitHub Releases API.
         None => resolve_latest_connector_asset_url(client, repo, &asset).await?,
     };
+    // Schema/binary skew guard (#539): install.sh already writes config for the
+    // current schema; an older binary crash-loops at TOML parse on the host.
+    if connector_version_below_floor(&version) {
+        tracing::error!(
+            version = %version,
+            floor = MIN_CONNECTOR_VERSION,
+            "connector release below config-schema floor: refusing to serve connector binaries"
+        );
+        return Err(connector_floor_error(&version));
+    }
     let upstream = client
         .get(&url)
         .send()
@@ -665,14 +731,14 @@ mod installation_tests {
     }
 }
 
-/// Pick `https://github.com/{repo}/releases/download/connector-vX.Y.Z/{asset}`
+/// Pick `(version, https://github.com/{repo}/releases/download/connector-vX.Y.Z/{asset})`
 /// for the newest non-draft, non-prerelease `connector-v*` tag. Avoids GitHub's
 /// `releases/latest`, which tracks the desktop app.
 async fn resolve_latest_connector_asset_url(
     client: &reqwest::Client,
     repo: &str,
     asset: &str,
-) -> Result<String, AppError> {
+) -> Result<(String, String), AppError> {
     let api = format!("https://api.github.com/repos/{repo}/releases?per_page=40");
     let resp = client
         .get(&api)
@@ -707,8 +773,9 @@ async fn resolve_latest_connector_asset_url(
         if ver.is_empty() {
             continue;
         }
-        return Ok(format!(
-            "https://github.com/{repo}/releases/download/connector-v{ver}/{asset}"
+        return Ok((
+            ver.to_string(),
+            format!("https://github.com/{repo}/releases/download/connector-v{ver}/{asset}"),
         ));
     }
     Err(AppError::Internal(
