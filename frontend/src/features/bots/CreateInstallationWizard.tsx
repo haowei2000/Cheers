@@ -1,6 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { useNavigate } from "react-router-dom";
 import { serverOrigin, isTauri } from "@/lib/serverConfig";
@@ -8,10 +8,9 @@ import { requestConnectorForBot } from "@/features/desktop/connectorIntent";
 import {
   Terminal,
   Sparkles,
-  KeyRound,
   Copy,
   Check,
-  Download,
+  Clock,
   ArrowLeft,
   AlertTriangle,
   Laptop,
@@ -32,35 +31,14 @@ import {
   type ConnectorDiscovery,
   type InstallationPairing,
   type PairingGuidance,
-  type ConnectorConfig,
-  type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { NavigationItem } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
 
 type Mode = "script" | "agent";
-
-/** Where prebuilt connector binaries are published (release-connector workflow).
- * Keep in sync with the default in server/assets/install.sh. */
-const CONNECTOR_RELEASES_REPO = "haowei2000/Cheers";
-/** Pin GitHub fallbacks to a connector-v* tag — releases/latest is the desktop app. */
-const CONNECTOR_RELEASE_TAG = "connector-v0.1.37";
-/** Same-origin download (gateway proxies the GitHub release): works from hosts
- * that can reach this server but not GitHub. GitHub stays the fallback.
- * Native HTTP MCP is mandatory; only the connector binary is installed. */
-// serverOrigin(), not window.location.origin: the snippet must name the
-// GATEWAY the target host can reach — in the desktop shell the window origin
-// is tauri://localhost, useless in a curl command.
-const CONNECTOR_DOWNLOAD_CMD = `os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-mkdir -p ~/.cheers/bin
-curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
-  "${serverOrigin()}/api/v1/connector/download/cce-acp-connector-$os-$arch" \\
-  || curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
-  "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/download/${CONNECTOR_RELEASE_TAG}/cce-acp-connector-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector
-export PATH="$HOME/.cheers/bin:$PATH"`;
 
 const FALLBACK_AGENTS: AcpAgentInfo[] = [
   { id: "claude", name: "Claude", source: "builtin", installable: true },
@@ -68,6 +46,11 @@ const FALLBACK_AGENTS: AcpAgentInfo[] = [
   { id: "opencode", name: "OpenCode", source: "builtin", installable: true },
   { id: "generic", name: "Something else", source: "builtin", installable: false },
 ];
+
+function botLabel(bot: BotItem | undefined): string {
+  if (!bot) return "—";
+  return `${bot.display_name || bot.username} (@${bot.username})`;
+}
 
 function CopyBtn({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -95,18 +78,44 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
   );
 }
 
-function download(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+/** Whole seconds until `iso`, floored at 0. An absent or unparseable timestamp
+ *  reads as expired, which fails toward "mint a fresh code" rather than toward
+ *  a command that dies on the far machine. */
+export function secondsUntil(iso: string | undefined, now: number = Date.now()): number {
+  if (!iso) return 0;
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
-function Stepper({ step }: { step: 0 | 1 | 2 }) {
-  const labels = ["Choose bot", "Choose host", "Connect"];
+/** m:ss — a pairing code's whole life is minutes, so there is no hour part. */
+export function formatCountdown(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+/** Ticks once a second while a code is live. The code is the only part of this
+ *  flow with a deadline, and it runs out while the user is walking to the other
+ *  machine — so the wizard shows the clock rather than a static "~15 min".
+ *
+ *  The remaining time is computed during render, not kept in state: a state copy
+ *  synced by an effect is one frame stale, and that frame lands exactly when a
+ *  fresh code arrives — flashing "expired" over a code seconds old. The tick
+ *  state exists only to schedule the re-render, and stops once time is up. */
+function useSecondsLeft(expiresAt: string | undefined): number {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = setInterval(() => {
+      setTick((n) => n + 1);
+      if (secondsUntil(expiresAt) <= 0) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+  return secondsUntil(expiresAt);
+}
+
+function Stepper({ step, labels }: { step: 0 | 1 | 2; labels: string[] }) {
   return (
     <div className="flex items-center gap-2 text-compact">
       {/* design-system-exempt: step-indicator — ordered wizard progress, not an entity list. */}
@@ -170,6 +179,8 @@ export function CreateInstallationWizard({
   const localDesktop = isTauri();
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [mode, setMode] = useState<Mode | null>(null);
+  const botFieldId = useId();
+  const agentFieldId = useId();
 
   // Step 0 — choose an existing bot and this installation's agent.
   const [agentType, setAgentType] = useState<AgentType>("codex");
@@ -181,6 +192,20 @@ export function CreateInstallationWizard({
   const [error, setError] = useState<string | null>(null);
 
   const [discovery, setDiscovery] = useState<ConnectorDiscovery | null>(null);
+
+  // One pairing code for the whole wizard. Both modes redeem the SAME code —
+  // "ask an agent" is the install-script one-liner wrapped in a prompt — so
+  // owning it here means switching modes re-presents one code instead of
+  // minting a second and leaving the first live against the per-bot cap.
+  const [pairing, setPairing] = useState<InstallationPairing | null>(null);
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const mintingRef = useRef(false);
+  /** bot+agent the auto-mint already ran for, so re-renders (and StrictMode's
+   *  double-invoke) don't mint again and an explicit Revoke stays revoked. */
+  const autoMintedFor = useRef<string | null>(null);
+  const secondsLeft = useSecondsLeft(pairing?.expires_at);
+  const expired = Boolean(pairing) && secondsLeft <= 0;
 
   useEffect(() => {
     getConnectorDiscovery()
@@ -195,6 +220,82 @@ export function CreateInstallationWizard({
       })
       .catch(() => {});
   }, []);
+
+  /** Best-effort revoke of a code the wizard is about to stop showing. The code
+   *  also expires on its own, so a failure here must not block the replacement
+   *  the user asked for — hence no toast. */
+  const discardPairing = useCallback(async (current: InstallationPairing | null) => {
+    if (!current) return;
+    try {
+      await revokeTerminalInstallation(current.bot_id, current.installation_id);
+    } catch {
+      /* already revoked, redeemed, or expiring on its own */
+    }
+  }, []);
+
+  /** Create a pending installation and hold its one-time code. Replaces (and
+   *  revokes) any code this wizard already minted. */
+  const mint = useCallback(async () => {
+    if (mintingRef.current) return;
+    const target = bots.find((b) => b.bot_id === existingId) ?? null;
+    if (!target) {
+      setError("Pick a bot.");
+      return;
+    }
+    mintingRef.current = true;
+    setPairingBusy(true);
+    const previous = pairing;
+    setPairing(null);
+    try {
+      // Revoke first: the gateway caps live codes per bot, so replacing has to
+      // free the old slot before asking for the next one.
+      await discardPairing(previous);
+      setPairing(await createInstallation(target.bot_id, agentType));
+    } catch (e) {
+      notify.error(messageOf(e));
+    } finally {
+      mintingRef.current = false;
+      setPairingBusy(false);
+    }
+  }, [agentType, bots, discardPairing, existingId, pairing]);
+
+  // Arriving at "Connect" always needs a code; the old per-mode "Create
+  // installation" button only stood between the user and the command they came
+  // for. Mint on arrival — the button below stays, for replacing an expired one.
+  useEffect(() => {
+    if (step !== 2 || !bot) return;
+    const key = `${bot.bot_id}:${agentType}`;
+    if (autoMintedFor.current === key) return;
+    autoMintedFor.current = key;
+    void mint();
+  }, [step, bot, agentType, mint]);
+
+  /** Drop the current code without minting a replacement. `autoMintedFor` keeps
+   *  its key, so the arrival effect does not immediately re-mint what the user
+   *  just deliberately revoked. */
+  async function revokePairing() {
+    const previous = pairing;
+    setPairing(null);
+    setPairingBusy(true);
+    try {
+      await discardPairing(previous);
+    } finally {
+      setPairingBusy(false);
+    }
+  }
+
+  /** Changing either half of the identity invalidates a code already minted:
+   *  the agent type is baked into the pending installation row, so a code minted
+   *  for `codex` would install a codex adapter for a bot now marked `claude`. */
+  function repick(next: { botId?: string; agent?: AgentType }) {
+    const previous = pairing;
+    setPairing(null);
+    autoMintedFor.current = null;
+    setConnected(false);
+    if (next.botId !== undefined) setExistingId(next.botId);
+    if (next.agent !== undefined) setAgentType(next.agent);
+    void discardPairing(previous);
+  }
 
   function resolveBot(): BotItem | null {
     const existing = bots.find((b) => b.bot_id === existingId) ?? null;
@@ -245,7 +346,10 @@ export function CreateInstallationWizard({
       onClose={onClose}
       maxWidth="max-w-2xl"
     >
-      <Stepper step={step} />
+      <Stepper
+        step={step}
+        labels={initialBotId ? ["Agent", "Host", "Connect"] : ["Bot & agent", "Host", "Connect"]}
+      />
       <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-3">
         {error && (
           <p className="text-compact text-danger-400 break-words">{error}</p>
@@ -260,22 +364,32 @@ export function CreateInstallationWizard({
                 The bot identity stays unchanged. This installation chooses its own agent and device.
               </p>
             </div>
-            <div>
-              <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">Bot identity</label>
-              <UiSelect value={existingId} disabled={Boolean(initialBotId)} onChange={(e) => setExistingId(e.target.value)} controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                {bots.map((b) => <option key={b.bot_id} value={b.bot_id}>{b.display_name || b.username} (@{b.username})</option>)}
-              </UiSelect>
-              {!bots.length && <p className="mt-2 text-compact text-warning-300">Create a bot identity before adding an installation.</p>}
-            </div>
+            <Field
+              label="Bot identity"
+              htmlFor={initialBotId ? undefined : botFieldId}
+              hint={!bots.length ? <span className="text-warning-300">Create a bot identity before adding an installation.</span> : undefined}
+            >
+              {initialBotId ? (
+                <p className="rounded-sm bg-zinc-800/40 px-3 py-2 text-regular text-content-secondary">
+                  {botLabel(bots.find((b) => b.bot_id === existingId))}
+                </p>
+              ) : (
+                <UiSelect id={botFieldId} value={existingId} onChange={(e) => repick({ botId: e.target.value })} controlSize="regular">
+                  {bots.map((b) => <option key={b.bot_id} value={b.bot_id}>{botLabel(b)}</option>)}
+                </UiSelect>
+              )}
+            </Field>
 
-            <div>
-              <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
-                Agent type
-              </label>
+            <Field
+              label="Agent type"
+              htmlFor={agentFieldId}
+              hint="The ACP adapter this device will run. It is fixed when the pending installation is created."
+            >
               <UiSelect
+                id={agentFieldId}
                 value={agentType}
-                onChange={(e) => setAgentType(e.target.value)}
-                controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                onChange={(e) => repick({ agent: e.target.value })}
+                controlSize="regular"
               >
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -284,7 +398,7 @@ export function CreateInstallationWizard({
                   </option>
                 ))}
               </UiSelect>
-            </div>
+            </Field>
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
@@ -343,13 +457,37 @@ export function CreateInstallationWizard({
         {/* ── Step 2: mode panel ────────────────────────────────────── */}
         {step === 2 && bot && (
           <div className="space-y-3">
+            <PairingSection
+              pairing={pairing}
+              secondsLeft={secondsLeft}
+              expired={expired}
+              busy={pairingBusy}
+              connected={connected}
+              onMint={() => void mint()}
+              onRevoke={() => void revokePairing()}
+            />
             {mode === "script" && (
-              <ScriptPanel bot={bot} agentType={agentType} discovery={discovery} />
+              <ScriptPanel
+                bot={bot}
+                agentType={agentType}
+                discovery={discovery}
+                pairing={pairing}
+                expired={expired}
+              />
             )}
             {mode === "agent" && (
-              <AgentPanel bot={bot} agentType={agentType} discovery={discovery} />
+              <AgentPanel
+                bot={bot}
+                discovery={discovery}
+                pairing={pairing}
+                expired={expired}
+              />
             )}
-            <ConnectionWatch botId={bot.bot_id} username={bot.username} />
+            <ConnectionWatch
+              botId={bot.bot_id}
+              username={bot.username}
+              onOnline={() => setConnected(true)}
+            />
             <div className="flex items-center justify-between">
               <UiButton action="back" content="iconText" variant="plain"
                 type="button"
@@ -385,22 +523,45 @@ export function CreateInstallationWizard({
  *  read a status dot. The gateway already knows: `bridge_connected` is live
  *  truth from the connection registry. Poll it, because the user's half of this
  *  happens on another machine and can succeed at any moment. */
-function ConnectionWatch({ botId, username }: { botId: string; username: string }) {
+function ConnectionWatch({
+  botId,
+  username,
+  onOnline,
+}: {
+  botId: string;
+  username: string;
+  /** Fired once, when the bridge first reports connected. */
+  onOnline?: () => void;
+}) {
   const [online, setOnline] = useState<boolean | null>(null);
+  const onOnlineRef = useRef(onOnline);
+  useEffect(() => {
+    onOnlineRef.current = onOnline;
+  }, [onOnline]);
 
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     async function tick() {
+      let bridged = false;
       try {
         const s = await getBotStatus(botId);
         if (!alive) return;
-        setOnline(!!s.bridge_connected);
+        bridged = !!s.bridge_connected;
+        setOnline(bridged);
       } catch {
         // Transient failure: keep the last known state rather than flapping to
         // "offline", which would read as the installation having dropped.
       }
-      if (alive) timer = setTimeout(tick, 3000);
+      if (!alive) return;
+      // The wizard asks one question — did this installation reach Cheers? — and
+      // a yes settles it. Stop rather than poll for as long as the dialog stays
+      // open; the bot list and Fleet own ongoing liveness.
+      if (bridged) {
+        onOnlineRef.current?.();
+        return;
+      }
+      timer = setTimeout(tick, 3000);
     }
     tick();
     return () => {
@@ -462,150 +623,97 @@ function ModeCard({
   );
 }
 
-function ManualPanel({
-  bot,
-  agentType,
-  config,
-  token,
+/** The one-time code, its clock, and the controls to replace or drop it.
+ *
+ *  Shared by both modes on purpose: they hand the SAME code to the SAME
+ *  installer, so a per-mode copy of this block meant switching modes silently
+ *  minted a second code and left the first live against the per-bot cap. */
+function PairingSection({
+  pairing,
+  secondsLeft,
+  expired,
   busy,
-  onGenConfig,
-  onGenToken,
+  connected,
+  onMint,
+  onRevoke,
 }: {
-  bot: BotItem;
-  agentType: AgentType;
-  config: ConnectorConfig | null;
-  token: IssuedToken | null;
+  pairing: InstallationPairing | null;
+  secondsLeft: number;
+  expired: boolean;
   busy: boolean;
-  onGenConfig: () => void;
-  onGenToken: () => void;
+  connected: boolean;
+  onMint: () => void;
+  onRevoke: () => void;
 }) {
-  const accountId = config?.account_id ?? bot.username;
-  const configFile = `~/.cheers/cheers-daemon.${accountId}.toml`;
-  const tokenFile = config?.credential_file ?? `secrets/${accountId}.token`;
   return (
-    <div className="space-y-3">
-      <p className="text-compact text-content-muted">
-        Manual setup for <span className="text-content-secondary">@{bot.username}</span>{" "}
-        ({agentType}). Two pieces: a settings file (safe to keep) and an installation credential
-        (a password — save it so only you can read it, and never commit it).
-      </p>
-
-      {/* 1. config */}
-      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-content-secondary">
-            1. Connector config
-          </span>
-          <UiButton action="create" variant="plain"
-            type="button"
-            onClick={onGenConfig}
-            disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {config ? "Regenerate" : "Generate config"}
-          </UiButton>
-        </div>
-        {config && (
-          <>
-            <ReachabilityNote reachability={config.reachability} />
-            <div className="rounded-sm bg-zinc-950 p-3 max-h-48 overflow-y-auto">
-              <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
-                {config.config_toml}
-              </pre>
-            </div>
-            <div className="flex items-center gap-3">
-              <CopyBtn value={config.config_toml} label="Copy config" />
-              <UiButton action="download" content="iconText" variant="plain"
-                type="button"
-                onClick={() =>
-                  download(
-                    `cheers-daemon.${accountId}.toml`,
-                    config.config_toml
-                  )
-                }
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
-              >
-                <Download className="w-3.5 h-3.5" /> Download
-              </UiButton>
-              <span className="text-compact text-content-muted">
-                save as <code className="text-content-muted">{configFile}</code>
-              </span>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 2. installation credential */}
-      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-content-secondary">
-            2. Installation credential
-          </span>
-          <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
-            <KeyRound className="w-3.5 h-3.5" />
-            {token ? "Rotate credential" : "Issue credential"}
+    <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-compact font-semibold text-content-secondary">
+          1. One-time pairing code
+        </span>
+        <div className="flex items-center gap-2">
+          {pairing && !connected && (
+            <UiButton action="revoke" content="iconText" variant="plain"
+              type="button"
+              onClick={onRevoke}
+              disabled={busy}
+              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Revoke
+            </UiButton>
+          )}
+          <Button action="create" controlSize="compact" onClick={onMint} disabled={busy}>
+            {busy ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Ticket className="w-3.5 h-3.5" />
+            )}
+            {pairing ? "New code" : "Create code"}
           </Button>
         </div>
-        {token && (
-          <>
-            <p className="text-compact text-warning-400">
-              {token.note ?? "Shown once. Rotating replaces this installation's previous credential."}
-            </p>
-            <div className="rounded-sm bg-zinc-950 p-3">
-              <code className="text-compact text-success-300 break-all">
-                {token.token}
-              </code>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-compact text-content-muted">
-                write to <code className="text-content-muted">~/.cheers/{tokenFile}</code> (chmod 600)
-              </span>
-              <CopyBtn value={token.token} label="Copy credential" />
-            </div>
-          </>
-        )}
       </div>
 
-      {/* 3. run */}
-      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <span className="text-compact font-semibold text-content-secondary">3. Start it</span>
-        <div className="rounded-sm bg-zinc-950 p-3">
-          <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
-{`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
-# (save the config + credential from above into the paths shown)
-cce-acp-connector start --config ${configFile} --name ${accountId}
-cce-acp-connector status --name ${accountId}`}
-          </pre>
-        </div>
-        <div className="space-y-2 pt-1">
-          <p className="text-compact text-content-muted">
-            Need the connector binary? Cheers requires an Agent adapter with native HTTP MCP OAuth
-            support. Unsupported adapters fail closed; no stdio sidecar is installed.
-          </p>
-          <div className="rounded-sm bg-zinc-950 p-3">
-            <pre className="text-compact leading-reading text-content-muted whitespace-pre-wrap break-all">
-              {CONNECTOR_DOWNLOAD_CMD}
-            </pre>
-          </div>
-          <div className="flex items-center justify-between">
-            <a
-              href={`https://github.com/${CONNECTOR_RELEASES_REPO}/releases/tag/${CONNECTOR_RELEASE_TAG}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-compact text-accent-300 hover:text-accent-200 underline underline-offset-2"
-            >
-              All platforms &amp; versions on GitHub Releases
-            </a>
-            <CopyBtn value={CONNECTOR_DOWNLOAD_CMD} label="Copy command" />
-          </div>
-          <p className="text-compact text-content-muted">
-            Or build from source:{" "}
-            <code className="text-content-muted">cargo build --release</code> in{" "}
-            <code className="text-content-muted">packages/cheers-acp-connector-rs</code>.
-          </p>
-        </div>
-      </div>
+      {busy && !pairing && (
+        <p className="text-compact text-content-muted">Creating a pending installation…</p>
+      )}
+
+      {pairing && connected && (
+        <p className="text-compact text-content-muted">
+          Redeemed. This code is spent — it can't be used a second time.
+        </p>
+      )}
+
+      {pairing && !connected && !expired && (
+        <p className="flex items-center gap-2 text-compact text-content-muted">
+          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>
+            Single-use. Expires in{" "}
+            <span className="tabular-nums text-warning-300">{formatCountdown(secondsLeft)}</span>
+            {pairing.live_pairings
+              ? ` · ${pairing.live_pairings} pending installation${pairing.live_pairings === 1 ? "" : "s"} for this bot`
+              : ""}
+          </span>
+        </p>
+      )}
+
+      {pairing && !connected && expired && (
+        <p className="flex items-start gap-2 text-compact text-warning-400">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
+          <span>
+            This code has expired — running it now fails with “pairing code is
+            invalid or expired”. Press{" "}
+            <span className="text-content-secondary">New code</span> and copy the
+            command again.
+          </span>
+        </p>
+      )}
+
+      {!pairing && !busy && (
+        <p className="text-compact text-content-muted">
+          No live code. Press <span className="text-content-secondary">Create code</span> to
+          register a pending installation for this bot.
+        </p>
+      )}
     </div>
   );
 }
@@ -614,17 +722,18 @@ function ScriptPanel({
   bot,
   agentType,
   discovery,
+  pairing,
+  expired,
 }: {
   bot: BotItem;
   agentType: AgentType;
   discovery: ConnectorDiscovery | null;
+  pairing: InstallationPairing | null;
+  expired: boolean;
 }) {
-  const [code, setCode] = useState<InstallationPairing | null>(null);
-  const [busy, setBusy] = useState(false);
-
   const installUrl = `${serverOrigin()}/api/v1/install.sh`;
-  const command = code
-    ? `CHEERS_PAIRING_CODE='${code.pairing_code}' bash <(curl -fsSL ${installUrl})`
+  const command = pairing
+    ? `CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
   const needsApiKeyHint =
     agentType === "claude" ||
@@ -635,79 +744,21 @@ function ScriptPanel({
     agentType === "codex" || agentType === "codex-acp"
       ? "OPENAI_API_KEY"
       : "ANTHROPIC_API_KEY";
-  const commandWithKey = code
-    ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${code.pairing_code}' bash <(curl -fsSL ${installUrl})`
+  const commandWithKey = pairing
+    ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
-
-  async function mint() {
-    setBusy(true);
-    try {
-      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
-      setCode(await createInstallation(bot.bot_id, agentType));
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function revoke() {
-    setBusy(true);
-    try {
-      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
-      setCode(null);
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="space-y-3">
       <p className="text-compact text-content-muted">
         One command on the agent's machine for{" "}
         <span className="text-content-secondary">@{bot.username}</span> ({agentType}). It
-        trades the code below for an installation credential, saves both files, and installs the
+        trades the code above for an installation credential, saves both files, and installs the
         connector so it restarts on its own after a reboot.
       </p>
 
-      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-content-secondary">
-            1. Create a pending installation
-          </span>
-          <div className="flex items-center gap-2">
-            {code && (
-              <UiButton action="revoke" content="iconText" variant="plain"
-                type="button"
-                onClick={revoke}
-                disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Revoke
-              </UiButton>
-            )}
-            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
-              {busy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Ticket className="w-3.5 h-3.5" />
-              )}
-              {code ? "Replace installation" : "Create installation"}
-            </Button>
-          </div>
-        </div>
-        {code && (
-          <p className="text-compact text-warning-400">
-            Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.{" "}
-            {code.live_pairings} pending installation{code.live_pairings === 1 ? "" : "s"} for this bot.
-          </p>
-        )}
-      </div>
-
-      {code && (
-        <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
+      {pairing && (
+        <div className={`rounded-sm bg-zinc-800/40 p-3 space-y-2 ${expired ? "opacity-60" : ""}`}>
           <span className="text-compact font-semibold text-content-secondary">
             2. Run on the agent's machine
           </span>
@@ -757,54 +808,30 @@ function ScriptPanel({
 
 function AgentPanel({
   bot,
-  agentType,
   discovery,
+  pairing,
+  expired,
 }: {
   bot: BotItem;
-  agentType: AgentType;
   discovery: ConnectorDiscovery | null;
+  pairing: InstallationPairing | null;
+  expired: boolean;
 }) {
-  const [code, setCode] = useState<InstallationPairing | null>(null);
   const [guidance, setGuidance] = useState<PairingGuidance | null>(null);
   // Persistent, not a toast: without the template, step 2 can never render, so
   // the failure must stay visible in the panel (StrictMode also double-runs this).
   const [guidanceError, setGuidanceError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getPairingGuidance()
       .then(setGuidance)
-      .catch((e) => setGuidanceError(String(e)));
+      .catch((e) => setGuidanceError(messageOf(e)));
   }, []);
 
   const prompt =
-    code && guidance
-      ? guidance.prompt_template.replace(guidance.pairing_code_placeholder, code.pairing_code)
+    pairing && guidance
+      ? guidance.prompt_template.replace(guidance.pairing_code_placeholder, pairing.pairing_code)
       : "";
-
-  async function mint() {
-    setBusy(true);
-    try {
-      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
-      setCode(await createInstallation(bot.bot_id, agentType));
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function revoke() {
-    setBusy(true);
-    try {
-      if (code) await revokeTerminalInstallation(bot.bot_id, code.installation_id);
-      setCode(null);
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="space-y-3">
@@ -821,41 +848,8 @@ function AgentPanel({
         </p>
       )}
 
-      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-compact font-semibold text-content-secondary">
-            1. Create a pending installation
-          </span>
-          <div className="flex items-center gap-2">
-            {code && (
-              <UiButton action="revoke" content="iconText" variant="plain"
-                type="button"
-                onClick={revoke}
-                disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Revoke
-              </UiButton>
-            )}
-            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
-              {busy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Ticket className="w-3.5 h-3.5" />
-              )}
-              {code ? "Replace installation" : "Create installation"}
-            </Button>
-          </div>
-        </div>
-        {code && (
-          <p className="text-compact text-warning-400">
-            Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.
-          </p>
-        )}
-      </div>
-
-      {code && guidance && (
-        <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
+      {pairing && guidance && (
+        <div className={`rounded-sm bg-zinc-800/40 p-3 space-y-2 ${expired ? "opacity-60" : ""}`}>
           <span className="text-compact font-semibold text-content-secondary">
             2. Paste this to your agent
           </span>
