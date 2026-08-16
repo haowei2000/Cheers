@@ -573,18 +573,14 @@ function BotOverview({
                     : "Disconnects the active installation and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
                 </p>
               </div>
-              <UiButton action="disable" variant="plain"
+              <UiButton action="disable" variant={bot.is_disabled ? "secondary" : "danger"}
                 type="button"
                 onClick={() => (bot.is_disabled ? void setDisabled(false) : setPendingDanger("disable"))}
                 disabled={toggling}
-                controlSize="regular" className={cn(
- "inline-flex flex-shrink-0 items-center gap-2 rounded-sm transition-colors disabled:opacity-50",
- bot.is_disabled
- ? "bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong": "bg-red-950/40 text-danger-300 hover:bg-red-950/70"
- )}
+                controlSize="regular"
               >
                 {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
-                {bot.is_disabled ? "Enable bot" : "Disable bot…"}
+                {bot.is_disabled ? "Enable bot" : "Disable bot"}
               </UiButton>
             </div>
 
@@ -596,14 +592,13 @@ function BotOverview({
                   becomes available again. This can't be undone.
                 </p>
               </div>
-              <UiButton action="delete" content="iconText" variant="plain"
+              <UiButton action="delete" content="iconText" variant="danger"
                 type="button"
                 onClick={() => setPendingDanger("delete")}
                 disabled={toggling}
-                controlSize="regular" className="inline-flex flex-shrink-0 items-center gap-2 rounded-sm bg-red-950/40  text-danger-300 hover:bg-red-950/70 disabled:opacity-50 transition-colors"
+                controlSize="regular"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Delete…
               </UiButton>
             </div>
           </section>
