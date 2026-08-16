@@ -59,6 +59,71 @@ pub struct BotCreateRequest {
 /// Per-user cap on bot creation for non-admins (resource-abuse bound, audit H1).
 const MAX_BOTS_PER_USER: i64 = 50;
 
+/// `bot_accounts.username` is VARCHAR(64).
+const MAX_BOT_USERNAME_LEN: usize = 64;
+
+/// A bot username is an address, not a label: it renders as `@name` in message
+/// bodies and seeds the connector account id, which lowercases the name and
+/// rewrites anything outside `[a-z0-9_-]` to `_`. Holding creation to that
+/// alphabet keeps the two in step, and the length bound turns what used to be a
+/// VARCHAR overflow — a 500 with "internal error" — into a fixable 400.
+/// Mirrored by `botUsernameError` in the web client.
+fn validate_bot_username(raw: &str) -> Result<String, AppError> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err(AppError::BadRequest("username is required".into()));
+    }
+    if value.chars().count() > MAX_BOT_USERNAME_LEN {
+        return Err(AppError::BadRequest(format!(
+            "username must be {MAX_BOT_USERNAME_LEN} characters or fewer"
+        )));
+    }
+    let mut chars = value.chars();
+    let starts_alnum = chars.next().is_some_and(|c| c.is_ascii_alphanumeric());
+    let rest_ok = chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !starts_alnum || !rest_ok {
+        return Err(AppError::BadRequest(
+            "username may contain letters, digits, '-' and '_', and must start with a letter or digit".into(),
+        ));
+    }
+    Ok(value.to_string())
+}
+
+#[cfg(test)]
+mod username_tests {
+    use super::validate_bot_username;
+
+    #[test]
+    fn accepts_addressable_names_and_trims() {
+        assert_eq!(
+            validate_bot_username("  research-assistant  ").unwrap(),
+            "research-assistant"
+        );
+        assert_eq!(validate_bot_username("Bot_2").unwrap(), "Bot_2");
+    }
+
+    /// Each of these previously reached Postgres: the long one as a 500 from a
+    /// VARCHAR(64) overflow, the rest as a stored name that no longer matches
+    /// its own `@mention` or connector account id.
+    #[test]
+    fn rejects_names_that_break_addressing() {
+        for bad in [
+            "",
+            "   ",
+            "my bot",
+            "@helper",
+            "-leading",
+            "_leading",
+            "bot!",
+            "b\u{00e9}ta",
+        ] {
+            assert!(validate_bot_username(bad).is_err(), "should reject {bad:?}");
+        }
+        assert!(validate_bot_username(&"x".repeat(65)).is_err());
+        assert!(validate_bot_username(&"x".repeat(64)).is_ok());
+    }
+}
+
 pub(crate) fn is_admin(claims: &Claims) -> bool {
     matches!(claims.role.as_str(), "system_admin" | "admin")
 }
@@ -236,9 +301,7 @@ pub async fn create_bot(
     Extension(claims): Extension<Claims>,
     Json(body): Json<BotCreateRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if body.username.trim().is_empty() {
-        return Err(AppError::BadRequest("username is required".into()));
-    }
+    let username = validate_bot_username(&body.username)?;
     if body.external_processor {
         let valid_url = body
             .processor_privacy_url
@@ -303,7 +366,7 @@ pub async fn create_bot(
                    external_processor, processor_name, processor_privacy_url, processor_data_use, processor_policy_version",
     )
     .bind(&bot_id)
-    .bind(body.username.trim())
+    .bind(&username)
     .bind(body.display_name)
     .bind(body.description)
     .bind(body.avatar_url)
@@ -325,8 +388,7 @@ pub async fn create_bot(
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(de) if de.is_unique_violation() => AppError::Conflict(format!(
-            "bot username '{}' is already taken — choose another name or use the existing bot identity",
-            body.username.trim()
+            "bot username '{username}' is already taken — choose another name or use the existing bot identity"
         )),
         _ => AppError::Db(e),
     })?;
@@ -336,7 +398,7 @@ pub async fn create_bot(
         Some(&bot_id),
         None,
         Some(&claims.sub),
-        json!({ "username": body.username.trim() }),
+        json!({ "username": username }),
     )
     .await;
     Ok(Json(json!({
@@ -1275,19 +1337,21 @@ pub async fn refresh_bot_status(
     })))
 }
 
+/// Parse a strict semver triple "major.minor.patch"; tolerates a leading `v`.
+pub(crate) fn version_triple(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.trim().trim_start_matches('v').splitn(3, '.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next()?.parse().ok()?;
+    let patch = it.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
 /// Strict semver-triple "is `candidate` newer than `current`" — used for the
 /// connector `update_available` flag. Tolerates a leading `v`; anything that
 /// isn't three dot-separated integers compares as "not newer" (fail quiet:
 /// a garbled version must never nag every bot owner to update).
 fn version_is_newer(candidate: &str, current: &str) -> bool {
-    fn triple(s: &str) -> Option<(u64, u64, u64)> {
-        let mut it = s.trim().trim_start_matches('v').splitn(3, '.');
-        let major = it.next()?.parse().ok()?;
-        let minor = it.next()?.parse().ok()?;
-        let patch = it.next()?.parse().ok()?;
-        Some((major, minor, patch))
-    }
-    match (triple(candidate), triple(current)) {
+    match (version_triple(candidate), version_triple(current)) {
         (Some(a), Some(b)) => a > b,
         _ => false,
     }

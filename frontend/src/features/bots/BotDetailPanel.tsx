@@ -13,7 +13,6 @@ import {
   Trash2,
   Pencil,
   Laptop,
-  RotateCw,
 } from "lucide-react";
 import {
   disableBot,
@@ -23,10 +22,6 @@ import {
   refreshBotStatus,
   getBotStatus,
   listTerminalInstallations,
-  activateTerminalInstallation,
-  rotateTerminalCredential,
-  revokeTerminalInstallation,
-  reconnectTerminalInstallation,
   type TerminalInstallation,
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
@@ -39,14 +34,22 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, SectionHead, MetaRow } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { IconButton } from "@/components/ui/icon-button";
 import { ItemGroup, ItemList, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
+import { messageOf } from "@/lib/notify";
 import { addChannelMember } from "@/api/channels";
 import { addWorkspaceMember } from "@/api/workspaces";
+import {
+  InstallationActions,
+  installationStatusLabel,
+  mcpStateLabel,
+  mcpStateTone,
+} from "./installationLifecycle";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
@@ -289,8 +292,6 @@ function BotInstallationsSection({
   onAddInstallation: () => void;
 }) {
   const [items, setItems] = useState<TerminalInstallation[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ id: string; credential: string } | null>(null);
 
   const load = async () => {
     try {
@@ -305,18 +306,6 @@ function BotInstallationsSection({
     const id = window.setInterval(() => void load(), 20_000);
     return () => clearInterval(id);
   }, [botId]);
-
-  const run = async (id: string, action: () => Promise<void>) => {
-    setBusy(id);
-    try {
-      await action();
-      await load();
-    } catch (e) {
-      onError(String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <section className="space-y-3">
@@ -352,15 +341,15 @@ function BotInstallationsSection({
               metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
               status={(
                 <span className={cn("text-compact", item.online ? "text-success-400" : "text-content-muted")}>
-                  {item.revoked_at ? "revoked" : item.online ? "online" : item.status}
+                  {installationStatusLabel({ ...item, bot_id: botId })}
                 </span>
               )}
             />
             <div className="mx-2 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-minimal text-content-muted">
               <span className={cn(
-                item.mcp_connection_state === "connected" ? "text-success-400" :
-                  item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed" ? "text-warning-400" : "text-content-muted"
-              )}>MCP: {item.mcp_connection_state.replaceAll("_", " ")}</span>
+                mcpStateTone(item.mcp_connection_state) === "success" ? "text-success-400" :
+                  mcpStateTone(item.mcp_connection_state) === "warning" ? "text-warning-400" : "text-content-muted"
+              )}>Agent sign-in: {mcpStateLabel(item.mcp_connection_state)}</span>
               {item.mcp_last_seen_at && <span>Last MCP request {new Date(item.mcp_last_seen_at).toLocaleString()}</span>}
               {item.agent_profile?.verified_version_range && (
                 <span>Verified: {item.agent_profile.verified_version_range}</span>
@@ -371,51 +360,13 @@ function BotInstallationsSection({
                 {item.agent_profile.login_hint}
               </p>
             )}
-            {!item.revoked_at && (
-              <div className="flex flex-wrap gap-2 px-2 py-2">
-                {item.status === "standby" && (
-                  <Button action="activate" content="iconText" variant="secondary" controlSize="compact"
-                    disabled={busy === item.installation_id}
-                    onClick={() => run(item.installation_id, () => activateTerminalInstallation(botId, item.installation_id))}>
-                    <Power className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                {item.status !== "pending" && (
-                  <Button action="rotate" content="iconText" variant="secondary" controlSize="compact"
-                    disabled={busy === item.installation_id}
-                    onClick={() => run(item.installation_id, async () => {
-                      const result = await rotateTerminalCredential(botId, item.installation_id);
-                      setIssued({ id: item.installation_id, credential: result.credential });
-                    })}>
-                    <RotateCw className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                {item.status === "active" && (
-                  <Button action="connect" content="iconText" variant="secondary" controlSize="compact"
-                    aria-label="Reconnect installation"
-                    disabled={busy === item.installation_id}
-                    onClick={() => run(item.installation_id, () => reconnectTerminalInstallation(botId, item.installation_id))}>
-                    <RotateCw className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                <Button action="revoke" content="iconText" variant="danger" controlSize="compact"
-                  disabled={busy === item.installation_id}
-                  onClick={() => {
-                    if (window.confirm(`Revoke installation “${item.device_name}”? It will no longer be able to connect.`)) {
-                      void run(item.installation_id, () => revokeTerminalInstallation(botId, item.installation_id));
-                    }
-                  }}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            )}
-            {issued?.id === item.installation_id && (
-              <div className="mx-2 mb-2 rounded-sm bg-amber-950/40 p-2 text-compact text-warning-100">
-                <p>This credential is shown once. Replace the installation credential file before reconnecting.</p>
-                <code className="mt-1 block break-all select-all">{issued.credential}</code>
-                <CopyButton value={issued.credential} />
-              </div>
-            )}
+            <div className="px-2 py-2">
+              <InstallationActions
+                item={{ ...item, bot_id: botId }}
+                presentation="labeled"
+                onChanged={load}
+              />
+            </div>
           </ItemGroup>
         ))}
       </ItemList>
@@ -443,6 +394,7 @@ function BotOverview({
   const [added, setAdded] = useState<"workspace" | "channel" | null>(null);
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [pendingDanger, setPendingDanger] = useState<"disable" | "delete" | null>(null);
 
   async function add() {
     if (!channelId || busy) return;
@@ -480,38 +432,36 @@ function BotOverview({
   }
 
   async function remove() {
-    if (
-      !window.confirm(
-        `Permanently delete ${bot.display_name || bot.username}? This removes it from all channels and can't be undone.`
-      )
-    )
-      return;
     setToggling(true);
     try {
       await deleteBot(bot.bot_id);
       toast.success(`Deleted ${bot.display_name || bot.username}`);
+      setPendingDanger(null);
       onChanged();
     } catch (e) {
-      onError(String(e));
+      onError(messageOf(e));
     } finally {
       setToggling(false);
     }
   }
 
-  async function toggleDisabled() {
+  /** Enabling is harmless and goes straight through; disabling kicks whatever is
+   *  connected right now, so it asks first. */
+  async function setDisabled(disabled: boolean) {
     if (toggling) return;
     setToggling(true);
     try {
-      if (bot.is_disabled) {
-        await enableBot(bot.bot_id);
-        toast.success(`Enabled ${bot.display_name || bot.username}`);
-      } else {
+      if (disabled) {
         await disableBot(bot.bot_id);
         toast.success(`Disabled ${bot.display_name || bot.username} (installation disconnected)`);
+      } else {
+        await enableBot(bot.bot_id);
+        toast.success(`Enabled ${bot.display_name || bot.username}`);
       }
+      setPendingDanger(null);
       onChanged();
     } catch (e) {
-      onError(String(e));
+      onError(messageOf(e));
     } finally {
       setToggling(false);
     }
@@ -603,52 +553,95 @@ function BotOverview({
         </p>}
       </section>
 
-      {/* Danger zone — trailing, one row; consequences in hover help (§2.15) */}
+      {/* Danger zone (§2.15). Consequences are stated here rather than in hover
+          help — §2.14 forbids hiding anything the reader needs in order to act
+          correctly, and both of these are hard to walk back. */}
       {bot.can_manage && (
         <>
           <div className="border-t border-zinc-800" />
-          <section className="flex items-center justify-between gap-3">
+          <section className="space-y-3">
             <SectionHead className="mb-0">Danger zone</SectionHead>
-            <div className="flex items-center gap-2">
-              <Tip
-                align="end"
-                content={
-                  bot.is_disabled
-                    ? "Re-enables the bot so its active installation can connect again."
-                    : "Disconnects the active installation; the bot stays offline until re-enabled."
-                }
-              >
-                <UiButton action="disable" variant="plain"
-                  type="button"
-                  onClick={toggleDisabled}
-                  disabled={toggling}
-                  controlSize="regular" className={cn(
- "inline-flex items-center gap-2 rounded-sm  transition-colors disabled:opacity-50",
- bot.is_disabled
- ? "bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong": "bg-red-950/40 text-danger-300 hover:bg-red-950/70"
- )}
-                >
-                  {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-regular font-medium text-content-secondary">
                   {bot.is_disabled ? "Enable bot" : "Disable bot"}
-                </UiButton>
-              </Tip>
-              <Tip
-                align="end"
-                content="Removes it from all channels — asks you to confirm first. This can't be undone."
+                </p>
+                <p className="mt-1 text-compact text-content-muted">
+                  {bot.is_disabled
+                    ? "Lets its active installation connect again. Channel membership never changed."
+                    : "Disconnects the active installation and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
+                </p>
+              </div>
+              <UiButton action="disable" variant={bot.is_disabled ? "secondary" : "danger"}
+                type="button"
+                onClick={() => (bot.is_disabled ? void setDisabled(false) : setPendingDanger("disable"))}
+                disabled={toggling}
+                controlSize="regular"
               >
-                <UiButton action="delete" content="iconText" variant="plain"
-                  type="button"
-                  onClick={remove}
-                  disabled={toggling}
-                  controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-red-950/40  text-danger-300 hover:bg-red-950/70 disabled:opacity-50 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Delete…
-                </UiButton>
-              </Tip>
+                {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                {bot.is_disabled ? "Enable bot" : "Disable bot"}
+              </UiButton>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-regular font-medium text-content-secondary">Delete bot</p>
+                <p className="mt-1 text-compact text-content-muted">
+                  Removes @{bot.username} from every channel and drops its installations. The name
+                  becomes available again. This can't be undone.
+                </p>
+              </div>
+              <UiButton action="delete" content="iconText" variant="danger"
+                type="button"
+                onClick={() => setPendingDanger("delete")}
+                disabled={toggling}
+                controlSize="regular"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </UiButton>
             </div>
           </section>
         </>
+      )}
+
+      {pendingDanger === "disable" && (
+        <ConfirmDialog
+          title="Disable this bot?"
+          confirmAction="disable"
+          confirmLabel="Disable bot"
+          busy={toggling}
+          onClose={() => setPendingDanger(null)}
+          onConfirm={() => void setDisabled(true)}
+        >
+          <p>
+            <strong className="text-content-primary">@{bot.username}</strong> is disconnected
+            immediately and stops answering, including any work in progress.
+          </p>
+          <p className="text-content-muted">
+            Nothing is deleted, and turning it back on restores it — its installations and channels
+            are untouched.
+          </p>
+        </ConfirmDialog>
+      )}
+
+      {pendingDanger === "delete" && (
+        <ConfirmDialog
+          title="Delete this bot?"
+          confirmAction="delete"
+          confirmLabel="Delete bot"
+          busy={toggling}
+          onClose={() => setPendingDanger(null)}
+          onConfirm={() => void remove()}
+        >
+          <p>
+            <strong className="text-content-primary">@{bot.username}</strong> is removed from every
+            channel it belongs to, and its installations stop working for good.
+          </p>
+          <p className="text-content-muted">
+            This can't be undone. To take it offline temporarily, disable it instead.
+          </p>
+        </ConfirmDialog>
       )}
     </div>
   );

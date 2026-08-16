@@ -183,8 +183,15 @@ export function BotsManager() {
 
       {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
         setCreateBotOpen(false);
+        // Seed the list with what the POST returned instead of waiting for the
+        // refetch: the installation wizard resolves its bot out of `bots`, so
+        // opening before the round-trip lands would show it an empty selection.
+        setBots((prev) => (prev.some((b) => b.bot_id === bot.bot_id) ? prev : [bot, ...prev]));
         setSelectedId(bot.bot_id);
-        void refresh();
+        // A bot identity can't do anything until some device runs it — carry on
+        // into that rather than ending the flow on an inert row.
+        setInstallationBotId(bot.bot_id);
+        void refresh({ silent: true });
       }} />}
       {installationBotId !== undefined && (
         <CreateInstallationWizard
