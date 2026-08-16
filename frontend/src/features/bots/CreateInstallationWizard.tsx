@@ -288,13 +288,11 @@ export function CreateInstallationWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button action="setup" content="iconText" variant="secondary" onClick={setupLocally} disabled={busy}>
-                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <Laptop className="w-4 h-4" /> Install on this Mac
+                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy}>
+                  <Laptop className="w-4 h-4" />
                 </Button>
               )}
-              <Button action="setup" onClick={validateAndAdvance} disabled={busy || !bots.length}>
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length}>
                 {localDesktop ? "Install on another device" : "Choose device"}
               </Button>
             </div>
@@ -332,9 +330,8 @@ export function CreateInstallationWizard({
               <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
+                <ArrowLeft className="w-3.5 h-3.5" />
               </UiButton>
             </div>
           </div>
@@ -351,15 +348,14 @@ export function CreateInstallationWizard({
             )}
             <ConnectionWatch botId={bot.bot_id} username={bot.username} />
             <div className="flex items-center justify-between">
-              <UiButton action="back" content="iconText" variant="plain"
+              <UiButton action="modes" content="iconText" variant="plain"
                 type="button"
                 onClick={() => {
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Modes
+                <ArrowLeft className="w-3.5 h-3.5" />
               </UiButton>
               <Button action="done"
                 onClick={() => {
@@ -496,13 +492,13 @@ function ManualPanel({
           <span className="text-compact font-semibold text-content-secondary">
             1. Connector config
           </span>
-          <UiButton action="create" variant="plain"
+          <UiButton
+            action="generate"
+            variant="secondary"
             type="button"
             onClick={onGenConfig}
-            disabled={busy}
-            controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 disabled:opacity-50"
+            loading={busy}
           >
-            {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
           </UiButton>
         </div>
@@ -524,9 +520,8 @@ function ManualPanel({
                     config.config_toml
                   )
                 }
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
-                <Download className="w-3.5 h-3.5" /> Download
+                <Download className="w-3.5 h-3.5" />
               </UiButton>
               <span className="text-compact text-content-muted">
                 save as <code className="text-content-muted">{configFile}</code>
@@ -542,9 +537,14 @@ function ManualPanel({
           <span className="text-compact font-semibold text-content-secondary">
             2. Installation credential
           </span>
-          <Button action="issue" content="iconText" controlSize="compact" onClick={onGenToken} disabled={busy}>
+          <Button
+            action={token ? "rotate" : "issue"}
+            content="iconText"
+            controlSize="compact"
+            onClick={onGenToken}
+            loading={busy}
+          >
             <KeyRound className="w-3.5 h-3.5" />
-            {token ? "Rotate credential" : "Issue credential"}
           </Button>
         </div>
         {token && (
@@ -679,21 +679,21 @@ function ScriptPanel({
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton action="revoke" content="iconText" variant="plain"
+              <UiButton action="revoke" content="iconText" variant="secondary"
                 type="button"
                 onClick={revoke}
-                disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+                loading={busy}
               >
-                <Trash2 className="w-3.5 h-3.5" /> Revoke
+                <Trash2 className="w-3.5 h-3.5" />
               </UiButton>
             )}
-            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
-              {busy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Ticket className="w-3.5 h-3.5" />
-              )}
+            <Button
+              action={code ? "replace" : "create"}
+              controlSize="compact"
+              onClick={mint}
+              loading={busy}
+            >
+              {!busy && <Ticket className="w-3.5 h-3.5" />}
               {code ? "Replace installation" : "Create installation"}
             </Button>
           </div>
@@ -828,21 +828,21 @@ function AgentPanel({
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <UiButton action="revoke" content="iconText" variant="plain"
+              <UiButton action="revoke" content="iconText" variant="secondary"
                 type="button"
                 onClick={revoke}
-                disabled={busy}
-                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+                loading={busy}
               >
-                <Trash2 className="w-3.5 h-3.5" /> Revoke
+                <Trash2 className="w-3.5 h-3.5" />
               </UiButton>
             )}
-            <Button action="create" controlSize="compact" onClick={mint} disabled={busy}>
-              {busy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Ticket className="w-3.5 h-3.5" />
-              )}
+            <Button
+              action={code ? "replace" : "create"}
+              controlSize="compact"
+              onClick={mint}
+              loading={busy}
+            >
+              {!busy && <Ticket className="w-3.5 h-3.5" />}
               {code ? "Replace installation" : "Create installation"}
             </Button>
           </div>
