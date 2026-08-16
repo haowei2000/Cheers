@@ -402,13 +402,11 @@ export function CreateInstallationWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button action="setup" content="iconText" variant="secondary" onClick={setupLocally} disabled={busy}>
-                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <Laptop className="w-4 h-4" /> Install on this Mac
+                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy}>
+                  <Laptop className="w-4 h-4" />
                 </Button>
               )}
-              <Button action="setup" onClick={validateAndAdvance} disabled={busy || !bots.length}>
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length}>
                 {localDesktop ? "Install on another device" : "Choose device"}
               </Button>
             </div>
@@ -446,9 +444,8 @@ export function CreateInstallationWizard({
               <UiButton action="back" content="iconText" variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
+                <ArrowLeft className="w-3.5 h-3.5" />
               </UiButton>
             </div>
           </div>
@@ -489,15 +486,14 @@ export function CreateInstallationWizard({
               onOnline={() => setConnected(true)}
             />
             <div className="flex items-center justify-between">
-              <UiButton action="back" content="iconText" variant="plain"
+              <UiButton action="modes" content="iconText" variant="plain"
                 type="button"
                 onClick={() => {
                   setStep(1);
                   setMode(null);
                 }}
-                className="inline-flex items-center gap-1  text-content-primary hover:text-content-strong"
               >
-                <ArrowLeft className="w-3.5 h-3.5" /> Modes
+                <ArrowLeft className="w-3.5 h-3.5" />
               </UiButton>
               <Button action="done"
                 onClick={() => {
@@ -653,21 +649,21 @@ function PairingSection({
         </span>
         <div className="flex items-center gap-2">
           {pairing && !connected && (
-            <UiButton action="revoke" content="iconText" variant="plain"
+            <UiButton action="revoke" content="iconText" variant="secondary"
               type="button"
               onClick={onRevoke}
-              disabled={busy}
-              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800  text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+              loading={busy}
             >
-              <Trash2 className="w-3.5 h-3.5" /> Revoke
+              <Trash2 className="w-3.5 h-3.5" />
             </UiButton>
           )}
-          <Button action="create" controlSize="compact" onClick={onMint} disabled={busy}>
-            {busy ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Ticket className="w-3.5 h-3.5" />
-            )}
+          <Button
+            action={pairing ? "replace" : "create"}
+            controlSize="compact"
+            onClick={onMint}
+            loading={busy}
+          >
+            {!busy && <Ticket className="w-3.5 h-3.5" />}
             {pairing ? "New code" : "Create code"}
           </Button>
         </div>
