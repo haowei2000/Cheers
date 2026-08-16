@@ -9,7 +9,7 @@ use axum::{
         State, WebSocketUpgrade,
     },
     http::{header, HeaderMap},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     domain::{acp_capability, channel_seq, sessions},
+    errors::AppError,
     gateway::{
         realtime::frame::WireFrame,
         stream::{handle_delta, handle_done, handle_send, handle_session_update},
@@ -76,17 +77,33 @@ struct BotInfo {
 pub async fn control_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
+    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     State(state): State<AppState>,
 ) -> Response {
+    let client = connect_key(&headers, connect_info, &state);
+    if let Some(retry_after_secs) = connect_limiter().retry_after(&client) {
+        return AppError::TooManyRequests { retry_after_secs }.into_response();
+    }
     let header_token = bearer_token(&headers);
-    ws.on_upgrade(move |socket| handle_control(socket, state, header_token))
+    ws.on_upgrade(move |socket| handle_control(socket, state, header_token, client))
 }
 
-async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Option<String>) {
+async fn handle_control(
+    mut socket: WebSocket,
+    state: AppState,
+    header_token: Option<String>,
+    client: String,
+) {
     // ── 1. 鉴权：优先 Authorization: Bearer，缺省时等待首帧 auth ─────────────
     let bot = match auth_bot(&mut socket, &state, header_token).await {
-        Some(b) => b,
-        None => return,
+        Some(b) => {
+            connect_limiter().reset(&client);
+            b
+        }
+        None => {
+            connect_limiter().record_failure(&client);
+            return;
+        }
     };
 
     // ── 2. 注册 control 连接（supersede 旧连接）────────────────────────────
@@ -165,6 +182,8 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
     let mut malformed: u32 = 0;
+    // connect already stamped last_seen_at; the next write is a full interval out.
+    let mut last_seen_written = std::time::Instant::now();
     let idle = tokio::time::sleep(IDLE_TIMEOUT);
     tokio::pin!(idle);
     let mut probe = tokio::time::interval(PROBE_INTERVAL);
@@ -179,6 +198,10 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
                         match serde_json::from_str::<Value>(&text) {
                             Ok(frame) => {
                                 malformed = 0;
+                                if last_seen_written.elapsed() >= LAST_SEEN_WRITE_INTERVAL {
+                                    last_seen_written = std::time::Instant::now();
+                                    touch_installation(&state, &bot).await;
+                                }
                                 handle_control_frame(&frame, &state, &bot).await;
                             }
                             Err(e) => {
@@ -244,11 +267,33 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
             .bot_registry
             .unbind_if_connection(bot.bot_id, connection_id);
         crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
+        // A turn that was streaming when this socket died has a placeholder the
+        // connector will never finalize. The periodic sweep would eventually
+        // clear it, but it waits out a threshold long enough for the chat bubble
+        // to sit on "thinking" for minutes. Here the death is known, so schedule
+        // a scoped sweep — it still re-checks liveness first, so a connector that
+        // reconnects inside the grace keeps its turn.
+        crate::gateway::reclaimer::spawn_disconnect_sweep(
+            state.db.clone(),
+            state.stream_registry.clone(),
+            state.fanout.clone(),
+            state.bot_locator.clone(),
+            bot.bot_id,
+        );
     }
 }
 
-async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
-    let bot_id = bot.bot_id;
+/// How stale `last_seen_at` may get while a connector is healthy.
+///
+/// It used to be written on every inbound control frame. That is bounded by the
+/// connector's 25s heartbeat in normal operation, but it made a DB write part of
+/// frame handling — a per-bot periodic write to a row the installation lists
+/// read, scaling with the fleet for no added precision. The column answers "when
+/// did we last hear from this device", which a minute's resolution covers; a
+/// connection that goes quiet is caught by the 90s idle reaper, not by this.
+const LAST_SEEN_WRITE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+async fn touch_installation(state: &AppState, bot: &BotInfo) {
     let _ = sqlx::query(
         "UPDATE terminal_installations SET last_seen_at = NOW(), updated_at = NOW()
          WHERE installation_id = $1 AND revoked_at IS NULL",
@@ -256,6 +301,10 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     .bind(bot.installation_id.to_string())
     .execute(&state.db)
     .await;
+}
+
+async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let bot_id = bot.bot_id;
     // Typed parse — the shared enum is the single schema both ends compile
     // against, so a field rename can no longer silently read as None (the
     // plugin_version bug class). Handlers that persist or tolerate legacy
@@ -511,17 +560,33 @@ async fn handle_runtime_session_control_ack(
 pub async fn data_handler(
     ws: WebSocketUpgrade,
     headers: HeaderMap,
+    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     State(state): State<AppState>,
 ) -> Response {
+    let client = connect_key(&headers, connect_info, &state);
+    if let Some(retry_after_secs) = connect_limiter().retry_after(&client) {
+        return AppError::TooManyRequests { retry_after_secs }.into_response();
+    }
     let header_token = bearer_token(&headers);
-    ws.on_upgrade(move |socket| handle_data(socket, state, header_token))
+    ws.on_upgrade(move |socket| handle_data(socket, state, header_token, client))
 }
 
-async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Option<String>) {
+async fn handle_data(
+    mut socket: WebSocket,
+    state: AppState,
+    header_token: Option<String>,
+    client: String,
+) {
     // ── 1. 鉴权 ──────────────────────────────────────────────────────────
     let bot = match auth_bot(&mut socket, &state, header_token).await {
-        Some(b) => b,
-        None => return,
+        Some(b) => {
+            connect_limiter().reset(&client);
+            b
+        }
+        None => {
+            connect_limiter().record_failure(&client);
+            return;
+        }
     };
 
     // ── 2. 注册 data 连接 ────────────────────────────────────────────────
@@ -982,14 +1047,27 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         "resume" => {
             // event_log 重放：需要 event_log 表基础设施，暂未实现。
-            // 当前 last_event_seq 始终返回 0，bot 重连后需自行通过
-            // channel.activity.read?since_seq=<last_known> 补齐上下文。
-            tracing::debug!(bot_id = %bot.bot_id, "resume frame received (not yet implemented)");
+            // bot 重连后需自行通过 channel.activity.read?since_seq=<last_known>
+            // 补齐上下文；`server_capabilities` 以 "resume": "ack_only" 声明这一点。
+            //
+            // A non-zero last_event_seq means the connector believes it missed
+            // frames while its data socket was down, and the ack it gets back
+            // cannot replay them. Nothing downstream reports that, so log it at
+            // warn: it is the only signal an operator gets that a reconnect was
+            // lossy rather than seamless.
             let up_to_seq = frame
                 .get("last_event_seq")
                 .and_then(Value::as_i64)
                 .unwrap_or(0)
                 .max(0);
+            if up_to_seq > 0 {
+                tracing::warn!(
+                    bot_id = %bot.bot_id,
+                    installation_id = %bot.installation_id,
+                    last_event_seq = up_to_seq,
+                    "connector asked to resume a data stream; no event log exists to replay from,                      so frames pushed while it was disconnected are lost"
+                );
+            }
             let _ = ws_send(socket, &bridge_frames::resume_ack_frame(up_to_seq)).await;
         }
 
@@ -2493,6 +2571,24 @@ fn server_capabilities(state: &AppState) -> Value {
 enum AuthFailure {
     InvalidToken,
     BotUnavailable,
+}
+
+fn connect_limiter() -> &'static crate::infra::ratelimit::FixedWindowLimiter {
+    crate::infra::ratelimit::bridge_connect_limiter()
+}
+
+/// Rate-limit key for one connecting host, resolved the same way every other
+/// public endpoint resolves it (peer address unless the deploy trusts a proxy).
+fn connect_key(
+    headers: &HeaderMap,
+    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
+    state: &AppState,
+) -> String {
+    crate::infra::ratelimit::client_key(
+        headers,
+        connect_info.map(|axum::extract::ConnectInfo(addr)| addr),
+        state.config.trust_proxy_headers,
+    )
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {

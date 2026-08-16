@@ -210,6 +210,18 @@ pub fn login_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(10, Duration::from_secs(300)))
 }
 
+/// Process-global Agent Bridge connect limiter. `/ws/agent-bridge/{control,data}`
+/// is reachable without prior authentication and spends a credential-hash lookup
+/// per attempt inside a 10s handshake window, so an unbounded reconnect storm —
+/// a revoked fleet retrying, or a flood — pins the DB. Only failed handshakes
+/// count and a successful one resets the client, so a healthy connector riding
+/// its backoff never trips it; 30 failures per 5-minute window leaves room for a
+/// host reconnecting through a flapping network.
+pub fn bridge_connect_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(300)))
+}
+
 /// Process-global pairing-redeem limiter. `POST /installations/redeem` is the
 /// other unauthenticated, DB-touching endpoint; the 256-bit code is itself
 /// brute-force-infeasible, but this caps wrong/replayed-code attempts per source
