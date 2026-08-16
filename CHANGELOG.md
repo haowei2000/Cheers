@@ -31,6 +31,25 @@ entries below marked **(desktop)** ship in `desktop-v0.1.1`.
   in the hero and at the top of the README.
 
 ### Fixed
+- **A connector dying mid-turn left the chat on "thinking" for 15 minutes.**
+  The orphan reclaimer was the only thing that released a stranded placeholder,
+  and it waits out a threshold long enough to tell a dead connector from a slow
+  one. A control disconnect knows better, so it now schedules a sweep for that
+  bot alone, re-checking liveness after a minute so a reconnecting connector
+  still gets to finish its turn.
+- **A revoked connector could retry forever if an error message was reworded.**
+  The connector decided whether a close was permanent by substring-matching the
+  rendered error text (`"fatal code=4401"`). The close code now travels as a
+  typed value, so classification survives rewording and context-wrapping.
+- **`/ws/agent-bridge/*` had no rate limit.** Unlike every other unauthenticated
+  DB-touching endpoint, the bridge spent a credential lookup per attempt with no
+  ceiling. Failed handshakes are now capped per source, and a successful one
+  resets the client so a connector riding its backoff is unaffected.
+- **A resume that replays nothing is now visible.** The connector asks to resume
+  its data stream from a sequence number on every reconnect; the gateway has no
+  event log to replay from and acknowledged anyway, so both sides reported a
+  seamless reconnect. The gateway now logs the lossy resume. The replay itself
+  remains unimplemented — see the note in the Agent Bridge handler.
 - **Destructive bot and installation actions asked with a browser dialog.**
   Revoking an installation, deleting its record, and deleting a bot went through
   `window.confirm`, whose OK is the reflexive Enter default, and stated their
@@ -44,6 +63,10 @@ entries below marked **(desktop)** ship in `desktop-v0.1.1`.
   icon, and a revoked installation could only be cleared from Fleet. Both now
   render one component, and statuses read as words ("Active, not connected",
   "Waiting for pairing") instead of raw column values.
+- **`last_seen_at` was written on every inbound control frame.** Bounded by the
+  connector's heartbeat in practice, but it put a DB write in frame handling
+  that scaled with the fleet for no added precision; it is now throttled to one
+  write a minute per connection.
 - **Abandoned pairing attempts were listed as devices.** A revoked pending
   installation never held a credential, but stayed in the installation lists for
   the reaper's day-long retention window — one per replaced code.

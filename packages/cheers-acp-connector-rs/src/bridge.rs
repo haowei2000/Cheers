@@ -374,6 +374,44 @@ impl Default for ReconnectOptions {
     }
 }
 
+/// A WebSocket close that carried one of the protocol's close codes.
+///
+/// The code travels as a typed value rather than only inside the rendered
+/// message. Callers decide whether to keep reconnecting by matching on it, so
+/// rewording the message can no longer turn "this credential is revoked" into an
+/// endless retry loop against a gateway that will never accept it.
+#[derive(Debug, Clone)]
+pub struct BridgeClose {
+    pub code: u16,
+    pub reason: String,
+}
+
+impl BridgeClose {
+    /// Reconnecting cannot succeed until someone changes something server-side:
+    /// the credential was rejected (4401), or the installation is revoked or on
+    /// standby, or its bot is disabled (4403).
+    ///
+    /// Deliberately excludes 4402 (superseded — another connection took over,
+    /// and the next attempt is how this one learns whether it is still allowed)
+    /// and 4400 (unsupported protocol version — a self-updating connector
+    /// recovers on its own once the new binary lands).
+    pub fn is_permanent(&self) -> bool {
+        matches!(self.code, WS_CLOSE_AUTH_FAIL | WS_CLOSE_BOT_UNAVAILABLE)
+    }
+}
+
+impl std::fmt::Display for BridgeClose {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "websocket closed with fatal code={} reason={}",
+            self.code, self.reason
+        )
+    }
+}
+
+impl std::error::Error for BridgeClose {}
+
 pub fn compute_backoff(attempt: u32, opts: ReconnectOptions) -> Duration {
     let exp = opts
         .base_ms
@@ -430,11 +468,10 @@ impl BridgeWebSocket {
                     if let Some(frame) = frame {
                         let code = u16::from(frame.code);
                         if is_fatal_close_code(code) {
-                            return Err(anyhow!(
-                                "websocket closed with fatal code={} reason={}",
+                            return Err(anyhow!(BridgeClose {
                                 code,
-                                frame.reason
-                            ));
+                                reason: frame.reason.to_string(),
+                            }));
                         }
                     }
                     return Ok(None);

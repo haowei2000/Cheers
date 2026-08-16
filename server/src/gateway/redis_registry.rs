@@ -290,6 +290,21 @@ impl BotRegistry for RedisBotRegistry {
         }
     }
 
+    /// # Not yet safe for multi-instance
+    ///
+    /// `cancel_map` is per-process, so this only closes a socket bound to *this*
+    /// replica. Everything that revokes access — disable, revoke, credential
+    /// rotation — relies on `kick` to drop a live connection, because the
+    /// credential is verified once at connect and never re-checked. On a replica
+    /// that does not hold the socket this reduces to deleting the online markers,
+    /// which the replica that does hold it re-sets on its next 10s refresh: the
+    /// connector keeps running with a credential the operator believes they
+    /// revoked.
+    ///
+    /// Wiring this registry up (it is deliberately unwired today — see
+    /// `main.rs`) therefore requires a cross-instance kick first: publish on a
+    /// per-bot control subject that every replica holding a socket subscribes
+    /// to, rather than reaching into a local map.
     fn kick(&self, bot_id: Uuid) {
         // Fire supersede (closes the live control WS), drop the cancel tokens so the
         // forward/refresh loops exit, then clear the online markers.
