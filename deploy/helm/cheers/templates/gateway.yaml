@@ -75,6 +75,58 @@ spec:
             - name: VAPID_SUBJECT
               value: {{ .Values.gateway.vapidSubject | quote }}
             {{- end }}
+            {{- /* optional: absent ⇒ Sign in with Apple disabled (gateway logs it).
+                 Kept out of extraEnv on purpose — that renders literal values into
+                 the Deployment spec, where a private key would be readable by
+                 anyone who can `get deploy`. */}}
+            - name: APPLE_PRIVATE_KEY_P8
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: APPLE_PRIVATE_KEY_P8, optional: true }
+            {{- /* optional: absent ⇒ reuse the Apple key above when it is
+                 authorized for APNs (the gateway logs which key it picked). */}}
+            - name: APNS_KEY_P8
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: APNS_KEY_P8, optional: true }
+            {{- with .Values.gateway.apple }}
+            {{- if .teamId }}
+            - name: APPLE_TEAM_ID
+              value: {{ .teamId | quote }}
+            {{- end }}
+            {{- if .keyId }}
+            - name: APPLE_KEY_ID
+              value: {{ .keyId | quote }}
+            {{- end }}
+            {{- if .clientId }}
+            - name: APPLE_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .webClientId }}
+            - name: APPLE_WEB_CLIENT_ID
+              value: {{ .webClientId | quote }}
+            {{- end }}
+            {{- if .webRedirectUri }}
+            - name: APPLE_WEB_REDIRECT_URI
+              value: {{ .webRedirectUri | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.gateway.apns }}
+            {{- if .keyId }}
+            - name: APNS_KEY_ID
+              value: {{ .keyId | quote }}
+            {{- end }}
+            {{- if .teamId }}
+            - name: APNS_TEAM_ID
+              value: {{ .teamId | quote }}
+            {{- end }}
+            {{- if .topic }}
+            - name: APNS_TOPIC
+              value: {{ .topic | quote }}
+            {{- end }}
+            {{- if .sandbox }}
+            - name: APNS_SANDBOX
+              value: "true"
+            {{- end }}
+            {{- end }}
             - name: PORT
               value: {{ .Values.gateway.port | quote }}
             - name: DATABASE_URL
