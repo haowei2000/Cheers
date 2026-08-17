@@ -436,14 +436,23 @@ pub(super) fn mcp_server_supported(
     }
 }
 
-/// Build the single authoritative Cheers MCP entry. OAuth headers are
-/// intentionally empty: discovery and token lifecycle belong to the Agent.
-pub(super) fn native_cheers_mcp_server(mcp_url: &str) -> Value {
+/// Build the single authoritative Cheers MCP entry.
+///
+/// `bearer` is an installation-bound access token the Connector minted for this
+/// session (see [`crate::mcp_token`]). Supplying it means the Agent only has to
+/// speak HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
+/// Document, and no consent round-trip. `None` falls back to the headerless
+/// entry, leaving an OAuth-capable Agent to run native discovery itself.
+pub(super) fn native_cheers_mcp_server(mcp_url: &str, bearer: Option<&str>) -> Value {
+    let headers = match bearer {
+        Some(token) => json!([{ "name": "Authorization", "value": format!("Bearer {token}") }]),
+        None => json!([]),
+    };
     json!({
         "type": "http",
         "name": "cheers",
         "url": mcp_url,
-        "headers": []
+        "headers": headers
     })
 }
 
@@ -1599,9 +1608,22 @@ mod tests {
     }
 
     #[test]
-    fn native_cheers_mcp_is_headerless_http() {
+    fn native_cheers_mcp_carries_the_connector_minted_bearer() {
         assert_eq!(
-            native_cheers_mcp_server("https://cheers.example/mcp"),
+            native_cheers_mcp_server("https://cheers.example/mcp", Some("tok-123")),
+            json!({
+                "type": "http",
+                "name": "cheers",
+                "url": "https://cheers.example/mcp",
+                "headers": [{"name": "Authorization", "value": "Bearer tok-123"}]
+            })
+        );
+    }
+
+    #[test]
+    fn native_cheers_mcp_falls_back_to_headerless_for_native_agent_oauth() {
+        assert_eq!(
+            native_cheers_mcp_server("https://cheers.example/mcp", None),
             json!({
                 "type": "http",
                 "name": "cheers",
