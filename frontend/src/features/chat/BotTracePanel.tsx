@@ -21,6 +21,7 @@ import {
   Search,
   GitBranch,
   GitCommit,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -119,6 +120,9 @@ function eventMeta(e: TraceEvent): EventVisual {
   }
   const presentation = toolPresentationFromTrace(e);
   if (presentation) return TOOL_EVENT_META[presentation.event_type];
+  if (isMcpStartupError(e)) {
+    return { Icon: KeyRound, tone: "text-warning-400/90", label: "MCP login required" };
+  }
   switch (e.phase) {
     case "tool_call":
     case "tool_call_update":
@@ -135,6 +139,21 @@ function eventMeta(e: TraceEvent): EventVisual {
     default:
       return { Icon: Clock, tone: "text-content-muted", label: e.phase || "Event" };
   }
+}
+
+export function isMcpStartupError(e: TraceEvent): boolean {
+  if (e.tool_call_id === "mcp_startup.cheers" || e.tool_call_id?.startsWith("mcp_startup.")) return true;
+  const data = asRecord(e.data);
+  if (!data) return false;
+  const text = typeof data.text === "string" ? data.text : "";
+  const content = Array.isArray(data.content) ? data.content : [];
+  const contentText = content.map((c: any) => c?.content?.text || c?.text || "").join(" ");
+  const fullText = `${text} ${contentText}`;
+  return (
+    fullText.includes("mcp_startup") ||
+    fullText.includes("MCP server `cheers` failed to start") ||
+    fullText.includes("MCP server 'cheers' failed to start")
+  );
 }
 
 // Map the ACP tool-call status vocabulary (pending/in_progress/completed/failed)
@@ -350,6 +369,9 @@ function eventPreview(event: TraceEvent): string | null {
   if (presentation) {
     return presentation.target ?? presentation.path ?? presentation.query ?? presentation.command ?? null;
   }
+  if (isMcpStartupError(event)) {
+    return "Run 'codex mcp login cheers' to grant tools";
+  }
   const input = asRecord(data?.input);
   const command = stringField(input, "command") ?? stringField(data, "command");
   const filePath = stringField(input, "path", "filePath", "file_path");
@@ -360,6 +382,23 @@ function eventPreview(event: TraceEvent): string | null {
   if (event.message && event.message !== event.title) return event.message;
   if (event.status) return statusLabel(event.status);
   return null;
+}
+
+function McpStartupErrorCard() {
+  return (
+    <div className="rounded-sm border border-warning-500/30 bg-warning-500/10 p-3 space-y-2 text-compact">
+      <div className="flex items-center gap-2 font-medium text-warning-300">
+        <KeyRound className="w-4 h-4 shrink-0" />
+        <span>Cheers MCP Authentication Required</span>
+      </div>
+      <p className="text-content-secondary">
+        The agent attempted to connect to Cheers MCP tools, but authorization is required. Run the following command in your terminal to log in:
+      </p>
+      <div className="flex items-center justify-between rounded bg-zinc-950 px-2.5 py-2 font-code text-content-primary">
+        <code>codex mcp login cheers</code>
+      </div>
+    </div>
+  );
 }
 
 /** The inspector deliberately omits the single-line row's preview. It exposes
@@ -396,6 +435,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
 
   return (
     <div className="space-y-3 p-3 text-compact text-content-muted">
+      {isMcpStartupError(event) && <McpStartupErrorCard />}
       {presentation && (
         <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">
