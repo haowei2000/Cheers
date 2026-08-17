@@ -198,9 +198,13 @@ export function ChannelView({
   } | null>(null);
   const handleDiscussionComposerContextChange = useCallback(
     (root: Message | null, creating: boolean) => {
-      setDiscussionComposerRoot(root);
+      setDiscussionComposerRoot((prevRoot) => {
+        if (prevRoot?.msg_id !== root?.msg_id || creating) {
+          setReplyTo(null);
+        }
+        return root;
+      });
       setCreatingDiscussion(creating);
-      if (!creating) setReplyTo(null);
     },
     [],
   );
