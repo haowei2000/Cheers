@@ -36,9 +36,40 @@ import {
   peekExtensionInstallIntent,
 } from "@/lib/extensionInstallIntent";
 import { ExtensionInstallDialog } from "./ExtensionInstallDialog";
-import type { ExtensionInstallCandidate, InstalledExtensionIdentity, InstallScope } from "./extensionInstall";
+import {
+  compareSemver,
+  type ExtensionInstallCandidate,
+  type InstalledExtensionIdentity,
+  type InstallScope,
+} from "./extensionInstall";
 
 const OFFICIAL_CATALOG_URL = "https://haowei2000.github.io/Cheers/plugins.html";
+const OFFICIAL_CATALOG_JSON_URL = "https://haowei2000.github.io/Cheers/extensions/catalog.json";
+
+export interface CatalogPackageEntry {
+  kind: "package";
+  id: string;
+  version: string;
+  publisher: string;
+  category: string;
+  featured?: boolean;
+  title: { en: string; "zh-CN"?: string };
+  description: { en: string; "zh-CN"?: string };
+  manifestTitle?: string;
+  manifestDescription?: string;
+  sha256: string;
+  downloadPath: string;
+  sourceUrl: string;
+  globalCapable: boolean;
+  contributes: { scenes: number; renderers: number; automations: number };
+  permissions: Record<string, unknown>;
+}
+
+export interface CatalogData {
+  schemaVersion: number;
+  publisher: string;
+  entries: (CatalogPackageEntry | { kind: "builtin"; id: string; [key: string]: unknown })[];
+}
 
 function fromBase64(value: string): Uint8Array {
   const binary = atob(value);
@@ -50,6 +81,9 @@ export function WorkbenchManager() {
   const desktop = isTauri();
   const [global, setGlobal] = useState<ExtensionSummary[]>([]);
   const [personal, setPersonal] = useState<ParsedExtension[]>([]);
+  const [catalogEntries, setCatalogEntries] = useState<CatalogPackageEntry[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogLoadingState, setCatalogLoadingState] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<ExtensionInstallCandidate | null>(null);
@@ -77,6 +111,32 @@ export function WorkbenchManager() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    let alive = true;
+    setCatalogLoadingState(true);
+    fetch(OFFICIAL_CATALOG_JSON_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: CatalogData) => {
+        if (!alive) return;
+        if (Array.isArray(data.entries)) {
+          const packages = data.entries.filter((e): e is CatalogPackageEntry => e.kind === "package");
+          setCatalogEntries(packages);
+        }
+      })
+      .catch((err) => {
+        if (alive) setCatalogError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (alive) setCatalogLoadingState(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => subscribeExtensionRuntime(() => setRuntimeRevision((value) => value + 1)), []);
 
@@ -110,6 +170,30 @@ export function WorkbenchManager() {
       catalogLoading.current = false;
     }
   }, [desktop]);
+
+  const installFromCatalog = useCallback(
+    async (entry: CatalogPackageEntry, scope: InstallScope) => {
+      setError(null);
+      try {
+        let bytes: Uint8Array;
+        if (desktop) {
+          bytes = await downloadCatalogExtension(entry.sourceUrl, entry.sha256);
+        } else {
+          const res = await fetch(entry.sourceUrl);
+          if (!res.ok) throw new Error(`Failed to download package: HTTP ${res.status}`);
+          bytes = new Uint8Array(await res.arrayBuffer());
+        }
+        const extension = await parseExtensionPackage(bytes, scope);
+        if (extension.sha256 !== entry.sha256 || extension.manifest.id !== entry.id) {
+          throw new Error("Official catalog metadata does not match the downloaded extension");
+        }
+        setCandidate({ extension, scope, source: "official-catalog", sourceLabel: entry.title.en });
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    },
+    [desktop]
+  );
 
   useEffect(() => {
     void prepareCatalogIntent();
@@ -160,20 +244,20 @@ export function WorkbenchManager() {
         </Banner>
       )}
       <ItemSection
-        label="Extensions"
+        label="Installed extensions"
         presentationLevel="medium"
         controlSize="regular"
         className="border-t border-zinc-800 pt-2"
-        description="Scenes and renderers are installed from one verified .cheers-extension package."
+        description="Scenes and renderers installed from verified packages."
         action={<div className="flex items-center gap-2">
           <UiButton action="open" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => { const popup = window.open(OFFICIAL_CATALOG_URL, "_blank", "noopener,noreferrer"); if (popup) popup.opener = null; }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Browse extensions
+            <ExternalLink className="h-3.5 w-3.5" />
           </UiButton>
           {isAdmin && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => globalRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" /> Install globally
+            <Upload className="h-3.5 w-3.5" />
           </UiButton>}
           {desktop && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => personalRef.current?.click()}>
-            <Laptop className="h-3.5 w-3.5" /> Install on this Mac
+            <Laptop className="h-3.5 w-3.5" />
           </UiButton>}
           {/* design-system-native: file-input */}
           <input ref={globalRef} aria-label="Choose a global extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareFile(file, "global"); event.target.value = ""; }} />
@@ -218,6 +302,69 @@ export function WorkbenchManager() {
         })}
         {global.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
+
+      <ItemSection
+        label="Official catalog"
+        presentationLevel="medium"
+        controlSize="regular"
+        className="mt-6 border-t border-zinc-800 pt-2"
+        description="Verified extensions from the official Cheers catalog."
+      >
+        {catalogEntries.map((entry) => {
+          const isInstalledGlobal = global.find((e) => e.id === entry.id);
+          const isInstalledPersonal = personal.find((e) => e.manifest.id === entry.id);
+          const installedVer = isInstalledPersonal?.manifest.version ?? isInstalledGlobal?.version;
+          const hasUpdate = Boolean(installedVer && compareSemver(entry.version, installedVer) > 0);
+          const isInstalled = Boolean(isInstalledGlobal || isInstalledPersonal);
+          const targetScope: InstallScope = desktop ? "personal" : "global";
+          const canInstall = !isInstalled || hasUpdate;
+          const isPermitted = desktop || (isAdmin && entry.globalCapable);
+
+          return (
+            <WorkbenchItem
+              key={`catalog:${entry.id}`}
+              title={`${entry.title.en} · ${entry.version}`}
+              leading={<Package className="h-3.5 w-3.5 text-accent-300" />}
+              status={
+                <span className="text-minimal text-content-muted">
+                  {entry.category} · {entry.contributes.scenes} Scenes · {entry.contributes.renderers} Renderers
+                  {isInstalled
+                    ? hasUpdate
+                      ? ` · Installed (${installedVer}) — Update Available`
+                      : ` · Installed (${installedVer})`
+                    : " · Official"}
+                </span>
+              }
+              actions={
+                <div className="flex items-center gap-2">
+                  {canInstall && isPermitted && (
+                    <UiButton
+                      action={hasUpdate ? "update" : "install"}
+                      content="iconText"
+                      variant="plain"
+                      controlSize="compact"
+                      onClick={() => void installFromCatalog(entry, targetScope)}
+                    />
+                  )}
+                </div>
+              }
+            />
+          );
+        })}
+        {catalogEntries.length === 0 && catalogLoadingState && (
+          <WorkbenchItem title="Loading official catalog..." />
+        )}
+        {catalogEntries.length === 0 && !catalogLoadingState && !catalogError && (
+          <WorkbenchItem title="No catalog extensions found" />
+        )}
+        {catalogError && (
+          <WorkbenchItem
+            title="Official catalog temporarily unavailable"
+            status={<span className="text-minimal text-content-muted">{catalogError}</span>}
+          />
+        )}
+      </ItemSection>
+
       {candidate && <ExtensionInstallDialog candidate={candidate} installed={installed} busy={installing} onConfirm={() => void confirmInstall()} onClose={() => { clearExtensionInstallIntent(); setCandidate(null); }} />}
     </section>
   );
