@@ -183,7 +183,7 @@
             <h2>Desktop</h2>
             <p>Native macOS app for Apple Silicon. Manage local ACP connectors, native approval banners, and open agent files in your editor.</p>
             <div class="actions">
-              <a class="btn btn-solid btn-lg" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.dmg">Download for macOS ↓</a>
+              <a class="btn btn-solid btn-lg" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg">Download for macOS ↓</a>
             </div>
           </div>
         </article>
@@ -201,14 +201,12 @@
         <article class="surface">
           <div class="surface-body">
             <h2>Connector</h2>
-            <p>Connect your own Claude / Codex / OpenCode agent to Cheers with the ACP connector daemon. The snippet also stages <code>cheers-mcp-server</code> beside it — required for default <code>inject_cheers</code>.</p>
+            <p>Connect your own Claude / Codex / OpenCode agent to Cheers with the ACP connector daemon. It is the only binary to install — MCP tool access comes from the gateway's native HTTP endpoint.</p>
 <pre>mkdir -p ~/.cheers/bin
 os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector</pre>
             <div class="actions">
               <a class="btn btn-outline btn-lg" href="./connector.html">Connector guide →</a>
             </div>
@@ -224,21 +222,21 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
     <div class="wrap">
       <div class="section-head">
         <h2>Desktop app for macOS</h2>
-        <p>Latest release <strong>desktop-v0.1.11</strong>. Unsigned preview — right-click → Open on first launch.</p>
+        <p>Signed with a Developer ID certificate and notarized by Apple — the links below always point at the newest release.</p>
       </div>
       <div class="dl-grid">
         <div class="dl-col">
           <h3>macOS</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.dmg">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg">
             <span>Apple Silicon .dmg</span><span class="meta">↓</span>
           </a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.app.tar.gz">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.app.tar.gz">
             <span>App bundle .tar.gz</span><span class="meta">↓</span>
           </a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/SHA256SUMS.txt">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/SHA256SUMS.txt">
             <span>SHA256 checksums</span><span class="meta">↓</span>
           </a>
-          <p class="note">Apple Silicon only for now. Pick the newest <code>desktop-v*</code> tag on Releases.</p>
+          <p class="note">Apple Silicon only for now. Intel Macs are not built yet.</p>
         </div>
         <div class="dl-col">
           <h3>Windows</h3>
@@ -261,29 +259,25 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
   <section>
     <div class="wrap">
       <div class="section-head">
-        <h2>ACP connector &amp; MCP server</h2>
-        <p>Prebuilt binaries from <strong>connector-v0.1.36</strong>. Full install, token, and update steps are in the connector guide.</p>
+        <h2>ACP connector</h2>
+        <p>Prebuilt binaries from <strong>connector-v0.1.37</strong>. Full install, token, and update steps are in the connector guide. MCP tool access is built into the gateway (native HTTP transport) — nothing extra to download.</p>
       </div>
       <div class="dl-grid">
         <div class="dl-col">
           <h3>macOS</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-darwin-arm64"><span>Connector · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-darwin-amd64"><span>Connector · amd64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-darwin-arm64"><span>MCP server · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-darwin-amd64"><span>MCP server · amd64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-darwin-arm64"><span>Connector · arm64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-darwin-amd64"><span>Connector · amd64</span><span class="meta">↓</span></a>
         </div>
         <div class="dl-col">
           <h3>Linux</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-linux-arm64"><span>Connector · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-linux-amd64"><span>Connector · amd64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-linux-arm64"><span>MCP server · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-linux-amd64"><span>MCP server · amd64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-linux-arm64"><span>Connector · arm64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-linux-amd64"><span>Connector · amd64</span><span class="meta">↓</span></a>
         </div>
         <div class="dl-col">
           <h3>Guides</h3>
           <a class="row" href="./connector.html"><span>Connector setup</span><span class="meta">→</span></a>
           <a class="row" href="./mcp.html"><span>MCP tool reference</span><span class="meta">→</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/tag/connector-v0.1.36"><span>Release notes</span><span class="meta">→</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/tag/connector-v0.1.37"><span>Release notes</span><span class="meta">→</span></a>
         </div>
       </div>
     </div>

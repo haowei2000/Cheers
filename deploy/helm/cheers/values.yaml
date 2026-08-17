@@ -47,6 +47,33 @@ gateway:
   #     WEBAUTHN_RP_ORIGIN: https://www.tocheers.com
   #     WEBAUTHN_RP_NAME: Cheers
   # Also serve /.well-known/apple-app-site-association (gateway route + website/).
+  # Sign in with Apple (optional). These four are identifiers, not secrets —
+  # they travel in the header of every client-secret JWT the gateway signs, which
+  # is why CI keeps them as `vars` while only the .p8 is a secret. The key itself
+  # is secrets.applePrivateKeyP8. All four must be present together: the gateway
+  # ignores a partial set and logs `partial APPLE_* configuration ignored`.
+  #   apple:
+  #     teamId: ABCDE12345
+  #     keyId: FGHIJ67890
+  #     clientId: app.cheers.ios      # the iOS bundle id
+  apple:
+    teamId: ""
+    keyId: ""
+    clientId: ""
+    # Web/macOS sign-in additionally needs a Services ID and the exact HTTPS
+    # callback registered with Apple — character for character, trailing slash
+    # included. Both or neither; one alone is ignored with a warning.
+    webClientId: ""
+    webRedirectUri: ""
+  # Direct APNs (optional). Leave keyId/teamId empty to reuse the Apple key above
+  # when that key is authorized for APNs too — the gateway logs which it picked.
+  # A partial tuple fails closed rather than mixing keys. topic defaults to the
+  # iOS bundle id; sandbox targets the development push environment.
+  apns:
+    keyId: ""
+    teamId: ""
+    topic: ""
+    sandbox: false
   extraEnv: {} # map of EXTRA_VAR: value
   resources: {}
   #  requests: { cpu: 100m, memory: 128Mi }
@@ -206,6 +233,15 @@ secrets:
   # Provide via `--set-file secrets.vapidPrivateKey=vapid.pem` or the existing
   # Secret's VAPID_PRIVATE_KEY key.
   vapidPrivateKey: ""
+  # Apple AuthKey (.p8, an EC PEM). OPTIONAL — without it Sign in with Apple
+  # stays off. Provide via `--set-file secrets.applePrivateKeyP8=AuthKey_XXX.p8`
+  # or the existing Secret's APPLE_PRIVATE_KEY_P8 key. It must be the PEM text:
+  # the gateway hands this value straight to the EC parser and, unlike
+  # APNS_KEY_P8, does not accept a file path.
+  applePrivateKeyP8: ""
+  # A separate APNs AuthKey, only when it is NOT the same key as above. Leave
+  # empty to reuse applePrivateKeyP8.
+  apnsKeyP8: ""
 
 # ── Ingress (path-routes /api + /ws to the gateway, everything else to the
 #    frontend; when disabled, reach the frontend Service directly) ───────────

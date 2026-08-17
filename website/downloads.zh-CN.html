@@ -180,7 +180,7 @@
             <h2>桌面端</h2>
             <p>面向 Apple 芯片的原生 macOS 应用。管理本机 ACP 连接器、系统级审批横幅，并在编辑器中打开智能体文件。</p>
             <div class="actions">
-              <a class="btn btn-solid btn-lg" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.dmg">下载 macOS 版 ↓</a>
+              <a class="btn btn-solid btn-lg" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg">下载 macOS 版 ↓</a>
             </div>
           </div>
         </article>
@@ -198,14 +198,12 @@
         <article class="surface">
           <div class="surface-body">
             <h2>连接器</h2>
-            <p>用 ACP 连接器守护进程，把你自己的 Claude / Codex / OpenCode 智能体接入 Cheers。片段会同时把 <code>cheers-mcp-server</code> 放到连接器同目录——默认 <code>inject_cheers</code> 需要它。</p>
+            <p>用 ACP 连接器守护进程，把你自己的 Claude / Codex / OpenCode 智能体接入 Cheers。只需安装这一个二进制——MCP 工具访问由网关的原生 HTTP 端点提供。</p>
 <pre>mkdir -p ~/.cheers/bin
 os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-$os-$arch"
-curl -fsSL -o ~/.cheers/bin/cheers-mcp-server \
-  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-$os-$arch"
-chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
+  "https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector</pre>
             <div class="actions">
               <a class="btn btn-outline btn-lg" href="./connector.zh-CN.html">连接器指南 →</a>
             </div>
@@ -221,21 +219,21 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
     <div class="wrap">
       <div class="section-head">
         <h2>macOS 桌面应用</h2>
-        <p>最新版本 <strong>desktop-v0.1.11</strong>。未签名预览版 —— 首次启动请右键 → 打开。</p>
+        <p>已使用 Developer ID 证书签名并通过 Apple 公证 —— 以下链接始终指向最新发布版。</p>
       </div>
       <div class="dl-grid">
         <div class="dl-col">
           <h3>macOS</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.dmg">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.dmg">
             <span>Apple Silicon .dmg</span><span class="meta">↓</span>
           </a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/Cheers-macOS-AppleSilicon.app.tar.gz">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/Cheers-macOS-AppleSilicon.app.tar.gz">
             <span>App 包 .tar.gz</span><span class="meta">↓</span>
           </a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/desktop-v0.1.11/SHA256SUMS.txt">
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/latest/download/SHA256SUMS.txt">
             <span>SHA256 校验和</span><span class="meta">↓</span>
           </a>
-          <p class="note">目前仅支持 Apple Silicon。请在 Releases 选择最新的 <code>desktop-v*</code> 标签。</p>
+          <p class="note">目前仅支持 Apple Silicon，Intel Mac 尚未构建。</p>
         </div>
         <div class="dl-col">
           <h3>Windows</h3>
@@ -258,29 +256,25 @@ chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</pre>
   <section>
     <div class="wrap">
       <div class="section-head">
-        <h2>ACP 连接器与 MCP Server</h2>
-        <p>预编译二进制来自 <strong>connector-v0.1.36</strong>。完整安装、令牌与更新步骤见连接器指南。</p>
+        <h2>ACP 连接器</h2>
+        <p>预编译二进制来自 <strong>connector-v0.1.37</strong>。完整安装、令牌与更新步骤见连接器指南。MCP 工具访问内置于网关（原生 HTTP 传输），无需额外下载。</p>
       </div>
       <div class="dl-grid">
         <div class="dl-col">
           <h3>macOS</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-darwin-arm64"><span>连接器 · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-darwin-amd64"><span>连接器 · amd64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-darwin-arm64"><span>MCP server · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-darwin-amd64"><span>MCP server · amd64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-darwin-arm64"><span>连接器 · arm64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-darwin-amd64"><span>连接器 · amd64</span><span class="meta">↓</span></a>
         </div>
         <div class="dl-col">
           <h3>Linux</h3>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-linux-arm64"><span>连接器 · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cce-acp-connector-linux-amd64"><span>连接器 · amd64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-linux-arm64"><span>MCP server · arm64</span><span class="meta">↓</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.36/cheers-mcp-server-linux-amd64"><span>MCP server · amd64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-linux-arm64"><span>连接器 · arm64</span><span class="meta">↓</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/download/connector-v0.1.37/cce-acp-connector-linux-amd64"><span>连接器 · amd64</span><span class="meta">↓</span></a>
         </div>
         <div class="dl-col">
           <h3>指南</h3>
           <a class="row" href="./connector.zh-CN.html"><span>连接器安装</span><span class="meta">→</span></a>
           <a class="row" href="./mcp.html"><span>MCP 工具参考</span><span class="meta">→</span></a>
-          <a class="row" href="https://github.com/haowei2000/Cheers/releases/tag/connector-v0.1.36"><span>发布说明</span><span class="meta">→</span></a>
+          <a class="row" href="https://github.com/haowei2000/Cheers/releases/tag/connector-v0.1.37"><span>发布说明</span><span class="meta">→</span></a>
         </div>
       </div>
     </div>

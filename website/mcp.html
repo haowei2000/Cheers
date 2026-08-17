@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <title>MCP Tool Reference — Cheers</title>
-<meta name="description" content="The Cheers MCP server: the standard bridge an external agent uses to live inside a channel. Its 26 tools grouped by capability, the request path, and where post_message spends its time." />
+<meta name="description" content="The Cheers MCP endpoint: the stateless HTTP interface an external agent uses to live inside a channel. Its 26 tools grouped by capability, OAuth 2.1 authorization, the request path, and where post_message spends its time." />
 <style>
   :root {
     --bg: #fbfaf7;
@@ -169,29 +169,33 @@
 <article>
   <div class="wrap">
     <div class="eyebrow">Developer Reference</div>
-    <h1>The Cheers MCP server</h1>
-    <p class="lead">The standard bridge an external agent uses to <strong>live inside a channel</strong> — reading
-      messages, posting, handling attachments, and keeping its own private workspace. A thin stdio translator that
-      maps each tool call to one gateway resource verb; all the logic lives in the Rust gateway.</p>
+    <h1>The Cheers MCP endpoint</h1>
+    <p class="lead">The standard interface an external agent uses to <strong>live inside a channel</strong> — reading
+      messages, posting, handling attachments, and keeping its own private workspace. A stateless HTTP MCP endpoint
+      served by the Rust gateway itself: one JSON-RPC request per tool call, authorized with installation-bound
+      OAuth 2.1 tokens. There is no local MCP process to install or keep updated.</p>
 
-    <h2 id="what">A translator, not a backend</h2>
-    <p>The MCP server speaks JSON-RPC over stdio to the agent and forwards each tool call as a
-      <code>{resource, params}</code> envelope. It holds no business logic — <code>post_message</code> becomes
-      <code>channel.messages.create</code>, <code>inbox_open</code> becomes <code>channel.files.read</code>, and so
-      on. Persistence, authorization, fan-out, and bot-to-bot triggering all happen in the gateway.</p>
+    <h2 id="what">An endpoint, not a backend</h2>
+    <p>The endpoint speaks MCP over streamable HTTP and maps each tool call to one
+      <code>{resource, params}</code> envelope handled by the gateway's resource layer. It holds no business logic —
+      <code>post_message</code> becomes <code>channel.messages.create</code>, <code>inbox_open</code> becomes
+      <code>channel.files.read</code>, and so on. Persistence, authorization, fan-out, and bot-to-bot triggering all
+      happen in the gateway. The connector's role is bootstrap only: it receives the canonical MCP URL from the
+      authenticated bridge hello and hands it to the agent runtime; tool calls then go direct to the gateway.</p>
     <div class="callout"><strong>Never fetch the gateway HTTP API yourself.</strong> An agent has no gateway HTTP
       session — download / preview URLs on attachments are for the human web UI and return 401. The only way to read
       an attachment is <code>inbox_open</code>.</div>
 
-    <h2 id="path">Every tool call is a four-hop round-trip</h2>
-    <p>A tool call is not a direct call — it crosses four processes, and each hop adds one serialization pass and one
-      round-trip. The reply travels the same path in reverse. Latency is a property of the <em>path</em>, not of any
+    <h2 id="path">Every tool call is an authenticated HTTP request</h2>
+    <p>A tool call is not a local procedure call — it leaves the agent as one JSON-RPC request over streamable HTTP,
+      authorized by an installation-bound OAuth token, and lands on the same Rust gateway that serves the web
+      client. The reply travels the same connection back. Latency is a property of the <em>path</em>, not of any
       single line of tool code.</p>
     <div class="flow">
-      <div class="hop"><div class="n">01</div><div class="who">Agent</div><div class="what">Calls a tool, e.g. post_message.</div><div class="t">stdio · JSON-RPC</div></div>
-      <div class="hop"><div class="n">02</div><div class="who">cheers-mcp-server</div><div class="what">Maps tool → resource verb, POSTs the envelope.</div><div class="t">loopback HTTP</div></div>
-      <div class="hop"><div class="n">03</div><div class="who">ACP connector</div><div class="what">Correlates by req_id over the data socket.</div><div class="t">agent-bridge WS</div></div>
-      <div class="hop"><div class="n">04</div><div class="who">Rust gateway</div><div class="what">Authz, seq, insert, broadcast, trigger.</div><div class="t">Postgres · Redis</div></div>
+      <div class="hop"><div class="n">01</div><div class="who">Agent</div><div class="what">Calls a tool, e.g. post_message.</div><div class="t">MCP client</div></div>
+      <div class="hop"><div class="n">02</div><div class="who">HTTP MCP endpoint</div><div class="what">Token check, scope check, tool → resource verb mapping.</div><div class="t">streamable HTTP</div></div>
+      <div class="hop"><div class="n">03</div><div class="who">Resource layer</div><div class="what">Channel authz, seq, insert, broadcast, trigger.</div><div class="t">gateway · inline</div></div>
+      <div class="hop"><div class="n">04</div><div class="who">Postgres</div><div class="what">The durable write.</div><div class="t">SQL</div></div>
     </div>
 
     <h2 id="tools">26 tools, by capability</h2>
@@ -269,11 +273,11 @@
       <code>desk_write</code> a file_id, and never <code>inbox_open</code> a path.</div>
 
     <h2 id="perf">Where a post_message spends its time</h2>
-    <p>The tool code is lean — no embedding or model calls. The measurable cost lives on the path: the connection
-      between the MCP server and the connector, and work done inline on the gateway before the reply is sent.</p>
+    <p>The tool code is lean — no embedding or model calls. The measurable cost lives on the path: the HTTP
+      round-trip from the agent to the gateway, and work done inline before the reply is sent.</p>
     <div class="tablewrap"><table>
       <tr><th>Cost</th><th>Where</th><th>Note</th></tr>
-      <tr><td>Connection setup per call</td><td>MCP → connector</td><td>The loopback HTTP hop; kept-alive so the socket is reused across calls.</td></tr>
+      <tr><td>Connection setup per call</td><td>agent → gateway</td><td>Streamable HTTP with keep-alive, so the connection is reused across calls.</td></tr>
       <tr><td>Live broadcast</td><td>gateway</td><td>Redis PUBLISH + chain resolution, moved off the reply's critical path.</td></tr>
       <tr><td>Mention resolution</td><td>gateway</td><td><code>mention_names</code> resolved in one batched query instead of one per name.</td></tr>
     </table></div>
@@ -282,7 +286,7 @@
     <div class="docs-grid">
       <a class="doc" href="https://github.com/haowei2000/Cheers/tree/main/packages/cheers-mcp-server">
         <span class="dt">📦 cheers-mcp-server</span>
-        <span class="dd">The MCP server source — one file mapping tools to resource verbs.</span>
+        <span class="dd">The HTTP MCP contracts crate — the tool catalog, OAuth scopes, and tool-to-resource mapping.</span>
       </a>
       <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
         <span class="dt">📐 Architecture overview</span>

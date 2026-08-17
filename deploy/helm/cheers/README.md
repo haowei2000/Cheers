@@ -116,6 +116,45 @@ Edit `values-prod.yaml` for your registry, ingress host/class, TLS secret, and
 storage classes. For real workloads consider a managed Postgres
 (`postgres.enabled=false` + point `secrets` / the `cheers.databaseUrl` helper at it).
 
+## Sign in with Apple and APNs
+
+Both are optional and both fail soft: without a key the gateway simply starts
+without them, and a *partial* configuration is ignored with a warning rather
+than half-enabled. The split follows the same rule CI uses — identifiers are
+values, only the `.p8` is a secret, because the Team and Key IDs travel in the
+header of every client-secret JWT the gateway signs.
+
+```bash
+helm upgrade --install cheers deploy/helm/cheers -n cheers \
+  --set gateway.apple.teamId=ABCDE12345 \
+  --set gateway.apple.keyId=FGHIJ67890 \
+  --set gateway.apple.clientId=app.cheers.ios \
+  --set-file secrets.applePrivateKeyP8=/path/to/AuthKey_FGHIJ67890.p8
+```
+
+Three things worth knowing:
+
+- **`gateway.apple.keyId` must name the key inside the `.p8`.** They are signed
+  together as `kid`, and a mismatch surfaces only as an opaque Apple rejection.
+- **Do not route the key through `gateway.extraEnv`.** That renders a literal
+  value into the Deployment spec, readable by anyone who can `get deploy`. It
+  goes in the Secret, which is what `secrets.applePrivateKeyP8` does.
+- **APNs reuses the Apple key** when `gateway.apns.keyId`/`teamId` are empty and
+  that key is authorized for both. Set `secrets.apnsKeyP8` only for a separate
+  key; partial tuples fail closed rather than mixing keys.
+
+Web and macOS sign-in additionally need a Services ID and the exact registered
+callback — `gateway.apple.webClientId` and `webRedirectUri`, both or neither.
+
+With `secrets.existingSecret`, supply `APPLE_PRIVATE_KEY_P8` (and optionally
+`APNS_KEY_P8`) as keys in that Secret; both are referenced with `optional: true`.
+
+Verify after rollout — every failure mode is an explicit log line:
+
+```bash
+kubectl -n cheers logs deploy/cheers-gateway | grep -i "apple\|apns"
+```
+
 ## Validate without a cluster
 
 The chart refuses to render placeholder secrets (`secrets.adminPassword`,
