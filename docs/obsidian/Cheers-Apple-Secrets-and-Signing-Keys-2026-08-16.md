@@ -1,5 +1,5 @@
 ---
-title: Cheers Apple Secrets 与签名资产说明
+title: Cheers Apple Secrets and Signing Assets
 date: 2026-08-16
 tags:
   - Cheers
@@ -10,43 +10,45 @@ tags:
 status: reference
 ---
 
-# Cheers Apple Secrets 与签名资产说明
+# Cheers Apple Secrets and Signing Assets
 
-## 结论
+## Summary
 
-Cheers 的 Apple 相关配置分成五组，不能混用：
+Cheers uses several Apple credentials that solve different problems. They must not be mixed:
 
-1. iOS/TestFlight 签名：`Apple Distribution` 证书和 iOS App Store provisioning profile。
-2. App Store Connect API：上传 TestFlight、提交 macOS notarization 的 `.p8` API key。
-3. macOS Developer ID：Mac App Store 之外分发时给 `.app` 签名的 `Developer ID Application` 证书。
-4. Sign in with Apple / APNs：服务端生成 Apple client secret 或 APNs token 的 `.p8` key。
-5. Tauri updater：只保护自动更新包，不负责 Apple Gatekeeper。
+1. iOS/TestFlight signing uses an `Apple Distribution` certificate and an iOS App Store provisioning profile.
+2. App Store Connect API access uses an App Store Connect `.p8` API key for TestFlight upload and macOS notarization.
+3. macOS Developer ID distribution uses a `Developer ID Application` certificate to sign the `.app` outside the Mac App Store.
+4. Sign in with Apple and APNs use an Apple Developer `.p8` key tuple.
+5. Tauri updater signing protects update payloads only; it does not satisfy Gatekeeper.
 
-GitHub 中推荐的存放位置：
+Recommended GitHub placement:
 
-- Apple 发布与生产部署相关 secret：`production` Environment secrets。
-- 公开标识符和 URL：`production` Environment variables。
-- 与 Apple 无关、且 repo-level workflow 需要的 secret：repo-level secrets。
+- Apple release and production deployment secrets: `production` Environment secrets.
+- Public identifiers and callback URLs: `production` Environment variables.
+- Non-Apple repository-wide automation secrets: repository-level secrets.
+
+Chinese mirror: [Cheers-Apple-Secrets-and-Signing-Keys-2026-08-16.zh-CN.md](Cheers-Apple-Secrets-and-Signing-Keys-2026-08-16.zh-CN.md)
 
 ## GitHub Secrets
 
 ### `IOS_DISTRIBUTION_CERTIFICATE_P12`
 
-用途：iOS Release / TestFlight 构建签名。
+Purpose: signs the iOS Release/TestFlight build.
 
-来源：Keychain Access 中的 `Apple Distribution: Haowei Wang (8M272Q9TAD)`，导出为 `.p12` 后 base64 上传。
+Source: export `Apple Distribution: Haowei Wang (8M272Q9TAD)` from Keychain Access as `.p12`, then upload its base64 content.
 
-用于：
+Used by:
 
 - `.github/workflows/release-ios.yml`
 
-正确证书 subject 应类似：
+Expected certificate subject:
 
 ```text
 CN=Apple Distribution: Haowei Wang (8M272Q9TAD)
 ```
 
-不要放：
+Do not upload:
 
 - `Apple Development`
 - `Developer ID Application`
@@ -54,23 +56,23 @@ CN=Apple Distribution: Haowei Wang (8M272Q9TAD)
 
 ### `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`
 
-用途：导入 `IOS_DISTRIBUTION_CERTIFICATE_P12` 时使用的 `.p12` 导出密码。
+Purpose: password used to import `IOS_DISTRIBUTION_CERTIFICATE_P12` into the CI keychain.
 
-来源：从 Keychain Access 导出 `Apple Distribution` `.p12` 时设置的密码。
+Source: the export password set when exporting the `Apple Distribution` `.p12` from Keychain Access.
 
-注意：它不是 Apple ID 密码，也不是 App Store Connect API 密码。
+This is not the Apple ID password and not an App Store Connect API password.
 
 ### `IOS_PROVISIONING_PROFILE_BASE64`
 
-用途：iOS App Store / TestFlight provisioning profile。
+Purpose: iOS App Store/TestFlight provisioning profile.
 
-来源：Apple Developer 下载的 `.mobileprovision`，base64 上传。
+Source: base64 content of the `.mobileprovision` file downloaded from Apple Developer.
 
-用于：
+Used by:
 
 - `.github/workflows/release-ios.yml`
 
-正确 profile 应满足：
+Expected profile fields:
 
 ```text
 Name = Cheers App Store Distribution
@@ -81,20 +83,20 @@ aps-environment = production
 
 ### `ASC_API_KEY_ID`
 
-用途：App Store Connect API Key ID。
+Purpose: App Store Connect API Key ID.
 
-用于：
+Used for:
 
-- iOS 上传 TestFlight
-- macOS notarization
+- uploading iOS builds to TestFlight
+- submitting macOS apps for notarization
 
-来源：App Store Connect API key 页面。文件名通常是：
+Source: App Store Connect API key page. The downloaded key filename usually looks like:
 
 ```text
 AuthKey_<ASC_API_KEY_ID>.p8
 ```
 
-当前示例：
+Current example:
 
 ```text
 M9H8CZJVX5
@@ -102,14 +104,14 @@ M9H8CZJVX5
 
 ### `ASC_API_ISSUER_ID`
 
-用途：App Store Connect API Issuer ID，用来标识 App Store Connect 组织。
+Purpose: identifies the App Store Connect organization for API requests.
 
-用于：
+Used for:
 
-- iOS 上传 TestFlight
-- macOS notarization
+- uploading iOS builds to TestFlight
+- submitting macOS apps for notarization
 
-它通常是 UUID 形状，例如：
+It usually has UUID shape:
 
 ```text
 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -117,35 +119,35 @@ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ### `ASC_API_PRIVATE_KEY_P8`
 
-用途：App Store Connect API 私钥。
+Purpose: App Store Connect API private key.
 
-来源：App Store Connect API key 下载的 `.p8` 文件。
+Source: the `.p8` file downloaded for the App Store Connect API key.
 
-用于：
+Used by:
 
 - `.github/workflows/release-ios.yml`
 - `.github/workflows/release-desktop.yml`
 
-不要把它当作 `APPLE_PRIVATE_KEY_P8`，除非它确实也是 Sign in with Apple key。通常这两类 key 不是同一个。
+Do not use it as `APPLE_PRIVATE_KEY_P8` unless it is truly also the Sign in with Apple key. In normal Apple setups, those are separate keys.
 
 ### `DEVELOPER_ID_APPLICATION_P12`
 
-用途：macOS App Store 之外分发时的 Developer ID 签名。
+Purpose: signs the macOS app for distribution outside the Mac App Store.
 
-来源：Keychain Access 中的 `Developer ID Application: Haowei Wang (8M272Q9TAD)`，导出为 `.p12` 后 base64 上传。
+Source: export `Developer ID Application: Haowei Wang (8M272Q9TAD)` from Keychain Access as `.p12`, then upload its base64 content.
 
-用于：
+Used by:
 
 - `.github/workflows/release-desktop.yml`
 
-正确证书 subject 应类似：
+Expected certificate subject:
 
 ```text
 CN=Developer ID Application: Haowei Wang (8M272Q9TAD)
 issuer=Developer ID Certification Authority, G2
 ```
 
-不要放：
+Do not upload:
 
 - `Apple Development`
 - `Apple Distribution`
@@ -154,75 +156,75 @@ issuer=Developer ID Certification Authority, G2
 
 ### `DEVELOPER_ID_APPLICATION_PASSWORD`
 
-用途：导入 `DEVELOPER_ID_APPLICATION_P12` 时使用的 `.p12` 导出密码。
+Purpose: password used to import `DEVELOPER_ID_APPLICATION_P12` into the CI keychain.
 
-来源：从 Keychain Access 导出 `Developer ID Application` `.p12` 时设置的密码。
+Source: the export password set when exporting the `Developer ID Application` `.p12` from Keychain Access.
 
-如果密码或证书不匹配，Tauri build 会在导入或签名阶段失败。
+If this password or certificate is wrong, Tauri build fails during certificate import or signing.
 
 ### `APPLE_PRIVATE_KEY_P8`
 
-用途：Sign in with Apple 服务端签名，也可被 APNs 逻辑复用完整 `APPLE_*` key tuple。
+Purpose: Sign in with Apple server-side signing. The APNs implementation may also reuse the complete `APPLE_*` key tuple.
 
-来源：Apple Developer 的 Keys 页面中启用了 Sign in with Apple 的 `.p8` 文件。
+Source: the Apple Developer `.p8` key that has Sign in with Apple enabled.
 
-用于：
+Used by:
 
 - `.github/workflows/cd.yml`
 - `.github/workflows/release-connector.yml`
 - server runtime config
 
-必须和 variable `APPLE_KEY_ID` 匹配。例如：
+It must match the `APPLE_KEY_ID` variable:
 
 ```text
 APPLE_KEY_ID = V88K9G69PQ
 APPLE_PRIVATE_KEY_P8 = AuthKey_V88K9G69PQ.p8
 ```
 
-Apple 的 `.p8` 私钥只能在创建 key 时下载一次。如果丢失，只能新建 key，并同时更新 `APPLE_KEY_ID` 和 `APPLE_PRIVATE_KEY_P8`。
+Apple private `.p8` keys can only be downloaded once, at creation time. If the file is lost, create a replacement key and update both `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY_P8`.
 
 ### `DESKTOP_UPDATER_KEY`
 
-用途：Tauri updater 私钥，用来签名 `.app.tar.gz` 更新包和 update feed。
+Purpose: Tauri updater private key. It signs `.app.tar.gz` update payloads and the update feed.
 
-用于：
+Used by:
 
 - `.github/workflows/release-desktop.yml`
 
-注意：它只保证应用内自动更新包没有被篡改。它不能替代 `Developer ID Application`，也不能让 Gatekeeper 信任 macOS app。
+This only protects in-app updates from tampering. It does not replace `Developer ID Application` signing and does not make Gatekeeper trust the app.
 
 ## GitHub Variables
 
 ### `APPLE_TEAM_ID`
 
-用途：Apple Developer Team ID。
+Purpose: Apple Developer Team ID.
 
-当前示例：
+Current example:
 
 ```text
 8M272Q9TAD
 ```
 
-用于：
+Used for:
 
 - iOS signing
 - Sign in with Apple
 - APNs
-- deployment payload
+- deployment payloads
 
 ### `APPLE_KEY_ID`
 
-用途：Sign in with Apple / APNs key 的 Key ID。
+Purpose: Key ID for the Sign in with Apple/APNs key tuple.
 
-必须和 `APPLE_PRIVATE_KEY_P8` 对应。
+It must match `APPLE_PRIVATE_KEY_P8`.
 
-不要和 `ASC_API_KEY_ID` 混淆。
+Do not confuse it with `ASC_API_KEY_ID`.
 
 ### `APPLE_CLIENT_ID`
 
-用途：iOS native Sign in with Apple client identifier。
+Purpose: iOS native Sign in with Apple client identifier.
 
-当前示例：
+Current example:
 
 ```text
 app.cheers.ios
@@ -230,9 +232,9 @@ app.cheers.ios
 
 ### `APPLE_WEB_CLIENT_ID`
 
-用途：Web / macOS OAuth 使用的 Apple Services ID。
+Purpose: Apple Services ID for web/macOS OAuth.
 
-当前示例：
+Current example:
 
 ```text
 com.cheers.web
@@ -240,9 +242,9 @@ com.cheers.web
 
 ### `APPLE_WEB_REDIRECT_URI`
 
-用途：Apple 登录完成后回调到 Cheers gateway 的 URL。
+Purpose: callback URL used by Apple after the user completes login.
 
-当前示例：
+Current example:
 
 ```text
 https://www.tocheers.com/api/v1/auth/oauth/apple/callback
@@ -250,17 +252,17 @@ https://www.tocheers.com/api/v1/auth/oauth/apple/callback
 
 ### `OAUTH_WEB_RETURN_URL`
 
-用途：OAuth 流程完成后回到前端或桌面端的返回 URL。
+Purpose: URL where the app returns after the OAuth flow completes.
 
-当前示例：
+Current example:
 
 ```text
 https://www.tocheers.com/auth/callback
 ```
 
-## 本地验证命令
+## Local Verification Commands
 
-### 验证 `.p12` 证书类型
+### Verify a `.p12` certificate type
 
 ```bash
 cd ~/Downloads
@@ -278,16 +280,16 @@ openssl pkcs12 -legacy -in DeveloperIDApplication.p12 -nocerts -nodes -passin en
 unset P12PW
 ```
 
-期望看到：
+Expected output for macOS release signing:
 
 ```text
 CN=Developer ID Application: ...
 Key is valid
 ```
 
-### 验证 iOS provisioning profile
+### Verify the iOS provisioning profile
 
-有些 `.mobileprovision` 是 DER CMS 格式，`security cms` 可能解析失败。可以用 Homebrew OpenSSL：
+Some `.mobileprovision` files are DER CMS files, and `security cms` may fail to decode them. Homebrew OpenSSL can decode them:
 
 ```bash
 /opt/homebrew/bin/openssl cms -inform DER -verify -noverify \
@@ -301,9 +303,9 @@ plutil -extract Entitlements.aps-environment raw -o - profile.plist
 plutil -extract ExpirationDate raw -o - profile.plist
 ```
 
-## 上传命令
+## Upload Commands
 
-### iOS Distribution 证书
+### iOS Distribution certificate
 
 ```bash
 base64 -i Certificates.p12 \
@@ -364,71 +366,79 @@ gh secret set APPLE_PRIVATE_KEY_P8 \
   --repo haowei2000/Cheers < AuthKey_<APPLE_KEY_ID>.p8
 ```
 
-## 常见混淆
+## Common Mix-Ups
 
-### `Apple Distribution` 和 `Developer ID Application`
+### `Apple Distribution` vs. `Developer ID Application`
 
-`Apple Distribution` 用于 iOS TestFlight / App Store。
+`Apple Distribution` is for iOS TestFlight/App Store builds.
 
-`Developer ID Application` 用于 macOS App Store 之外分发。
+`Developer ID Application` is for macOS apps distributed outside the Mac App Store.
 
-它们都是 distribution 类证书，但用途完全不同。
+Both are distribution credentials, but they are not interchangeable.
 
 ### `Apple Development`
 
-`Apple Development` 只用于开发调试。它有私钥也不能用于 release workflow。
+`Apple Development` is only for local development and debugging. It may include a valid private key, but it must not be used in release workflows.
 
 ### `Developer ID Certification Authority`
 
-这是中间 CA，不是你的签名身份。不要导出它作为 `.p12`。
+This is an intermediate CA certificate, not your signing identity. Do not export it as the `.p12`.
 
-### `ASC_API_PRIVATE_KEY_P8` 和 `APPLE_PRIVATE_KEY_P8`
+### `ASC_API_PRIVATE_KEY_P8` vs. `APPLE_PRIVATE_KEY_P8`
 
-`ASC_API_PRIVATE_KEY_P8` 用于 App Store Connect API。
+`ASC_API_PRIVATE_KEY_P8` is for the App Store Connect API.
 
-`APPLE_PRIVATE_KEY_P8` 用于 Sign in with Apple / APNs key tuple。
+`APPLE_PRIVATE_KEY_P8` is for the Sign in with Apple/APNs key tuple.
 
-文件名中的 Key ID 必须和对应 variable 匹配。
+The Key ID in the filename must match the corresponding GitHub variable.
 
-### `DESKTOP_UPDATER_KEY` 和 Developer ID
+### `DESKTOP_UPDATER_KEY` vs. Developer ID
 
-`DESKTOP_UPDATER_KEY` 签 Tauri 更新包。
+`DESKTOP_UPDATER_KEY` signs Tauri updater payloads.
 
-`DEVELOPER_ID_APPLICATION_P12` 签 macOS app，配合 notarization 通过 Gatekeeper。
+`DEVELOPER_ID_APPLICATION_P12` signs the macOS app, and notarization plus stapling lets Gatekeeper trust it.
 
-两个都需要，但解决的是不同信任边界。
+Both are needed, but they protect different trust boundaries.
 
-## Release 前检查清单
+## Release Checklist
 
-- `gh secret list --env production --repo haowei2000/Cheers` 中存在全部必需 secrets。
-- `gh variable list --env production --repo haowei2000/Cheers` 中 `APPLE_KEY_ID` 与 `APPLE_PRIVATE_KEY_P8` 文件名匹配。
-- `DEVELOPER_ID_APPLICATION_P12` 本地验证输出 `CN=Developer ID Application`。
-- `IOS_DISTRIBUTION_CERTIFICATE_P12` 本地验证输出 `CN=Apple Distribution`。
-- iOS provisioning profile 的 `application-identifier` 是 `8M272Q9TAD.app.cheers.ios`。
-- macOS release 日志通过 `Verify Developer ID signature + notarization`。
-- macOS release 日志中不能再出现 `Signing with identity "-"` 或 `skipping app notarization`。
+- `gh secret list --env production --repo haowei2000/Cheers` contains all required secrets.
+- `gh variable list --env production --repo haowei2000/Cheers` shows an `APPLE_KEY_ID` that matches the `APPLE_PRIVATE_KEY_P8` file.
+- `DEVELOPER_ID_APPLICATION_P12` verifies locally as `CN=Developer ID Application`.
+- `IOS_DISTRIBUTION_CERTIFICATE_P12` verifies locally as `CN=Apple Distribution`.
+- The iOS provisioning profile has `application-identifier = 8M272Q9TAD.app.cheers.ios`.
+- The macOS release log passes `Verify Developer ID signature + notarization`.
+- The macOS release log must not show `Signing with identity "-"` or `skipping app notarization`.
 
-## 失败日志解读
+## Failure Log Guide
 
 ### `Signing with identity "-"`
 
-表示 Tauri 退回 ad-hoc signing。Gatekeeper 会认为包不可信。
+Tauri fell back to ad-hoc signing. Gatekeeper will not trust the package.
 
 ### `skipping app notarization`
 
-表示 notarization 所需的 `APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH` 没被 Tauri 识别。
+Tauri did not find the notarization environment: `APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_PATH`.
 
 ### `certificate ... does not match provided identity "Developer ID Application"`
 
-表示 `DEVELOPER_ID_APPLICATION_P12` 里面放错证书。常见误传：
+`DEVELOPER_ID_APPLICATION_P12` contains the wrong certificate. Common mistakes:
 
 - `Apple Development`
 - `Apple Distribution`
 
 ### `Mac verify error: invalid password?`
 
-表示 `.p12` 密码不匹配。
+The `.p12` password does not match the file.
 
 ### `Algorithm (RC2-40-CBC) unsupported`
 
-表示 `.p12` 使用旧加密算法。OpenSSL 3 需要加 `-legacy` 才能解析。
+The `.p12` uses old encryption. OpenSSL 3 needs `-legacy` to parse it.
+
+### `bundle is not Developer ID signed`
+
+If the log also shows notarization was accepted, check the verification command. `codesign -dv` may not emit `Authority=` lines; use:
+
+```bash
+codesign --display --verbose=4 "$APP"
+```
