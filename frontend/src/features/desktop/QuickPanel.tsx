@@ -85,7 +85,7 @@ export function QuickPanel() {
   );
 
   return (
-    <div className="h-screen w-screen bg-zinc-900 text-content-primary flex flex-col overflow-hidden">
+    <div className="h-screen h-dvh w-screen bg-zinc-900 text-content-primary flex flex-col overflow-hidden">
       {/* Frameless window: this strip is the drag handle. */}
       <div
         data-tauri-drag-region

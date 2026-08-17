@@ -64,7 +64,7 @@ export function PdfViewer({ path }: { path: string }) {
   }, [path]);
 
   return (
-    <div>
+    <div className="flex flex-col">
       {state === "loading" && (
         <div className="flex items-center justify-center gap-2 py-12 text-regular text-content-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
@@ -75,7 +75,7 @@ export function PdfViewer({ path }: { path: string }) {
       )}
       <div
         ref={hostRef}
-        className="max-h-[70vh] min-h-0 overflow-auto rounded-sm bg-zinc-950/40 p-2"
+        className={state === "ready" ? "max-h-[70vh] min-h-0 overflow-auto rounded-sm bg-zinc-950/40 p-3" : "hidden"}
       />
     </div>
   );
