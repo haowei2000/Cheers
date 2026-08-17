@@ -104,7 +104,7 @@ jobs:
         run: |
           APP="apps/macos/src-tauri/target/release/bundle/macos/Cheers.app"
           codesign --verify --strict "$APP"
-          codesign -dv "$APP" 2>&1 | tee /tmp/codesign.txt
+          codesign --display --verbose=4 "$APP" 2>&1 | tee /tmp/codesign.txt
           grep -q '^Authority=Developer ID Application' /tmp/codesign.txt || {
             echo "::error::bundle is not Developer ID signed — did APPLE_SIGNING_IDENTITY not override the '-' conf?"
             exit 1
