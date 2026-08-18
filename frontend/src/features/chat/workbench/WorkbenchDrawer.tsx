@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -653,24 +652,23 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             {pinned.length > 0 && (
               <div className="relative">
                 <Tip content="Manage files pinned into every prompt.">
-                  <UiButton
-                    action={pinMenu ? "collapse" : "expand"}
-                    content="icon"
-                    variant="plain"
-                    onClick={() => setPinMenu((o) => !o)}
-                    aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
-                    aria-expanded={pinMenu}
-                    title="Manage pinned files"
-                    className="relative text-warning-400/80 hover:text-warning-300"
-                  >
-                    <Pin className="h-4 w-4" aria-hidden="true" />
+                  <div className="relative inline-flex">
+                    <ActionButton
+                      action="pin"
+                      context="toolbar"
+                      onClick={() => setPinMenu((o) => !o)}
+                      aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
+                      aria-expanded={pinMenu}
+                      title="Manage pinned files"
+                      className="relative text-warning-400/80 hover:text-warning-300"
+                    />
                     <span
                       aria-hidden="true"
-                      className="absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light"
+                      className="pointer-events-none absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light"
                     >
                       {pinned.length > 9 ? "9+" : pinned.length}
                     </span>
-                  </UiButton>
+                  </div>
                 </Tip>
                 {pinMenu && (
                   <div className="absolute left-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
@@ -738,12 +736,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             <span className="flex-1">
               No scenes yet. Load a .cheers-extension package or install one in Settings.
             </span>
-            <UiButton action="open" variant="plain"
+            <ActionButton
+              action="open"
+              context="settings"
               onClick={() => navigate("/settings/workbench")}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
-            >
-              Open Settings
-            </UiButton>
+              controlSize="regular"
+              className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
+            />
           </div>
         )}
 

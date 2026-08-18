@@ -47,6 +47,8 @@ interface Props {
   replyToId?: string | null;
   /** `chat` is a flat chronological timeline; `discuss` nests replies by topic. */
   conversationMode?: ConversationMode;
+  /** Render only descendants of this message (the topic root stays in the header). */
+  threadRootId?: string | null;
 }
 
 export function MessageList({
@@ -63,6 +65,7 @@ export function MessageList({
   focusMsg,
   replyToId,
   conversationMode = "chat",
+  threadRootId = null,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -360,13 +363,23 @@ export function MessageList({
 
         {/* Chat stays chronological. Discuss groups replies directly below roots. */}
         <div className="flex flex-col gap-4">
-          {conversationMode === "discuss"
-            ? roots.map((msg, i) =>
-                renderNode(msg, 0, i > 0 ? roots[i - 1]! : null),
+          {threadRootId
+            ? (childrenByParent.get(threadRootId) ?? []).map((msg, i, siblings) =>
+                renderNode(
+                  msg,
+                  1,
+                  i > 0 && isDiscussionConsecutive(siblings[i - 1]!, msg)
+                    ? siblings[i - 1]!
+                    : null,
+                ),
               )
-            : topLevel.map((msg, i) =>
-                renderChatMessage(msg, i > 0 ? topLevel[i - 1]! : null),
-              )}
+            : conversationMode === "discuss"
+              ? roots.map((msg, i) =>
+                  renderNode(msg, 0, i > 0 ? roots[i - 1]! : null),
+                )
+              : topLevel.map((msg, i) =>
+                  renderChatMessage(msg, i > 0 ? topLevel[i - 1]! : null),
+                )}
         </div>
         <div ref={bottomRef} />
       </div>

@@ -16,6 +16,7 @@ interface PublicPageShellProps {
   eyebrow?: string;
   children: ReactNode;
   width?: "form" | "wide";
+  sidebarContent?: ReactNode;
 }
 
 /** Shared public/auth shell. It deliberately uses the same three type roles as
@@ -26,20 +27,60 @@ export function PublicPageShell({
   eyebrow = "Cheers · Private edition",
   children,
   width = "form",
+  sidebarContent,
 }: PublicPageShellProps) {
   return (
     <main className="public-edition h-full overflow-y-auto bg-zinc-950 text-content-primary">
-      <div className="mx-auto grid min-h-full w-full max-w-6xl gap-x-16 md:grid-cols-[minmax(260px,0.8fr)_minmax(380px,1.2fr)]">
-        <aside className="hidden px-8 py-9 md:flex md:flex-col">
-          <Link to="/" className="font-masthead text-comfortable tracking-masthead text-content-primary">
-            Cheers
-          </Link>
-          <div className="mt-auto max-w-xs border-t border-zinc-800 pt-5">
+      <div className="mx-auto grid min-h-full w-full max-w-6xl gap-x-16 md:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)]">
+        <aside className="hidden px-8 py-9 md:flex md:flex-col justify-between border-r border-zinc-900/60">
+          <div className="space-y-8">
+            <div>
+              <Link to="/" className="font-masthead text-comfortable tracking-masthead text-content-primary hover:text-content-strong transition-colors">
+                Cheers
+              </Link>
+              <p className="font-utility text-minimal uppercase tracking-overline text-content-muted mt-1">
+                Autonomous Agent Workspace
+              </p>
+            </div>
+
+            {sidebarContent ?? (
+              <div className="space-y-6 max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-utility text-compact font-semibold text-content-secondary">
+                    Multi-agent Collaboration
+                  </p>
+                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                    Coordinate Claude, Codex, and custom bots in real-time threaded channels with shared context.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="font-utility text-compact font-semibold text-content-secondary">
+                    Interactive Workbench
+                  </p>
+                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                    Inspect code diffs, run live lenses, preview sandboxed artifacts, and inspect execution traces.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="font-utility text-compact font-semibold text-content-secondary">
+                    Accountable Execution
+                  </p>
+                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                    Granular permission prompts, audit trails, and transparent human-in-the-loop control.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="max-w-xs border-t border-zinc-800/80 pt-5 mt-8">
             <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
               A shared desk for people and agents
             </p>
-            <p className="font-reading mt-3 text-regular leading-6 text-content-muted">
-              Conversations, files, context, and accountable actions in one workspace.
+            <p className="font-reading mt-2 text-compact leading-relaxed text-content-muted">
+              Self-hosted and private by design. Conversations, files, and actions remain under your control.
             </p>
           </div>
         </aside>

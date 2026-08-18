@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferColumns, parseCodemap, updateRowCell } from "./builtins";
+import { inferColumns, parseCodemap, updateRowCell, codemapLayout } from "./builtins";
 
 // The registry only OFFERS the table for arrays of plain objects, but the lens can
 // still receive anything (template bindings, files edited after binding) — these are
@@ -59,5 +59,25 @@ describe("codemap lens parser", () => {
 
   it("rejects non-codemap documents", () => {
     expect(parseCodemap({ nodes: {} })).toBeNull();
+  });
+});
+
+describe("codemap layout", () => {
+  it("calculates positions and dimensions for nodes and edges", () => {
+    const parsed = parseCodemap({
+      codemap: 1,
+      nodes: {
+        a: { kind: "module", label: "A", summary: "", status: "explored", tags: [] },
+        b: { kind: "module", label: "B", summary: "", status: "explored", tags: [] },
+      },
+      edges: [{ from: "a", to: "b" }],
+    });
+    expect(parsed).not.toBeNull();
+    if (!parsed) return;
+    const { positions, width, height } = codemapLayout(parsed.nodes, parsed.edges);
+    expect(positions.has("a")).toBe(true);
+    expect(positions.has("b")).toBe(true);
+    expect(width).toBeGreaterThan(0);
+    expect(height).toBeGreaterThan(0);
   });
 });

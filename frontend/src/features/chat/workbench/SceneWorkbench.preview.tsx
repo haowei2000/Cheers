@@ -125,7 +125,7 @@ const context: WorkbenchContext = {
 function Preview() {
   return (
     <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-content-primary">
-      <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-sm border border-zinc-700/80 bg-zinc-900 shadow-2xl shadow-black/50">
+      <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-sm bg-zinc-900 shadow-2xl shadow-black/50">
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <LayoutGrid className="h-4 w-4 text-accent-300" />
           <h1 className="text-regular font-semibold">Workbench</h1>

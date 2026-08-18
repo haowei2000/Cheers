@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="min-h-screen min-h-dvh bg-zinc-950 flex items-center justify-center p-4">
         <ErrorState
           title="Something broke on our side"
           description="The app hit an unexpected error. Reloading usually fixes it."

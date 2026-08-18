@@ -13,11 +13,13 @@ GlobalWorkerOptions.workerSrc = workerSrc;
 export function PdfViewer({ path }: { path: string }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [hasPage, setHasPage] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     setState("loading");
+    setHasPage(false);
 
     (async () => {
       try {
@@ -44,6 +46,9 @@ export function PdfViewer({ path }: { path: string }) {
           canvas.style.height = `${Math.floor(viewport.height)}px`;
           canvas.className = "mx-auto mb-3 max-w-full rounded-sm shadow-lg shadow-black/30";
           host.appendChild(canvas);
+          // Reveal after the first canvas so large docs paint progressively
+          // instead of staying behind the spinner until the last page.
+          if (n === 1) setHasPage(true);
           await page.render({
             canvas,
             viewport,
@@ -64,8 +69,8 @@ export function PdfViewer({ path }: { path: string }) {
   }, [path]);
 
   return (
-    <div>
-      {state === "loading" && (
+    <div className="flex flex-col">
+      {state === "loading" && !hasPage && (
         <div className="flex items-center justify-center gap-2 py-12 text-regular text-content-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
         </div>
@@ -75,7 +80,11 @@ export function PdfViewer({ path }: { path: string }) {
       )}
       <div
         ref={hostRef}
-        className="max-h-[70vh] min-h-0 overflow-auto rounded-sm bg-zinc-950/40 p-2"
+        className={
+          hasPage || state === "ready"
+            ? "max-h-[70vh] min-h-0 overflow-auto rounded-sm bg-zinc-950/40 p-3"
+            : "hidden"
+        }
       />
     </div>
   );
