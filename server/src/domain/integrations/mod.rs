@@ -6,7 +6,9 @@
 //! in this process — anything needing real logic runs out-of-process as an ACP
 //! connector or MCP server.
 
+pub mod bindings;
 pub mod catalog;
 pub mod credentials;
+pub mod projection;
 pub mod secret;
 pub mod webhook;
