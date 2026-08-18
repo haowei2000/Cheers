@@ -31,4 +31,21 @@ describe("extension installation decisions", () => {
     expect(compareSemver("1.0.0", "1.0.0-rc.1")).toBeGreaterThan(0);
     expect(compareSemver("1.0.0+catalog.2", "1.0.0+catalog.1")).toBe(0);
   });
+
+  it("handles complex multi-level permissions comparison", () => {
+    expect(
+      expandedPermissions(
+        { "file.write": true, "channel.resources": ["channel.info", "channel.files"] },
+        { "file.write": true, "channel.resources": ["channel.info"] },
+      ),
+    ).toEqual(["channel.resources:channel.files"]);
+
+    expect(
+      expandedPermissions(
+        { "navigation.open": true, "composer.prefill": true, "automation.manage": true },
+        { "navigation.open": true },
+      ),
+    ).toEqual(["composer.prefill", "automation.manage"]);
+  });
 });
+

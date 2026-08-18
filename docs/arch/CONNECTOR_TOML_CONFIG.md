@@ -313,4 +313,4 @@ cce-acp-connector stop   --name haowei_codex
 | Can't set a **config option** from the UI | option not in `allowed_config_options`, or bot offline | add the id to `allowed_config_options`; bring the bot online |
 | Can't set a **mode** | mode not in `allowed_modes`, or `backend_may_set_mode = false` | add the mode id (or `[]` for any); enable `backend_may_set_mode` |
 | Agent can't read an uploaded file | it tried to HTTP the gateway | agents read attachments via the `cheers` MCP `inbox_open` tool, never HTTP |
-| Bot has no Cheers tools | Agent lacks native HTTP MCP OAuth or Gateway omitted `mcp_url` | upgrade the Agent adapter; verify `MCP_PUBLIC_URL`; stdio fallback is not supported |
+| Bot has no Cheers tools | Agent lacks `mcpCapabilities.http`, or Gateway omitted `mcp_url` / the installation id | upgrade the Agent adapter; verify `MCP_PUBLIC_URL`; check the connector log for a token-minting warning; stdio fallback is not supported |

@@ -193,6 +193,7 @@ export default function SettingsPage() {
               </h2>
               <AppUpdateCard />
               <LaunchAtLoginCard />
+              <LegalLinks />
             </section>
           )}
 

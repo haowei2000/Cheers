@@ -146,4 +146,45 @@ describe("BotTracePanel disclosure labels", () => {
     expect(markup.match(/Publish frontend changes/g)).toHaveLength(1);
     expect(markup).toContain("Needs approval");
   });
+
+  it("renders MCP startup failure with terminal login command hint", () => {
+    const mcpStartupEvent: TraceEvent = {
+      v: 1,
+      id: "mcp-err-1",
+      event_id: "mcp-err-1",
+      msg_id: "message-1",
+      channel_id: "channel-1",
+      trace_seq: 1,
+      kind: "trace",
+      phase: "tool_call",
+      tool_call_id: "mcp_startup.cheers",
+      status: "failed",
+      is_terminal: true,
+      created_at: "2026-08-17T03:39:46Z",
+      data: {
+        content: [
+          {
+            content: {
+              text: "[codex-acp forwarded startup error] MCP server `cheers` failed to start: MCP client for `cheers` failed to start",
+            },
+          },
+        ],
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <BotTracePanel
+        channelId="channel-1"
+        msgId="message-1"
+        liveEvents={[mcpStartupEvent]}
+        expanded
+        showToggle={false}
+      />,
+    );
+
+    expect(markup).toContain("MCP login required");
+    expect(markup).toContain("codex mcp login cheers");
+    expect(markup).not.toContain("rmcp::transport");
+  });
 });
+

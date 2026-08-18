@@ -17,6 +17,7 @@ import {
   Maximize2,
   Minimize2,
   Pencil,
+  Pin,
   Plus,
   RefreshCw,
   Save,
@@ -68,6 +69,7 @@ export type CommonActionKey = Extract<
   | "manageTwoFactor"
   | "more"
   | "open"
+  | "pin"
   | "refresh"
   | "request"
   | "resolve"
@@ -109,6 +111,7 @@ const commonActionPresentations = {
     collapse: { content: "icon", icon: Minimize2, variant: "plain" },
     delete: { content: "icon", icon: Trash2, variant: "danger" },
     expand: { content: "icon", icon: Maximize2, variant: "plain" },
+    pin: { content: "icon", icon: Pin, variant: "plain" },
     remove: { content: "icon", icon: X, variant: "danger" },
     stop: { content: "icon", icon: EyeOff, variant: "plain" },
     unpin: { content: "icon", icon: X, variant: "danger" },

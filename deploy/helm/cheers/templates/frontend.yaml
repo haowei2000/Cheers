@@ -19,8 +19,9 @@ data:
       # hardened CSP. The production Vite build emits only external hashed module
       # scripts (no inline <script>), so script-src 'self' is safe; style-src keeps
       # 'unsafe-inline' because the SPA injects runtime styles. API + WS are proxied
-      # same-origin (/api, /ws) so connect-src 'self' ws: wss:' covers them. No
-      # location here defines its own add_header, so these inherit to every response.
+      # same-origin (/api, /ws) so connect-src 'self' ws: wss:' covers them.
+      # Locations that set add_header (index.html, assets, sw, manifest) repeat
+      # these headers because nginx drops inheritance once a location sets any.
       add_header X-Content-Type-Options "nosniff" always;
       add_header X-Frame-Options "DENY" always;
       add_header Referrer-Policy "strict-origin-when-cross-origin" always;
@@ -28,6 +29,15 @@ data:
 
       location / {
         try_files $uri $uri/ /index.html;
+      }
+
+      # Vite content-hashed chunks: serve real files or 404 — never the SPA shell.
+      location ^~ /assets/ {
+        try_files $uri =404;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
       }
 
       # The SPA shell must never be cached. Without this, the browser heuristically

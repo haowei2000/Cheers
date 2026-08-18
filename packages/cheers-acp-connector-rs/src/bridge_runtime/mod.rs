@@ -51,6 +51,7 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
+use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
 };
@@ -165,6 +166,38 @@ impl AccountRuntime {
                 "Gateway did not advertise a canonical Cheers HTTP MCP URL; refusing to derive one or fall back to stdio"
             ));
         };
+        // The Connector is itself an enrolled terminal installation, which is the
+        // principal the Gateway's `client_credentials` grant exists for. Minting
+        // here means the Agent only has to speak HTTP MCP; it needs no OAuth
+        // client, metadata document, or consent round-trip of its own. Without an
+        // installation id (older Gateway) we keep the headerless entry so an
+        // OAuth-capable Agent can still authenticate natively.
+        let mcp_token = match bridge.control_hello().installation_id.clone() {
+            Some(installation_id) if !installation_id.trim().is_empty() => {
+                match McpTokenProvider::new(
+                    mcp_url.clone(),
+                    installation_id,
+                    self.config.bridge_credential.clone(),
+                ) {
+                    Ok(provider) => Some(Arc::new(provider)),
+                    Err(error) => {
+                        tracing::warn!(
+                            account = %self.account_id,
+                            error = %error,
+                            "could not build the MCP token provider; falling back to native Agent OAuth"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => {
+                tracing::warn!(
+                    account = %self.account_id,
+                    "Gateway hello carried no installation id; falling back to native Agent OAuth"
+                );
+                None
+            }
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -212,6 +245,7 @@ impl AccountRuntime {
             config: self.config,
             identity,
             mcp_url,
+            mcp_token,
             state: self.state,
             adapter,
             io,
@@ -537,6 +571,10 @@ struct RuntimeContext {
     identity: BotIdentity,
     /// Canonical native HTTP MCP endpoint advertised by the authenticated Gateway.
     mcp_url: String,
+    /// Mints installation-bound access tokens for [`Self::mcp_url`]. `None` when
+    /// the Gateway advertised no installation id, in which case the endpoint is
+    /// injected headerless and the Agent must run native OAuth itself.
+    mcp_token: Option<Arc<McpTokenProvider>>,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
@@ -2522,7 +2560,22 @@ impl RuntimeContext {
                 );
             }
         }
-        servers.push(native_cheers_mcp_server(&self.mcp_url));
+        let bearer = match self.mcp_token.as_ref() {
+            Some(provider) => provider
+                .bearer()
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        account = %self.account_id,
+                        error = %error,
+                        "could not mint a Cheers MCP access token; injecting the endpoint without \
+                         credentials (Cheers tools stay unavailable unless the Agent runs native OAuth)"
+                    );
+                })
+                .ok(),
+            None => None,
+        };
+        servers.push(native_cheers_mcp_server(&self.mcp_url, bearer.as_deref()));
         Value::Array(servers)
     }
 

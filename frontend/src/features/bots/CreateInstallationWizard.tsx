@@ -406,9 +406,7 @@ export function CreateInstallationWizard({
                   <Laptop className="w-4 h-4" />
                 </Button>
               )}
-              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length}>
-                {localDesktop ? "Install on another device" : "Choose device"}
-              </Button>
+              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length} />
             </div>
           </div>
         )}

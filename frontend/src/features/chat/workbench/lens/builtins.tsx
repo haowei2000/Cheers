@@ -551,7 +551,7 @@ export function parseCodemap(data: unknown): CodemapData | null {
   };
 }
 
-function codemapLayout(nodes: CodemapNode[], edges: CodemapEdge[]) {
+export function codemapLayout(nodes: CodemapNode[], edges: CodemapEdge[]) {
   const ids = new Set(nodes.map((node) => node.id));
   const outgoing = new Map<string, string[]>();
   const indegree = new Map(nodes.map((node) => [node.id, 0]));
@@ -656,6 +656,7 @@ function CodemapLens({ data }: LensProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const initializedDocRef = useRef<unknown>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ pointer: number; x: number; y: number; ox: number; oy: number } | null>(null);
@@ -670,12 +671,29 @@ function CodemapLens({ data }: LensProps) {
   }, [document]);
 
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!document?.nodes.length) {
       setSelectedId(null);
+      initializedDocRef.current = null;
       return;
     }
-    if (selectedId && document.nodes.some((node) => node.id === selectedId)) return;
-    setSelectedId(document.nodes.find((node) => document.focus.has(node.id))?.id ?? document.nodes[0].id);
+    if (initializedDocRef.current !== document) {
+      initializedDocRef.current = document;
+      setSelectedId(document.nodes.find((node) => document.focus.has(node.id))?.id ?? document.nodes[0].id);
+      return;
+    }
+    if (selectedId && !document.nodes.some((node) => node.id === selectedId)) {
+      setSelectedId(null);
+    }
   }, [document, selectedId]);
 
   if (!document || document.nodes.length === 0) {
@@ -696,6 +714,10 @@ function CodemapLens({ data }: LensProps) {
     <div ref={rootRef} className="relative flex h-full min-h-0 bg-zinc-950">
       <div
         className="relative min-w-0 flex-1 overflow-hidden touch-none"
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest("button")) return;
+          setSelectedId(null);
+        }}
         onPointerDown={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
           drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
@@ -737,7 +759,7 @@ function CodemapLens({ data }: LensProps) {
               <UiButton variant="plain" role="option" aria-selected={selectedNode}
                 key={node.id}
                 type="button"
-                onClick={() => setSelectedId(node.id)}
+                onClick={() => setSelectedId((cur) => (cur === node.id ? null : node.id))}
                 controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm bg-zinc-900 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60": focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
@@ -765,7 +787,7 @@ function CodemapLens({ data }: LensProps) {
           <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
         </div>
       </div>
-      {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} /></div>}
+      {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} onClose={() => setSelectedId(null)} /></div>}
       {!wide && selected && (
         <div className="absolute inset-x-3 bottom-16 z-20 max-h-[70%] overflow-hidden rounded-sm  border-zinc-700 shadow-2xl shadow-black/60">
           <CodemapInspector node={selected} onClose={() => setSelectedId(null)} />
