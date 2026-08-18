@@ -198,14 +198,16 @@ export function ChannelView({
     id: string;
     nonce: number;
   } | null>(null);
+  const discussionComposerRootRef = useRef<Message | null>(null);
   const handleDiscussionComposerContextChange = useCallback(
     (root: Message | null, creating: boolean) => {
-      setDiscussionComposerRoot((prevRoot) => {
-        if (prevRoot?.msg_id !== root?.msg_id || creating) {
-          setReplyTo(null);
-        }
-        return root;
-      });
+      // React invokes updaters twice in StrictMode, so setReplyTo cannot live
+      // inside one. Compare against a ref that mirrors the committed root.
+      if (discussionComposerRootRef.current?.msg_id !== root?.msg_id || creating) {
+        setReplyTo(null);
+      }
+      discussionComposerRootRef.current = root;
+      setDiscussionComposerRoot(root);
       setCreatingDiscussion(creating);
     },
     [],

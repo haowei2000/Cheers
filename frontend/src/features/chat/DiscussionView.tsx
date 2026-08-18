@@ -108,7 +108,7 @@ export function DiscussionView({
   const [isWide, setIsWide] = useState(false);
   const splitKey = `cheers:discussion-split:${channelId}`;
   const [topicWidth, setTopicWidth] = useState(() => {
-    const stored = Number(window.localStorage.getItem(`cheers:discussion-split:${channelId}`));
+    const stored = Number(window.localStorage.getItem(splitKey));
     return Number.isFinite(stored) && stored >= 260 ? stored : 320;
   });
   const [creating, setCreating] = useState(false);
@@ -463,11 +463,11 @@ export function DiscussionView({
         <>
           {topicList}
           <TopicPaneResizer
-            onChange={(widthPx) => {
-              setTopicWidth(widthPx);
-              window.localStorage.setItem(splitKey, String(widthPx));
-            }}
-            onCommit={() => undefined}
+            onChange={setTopicWidth}
+            // Persist once the drag ends. Writing from onChange hit
+            // localStorage on every pointer frame for a value only the next
+            // mount reads.
+            onCommit={(widthPx) => window.localStorage.setItem(splitKey, String(widthPx))}
           />
           {detailPane}
         </>

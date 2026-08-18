@@ -9,12 +9,13 @@ export function TopicPaneResizer({
   minRight = 360,
 }: {
   onChange: (widthPx: number) => void;
-  onCommit: () => void;
+  onCommit: (widthPx: number) => void;
   minLeft?: number;
   minRight?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const width = useRef<number | null>(null);
 
   const onDown = (e: ReactPointerEvent) => {
     dragging.current = true;
@@ -27,14 +28,15 @@ export function TopicPaneResizer({
     if (!row) return;
     const r = row.getBoundingClientRect();
     const maxLeft = Math.max(minLeft, r.width - minRight);
-    const w = Math.min(Math.max(e.clientX - r.left, minLeft), maxLeft);
-    onChange(Math.round(w));
+    const w = Math.round(Math.min(Math.max(e.clientX - r.left, minLeft), maxLeft));
+    width.current = w;
+    onChange(w);
   };
   const onUp = (e: ReactPointerEvent) => {
     if (!dragging.current) return;
     dragging.current = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    onCommit();
+    if (width.current !== null) onCommit(width.current);
   };
 
   return (
