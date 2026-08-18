@@ -1,7 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Apple } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   exchangeOAuthHandoff,
@@ -20,6 +19,7 @@ import { onOAuthHandoff } from "@/lib/oauthCallback";
 import { getPasskey } from "@/lib/webauthn";
 import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { AppleMark, GoogleMark } from "@/components/ui/provider-marks";
 import { Input } from "@/components/ui/input";
 import {
   PublicPageShell,
@@ -255,6 +255,7 @@ export default function LoginPage() {
               type="text"
               placeholder="you@example.com"
               autoComplete="username"
+              required
               autoFocus
               value={form.login}
               onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))}
@@ -273,6 +274,7 @@ export default function LoginPage() {
               type="password"
               placeholder="••••••••"
               autoComplete="current-password"
+              required
               value={form.password}
               onChange={(e) =>
                 setForm((f) => ({ ...f, password: e.target.value }))
@@ -284,7 +286,6 @@ export default function LoginPage() {
             type="submit"
             className="mt-2"
             loading={loading}
-            disabled={!form.login || !form.password}
           >
             Sign in
           </Button>
@@ -297,7 +298,7 @@ export default function LoginPage() {
                 <span className="h-px flex-1 bg-zinc-800" />
               </div>
               {capabilities.providers.apple && (
-                <Button action="signIn" content="iconText" controlWidth="fill"
+                <Button action="continueWithApple" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
                   disabled={loading}
@@ -310,11 +311,11 @@ export default function LoginPage() {
                     });
                   }}
                 >
-                  <Apple className="h-4 w-4" /> Continue with Apple
+                  <AppleMark className="h-4 w-4" />
                 </Button>
               )}
               {capabilities.providers.google && (
-                <Button action="signIn" content="iconText" controlWidth="fill"
+                <Button action="continueWithGoogle" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
                   disabled={loading}
@@ -327,7 +328,7 @@ export default function LoginPage() {
                     });
                   }}
                 >
-                  <span className="font-semibold" aria-hidden="true">G</span> Continue with Google
+                  <GoogleMark className="h-4 w-4" />
                 </Button>
               )}
             </div>

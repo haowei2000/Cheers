@@ -259,7 +259,7 @@ export function ConnectorConfigForm({
               controlSize="compact"
               onClick={() => void pickFolder().then((p) => p && patch({ default_cwd: p }))}
             >
-              <FolderPlus className="w-3.5 h-3.5" /> Choose…
+              <FolderPlus className="w-3.5 h-3.5" />
             </Button>
           </div>
           {cwdUnderRoot === false && f.default_cwd?.trim() && (

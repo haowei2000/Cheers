@@ -1072,10 +1072,11 @@ function OnboardForm(props: {
       <div>
         <Button action="setup" content="iconText"
           controlSize="compact"
+          loading={p.onboarding}
           disabled={p.onboarding || !p.existingBotId}
           onClick={p.onSubmit}
         >
-          <Play className="w-3.5 h-3.5" /> {p.onboarding ? "Setting up…" : "Set up & start"}
+          <Play className="w-3.5 h-3.5" />
         </Button>
       </div>
 
@@ -1112,7 +1113,7 @@ function OnboardForm(props: {
                 disabled={!p.newName.trim() || !p.newConfig.trim() || p.busy}
                 onClick={p.startFromToml}
               >
-                <Play className="w-3.5 h-3.5" /> Start
+                <Play className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>

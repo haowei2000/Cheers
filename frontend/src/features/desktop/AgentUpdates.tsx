@@ -71,8 +71,8 @@ export function AgentUpdates() {
             presentationLevel="minimal" className="border-0" />
         ))}
       </ItemList>
-      <Button action="upgrade" content="iconText" variant="secondary" controlSize="compact" loading={busy} onClick={() => void upgradeAll()}>
-        <ArrowUpCircle className="w-3.5 h-3.5" /> Upgrade all
+      <Button action="upgradeAll" content="iconText" controlWidth="fill" variant="secondary" controlSize="compact" loading={busy} onClick={() => void upgradeAll()}>
+        <ArrowUpCircle className="w-3.5 h-3.5" />
       </Button>
     </div>
   );

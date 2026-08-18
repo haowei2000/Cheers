@@ -32,10 +32,10 @@ export function TaskClaimConfirmationCard({ message, channelId, currentUserId }:
   if (!actionable) return null;
   return <div className="mt-3 flex items-center gap-2">
     <Button action="decline" content="iconText" controlSize="compact" variant="secondary" disabled={busy} onClick={() => void resolve("reject")}>
-      <X className="h-3.5 w-3.5" />Decline
+      <X className="h-3.5 w-3.5" />
     </Button>
-    <Button action="accept" content="iconText" controlSize="compact" loading={busy} onClick={() => void resolve("accept")}>
-      <Check className="h-3.5 w-3.5" />Accept claim
+    <Button action="accept" content="iconText" controlSize="compact" loading={busy} aria-label="Accept claim" onClick={() => void resolve("accept")}>
+      <Check className="h-3.5 w-3.5" />
     </Button>
   </div>;
 }
