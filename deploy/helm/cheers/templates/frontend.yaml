@@ -15,17 +15,10 @@ data:
       root /usr/share/nginx/html;
       index index.html;
 
-      # Security headers (audit M2): clickjacking + MIME-sniff + referrer + a
-      # hardened CSP. The production Vite build emits only external hashed module
-      # scripts (no inline <script>), so script-src 'self' is safe; style-src keeps
-      # 'unsafe-inline' because the SPA injects runtime styles. API + WS are proxied
-      # same-origin (/api, /ws) so connect-src 'self' ws: wss:' covers them.
-      # Locations that set add_header (index.html, assets, sw, manifest) repeat
-      # these headers because nginx drops inheritance once a location sets any.
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header X-Frame-Options "DENY" always;
-      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-      add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      # Security headers (audit M2). The policy body lives in one place; see the
+      # security-headers.conf key below. nginx drops inherited add_header once a
+      # location sets any, so each such location includes the same file.
+      include /etc/nginx/security-headers.conf;
 
       location / {
         try_files $uri $uri/ /index.html;
@@ -34,10 +27,7 @@ data:
       # Vite content-hashed chunks: serve real files or 404 — never the SPA shell.
       location ^~ /assets/ {
         try_files $uri =404;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "DENY" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+        include /etc/nginx/security-headers.conf;
       }
 
       # The SPA shell must never be cached. Without this, the browser heuristically
@@ -49,10 +39,7 @@ data:
       # security headers, so they are repeated here.
       location = /index.html {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "DENY" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+        include /etc/nginx/security-headers.conf;
       }
 
       # Service worker: must never be cached long — a cached sw.js pins every
@@ -60,10 +47,7 @@ data:
       # makes each registration update-check revalidate at the origin.
       location = /sw.js {
         add_header Cache-Control "no-cache, must-revalidate" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "DENY" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+        include /etc/nginx/security-headers.conf;
       }
 
       # PWA manifest: correct MIME (nginx's types map lacks .webmanifest) and
@@ -72,10 +56,7 @@ data:
         types { }
         default_type application/manifest+json;
         add_header Cache-Control "no-cache, must-revalidate" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "DENY" always;
-        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+        include /etc/nginx/security-headers.conf;
       }
 
       location /api {
@@ -131,6 +112,11 @@ data:
         proxy_pass http://{{ $gw }};
       }
     }
+  security-headers.conf: |
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss: https://haowei2000.github.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -186,6 +172,9 @@ spec:
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
+            - name: nginx-conf
+              mountPath: /etc/nginx/security-headers.conf
+              subPath: security-headers.conf
       volumes:
         - name: nginx-conf
           configMap:
