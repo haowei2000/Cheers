@@ -71,8 +71,8 @@ enum MessageTree {
     /// is the tiebreak so rows with equal (or absent) sequence numbers keep a
     /// stable position instead of reshuffling between renders.
     static func precedesInThread(_ lhs: MessageDto, _ rhs: MessageDto) -> Bool {
-        let left = lhs.channelSeq ?? Int.max
-        let right = rhs.channelSeq ?? Int.max
+        let left = lhs.channelSeq ?? Int64.max
+        let right = rhs.channelSeq ?? Int64.max
         return left == right ? lhs.msgId < rhs.msgId : left < right
     }
 

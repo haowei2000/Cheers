@@ -1394,7 +1394,7 @@ export function RemoteWorkspaceDialog({
             {leftView === "changes" && git ? (
               <>
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-content-muted">
-                  <UiButton action="close" content="iconText" variant="plain"
+                  <UiButton action="diffWorking" content="iconText" variant="plain"
                     onClick={() => openDiff("", false)}
                     title="Diff the whole working tree (unstaged)"
                     controlSize="regular" className={`flex items-center gap-1 rounded-sm hover:bg-zinc-800 ${
@@ -1403,9 +1403,9 @@ export function RemoteWorkspaceDialog({
  : ""
  }`}
                   >
-                    <GitCompare className="w-3.5 h-3.5" /> Working tree
+                    <GitCompare className="w-3.5 h-3.5" />
                   </UiButton>
-                  <UiButton action="preview" content="iconText" variant="plain"
+                  <UiButton action="diffStaged" content="iconText" variant="plain"
                     onClick={() => openDiff("", true)}
                     title="Diff everything staged (git diff --staged)"
                     controlSize="regular" className={`flex items-center gap-1 rounded-sm hover:bg-zinc-800 ${
@@ -1414,8 +1414,7 @@ export function RemoteWorkspaceDialog({
  : ""
  }`}
                   >
-                    <GitCompare className="w-3.5 h-3.5" /> Staged
-                  </UiButton>
+                    <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
                   <div className="flex-1" />
                   {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
                   <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-zinc-800">
@@ -1704,13 +1703,12 @@ export function RemoteWorkspaceDialog({
                     </>
                   )}
                   {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                  <UiButton action="preview" content="iconText" variant="plain"
+                  <UiButton action="close" content="iconText" variant="plain"
                     onClick={() => setDiff(null)}
                     title="Close diff and return to the file view"
                     controlSize="regular" className="flex items-center gap-1 rounded-sm hover:bg-zinc-800 text-content-primary"
                   >
-                    <X className="w-3.5 h-3.5" /> Close
-                  </UiButton>
+                    <X className="w-3.5 h-3.5" />                  </UiButton>
                 </div>
                 {/* Changed-file strip for a commit: jump between per-file diffs without
                     fetching (cached) or scrolling through the whole patch. */}
@@ -1870,7 +1868,7 @@ export function RemoteWorkspaceDialog({
                       title="Discard your edits and reload the latest from the server"
                       controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-content-primary disabled:opacity-50"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" /> Reload
+                      <RefreshCw className="w-3.5 h-3.5" />
                     </UiButton>
                     <UiButton action="discard" content="iconText" variant="plain"
                       onClick={() => {
@@ -1886,7 +1884,7 @@ export function RemoteWorkspaceDialog({
                       title="Overwrite the server version with your edits"
                       controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-amber-700 hover:bg-amber-600 text-content-primary disabled:opacity-50"
                     >
-                      <Save className="w-3.5 h-3.5" /> Force overwrite
+                      <Save className="w-3.5 h-3.5" />
                     </UiButton>
                   </div>
                 )}

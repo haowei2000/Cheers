@@ -224,7 +224,6 @@ function SendStatus({
           className="inline-flex items-center gap-1 font-medium text-danger-300 underline underline-offset-2 hover:text-danger-200"
         >
           <RotateCw className="w-3.5 h-3.5" />
-          Retry
         </UiButton>
       )}
     </div>

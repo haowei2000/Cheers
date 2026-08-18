@@ -225,7 +225,7 @@ export function ScheduledMessagesManager() {
         presentationLevel="max"
         controlSize="regular"
         className="border-t border-zinc-800 pt-2"
-        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => setForm(emptyForm())}><Plus className="h-3.5 w-3.5" /> New task</UiButton>}
+        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => setForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
       >
         {tasks.map((task) => (
           <WorkbenchItem

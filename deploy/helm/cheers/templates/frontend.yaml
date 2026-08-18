@@ -1,4 +1,118 @@
 {{- $gw := printf "%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port -}}
+{{/* The nginx config and the security-header snippet live in named templates so
+     the Deployment can hash exactly what the ConfigMap renders. Without that,
+     `helm upgrade` leaves the old pods running the previous policy. */}}
+{{- define "cheers.frontend.nginxConf" -}}
+{{- $gw := printf "%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port -}}
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Security headers (audit M2). The policy body lives in one place; see the
+  # security-headers.conf key below. nginx drops inherited add_header once a
+  # location sets any, so each such location includes the same file.
+  include /etc/nginx/security-headers.conf;
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  # Vite content-hashed chunks: serve real files or 404 — never the SPA shell.
+  location ^~ /assets/ {
+    try_files $uri =404;
+    include /etc/nginx/security-headers.conf;
+  }
+
+  # The SPA shell must never be cached. Without this, the browser heuristically
+  # caches index.html (it has Last-Modified/ETag but no Cache-Control), so after
+  # a redeploy it keeps serving an old index.html that points at old, now-absent
+  # hashed chunks — the new build stays invisible until a manual hard refresh.
+  # The content-hashed assets under /assets are safe to cache and fall through to
+  # nginx defaults. NOTE: setting add_header in a location drops the inherited
+  # security headers, so they are repeated here.
+  location = /index.html {
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    include /etc/nginx/security-headers.conf;
+  }
+
+  # Service worker: must never be cached long — a cached sw.js pins every
+  # client to a stale precache manifest until heuristic expiry. no-cache
+  # makes each registration update-check revalidate at the origin.
+  location = /sw.js {
+    add_header Cache-Control "no-cache, must-revalidate" always;
+    include /etc/nginx/security-headers.conf;
+  }
+
+  # PWA manifest: correct MIME (nginx's types map lacks .webmanifest) and
+  # the same no-cache policy so installs pick up icon/name changes promptly.
+  location = /manifest.webmanifest {
+    types { }
+    default_type application/manifest+json;
+    add_header Cache-Control "no-cache, must-revalidate" always;
+    include /etc/nginx/security-headers.conf;
+  }
+
+  location /api {
+    proxy_pass http://{{ $gw }};
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location = /mcp {
+    proxy_pass http://{{ $gw }};
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location ^~ /.well-known/oauth-protected-resource {
+    proxy_pass http://{{ $gw }};
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location = /.well-known/oauth-authorization-server {
+    proxy_pass http://{{ $gw }};
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location ^~ /oauth/ {
+    proxy_pass http://{{ $gw }};
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location /ws {
+    proxy_pass http://{{ $gw }};
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 3600s;
+  }
+
+  location = /health {
+    proxy_pass http://{{ $gw }};
+  }
+}
+{{- end }}
+{{- define "cheers.frontend.securityHeaders" -}}
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss: https://haowei2000.github.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,113 +124,9 @@ data:
   # Overrides the image's baked nginx config (which still points at the old
   # `backend:8000` host) so the SPA proxies /api + /ws to the gateway Service.
   default.conf: |
-    server {
-      listen 80;
-      root /usr/share/nginx/html;
-      index index.html;
-
-      # Security headers (audit M2). The policy body lives in one place; see the
-      # security-headers.conf key below. nginx drops inherited add_header once a
-      # location sets any, so each such location includes the same file.
-      include /etc/nginx/security-headers.conf;
-
-      location / {
-        try_files $uri $uri/ /index.html;
-      }
-
-      # Vite content-hashed chunks: serve real files or 404 — never the SPA shell.
-      location ^~ /assets/ {
-        try_files $uri =404;
-        include /etc/nginx/security-headers.conf;
-      }
-
-      # The SPA shell must never be cached. Without this, the browser heuristically
-      # caches index.html (it has Last-Modified/ETag but no Cache-Control), so after
-      # a redeploy it keeps serving an old index.html that points at old, now-absent
-      # hashed chunks — the new build stays invisible until a manual hard refresh.
-      # The content-hashed assets under /assets are safe to cache and fall through to
-      # nginx defaults. NOTE: setting add_header in a location drops the inherited
-      # security headers, so they are repeated here.
-      location = /index.html {
-        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
-        include /etc/nginx/security-headers.conf;
-      }
-
-      # Service worker: must never be cached long — a cached sw.js pins every
-      # client to a stale precache manifest until heuristic expiry. no-cache
-      # makes each registration update-check revalidate at the origin.
-      location = /sw.js {
-        add_header Cache-Control "no-cache, must-revalidate" always;
-        include /etc/nginx/security-headers.conf;
-      }
-
-      # PWA manifest: correct MIME (nginx's types map lacks .webmanifest) and
-      # the same no-cache policy so installs pick up icon/name changes promptly.
-      location = /manifest.webmanifest {
-        types { }
-        default_type application/manifest+json;
-        add_header Cache-Control "no-cache, must-revalidate" always;
-        include /etc/nginx/security-headers.conf;
-      }
-
-      location /api {
-        proxy_pass http://{{ $gw }};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-
-      location = /mcp {
-        proxy_pass http://{{ $gw }};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-
-      location ^~ /.well-known/oauth-protected-resource {
-        proxy_pass http://{{ $gw }};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-
-      location = /.well-known/oauth-authorization-server {
-        proxy_pass http://{{ $gw }};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-
-      location ^~ /oauth/ {
-        proxy_pass http://{{ $gw }};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-
-      location /ws {
-        proxy_pass http://{{ $gw }};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 3600s;
-      }
-
-      location = /health {
-        proxy_pass http://{{ $gw }};
-      }
-    }
+{{ include "cheers.frontend.nginxConf" . | indent 4 }}
   security-headers.conf: |
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss: https://haowei2000.github.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+{{ include "cheers.frontend.securityHeaders" . | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -134,7 +144,10 @@ spec:
     metadata:
       annotations:
         # Roll the pods when the nginx config changes.
-        checksum/nginx: {{ printf "%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port | sha256sum }}
+        # Hash what the ConfigMap actually renders. The previous value covered
+        # only the gateway host:port, so a policy change left running pods
+        # serving the old CSP until someone recreated them by hand.
+        checksum/nginx: {{ printf "%s|%s" (include "cheers.frontend.nginxConf" .) (include "cheers.frontend.securityHeaders" .) | sha256sum }}
       labels:
         {{- include "cheers.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
     spec:

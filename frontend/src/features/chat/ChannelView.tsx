@@ -1475,9 +1475,8 @@ export function ChannelView({
                     controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    Copy
                   </UiButton>
-                  <UiButton action="send" content="iconText" variant="plain"
+                  <UiButton action="forward" content="iconText" variant="plain"
                     type="button"
                     disabled={selectedIds.size === 0}
                     onClick={() =>
@@ -1489,7 +1488,6 @@ export function ChannelView({
                     controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
                   >
                     <Forward className="w-3.5 h-3.5" />
-                    Forward
                   </UiButton>
                   <UiButton action="cancel" content="iconText" variant="plain"
                     type="button"
@@ -1497,7 +1495,6 @@ export function ChannelView({
                     controlSize="regular" className="inline-flex items-center gap-2 rounded-sm text-content-primary hover:text-content-strong"
                   >
                     <X className="w-3.5 h-3.5" />
-                    Cancel
                   </UiButton>
                 </div>
               )}

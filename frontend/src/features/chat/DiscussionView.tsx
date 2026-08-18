@@ -397,8 +397,8 @@ export function DiscussionView({
   const detailPane = (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
-        <UiButton action="start" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-content-primary hover:bg-zinc-900 focus-visible:ring-inset">
-          <ArrowLeft className="h-4 w-4" />Discussions
+        <UiButton action="back" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-content-primary hover:bg-zinc-900 focus-visible:ring-inset">
+          <ArrowLeft className="h-4 w-4" />
         </UiButton>
       )}
       <div className="flex min-h-0 flex-1 flex-col">

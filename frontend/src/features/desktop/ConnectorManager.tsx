@@ -517,7 +517,7 @@ export function ConnectorManager() {
           </div>
           <div className="flex items-center gap-1">
             <UiButton action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
-              <Plus className="h-4 w-4" /> Add installation
+              <Plus className="h-4 w-4" />
             </UiButton>
             <UiButton action="setup" content="icon" variant="plain" controlSize="compact" aria-label="Use pairing code" title="Use pairing code" onClick={() => setModal({ kind: "redeem" })}>
               <Ticket className="h-4 w-4" />
