@@ -954,6 +954,15 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/voice/livekit/webhook",
             post(api::voice::livekit_webhook).layer(DefaultBodyLimit::max(256 * 1024)),
         )
+        // Generic integration webhook ingress. Like the LiveKit route above it
+        // sits outside browser auth: the provider authenticates with its own
+        // signature over the raw body, verified before any JSON is parsed.
+        .route(
+            "/api/v1/integrations/:integration_id/:installation_id/events",
+            post(api::integrations::receive).layer(DefaultBodyLimit::max(
+                crate::domain::integrations::webhook::MAX_BODY_BYTES,
+            )),
+        )
         .route(
             "/internal/v1/voice/sessions/:voice_session_id/transcript-segments",
             post(api::voice::ingest_transcript_segment).layer(DefaultBodyLimit::max(32 * 1024)),
