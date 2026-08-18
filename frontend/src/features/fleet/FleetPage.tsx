@@ -58,7 +58,15 @@ function botRoute(pathname: string): { botId?: string; tab?: string } {
   return section === "bots" && botId ? { botId, tab } : {};
 }
 
-function AddMenu({ onNewBot, onInstallation }: { onNewBot: () => void; onInstallation: () => void }) {
+function AddMenu({
+  onNewBot,
+  onInstallation,
+  onRedeem,
+}: {
+  onNewBot: () => void;
+  onInstallation: () => void;
+  onRedeem?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   usePopoverDismiss(open, () => setOpen(false), rootRef);
@@ -67,7 +75,7 @@ function AddMenu({ onNewBot, onInstallation }: { onNewBot: () => void; onInstall
     {open && <PopoverPanel placement="down" align="end" className="w-56 p-1">
       <NavigationItem title="New bot" leading={<BotIcon className="h-4 w-4" />} onClick={() => { setOpen(false); onNewBot(); }} />
       <NavigationItem title="Add installation" leading={<Laptop className="h-4 w-4" />} onClick={() => { setOpen(false); onInstallation(); }} />
-      {isTauri() && <NavigationItem title="Use pairing code" leading={<ShieldAlert className="h-4 w-4" />} onClick={() => { setOpen(false); location.assign("/fleet/installations?redeem=1"); }} />}
+      {isTauri() && <NavigationItem title="Use pairing code" leading={<ShieldAlert className="h-4 w-4" />} onClick={() => { setOpen(false); onRedeem?.(); }} />}
     </PopoverPanel>}
   </div>;
 }
@@ -126,7 +134,18 @@ export default function FleetPage() {
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }
   function openInstallation(botId?: string) { setInstallationBotId(botId ?? ""); }
 
-  const headerActions = <><AddMenu onNewBot={() => setCreateBotOpen(true)} onInstallation={() => openInstallation()} /><IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" /></IconButton></>;
+  const headerActions = (
+    <>
+      <AddMenu
+        onNewBot={() => setCreateBotOpen(true)}
+        onInstallation={() => openInstallation()}
+        onRedeem={() => navigate("/fleet/installations?redeem=1")}
+      />
+      <IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}>
+        <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" />
+      </IconButton>
+    </>
+  );
 
   return <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
     <RouteChromeHeader actions={headerActions}>
