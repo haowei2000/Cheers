@@ -65,4 +65,64 @@ enum MessageTree {
 
         return Grouped(roots: roots, childrenByParent: childrenByParent, byId: byId)
     }
+
+    /// Whether a message belongs to a discussion root (including the root itself).
+    static func inDiscussionThread(_ message: MessageDto, rootId: String) -> Bool {
+        message.msgId == rootId || message.threadRootMsgId == rootId
+    }
+
+    /// Overlay live WS rows (partials, permission cards) onto the REST thread.
+    /// Mirrors `frontend/src/features/chat/discussionThread.ts`.
+    static func mergeDiscussion(
+        root: MessageDto,
+        replies: [MessageDto],
+        live: [MessageDto]
+    ) -> [MessageDto] {
+        var byId: [String: MessageDto] = [:]
+        byId.reserveCapacity(replies.count + live.count + 1)
+        byId[root.msgId] = root
+        for reply in replies {
+            byId[reply.msgId] = reply
+        }
+
+        func consider(_ message: MessageDto) {
+            if let previous = byId[message.msgId] {
+                if message.isPartial == true
+                    || (message.channelSeq ?? 0) >= (previous.channelSeq ?? 0)
+                {
+                    var merged = message
+                    if merged.createdAt == nil {
+                        merged.createdAt = previous.createdAt
+                    }
+                    if merged.senderName == nil {
+                        merged.senderName = previous.senderName
+                    }
+                    byId[message.msgId] = merged
+                }
+                return
+            }
+            if inDiscussionThread(message, rootId: root.msgId)
+                || message.replyToMsgId.flatMap({ byId[$0] }) != nil
+            {
+                byId[message.msgId] = message
+            }
+        }
+
+        for message in live {
+            consider(message)
+        }
+        var grew = true
+        while grew {
+            grew = false
+            for message in live {
+                if byId[message.msgId] != nil { continue }
+                if let parentId = message.replyToMsgId, byId[parentId] != nil {
+                    byId[message.msgId] = message
+                    grew = true
+                }
+            }
+        }
+
+        return byId.values.sorted { ($0.channelSeq ?? 0) < ($1.channelSeq ?? 0) }
+    }
 }

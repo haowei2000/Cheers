@@ -3,6 +3,7 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import {
+  type MutableRefObject,
   type ReactNode,
   useCallback,
   useEffect,
@@ -31,8 +32,10 @@ import { ItemList, ItemRow } from "@/components/ui/item";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
 import type { Message } from "@/types";
-import { MessageItem, type MessageActionHandlers } from "./MessageItem";
-import { isDiscussionConsecutive } from "./messageTree";
+import { MessageList } from "./MessageList";
+import { type MessageActionHandlers } from "./MessageItem";
+import { mergeDiscussionMessages } from "./discussionThread";
+import { TopicPaneResizer } from "./TopicPaneResizer";
 
 interface Props {
   channelId: string;
@@ -42,6 +45,10 @@ interface Props {
   replyToId?: string | null;
   realtimeVersion: number;
   openDiscussionId?: string | null;
+  /** Live channel messages (WS + history) so streaming bot turns appear in-thread. */
+  liveMessages?: Message[];
+  /** Lets the composer find bot children that live in this topic, not the chat window. */
+  discussionThreadRef?: MutableRefObject<Message[]>;
   footer?: ReactNode;
   onComposerContextChange: (root: Message | null, creating: boolean) => void;
 }
@@ -90,6 +97,8 @@ export function DiscussionView({
   replyToId,
   realtimeVersion,
   openDiscussionId,
+  liveMessages = [],
+  discussionThreadRef,
   footer,
   onComposerContextChange,
 }: Props) {
@@ -97,6 +106,11 @@ export function DiscussionView({
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get("discussion");
   const [isWide, setIsWide] = useState(false);
+  const splitKey = `cheers:discussion-split:${channelId}`;
+  const [topicWidth, setTopicWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem(`cheers:discussion-split:${channelId}`));
+    return Number.isFinite(stored) && stored >= 260 ? stored : 320;
+  });
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -115,6 +129,22 @@ export function DiscussionView({
   useEffect(() => {
     onComposerContextChangeRef.current = onComposerContextChange;
   }, [onComposerContextChange]);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(splitKey));
+    setTopicWidth(Number.isFinite(stored) && stored >= 260 ? stored : 320);
+  }, [splitKey]);
+
+  const threadMessages = useMemo(() => {
+    if (!detail) return [];
+    return mergeDiscussionMessages(detail.root, detail.replies, liveMessages);
+  }, [detail, liveMessages]);
+  useEffect(() => {
+    if (discussionThreadRef) discussionThreadRef.current = threadMessages;
+  }, [discussionThreadRef, threadMessages]);
+  const threadReplyCount = threadMessages.filter(
+    (message) => message.msg_id !== detail?.root.msg_id,
+  ).length;
 
   useEffect(() => {
     const node = rootRef.current;
@@ -274,7 +304,13 @@ export function DiscussionView({
   };
 
   const topicList = (
-    <section className="flex min-h-0 flex-1 flex-col border-zinc-800 bg-zinc-950/40 md:border-r">
+    <section
+      className={cn(
+        "flex min-h-0 flex-col border-zinc-800 bg-zinc-950/40 md:border-r",
+        isWide ? "flex-shrink-0" : "flex-1",
+      )}
+      style={isWide ? { width: topicWidth } : undefined}
+    >
       <div className="border-b border-zinc-800/80 p-3">
         <div className="flex items-center gap-2">
           <SearchInput
@@ -341,9 +377,9 @@ export function DiscussionView({
                     </span>
                   )}
                   className={cn(
- "border-b-0 ",
- !selected && "bg-zinc-900/45 hover:bg-zinc-900/80",
- )}
+                    "border-b-0",
+                    !selected && "bg-zinc-900/45 hover:bg-zinc-900/80",
+                  )}
                 />
               );
             })}
@@ -359,7 +395,7 @@ export function DiscussionView({
   );
 
   const detailPane = (
-    <section className="flex min-h-0 flex-[1.5] flex-col bg-zinc-950">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
         <UiButton action="start" content="iconText" controlWidth="fill" variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="justify-start border-b border-zinc-800 text-content-primary hover:bg-zinc-900 focus-visible:ring-inset">
           <ArrowLeft className="h-4 w-4" />Discussions
@@ -390,30 +426,26 @@ export function DiscussionView({
               </div>
             </div>
           </header>
-          <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto py-3">
-            <div className="mx-auto flex max-w-[56rem] flex-col gap-1 px-2 md:px-4">
-              {detail.meta.has_more_before && (
-                <UiButton action="more" variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto  text-content-primary hover:bg-zinc-900 hover:text-content-strong">
-                  {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
-                </UiButton>
-              )}
-              {detail.replies.length === 0 ? (
-                <div className="py-16 text-center text-regular text-content-muted">No replies yet. Continue the discussion below.</div>
-              ) : detail.replies.map((message, index) => (
-                <div key={message.msg_id} data-msg-id={message.msg_id}>
-                  <MessageItem
-                    message={message}
-                    isConsecutive={index > 0 && isDiscussionConsecutive(detail.replies[index - 1], message)}
-                    alignOwnMessages={false}
-                    hideReplyQuote
-                    currentUserId={currentUserId}
-                    channelId={channelId}
-                    senderName={senderNames?.get(message.sender_id)}
-                    actions={actions}
-                  />
-                </div>
-              ))}
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            {detail.meta.has_more_before && (
+              <UiButton action="more" variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto mt-2 text-content-primary hover:bg-zinc-900 hover:text-content-strong">
+                {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
+              </UiButton>
+            )}
+            {threadReplyCount === 0 ? (
+              <div className="flex flex-1 items-center justify-center py-16 text-regular text-content-muted">No replies yet. Continue the discussion below.</div>
+            ) : (
+              <MessageList
+                messages={threadMessages}
+                currentUserId={currentUserId}
+                channelId={channelId}
+                senderNames={senderNames}
+                actions={actions}
+                replyToId={replyToId}
+                conversationMode="discuss"
+                threadRootId={detail.root.msg_id}
+              />
+            )}
           </div>
         </>
       ) : (
@@ -427,7 +459,19 @@ export function DiscussionView({
   const showDetailOnNarrow = Boolean(selectedId || creating);
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 overflow-hidden">
-      {isWide ? <>{topicList}{detailPane}</> : showDetailOnNarrow ? detailPane : topicList}
+      {isWide ? (
+        <>
+          {topicList}
+          <TopicPaneResizer
+            onChange={(widthPx) => {
+              setTopicWidth(widthPx);
+              window.localStorage.setItem(splitKey, String(widthPx));
+            }}
+            onCommit={() => undefined}
+          />
+          {detailPane}
+        </>
+      ) : showDetailOnNarrow ? detailPane : topicList}
     </div>
   );
 }

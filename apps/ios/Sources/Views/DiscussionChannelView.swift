@@ -9,10 +9,15 @@ struct DiscussionChannelView<Footer: View>: View {
     @ViewBuilder let footer: () -> Footer
 
     @State private var search = ""
+    @State private var topicWidth: CGFloat = 320
+    @State private var dragOrigin: CGFloat?
 
     private var isWide: Bool { horizontalSizeClass == .regular }
     private var showsDetail: Bool {
         model.selectedDiscussionId != nil || model.isCreatingDiscussion
+    }
+    private var splitKey: String {
+        "cheers:discussion-split:\(model.channel.channelId)"
     }
 
     var body: some View {
@@ -20,8 +25,8 @@ struct DiscussionChannelView<Footer: View>: View {
             if isWide && proxy.size.width >= 720 {
                 HStack(spacing: 0) {
                     topicList
-                        .frame(width: max(300, proxy.size.width * 0.4))
-                    Divider()
+                        .frame(width: clampedTopicWidth(in: proxy.size.width))
+                    topicSplitter(totalWidth: proxy.size.width)
                     detail
                 }
                 .task(id: model.discussions.first?.id) {
@@ -46,6 +51,53 @@ struct DiscussionChannelView<Footer: View>: View {
             guard !Task.isCancelled else { return }
             await model.loadDiscussions(query: search)
         }
+        .onAppear(perform: loadTopicWidth)
+        .onChange(of: model.channel.channelId) { _, _ in
+            loadTopicWidth()
+        }
+    }
+
+    private func loadTopicWidth() {
+        let stored = UserDefaults.standard.double(forKey: splitKey)
+        if stored >= 260 { topicWidth = stored }
+        else { topicWidth = 320 }
+    }
+
+    private func clampedTopicWidth(in total: CGFloat) -> CGFloat {
+        let minLeft: CGFloat = 280
+        let minRight: CGFloat = 360
+        let maxLeft = max(minLeft, total - minRight)
+        return min(max(topicWidth, minLeft), maxLeft)
+    }
+
+    private func topicSplitter(totalWidth: CGFloat) -> some View {
+        ZStack {
+            Divider()
+            Color.clear
+                .frame(width: 12)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if dragOrigin == nil { dragOrigin = topicWidth }
+                            topicWidth = min(
+                                max((dragOrigin ?? topicWidth) + value.translation.width, 280),
+                                max(280, totalWidth - 360)
+                            )
+                        }
+                        .onEnded { _ in
+                            UserDefaults.standard.set(
+                                Double(clampedTopicWidth(in: totalWidth)),
+                                forKey: splitKey
+                            )
+                            dragOrigin = nil
+                        }
+                )
+                .accessibilityLabel("Resize discussion panes")
+                .accessibilityHint("Drag to change the topic list width")
+                .accessibilityAddTraits(.adjustable)
+        }
+        .frame(width: 12)
     }
 
     private var topicList: some View {
@@ -219,24 +271,15 @@ struct DiscussionChannelView<Footer: View>: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(Theme.textSecondary)
                         }
-                        if model.discussionReplies.isEmpty {
+                        if threadRows.isEmpty {
                             Text("No replies yet. Continue the discussion below.")
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.textMuted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 54)
                         } else {
-                            ForEach(model.discussionReplies) { reply in
-                                MessageBubbleView(
-                                    message: reply,
-                                    isOwn: false,
-                                    showAvatar: true,
-                                    formattedTime: formattedTime(reply),
-                                    onReply: { model.beginReply(to: reply) },
-                                    onMention: currentUserId == reply.senderId
-                                        ? nil
-                                        : { model.mentionSender(of: reply) }
-                                )
+                            ForEach(threadRows) { row in
+                                discussionReplyRow(row)
                             }
                         }
                     }
@@ -296,6 +339,79 @@ struct DiscussionChannelView<Footer: View>: View {
         return (String(title.prefix(120)), String((preview.isEmpty ? message.content : preview).prefix(240)))
     }
 
+    private struct ThreadRow: Identifiable {
+        let message: MessageDto
+        let depth: Int
+        let isLastSibling: Bool
+        let parentInView: Bool
+        var id: String { message.msgId }
+    }
+
+    /// REST replies plus live WS rows (streaming bots) for the open topic.
+    private var threadMessages: [MessageDto] {
+        guard let root = model.selectedDiscussionRoot else { return model.discussionReplies }
+        return MessageTree.mergeDiscussion(
+            root: root,
+            replies: model.discussionReplies,
+            live: model.messages
+        )
+    }
+
+    private var threadRows: [ThreadRow] {
+        guard let root = model.selectedDiscussionRoot else { return [] }
+        let grouped = MessageTree.groupByReply(threadMessages)
+        return flattenThread(parentId: root.msgId, grouped: grouped, depth: 1)
+    }
+
+    private func flattenThread(
+        parentId: String,
+        grouped: MessageTree.Grouped,
+        depth: Int
+    ) -> [ThreadRow] {
+        let kids = grouped.childrenByParent[parentId] ?? []
+        var rows: [ThreadRow] = []
+        for (index, child) in kids.enumerated() {
+            rows.append(ThreadRow(
+                message: child,
+                depth: depth,
+                isLastSibling: index == kids.count - 1,
+                parentInView: child.replyToMsgId.flatMap { grouped.byId[$0] } != nil
+            ))
+            rows.append(contentsOf: flattenThread(
+                parentId: child.msgId,
+                grouped: grouped,
+                depth: depth + 1
+            ))
+        }
+        return rows
+    }
+
+    private func discussionReplyRow(_ row: ThreadRow) -> some View {
+        let message = row.message
+        let isOwn = message.senderType == "user" && message.senderId == currentUserId
+        return MessageBubbleView(
+            message: message,
+            isOwn: isOwn,
+            showAvatar: true,
+            formattedTime: formattedTime(message),
+            repliedTo: row.parentInView ? nil : message.replyToMsgId.flatMap { parent in
+                threadMessages.first { $0.msgId == parent }
+            },
+            nested: row.depth > 0,
+            onReply: { model.beginReply(to: message) },
+            onMention: currentUserId == message.senderId
+                ? nil
+                : { model.mentionSender(of: message) }
+        )
+        .padding(.leading, 16 + CGFloat(max(row.depth - 1, 0)) * 16)
+        .overlay(alignment: .leading) {
+            DiscussionThreadRail(isLastSibling: row.isLastSibling)
+                .frame(width: 14)
+                .padding(.leading, CGFloat(max(row.depth - 1, 0)) * 16 + 6)
+        }
+        .accessibilityIdentifier("discussion-reply-\(message.msgId)")
+    }
+
     private func formattedTime(_ message: MessageDto) -> String {
         guard let date = message.createdDate else { return "" }
         return date.formatted(date: .abbreviated, time: .shortened)
@@ -304,5 +420,29 @@ struct DiscussionChannelView<Footer: View>: View {
     private func relativeTime(_ raw: String) -> String {
         guard let date = TimeFormat.parse(raw) else { return "" }
         return date.formatted(.relative(presentation: .numeric))
+    }
+}
+
+/// L-shaped reply connector (chat timeline parity) for nested discussion rows.
+private struct DiscussionThreadRail: View {
+    let isLastSibling: Bool
+
+    var body: some View {
+        Canvas { context, size in
+            let x: CGFloat = 0.5
+            let elbowY = min(16, size.height * 0.35)
+            var path = Path()
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: isLastSibling ? elbowY : size.height))
+            path.move(to: CGPoint(x: x, y: elbowY))
+            path.addLine(to: CGPoint(x: size.width, y: elbowY))
+            context.stroke(
+                path,
+                with: .color(Theme.border),
+                style: StrokeStyle(lineWidth: 1, lineCap: .square)
+            )
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

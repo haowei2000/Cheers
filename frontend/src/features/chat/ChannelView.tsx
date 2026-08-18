@@ -191,6 +191,8 @@ export function ChannelView({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [discussionComposerRoot, setDiscussionComposerRoot] =
     useState<Message | null>(null);
+  /** Live+REST rows for the open topic — reply defaults look here, not only the chat window. */
+  const discussionThreadRef = useRef<Message[]>([]);
   const [creatingDiscussion, setCreatingDiscussion] = useState(false);
   const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
     id: string;
@@ -1091,7 +1093,20 @@ export function ChannelView({
         bot = m;
       } else {
         // Prefer the latest bot child under this message (the turn being continued).
-        const botKids = messages
+        // Discussion threads keep REST replies off the chat window — search both.
+        const seen = new Set<string>();
+        const pool: Message[] = [];
+        for (const row of discussionThreadRef.current) {
+          if (seen.has(row.msg_id)) continue;
+          seen.add(row.msg_id);
+          pool.push(row);
+        }
+        for (const row of messages) {
+          if (seen.has(row.msg_id)) continue;
+          seen.add(row.msg_id);
+          pool.push(row);
+        }
+        const botKids = pool
           .filter(
             (x) =>
               x.reply_to_msg_id === m.msg_id &&
@@ -1368,6 +1383,8 @@ export function ChannelView({
                     replyToId={replyTo && !selectMode ? replyTo.msg_id : null}
                     realtimeVersion={discussionRealtimeVersion}
                     openDiscussionId={openDiscussionRequest?.id ?? null}
+                    liveMessages={messages}
+                    discussionThreadRef={discussionThreadRef}
                     footer={
                       !selectMode ? (
                         <>

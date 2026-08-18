@@ -615,11 +615,21 @@ final class ChatModel {
         if message.isBot {
             bot = message
         } else {
-            let botKids = messages
+            let pool: [MessageDto]
+            if channel.isDiscuss, let root = selectedDiscussionRoot {
+                pool = MessageTree.mergeDiscussion(
+                    root: root,
+                    replies: discussionReplies,
+                    live: messages
+                )
+            } else {
+                pool = messages
+            }
+            let botKids = pool
                 .filter {
                     $0.replyToMsgId == message.msgId
                         && $0.isBot
-                        && $0.isPartial != true
+                        && $0.isDeleted != true
                 }
                 .sorted { ($0.channelSeq ?? 0) < ($1.channelSeq ?? 0) }
             bot = botKids.last
