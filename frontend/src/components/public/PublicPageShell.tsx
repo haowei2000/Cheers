@@ -45,7 +45,7 @@ export function PublicPageShell({
 
             {sidebarContent ?? (
               <div className="space-y-6 max-w-xs">
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <p className="font-utility text-compact font-semibold text-content-secondary">
                     Multi-agent Collaboration
                   </p>
@@ -54,7 +54,7 @@ export function PublicPageShell({
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <p className="font-utility text-compact font-semibold text-content-secondary">
                     Interactive Workbench
                   </p>
@@ -63,7 +63,7 @@ export function PublicPageShell({
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <p className="font-utility text-compact font-semibold text-content-secondary">
                     Accountable Execution
                   </p>
