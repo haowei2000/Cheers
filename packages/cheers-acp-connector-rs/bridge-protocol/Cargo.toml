@@ -2,7 +2,7 @@
 name = "cheers-bridge-protocol"
 # The crate version tracks the connector release; the WIRE version is the
 # separate BRIDGE_PROTOCOL_VERSION constant.
-version = "0.1.38"
+version = "0.1.39"
 edition = "2021"
 
 # Frame types shared verbatim by the gateway (server/) and the connector —

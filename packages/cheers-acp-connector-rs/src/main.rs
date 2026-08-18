@@ -19,6 +19,7 @@ mod cli;
 mod config;
 mod daemon;
 mod extensions;
+mod mcp_token;
 mod runtime_adapter;
 mod self_update;
 mod state;

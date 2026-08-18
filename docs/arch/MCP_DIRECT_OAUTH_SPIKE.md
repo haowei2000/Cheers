@@ -16,11 +16,24 @@ The spike asks whether an ACP Agent can connect directly to the Cheers Gateway:
 Connector ── ACP over local stdio ──▶ Agent ── HTTP MCP + OAuth ──▶ Gateway
 ```
 
-There is no Connector MCP proxy and no static `Authorization` header in
-`session/new`. The Agent must discover OAuth from the Gateway, own its token
-lifecycle, recover after restart, and stop working immediately after its
-terminal installation is revoked. The Agent never gains more Cheers authority
-than the selected installation's Bot, scopes, channel membership and role.
+There is no Connector MCP proxy. The Agent never gains more Cheers authority
+than the selected installation's Bot, scopes, channel membership and role, and
+must stop working immediately after its terminal installation is revoked.
+
+> **Amended 2026-08-17 (connector 0.1.39).** The original spike also required the
+> Agent to discover OAuth itself and own its token lifecycle, with no
+> `Authorization` header in `session/new`. That bar proved unreachable for most
+> Agents: the Gateway publishes no `registration_endpoint`, so an Agent needs a
+> public HTTPS Client ID Metadata Document plus a consent round-trip surfaced
+> through ACP URL elicitation. The Connector now mints the token instead, using
+> the installation-bound `client_credentials` grant that
+> [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) §2 already defines
+> for unattended enrolled Agent terminals, and injects it as a header. This is
+> not the rejected static-Bearer workaround: tokens are short-lived and re-minted
+> on demand, and the Gateway re-validates installation status, revocation,
+> credential hash and bot enablement on every MCP request, so the revocation
+> guarantee above is unchanged. Native Agent OAuth remains supported and is still
+> the path taken when the Gateway advertises no installation id.
 
 The harness does not weaken the Gateway's CIMD SSRF checks. Authorization Code
 clients must publish a real public HTTPS Client ID Metadata Document. A localhost
@@ -30,8 +43,9 @@ test bypass.
 
 After the mandatory HTTP cutover, an incompatible Agent or adapter version is
 rejected with a precise remediation message. It does not fall back to the local
-stdio MCP sidecar. Compatibility must be restored in the Agent's public native
-HTTP OAuth lifecycle before that version can be supported by Cheers.
+stdio MCP sidecar. With Connector-minted tokens the remaining compatibility
+requirement is the HTTP MCP transport itself (`mcpCapabilities.http`), not the
+Agent's OAuth lifecycle.
 
 ## Pinned matrix
 
