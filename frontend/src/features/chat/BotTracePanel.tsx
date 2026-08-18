@@ -148,7 +148,17 @@ export function isMcpStartupError(e: TraceEvent): boolean {
   if (!data) return false;
   const text = typeof data.text === "string" ? data.text : "";
   const content = Array.isArray(data.content) ? data.content : [];
-  const contentText = content.map((c: any) => c?.content?.text || c?.text || "").join(" ");
+  const contentText = content
+    .map((c) => {
+      const record = asRecord(c);
+      const innerContent = asRecord(record?.content);
+      return typeof innerContent?.text === "string"
+        ? innerContent.text
+        : typeof record?.text === "string"
+          ? record.text
+          : "";
+    })
+    .join(" ");
   const fullText = `${text} ${contentText}`;
   return (
     fullText.includes("mcp_startup") ||
