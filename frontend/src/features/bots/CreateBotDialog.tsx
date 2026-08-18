@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot } from "lucide-react";
 import { createBot } from "@/api/bots";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -89,10 +89,8 @@ export function CreateBotDialog({
           <Input id={displayNameId} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Research Assistant" controlSize="regular" />
         </Field>
         <div className="flex justify-end gap-2">
-          <Button action="cancel" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button action="create" onClick={() => void submit()} disabled={busy || usernameProblem !== null}>
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}Create bot
-          </Button>
+          <Button action="cancel" variant="secondary" onClick={onClose} disabled={busy} />
+          <Button action="create" onClick={() => void submit()} disabled={busy || usernameProblem !== null} loading={busy} />
         </div>
       </div>
     </Dialog>
