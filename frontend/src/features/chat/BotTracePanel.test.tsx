@@ -183,7 +183,10 @@ describe("BotTracePanel disclosure labels", () => {
     );
 
     expect(markup).toContain("MCP login required");
-    expect(markup).toContain("codex mcp login cheers");
+    expect(markup).toContain("mcp login cheers");
+    // A bot may be running Claude Code, Gemini or any other ACP agent, so the
+    // row must not prescribe one vendor's CLI.
+    expect(markup).not.toContain("codex mcp login");
     expect(markup).not.toContain("rmcp::transport");
   });
 });

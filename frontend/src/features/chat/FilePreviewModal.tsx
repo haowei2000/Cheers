@@ -235,7 +235,7 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
           title="Download this file"
           controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700"
         >
-          <Download className="h-3.5 w-3.5" /> Download
+          <Download className="h-3.5 w-3.5" />
         </UiButton>
       </div>
     </Dialog>

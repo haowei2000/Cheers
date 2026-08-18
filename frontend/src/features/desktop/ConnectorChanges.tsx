@@ -169,14 +169,14 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
             {git.ahead > 0 && `↑${git.ahead}`} {git.behind > 0 && `↓${git.behind}`}
           </span>
         )}
-        <Button action="open" content="iconText"
+        <Button action="openPr" content="iconText"
           variant="secondary"
           controlSize="compact"
           className="ml-auto"
           loading={busyPr}
           onClick={() => void openPr()}
         >
-          <GitPullRequest className="w-3.5 h-3.5" /> Open PR
+          <GitPullRequest className="w-3.5 h-3.5" />
         </Button>
       </div>
 

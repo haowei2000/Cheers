@@ -97,7 +97,6 @@ export function TaskClaimsPanel({
                   onClick={() => void cancel(c)}
                 >
                   <X className="h-3.5 w-3.5" />
-                  Cancel
                 </Button>
                 <Button action="reject" content="iconText"
                   controlSize="compact"
@@ -106,15 +105,14 @@ export function TaskClaimsPanel({
                   onClick={() => void resolve(c, "reject")}
                 >
                   <X className="h-3.5 w-3.5" />
-                  Reject
                 </Button>
                 <Button action="approve" content="iconText"
                   controlSize="compact"
                   loading={busy === c.claim_id}
+                  aria-label="Approve and run"
                   onClick={() => void resolve(c, "accept")}
                 >
                   <Check className="h-3.5 w-3.5" />
-                  Approve &amp; run
                 </Button>
               </> : undefined}
         />

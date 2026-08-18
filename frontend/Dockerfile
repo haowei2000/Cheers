@@ -27,5 +27,6 @@ RUN npm run build
 FROM ${BASE_REGISTRY}/library/nginx:alpine
 COPY --from=builder /repo/frontend/dist /usr/share/nginx/html
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

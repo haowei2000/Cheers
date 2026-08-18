@@ -419,14 +419,13 @@ export function SessionChip({
                   className={rowCls(idx, false)}
                 >
                   <Plus className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-                  New session…
                 </UiButton>
               );
             })()}
           {(() => {
             const idx = rowIndex++;
             return (
-              <UiButton action="open" content="iconText" variant="plain"
+              <UiButton action="manage" content="iconText" variant="plain"
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -437,7 +436,6 @@ export function SessionChip({
                 className={rowCls(idx, false)}
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-                Manage sessions…
               </UiButton>
             );
           })()}

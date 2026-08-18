@@ -142,8 +142,14 @@ function eventMeta(e: TraceEvent): EventVisual {
   }
 }
 
+/** The MCP server a startup failure is about, e.g. "cheers". */
+export function mcpStartupServer(e: TraceEvent): string {
+  const id = e.tool_call_id ?? "";
+  return id.startsWith("mcp_startup.") ? id.slice("mcp_startup.".length) || "cheers" : "cheers";
+}
+
 export function isMcpStartupError(e: TraceEvent): boolean {
-  if (e.tool_call_id === "mcp_startup.cheers" || e.tool_call_id?.startsWith("mcp_startup.")) return true;
+  if (e.tool_call_id?.startsWith("mcp_startup.")) return true;
   const data = asRecord(e.data);
   if (!data) return false;
   const text = typeof data.text === "string" ? data.text : "";
@@ -381,7 +387,7 @@ function eventPreview(event: TraceEvent): string | null {
     return presentation.target ?? presentation.path ?? presentation.query ?? presentation.command ?? null;
   }
   if (isMcpStartupError(event)) {
-    return "Run 'codex mcp login cheers' to grant tools";
+    return `Run 'mcp login ${mcpStartupServer(event)}' in your agent's CLI to grant tools`;
   }
   const input = asRecord(data?.input);
   const command = stringField(input, "command") ?? stringField(data, "command");
@@ -395,11 +401,13 @@ function eventPreview(event: TraceEvent): string | null {
   return null;
 }
 
-function McpStartupErrorCard() {
+function McpStartupErrorCard({ server }: { server: string }) {
   return (
     <Banner severity="warning" icon={KeyRound}>
       Cheers MCP tools need a login. Run{" "}
-      <code className="font-code">codex mcp login cheers</code> in a terminal.
+      <code className="font-code">mcp login {server}</code> with the CLI of the
+      agent behind this bot — for Codex that is{" "}
+      <code className="font-code">codex mcp login {server}</code>.
     </Banner>
   );
 }
@@ -438,7 +446,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
 
   return (
     <div className="space-y-3 p-3 text-compact text-content-muted">
-      {isMcpStartupError(event) && <McpStartupErrorCard />}
+      {isMcpStartupError(event) && <McpStartupErrorCard server={mcpStartupServer(event)} />}
       {presentation && (
         <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">

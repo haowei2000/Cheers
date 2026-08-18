@@ -1,6 +1,6 @@
 import { Children, forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { actionLabel, type ActionKey } from "./action-labels";
+import { actionLabel, isFillActionKey, type ActionKey } from "./action-labels";
 import {
   controlHeightClasses,
   controlSquareClasses,
@@ -8,6 +8,10 @@ import {
   useControlSize,
   type ControlSize,
 } from "./control-size";
+
+// Vite injects import.meta.env; the repo casts rather than pulling in vite/client
+// types (same shape as lib/serverConfig.ts).
+const DEV = (import.meta as { env?: { DEV?: boolean } }).env?.DEV ?? false;
 
 type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill";
@@ -78,13 +82,26 @@ function IconTextContent({ action, children, label, loading, size }: {
 }) {
   const parts = Children.toArray(children);
   const leading = parts.shift();
+  // The registry label always wins, so any child after the icon is silently
+  // dropped. That has shipped wrong copy before ("Continue with Apple" rendering
+  // as "Sign in"), so fail loudly in dev instead of losing the label quietly.
+  if (DEV && parts.length > 0 && (action || label !== undefined)) {
+    const dropped = parts
+      .map((part) => (typeof part === "string" || typeof part === "number" ? String(part) : "<element>"))
+      .join("")
+      .trim();
+    throw new Error(
+      `Button content="iconText" was given both a registered label and extra children; the children never render. ` +
+        `Drop them, or register an ActionKey whose label is the copy you want. Discarded: ${JSON.stringify(dropped)}`
+    );
+  }
   return (
     <>
       <span
         data-button-slot="icon"
         aria-hidden="true"
         className={cn(
-          "inline-flex flex-shrink-0 items-center justify-center self-stretch bg-black/10 [&>svg]:flex-shrink-0",
+          "inline-flex flex-shrink-0 items-center justify-center self-stretch [&>svg]:flex-shrink-0",
           controlSquareClasses[size],
         )}
       >
@@ -121,6 +138,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const inheritedSize = useControlSize(controlSize);
     const resolvedSize = inheritedSize;
+    // Fill-only labels exceed the 128px slot budget on purpose; rendering one
+    // in a slot-width button would truncate it.
+    if (DEV && action && isFillActionKey(action) && controlWidth !== "fill") {
+      throw new Error(
+        `Button action="${action}" carries an unabbreviated label and requires controlWidth="fill".`
+      );
+    }
     return <button
       ref={ref}
       disabled={disabled || loading}

@@ -147,7 +147,7 @@ export function QuickPanel() {
               disabled={!target || !text.trim()}
               loading={sending}
             >
-              <Send className="w-4 h-4" /> Send
+              <Send className="w-4 h-4" />
             </Button>
           </div>
         </div>

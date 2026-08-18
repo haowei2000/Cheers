@@ -417,7 +417,7 @@ export function VoiceRoomPanel({
           </Button>
         ) : (
           <div className="flex shrink-0 items-center gap-2">
-            <UiButton action={micEnabled ? "disable" : "enable"} content="iconText" variant="plain"
+            <UiButton action={micEnabled ? "mute" : "unmute"} content="iconText" variant="plain"
               type="button"
               onClick={() => void toggleMic()}
               disabled={!canPublish}
@@ -440,7 +440,6 @@ export function VoiceRoomPanel({
               ) : (
                 <MicOff className="h-3.5 w-3.5" />
               )}
-              <span className="hidden sm:inline">{micEnabled ? "Mute" : "Unmute"}</span>
             </UiButton>
             <UiButton action="disconnect" variant="plain"
               type="button"

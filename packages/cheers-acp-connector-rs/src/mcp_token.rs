@@ -38,6 +38,9 @@ const RENEW_AT_FRACTION: f64 = 0.8;
 const MIN_RENEW_MARGIN: Duration = Duration::from_secs(30);
 /// Assumed lifetime when the token endpoint omits `expires_in`.
 const DEFAULT_TOKEN_LIFETIME: Duration = Duration::from_secs(300);
+/// Slack kept between the last reuse and the stated expiry, so a token is never
+/// presented at the instant it becomes invalid.
+const EXPIRY_SLACK: Duration = Duration::from_secs(5);
 
 /// RFC 9728 protected-resource metadata, trimmed to the fields we consume.
 #[derive(Debug, Deserialize)]
@@ -239,10 +242,12 @@ impl McpTokenProvider {
             ));
         }
 
+        check_credential_destination(&resource, issuer, "authorization server")?;
         let as_metadata: AuthorizationServerMetadata = self
             .fetch_json(&authorization_server_metadata_url(issuer)?)
             .await
             .context("authorization-server metadata lookup failed")?;
+        check_credential_destination(&resource, &as_metadata.token_endpoint, "token endpoint")?;
 
         let discovered = Discovered {
             token_endpoint: as_metadata.token_endpoint,
@@ -308,6 +313,28 @@ fn protected_resource_metadata_urls(resource: &reqwest::Url) -> Vec<String> {
     ]
 }
 
+/// The installation's client secret is posted to whatever origin discovery
+/// names, so refuse a destination that could leak it. The MCP origin itself may
+/// be plaintext (local dev runs the gateway over http); anything else must be
+/// HTTPS.
+fn check_credential_destination(
+    mcp_url: &reqwest::Url,
+    endpoint: &str,
+    what: &str,
+) -> anyhow::Result<()> {
+    let url: reqwest::Url = endpoint
+        .parse()
+        .with_context(|| format!("{what} is not a URL"))?;
+    if url.origin() == mcp_url.origin() || url.scheme() == "https" {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "refusing to send installation credentials to {what} {url} over {}: \
+         only the MCP server's own origin may be plaintext",
+        url.scheme()
+    ))
+}
+
 /// RFC 8414 metadata location for an issuer.
 fn authorization_server_metadata_url(issuer: &str) -> anyhow::Result<String> {
     let issuer: reqwest::Url = issuer
@@ -324,10 +351,14 @@ fn renew_margin(expires_in: Option<u64>) -> Duration {
     let lifetime = expires_in
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_TOKEN_LIFETIME);
-    let renew_at = lifetime.mul_f64(RENEW_AT_FRACTION);
-    // A very short-lived token would otherwise be re-minted on every call; keep
-    // a floor, but never exceed the token's actual lifetime.
-    renew_at.max(MIN_RENEW_MARGIN.min(lifetime))
+    let target = lifetime.mul_f64(RENEW_AT_FRACTION);
+    // The floor keeps a very short-lived token from being re-minted on every
+    // call. The cap is the correctness half: `.min(lifetime)` still allowed
+    // reuse for the token's entire lifetime, which presents it at the exact
+    // moment it expires — always stop short of that.
+    target
+        .max(MIN_RENEW_MARGIN)
+        .min(lifetime.saturating_sub(EXPIRY_SLACK))
 }
 
 #[cfg(test)]
@@ -533,9 +564,26 @@ mod tests {
     }
 
     #[test]
-    fn renew_margin_never_exceeds_a_short_lifetime() {
+    fn refuses_plaintext_credential_destinations_off_the_mcp_origin() {
+        let mcp: reqwest::Url = "http://localhost:8000/mcp".parse().unwrap();
+        // The gateway's own plaintext origin is the local-dev case.
+        check_credential_destination(&mcp, "http://localhost:8000/oauth/token", "token endpoint")
+            .unwrap();
+        // A third party must at least be HTTPS.
+        check_credential_destination(&mcp, "https://idp.example/token", "token endpoint").unwrap();
+        let error =
+            check_credential_destination(&mcp, "http://attacker.example/token", "token endpoint")
+                .expect_err("plaintext third-party endpoint must be refused");
+        assert!(error.to_string().contains("refusing to send"), "{error}");
+    }
+
+    #[test]
+    fn renew_margin_leaves_slack_on_a_short_lifetime() {
         // 10s token: the 30s floor must not push renewal past expiry.
-        assert_eq!(renew_margin(Some(10)), Duration::from_secs(10));
+        // The 30s floor must not stretch a 10s token to its full lifetime.
+        assert_eq!(renew_margin(Some(10)), Duration::from_secs(5));
+        // Nothing is reusable when the whole lifetime is inside the slack.
+        assert_eq!(renew_margin(Some(3)), Duration::ZERO);
     }
 }
 

@@ -17,7 +17,7 @@ import { SurfaceSpinner } from "@/components/ui/spinner";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { NavigationItem } from "@/components/ui/item";
+import { ItemList, NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { UnreadBadge } from "@/components/ui/unread-badge";
@@ -171,37 +171,37 @@ export default function FleetPage() {
       </header>
     </RouteChromeHeader>
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-      <nav aria-label="Fleet sections" className="flex gap-1 overflow-x-auto sm:w-48 sm:shrink-0 sm:flex-col">
-        {sections.map((item) => {
-          const Icon = item.icon;
-          const active = section === item.id;
-          return (
-            <UiButton
-              key={item.id}
-              type="button"
-              content="iconText"
-              variant="plain"
-              selected={active}
-              role="tab"
-              aria-selected={active}
-              aria-current={active ? "page" : undefined}
-              controlSize="regular"
-              onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
-              className={cn(
-                "flex shrink-0 items-center gap-3 rounded-sm font-medium whitespace-nowrap transition-colors",
-                !active && "text-content-primary hover:bg-control hover:text-content-strong",
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{item.label}</span>
-              {item.id === "overview" && actionableCount > 0 ? (
-                <UnreadBadge tone="approval" contentSize="small">
-                  {actionableCount}
-                </UnreadBadge>
-              ) : null}
-            </UiButton>
-          );
-        })}
+      {/* Section switching changes the URL, so these are navigation items, not
+          tabs: NavigationItem gives the left marker, the selected fill and
+          aria-current="page" without hand-rolling ARIA. */}
+      <nav aria-label="Fleet sections" className="sm:w-48 sm:shrink-0">
+        <ItemList
+          presentationLevel="minimal"
+          controlSize="regular"
+          className="flex gap-1 overflow-x-auto sm:flex-col"
+        >
+          {sections.map((item) => {
+            const Icon = item.icon;
+            const active = section === item.id;
+            return (
+              <NavigationItem
+                key={item.id}
+                title={item.label}
+                leading={<Icon className="h-4 w-4" aria-hidden="true" />}
+                selected={active}
+                criticalStatus={
+                  item.id === "overview" && actionableCount > 0 ? (
+                    <UnreadBadge tone="approval" contentSize="small">
+                      {actionableCount}
+                    </UnreadBadge>
+                  ) : undefined
+                }
+                onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
+                className="shrink-0 max-sm:w-auto"
+              />
+            );
+          })}
+        </ItemList>
       </nav>
       <main className="min-w-0 flex-1">
         <div className="space-y-7">

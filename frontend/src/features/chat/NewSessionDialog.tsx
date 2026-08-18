@@ -151,9 +151,8 @@ export function NewSessionDialog({
           <Button action="cancel" variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button action="create" content="iconText" controlSize="compact" disabled={busy || !botId} onClick={() => void create()}>
+          <Button action="create" content="iconText" controlSize="compact" loading={busy} disabled={busy || !botId} onClick={() => void create()}>
             <Plus className="w-3.5 h-3.5" />
-            {busy ? "Creating…" : "Create"}
           </Button>
         </div>
       </div>
