@@ -94,8 +94,20 @@ struct DiscussionChannelView<Footer: View>: View {
                         }
                 )
                 .accessibilityLabel("Resize discussion panes")
-                .accessibilityHint("Drag to change the topic list width")
-                .accessibilityAddTraits(.adjustable)
+                .accessibilityHint("Swipe up or down to change the topic list width")
+                .accessibilityValue(Text("\(Int(clampedTopicWidth(in: totalWidth))) points"))
+                .accessibilityAdjustableAction { direction in
+                    let step: CGFloat = 24
+                    let delta: CGFloat = direction == .increment ? step : -step
+                    topicWidth = min(
+                        max(topicWidth + delta, 280),
+                        max(280, totalWidth - 360)
+                    )
+                    UserDefaults.standard.set(
+                        Double(clampedTopicWidth(in: totalWidth)),
+                        forKey: splitKey
+                    )
+                }
         }
         .frame(width: 12)
     }

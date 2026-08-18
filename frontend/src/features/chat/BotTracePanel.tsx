@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/cn";
 import { fetchMessageTrace } from "@/api/approval";
 import { FloatingPanel } from "@/components/ui/floating-panel";
+import { Banner } from "@/components/ui/banner";
 import type { Message, PermissionContentData, TraceEvent } from "@/types";
 import { DiffView } from "./DiffView";
 import {
@@ -386,18 +387,10 @@ function eventPreview(event: TraceEvent): string | null {
 
 function McpStartupErrorCard() {
   return (
-    <div className="rounded-sm border border-warning-500/30 bg-warning-500/10 p-3 space-y-2 text-compact">
-      <div className="flex items-center gap-2 font-medium text-warning-300">
-        <KeyRound className="w-4 h-4 shrink-0" />
-        <span>Cheers MCP Authentication Required</span>
-      </div>
-      <p className="text-content-secondary">
-        The agent attempted to connect to Cheers MCP tools, but authorization is required. Run the following command in your terminal to log in:
-      </p>
-      <div className="flex items-center justify-between rounded bg-zinc-950 px-2.5 py-2 font-code text-content-primary">
-        <code>codex mcp login cheers</code>
-      </div>
-    </div>
+    <Banner severity="warning" icon={KeyRound}>
+      Cheers MCP tools need a login. Run{" "}
+      <code className="font-code">codex mcp login cheers</code> in a terminal.
+    </Banner>
   );
 }
 
