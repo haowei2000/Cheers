@@ -20,7 +20,7 @@ import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listGlobalScenes } from "./extensions/api";
-import { parseExtensionPackage } from "./extensions/package";
+import { parseExtensionPackageOffThread } from "./extensions/parseOffThread";
 import {
   isPersonalExtensionDisabled,
   registerTemporaryExtension,
@@ -185,7 +185,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         return Promise.all(ps.map(async (p) => {
           const binary = atob(p.contentBase64);
           const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-          return parseExtensionPackage(bytes, "personal");
+          return parseExtensionPackageOffThread(bytes, "personal");
         })).then((extensions) => {
           if (!alive) return;
           const enabled = extensions.filter((extension) => !isPersonalExtensionDisabled(extension.manifest.id));
@@ -329,7 +329,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         setNotice("Choose a .cheers-extension package");
         return;
       }
-      void file.arrayBuffer().then((bytes) => parseExtensionPackage(bytes, isTauri() ? "temporary" : "global")).then((extension) => {
+      void file.arrayBuffer().then((bytes) => parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global")).then((extension) => {
         registerTemporaryExtension(extension);
         setSessionTemplates((current) => [
           ...extension.scenes,
@@ -345,7 +345,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   );
 
   const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
-    void parseExtensionPackage(bytes, isTauri() ? "temporary" : "global").then((extension) => {
+    void parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global").then((extension) => {
       registerTemporaryExtension(extension);
       setSessionTemplates((current) => [
         ...extension.scenes,

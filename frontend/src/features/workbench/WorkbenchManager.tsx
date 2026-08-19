@@ -18,10 +18,10 @@ import {
   type ExtensionSummary,
 } from "@/features/chat/workbench/extensions/api";
 import {
-  parseExtensionPackage,
   permissionSummary,
   type ParsedExtension,
 } from "@/features/chat/workbench/extensions/package";
+import { parseExtensionPackageOffThread } from "@/features/chat/workbench/extensions/parseOffThread";
 import {
   isPersonalExtensionDisabled,
   listTemporaryExtensions,
@@ -99,7 +99,7 @@ export function WorkbenchManager() {
       if (desktop) {
         const stored = await listPersonalExtensions();
         const parsed = await Promise.all(
-          stored.map((entry) => parseExtensionPackage(fromBase64(entry.contentBase64), "personal"))
+          stored.map((entry) => parseExtensionPackageOffThread(fromBase64(entry.contentBase64), "personal"))
         );
         setPersonal(parsed);
       }
@@ -143,7 +143,7 @@ export function WorkbenchManager() {
   const prepareFile = useCallback(async (file: File, scope: InstallScope) => {
     setError(null);
     try {
-      const extension = await parseExtensionPackage(await file.arrayBuffer(), scope);
+      const extension = await parseExtensionPackageOffThread(await file.arrayBuffer(), scope);
       setCandidate({ extension, scope, source: "file", sourceLabel: file.name });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -157,7 +157,7 @@ export function WorkbenchManager() {
     setError(null);
     try {
       const bytes = await downloadCatalogExtension(intent.source, intent.sha256);
-      const extension = await parseExtensionPackage(bytes, "personal");
+      const extension = await parseExtensionPackageOffThread(bytes, "personal");
       if (extension.sha256 !== intent.sha256 || extension.manifest.id !== intent.id || extension.manifest.version !== intent.version) {
         throw new Error("Official catalog metadata does not match the downloaded extension");
       }
@@ -183,7 +183,7 @@ export function WorkbenchManager() {
           if (!res.ok) throw new Error(`Failed to download package: HTTP ${res.status}`);
           bytes = new Uint8Array(await res.arrayBuffer());
         }
-        const extension = await parseExtensionPackage(bytes, scope);
+        const extension = await parseExtensionPackageOffThread(bytes, scope);
         if (extension.sha256 !== entry.sha256 || extension.manifest.id !== entry.id) {
           throw new Error("Official catalog metadata does not match the downloaded extension");
         }

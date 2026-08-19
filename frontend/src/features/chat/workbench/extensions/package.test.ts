@@ -11,6 +11,31 @@ function archive(manifest: object, files: Record<string, string> = {}): Uint8Arr
   ]));
 }
 
+/** Rewrite one entry's declared uncompressed size in the central directory, leaving
+ * the deflate stream alone. This is the shape of a package that two parsers read
+ * differently: `unzipSync` believes the declaration, the Rust validator reads the
+ * stream. */
+function understateSize(zip: Uint8Array, entry: string, declared: number): Uint8Array {
+  const bytes = new Uint8Array(zip);
+  const view = new DataView(bytes.buffer);
+  let eocd = -1;
+  for (let i = bytes.byteLength - 22; i >= 0; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("no EOCD in fixture");
+  let offset = view.getUint32(eocd + 16, true);
+  for (let i = 0; i < view.getUint16(eocd + 10, true); i++) {
+    const nameLength = view.getUint16(offset + 28, true);
+    const name = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    if (name === entry) {
+      view.setUint32(offset + 24, declared, true);
+      return bytes;
+    }
+    offset = offset + 46 + nameLength + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
+  }
+  throw new Error(`no entry ${entry} in fixture`);
+}
+
 const base = {
   schemaVersion: 1,
   id: "example",
@@ -114,5 +139,25 @@ describe("parseExtensionPackage", () => {
     });
     const parsed = await parseExtensionPackage(bytes, "global");
     expect(parsed.manifest.contributes.automations?.[0].defaultSchedule.kind).toBe("daily");
+  });
+
+  /** The bug this guards: a renderer truncated mid-file is still valid JavaScript,
+   * and a truncated seed file reaches the workspace with nothing to signal it. The
+   * client would run one extension while the server had validated another. */
+  it("rejects a package whose central directory understates an entry's real size", async () => {
+    const body = "// ".concat("payload;".repeat(200));
+    const bytes = archive(
+      { ...base, contributes: { scenes: [], renderers: [{ id: "view", title: "View", entry: "renderers/view.js" }] } },
+      { "renderers/view.js": body }
+    );
+    await expect(parseExtensionPackage(bytes, "personal")).resolves.toBeTruthy();
+    const lying = understateSize(bytes, "renderers/view.js", 20);
+    await expect(parseExtensionPackage(lying, "personal")).rejects.toThrow(/declared size/);
+  });
+
+  it("rejects a package whose central directory overstates an entry's real size", async () => {
+    const bytes = archive({ ...base }, { "seed/main/notes.md": "# Notes" });
+    const lying = understateSize(bytes, "seed/main/notes.md", 4096);
+    await expect(parseExtensionPackage(lying, "personal")).rejects.toThrow(/declared size/);
   });
 });

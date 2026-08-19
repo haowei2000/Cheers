@@ -223,6 +223,21 @@ pub fn validate_package(raw: &[u8], allow_code: bool) -> Result<ValidatedPackage
         if actual_expanded > MAX_EXPANDED_BYTES {
             return Err("extension exceeds the 8 MiB expanded limit".into());
         }
+        // Checked after the cap so a genuine overflow keeps its own message.
+        //
+        // The declared size is whatever the archive's author put in the central
+        // directory; this is the only place it meets the stream it describes.
+        // Letting them differ is a parser differential rather than a size
+        // problem: this reads the real stream, while the client's `fflate`
+        // allocates the declared size and silently discards the rest, so one
+        // package could validate here and run as something else there. The two
+        // must agree or neither may interpret it.
+        if bytes.len() != announced {
+            return Err(format!(
+                "`{name}` does not match its declared size ({announced} declared, {} actual)",
+                bytes.len()
+            ));
+        }
         if name.starts_with("seed/") && bytes.len() > MAX_SEED_BYTES {
             return Err(format!("seed file `{name}` exceeds 256 KiB"));
         }
@@ -704,12 +719,65 @@ mod tests {
         output.into_inner()
     }
 
+    /// Rewrite one entry's declared uncompressed size in the central directory,
+    /// leaving the deflate stream alone. This is the shape of a package two
+    /// parsers read differently: the client's `fflate` believes the declaration,
+    /// this validator reads the stream.
+    fn understate_size(raw: &[u8], entry: &str, declared: u32) -> Vec<u8> {
+        let mut bytes = raw.to_vec();
+        let u16_at = |b: &[u8], at: usize| u16::from_le_bytes([b[at], b[at + 1]]) as usize;
+        let eocd = (0..=bytes.len() - 22)
+            .rev()
+            .find(|&i| bytes[i..i + 4] == [0x50, 0x4b, 0x05, 0x06])
+            .expect("EOCD");
+        let count = u16_at(&bytes, eocd + 10);
+        let mut offset =
+            u32::from_le_bytes(bytes[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
+        for _ in 0..count {
+            let name_length = u16_at(&bytes, offset + 28);
+            let name = String::from_utf8(bytes[offset + 46..offset + 46 + name_length].to_vec())
+                .expect("utf-8 name");
+            if name == entry {
+                bytes[offset + 24..offset + 28].copy_from_slice(&declared.to_le_bytes());
+                return bytes;
+            }
+            offset = offset
+                + 46
+                + name_length
+                + u16_at(&bytes, offset + 30)
+                + u16_at(&bytes, offset + 32);
+        }
+        panic!("no entry {entry}");
+    }
+
     fn manifest(renderers: Value) -> Value {
         json!({
             "schemaVersion": 1, "id": "example", "version": "1.0.0",
             "title": "Example", "description": "",
             "contributes": {"scenes": [], "renderers": renderers}, "permissions": {}
         })
+    }
+
+    /// Both parsers must reject a package whose central directory disagrees with
+    /// its own stream. If only one does, the same bytes and the same sha256
+    /// describe two different extensions — and a renderer truncated mid-file is
+    /// still valid JavaScript, so nothing downstream would notice.
+    #[test]
+    fn rejects_a_package_whose_declared_entry_size_is_a_lie() {
+        let body = "// ".to_string() + &"payload;".repeat(200);
+        let raw = package(
+            manifest(json!([])),
+            &[("seed/main/notes.md", body.as_bytes())],
+        );
+        validate_package(&raw, true).expect("the honest package is fine");
+
+        let understated = understate_size(&raw, "seed/main/notes.md", 20);
+        let error = validate_package(&understated, true).expect_err("understated size");
+        assert!(error.contains("declared size"), "{error}");
+
+        let overstated = understate_size(&raw, "seed/main/notes.md", 4096);
+        let error = validate_package(&overstated, true).expect_err("overstated size");
+        assert!(error.contains("declared size"), "{error}");
     }
 
     #[test]

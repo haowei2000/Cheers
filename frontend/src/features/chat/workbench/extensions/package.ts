@@ -1,4 +1,4 @@
-import { unzipSync } from "fflate";
+import { inflateSync } from "fflate";
 import type { TemplateManifest, ViewDef } from "../manifest";
 import type { RendererExtension } from "../sandbox/rendererExtension";
 
@@ -115,9 +115,22 @@ function validatePath(path: string): void {
   if (!known) throw new Error(`Unknown or executable file is not allowed: ${path}`);
 }
 
+interface ZipEntry {
+  name: string;
+  /** 0 = stored, 8 = deflate. Nothing else is accepted. */
+  method: number;
+  compressedSize: number;
+  /** What the central directory claims this entry expands to. A claim, not a fact —
+   * see {@link readEntries}. */
+  declaredSize: number;
+  /** Byte offset of this entry's local file header. */
+  localOffset: number;
+}
+
 /** Read the central directory before inflation so declared bombs, duplicates, encrypted
- * entries, and symlinks are rejected without allocating their expanded contents. */
-function inspectZip(bytes: Uint8Array): void {
+ * entries, and symlinks are rejected without allocating their expanded contents.
+ * Returns the entry table so {@link readEntries} can inflate one entry at a time. */
+function inspectZip(bytes: Uint8Array): ZipEntry[] {
   if (bytes.byteLength > MAX_EXTENSION_COMPRESSED) throw new Error("Extension exceeds 4 MiB");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
@@ -133,13 +146,27 @@ function inspectZip(bytes: Uint8Array): void {
   let offset = view.getUint32(eocd + 16, true);
   let expanded = 0;
   const names = new Set<string>();
+  const entries: ZipEntry[] = [];
   for (let i = 0; i < count; i++) {
     if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
       throw new Error("Invalid ZIP central directory");
     }
     const flags = view.getUint16(offset + 8, true);
     if (flags & 1) throw new Error("Encrypted ZIP entries are not supported");
-    expanded += view.getUint32(offset + 24, true);
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const declaredSize = view.getUint32(offset + 24, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    // 0xffffffff is ZIP64's "look in the extra field" sentinel. A 4 MiB package
+    // can never legitimately need it, and silently reading the sentinel as a
+    // size is how a ZIP64 archive gets parsed two different ways.
+    if (compressedSize === 0xffffffff || declaredSize === 0xffffffff || localOffset === 0xffffffff) {
+      throw new Error("ZIP64 extensions are not supported");
+    }
+    // Now that every entry is checked against its declaration, this cap is a
+    // bound on the real expanded size rather than on a number chosen by whoever
+    // built the archive.
+    expanded += declaredSize;
     if (expanded > MAX_EXTENSION_EXPANDED) throw new Error("Extension exceeds 8 MiB expanded");
     const nameLength = view.getUint16(offset + 28, true);
     const extraLength = view.getUint16(offset + 30, true);
@@ -152,8 +179,57 @@ function inspectZip(bytes: Uint8Array): void {
     names.add(name);
     const unixMode = externalAttributes >>> 16;
     if ((unixMode & 0xf000) === 0xa000) throw new Error(`Symbolic link is not allowed: ${name}`);
+    entries.push({ name, method, compressedSize, declaredSize, localOffset });
     offset = nameStart + nameLength + extraLength + commentLength;
   }
+  return entries;
+}
+
+/** Inflate every entry, holding each one to the size its central directory declared.
+ *
+ * The declared size is attacker-chosen and independent of the deflate stream, and
+ * `unzipSync` trusts it: it allocates exactly that many bytes and silently discards
+ * everything the stream produces past the end. A package declaring 200 bytes whose
+ * stream inflates to 5013 therefore yields 200 bytes here and all 5013 in the Rust
+ * validator, which reads the real stream — the same bytes and the same sha256
+ * producing two different extensions. Truncated JSON usually gives itself away by
+ * failing to parse; truncated `renderers/*.js` is still valid JavaScript, and
+ * truncated `seed/*` reaches the workspace with no signal at all.
+ *
+ * So each entry is inflated into a buffer one byte larger than declared. fflate
+ * truncates to the buffer it is given, so a result that fills it proves the stream
+ * produced more than the archive claimed, and any other mismatch means the
+ * declaration was wrong in the other direction. Either way the two parsers would
+ * disagree, so the package is rejected rather than interpreted. */
+function readEntries(bytes: Uint8Array, entries: ZipEntry[]): Record<string, Uint8Array> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const files: Record<string, Uint8Array> = {};
+  for (const entry of entries) {
+    if (entry.name.endsWith("/")) continue;
+    if (entry.localOffset + 30 > bytes.byteLength || view.getUint32(entry.localOffset, true) !== 0x04034b50) {
+      throw new Error(`Invalid ZIP local header: ${entry.name}`);
+    }
+    // Name and extra lengths are read from the LOCAL header, not the central one:
+    // the two copies are permitted to differ, and the entry's data begins after
+    // the local copy.
+    const start = entry.localOffset + 30 + view.getUint16(entry.localOffset + 26, true) + view.getUint16(entry.localOffset + 28, true);
+    const end = start + entry.compressedSize;
+    if (end > bytes.byteLength) throw new Error(`Truncated ZIP entry: ${entry.name}`);
+    const compressed = bytes.subarray(start, end);
+    let content: Uint8Array;
+    if (entry.method === 0) {
+      content = compressed;
+    } else if (entry.method === 8) {
+      content = inflateSync(compressed, { out: new Uint8Array(entry.declaredSize + 1) });
+    } else {
+      throw new Error(`Unsupported ZIP compression method for ${entry.name}`);
+    }
+    if (content.length !== entry.declaredSize) {
+      throw new Error(`ZIP entry does not match its declared size: ${entry.name}`);
+    }
+    files[entry.name] = content;
+  }
+  return files;
 }
 
 function requireId(kind: string, value: unknown): asserts value is string {
@@ -261,13 +337,17 @@ async function digest(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+/** Validate and unpack a `.cheers-extension`.
+ *
+ * Application code should call `parseExtensionPackageOffThread` instead: inflation
+ * has no cheap upper bound, so this must not run on the main thread. This export
+ * is the parser itself — what the worker runs, and what the tests exercise. */
 export async function parseExtensionPackage(
   input: ArrayBuffer | Uint8Array,
   scope: "global" | "personal" | "temporary"
 ): Promise<ParsedExtension> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  inspectZip(bytes);
-  const files = unzipSync(bytes);
+  const files = readEntries(bytes, inspectZip(bytes));
   const manifestBytes = files["manifest.json"];
   if (!manifestBytes) throw new Error("Extension is missing manifest.json");
   const manifest = parseManifest(manifestBytes);
