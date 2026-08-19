@@ -83,7 +83,7 @@ export function MembersPopover({
         </ItemList>
 
         {!isDm && (
-          <UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
+          <UiButton action="manage" content="iconText" controlWidth="fill" variant="plain"
             type="button"
             onClick={() => {
               onClose();
@@ -92,7 +92,6 @@ export function MembersPopover({
             controlSize="regular" className="flex items-center gap-2  text-content-primary hover:text-content-strong hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
-            Manage members…
           </UiButton>
         )}
       </PopoverPanel>

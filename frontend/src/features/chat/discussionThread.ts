@@ -52,7 +52,10 @@ export function mergeDiscussionMessages(
     }
   }
 
-  return [...byId.values()].sort(
-    (a, b) => (a.channel_seq ?? 0) - (b.channel_seq ?? 0),
-  );
+  // A row that is still streaming has no channel_seq yet. Coalescing that to 0
+  // sorted the newest turn to the very top of the thread; it belongs last,
+  // after every row the server has already sequenced.
+  const order = (message: Message) =>
+    message.channel_seq ?? Number.MAX_SAFE_INTEGER;
+  return [...byId.values()].sort((a, b) => order(a) - order(b));
 }

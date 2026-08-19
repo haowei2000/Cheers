@@ -398,7 +398,6 @@ export function WorkspaceSettingsDialog({
                 }
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Delete
               </Button>
             </div>
           </>
@@ -427,7 +426,6 @@ export function WorkspaceSettingsDialog({
               }
             >
               <LogOut className="w-3.5 h-3.5" />
-              Leave
             </Button>
           </div>
         )}

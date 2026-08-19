@@ -366,12 +366,11 @@ export function PermissionCard({
               <UiButton action={diffOpen ? "collapse" : "preview"} content="iconText" variant="plain"
                 type="button"
                 onClick={onToggleStagedDiff}
+                loading={diffLoading}
                 title="Preview what this commit will include (git diff --staged)"
                 controlSize="compact" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong"
               >
                 <span className="text-content-muted">±</span>
-                {diffOpen ? "Hide staged diff" : "View staged diff"}
-                {diffLoading && <span className="text-content-muted">…</span>}
               </UiButton>
               {diffOpen && (
                 <div className="mt-2 overflow-hidden rounded-sm bg-zinc-950">

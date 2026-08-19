@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button";
-import { actionLabels } from "./action-labels";
+import { slotActionLabels } from "./action-labels";
 import { Input } from "./input";
 import { InputWithLeadingIcon } from "./input-with-leading-icon";
 import { Select } from "./select";
@@ -40,10 +40,30 @@ describe("shared control geometry", () => {
     expect(markup).toContain("Create");
     expect(markup).toContain('data-button-slot="label"');
     expect(markup).not.toContain('data-button-slot="label" class="inline-flex min-w-0 flex-1 items-center justify-center self-stretch px-3">New discussion');
-    for (const label of Object.values(actionLabels)) {
+    // The budget is a property of the fixed 128px slot, so it applies to the
+    // slot registry only. Fill-width actions carry unabbreviated copy.
+    for (const label of Object.values(slotActionLabels)) {
       expect(label.split(/\s+/)).toHaveLength(label.includes(" ") ? 2 : 1);
       expect(label.length).toBeLessThanOrEqual(8);
     }
+  });
+
+  it("drops no author-written label when an iconText button carries an action key", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <Button content="iconText" action="create"><span aria-hidden>+</span>New discussion</Button>,
+      ),
+    ).toThrow(/never render/);
+  });
+
+  it("keeps fill-only action labels off the fixed slot", () => {
+    expect(() =>
+      renderToStaticMarkup(<Button content="iconText" action="continueWithApple" />),
+    ).toThrow(/controlWidth="fill"/);
+    const filled = renderToStaticMarkup(
+      <Button content="iconText" action="continueWithApple" controlWidth="fill" />,
+    );
+    expect(filled).toContain("Continue with Apple");
   });
 
   it("keeps a specific text label when an action key is also provided", () => {

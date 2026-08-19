@@ -651,6 +651,9 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
   );
 }
 
+// Pointer travel below this is a click, not a pan.
+const DRAG_SLOP_PX = 4;
+
 function CodemapLens({ data }: LensProps) {
   const document = parseCodemap(data);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -660,6 +663,7 @@ function CodemapLens({ data }: LensProps) {
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ pointer: number; x: number; y: number; ox: number; oy: number } | null>(null);
+  const panned = useRef(false);
 
   useEffect(() => {
     const element = rootRef.current;
@@ -716,19 +720,26 @@ function CodemapLens({ data }: LensProps) {
         className="relative min-w-0 flex-1 overflow-hidden touch-none"
         onClick={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
+          // A pan finishes with a click on the canvas. Without this guard,
+          // every drag of the map also cleared the selected module.
+          if (panned.current) return;
           setSelectedId(null);
         }}
         onPointerDown={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
+          panned.current = false;
           drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
           if (!drag.current || drag.current.pointer !== event.pointerId) return;
-          setOffset({ x: drag.current.ox + event.clientX - drag.current.x, y: drag.current.oy + event.clientY - drag.current.y });
+          const dx = event.clientX - drag.current.x;
+          const dy = event.clientY - drag.current.y;
+          if (Math.abs(dx) > DRAG_SLOP_PX || Math.abs(dy) > DRAG_SLOP_PX) panned.current = true;
+          setOffset({ x: drag.current.ox + dx, y: drag.current.oy + dy });
         }}
         onPointerUp={() => { drag.current = null; }}
-        onPointerCancel={() => { drag.current = null; }}
+        onPointerCancel={() => { drag.current = null; panned.current = false; }}
       >
         <div
           className="absolute left-0 top-0 origin-top-left transition-transform duration-150 motion-reduce:transition-none"

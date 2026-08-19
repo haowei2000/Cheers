@@ -60,10 +60,20 @@ enum MessageTree {
         }
 
         for key in childrenByParent.keys {
-            childrenByParent[key]?.sort { ($0.channelSeq ?? 0) < ($1.channelSeq ?? 0) }
+            childrenByParent[key]?.sort(by: precedesInThread)
         }
 
         return Grouped(roots: roots, childrenByParent: childrenByParent, byId: byId)
+    }
+
+    /// Thread order. A row that is still streaming has no `channelSeq` yet and
+    /// belongs last, after every row the server has already sequenced; `msgId`
+    /// is the tiebreak so rows with equal (or absent) sequence numbers keep a
+    /// stable position instead of reshuffling between renders.
+    static func precedesInThread(_ lhs: MessageDto, _ rhs: MessageDto) -> Bool {
+        let left = lhs.channelSeq ?? Int64.max
+        let right = rhs.channelSeq ?? Int64.max
+        return left == right ? lhs.msgId < rhs.msgId : left < right
     }
 
     /// Whether a message belongs to a discussion root (including the root itself).
@@ -123,6 +133,8 @@ enum MessageTree {
             }
         }
 
-        return byId.values.sorted { ($0.channelSeq ?? 0) < ($1.channelSeq ?? 0) }
+        // Dictionary.values has no defined order, so this needs a total order
+        // rather than one that only compares sequence numbers.
+        return byId.values.sorted(by: precedesInThread)
     }
 }
