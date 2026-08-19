@@ -13,7 +13,7 @@ stdio MCP process is not an authorization authority.
 The remote endpoint has four distinct identities. They must never be collapsed:
 
 1. The MCP OAuth client identifies the application/runtime requesting access.
-2. A terminal installation identifies one enrolled device of a Cheers Bot.
+2. A connector host identifies one enrolled device of a Cheers Bot.
 3. The Bot is the Cheers member principal used for channel authorization.
 4. A human resource owner grants or revokes the OAuth scopes.
 
@@ -21,8 +21,8 @@ Every call is authorized in this order:
 
 1. Validate the access token signature, expiry, issuer, token use and canonical
    MCP resource audience.
-2. Resolve the active installation and Bot; rejected, revoked or disabled
-   installations and Bots fail closed.
+2. Resolve the active host and Bot; rejected, revoked or disabled
+   hosts and Bots fail closed.
 3. Check the operation's required OAuth scope set.
 4. Bind the request to `Principal::bot(bot_id)` on the server. Client arguments
    can never select the principal.
@@ -45,7 +45,7 @@ server publishes RFC 8414 metadata and supports:
 
 - Authorization Code with PKCE S256 for public interactive MCP clients.
 - Pre-registered clients and Client ID Metadata Documents.
-- Installation-bound client credentials for unattended enrolled Agent
+- Host-bound client credentials for unattended enrolled Agent
   terminals. These credentials are device-specific, rotatable and revocable.
 - RFC 8707 `resource` in authorization and token requests.
 - Refresh tokens only when the authorization server elects to issue them.
@@ -53,7 +53,7 @@ server publishes RFC 8414 metadata and supports:
 Client ID Metadata Documents are the public-client registration mechanism.
 Authorization codes are single-use and PKCE S256-bound; refresh tokens rotate
 on every use. Unattended connector clients authenticate only as an enrolled
-installation. The former Bot-credential token exchange has been removed.
+host. The former Bot-credential token exchange has been removed.
 
 Cheers serves metadata at both the host-level path requested by MCP clients and
 the RFC 9728 path-derived alias:
@@ -111,11 +111,11 @@ include `io.cheers/requiredScopes` so clients can request step-up before a call.
 | `cheers:task-claims:write` | `respond_to_task_claim_evaluation` |
 
 `inbox_stage` is intentionally absent from the remote v1 catalog. It names a
-file on a particular terminal and therefore requires installation routing plus
+file on a particular terminal and therefore requires host routing plus
 an explicit local-file approval contract; a stateless gateway request cannot
-safely infer that installation.
+safely infer that host.
 
-`read_workspace` remains read-scoped. Its live owner-installation routing is
+`read_workspace` remains read-scoped. Its live owner-host routing is
 transport-neutral: both Agent Bridge and HTTP MCP dispatch through the owner
 Connector. It never falls back to the gateway's filesystem.
 
@@ -150,15 +150,15 @@ The stdio process may be removed only after all of these are true:
 
 1. Protected Resource Metadata and authorization-server discovery interoperate
    with the official conformance client.
-2. Installation credentials replace shared long-lived Bot credentials. ✅
+2. Host credentials replace shared long-lived Bot credentials. ✅
 3. Every remotely exposed Tool has parity tests against its stdio mapping.
-4. Scope challenge, revoked installation, removed membership and role downgrade
+4. Scope challenge, revoked host, removed membership and role downgrade
    tests pass.
 5. Connector uses the remote endpoint by default and retains no hidden
    privileged resource path.
 
 The official `@modelcontextprotocol/conformance@0.2.0-alpha.11` server command
 is a required CI gate with `--suite all --spec-version 2026-07-28`. It
-bootstraps a real terminal installation, obtains its OAuth token, executes the
-full suite, revokes the installation, and verifies the already-issued access
+bootstraps a real connector host, obtains its OAuth token, executes the
+full suite, revokes the host, and verifies the already-issued access
 token immediately returns HTTP 401.

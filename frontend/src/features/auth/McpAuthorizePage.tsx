@@ -9,8 +9,8 @@ import { PublicPageShell, publicPanelClass } from "@/components/public/PublicPag
 interface ConsentPreview {
   client: { client_id: string; client_name: string };
   scopes: string[];
-  installations: Array<{
-    installation_id: string;
+  hosts: Array<{
+    host_id: string;
     device_name: string;
     bot_id: string;
     bot_name: string;
@@ -32,7 +32,7 @@ export default function McpAuthorizePage() {
   const query = window.location.search;
   const request = useMemo(() => Object.fromEntries(new URLSearchParams(query)), [query]);
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
-  const [installationId, setInstallationId] = useState("");
+  const [hostId, setHostId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +40,7 @@ export default function McpAuthorizePage() {
     apiJson<ConsentPreview>(`/mcp/oauth/authorize${query}`)
       .then((value) => {
         setPreview(value);
-        setInstallationId(value.installations[0]?.installation_id ?? "");
+        setHostId(value.hosts[0]?.host_id ?? "");
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Authorization request is invalid"));
   }, [query]);
@@ -51,7 +51,7 @@ export default function McpAuthorizePage() {
     try {
       const result = await apiJson<{ redirect_uri: string }>("/mcp/oauth/authorize", {
         method: "POST",
-        body: JSON.stringify({ ...request, installation_id: installationId, approved }),
+        body: JSON.stringify({ ...request, host_id: hostId, approved }),
       });
       window.location.replace(result.redirect_uri);
     } catch (reason) {
@@ -64,7 +64,7 @@ export default function McpAuthorizePage() {
     <PublicPageShell
       eyebrow="Cheers · MCP authorization"
       title="Connect an MCP client"
-      description="Choose the Agent installation whose existing Cheers permissions will bound this connection."
+      description="Choose the Agent host whose existing Cheers permissions will bound this connection."
     >
       <div className={`${publicPanelClass} space-y-4`}>
         {!preview && !error && <Spinner contentSize="large" className="mx-auto text-content-muted" />}
@@ -80,10 +80,10 @@ export default function McpAuthorizePage() {
             </div>
             <label className="block space-y-1 text-compact text-content-muted">
               <span>Act as</span>
-              <Select value={installationId} onChange={(event) => setInstallationId(event.target.value)}>
-                {preview.installations.map((installation) => (
-                  <option key={installation.installation_id} value={installation.installation_id}>
-                    {installation.bot_name} · {installation.device_name}
+              <Select value={hostId} onChange={(event) => setHostId(event.target.value)}>
+                {preview.hosts.map((host) => (
+                  <option key={host.host_id} value={host.host_id}>
+                    {host.bot_name} · {host.device_name}
                   </option>
                 ))}
               </Select>
@@ -95,11 +95,11 @@ export default function McpAuthorizePage() {
               </ul>
             </div>
             <p className="text-compact text-content-muted">
-              OAuth scopes only reduce access. Channel membership, roles, approvals, installation revocation and audit policy still apply to every operation.
+              OAuth scopes only reduce access. Channel membership, roles, approvals, host revocation and audit policy still apply to every operation.
             </p>
             <div className="flex justify-end gap-2">
               <Button action="cancel" variant="secondary" disabled={busy} onClick={() => void finish(false)} />
-              <Button action="approve" disabled={busy || !installationId} loading={busy} onClick={() => void finish(true)} />
+              <Button action="approve" disabled={busy || !hostId} loading={busy} onClick={() => void finish(true)} />
             </div>
           </>
         )}

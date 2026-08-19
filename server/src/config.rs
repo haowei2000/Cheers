@@ -64,13 +64,13 @@ impl std::fmt::Debug for AppleAuthConfig {
 /// A GitHub **App**, not an OAuth App. The difference matters to the credential
 /// model: an OAuth App token carries the *user's* full scope everywhere that
 /// user can reach, while an App is installed per account and its tokens are
-/// scoped to that installation's repositories and expire in an hour. That is
+/// scoped to that host's repositories and expire in an hour. That is
 /// the same shape `integrations::credentials` was built around — short-lived,
 /// renewable, revocable per install — and it means a compromised gateway
 /// cannot reach a repository the installer never selected.
 ///
 /// The private key signs a short App JWT which is exchanged for those
-/// installation tokens; it is deployment configuration like `JWT_PRIVATE_KEY`,
+/// host tokens; it is deployment configuration like `JWT_PRIVATE_KEY`,
 /// never a per-user secret, so it lives here rather than in the credential
 /// store.
 #[derive(Clone)]

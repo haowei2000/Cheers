@@ -32,7 +32,7 @@ sidebar).
 | Destination | Job (one sentence) | Badge | iOS chrome | Desktop chrome |
 | --- | --- | --- | --- | --- |
 | **Activity** | Things that need *me*: pending approvals + invites | Pending count | Full page from drawer chip | Rail control → page **or** popover with the **same sections** |
-| **Fleet** | Personal bot cockpit: status, create/manage, installations, audit | Optional “waiting on me” (mirrors Activity) | Full page from drawer chip | Rail → `/fleet` |
+| **Fleet** | Personal bot cockpit: status, create/manage, hosts, audit | Optional “waiting on me” (mirrors Activity) | Full page from drawer chip | Rail → `/fleet` |
 | **Friends** | People graph: friends, requests, add, blocked | Incoming requests | Full page from drawer chip | Rail → `/friends` |
 | **Settings** | Me, account security, legal, server, platform prefs | — | Full page from drawer footer | Rail → `/settings` |
 
@@ -119,9 +119,9 @@ Activity                         Fleet
 ─────────────────────            ────────────────────────────
 Needs approval (top)             Overview / attention summary
 Invites (Accept/Decline)         Bot-centric roster (Mine / Shared)
-Recent resolutions              Cross-bot installations
+Recent resolutions              Cross-bot hosts
                                  Unified owner audit
-                                 Add bot / installation
+                                 Add bot / host
 ```
 
 Approvals may appear as compact cards in chat and as push targets; the

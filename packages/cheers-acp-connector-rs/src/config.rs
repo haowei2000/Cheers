@@ -46,7 +46,7 @@ pub struct DaemonFileConfig {
 #[derive(Debug, Clone)]
 pub struct AccountConfig {
     /// Credential used only by the connector to authenticate Agent Bridge.
-    /// Pairing supplies an installation-bound `agbi_…` secret.
+    /// Pairing supplies a host-bound `agbi_…` secret.
     pub bridge_credential: String,
     pub control_url: String,
     pub data_url: String,
@@ -316,9 +316,9 @@ struct RawBridge {
     control_url: String,
     data_url: String,
     #[serde(default)]
-    installation_credential_env: Option<String>,
+    host_credential_env: Option<String>,
     #[serde(default)]
-    installation_credential_file: Option<String>,
+    host_credential_file: Option<String>,
     #[serde(default = "default_heartbeat_interval_ms")]
     heartbeat_interval_ms: u64,
     #[serde(default = "default_send_ack_timeout_ms")]
@@ -909,42 +909,35 @@ async fn read_bridge_credential(
     base_dir: &Path,
 ) -> anyhow::Result<String> {
     let sources = [
-        bridge.installation_credential_env.is_some(),
-        bridge.installation_credential_file.is_some(),
+        bridge.host_credential_env.is_some(),
+        bridge.host_credential_file.is_some(),
     ]
     .into_iter()
     .filter(|present| *present)
     .count();
     if sources != 1 {
         return Err(anyhow!(
-            "accounts.{id}.bridge must set exactly one of installation_credential_env or installation_credential_file"
+            "accounts.{id}.bridge must set exactly one of host_credential_env or host_credential_file"
         ));
     }
-    if let Some(env_name) = &bridge.installation_credential_env {
+    if let Some(env_name) = &bridge.host_credential_env {
         let credential = env::var(env_name).with_context(|| {
-            format!("accounts.{id}.bridge.installation_credential_env {env_name} is not set")
+            format!("accounts.{id}.bridge.host_credential_env {env_name} is not set")
         })?;
         return non_empty_secret(
             credential,
-            &format!("accounts.{id}.bridge.installation_credential_env"),
+            &format!("accounts.{id}.bridge.host_credential_env"),
         );
     }
-    if let Some(path) = &bridge.installation_credential_file {
-        let path = resolve_path(path, base_dir).with_context(|| {
-            format!("accounts.{id}.bridge.installation_credential_file is invalid")
-        })?;
-        let credential = fs::read_to_string(&path).await.with_context(|| {
-            format!(
-                "failed to read installation credential file {}",
-                path.display()
-            )
-        })?;
-        return non_empty_secret(
-            credential.trim().to_string(),
-            "installation credential file",
-        );
+    if let Some(path) = &bridge.host_credential_file {
+        let path = resolve_path(path, base_dir)
+            .with_context(|| format!("accounts.{id}.bridge.host_credential_file is invalid"))?;
+        let credential = fs::read_to_string(&path)
+            .await
+            .with_context(|| format!("failed to read host credential file {}", path.display()))?;
+        return non_empty_secret(credential.trim().to_string(), "host credential file");
     }
-    unreachable!("one installation credential source must have matched")
+    unreachable!("one host credential source must have matched")
 }
 
 fn non_empty_secret(value: String, field: &str) -> anyhow::Result<String> {
@@ -1269,7 +1262,7 @@ log_dir = "logs"
 [accounts.local.bridge]
 control_url = "wss://example.test/control"
 data_url = "wss://example.test/data"
-installation_credential_env = "CHEERS_TEST_TOKEN"
+host_credential_env = "CHEERS_TEST_TOKEN"
 heartbeat_interval_ms = 10000
 ack_timeout_ms = 120000
 
@@ -1400,7 +1393,7 @@ request_timeout_ms = 666000
     }
 
     #[tokio::test]
-    async fn requires_installation_credential_and_rejects_legacy_bot_token() {
+    async fn requires_host_credential_and_rejects_legacy_bot_token() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("cheers-daemon.toml");
         std::fs::write(
@@ -1420,10 +1413,7 @@ command = "/bin/echo"
         .unwrap();
 
         let err = load_config(&config_path).await.unwrap_err().to_string();
-        assert!(
-            err.contains("installation_credential_env")
-                || err.contains("installation_credential_file")
-        );
+        assert!(err.contains("host_credential_env") || err.contains("host_credential_file"));
 
         std::fs::write(
             &config_path,

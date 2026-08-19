@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  installationStatusLabel,
+  hostStatusLabel,
   mcpStateLabel,
   mcpStateTone,
-  type InstallationLifecycleItem,
-} from "./installationLifecycle";
+  type HostLifecycleItem,
+} from "./hostLifecycle";
 
-function item(over: Partial<InstallationLifecycleItem> = {}): InstallationLifecycleItem {
+function item(over: Partial<HostLifecycleItem> = {}): HostLifecycleItem {
   return {
     bot_id: "bot-1",
-    installation_id: "inst-1",
+    host_id: "inst-1",
     device_name: "Build Mac",
     status: "active",
     online: false,
@@ -17,22 +17,22 @@ function item(over: Partial<InstallationLifecycleItem> = {}): InstallationLifecy
   };
 }
 
-describe("installationStatusLabel", () => {
+describe("hostStatusLabel", () => {
   it("separates the designated role from actual liveness", () => {
     // The trap the old raw-enum status had: "active" reads as "running" when it
     // only means "the one that may connect".
-    expect(installationStatusLabel(item({ status: "active", online: false }))).toBe("Active, not connected");
-    expect(installationStatusLabel(item({ status: "active", online: true }))).toBe("Online");
-    expect(installationStatusLabel(item({ status: "standby" }))).toBe("Standby");
+    expect(hostStatusLabel(item({ status: "active", online: false }))).toBe("Active, not connected");
+    expect(hostStatusLabel(item({ status: "active", online: true }))).toBe("Online");
+    expect(hostStatusLabel(item({ status: "standby" }))).toBe("Standby");
   });
 
   it("says what a pending row is waiting for", () => {
-    expect(installationStatusLabel(item({ status: "pending" }))).toBe("Waiting for pairing");
+    expect(hostStatusLabel(item({ status: "pending" }))).toBe("Waiting for pairing");
   });
 
   it("reports revoked regardless of the underlying status", () => {
     for (const status of ["pending", "active", "standby"] as const) {
-      expect(installationStatusLabel(item({ status, revoked_at: "2026-08-16T10:00:00Z" }))).toBe("Revoked");
+      expect(hostStatusLabel(item({ status, revoked_at: "2026-08-16T10:00:00Z" }))).toBe("Revoked");
     }
   });
 });

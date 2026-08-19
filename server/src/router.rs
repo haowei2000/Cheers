@@ -249,10 +249,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // Primary Fleet page: workspace-agnostic bot roster + approvals.
         .route("/api/v1/fleet", get(api::fleet::get_fleet_all))
-        .route(
-            "/api/v1/fleet/installations",
-            get(api::fleet::list_installations_all),
-        )
+        .route("/api/v1/fleet/hosts", get(api::fleet::list_hosts_all))
         .route("/api/v1/fleet/audit", get(api::fleet::list_audit_all))
         // Rail badge: workspace-agnostic actionable-pending count
         .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
@@ -584,41 +581,41 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/token",
             post(api::bots::issue_bot_token),
         )
-        // ── Installation pairing + connector config ──────────────────────────
+        // ── Host pairing + connector config ──────────────────────────
         .route(
             "/api/v1/bots/:bot_id/connector-config",
             get(api::pairing::get_connector_config),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations",
-            get(api::installations::list_installations).post(api::pairing::create_installation),
+            "/api/v1/bots/:bot_id/hosts",
+            get(api::connector_hosts::list_hosts).post(api::pairing::create_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/activate",
-            post(api::installations::activate_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id/activate",
+            post(api::connector_hosts::activate_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/credential",
-            post(api::installations::rotate_installation_credential),
+            "/api/v1/bots/:bot_id/hosts/:host_id/credential",
+            post(api::connector_hosts::rotate_host_credential),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/reconnect",
-            post(api::installations::reconnect_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id/reconnect",
+            post(api::connector_hosts::reconnect_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/record",
-            delete(api::installations::delete_installation_record),
+            "/api/v1/bots/:bot_id/hosts/:host_id/record",
+            delete(api::connector_hosts::delete_host_record),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id",
-            delete(api::installations::revoke_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id",
+            delete(api::connector_hosts::revoke_host),
         )
         .route(
             "/api/v1/ops/connector-discovery",
             get(api::pairing::connector_discovery),
         )
         .route(
-            "/api/v1/installations/guidance",
+            "/api/v1/hosts/guidance",
             get(api::pairing::pairing_guidance),
         )
         .route("/api/v1/acp/agents", get(api::pairing::list_acp_agents))
@@ -938,11 +935,11 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/auth/reset-password",
             post(api::auth::reset_password),
         )
-        // Public, code-authenticated: a host redeems an installation pairing
-        // code for that installation's credential + connector config.
+        // Public, code-authenticated: a host redeems a host pairing
+        // code for that host's credential + connector config.
         .route(
-            "/api/v1/installations/redeem",
-            post(api::pairing::redeem_installation_pairing),
+            "/api/v1/hosts/redeem",
+            post(api::pairing::redeem_host_pairing),
         )
         // Public invite-link preview for the landing page: the visitor usually has
         // no account yet. Read-only + rate-limited; workspace details come back

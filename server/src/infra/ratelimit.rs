@@ -222,7 +222,7 @@ pub fn bridge_connect_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(300)))
 }
 
-/// Process-global pairing-redeem limiter. `POST /installations/redeem` is the
+/// Process-global pairing-redeem limiter. `POST /hosts/redeem` is the
 /// other unauthenticated, DB-touching endpoint; the 256-bit code is itself
 /// brute-force-infeasible, but this caps wrong/replayed-code attempts per source
 /// so a flood can't pin the DB. 20 failures per 5-minute window per client.

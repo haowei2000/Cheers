@@ -3904,13 +3904,13 @@ async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn terminal_installations_enforce_one_active_and_independent_credentials(db: PgPool) {
+async fn connector_hosts_enforce_one_active_and_independent_credentials(db: PgPool) {
     let bot = seed_bot(&db).await;
     let first = Uuid::new_v4();
     let second = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-a', $3, 'agbi_first', 'active')",
     )
     .bind(first.to_string())
@@ -3921,8 +3921,8 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
 
     let duplicate_active = sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'active')",
     )
     .bind(second.to_string())
@@ -3932,12 +3932,12 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .await;
     assert!(
         duplicate_active.is_err(),
-        "database must reject two active installations"
+        "database must reject two active hosts"
     );
 
     sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'standby')",
     )
     .bind(second.to_string())
@@ -3947,8 +3947,8 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .await
     .unwrap();
     sqlx::query(
-        "UPDATE terminal_installations SET revoked_at = NOW()
-         WHERE installation_id = $1",
+        "UPDATE connector_hosts SET revoked_at = NOW()
+         WHERE host_id = $1",
     )
     .bind(second.to_string())
     .execute(&db)
@@ -3956,7 +3956,7 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
     let first_still_active: bool = sqlx::query_scalar(
         "SELECT status = 'active' AND revoked_at IS NULL
-         FROM terminal_installations WHERE installation_id = $1",
+         FROM connector_hosts WHERE host_id = $1",
     )
     .bind(first.to_string())
     .fetch_one(&db)
@@ -3964,6 +3964,6 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
     assert!(
         first_still_active,
-        "revoking standby must not alter active installation"
+        "revoking standby must not alter active host"
     );
 }

@@ -41,7 +41,7 @@ import { ConnectorChanges } from "./ConnectorChanges";
 import { AgentUpdates } from "./AgentUpdates";
 import { AgentPicker, type DetectedAgent } from "./AgentPicker";
 import { consumeConnectorIntent } from "./connectorIntent";
-import { createInstallation, listBots, redeemInstallationPairing, type AgentType } from "@/api/bots";
+import { createHost, listBots, redeemHostPairing, type AgentType } from "@/api/bots";
 import type { BotItem } from "@/types";
 
 /** Shape returned by the Tauri `connector_list` command (src-tauri/src/connector.rs). */
@@ -85,7 +85,7 @@ function fmtMem(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-/** Non-empty Installation agent id (legacy short name or registry id). */
+/** Non-empty Host agent id (legacy short name or registry id). */
 function isAgentType(v: string | undefined): v is AgentType {
   return !!v && v.trim().length > 0;
 }
@@ -149,7 +149,7 @@ function HealthRow({
           type="button"
           onClick={onRestart}
           disabled={busy}
-          title={`${reason} — restart this installation`}
+          title={`${reason} — restart this host`}
           controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-warning-300 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -207,7 +207,7 @@ export function ConnectorManager() {
   const [keepConfig, setKeepConfig] = useState(false);
   // Card highlighted while a Finder folder is dragged over it (drag-to-grant).
   const [dragOverName, setDragOverName] = useState<string | null>(null);
-  // Installation setup always starts from an existing bot identity.
+  // Host setup always starts from an existing bot identity.
   const [bots, setBots] = useState<BotItem[]>([]);
   const [existingBotId, setExistingBotId] = useState("");
   const [pairingCode, setPairingCode] = useState("");
@@ -368,9 +368,9 @@ export function ConnectorManager() {
     }
     setOnboarding(true);
     try {
-      const redeemed = await redeemInstallationPairing(code, "Cheers Desktop");
+      const redeemed = await redeemHostPairing(code, "Cheers Desktop");
       if (isAgentType(redeemed.agent_type) && !(await ensureAdapterReady(redeemed.agent_type))) {
-        // The code is spent and the Installation is active by now, so redemption
+        // The code is spent and the Host is active by now, so redemption
         // can't be undone. Say so plainly instead of a bare "not installed",
         // because the user's next step is to install and mint a fresh code.
         toast.error(
@@ -385,7 +385,7 @@ export function ConnectorManager() {
         tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Installation "${redeemed.account_id}" is running`);
+      toast.success(`Host "${redeemed.account_id}" is running`);
       setPairingCode("");
       setModal(null);
       refresh();
@@ -403,7 +403,7 @@ export function ConnectorManager() {
     setOnboardingError(null);
     setOnboarding(true);
     try {
-      // Pre-flight the adapter before creating a pending installation, so an
+      // Pre-flight the adapter before creating a pending host, so an
       // unavailable local agent does not leave a pairing behind.
       if (!(await ensureAdapterReady(agentType))) {
         return;
@@ -414,8 +414,8 @@ export function ConnectorManager() {
         toast.error("Pick a bot first");
         return;
       }
-      const pairing = await createInstallation(botId, agentType, "Cheers Desktop");
-      const redeemed = await redeemInstallationPairing(pairing.pairing_code, "Cheers Desktop");
+      const pairing = await createHost(botId, agentType, "Cheers Desktop");
+      const redeemed = await redeemHostPairing(pairing.pairing_code, "Cheers Desktop");
       const configPath = await invokeDesktop<string>("connector_write_onboarded", {
         accountId: redeemed.account_id,
         configToml: redeemed.config_toml,
@@ -423,7 +423,7 @@ export function ConnectorManager() {
         tokenFile: redeemed.credential_file,
       });
       await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Installation "${redeemed.account_id}" is running`);
+      toast.success(`Host "${redeemed.account_id}" is running`);
       setModal(null);
       refresh();
     } catch (e) {
@@ -485,7 +485,7 @@ export function ConnectorManager() {
       await apply();
       if (restart && inst.running) {
         await invokeDesktop("connector_restart", { name: inst.name });
-        toast.success("Config saved, installation restarted");
+        toast.success("Config saved, host restarted");
       } else {
         toast.success("Config saved");
       }
@@ -504,7 +504,7 @@ export function ConnectorManager() {
     <section>
       <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
         <Laptop className="w-3.5 h-3.5" />
-        Installations
+        Hosts
       </h2>
 
       <div className="bg-zinc-900 rounded-sm p-6">
@@ -527,7 +527,7 @@ export function ConnectorManager() {
 
         {instances.length === 0 && (
           <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted">
-            No connector is running on this Mac. Add an installation or use a pairing code.
+            No connector is running on this Mac. Add a host or use a pairing code.
           </p>
         )}
 
@@ -565,7 +565,7 @@ export function ConnectorManager() {
                     void act(
                       inst.name,
                       () => invokeDesktop("connector_restart", { name: inst.name }),
-                      "Installation restarted"
+                      "Host restarted"
                     )
                   }
                 />
@@ -581,7 +581,7 @@ export function ConnectorManager() {
                       void act(
                         inst.name,
                         () => invokeDesktop("connector_stop", { name: inst.name }),
-                        "Installation stopped"
+                        "Host stopped"
                       )
                     }
                   />
@@ -598,7 +598,7 @@ export function ConnectorManager() {
                             name: inst.name,
                             configPath: inst.config_path,
                           }),
-                        "Installation started"
+                        "Host started"
                       )
                     }
                   />
@@ -611,7 +611,7 @@ export function ConnectorManager() {
                     void act(
                       inst.name,
                       () => invokeDesktop("connector_restart", { name: inst.name }),
-                      "Installation restarted"
+                      "Host restarted"
                     )
                   }
                 />
@@ -694,8 +694,8 @@ export function ConnectorManager() {
             />
             <p className="text-compact text-content-muted">
               Codes are single-use and expire after about 15 minutes. Using one
-              activates this installation, so the bot's previously active
-              installation will stop.
+              activates this host, so the bot's previously active
+              host will stop.
             </p>
             <div className="flex justify-end gap-2">
               <Button action="cancel" variant="secondary" onClick={() => setModal(null)}>
@@ -711,7 +711,7 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "onboard" && (
-        <Dialog title="Add an installation on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
+        <Dialog title="Add a host on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <OnboardForm
             bots={bots}
             existingBotId={existingBotId}
@@ -736,7 +736,7 @@ export function ConnectorManager() {
                     name: newName.trim(),
                     configPath: newConfig.trim(),
                   }),
-                "Installation started"
+                "Host started"
               ).then((ok) => {
                 if (!ok) return;
                 setNewName("");
@@ -852,9 +852,9 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "delete" && (
-        <Dialog title="Remove local installation" onClose={() => setModal(null)} maxWidth="max-w-md">
+        <Dialog title="Remove this host" onClose={() => setModal(null)} maxWidth="max-w-md">
           <p className="text-regular text-content-secondary">
-            Remove the local installation <b>{modal.inst.name}</b> (stops it and
+            Remove the host <b>{modal.inst.name}</b> (stops it and
             deletes its state, logs, and config). This does <b>not</b> delete the
             bot on the server — do that from the web Bots settings.
           </p>
@@ -885,11 +885,11 @@ export function ConnectorManager() {
                       name: modal.inst.name,
                       deleteConfig: !keepConfig,
                     }),
-                  "Installation removed"
+                  "Host removed"
                 ).then((ok) => ok && setModal(null))
               }
             >
-              Remove installation
+              Remove host
             </Button>
             <Button action="cancel" variant="secondary" controlSize="compact" onClick={() => setModal(null)}>
               Cancel
@@ -997,7 +997,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
   );
 }
 
-/** The onboarding form body for adding a bot installation on this Mac. */
+/** The onboarding form body for adding a bot host on this Mac. */
 function OnboardForm(props: {
   bots: BotItem[];
   existingBotId: string;
@@ -1022,8 +1022,8 @@ function OnboardForm(props: {
       <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-accent-100">
         <p className="font-medium">Four steps, all on this Mac</p>
         <p className="mt-1 text-accent-200/75">
-          Choose a bot → check its agent → save its secure installation → start and verify it.
-          If startup fails, the installation remains below with recovery and diagnostics.
+          Choose a bot → check its agent → save its host config → start and verify it.
+          If startup fails, the host remains below with recovery and diagnostics.
         </p>
       </div>
       <Field label="Bot identity" htmlFor="onb-bot">
@@ -1042,7 +1042,7 @@ function OnboardForm(props: {
           </UiSelect>
         </Field>
       {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-warning-200">
-        Create a bot identity first; installations cannot create bots.
+        Create a bot identity first; hosts cannot create bots.
         <div className="mt-2"><Button action="open" variant="secondary" controlSize="compact" onClick={() => window.location.assign("/fleet/bots")}>Create bot in Fleet</Button></div>
       </div>}
 
@@ -1064,7 +1064,7 @@ function OnboardForm(props: {
           <p className="font-medium">Setup needs attention</p>
           <p className="mt-1 break-words text-removed-200/80">{p.onboardingError}</p>
           <p className="mt-1 text-removed-200/70">
-            You can fix the agent or configuration and retry. The saved installation remains on this page.
+            You can fix the agent or configuration and retry. The saved host remains on this page.
           </p>
         </div>
       )}

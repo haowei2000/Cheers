@@ -82,15 +82,15 @@ Rust 网关（唯一后端）
 ## 3. bot 如何鉴权
 
 Prompt 传输在 **Agent Bridge WebSocket** 上鉴权。MCP 调用使用 Agent 原生
-OAuth 生命周期取得的 installation-bound access token；Gateway 每次都校验
-installation 状态、scope、audience 和频道成员资格。Bridge credential 模型为：
+OAuth 生命周期取得的 host-bound access token；Gateway 每次都校验
+host 状态、scope、audience 和频道成员资格。Bridge credential 模型为：
 
 1. **先建身份。** `POST /api/v1/bots` 只创建长期存在的 Bot 身份。
-2. **再建 Installation。** `POST /api/v1/bots/{bot_id}/installations` 创建 pending Installation，
+2. **再建 Host。** `POST /api/v1/bots/{bot_id}/hosts` 创建 pending Host，
    并返回一个 900 秒有效、只能使用一次的 pairing code。
-3. **配对。** `POST /api/v1/installations/redeem` 由 code 本身鉴权；成功后激活该 Installation，
-   并只返回一次 `agbi_…` Installation credential。数据库只保存它的 SHA-256。
-4. **握手。** Agent Bridge 只接受 active、未撤销 Installation 的 credential；Bot 被停用时同样拒绝连接。
+3. **配对。** `POST /api/v1/hosts/redeem` 由 code 本身鉴权；成功后激活该 Host，
+   并只返回一次 `agbi_…` Host credential。数据库只保存它的 SHA-256。
+4. **握手。** Agent Bridge 只接受 active、未撤销 Host 的 credential；Bot 被停用时同样拒绝连接。
 
 因为 credential 是高熵随机值，静态存储用**无盐 SHA-256** 是正确的（不需要 bcrypt）。
 
@@ -118,7 +118,7 @@ bot 永远**归属**于某个用户（`bot_accounts.created_by`），是一个*�
 
 - Workspace 与 Channel 都使用统一成员请求：`member_id + member_type + role`。
 - 邀请入口分别是 `POST /workspaces/{id}/members` 与 `POST /channels/{id}/members`；
-  Bot 不通过 Installation 接口加入空间或频道。
+  Bot 不通过 Host 接口加入空间或频道。
 
 - **成员关系**——同一张 `channel_memberships` 表。bot 通过与用户**相同**的统一邀请入口被邀请
   （`search_invitable` 把用户和 bot 一起返回），只是多一道授权闸（平台管理员 / bot owner / 持有该 bot

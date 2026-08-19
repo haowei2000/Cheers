@@ -31,7 +31,7 @@ use crate::{
     api::middleware::Claims,
     app_state::AppState,
     errors::AppError,
-    infra::crypto::hash_installation_credential,
+    infra::crypto::hash_host_credential,
     resource::{self, Principal},
 };
 
@@ -79,7 +79,7 @@ fn protected_resource_metadata_document(resource: &str, issuer: Option<&str>) ->
     metadata
 }
 
-/// RFC 8414 metadata for Cheers' installation-bound OAuth 2.1 issuer.
+/// RFC 8414 metadata for Cheers' host-bound OAuth 2.1 issuer.
 pub async fn authorization_server_metadata(State(state): State<AppState>) -> Response {
     let issuer = state.config.mcp_authorization_issuer();
     let resource = state.config.mcp_resource_url();
@@ -94,7 +94,7 @@ pub async fn authorization_server_metadata(State(state): State<AppState>) -> Res
         "scopes_supported": ALL_OAUTH_SCOPES,
         "resource_indicators_supported": true,
         "client_id_metadata_document_supported": true,
-        "cheers_installation_clients": true,
+        "cheers_host_clients": true,
         "protected_resource": resource
     });
     let mut response = (StatusCode::OK, Json(metadata)).into_response();
@@ -121,7 +121,7 @@ pub struct McpAuthorizeRequest {
 pub struct McpAuthorizeApproval {
     #[serde(flatten)]
     request: McpAuthorizeRequest,
-    installation_id: String,
+    host_id: String,
     approved: bool,
 }
 
@@ -159,7 +159,7 @@ pub async fn authorize_start(
     .into_response()
 }
 
-/// Authenticated consent preview. Only active installations owned by this user
+/// Authenticated consent preview. Only active hosts owned by this user
 /// (or an administrator) may become the grant principal.
 pub async fn authorize_inspect(
     State(state): State<AppState>,
@@ -173,8 +173,8 @@ pub async fn authorize_inspect(
     validate_client_redirect(&client, &request).map_err(AppError::BadRequest)?;
     let rows = if crate::api::bots::is_admin(&claims) {
         sqlx::query(
-            "SELECT i.installation_id, i.device_name, b.bot_id, b.display_name, b.username
-             FROM terminal_installations i JOIN bot_accounts b ON b.bot_id = i.bot_id
+            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username
+             FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
              WHERE i.status = 'active' AND i.revoked_at IS NULL AND b.is_disabled = FALSE
              ORDER BY b.username, i.device_name",
         )
@@ -182,8 +182,8 @@ pub async fn authorize_inspect(
         .await?
     } else {
         sqlx::query(
-            "SELECT i.installation_id, i.device_name, b.bot_id, b.display_name, b.username
-             FROM terminal_installations i JOIN bot_accounts b ON b.bot_id = i.bot_id
+            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username
+             FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
              WHERE i.status = 'active' AND i.revoked_at IS NULL AND b.is_disabled = FALSE
                AND b.created_by = $1
              ORDER BY b.username, i.device_name",
@@ -192,11 +192,11 @@ pub async fn authorize_inspect(
         .fetch_all(&state.db)
         .await?
     };
-    let installations = rows
+    let hosts = rows
         .into_iter()
         .map(|row| {
             json!({
-                "installation_id": row.try_get::<String, _>("installation_id").unwrap_or_default(),
+                "host_id": row.try_get::<String, _>("host_id").unwrap_or_default(),
                 "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
                 "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
                 "bot_name": row.try_get::<Option<String>, _>("display_name").ok().flatten()
@@ -207,7 +207,7 @@ pub async fn authorize_inspect(
     Ok(Json(json!({
         "client":{"client_id":client.client_id,"client_name":client.client_name.unwrap_or_else(|| "MCP client".into())},
         "scopes":parse_requested_scopes(&request.scope).unwrap_or_default(),
-        "installations":installations,
+        "hosts":hosts,
         "redirect_uri":request.redirect_uri
     })))
 }
@@ -229,35 +229,38 @@ pub async fn authorize_approve(
             json!({"redirect_uri":authorization_redirect(&request, None, Some(("access_denied", "The resource owner denied the request")), &state.config.mcp_authorization_issuer())?}),
         ));
     }
-    let installation = Uuid::parse_str(&approval.installation_id)
-        .map_err(|_| AppError::BadRequest("invalid installation_id".into()))?;
+    let host = Uuid::parse_str(&approval.host_id)
+        .map_err(|_| AppError::BadRequest("invalid host_id".into()))?;
     let allowed: bool = if crate::api::bots::is_admin(&claims) {
         sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM terminal_installations i JOIN bot_accounts b ON b.bot_id=i.bot_id
-             WHERE i.installation_id=$1 AND i.status='active' AND i.revoked_at IS NULL AND b.is_disabled=FALSE)",
+            "SELECT EXISTS(SELECT 1 FROM connector_hosts i JOIN bot_accounts b ON b.bot_id=i.bot_id
+             WHERE i.host_id=$1 AND i.status='active' AND i.revoked_at IS NULL AND b.is_disabled=FALSE)",
         )
-        .bind(installation.to_string()).fetch_one(&state.db).await?
+        .bind(host.to_string()).fetch_one(&state.db).await?
     } else {
         sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM terminal_installations i JOIN bot_accounts b ON b.bot_id=i.bot_id
-             WHERE i.installation_id=$1 AND i.status='active' AND i.revoked_at IS NULL
+            "SELECT EXISTS(SELECT 1 FROM connector_hosts i JOIN bot_accounts b ON b.bot_id=i.bot_id
+             WHERE i.host_id=$1 AND i.status='active' AND i.revoked_at IS NULL
                AND b.is_disabled=FALSE AND b.created_by=$2)",
         )
-        .bind(installation.to_string()).bind(&claims.sub).fetch_one(&state.db).await?
+        .bind(host.to_string())
+        .bind(&claims.sub)
+        .fetch_one(&state.db)
+        .await?
     };
     if !allowed {
-        return Err(AppError::Forbidden("installation is unavailable".into()));
+        return Err(AppError::Forbidden("host is unavailable".into()));
     }
 
     let code = random_oauth_secret()?;
     sqlx::query(
         "INSERT INTO mcp_oauth_authorization_codes
-         (code_id,code_hash,installation_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at)
+         (code_id,code_hash,host_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
     )
     .bind(Uuid::new_v4().to_string())
     .bind(hash_oauth_secret(&code))
-    .bind(installation.to_string())
+    .bind(host.to_string())
     .bind(&request.client_id)
     .bind(&request.redirect_uri)
     .bind(canonical_scope(&request.scope).map_err(AppError::BadRequest)?)
@@ -518,7 +521,7 @@ fn hash_oauth_secret(secret: &str) -> String {
 #[derive(Debug, Serialize, Deserialize)]
 struct McpAccessClaims {
     sub: String,
-    installation_id: String,
+    host_id: String,
     credential_hash: String,
     scope: String,
     aud: String,
@@ -552,7 +555,7 @@ struct McpTokenRequest {
     refresh_token: Option<String>,
 }
 
-/// Exchange an active installation credential for a narrowly scoped MCP token.
+/// Exchange an active host credential for a narrowly scoped MCP token.
 /// Rotation, revocation, or demotion invalidates outstanding tokens immediately.
 pub async fn issue_mcp_access_token(
     State(state): State<AppState>,
@@ -605,23 +608,22 @@ pub async fn issue_mcp_access_token(
         .client_id
         .as_deref()
         .or_else(|| basic.as_ref().map(|v| v.0.as_str()));
-    let installation_credential = request
+    let host_credential = request
         .client_secret
         .as_deref()
         .or_else(|| basic.as_ref().map(|v| v.1.as_str()));
-    let (Some(client_id), Some(installation_credential)) = (client_id, installation_credential)
-    else {
+    let (Some(client_id), Some(host_credential)) = (client_id, host_credential) else {
         return oauth_token_error(
             "invalid_client",
-            "installation client_id and credential are required",
+            "host client_id and credential are required",
         );
     };
-    let credential_hash = hash_installation_credential(installation_credential);
+    let credential_hash = hash_host_credential(host_credential);
     let row = match sqlx::query(
-        "SELECT i.installation_id, i.bot_id, b.is_disabled
-         FROM terminal_installations i
+        "SELECT i.host_id, i.bot_id, b.is_disabled
+         FROM connector_hosts i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
-         WHERE i.installation_id = $1 AND i.credential_hash = $2 AND i.status = 'active'
+         WHERE i.host_id = $1 AND i.credential_hash = $2 AND i.status = 'active'
            AND i.revoked_at IS NULL",
     )
     .bind(client_id)
@@ -643,11 +645,11 @@ pub async fn issue_mcp_access_token(
         tracing::error!("MCP token exchange found malformed bot id");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     };
-    let Ok(installation_id) = row.try_get::<String, _>("installation_id") else {
-        tracing::error!("MCP token exchange found malformed installation id");
+    let Ok(host_id) = row.try_get::<String, _>("host_id") else {
+        tracing::error!("MCP token exchange found malformed host id");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     };
-    debug_assert_eq!(client_id, installation_id);
+    debug_assert_eq!(client_id, host_id);
     if Uuid::parse_str(&bot_id).is_err() {
         tracing::error!("MCP token exchange found invalid bot UUID");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
@@ -660,22 +662,15 @@ pub async fn issue_mcp_access_token(
     };
     let scope = scopes.join(" ");
 
-    let _ = mark_mcp_authorizing(&state, &installation_id).await;
+    let _ = mark_mcp_authorizing(&state, &host_id).await;
 
-    mint_mcp_access_token(
-        &state,
-        bot_id,
-        installation_id,
-        credential_hash,
-        scope,
-        None,
-    )
+    mint_mcp_access_token(&state, bot_id, host_id, credential_hash, scope, None)
 }
 
 fn mint_mcp_access_token(
     state: &AppState,
     bot_id: String,
-    installation_id: String,
+    host_id: String,
     credential_hash: String,
     scope: String,
     refresh_token: Option<String>,
@@ -683,7 +678,7 @@ fn mint_mcp_access_token(
     let now = chrono::Utc::now().timestamp().max(0) as u64;
     let claims = McpAccessClaims {
         sub: bot_id,
-        installation_id,
+        host_id,
         credential_hash,
         scope: scope.clone(),
         aud: state.config.mcp_resource_url(),
@@ -746,7 +741,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         "UPDATE mcp_oauth_authorization_codes SET used_at=NOW()
          WHERE code_hash=$1 AND used_at IS NULL AND expires_at>NOW()
            AND client_id=$2 AND redirect_uri=$3 AND resource=$4 AND code_challenge=$5
-         RETURNING installation_id, scope",
+         RETURNING host_id, scope",
     )
     .bind(hash_oauth_secret(code))
     .bind(client_id)
@@ -765,7 +760,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    let installation_id: String = match row.try_get("installation_id") {
+    let host_id: String = match row.try_get("host_id") {
         Ok(value) => value,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
@@ -773,11 +768,11 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         Ok(value) => value,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
-    let installation = match active_installation(&mut tx, &installation_id).await {
+    let host = match active_host(&mut tx, &host_id).await {
         Ok(Some(value)) => value,
-        Ok(None) => return oauth_token_error("invalid_grant", "installation is no longer active"),
+        Ok(None) => return oauth_token_error("invalid_grant", "host is no longer active"),
         Err(error) => {
-            tracing::error!(%error, "MCP installation lookup failed");
+            tracing::error!(%error, "connector host lookup failed");
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
@@ -788,13 +783,13 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     let refresh_token_id = Uuid::new_v4().to_string();
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,installation_id,credential_hash,client_id,scope,resource,expires_at)
+         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at)
          VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8)",
     )
     .bind(refresh_token_id)
     .bind(hash_oauth_secret(&refresh_token))
-    .bind(&installation_id)
-    .bind(&installation.1)
+    .bind(&host_id)
+    .bind(&host.1)
     .bind(client_id)
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
@@ -808,15 +803,8 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     if tx.commit().await.is_err() {
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
-    let _ = mark_mcp_authorizing(state, &installation_id).await;
-    mint_mcp_access_token(
-        state,
-        installation.0,
-        installation_id,
-        installation.1,
-        scope,
-        Some(refresh_token),
-    )
+    let _ = mark_mcp_authorizing(state, &host_id).await;
+    mint_mcp_access_token(state, host.0, host_id, host.1, scope, Some(refresh_token))
 }
 
 async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> Response {
@@ -845,7 +833,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
     let row = match sqlx::query(
-        "SELECT refresh_token_id, family_id, installation_id, credential_hash, scope
+        "SELECT refresh_token_id, family_id, host_id, credential_hash, scope
          FROM mcp_oauth_refresh_tokens
          WHERE token_hash=$1 AND client_id=$2 AND resource=$3
            AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()
@@ -871,8 +859,8 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             .bind(state.config.mcp_resource_url())
             .execute(&mut *tx)
             .await;
-            let known_installation = sqlx::query_scalar::<_, String>(
-                "SELECT installation_id FROM mcp_oauth_refresh_tokens
+            let known_host = sqlx::query_scalar::<_, String>(
+                "SELECT host_id FROM mcp_oauth_refresh_tokens
                  WHERE token_hash=$1 AND client_id=$2 AND resource=$3 LIMIT 1",
             )
             .bind(hash_oauth_secret(refresh_token))
@@ -883,8 +871,8 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             .ok()
             .flatten();
             let _ = tx.commit().await;
-            if let Some(installation_id) = known_installation {
-                let _ = mark_mcp_refresh_failed(state, &installation_id).await;
+            if let Some(host_id) = known_host {
+                let _ = mark_mcp_refresh_failed(state, &host_id).await;
             }
             return oauth_token_error("invalid_grant", "refresh token is invalid or expired");
         }
@@ -896,14 +884,14 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     let decoded = (
         row.try_get::<String, _>("refresh_token_id"),
         row.try_get::<String, _>("family_id"),
-        row.try_get::<String, _>("installation_id"),
+        row.try_get::<String, _>("host_id"),
         row.try_get::<String, _>("credential_hash"),
         row.try_get::<String, _>("scope"),
     );
     let (
         Ok(original_id),
         Ok(family_id),
-        Ok(installation_id),
+        Ok(host_id),
         Ok(grant_credential_hash),
         Ok(original_scope),
     ) = decoded
@@ -918,15 +906,15 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             Err(message) => return oauth_token_error("invalid_scope", &message),
         },
     };
-    let installation = match active_installation(&mut tx, &installation_id).await {
+    let host = match active_host(&mut tx, &host_id).await {
         Ok(Some(value)) => value,
-        Ok(None) => return oauth_token_error("invalid_grant", "installation is no longer active"),
+        Ok(None) => return oauth_token_error("invalid_grant", "host is no longer active"),
         Err(error) => {
-            tracing::error!(%error, "MCP installation lookup during refresh failed");
+            tracing::error!(%error, "connector host lookup during refresh failed");
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    if grant_credential_hash != installation.1 {
+    if grant_credential_hash != host.1 {
         if let Err(error) = sqlx::query(
             "UPDATE mcp_oauth_refresh_tokens
              SET revoked_at=COALESCE(revoked_at,NOW()) WHERE family_id=$1",
@@ -948,14 +936,14 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     }
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,installation_id,credential_hash,client_id,scope,resource,expires_at)
+         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
     .bind(&replacement_id)
     .bind(&family_id)
     .bind(hash_oauth_secret(&replacement))
-    .bind(&installation_id)
-    .bind(&installation.1)
+    .bind(&host_id)
+    .bind(&host.1)
     .bind(client_id)
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
@@ -991,28 +979,21 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     if tx.commit().await.is_err() {
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
-    let _ = mark_mcp_authorizing(state, &installation_id).await;
-    mint_mcp_access_token(
-        state,
-        installation.0,
-        installation_id,
-        installation.1,
-        scope,
-        Some(replacement),
-    )
+    let _ = mark_mcp_authorizing(state, &host_id).await;
+    mint_mcp_access_token(state, host.0, host_id, host.1, scope, Some(replacement))
 }
 
-async fn active_installation(
+async fn active_host(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    installation_id: &str,
+    host_id: &str,
 ) -> Result<Option<(String, String)>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT i.bot_id, i.credential_hash
-         FROM terminal_installations i JOIN bot_accounts b ON b.bot_id=i.bot_id
-         WHERE i.installation_id=$1 AND i.status='active' AND i.revoked_at IS NULL
+         FROM connector_hosts i JOIN bot_accounts b ON b.bot_id=i.bot_id
+         WHERE i.host_id=$1 AND i.status='active' AND i.revoked_at IS NULL
            AND i.credential_hash IS NOT NULL AND b.is_disabled=FALSE",
     )
-    .bind(installation_id)
+    .bind(host_id)
     .fetch_optional(&mut **tx)
     .await?;
     Ok(row.and_then(|row| {
@@ -1056,7 +1037,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
         }
     };
-    tracing::debug!(bot_id=%identity.bot_id, installation_id=%identity.installation_id, "authorized MCP request");
+    tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
 
     let request: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
@@ -1290,9 +1271,9 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     };
 
     // This is the only transition that establishes connected: the Gateway has
-    // validated an installation-bound token and handled a recognized MCP method.
-    if let Err(error) = mark_mcp_connected(&state, identity.installation_id).await {
-        tracing::warn!(%error, installation_id=%identity.installation_id, "MCP connection-state update failed");
+    // validated a host-bound token and handled a recognized MCP method.
+    if let Err(error) = mark_mcp_connected(&state, identity.host_id).await {
+        tracing::warn!(%error, host_id=%identity.host_id, "MCP connection-state update failed");
     }
 
     let final_response = json!({"jsonrpc": "2.0", "id": id, "result": result});
@@ -1314,17 +1295,17 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
 }
 
 /// Records a successfully authenticated and handled MCP method as connectivity evidence.
-async fn mark_mcp_connected(state: &AppState, installation_id: Uuid) -> Result<(), sqlx::Error> {
+async fn mark_mcp_connected(state: &AppState, host_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET mcp_connection_state = $2,
              mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
                                          THEN mcp_state_updated_at ELSE NOW() END,
              mcp_connected_at = COALESCE(mcp_connected_at, NOW()),
              mcp_last_seen_at = NOW()
-         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
-    .bind(installation_id.to_string())
+    .bind(host_id.to_string())
     .bind(mcp_state_for_evidence(
         McpConnectionEvidence::AuthenticatedRequest,
     ))
@@ -1334,31 +1315,28 @@ async fn mark_mcp_connected(state: &AppState, installation_id: Uuid) -> Result<(
 }
 
 /// Records successful OAuth token issuance without claiming MCP connectivity.
-async fn mark_mcp_authorizing(state: &AppState, installation_id: &str) -> Result<(), sqlx::Error> {
+async fn mark_mcp_authorizing(state: &AppState, host_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
-         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL
            AND mcp_connection_state <> 'connected'",
     )
-    .bind(installation_id)
+    .bind(host_id)
     .bind(mcp_state_for_evidence(McpConnectionEvidence::TokenIssued))
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Records a known installation's rejected refresh token.
-async fn mark_mcp_refresh_failed(
-    state: &AppState,
-    installation_id: &str,
-) -> Result<(), sqlx::Error> {
+/// Records a known host's rejected refresh token.
+async fn mark_mcp_refresh_failed(state: &AppState, host_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
-         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
-    .bind(installation_id)
+    .bind(host_id)
     .bind(mcp_state_for_evidence(McpConnectionEvidence::RefreshFailed))
     .execute(&state.db)
     .await?;
@@ -2038,7 +2016,7 @@ enum AuthMcpError {
 
 struct McpIdentity {
     bot_id: Uuid,
-    installation_id: Uuid,
+    host_id: Uuid,
     scopes: HashSet<String>,
 }
 
@@ -2049,7 +2027,7 @@ enum McpConnectionEvidence {
     RefreshFailed,
 }
 
-/// Maps server-side evidence to an installation state.
+/// Maps server-side evidence to a host state.
 fn mcp_state_for_evidence(evidence: McpConnectionEvidence) -> &'static str {
     match evidence {
         McpConnectionEvidence::TokenIssued => "authorizing",
@@ -2097,17 +2075,16 @@ async fn authenticate_mcp(
         return Err(AuthMcpError::Unauthorized);
     }
     let bot_id = Uuid::parse_str(&claims.sub).map_err(|_| AuthMcpError::Unauthorized)?;
-    let installation_id =
-        Uuid::parse_str(&claims.installation_id).map_err(|_| AuthMcpError::Unauthorized)?;
+    let host_id = Uuid::parse_str(&claims.host_id).map_err(|_| AuthMcpError::Unauthorized)?;
     let row = sqlx::query(
         "SELECT b.is_disabled
-         FROM terminal_installations i
+         FROM connector_hosts i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
-         WHERE i.installation_id = $1 AND i.bot_id = $2
+         WHERE i.host_id = $1 AND i.bot_id = $2
            AND i.credential_hash = $3 AND i.status = 'active'
            AND i.revoked_at IS NULL",
     )
-    .bind(installation_id.to_string())
+    .bind(host_id.to_string())
     .bind(bot_id.to_string())
     .bind(&claims.credential_hash)
     .fetch_optional(&state.db)
@@ -2119,7 +2096,7 @@ async fn authenticate_mcp(
     match row {
         Some(row) if !row.try_get::<bool, _>("is_disabled").unwrap_or(true) => Ok(McpIdentity {
             bot_id,
-            installation_id,
+            host_id,
             scopes: scopes.into_iter().map(str::to_string).collect(),
         }),
         _ => Err(AuthMcpError::Unauthorized),

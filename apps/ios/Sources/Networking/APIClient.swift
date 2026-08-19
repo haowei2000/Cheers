@@ -1269,8 +1269,8 @@ extension APIClient {
         try await getJSON("/bots", as: [BotDto].self)
     }
 
-    func listFleetInstallations() async throws -> [FleetInstallationDto] {
-        try await getJSON("/fleet/installations", as: FleetInstallationListDto.self).installations
+    func listFleetHosts() async throws -> [FleetHostDto] {
+        try await getJSON("/fleet/hosts", as: FleetHostListDto.self).hosts
     }
 
     func listFleetAudit() async throws -> [FleetAuditEventDto] {
@@ -1297,10 +1297,10 @@ extension APIClient {
         )
     }
 
-    // MARK: Bot identity and Installation pairing
+    // MARK: Bot identity and Host pairing
     //
-    // The phone can create a bot and pair installations, but never runs the
-    // connector — see the AgentType/InstallationPairingDto note in DTOs.swift. Every
+    // The phone can create a bot and pair hosts, but never runs the
+    // connector — see the AgentType/HostPairingDto note in DTOs.swift. Every
     // call here exists to produce something the user carries to a real host.
 
     func createBot(username: String, displayName: String?) async throws -> BotDto {
@@ -1314,17 +1314,17 @@ extension APIClient {
         )
     }
 
-    /// Create a pending installation. Its pairing code is returned once.
-    func createInstallation(botId: String, agentType: AgentType) async throws -> InstallationPairingDto {
+    /// Create a pending host. Its pairing code is returned once.
+    func createHost(botId: String, agentType: AgentType) async throws -> HostPairingDto {
         try await postJSON(
-            "/bots/\(botId)/installations",
+            "/bots/\(botId)/hosts",
             body: ["agent_type": agentType.rawValue],
-            as: InstallationPairingDto.self
+            as: HostPairingDto.self
         )
     }
 
-    func revokeInstallation(botId: String, installationId: String) async throws {
-        try await deleteEmpty("/bots/\(botId)/installations/\(installationId)")
+    func revokeHost(botId: String, hostId: String) async throws {
+        try await deleteEmpty("/bots/\(botId)/hosts/\(hostId)")
     }
 
     func connectorConfig(botId: String, agentType: AgentType) async throws -> ConnectorConfigDto {
@@ -1342,7 +1342,7 @@ extension APIClient {
     }
 
     func pairingGuidance() async throws -> PairingGuidanceDto {
-        try await getJSON("/installations/guidance", as: PairingGuidanceDto.self)
+        try await getJSON("/hosts/guidance", as: PairingGuidanceDto.self)
     }
 
     func connectorDiscovery() async throws -> ConnectorDiscoveryDto {

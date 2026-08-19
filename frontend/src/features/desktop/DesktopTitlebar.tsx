@@ -123,7 +123,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
       { id: "activity", label: "Activity", detail: "Approvals and invitations", path: "/activity", Icon: Bell },
-      { id: "fleet", label: "Fleet", detail: "Bots, installations, and audit", path: "/fleet", Icon: Radar },
+      { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: Radar },
       { id: "friends", label: "Friends", detail: "Friends and requests", path: "/friends", Icon: Users },
       { id: "settings", label: "Settings", detail: "Account and application settings", path: "/settings", Icon: Settings },
     ];

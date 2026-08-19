@@ -37,7 +37,7 @@ than from precedent.
 
 | Mechanism | Package | Install record | Signed | Permission vocabulary |
 |---|---|---|---|---|
-| Bot + ACP connector | `connector-manifest.json` | `terminal_installations` | ed25519 vs pinned key | capability delegations, bot-grants, event-access |
+| Bot + ACP connector | `connector-manifest.json` | `connector_hosts` | ed25519 vs pinned key | capability delegations, bot-grants, event-access |
 | Workbench extension — global | `.cheers-extension` zip | `workbench_extensions`, `origin IN ('admin','system')` | sha256 only | **none permitted** (see below) |
 | Workbench extension — personal | same zip | none — client-side only | sha256 only | `file.write`, `channel.resources`, `network`… |
 | Integration | compiled into `catalog.rs` | `integration_installations` | n/a (in-tree) | channel-role projection |
@@ -48,8 +48,9 @@ Three clarifications the table cannot carry:
 "install an MCP server" feature: Cheers *is* the MCP server
 ([packages/cheers-mcp-server](../../packages/cheers-mcp-server)), and a bot's connector
 host is the client. What the platform records is whether a given host has signed in —
-`mcp_connection_state`, a column on `terminal_installations`
-([0077](../../server/migrations/0077_installation_mcp_connection_state.sql)), not an
+`mcp_connection_state`, a column on `connector_hosts`
+([0077](../../server/migrations/0077_installation_mcp_connection_state.sql), written when
+the table was still `terminal_installations`), not an
 install record of its own. It appears in this section only because its OAuth scopes are
 one of the permission vocabularies below.
 
@@ -243,11 +244,14 @@ Three invariants are structural rather than test-guarded, and reviewers must hol
 These are real and worth fixing, in roughly this order. None is a security hole today;
 together they are why the system reads as chaotic.
 
-1. **"Installation" means two unrelated things.** `terminal_installations` is a machine
-   running a connector daemon; `integration_installations` is a provider-side install.
-   Both surface as `/installations` in the router
-   ([:593](../../server/src/router.rs:593) and [:332](../../server/src/router.rs:332)).
-   Rename the former to runners or deployments.
+1. ~~**"Installation" means two unrelated things.**~~ **Resolved.** The machine running
+   a connector daemon is now a *host*: `connector_hosts`, `/hosts` and
+   `/bots/:bot_id/hosts` ([:593](../../server/src/router.rs:593)), `host_id` on the wire
+   ([0088](../../server/migrations/0088_connector_hosts.sql)). `integration_installations`
+   deliberately keeps its name — GitHub's own API returns `installation.id`, so renaming it
+   would make the code disagree with the provider it models. The remaining `/installations`
+   route ([:329](../../server/src/router.rs:329)) is that provider-side concept and is
+   correctly named.
 2. **Four permission vocabularies, two of which should not converge.** A manifest says
    `file.write`; a bot has capability delegations; an integration projects channel roles;
    MCP has OAuth scopes. The first two are plausibly one vocabulary — the resource
@@ -311,6 +315,6 @@ which side something belongs on is whether changing it requires a gateway rebuil
 ## Related
 
 - [Workbench renderer runtime](RENDERER_PLUGIN.md) — the client sandbox and its JSON-RPC surface
-- [Terminal installations](TERMINAL_INSTALLATIONS.md) — connector hosts, the *other* "installation"
+- [Connector hosts](CONNECTOR_HOSTS.md) — the machines that run connector daemons
 - [Platform-resource permissions](PLATFORM_RESOURCE_PERMISSION.md) — the vocabulary item 2 should converge on
 - [Security baseline](SECURITY.md)

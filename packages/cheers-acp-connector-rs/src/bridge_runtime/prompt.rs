@@ -438,7 +438,7 @@ pub(super) fn mcp_server_supported(
 
 /// Build the single authoritative Cheers MCP entry.
 ///
-/// `bearer` is an installation-bound access token the Connector minted for this
+/// `bearer` is a host-bound access token the Connector minted for this
 /// session (see [`crate::mcp_token`]). Supplying it means the Agent only has to
 /// speak HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
 /// Document, and no consent round-trip. `None` falls back to the headerless

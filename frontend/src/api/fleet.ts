@@ -26,7 +26,7 @@ export interface FleetBot {
   can_manage?: boolean;
   relationship?: "mine" | "shared";
   is_disabled?: boolean;
-  installation_count?: number;
+  host_count?: number;
   online: boolean;
   busy_sessions: number;
   idle_sessions: number;
@@ -47,8 +47,8 @@ export interface FleetResponse {
   bots: FleetBot[];
 }
 
-export interface FleetInstallation {
-  installation_id: string;
+export interface FleetHost {
+  host_id: string;
   bot_id: string;
   bot_name: string;
   bot_username: string;
@@ -73,7 +73,7 @@ export interface FleetAuditEvent {
   source: "management" | "connection" | "acp" | "approval";
   event_type: string;
   bot_id?: string | null;
-  installation_id?: string | null;
+  host_id?: string | null;
   actor_id?: string | null;
   detail: Record<string, unknown> | null;
   created_at: string;
@@ -88,22 +88,22 @@ export async function getAllFleet(): Promise<FleetResponse> {
   return apiJson(`/fleet`);
 }
 
-export async function getFleetInstallations(): Promise<FleetInstallation[]> {
-  const result = await apiJson<{ installations: FleetInstallation[] }>(`/fleet/installations`);
-  return result.installations ?? [];
+export async function getFleetHosts(): Promise<FleetHost[]> {
+  const result = await apiJson<{ hosts: FleetHost[] }>(`/fleet/hosts`);
+  return result.hosts ?? [];
 }
 
 export async function getFleetAudit(params: {
   cursor?: string;
   botId?: string;
-  installationId?: string;
+  hostId?: string;
   eventType?: string;
   limit?: number;
 } = {}): Promise<{ events: FleetAuditEvent[]; next_cursor?: string | null }> {
   const query = new URLSearchParams();
   if (params.cursor) query.set("cursor", params.cursor);
   if (params.botId) query.set("bot_id", params.botId);
-  if (params.installationId) query.set("installation_id", params.installationId);
+  if (params.hostId) query.set("host_id", params.hostId);
   if (params.eventType) query.set("event_type", params.eventType);
   if (params.limit) query.set("limit", String(params.limit));
   return apiJson(`/fleet/audit${query.size ? `?${query}` : ""}`);

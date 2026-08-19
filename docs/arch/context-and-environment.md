@@ -69,7 +69,7 @@ that channel's messages."
 Gateway `/mcp` is the only active Cheers MCP tool surface. The Connector injects
 its canonical URL as a headerless ACP `McpServerHttp`; the Agent performs OAuth
 discovery and owns access-token refresh. Authorization remains bound to the
-installation, Bot scopes, channel membership and role. There is no Connector
+host, Bot scopes, channel membership and role. There is no Connector
 OAuth proxy, stdio sidecar, static Bearer header or automatic downgrade.
 
 An incompatible Agent fails closed. Interactive login may require the Agent's

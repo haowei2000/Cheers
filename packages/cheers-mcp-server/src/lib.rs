@@ -31,7 +31,7 @@ pub const ALL_OAUTH_SCOPES: &[&str] = &[
 /// guards, so a new tool cannot be added without one.
 ///
 /// `inbox_stage` is deliberately excluded: it refers to a terminal-local path
-/// and cannot be routed safely until remote calls are installation-bound.
+/// and cannot be routed safely until remote calls are host-bound.
 pub fn required_scope_for_tool(name: &str) -> Option<&'static str> {
     registry::by_tool(name)
         .and_then(|spec| spec.tool)

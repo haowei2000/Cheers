@@ -2,10 +2,10 @@ import { useState, type ReactNode } from "react";
 import { Ban, KeyRound, Power, RefreshCw, Trash2 } from "lucide-react";
 
 import {
-  activateTerminalInstallation,
-  deleteInstallationRecord,
-  reconnectTerminalInstallation,
-  revokeTerminalInstallation,
+  activateConnectorHost,
+  deleteHostRecord,
+  reconnectConnectorHost,
+  revokeConnectorHost,
   rotateTerminalCredential,
 } from "@/api/bots";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,12 @@ import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { messageOf, notify } from "@/lib/notify";
 
-/** The fields every installation surface has in common. `FleetInstallation`
+/** The fields every host surface has in common. `FleetHost`
  *  satisfies this as-is; the per-bot list needs its bot id spread in, since it
  *  is addressed by a route the row itself doesn't carry. */
-export interface InstallationLifecycleItem {
+export interface HostLifecycleItem {
   bot_id: string;
-  installation_id: string;
+  host_id: string;
   device_name: string;
   status: "pending" | "active" | "standby";
   online: boolean;
@@ -27,10 +27,10 @@ export interface InstallationLifecycleItem {
 }
 
 /** Status as a sentence, not a column value. `status` alone is ambiguous — an
- *  installation can be the designated active one while nothing is connected —
+ *  host can be the designated active one while nothing is connected —
  *  so liveness and role are stated together (DESIGN.md bans raw enum names in
  *  UI copy). */
-export function installationStatusLabel(item: InstallationLifecycleItem): string {
+export function hostStatusLabel(item: HostLifecycleItem): string {
   if (item.revoked_at) return "Revoked";
   if (item.status === "pending") return "Waiting for pairing";
   if (item.online) return "Online";
@@ -65,10 +65,10 @@ export function mcpStateTone(state: string): "success" | "warning" | "muted" {
 type Pending = "revoke" | "delete" | null;
 
 /**
- * Every lifecycle operation an installation has, in one place.
+ * Every lifecycle operation a host has, in one place.
  *
- * Both surfaces that manage installations — a bot's own Installations tab and
- * Fleet → Installations — used to implement these separately, which is why they
+ * Both surfaces that manage hosts — a bot's own Hosts tab and
+ * Fleet → Hosts — used to implement these separately, which is why they
  * drifted: two different icons for the same operation, the same `Trash2` for
  * revoke and delete, and a revoked row that could only be cleared from Fleet.
  * They now render this.
@@ -76,12 +76,12 @@ type Pending = "revoke" | "delete" | null;
  * `presentation="labeled"` spells the actions out (roomy detail panel);
  * `presentation="compact"` is icon-only with accessible names (dense list row).
  */
-export function InstallationActions({
+export function HostActions({
   item,
   presentation = "labeled",
   onChanged,
 }: {
-  item: InstallationLifecycleItem;
+  item: HostLifecycleItem;
   presentation?: "labeled" | "compact";
   /** Refetch the owning list once an operation lands. */
   onChanged: () => void | Promise<void>;
@@ -109,7 +109,7 @@ export function InstallationActions({
   async function rotate() {
     setBusy(true);
     try {
-      const result = await rotateTerminalCredential(item.bot_id, item.installation_id);
+      const result = await rotateTerminalCredential(item.bot_id, item.host_id);
       setCredential(result.credential);
       await onChanged();
     } catch (e) {
@@ -123,14 +123,14 @@ export function InstallationActions({
   const controls: ReactNode[] = [];
 
   if (revoked) {
-    // A revoked installation cannot connect again; the row is kept so the device
+    // A revoked host cannot connect again; the row is kept so the device
     // stays visible in history until someone clears it.
     controls.push(
       <Action
         key="delete"
         presentation={presentation}
         action="delete"
-        accessibleLabel="Delete installation record"
+        accessibleLabel="Delete host record"
         icon={<Trash2 className="h-3.5 w-3.5" />}
         tone="danger"
         disabled={busy}
@@ -144,12 +144,12 @@ export function InstallationActions({
           key="activate"
           presentation={presentation}
           action="activate"
-          accessibleLabel="Make this the active installation"
+          accessibleLabel="Make this the active host"
           icon={<Power className="h-3.5 w-3.5" />}
           disabled={busy}
           onClick={() => void run(
-            () => activateTerminalInstallation(item.bot_id, item.installation_id),
-            `${item.device_name} is now the active installation`
+            () => activateConnectorHost(item.bot_id, item.host_id),
+            `${item.device_name} is now the active host`
           )}
         />
       );
@@ -160,11 +160,11 @@ export function InstallationActions({
           key="reconnect"
           presentation={presentation}
           action="restart"
-          accessibleLabel="Reconnect installation"
+          accessibleLabel="Reconnect host"
           icon={<RefreshCw className="h-3.5 w-3.5" />}
           disabled={busy}
           onClick={() => void run(
-            () => reconnectTerminalInstallation(item.bot_id, item.installation_id),
+            () => reconnectConnectorHost(item.bot_id, item.host_id),
             "Reconnect requested"
           )}
         />
@@ -190,7 +190,7 @@ export function InstallationActions({
         key="revoke"
         presentation={presentation}
         action="revoke"
-        accessibleLabel={item.status === "pending" ? "Cancel pending pairing" : "Revoke installation"}
+        accessibleLabel={item.status === "pending" ? "Cancel pending pairing" : "Revoke host"}
         icon={<Ban className="h-3.5 w-3.5" />}
         tone="danger"
         disabled={busy}
@@ -205,13 +205,13 @@ export function InstallationActions({
 
       {pending === "revoke" && (
         <ConfirmDialog
-          title={item.status === "pending" ? "Cancel this pairing?" : "Revoke this installation?"}
+          title={item.status === "pending" ? "Cancel this pairing?" : "Revoke this host?"}
           confirmAction="revoke"
           confirmLabel={item.status === "pending" ? "Cancel pairing" : "Revoke"}
           busy={busy}
           onClose={() => setPending(null)}
           onConfirm={() => void run(
-            () => revokeTerminalInstallation(item.bot_id, item.installation_id),
+            () => revokeConnectorHost(item.bot_id, item.host_id),
             item.status === "pending" ? "Pairing cancelled" : `${item.device_name} revoked`
           )}
         >
@@ -243,7 +243,7 @@ export function InstallationActions({
           busy={busy}
           onClose={() => setPending(null)}
           onConfirm={() => void run(
-            () => deleteInstallationRecord(item.bot_id, item.installation_id),
+            () => deleteHostRecord(item.bot_id, item.host_id),
             `${item.device_name} record deleted`
           )}
         >
@@ -325,7 +325,7 @@ function CredentialDialog({
     <Dialog title={`New credential for ${deviceName}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
         <p className="text-compact text-warning-200">
-          Shown once. Write it to the installation's credential file before reconnecting — the
+          Shown once. Write it to the host's credential file before reconnecting — the
           previous credential no longer works.
         </p>
         <code className="block select-all break-all rounded-sm bg-zinc-950 p-3 text-compact text-content-secondary">

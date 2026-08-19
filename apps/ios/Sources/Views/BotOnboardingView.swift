@@ -3,7 +3,7 @@ import CoreImage.CIFilterBuiltins
 
 /// Create a bot from the phone and hand it off to the machine that will run it.
 ///
-/// Mirrors the installation wizard while retaining iOS's compact combined UI:
+/// Mirrors the host wizard while retaining iOS's compact combined UI:
 /// choose bot → pick a mode → connect. The steps are the same because the
 /// server contract is the same; what differs is the *carrier*. A phone has no
 /// terminal, so every mode here ends in something you can actually move off the
@@ -42,7 +42,7 @@ struct BotOnboardingView: View {
     @State private var error: String?
 
     // Step 3 artifacts
-    @State private var code: InstallationPairingDto?
+    @State private var code: HostPairingDto?
     @State private var guidance: PairingGuidanceDto?
     @State private var guidanceError: String?
     @State private var config: ConnectorConfigDto?
@@ -163,7 +163,7 @@ struct BotOnboardingView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Chosen for this Installation. That machine will need \(agentType.adapterHint) installed.")
+                        Text("Chosen for this Host. That machine will need \(agentType.adapterHint) installed.")
                             .font(.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -207,7 +207,7 @@ struct BotOnboardingView: View {
 
             if preselectedBot != nil {
                 card {
-                    Picker("Agent for this Installation", selection: $agentType) {
+                    Picker("Agent for this Host", selection: $agentType) {
                         ForEach(AgentType.allCases) { agent in
                             Text(agent.label).tag(agent)
                         }
@@ -335,7 +335,7 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func scriptPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Open Cheers on the machine that will run the agent, go to Fleet → Installations → Use pairing code, and scan or type this.")
+            Text("Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
 
             if let code {
@@ -521,8 +521,8 @@ struct BotOnboardingView: View {
         busy = true
         defer { busy = false }
         do {
-            if let code { try await api.revokeInstallation(botId: bot.botId, installationId: code.installationId) }
-            code = try await api.createInstallation(botId: bot.botId, agentType: agentType)
+            if let code { try await api.revokeHost(botId: bot.botId, hostId: code.hostId) }
+            code = try await api.createHost(botId: bot.botId, agentType: agentType)
         }
         catch { self.error = friendly(error) }
     }
@@ -532,7 +532,7 @@ struct BotOnboardingView: View {
         busy = true
         defer { busy = false }
         do {
-            if let code { try await api.revokeInstallation(botId: bot.botId, installationId: code.installationId) }
+            if let code { try await api.revokeHost(botId: bot.botId, hostId: code.hostId) }
             code = nil
         } catch { self.error = friendly(error) }
     }

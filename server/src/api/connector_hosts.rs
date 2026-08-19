@@ -1,4 +1,4 @@
-//! Terminal installation management for Agent Bridge connectors.
+//! Connector host management for Agent Bridge connectors.
 //!
 //! A bot remains the durable channel identity. Each row here represents one
 //! concrete connector host with its own revocable, rotatable bearer secret.
@@ -15,10 +15,10 @@ use crate::{
     api::{bots::ensure_bot_owner_or_admin, middleware::Claims},
     app_state::AppState,
     errors::AppError,
-    infra::crypto::{generate_installation_credential, hash_installation_credential},
+    infra::crypto::{generate_host_credential, hash_host_credential},
 };
 
-pub async fn list_installations(
+pub async fn list_hosts(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
@@ -26,18 +26,18 @@ pub async fn list_installations(
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let bot_uuid = Uuid::parse_str(&bot_id).map_err(|_| AppError::NotFound)?;
     let bot_online = state.bot_locator.is_online(bot_uuid).await;
-    // A revoked pending installation never held a credential and is not a runtime
+    // A revoked pending host never held a credential and is not a runtime
     // location — it is an abandoned pairing attempt, kept only until the reaper
     // clears it with its code (up to a day). Listing it as a device is noise, and
     // replacing a code in the setup wizard leaves one behind every time. The
     // management audit log keeps the trail.
     let rows = sqlx::query(
-        "SELECT installation_id, device_name, agent_type, credential_prefix, status,
+        "SELECT host_id, device_name, agent_type, credential_prefix, status,
                 connector_version, capabilities, last_seen_at, connected_at,
                 credential_rotated_at, created_at, updated_at, revoked_at,
                 mcp_connection_state, mcp_state_updated_at, mcp_connected_at,
                 mcp_last_seen_at
-         FROM terminal_installations
+         FROM connector_hosts
          WHERE bot_id = $1
            AND NOT (status = 'pending' AND revoked_at IS NOT NULL)
          ORDER BY created_at DESC",
@@ -46,12 +46,12 @@ pub async fn list_installations(
     .fetch_all(&state.db)
     .await?;
 
-    let installations = rows.into_iter().map(|row| {
+    let hosts = rows.into_iter().map(|row| {
         let status: String = row.try_get("status").unwrap_or_else(|_| "standby".into());
         let revoked_at = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at").ok().flatten();
         let agent_type = row.try_get::<String, _>("agent_type").unwrap_or_else(|_| "generic".into());
         json!({
-            "installation_id": row.try_get::<String, _>("installation_id").unwrap_or_default(),
+            "host_id": row.try_get::<String, _>("host_id").unwrap_or_default(),
             "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
             "agent_type": agent_type,
             "agent_profile": crate::domain::agent_profile::profile(&agent_type),
@@ -72,15 +72,13 @@ pub async fn list_installations(
             "mcp_last_seen_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_last_seen_at").ok().flatten(),
         })
     }).collect::<Vec<_>>();
-    Ok(Json(
-        json!({ "bot_id": bot_id, "installations": installations }),
-    ))
+    Ok(Json(json!({ "bot_id": bot_id, "hosts": hosts })))
 }
 
-pub async fn activate_installation(
+pub async fn activate_host(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((bot_id, installation_id)): Path<(String, String)>,
+    Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let mut tx = state.db.begin().await?;
@@ -89,11 +87,11 @@ pub async fn activate_installation(
         .execute(&mut *tx)
         .await?;
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM terminal_installations
-         WHERE installation_id = $1 AND bot_id = $2 AND revoked_at IS NULL
+        "SELECT EXISTS(SELECT 1 FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2 AND revoked_at IS NULL
            AND status IN ('active', 'standby') AND credential_hash IS NOT NULL)",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .fetch_one(&mut *tx)
     .await?;
@@ -101,17 +99,17 @@ pub async fn activate_installation(
         return Err(AppError::NotFound);
     }
     sqlx::query(
-        "UPDATE terminal_installations SET status = 'standby', updated_at = NOW()
+        "UPDATE connector_hosts SET status = 'standby', updated_at = NOW()
          WHERE bot_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        "UPDATE terminal_installations SET status = 'active', updated_at = NOW()
-         WHERE installation_id = $1 AND bot_id = $2 AND revoked_at IS NULL",
+        "UPDATE connector_hosts SET status = 'active', updated_at = NOW()
+         WHERE host_id = $1 AND bot_id = $2 AND revoked_at IS NULL",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
@@ -119,41 +117,41 @@ pub async fn activate_installation(
     kick_bot(&state, &bot_id);
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.activated",
+        "host.activated",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({}),
     )
     .await;
-    tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation activated");
+    tracing::info!(%bot_id, %host_id, owner = %claims.sub, "connector host activated");
     Ok(Json(
-        json!({"bot_id": bot_id, "installation_id": installation_id, "status": "active"}),
+        json!({"bot_id": bot_id, "host_id": host_id, "status": "active"}),
     ))
 }
 
-pub async fn rotate_installation_credential(
+pub async fn rotate_host_credential(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((bot_id, installation_id)): Path<(String, String)>,
+    Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let credential = generate_installation_credential();
-    let hash = hash_installation_credential(&credential);
+    let credential = generate_host_credential();
+    let hash = hash_host_credential(&credential);
     let prefix = credential[..credential.len().min(13)].to_string();
     let row = sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET credential_hash = $1, credential_prefix = $2,
              credential_rotated_at = NOW(), updated_at = NOW(),
              mcp_connection_state = 'unconfigured', mcp_state_updated_at = NOW(),
              mcp_connected_at = NULL, mcp_last_seen_at = NULL
-         WHERE installation_id = $3 AND bot_id = $4 AND revoked_at IS NULL
+         WHERE host_id = $3 AND bot_id = $4 AND revoked_at IS NULL
            AND status IN ('active', 'standby') AND credential_hash IS NOT NULL
          RETURNING status",
     )
     .bind(hash)
     .bind(&prefix)
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .fetch_optional(&state.db)
     .await?;
@@ -165,73 +163,73 @@ pub async fn rotate_installation_credential(
     }
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.credential_rotated",
+        "host.credential_rotated",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({ "credential_prefix": prefix }),
     )
     .await;
-    tracing::info!(%bot_id, %installation_id, credential_prefix = %prefix, owner = %claims.sub, "terminal installation credential rotated");
+    tracing::info!(%bot_id, %host_id, credential_prefix = %prefix, owner = %claims.sub, "connector host credential rotated");
     Ok(Json(json!({
         "bot_id": bot_id,
-        "installation_id": installation_id,
+        "host_id": host_id,
         "credential": credential,
         "credential_prefix": prefix,
-        "note": "Store this credential now. It is shown once and replaces only this installation's previous credential."
+        "note": "Store this credential now. It is shown once and replaces only this host's previous credential."
     })))
 }
 
-pub async fn reconnect_installation(
+pub async fn reconnect_host(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((bot_id, installation_id)): Path<(String, String)>,
+    Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM terminal_installations
-         WHERE installation_id = $1 AND bot_id = $2
+        "SELECT EXISTS(SELECT 1 FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2
            AND status = 'active' AND revoked_at IS NULL)",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .fetch_one(&state.db)
     .await?;
     if !active {
         return Err(AppError::BadRequest(
-            "only the active installation can be reconnected".into(),
+            "only the active host can be reconnected".into(),
         ));
     }
     kick_bot(&state, &bot_id);
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.reconnect_requested",
+        "host.reconnect_requested",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({}),
     )
     .await;
-    tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation reconnect requested");
+    tracing::info!(%bot_id, %host_id, owner = %claims.sub, "connector host reconnect requested");
     Ok(Json(json!({
         "bot_id": bot_id,
-        "installation_id": installation_id,
+        "host_id": host_id,
         "reconnect_requested": true
     })))
 }
 
-pub async fn revoke_installation(
+pub async fn revoke_host(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((bot_id, installation_id)): Path<(String, String)>,
+    Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let mut tx = state.db.begin().await?;
     let previous_status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM terminal_installations
-         WHERE installation_id = $1 AND bot_id = $2 FOR UPDATE",
+        "SELECT status FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2 FOR UPDATE",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .fetch_optional(&mut *tx)
     .await?;
@@ -241,22 +239,22 @@ pub async fn revoke_installation(
     if previous_status == "pending" {
         sqlx::query(
             "UPDATE enrollment_codes SET revoked = TRUE
-             WHERE installation_id = $1 AND bot_id = $2
+             WHERE host_id = $1 AND bot_id = $2
                AND redeemed_at IS NULL AND NOT revoked",
         )
-        .bind(&installation_id)
+        .bind(&host_id)
         .bind(&bot_id)
         .execute(&mut *tx)
         .await?;
     }
     let revoked_status = status_after_revoke(&previous_status);
     sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET revoked_at = COALESCE(revoked_at, NOW()), status = $3,
              mcp_connection_state = 'revoked', mcp_state_updated_at = NOW(), updated_at = NOW()
-         WHERE installation_id = $1 AND bot_id = $2",
+         WHERE host_id = $1 AND bot_id = $2",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .bind(revoked_status)
     .execute(&mut *tx)
@@ -267,33 +265,33 @@ pub async fn revoke_installation(
     }
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.revoked",
+        "host.revoked",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({ "previous_status": previous_status }),
     )
     .await;
-    tracing::info!(%bot_id, %installation_id, owner = %claims.sub, "terminal installation revoked");
+    tracing::info!(%bot_id, %host_id, owner = %claims.sub, "connector host revoked");
     Ok(Json(
-        json!({"bot_id": bot_id, "installation_id": installation_id, "revoked": true}),
+        json!({"bot_id": bot_id, "host_id": host_id, "revoked": true}),
     ))
 }
 
-pub async fn delete_installation_record(
+pub async fn delete_host_record(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Path((bot_id, installation_id)): Path<(String, String)>,
+    Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let mut tx = state.db.begin().await?;
 
     let revoked_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
-        "SELECT revoked_at FROM terminal_installations
-         WHERE installation_id = $1 AND bot_id = $2
+        "SELECT revoked_at FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2
          FOR UPDATE",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .fetch_optional(&mut *tx)
     .await?;
@@ -302,17 +300,17 @@ pub async fn delete_installation_record(
         None => return Err(AppError::NotFound),
         Some(None) => {
             return Err(AppError::BadRequest(
-                "revoke the installation before deleting its record".into(),
+                "revoke the host before deleting its record".into(),
             ));
         }
         Some(Some(_)) => {}
     }
 
     sqlx::query(
-        "DELETE FROM terminal_installations
-         WHERE installation_id = $1 AND bot_id = $2",
+        "DELETE FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
@@ -320,9 +318,9 @@ pub async fn delete_installation_record(
     tx.commit().await?;
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.deleted",
+        "host.deleted",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({}),
     )
@@ -330,19 +328,19 @@ pub async fn delete_installation_record(
 
     tracing::info!(
         %bot_id,
-        %installation_id,
+        %host_id,
         owner = %claims.sub,
-        "terminal installation record deleted"
+        "connector host record deleted"
     );
 
     Ok(Json(json!({
         "bot_id": bot_id,
-        "installation_id": installation_id,
+        "host_id": host_id,
         "deleted": true
     })))
 }
-/// A revoked pending Installation stays pending until `pairing_reaper` removes
-/// it with its revoked code. Credentialed Installations become standby so the
+/// A revoked pending Host stays pending until `pairing_reaper` removes
+/// it with its revoked code. Credentialed Hosts become standby so the
 /// historical row remains visible as a non-active runtime location.
 fn status_after_revoke(previous_status: &str) -> &'static str {
     if previous_status == "pending" {

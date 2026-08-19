@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         config.approval_card_ttl_secs,
     );
 
-    // Reap spent/expired installation pairing codes (audit follow-up L2):
+    // Reap spent/expired host pairing codes (audit follow-up L2):
     // the per-owner/per-bot caps count only live codes, so terminal rows would
     // otherwise accumulate without bound. Hourly, keeping rows 1 day for audit.
     gateway::pairing_reaper::spawn(state.db.clone(), 3600, 86_400);

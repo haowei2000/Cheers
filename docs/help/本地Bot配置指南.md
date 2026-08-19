@@ -2,8 +2,8 @@
 
 > **Language**: English | [中文](本地Bot配置指南.zh-CN.md)
 
-For users / developers connecting an ACP agent (e.g. Codex, Claude) **as a local host daemon**.
-It covers: how to create a Bot identity, pair a local Installation, store its credential, manage multiple Installations, and troubleshoot.
+For users / developers connecting an ACP agent (e.g. Codex, Claude) **as a local connector daemon**.
+It covers: how to create a Bot identity, pair a local Host, store its credential, manage multiple Hosts, and troubleshoot.
 
 - For the full "create a bot in the UI" flow, see the
   [Agent Bridge Integration Guide](AgentBridge接入指南.md). This document focuses
@@ -17,13 +17,13 @@ It covers: how to create a Bot identity, pair a local Installation, store its cr
 
 ```
 your browser ──▶ gateway(:8000, from source) ◀──WebSocket── connector daemon ──stdio──▶ ACP agent (codex/claude)
-                                                            └ one TOML = one Installation = one daemon
+                                                            └ one TOML = one Host = one daemon
 ```
 
 Three rules:
 
-1. A **Bot is the durable identity**; an **Installation is one place where that Bot runs**. One TOML file = one Installation = one daemon (distinguished by `--name`).
-2. Put the Installation credential in a separate sidecar file (`bot_token_file` is the connector's historical config key); never inline it in TOML.
+1. A **Bot is the durable identity**; an **Host is one place where that Bot runs**. One TOML file = one Host = one daemon (distinguished by `--name`).
+2. Put the Host credential in a separate sidecar file (`host_credential_file`); never inline it in TOML.
 3. The gateway runs from source and reuses your existing Docker infra (Postgres/Redis/RustFS). **Do not** `docker compose up` the repo's `docker-compose.yml` — it's stale and would collide with your running containers on ports 5432/6379/9000.
 
 ---
@@ -74,8 +74,8 @@ Keep **runtime config + secrets outside the repo** (`~/.cheers/`); treat the rep
 ~/.cheers/
 ├─ bin/
 │   └─ cce-acp-connector
-├─ cheers-daemon.codex.toml      # Installation: codex (one file per Installation)
-├─ cheers-daemon.claude.toml     # Installation: claude
+├─ cheers-daemon.codex.toml      # Host: codex (one file per Host)
+├─ cheers-daemon.claude.toml     # Host: claude
 ├─ secrets/
 │   ├─ codex.token   (chmod 600) # token plaintext only, gitignored
 │   └─ claude.token  (chmod 600)
@@ -88,12 +88,12 @@ Daemon metadata (pid, etc.) lives in `~/.cheers/acp-connector/<name>/daemon.json
 
 ---
 
-## 3. Connect a Bot through an Installation
+## 3. Connect a Bot through a Host
 
 Example: **codex** (for claude, swap the name / command / bot_id).
 
 ### 3.1 Confirm/create the Bot identity, get its `bot_id`
-UI: log in → Fleet → **New bot**. This creates only the identity; it does not select an Agent or create an Installation. Or list via API:
+UI: log in → Fleet → **New bot**. This creates only the identity; it does not select an Agent or create a Host. Or list via API:
 
 ```bash
 TOK=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
@@ -103,17 +103,17 @@ curl -s http://127.0.0.1:8000/api/v1/bots -H "Authorization: Bearer $TOK" \
   | jq -r '.[] | "\(.username)  \(.bot_id)"'
 ```
 
-### 3.2 Create and redeem an Installation pairing
+### 3.2 Create and redeem a Host pairing
 
-Choose the Agent for this Installation. Redeeming it makes this Installation active and moves any previous active Installation for the same Bot to standby.
+Choose the Agent for this Host. Redeeming it makes this Host active and moves any previous active Host for the same Bot to standby.
 
 ```bash
 mkdir -p ~/.cheers/secrets && chmod 700 ~/.cheers/secrets
-PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/installations" \
+PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/hosts" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"agent_type":"codex","device_name":"Local Mac"}')
 PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
-REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/installations/redeem" \
+REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/hosts/redeem" \
   -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg code "$PAIRING_CODE" --arg device 'Local Mac' '{pairing_code:$code,device_name:$device}')")
 printf '%s' "$REDEEMED" | jq -r .credential > ~/.cheers/secrets/codex.token
@@ -127,8 +127,8 @@ For the recommended installer instead of the manual steps below, run the single-
 CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
 ```
 
-### 3.3 Inspect or customize the generated Installation config
-(Field reference in [§6](#6-full-config-reference). `bot_token_file` resolves relative to **the config file's directory**.)
+### 3.3 Inspect or customize the generated Host config
+(Field reference in [§6](#6-full-config-reference). `host_credential_file` resolves relative to **the config file's directory**.)
 
 ```toml
 version = 1
@@ -140,7 +140,7 @@ log_dir    = "logs-codex"
 [accounts.codex.bridge]
 control_url    = "ws://localhost:8000/ws/agent-bridge/control"
 data_url       = "ws://localhost:8000/ws/agent-bridge/data"
-bot_token_file = "secrets/codex.token"   # ← token in a file, not inline, not env
+host_credential_file = "secrets/codex.token"   # ← token in a file, not inline, not env
 
 [accounts.codex.adapter]
 type    = "stdio"
@@ -173,7 +173,7 @@ The Connector always injects the authenticated Gateway hello's canonical HTTP
 MCP URL as `cheers`; this is not configurable and carries no static bearer header.
 
 > This is the **minimal** form (omitted fields have sensible defaults). For a full template, copy
-> `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` and switch the token source to `bot_token_file`.
+> `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` and switch the token source to `host_credential_file`.
 
 ### 3.4 Start the daemon
 ```bash
@@ -243,18 +243,18 @@ chmod +x ~/.cheers/cheers-bots.sh
 
 ## 5. Where the token goes: file vs env vs inline
 
-The schema **requires** exactly one of `bot_token_env` / `bot_token_file`, and **rejects** an inline `bot_token` in the TOML (a deliberate security choice).
+The schema **requires** exactly one of `host_credential_env` / `host_credential_file`, and **rejects** an inline `bot_token` in the TOML (a deliberate security choice).
 
-| | Inline in TOML | Env var `bot_token_env` | **Sidecar file `bot_token_file`** ✅ local default |
+| | Inline in TOML | Env var `host_credential_env` | **Sidecar file `host_credential_file`** ✅ local default |
 |---|---|---|---|
 | Supported | ❌ rejected | ✅ | ✅ |
 | Commit-safe | plaintext into git/screenshots/tickets | config has no secret | config has no secret; token gitignored separately |
 | Restart / launcher | — | must re-export each time | works as-is, no export |
 | Leak surface | largest | visible in process env (`ps eww`), shell history | in memory only; file is 600 |
 | Rotation | edit the config (risk fat-fingering) | re-export + restart | overwrite one small file |
-| Best for | don't | **containers / CI** (secrets manager injects, no disk) | **local host daemons** |
+| Best for | don't | **containers / CI** (secrets manager injects, no disk) | **local connector daemons** |
 
-**Bottom line:** use `bot_token_file` locally; use `bot_token_env` only when something external (container orchestrator / CI secrets manager) injects the secret at runtime.
+**Bottom line:** use `host_credential_file` locally; use `host_credential_env` only when something external (container orchestrator / CI secrets manager) injects the secret at runtime.
 
 ---
 
@@ -276,7 +276,7 @@ auto = true                          # verify ed25519 manifest + sha256, drain, 
 [accounts.codex.bridge]
 control_url           = "ws://localhost:8000/ws/agent-bridge/control"
 data_url              = "ws://localhost:8000/ws/agent-bridge/data"
-bot_token_file        = "secrets/codex.token"   # or bot_token_env = "VAR"; exactly one
+host_credential_file        = "secrets/codex.token"   # or host_credential_env = "VAR"; exactly one
 heartbeat_interval_ms = 25000
 ack_timeout_ms        = 600000
 [accounts.codex.bridge.reconnect]
@@ -355,7 +355,7 @@ $BIN stop    --name codex
 $BIN run     --config <file>     # run in the foreground (debugging, not daemonized)
 ```
 
-- **Replace an Installation credential:** create and pair a replacement Installation (§3.2). It becomes active and the old Installation becomes standby; revoke the old Installation when it is no longer needed.
+- **Replace a Host credential:** create and pair a replacement Host (§3.2). It becomes active and the old Host becomes standby; revoke the old Host when it is no longer needed.
 - **Auto-start on login:** write a launchd plist (one per bot, or one that runs `cheers-bots.sh start`). Ask if you want one.
 
 ### Automatic updates (connector >= 0.1.27)
@@ -384,8 +384,8 @@ connection it is restored automatically and that version is never retried.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `start` exits immediately / log mentions token | token source missing or empty | `bridge` must set one of `bot_token_env` / `bot_token_file`; check the file exists and is non-empty |
-| `bot_token_env ... is not set` | using env but didn't export | switch to `bot_token_file`, or export before starting |
+| `start` exits immediately / log mentions token | token source missing or empty | `bridge` must set one of `host_credential_env` / `host_credential_file`; check the file exists and is non-empty |
+| `host_credential_env ... is not set` | using env but didn't export | switch to `host_credential_file`, or export before starting |
 | log `ACP agent ... command not found` | wrong agent binary path | `command -v codex-acp`, put the absolute path in `adapter.command` |
 | agent starts but no reply / child auth fails | child can't reach auth | `policy.env.allow` must include `HOME` (subscription auth) or the API-key var (and export it) |
 | can't connect / endless reconnect | gateway down or wrong URL | `curl :8000/health`; point `control_url/data_url` at `ws://localhost:8000/ws/agent-bridge/...` |

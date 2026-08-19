@@ -24,7 +24,7 @@ use crate::{
         realtime::frame::WireFrame,
         stream::{handle_delta, handle_done, handle_send, handle_session_update},
     },
-    infra::crypto::hash_installation_credential,
+    infra::crypto::hash_host_credential,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
 };
 use sqlx::PgPool;
@@ -59,7 +59,7 @@ const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 #[derive(Debug, Clone)]
 struct BotInfo {
     bot_id: Uuid,
-    installation_id: Uuid,
+    host_id: Uuid,
     provider_account_id: String,
     username: String,
     display_name: Option<String>,
@@ -119,7 +119,7 @@ async fn handle_control(
     let memberships = load_memberships(&state.db, bot.bot_id).await;
     let hello = bridge_frames::control_hello_frame(
         bot.bot_id,
-        bot.installation_id,
+        bot.host_id,
         &bot.username,
         bot.display_name.as_deref(),
         connection_id,
@@ -167,7 +167,7 @@ async fn handle_control(
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
-    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, "control connected");
+    tracing::info!(bot_id = %bot.bot_id, host_id = %bot.host_id, "control connected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -200,7 +200,7 @@ async fn handle_control(
                                 malformed = 0;
                                 if last_seen_written.elapsed() >= LAST_SEEN_WRITE_INTERVAL {
                                     last_seen_written = std::time::Instant::now();
-                                    touch_installation(&state, &bot).await;
+                                    touch_host(&state, &bot).await;
                                 }
                                 handle_control_frame(&frame, &state, &bot).await;
                             }
@@ -251,7 +251,7 @@ async fn handle_control(
     };
 
     let superseded = reason == "superseded";
-    tracing::info!(bot_id = %bot.bot_id, installation_id = %bot.installation_id, reason, "control disconnected");
+    tracing::info!(bot_id = %bot.bot_id, host_id = %bot.host_id, reason, "control disconnected");
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -287,18 +287,18 @@ async fn handle_control(
 ///
 /// It used to be written on every inbound control frame. That is bounded by the
 /// connector's 25s heartbeat in normal operation, but it made a DB write part of
-/// frame handling — a per-bot periodic write to a row the installation lists
+/// frame handling — a per-bot periodic write to a row the host lists
 /// read, scaling with the fleet for no added precision. The column answers "when
 /// did we last hear from this device", which a minute's resolution covers; a
 /// connection that goes quiet is caught by the 90s idle reaper, not by this.
 const LAST_SEEN_WRITE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-async fn touch_installation(state: &AppState, bot: &BotInfo) {
+async fn touch_host(state: &AppState, bot: &BotInfo) {
     let _ = sqlx::query(
-        "UPDATE terminal_installations SET last_seen_at = NOW(), updated_at = NOW()
-         WHERE installation_id = $1 AND revoked_at IS NULL",
+        "UPDATE connector_hosts SET last_seen_at = NOW(), updated_at = NOW()
+         WHERE host_id = $1 AND revoked_at IS NULL",
     )
-    .bind(bot.installation_id.to_string())
+    .bind(bot.host_id.to_string())
     .execute(&state.db)
     .await;
 }
@@ -371,21 +371,21 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 if let Err(e) = result {
                     tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
                 }
-                let installation_result = sqlx::query(
-                    "UPDATE terminal_installations
+                let host_result = sqlx::query(
+                    "UPDATE connector_hosts
                      SET connector_version = COALESCE($2, connector_version),
                          capabilities = CASE WHEN $3::jsonb = 'null'::jsonb
                                              THEN capabilities ELSE $3::jsonb END,
                          last_seen_at = NOW(), updated_at = NOW()
-                     WHERE installation_id = $1 AND revoked_at IS NULL",
+                     WHERE host_id = $1 AND revoked_at IS NULL",
                 )
-                .bind(bot.installation_id.to_string())
+                .bind(bot.host_id.to_string())
                 .bind(connector_version.as_deref())
                 .bind(&caps_str)
                 .execute(&state.db)
                 .await;
-                if let Err(e) = installation_result {
-                    tracing::warn!(installation_id = %bot.installation_id, err = %e, "installation capabilities persist failed");
+                if let Err(e) = host_result {
+                    tracing::warn!(host_id = %bot.host_id, err = %e, "host capabilities persist failed");
                 }
             }
         }
@@ -601,7 +601,7 @@ async fn handle_data(
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
     let hello = bridge_frames::data_hello_frame(
         bot.bot_id,
-        bot.installation_id,
+        bot.host_id,
         connection_id,
         server_capabilities(&state),
         bot.acp_security.as_ref(),
@@ -1063,7 +1063,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             if up_to_seq > 0 {
                 tracing::warn!(
                     bot_id = %bot.bot_id,
-                    installation_id = %bot.installation_id,
+                    host_id = %bot.host_id,
                     last_event_seq = up_to_seq,
                     "connector asked to resume a data stream; no event log exists to replay from,                      so frames pushed while it was disconnected are lost"
                 );
@@ -2059,7 +2059,7 @@ async fn handle_elicitation_request_frame(
     let content_data = json!({
         "kind": "agent_bridge_elicitation",
         "interaction_kind": interaction_kind,
-        "installation_id": bot.installation_id,
+        "host_id": bot.host_id,
         "request_id": request_id,
         "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
         "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
@@ -2108,12 +2108,12 @@ async fn handle_elicitation_request_frame(
 
     if interaction_kind == "mcp_oauth" {
         sqlx::query(
-            "UPDATE terminal_installations
+            "UPDATE connector_hosts
              SET mcp_connection_state = 'action_required', mcp_state_updated_at = NOW()
-             WHERE installation_id = $1 AND revoked_at IS NULL
+             WHERE host_id = $1 AND revoked_at IS NULL
                AND mcp_connection_state <> 'connected'",
         )
-        .bind(bot.installation_id.to_string())
+        .bind(bot.host_id.to_string())
         .execute(&state.db)
         .await
         .map_err(crate::gateway::log_db_err(
@@ -2221,9 +2221,9 @@ async fn handle_auth_required_frame(
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
     let agent_type = sqlx::query_scalar::<_, String>(
-        "SELECT agent_type FROM terminal_installations WHERE installation_id = $1",
+        "SELECT agent_type FROM connector_hosts WHERE host_id = $1",
     )
-    .bind(bot.installation_id.to_string())
+    .bind(bot.host_id.to_string())
     .fetch_optional(&state.db)
     .await
     .map_err(crate::gateway::log_db_err(
@@ -2607,7 +2607,7 @@ async fn auth_bot(
     header_token: Option<String>,
 ) -> Option<BotInfo> {
     if let Some(token) = header_token {
-        return match resolve_installation(&state.db, &token, None).await {
+        return match resolve_host(&state.db, &token, None).await {
             Ok(bot) => Some(bot),
             Err(AuthFailure::BotUnavailable) => {
                 close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2690,7 +2690,7 @@ async fn auth_bot(
                 };
 
                 let connector = frame.get("connector");
-                match resolve_installation(&state.db, &token, connector).await {
+                match resolve_host(&state.db, &token, connector).await {
                     Ok(bot) => return Some(bot),
                     Err(AuthFailure::BotUnavailable) => {
                         close(socket, CLOSE_BOT_UNAVAILABLE, "bot is not online").await;
@@ -2706,21 +2706,21 @@ async fn auth_bot(
     }
 }
 
-/// Resolve one active, non-revoked terminal installation and its Bot identity.
+/// Resolve one active, non-revoked connector host and its Bot identity.
 /// Bot tokens are intentionally not accepted: otherwise a legacy shared token
-/// could bypass per-installation revocation and active/standby enforcement.
-async fn resolve_installation(
+/// could bypass per-host revocation and active/standby enforcement.
+async fn resolve_host(
     db: &PgPool,
     credential: &str,
     connector: Option<&Value>,
 ) -> Result<BotInfo, AuthFailure> {
-    let credential_hash = hash_installation_credential(credential);
+    let credential_hash = hash_host_credential(credential);
 
     let row = sqlx::query(
-        "SELECT i.installation_id, i.status, i.revoked_at,
+        "SELECT i.host_id, i.status, i.revoked_at,
                 b.bot_id, b.username, b.display_name, b.is_disabled,
                 b.binding_config, b.created_by
-         FROM terminal_installations i
+         FROM connector_hosts i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
          WHERE i.credential_hash = $1",
     )
@@ -2752,8 +2752,8 @@ async fn resolve_installation(
         .ok()
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
-    let installation_id: Uuid = row
-        .try_get::<String, _>("installation_id")
+    let host_id: Uuid = row
+        .try_get::<String, _>("host_id")
         .ok()
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
@@ -2761,12 +2761,12 @@ async fn resolve_installation(
         .and_then(|value| value.get("version"))
         .and_then(Value::as_str);
     let touched = sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET connector_version = COALESCE($2, connector_version),
              last_seen_at = NOW(), connected_at = NOW(), updated_at = NOW()
-         WHERE installation_id = $1 AND status = 'active' AND revoked_at IS NULL",
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
-    .bind(installation_id.to_string())
+    .bind(host_id.to_string())
     .bind(connector_version)
     .execute(db)
     .await
@@ -2789,7 +2789,7 @@ async fn resolve_installation(
     };
     Ok(BotInfo {
         bot_id,
-        installation_id,
+        host_id,
         provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),

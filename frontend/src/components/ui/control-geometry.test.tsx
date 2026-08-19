@@ -68,9 +68,9 @@ describe("shared control geometry", () => {
 
   it("keeps a specific text label when an action key is also provided", () => {
     const markup = renderToStaticMarkup(
-      <Button action="setup">Add installation</Button>,
+      <Button action="setup">Add host</Button>,
     );
-    expect(markup).toContain("Add installation");
+    expect(markup).toContain("Add host");
     expect(markup).not.toContain(">Set up<");
   });
 

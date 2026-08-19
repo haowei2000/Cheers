@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cheers connector installer (installation pairing — mode 2).
+# Cheers connector installer (host pairing — mode 2).
 #
 # Canonical use (code via env, NEVER on the command line / URL):
 #   CHEERS_PAIRING_CODE='agbpair_…' bash <(curl -fsSL https://<host>/api/v1/install.sh)
@@ -7,7 +7,7 @@
 #     of your shell history. The code is single-use and expires in ~15 min.
 #
 # What it does: redeems the one-time code over the API → receives a fresh
-# installation credential + a ready connector config → writes both (credential to a 0600
+# host credential + a ready connector config → writes both (credential to a 0600
 # sidecar) → installs a keep-alive service (launchd/systemd) → starts it.
 #
 # Env knobs:
@@ -50,21 +50,21 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required (used to parse JS
 CODE="${CHEERS_PAIRING_CODE:-}"
 if [ -z "$CODE" ]; then
   if [ -t 0 ]; then
-    printf 'Installation pairing code (agbpair_…): ' >&2
+    printf 'Host pairing code (agbpair_…): ' >&2
     read -rs CODE; printf '\n' >&2
   fi
 fi
 [ -n "$CODE" ] || die "no pairing code (set CHEERS_PAIRING_CODE)"
 
 # ── 2. redeem (single-use, over the API). Response holds credential + config. ─
-info "redeeming installation pairing code at $API_BASE …"
+info "redeeming host pairing code at $API_BASE …"
 RESP_FILE="$(mktemp)"
 trap 'rm -f "$RESP_FILE"' EXIT
 # Code goes in the JSON body, never the URL/argv. --fail-with-body keeps the
 # opaque 400 message; we don't echo the code on any path.
 DEVICE_NAME="${CHEERS_DEVICE_NAME:-$(hostname 2>/dev/null || printf 'Unnamed terminal')}"
 if ! python3 -c 'import json,sys; print(json.dumps({"pairing_code":sys.argv[1],"device_name":sys.argv[2]}))' "$CODE" "$DEVICE_NAME" \
-    | curl -fsS -X POST "$API_BASE/installations/redeem" \
+    | curl -fsS -X POST "$API_BASE/hosts/redeem" \
         -H 'Content-Type: application/json' --data-binary @- > "$RESP_FILE"; then
   die "pairing failed — code invalid, expired, already used, or gateway unreachable"
 fi
@@ -86,7 +86,7 @@ umask 077
 python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["credential"])' "$RESP_FILE" > "$CREDENTIAL_PATH"
 chmod 600 "$CREDENTIAL_PATH"
 info "wrote config → $CONFIG_FILE"
-info "wrote installation credential → $CREDENTIAL_PATH (chmod 600)"
+info "wrote host credential → $CREDENTIAL_PATH (chmod 600)"
 
 # ── 3a. capture agent vendor credentials for the keep-alive unit ─────────────
 # systemd/launchd do not see interactive-shell exports. Persist any keys present

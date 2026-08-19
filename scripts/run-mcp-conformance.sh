@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # End-to-end MCP 2026-07-28 gate. This deliberately obtains the MCP bearer via
-# the public installation pairing + OAuth client_credentials flow; it never
+# the public host pairing + OAuth client_credentials flow; it never
 # inserts a Bot credential or bypasses the protected-resource boundary.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -113,19 +113,19 @@ bot_id="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots" \
   --data "$(jq -nc --arg username "mcp-conformance-${run_suffix}" '{username:$username,display_name:"MCP Conformance Agent",binding_type:"agent_bridge",bridge_provider:"generic"}')" \
   | jq -er .bot_id)"
 
-pairing="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots/${bot_id}/installations" \
+pairing="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots/${bot_id}/hosts" \
   -H 'content-type: application/json' \
   -H "authorization: Bearer ${admin_token}" \
   --data '{"agent_type":"generic","device_name":"official-conformance"}')"
 code="$(jq -er .pairing_code <<<"$pairing")"
 
-installation="$(curl -fsS -X POST "${gateway_origin}/api/v1/installations/redeem" \
+host="$(curl -fsS -X POST "${gateway_origin}/api/v1/hosts/redeem" \
   -H 'content-type: application/json' \
   --data "$(jq -nc --arg code "$code" '{pairing_code:$code,device_name:"official-conformance"}')")"
-installation_id="$(jq -er .installation_id <<<"$installation")"
-credential="$(jq -er .credential <<<"$installation")"
+host_id="$(jq -er .host_id <<<"$host")"
+credential="$(jq -er .credential <<<"$host")"
 
-oauth="$(curl -fsS -u "${installation_id}:${credential}" \
+oauth="$(curl -fsS -u "${host_id}:${credential}" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=client_credentials \
   --data-urlencode "resource=${gateway_origin}/mcp" \
@@ -148,7 +148,7 @@ npx -y @modelcontextprotocol/conformance@0.2.0-alpha.11 server \
   --spec-version 2026-07-28
 
 # The access token is not merely JWT-valid: each request rechecks the live
-# installation + current credential hash. Revocation must therefore invalidate
+# host + current credential hash. Revocation must therefore invalidate
 # an already-issued token immediately, before its ten-minute expiry.
 discover_body='{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 curl -fsS "${gateway_origin}/mcp" \
@@ -158,7 +158,7 @@ curl -fsS "${gateway_origin}/mcp" \
   -H 'mcp-method: server/discover' \
   --data "$discover_body" >/dev/null
 
-curl -fsS -X DELETE "${gateway_origin}/api/v1/bots/${bot_id}/installations/${installation_id}" \
+curl -fsS -X DELETE "${gateway_origin}/api/v1/bots/${bot_id}/hosts/${host_id}" \
   -H "authorization: Bearer ${admin_token}" >/dev/null
 
 revoked_status="$(curl -sS -o /dev/null -w '%{http_code}' "${gateway_origin}/mcp" \
@@ -168,6 +168,6 @@ revoked_status="$(curl -sS -o /dev/null -w '%{http_code}' "${gateway_origin}/mcp
   -H 'mcp-method: server/discover' \
   --data "$discover_body")"
 if [[ "$revoked_status" != "401" ]]; then
-  echo "expected revoked installation MCP token to return 401, got ${revoked_status}" >&2
+  echo "expected revoked host MCP token to return 401, got ${revoked_status}" >&2
   exit 1
 fi
