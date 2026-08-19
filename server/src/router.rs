@@ -838,14 +838,9 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/admin/settings/stt/test",
             post(api::stt_settings::test_settings),
         )
-        .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
             "/api/v1/mcp/oauth/authorize",
             get(api::mcp::authorize_inspect).post(api::mcp::authorize_approve),
-        )
-        .route(
-            "/api/v1/mcp/parse-claude-config",
-            post(api::mcp::parse_claude_config),
         )
         .layer(middleware::from_fn_with_state(state.clone(), jwt_auth))
 }
