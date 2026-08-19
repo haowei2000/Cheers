@@ -2,10 +2,10 @@ import { AlertTriangle, Globe2, Hourglass, Laptop, PackageCheck, ShieldCheck } f
 import { Banner } from "@/components/ui/banner";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { permissionSummary } from "@/features/chat/workbench/extensions/package";
 import {
   expandedPermissions,
   installDisposition,
+  permissionSummary,
   type ExtensionInstallCandidate,
   type InstalledExtensionIdentity,
 } from "./extensionInstall";

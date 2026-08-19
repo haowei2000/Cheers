@@ -212,6 +212,7 @@ without changing its test deliberately.
 | Both installers give one package one verdict | `workbench_extensions::tests::shared_contract::gives_every_corpus_package_the_verdict_it_declares`, `corpus.test.ts` "at %s scope" |
 | The declared limits are the enforced limits | `…::shared_contract::declares_the_limits_this_validator_enforces`, `corpus.test.ts` "declares the limits this validator enforces" |
 | The SDK never blocks a package the installers accept | `pack.test.ts` "never rejects a manifest the installers accept" |
+| A permission never names a resource the gateway stopped dispatching | `extensionInstall.test.ts` "names only resources the gateway still dispatches" |
 
 Three invariants are structural rather than test-guarded, and reviewers must hold them:
 
@@ -247,11 +248,24 @@ together they are why the system reads as chaotic.
    Both surface as `/installations` in the router
    ([:593](../../server/src/router.rs:593) and [:332](../../server/src/router.rs:332)).
    Rename the former to runners or deployments.
-2. **Four permission vocabularies that cannot be compared.** A manifest says `file.write`;
-   a bot has capability delegations; an integration projects channel roles; MCP has OAuth
-   scopes. No query answers "what can this thing do?", so no consent screen can honestly
-   describe what is being approved. The resource protocol is already the platform's
-   authorization surface and should become the single vocabulary.
+2. **Four permission vocabularies, two of which should not converge.** A manifest says
+   `file.write`; a bot has capability delegations; an integration projects channel roles;
+   MCP has OAuth scopes. The first two are plausibly one vocabulary — the resource
+   protocol is already the platform's authorization surface. The other two are not on
+   offer: MCP scopes are a wire format negotiated with third-party servers, and
+   `GITHUB_ROLE_PROJECTION` is a *translation table* whose entire purpose is letting each
+   provider keep its own role names.
+
+   The question a merge was wanted for — *what can this extension do, in resource terms?*
+   — has an answer without one. [`permissionGrants`](../../frontend/src/features/workbench/extensionInstall.ts)
+   translates a manifest's permissions into the names `resource/mod.rs` dispatches, and is
+   deliberately partial: `file.write` reaches `fs.write` and `channel.resources` reaches
+   those names directly, `automation.manage` reaches a REST endpoint, and
+   `navigation.open`, `composer.prefill`, and `network` never leave the browser. Four of
+   the six have no resource counterpart. A mapping that quietly dropped them would make a
+   consent screen read as though `network: unrestricted` were nothing, so the reach is
+   part of the answer rather than a gap in it. Converging the two that can converge is
+   still worth doing; it is now an improvement rather than a prerequisite.
 3. **Personal scope has no server record.** The bytes are not lost — the desktop shell
    persists each one to `~/.cheers/extensions/{id}.cheers-extension`, written atomically
    at `0o600` ([plugins.rs:197](../../apps/macos/src-tauri/src/plugins.rs:197)), with

@@ -494,15 +494,3 @@ export async function parseExtensionPackage(
     : null;
   return { manifest, scenes, rendererExtension, bytes, sha256: await digest(bytes) };
 }
-
-export function permissionSummary(manifest: ExtensionManifest): string[] {
-  const p = manifest.permissions ?? {};
-  return [
-    p["file.write"] && "Write file",
-    p["channel.resources"]?.length && `Read channel (${p["channel.resources"].length})`,
-    p["navigation.open"] && "Open navigation",
-    p["composer.prefill"] && "Prefill composer",
-    p["automation.manage"] && "Manage scheduled tasks",
-    p.network === "unrestricted" && "Unrestricted network",
-  ].filter((value): value is string => Boolean(value));
-}

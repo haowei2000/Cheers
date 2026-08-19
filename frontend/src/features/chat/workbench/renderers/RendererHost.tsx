@@ -3,19 +3,19 @@ import type { ViewDef } from "../manifest";
 import { LensPanel } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
+import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
 
 // The channel.* read verbs a renderer extension may call (host API). READ-ONLY and low/medium
 // sensitivity. NOTE: a sandboxed iframe is isolated for tokens/DOM but NOT for network — a
 // an extension could exfiltrate whatever it is handed. Personal extensions are explicitly
 // approved by the user and every read still passes server-side channel-role authz,
 // scoped to THIS channel (channel_id is forced below). Keep this list conservative.
-const CHANNEL_READ_WHITELIST = new Set([
-  "channel.info",
-  "channel.members",
-  "channel.messages",
-  "channel.activity.read",
-  "channel.messages.index",
-]);
+//
+// This is the gate that actually stops a call, re-checked here rather than trusted from
+// install time — but it is the manifest vocabulary itself, not a fourth copy of those
+// names. A permission that could be declared, consented to, and then refused here would
+// be a promise the host does not keep.
+const CHANNEL_READ_WHITELIST = new Set<string>(EXTENSION_CHANNEL_RESOURCES);
 
 // Mount the chosen renderer over one file. Built-in => the compiled lens (via a
 // synthetic view); extension => the sandboxed render/save host. Both render exactly the

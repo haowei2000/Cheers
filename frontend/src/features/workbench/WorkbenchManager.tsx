@@ -17,10 +17,7 @@ import {
   listExtensions,
   type ExtensionSummary,
 } from "@/features/chat/workbench/extensions/api";
-import {
-  permissionSummary,
-  type ParsedExtension,
-} from "@/features/chat/workbench/extensions/package";
+import type { ParsedExtension } from "@/features/chat/workbench/extensions/package";
 import { parseExtensionPackageOffThread, parsePersonalExtension } from "@/features/chat/workbench/extensions/parseOffThread";
 import {
   isPersonalExtensionDisabled,
@@ -38,6 +35,7 @@ import {
 import { ExtensionInstallDialog } from "./ExtensionInstallDialog";
 import {
   compareSemver,
+  permissionSummary,
   type ExtensionInstallCandidate,
   type InstalledExtensionIdentity,
   type InstallScope,
