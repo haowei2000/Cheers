@@ -241,6 +241,65 @@ pub fn invite_link_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(300)))
 }
 
+/// Throttle inbound integration webhooks, per installation.
+///
+/// `POST /integrations/:integration_id/:installation_id/events` is
+/// unauthenticated by necessity — the provider authenticates with a signature
+/// over the raw body — and it reaches the database *before* it verifies, then
+/// HMACs up to 1 MiB. One installation should not be able to pin either.
+///
+/// Keyed on the installation rather than the source address, unlike every other
+/// limiter here. A webhook's peer address is the provider's delivery fleet
+/// serving every installation at once, so a per-source budget either trips on
+/// legitimate traffic or is set so high it stops nothing — and behind a proxy
+/// with `TRUST_PROXY_HEADERS` unset it collapses to a single global key, where a
+/// flood from anywhere would block GitHub's real deliveries.
+///
+/// Scope, stated honestly: this caps one installation, not a distributed flood
+/// of invented ids. Those miss `catalog::find` or one indexed lookup and never
+/// reach the HMAC; stopping them is an ingress concern, not this one's.
+///
+/// 600 per minute is far above any real repository — GitHub retries on any
+/// non-2xx, so a limiter that trips on genuine traffic causes exactly the
+/// redelivery storm the `duplicate: true` 202 exists to avoid.
+pub fn integration_webhook_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(600, Duration::from_secs(60)))
+}
+
+/// The rate-limit key for one inbound webhook, from its path parameters alone.
+///
+/// Both parameters are attacker-controlled, so using them directly would be the
+/// bug rather than the fix: [`FixedWindowLimiter::try_hit`] falls back to
+/// `hits.clear()` past 100k live keys, and a flood of invented ids would reach
+/// that trivially — resetting every legitimate installation's window. Keying on
+/// unbounded attacker input turns the limiter into the DoS vector.
+///
+/// So the pair is hashed into a **16-bit bucket**: 65536 possible keys in total,
+/// no matter what is sent, which puts the clear path out of reach by
+/// construction. The cost is that installations sharing a bucket share a window.
+/// That is acceptable because `installation_id` is a 36-character opaque id: an
+/// attacker who does not have one cannot aim at a particular bucket, and one who
+/// does could exhaust that installation's budget by replaying its real id
+/// anyway. The bucket adds no exposure that per-installation limiting does not
+/// already carry.
+///
+/// Computed from path parameters only, so the check can run *above* the catalog
+/// lookup — unknown integrations, unknown installations, and valid ones all take
+/// the same branch, which is what keeps this endpoint from answering "does this
+/// installation exist?".
+pub fn integration_webhook_key(integration_id: &str, installation_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(integration_id.as_bytes());
+    // A separator no id contains, so `("a", "bc")` and `("ab", "c")` cannot
+    // collapse onto one bucket by concatenation.
+    hasher.update([0x1f]);
+    hasher.update(installation_id.as_bytes());
+    let digest = hasher.finalize();
+    format!("ihook:{:04x}", u16::from_be_bytes([digest[0], digest[1]]))
+}
+
 /// Throttle password-reset requests + code guesses per client (forgot/reset). Caps
 /// both email-spam and reset-code brute-force: 10 per 5-minute window per source.
 pub fn password_reset_limiter() -> &'static FixedWindowLimiter {
@@ -316,6 +375,58 @@ mod tests {
 
     /// Default (untrusted): spoofable headers are ignored — the key is the peer
     /// socket IP, so rotating X-Real-IP cannot reset a brute-force window.
+    /// The whole reason the key is hashed: no amount of invented path input can
+    /// grow the map past the point where `try_hit` falls back to `hits.clear()`
+    /// and wipes every legitimate installation's window.
+    #[test]
+    fn invented_installation_ids_cannot_grow_the_key_space() {
+        let keys: std::collections::HashSet<_> = (0..200_000)
+            .map(|i| integration_webhook_key("github", &format!("attacker-{i}")))
+            .collect();
+        assert!(
+            keys.len() <= 65_536,
+            "200k invented ids produced {} distinct keys",
+            keys.len()
+        );
+    }
+
+    /// A throttled request must not be distinguishable from an unknown one, so
+    /// the key cannot vary in shape with whether its input is real.
+    #[test]
+    fn a_key_looks_the_same_whatever_it_was_built_from() {
+        let real = integration_webhook_key("github", "3f2a91c4-5b7e-4d18-9a02-6c1d8e4f7b03");
+        let junk = integration_webhook_key("nope", "");
+        assert_eq!(real.len(), junk.len());
+        assert!(real.starts_with("ihook:") && junk.starts_with("ihook:"));
+    }
+
+    #[test]
+    fn a_key_is_stable_and_separates_its_two_fields() {
+        assert_eq!(
+            integration_webhook_key("github", "inst-1"),
+            integration_webhook_key("github", "inst-1")
+        );
+        // Concatenating without a separator would let one installation land on
+        // another's bucket by choosing its own id.
+        assert_ne!(
+            integration_webhook_key("a", "bc"),
+            integration_webhook_key("ab", "c")
+        );
+    }
+
+    /// The budget has to clear a busy repository by a wide margin: GitHub
+    /// redelivers on any non-2xx, so tripping on real traffic is worse than not
+    /// limiting at all.
+    #[test]
+    fn the_webhook_budget_admits_a_busy_repository() {
+        let limiter = integration_webhook_limiter();
+        let key = integration_webhook_key("github", "budget-probe");
+        for i in 0..600 {
+            assert!(limiter.try_hit(&key), "rejected legitimate delivery {i}");
+        }
+        assert!(!limiter.try_hit(&key), "the budget never closes");
+    }
+
     #[test]
     fn untrusted_ignores_proxy_headers() {
         assert_eq!(client_key(&spoofing_headers(), peer(), false), "10.1.2.3");

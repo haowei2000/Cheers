@@ -10,6 +10,16 @@
 //! unauthenticated caller must never reach `serde_json`, and must never be able
 //! to tell an unknown integration from a bad signature — both are the same
 //! opaque rejection, so this endpoint cannot enumerate what is installed.
+//!
+//! That covers the *response*, not the clock: an unknown integration returns
+//! before any query, a known one queries first, so the two differ in timing.
+//! Left as is deliberately. Which integrations exist is compiled into an
+//! open-source `catalog.rs`, so the timing reveals nothing a reader cannot
+//! already look up, and closing it would mean adding a database round trip to
+//! the cheapest rejection path — paying for a worse DoS surface to hide a
+//! public fact. Which *installations* exist is the secret worth keeping, and
+//! that one is uniform: a wrong, disabled, or absent installation all take the
+//! same query and the same rejection.
 
 use axum::{
     body::Bytes,
@@ -27,7 +37,7 @@ use crate::{
         webhook::{self, SignatureScheme},
     },
     errors::AppError,
-    infra::crypto,
+    infra::{crypto, ratelimit},
 };
 
 /// One response for every rejection. See the module note: distinguishing them
@@ -45,6 +55,17 @@ pub async fn receive(
     // Cap before anything else touches the bytes.
     if body.len() > webhook::MAX_BODY_BYTES {
         tracing::warn!(%integration_id, len = body.len(), "webhook body over cap");
+        return Err(rejected());
+    }
+
+    // Above the catalog lookup on purpose: the key comes from the path
+    // parameters alone, so a throttled request cannot be told from an unknown
+    // one. See `integration_webhook_key` for why the key is bucketed.
+    if !ratelimit::integration_webhook_limiter().try_hit(&ratelimit::integration_webhook_key(
+        &integration_id,
+        &installation_id,
+    )) {
+        tracing::warn!(%integration_id, "webhook over its rate limit");
         return Err(rejected());
     }
 
