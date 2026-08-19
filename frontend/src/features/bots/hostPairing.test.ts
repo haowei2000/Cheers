@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCountdown, secondsUntil } from "./CreateInstallationWizard";
+import { formatCountdown, secondsUntil } from "./CreateHostWizard";
 
 const NOW = Date.parse("2026-08-16T10:00:00Z");
 

@@ -37,7 +37,7 @@ use crate::{
 pub struct FleetAuditQuery {
     pub cursor: Option<chrono::DateTime<chrono::Utc>>,
     pub bot_id: Option<String>,
-    pub installation_id: Option<String>,
+    pub host_id: Option<String>,
     pub event_type: Option<String>,
     pub limit: Option<i64>,
 }
@@ -216,28 +216,28 @@ pub async fn get_fleet_all(
     build_fleet(&state, uid, is_admin(&claims), None).await
 }
 
-/// Every registered installation belonging to a bot the caller may manage.
+/// Every registered host belonging to a bot the caller may manage.
 /// Shared bots remain visible in the roster, but their device and credential
 /// metadata never crosses this owner/admin boundary.
-pub async fn list_installations_all(
+pub async fn list_hosts_all(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
     let admin = is_admin(&claims);
-    // A revoked pending installation never held a credential and is not a runtime
+    // A revoked pending host never held a credential and is not a runtime
     // location — it is an abandoned pairing attempt, kept only until the reaper
     // clears it with its code (up to a day). Listing it as a device is noise, and
     // replacing a code in the setup wizard leaves one behind every time. The
     // management audit log keeps the trail.
     let rows = sqlx::query(
-        "SELECT i.installation_id, i.bot_id,
+        "SELECT i.host_id, i.bot_id,
                 COALESCE(b.display_name, b.username) AS bot_name,
                 b.username AS bot_username, i.device_name, i.agent_type,
                 i.credential_prefix, i.status, i.connector_version,
                 i.last_seen_at, i.connected_at, i.created_at, i.revoked_at,
                 i.mcp_connection_state, i.mcp_state_updated_at,
                 i.mcp_connected_at, i.mcp_last_seen_at
-         FROM terminal_installations i
+         FROM connector_hosts i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
          WHERE ($1 OR b.created_by = $2)
            AND NOT (i.status = 'pending' AND i.revoked_at IS NOT NULL)
@@ -248,7 +248,7 @@ pub async fn list_installations_all(
     .fetch_all(&state.db)
     .await?;
 
-    let mut installations = Vec::with_capacity(rows.len());
+    let mut hosts = Vec::with_capacity(rows.len());
     for row in rows {
         let bot_id: String = row.try_get("bot_id").unwrap_or_default();
         let status: String = row.try_get("status").unwrap_or_else(|_| "standby".into());
@@ -261,8 +261,8 @@ pub async fn list_installations_all(
             Err(_) => false,
         } && status == "active"
             && revoked_at.is_none();
-        installations.push(json!({
-            "installation_id": row.try_get::<String, _>("installation_id").unwrap_or_default(),
+        hosts.push(json!({
+            "host_id": row.try_get::<String, _>("host_id").unwrap_or_default(),
             "bot_id": bot_id,
             "bot_name": row.try_get::<String, _>("bot_name").unwrap_or_default(),
             "bot_username": row.try_get::<String, _>("bot_username").unwrap_or_default(),
@@ -282,7 +282,7 @@ pub async fn list_installations_all(
             "mcp_last_seen_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_last_seen_at").ok().flatten(),
         }));
     }
-    Ok(Json(json!({ "installations": installations })))
+    Ok(Json(json!({ "hosts": hosts })))
 }
 
 /// Owner/admin-only, cursor-paginated audit across every manageable bot.
@@ -293,11 +293,11 @@ pub async fn list_audit_all(
 ) -> Result<Json<Value>, AppError> {
     let limit = query.limit.unwrap_or(100).clamp(1, 250);
     let rows = sqlx::query(
-        "SELECT source, event_id, event_type, bot_id, installation_id, actor_id,
+        "SELECT source, event_id, event_type, bot_id, host_id, actor_id,
                 detail, created_at
          FROM (
            SELECT 'management'::text AS source, a.id AS event_id, a.event_type,
-                  a.bot_id, a.installation_id, a.actor_id, a.detail, a.created_at
+                  a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at
            FROM bot_management_audit a
            WHERE ($1 OR a.actor_id = $2 OR EXISTS (
              SELECT 1 FROM bot_accounts b WHERE b.bot_id = a.bot_id AND b.created_by = $2
@@ -324,7 +324,7 @@ pub async fn list_audit_all(
          ) events
          WHERE ($3::timestamptz IS NULL OR created_at < $3)
            AND ($4::text IS NULL OR bot_id = $4)
-           AND ($5::text IS NULL OR installation_id = $5)
+           AND ($5::text IS NULL OR host_id = $5)
            AND ($6::text IS NULL OR event_type = $6)
          ORDER BY created_at DESC, event_id DESC
          LIMIT $7",
@@ -333,7 +333,7 @@ pub async fn list_audit_all(
     .bind(&claims.sub)
     .bind(query.cursor)
     .bind(query.bot_id)
-    .bind(query.installation_id)
+    .bind(query.host_id)
     .bind(query.event_type)
     .bind(limit + 1)
     .fetch_all(&state.db)
@@ -348,7 +348,7 @@ pub async fn list_audit_all(
             "source": row.try_get::<String, _>("source").unwrap_or_default(),
             "event_type": row.try_get::<String, _>("event_type").unwrap_or_default(),
             "bot_id": row.try_get::<Option<String>, _>("bot_id").ok().flatten(),
-            "installation_id": row.try_get::<Option<String>, _>("installation_id").ok().flatten(),
+            "host_id": row.try_get::<Option<String>, _>("host_id").ok().flatten(),
             "actor_id": row.try_get::<Option<String>, _>("actor_id").ok().flatten(),
             "detail": row.try_get::<Value, _>("detail").unwrap_or(Value::Null),
             "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").map(|v| v.to_rfc3339()).unwrap_or_default(),
@@ -458,9 +458,9 @@ async fn build_fleet(
         .bind(admin)
         .fetch_all(&state.db)
         .await?;
-        let installation_counts: HashMap<String, i64> = sqlx::query(
+        let host_counts: HashMap<String, i64> = sqlx::query(
             "SELECT i.bot_id, COUNT(*) FILTER (WHERE i.revoked_at IS NULL) AS count
-             FROM terminal_installations i JOIN bot_accounts b ON b.bot_id = i.bot_id
+             FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
              WHERE $2 OR b.created_by = $1 GROUP BY i.bot_id",
         )
         .bind(uid.to_string())
@@ -539,7 +539,7 @@ async fn build_fleet(
                 "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
                 "cost_today_usd": cost,
                 "pending_count": pending,
-                "installation_count": installation_counts.get(&bot_id_s).copied().unwrap_or(0),
+                "host_count": host_counts.get(&bot_id_s).copied().unwrap_or(0),
                 "channels": channels,
             }));
         }

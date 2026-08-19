@@ -1,4 +1,4 @@
-//! Installation-bound OAuth client for the canonical Cheers HTTP MCP endpoint.
+//! Host-bound OAuth client for the canonical Cheers HTTP MCP endpoint.
 //!
 //! An ACP Agent can only reach the Cheers MCP endpoint while holding an OAuth
 //! access token for it. Making the Agent obtain that token itself requires it to
@@ -7,18 +7,18 @@
 //! interactive consent round-trip surfaced through ACP URL elicitation. Very few
 //! Agents clear that bar, and the ones that do disagree on how they surface it.
 //!
-//! The Connector needs none of that. It *is* an enrolled terminal installation,
+//! The Connector needs none of that. It *is* an enrolled connector host,
 //! which is precisely the principal the Gateway's `client_credentials` grant
-//! exists for (`MCP_HTTP_OAUTH_TOOL_SCOPE.md` §2): the installation id is the
-//! `client_id` and the installation credential — already held to authenticate
+//! exists for (`MCP_HTTP_OAUTH_TOOL_SCOPE.md` §2): the host id is the
+//! `client_id` and the host credential — already held to authenticate
 //! the Bridge — is the `client_secret`. Minting here and injecting the result as
 //! the `cheers` server's `Authorization` header reduces the Agent's requirement
 //! to "speaks HTTP MCP with headers".
 //!
 //! This is not a static-bearer shortcut. Tokens are short-lived and re-minted on
-//! demand, and the Gateway re-validates the installation — status, revocation,
+//! demand, and the Gateway re-validates the host — status, revocation,
 //! credential hash, bot enablement — on *every* MCP request, so a revoked or
-//! rotated installation stops working immediately regardless of token lifetime.
+//! rotated host stops working immediately regardless of token lifetime.
 
 use std::time::{Duration, Instant};
 
@@ -89,10 +89,10 @@ impl std::fmt::Debug for CachedToken {
     }
 }
 
-/// Mints and caches installation-bound MCP access tokens.
+/// Mints and caches host-bound MCP access tokens.
 pub(crate) struct McpTokenProvider {
     mcp_url: String,
-    installation_id: String,
+    host_id: String,
     credential: String,
     http: reqwest::Client,
     /// Held across the mint await so concurrent `session/new` calls collapse
@@ -101,23 +101,23 @@ pub(crate) struct McpTokenProvider {
     discovered: Mutex<Option<Discovered>>,
 }
 
-/// Redacted: this struct holds the installation credential, which is the
-/// `client_secret` for the whole installation — never let it reach a log line.
+/// Redacted: this struct holds the host credential, which is the
+/// `client_secret` for the whole host — never let it reach a log line.
 impl std::fmt::Debug for McpTokenProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("McpTokenProvider")
             .field("mcp_url", &self.mcp_url)
-            .field("installation_id", &self.installation_id)
+            .field("host_id", &self.host_id)
             .field("credential", &"<redacted>")
             .finish_non_exhaustive()
     }
 }
 
 impl McpTokenProvider {
-    /// Builds a provider for one account's installation.
+    /// Builds a provider for one account's host.
     pub(crate) fn new(
         mcp_url: String,
-        installation_id: String,
+        host_id: String,
         credential: String,
     ) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder()
@@ -127,7 +127,7 @@ impl McpTokenProvider {
             .context("failed to build the MCP OAuth HTTP client")?;
         Ok(Self {
             mcp_url,
-            installation_id,
+            host_id,
             credential,
             http,
             cached: Mutex::new(None),
@@ -155,7 +155,7 @@ impl McpTokenProvider {
         let discovered = self.discover().await?;
         let form: [(&str, &str); 5] = [
             ("grant_type", "client_credentials"),
-            ("client_id", &self.installation_id),
+            ("client_id", &self.host_id),
             ("client_secret", &self.credential),
             ("resource", &self.mcp_url),
             ("scope", &discovered.scope),
@@ -171,7 +171,7 @@ impl McpTokenProvider {
         let body = bounded_body(response).await?;
         if !status.is_success() {
             // The body is an RFC 6749 error object; surface its `error` code,
-            // which distinguishes a revoked installation (invalid_client) from a
+            // which distinguishes a revoked host (invalid_client) from a
             // misconfigured resource (invalid_target).
             let code = serde_json::from_slice::<serde_json::Value>(&body)
                 .ok()
@@ -313,7 +313,7 @@ fn protected_resource_metadata_urls(resource: &reqwest::Url) -> Vec<String> {
     ]
 }
 
-/// The installation's client secret is posted to whatever origin discovery
+/// The host's client secret is posted to whatever origin discovery
 /// names, so refuse a destination that could leak it. The MCP origin itself may
 /// be plaintext (local dev runs the gateway over http); anything else must be
 /// HTTPS.
@@ -329,7 +329,7 @@ fn check_credential_destination(
         return Ok(());
     }
     Err(anyhow!(
-        "refusing to send installation credentials to {what} {url} over {}: \
+        "refusing to send host credentials to {what} {url} over {}: \
          only the MCP server's own origin may be plaintext",
         url.scheme()
     ))
@@ -464,12 +464,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mints_an_installation_bound_token_through_full_discovery() {
+    async fn mints_a_host_bound_token_through_full_discovery() {
         let gateway = spawn_gateway().await;
         let mcp_url = format!("{}/mcp", gateway.base);
         let provider = McpTokenProvider::new(
             mcp_url.clone(),
-            "installation-42".to_string(),
+            "host-42".to_string(),
             "credential-secret".to_string(),
         )
         .unwrap();
@@ -479,7 +479,7 @@ mod tests {
         let requests = gateway.token_requests.lock().await;
         let body = requests.first().expect("a token request was made");
         assert!(body.contains("grant_type=client_credentials"), "{body}");
-        assert!(body.contains("client_id=installation-42"), "{body}");
+        assert!(body.contains("client_id=host-42"), "{body}");
         assert!(body.contains("client_secret=credential-secret"), "{body}");
         // Scope is taken from the resource's advertised set, never a local
         // constant, so the Connector cannot drift from the frozen scope list.
@@ -496,7 +496,7 @@ mod tests {
         let gateway = spawn_gateway().await;
         let provider = McpTokenProvider::new(
             format!("{}/mcp", gateway.base),
-            "installation-42".to_string(),
+            "host-42".to_string(),
             "credential-secret".to_string(),
         )
         .unwrap();
@@ -514,7 +514,7 @@ mod tests {
         drop(listener);
         let provider = McpTokenProvider::new(
             format!("http://{addr}/mcp"),
-            "installation-42".to_string(),
+            "host-42".to_string(),
             "credential-secret".to_string(),
         )
         .unwrap();
@@ -592,16 +592,16 @@ mod redaction_tests {
     use super::*;
 
     #[test]
-    fn debug_never_reveals_the_installation_credential() {
+    fn debug_never_reveals_the_host_credential() {
         let provider = McpTokenProvider::new(
             "https://cheers.example/mcp".to_string(),
-            "installation-42".to_string(),
+            "host-42".to_string(),
             "super-secret-credential".to_string(),
         )
         .unwrap();
         let rendered = format!("{provider:?}");
         assert!(!rendered.contains("super-secret-credential"), "{rendered}");
-        assert!(rendered.contains("installation-42"), "{rendered}");
+        assert!(rendered.contains("host-42"), "{rendered}");
 
         let cached = CachedToken {
             value: "super-secret-token".to_string(),

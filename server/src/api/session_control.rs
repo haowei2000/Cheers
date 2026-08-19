@@ -673,7 +673,7 @@ async fn bot_agent_type(state: &AppState, bot_id: Uuid) -> String {
     sqlx::query(
         "SELECT COALESCE(
                     (SELECT NULLIF(TRIM(i.agent_type), '')
-                     FROM terminal_installations i
+                     FROM connector_hosts i
                      WHERE i.bot_id = b.bot_id AND i.status = 'active'
                        AND i.revoked_at IS NULL
                      ORDER BY i.updated_at DESC

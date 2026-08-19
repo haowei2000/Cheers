@@ -21,8 +21,8 @@ import {
   updateBotProfile,
   refreshBotStatus,
   getBotStatus,
-  listTerminalInstallations,
-  type TerminalInstallation,
+  listConnectorHosts,
+  type ConnectorHost,
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { Avatar } from "@/components/ui/avatar";
@@ -45,11 +45,11 @@ import { messageOf } from "@/lib/notify";
 import { addChannelMember } from "@/api/channels";
 import { addWorkspaceMember } from "@/api/workspaces";
 import {
-  InstallationActions,
-  installationStatusLabel,
+  HostActions,
+  hostStatusLabel,
   mcpStateLabel,
   mcpStateTone,
-} from "./installationLifecycle";
+} from "./hostLifecycle";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
@@ -85,13 +85,13 @@ type Tab = "overview" | "terminals" | "permissions" | "events";
 
 const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
   { id: "overview", label: "Overview", icon: Info },
-  { id: "terminals", label: "Installations", icon: Laptop },
+  { id: "terminals", label: "Hosts", icon: Laptop },
   { id: "permissions", label: "Access", icon: ShieldCheck },
   { id: "events", label: "Audit", icon: Activity },
 ];
 
 function routeTab(value?: string): Tab {
-  if (value === "installations" || value === "terminals") return "terminals";
+  if (value === "hosts" || value === "terminals") return "terminals";
   if (value === "access" || value === "permissions") return "permissions";
   if (value === "audit" || value === "events") return "events";
   return "overview";
@@ -109,7 +109,7 @@ export function BotDetailPanel({
   onError,
   onChanged,
   onPoll,
-  onAddInstallation,
+  onAddHost,
   initialTab,
 }: {
   bot: BotItem;
@@ -120,7 +120,7 @@ export function BotDetailPanel({
   /** Silent background refetch for "live while open" (item 8) — no spinner. */
   onPoll: () => void;
   /** Starts the shared setup flow with this bot already selected. */
-  onAddInstallation: () => void;
+  onAddHost: () => void;
   initialTab?: string;
 }) {
   const [tab, setTab] = useState<Tab>(() => routeTab(initialTab));
@@ -212,7 +212,7 @@ export function BotDetailPanel({
               "inline-flex items-center gap-1 text-compact",
               bot.is_online ? "text-success-400" : "text-content-muted"
             )}
-            title={bot.is_online ? "An installation is online" : "No installation is online"}
+            title={bot.is_online ? "A host is online" : "No host is online"}
           >
             <CircleDot className="w-3.5 h-3.5" />
             {bot.is_online ? "online" : "offline"}
@@ -262,13 +262,13 @@ export function BotDetailPanel({
         )}
         {tab === "terminals" && (
           bot.can_manage ? (
-            <BotInstallationsSection
+            <BotHostsSection
               botId={bot.bot_id}
               onError={onError}
-              onAddInstallation={onAddInstallation}
+              onAddHost={onAddHost}
             />
           ) : (
-            <p className="text-compact text-content-muted">Only the bot owner or an administrator can view installations.</p>
+            <p className="text-compact text-content-muted">Only the bot owner or an administrator can view hosts.</p>
           )
         )}
         {tab === "events" && (
@@ -282,20 +282,20 @@ export function BotDetailPanel({
   );
 }
 
-function BotInstallationsSection({
+function BotHostsSection({
   botId,
   onError,
-  onAddInstallation,
+  onAddHost,
 }: {
   botId: string;
   onError: (msg: string) => void;
-  onAddInstallation: () => void;
+  onAddHost: () => void;
 }) {
-  const [items, setItems] = useState<TerminalInstallation[]>([]);
+  const [items, setItems] = useState<ConnectorHost[]>([]);
 
   const load = async () => {
     try {
-      setItems(await listTerminalInstallations(botId));
+      setItems(await listConnectorHosts(botId));
     } catch (e) {
       onError(String(e));
     }
@@ -311,28 +311,28 @@ function BotInstallationsSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <SectionHead>Installations</SectionHead>
+          <SectionHead>Hosts</SectionHead>
           <p className="mt-1 max-w-2xl text-compact text-content-muted">
-            An installation is this bot running on a specific device. Each one has its own
-            credential, agent, workspace, and connection state. One installation is active at a time.
+            A host is this bot running on a specific device. Each one has its own
+            credential, agent, workspace, and connection state. One host is active at a time.
           </p>
         </div>
         <ActionButton
           action="add"
           context="toolbar"
-          accessibleLabel="Add installation"
+          accessibleLabel="Add host"
           controlSize="compact"
-          onClick={onAddInstallation}
+          onClick={onAddHost}
         />
       </div>
       {items.length === 0 && (
         <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted">
-          This bot has no installations yet. Add one to choose where the bot runs.
+          This bot has no hosts yet. Add one to choose where the bot runs.
         </p>
       )}
       <ItemList presentationLevel="max" controlSize="regular" className="space-y-2">
         {items.map((item) => (
-          <ItemGroup key={item.installation_id} className="rounded-sm bg-zinc-950/40">
+          <ItemGroup key={item.host_id} className="rounded-sm bg-zinc-950/40">
             <OperationsItem
               containerRole="presentation"
               title={item.device_name}
@@ -341,7 +341,7 @@ function BotInstallationsSection({
               metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
               status={(
                 <span className={cn("text-compact", item.online ? "text-success-400" : "text-content-muted")}>
-                  {installationStatusLabel({ ...item, bot_id: botId })}
+                  {hostStatusLabel({ ...item, bot_id: botId })}
                 </span>
               )}
             />
@@ -361,7 +361,7 @@ function BotInstallationsSection({
               </p>
             )}
             <div className="px-2 py-2">
-              <InstallationActions
+              <HostActions
                 item={{ ...item, bot_id: botId }}
                 presentation="labeled"
                 onChanged={load}
@@ -453,7 +453,7 @@ function BotOverview({
     try {
       if (disabled) {
         await disableBot(bot.bot_id);
-        toast.success(`Disabled ${bot.display_name || bot.username} (installation disconnected)`);
+        toast.success(`Disabled ${bot.display_name || bot.username} (host disconnected)`);
       } else {
         await enableBot(bot.bot_id);
         toast.success(`Enabled ${bot.display_name || bot.username}`);
@@ -481,7 +481,7 @@ function BotOverview({
       {bot.can_manage && <div className="border-t border-zinc-800" />}
 
       {/* Details — stable identity and channel membership. Runtime credentials
-          belong to Installations and are deliberately managed there. */}
+          belong to Hosts and are deliberately managed there. */}
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
@@ -569,8 +569,8 @@ function BotOverview({
                 </p>
                 <p className="mt-1 text-compact text-content-muted">
                   {bot.is_disabled
-                    ? "Lets its active installation connect again. Channel membership never changed."
-                    : "Disconnects the active installation and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
+                    ? "Lets its active host connect again. Channel membership never changed."
+                    : "Disconnects the active host and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
                 </p>
               </div>
               <UiButton action="disable" variant={bot.is_disabled ? "secondary" : "danger"}
@@ -588,7 +588,7 @@ function BotOverview({
               <div className="min-w-0">
                 <p className="text-regular font-medium text-content-secondary">Delete bot</p>
                 <p className="mt-1 text-compact text-content-muted">
-                  Removes @{bot.username} from every channel and drops its installations. The name
+                  Removes @{bot.username} from every channel and drops its hosts. The name
                   becomes available again. This can't be undone.
                 </p>
               </div>
@@ -619,7 +619,7 @@ function BotOverview({
             immediately and stops answering, including any work in progress.
           </p>
           <p className="text-content-muted">
-            Nothing is deleted, and turning it back on restores it — its installations and channels
+            Nothing is deleted, and turning it back on restores it — its hosts and channels
             are untouched.
           </p>
         </ConfirmDialog>
@@ -636,7 +636,7 @@ function BotOverview({
         >
           <p>
             <strong className="text-content-primary">@{bot.username}</strong> is removed from every
-            channel it belongs to, and its installations stop working for good.
+            channel it belongs to, and its hosts stop working for good.
           </p>
           <p className="text-content-muted">
             This can't be undone. To take it offline temporarily, disable it instead.

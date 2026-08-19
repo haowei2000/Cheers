@@ -4,7 +4,7 @@
   "bot_username": "helper",
   "bridge_protocol_version": 1,
   "connection_id": "11111111-2222-4333-8444-555555555555",
-  "installation_id": "11111111-2222-4333-8444-555555555555",
+  "host_id": "11111111-2222-4333-8444-555555555555",
   "connector_config": {
     "agentNativePermissionMode": "default"
   },

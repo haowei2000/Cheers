@@ -18,23 +18,23 @@ type FleetSummary = {
 export function FleetOverview({
   summary,
   actionableCount,
-  installationIssues,
+  hostIssues,
   bots,
   audit,
   onOpenBot,
   onOpenAllBots,
   onOpenActivity,
-  onOpenInstallations,
+  onOpenHosts,
 }: {
   summary: FleetSummary;
   actionableCount: number;
-  installationIssues: number;
+  hostIssues: number;
   bots: FleetBot[];
   audit: FleetAuditEvent[];
   onOpenBot: (botId: string) => void;
   onOpenAllBots: () => void;
   onOpenActivity: () => void;
-  onOpenInstallations: () => void;
+  onOpenHosts: () => void;
 }) {
   return (
     <>
@@ -45,11 +45,11 @@ export function FleetOverview({
         <MetricCard label="Waiting" value={summary.waiting} tone={summary.waiting ? "warning" : "neutral"} />
         <MetricCard
           label="Install issues"
-          value={installationIssues}
-          tone={installationIssues ? "warning" : "neutral"}
+          value={hostIssues}
+          tone={hostIssues ? "warning" : "neutral"}
         />
       </div>
-      {(actionableCount > 0 || installationIssues > 0) && (
+      {(actionableCount > 0 || hostIssues > 0) && (
         <ItemSection label="Needs attention" presentationLevel="medium" controlSize="regular">
           {actionableCount > 0 && (
             <OperationsItem
@@ -64,12 +64,12 @@ export function FleetOverview({
               onClick={onOpenActivity}
             />
           )}
-          {installationIssues > 0 && (
+          {hostIssues > 0 && (
             <OperationsItem
-              title={`${installationIssues} installation issue${installationIssues === 1 ? "" : "s"}`}
+              title={`${hostIssues} host issue${hostIssues === 1 ? "" : "s"}`}
               subtitle="MCP authorization or refresh needs attention"
               leading={<ShieldAlert className="h-4 w-4 text-warning-300" />}
-              onClick={onOpenInstallations}
+              onClick={onOpenHosts}
             />
           )}
         </ItemSection>

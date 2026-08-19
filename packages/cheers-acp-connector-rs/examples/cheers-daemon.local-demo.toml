@@ -2,7 +2,7 @@
 #
 # Fill the two placeholders marked <<< and run:
 #   mkdir -p ~/.cheers/workspace
-#   export CHEERS_INSTALLATION_CREDENTIAL=agbi_... # returned by installation pairing
+#   export CHEERS_HOST_CREDENTIAL=agbi_... # returned by host pairing
 #   cargo run --bin cce-acp-connector -- start \
 #       --config examples/cheers-daemon.local-demo.toml --name demo
 #
@@ -21,7 +21,7 @@ log_dir = "logs"
 # Local gateway runs on :8000 over plain ws (use wss in production).
 control_url = "ws://localhost:8000/ws/agent-bridge/control"
 data_url = "ws://localhost:8000/ws/agent-bridge/data"
-installation_credential_env = "CHEERS_INSTALLATION_CREDENTIAL"
+host_credential_env = "CHEERS_HOST_CREDENTIAL"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 

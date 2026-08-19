@@ -179,6 +179,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None, // 默认 = 频道 primary session（本测试不针对 other session）
+                msg_id: None,
             },
         )
         .await
@@ -253,6 +254,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -285,6 +287,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -471,6 +474,7 @@ async fn issue_330_concurrent_distinct_messages_all_persist_and_dispatch_once_ea
                     mention_ids: vec![],
                     mention_names: vec![],
                     session_id: None,
+                    msg_id: None,
                 },
             )
             .await
@@ -2274,6 +2278,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None,
+                msg_id: None,
             },
         )
         .await
@@ -2358,6 +2363,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None,
+                msg_id: None,
             },
         )
         .await
@@ -2682,6 +2688,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -2718,6 +2725,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3038,6 +3046,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
             mention_ids: vec![me],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3058,6 +3067,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3140,6 +3150,7 @@ async fn human_group_bots_mention_triggers_all_bots(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec!["bots".to_string()],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3191,6 +3202,7 @@ async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3723,6 +3735,7 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3904,13 +3917,13 @@ async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn terminal_installations_enforce_one_active_and_independent_credentials(db: PgPool) {
+async fn connector_hosts_enforce_one_active_and_independent_credentials(db: PgPool) {
     let bot = seed_bot(&db).await;
     let first = Uuid::new_v4();
     let second = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-a', $3, 'agbi_first', 'active')",
     )
     .bind(first.to_string())
@@ -3921,8 +3934,8 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
 
     let duplicate_active = sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'active')",
     )
     .bind(second.to_string())
@@ -3932,12 +3945,12 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .await;
     assert!(
         duplicate_active.is_err(),
-        "database must reject two active installations"
+        "database must reject two active hosts"
     );
 
     sqlx::query(
-        "INSERT INTO terminal_installations
-         (installation_id, bot_id, device_name, credential_hash, credential_prefix, status)
+        "INSERT INTO connector_hosts
+         (host_id, bot_id, device_name, credential_hash, credential_prefix, status)
          VALUES ($1, $2, 'host-b', $3, 'agbi_second', 'standby')",
     )
     .bind(second.to_string())
@@ -3947,8 +3960,8 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .await
     .unwrap();
     sqlx::query(
-        "UPDATE terminal_installations SET revoked_at = NOW()
-         WHERE installation_id = $1",
+        "UPDATE connector_hosts SET revoked_at = NOW()
+         WHERE host_id = $1",
     )
     .bind(second.to_string())
     .execute(&db)
@@ -3956,7 +3969,7 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
     let first_still_active: bool = sqlx::query_scalar(
         "SELECT status = 'active' AND revoked_at IS NULL
-         FROM terminal_installations WHERE installation_id = $1",
+         FROM connector_hosts WHERE host_id = $1",
     )
     .bind(first.to_string())
     .fetch_one(&db)
@@ -3964,6 +3977,6 @@ async fn terminal_installations_enforce_one_active_and_independent_credentials(d
     .unwrap();
     assert!(
         first_still_active,
-        "revoking standby must not alter active installation"
+        "revoking standby must not alter active host"
     );
 }

@@ -1,0 +1,905 @@
+[
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Metadata for a channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_channel_info",
+    "title": "Get channel info"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Users and Agents in a channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_members",
+    "title": "List channel members"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read channel messages by cursor.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "string"
+        },
+        "before": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "since_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_messages",
+    "title": "Read recent messages"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Get channel message sequence bounds.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "messages_index",
+    "title": "Get message sequence index"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read messages in a channel sequence range.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "max_seq": {
+          "type": "integer"
+        },
+        "min_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel_id",
+        "min_seq"
+      ],
+      "type": "object"
+    },
+    "name": "messages_by_seq",
+    "title": "Read messages by channel sequence"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Search finalized message content.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "before": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_messages",
+    "title": "Search channel messages"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the ordered channel activity stream.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "since_seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_activity",
+    "title": "Read channel activity"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the condensed channel context.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_context",
+    "title": "Get channel context"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the live channel plan.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_plan",
+    "title": "Read channel plan"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read Agent sessions in a channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_sessions",
+    "title": "List channel Agent sessions"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read token usage and cost totals.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_cost",
+    "title": "Read channel usage"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:membership:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Remove this Bot from a non-DM channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "leave_channel",
+    "title": "Leave a channel"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:membership:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Open an eligible one-to-one DM.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "target_user_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_user_id"
+      ],
+      "type": "object"
+    },
+    "name": "open_direct_message",
+    "title": "Open a direct message"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List files uploaded to channel chat.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "inbox_list",
+    "title": "List channel attachments"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read one channel attachment.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "as_base64": {
+          "type": "boolean"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "file_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "file_id"
+      ],
+      "type": "object"
+    },
+    "name": "inbox_open",
+    "title": "Open a channel attachment"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Resolve a shared workspace reference through the owner Bot's live Connector.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "bot_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "read_workspace",
+    "title": "Read another Bot's workspace file"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:messages:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Send or reply to a channel message.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mention_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mention_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reply_to_msg_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "post_message",
+    "title": "Post a message"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:profile:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Update this Bot's own status/profile card.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "info": {
+          "type": "string"
+        },
+        "status_emoji": {
+          "type": "string"
+        },
+        "status_text": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "set_status",
+    "title": "Update Bot status"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:files:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Upload a base64-encoded attachment.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "data_b64": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "filename",
+        "data_b64"
+      ],
+      "type": "object"
+    },
+    "name": "inbox_deliver",
+    "title": "Deliver a channel attachment"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List Cheers Desk files under a path.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "desk_list",
+    "title": "List Desk files"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read a Cheers Desk file.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "desk_read",
+    "title": "Read a Desk file"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Create or overwrite a Cheers Desk file.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "if_version": {
+          "type": "integer"
+        },
+        "is_dir": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "desk_write",
+    "title": "Write a Desk file"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Replace one exact string in a Desk file.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "if_version": {
+          "type": "integer"
+        },
+        "new_string": {
+          "type": "string"
+        },
+        "old_string": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path",
+        "old_string",
+        "new_string"
+      ],
+      "type": "object"
+    },
+    "name": "desk_edit",
+    "title": "Edit a Desk file"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Append text to a Desk file.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "desk_append",
+    "title": "Append to a Desk file"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Remove a Desk file or subtree.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "recursive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "desk_rm",
+    "title": "Remove a Desk path"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Move or rename a Desk file or subtree.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "name": "desk_mv",
+    "title": "Move a Desk path"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:task-claims:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Record this Bot's assigned task-claim decision.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "evaluation_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "evaluation_id",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "name": "respond_to_task_claim_evaluation",
+    "title": "Respond to a task evaluation"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List proactive task claims in a channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_task_claims",
+    "title": "List task claims"
+  }
+]

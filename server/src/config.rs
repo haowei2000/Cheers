@@ -59,6 +59,37 @@ impl std::fmt::Debug for AppleAuthConfig {
     }
 }
 
+/// GitHub App credentials.
+///
+/// A GitHub **App**, not an OAuth App. The difference matters to the credential
+/// model: an OAuth App token carries the *user's* full scope everywhere that
+/// user can reach, while an App is installed per account and its tokens are
+/// scoped to that host's repositories and expire in an hour. That is
+/// the same shape `integrations::credentials` was built around — short-lived,
+/// renewable, revocable per install — and it means a compromised gateway
+/// cannot reach a repository the installer never selected.
+///
+/// The private key signs a short App JWT which is exchanged for those
+/// host tokens; it is deployment configuration like `JWT_PRIVATE_KEY`,
+/// never a per-user secret, so it lives here rather than in the credential
+/// store.
+#[derive(Clone)]
+pub struct GitHubAppConfig {
+    /// Numeric App ID, the `iss` of the App JWT.
+    pub app_id: String,
+    /// RSA private key PEM downloaded when the App was created.
+    pub private_key_pem: String,
+}
+
+impl std::fmt::Debug for GitHubAppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitHubAppConfig")
+            .field("app_id", &self.app_id)
+            .field("private_key_pem", &"<redacted>")
+            .finish()
+    }
+}
+
 #[derive(Clone)]
 pub struct GoogleAuthConfig {
     pub client_id: String,
@@ -146,6 +177,13 @@ pub struct Config {
     pub google_auth: Option<GoogleAuthConfig>,
     /// Exact browser destination after a successful provider callback.
     pub oauth_web_return_url: Option<String>,
+
+    /// GitHub integration is advertised only when both values are present, so a
+    /// self-hosted gateway with no App registered simply has no GitHub.
+    pub github_app: Option<GitHubAppConfig>,
+    /// API root, overridable for GitHub Enterprise Server (whose API lives at
+    /// `https://ghe.example.com/api/v3`) and for tests.
+    pub github_api_base_url: String,
 
     // 邮件（Brevo 事务性邮件 HTTP API；不配置则验证码回退打印到日志）
     /// Brevo (ex-Sendinblue) API key for the transactional email endpoint
@@ -258,6 +296,26 @@ impl Config {
                     panic!("JWT_PUBLIC_KEY is missing or not a valid RSA public-key PEM ({e}) — see docs/help/deployment.md")
                 },
             ),
+        };
+
+        let github_app = match (
+            optional("GITHUB_APP_ID"),
+            optional("GITHUB_APP_PRIVATE_KEY"),
+        ) {
+            (Some(app_id), Some(private_key_pem)) => Some(GitHubAppConfig {
+                app_id,
+                private_key_pem,
+            }),
+            (None, None) => None,
+            _ => {
+                // Half-configured is a deployment mistake, not a way to run: the
+                // App JWT needs both, and failing at the first API call would
+                // surface as an opaque 401 much later.
+                tracing::warn!(
+                    "partial GitHub App configuration ignored; GitHub integration disabled"
+                );
+                None
+            }
         };
 
         let apple_values = (
@@ -377,6 +435,12 @@ impl Config {
             apple_auth,
             google_auth,
             oauth_web_return_url: optional("OAUTH_WEB_RETURN_URL"),
+
+            github_app,
+            github_api_base_url: optional("GITHUB_API_BASE_URL")
+                .unwrap_or_else(|| "https://api.github.com".to_string())
+                .trim_end_matches('/')
+                .to_string(),
 
             brevo_api_key: env::var("BREVO_API_KEY")
                 .ok()

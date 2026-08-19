@@ -19,6 +19,7 @@
           "design-system/**",
           "extensions/**",
           "fixtures/workbench/**",
+          "server/src/resource/mod.rs",
           "packages/cheers-workbench-sdk/**",
           "scripts/build-extension-catalog.mjs",
           "scripts/check-design-system.mjs",

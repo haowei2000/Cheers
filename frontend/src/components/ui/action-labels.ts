@@ -35,6 +35,7 @@ export const slotActionLabels = {
   join: "Join",
   leave: "Leave",
   link: "Link",
+  loadTemporarily: "Load",
   lookup: "Look up",
   manage: "Manage",
   more: "More",

@@ -2,6 +2,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use url::Url;
 
+pub mod registry;
 pub mod tools;
 
 pub const RESOURCE_GUIDE_URI: &str = "cheers://help/resources";
@@ -26,24 +27,15 @@ pub const ALL_OAUTH_SCOPES: &[&str] = &[
 
 /// Frozen MCP 2026-07-28 v1 scope for a public Cheers tool name.
 ///
+/// Derived from [`registry::catalog`] — the scope lives beside the tool it
+/// guards, so a new tool cannot be added without one.
+///
 /// `inbox_stage` is deliberately excluded: it refers to a terminal-local path
-/// and cannot be routed safely until remote calls are installation-bound.
+/// and cannot be routed safely until remote calls are host-bound.
 pub fn required_scope_for_tool(name: &str) -> Option<&'static str> {
-    match name {
-        "get_channel_info" | "list_members" | "read_messages" | "messages_index"
-        | "messages_by_seq" | "search_messages" | "read_activity" | "get_context" | "read_plan"
-        | "read_sessions" | "read_cost" | "inbox_list" | "inbox_open" | "desk_list"
-        | "desk_read" | "read_workspace" | "list_task_claims" => Some(SCOPE_READ),
-        "post_message" => Some(SCOPE_MESSAGES_WRITE),
-        "inbox_deliver" => Some(SCOPE_FILES_WRITE),
-        "desk_write" | "desk_edit" | "desk_append" | "desk_rm" | "desk_mv" => {
-            Some(SCOPE_WORKSPACE_WRITE)
-        }
-        "set_status" => Some(SCOPE_PROFILE_WRITE),
-        "leave_channel" | "open_direct_message" => Some(SCOPE_MEMBERSHIP_WRITE),
-        "respond_to_task_claim_evaluation" => Some(SCOPE_TASK_CLAIMS_WRITE),
-        _ => None,
-    }
+    registry::by_tool(name)
+        .and_then(|spec| spec.tool)
+        .map(|t| t.scope)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -328,6 +320,42 @@ fn safe_mime(supplied: &str, binary: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    /// The scope table exactly as it was hand-written before the registry.
+    /// Kept as a test fixture so the registry migration is provably behaviour-
+    /// preserving; it is not reachable from production code.
+    fn frozen_scope_table(name: &str) -> Option<&'static str> {
+        match name {
+            "get_channel_info" | "list_members" | "read_messages" | "messages_index"
+            | "messages_by_seq" | "search_messages" | "read_activity" | "get_context"
+            | "read_plan" | "read_sessions" | "read_cost" | "inbox_list" | "inbox_open"
+            | "desk_list" | "desk_read" | "read_workspace" | "list_task_claims" => Some(SCOPE_READ),
+            "post_message" => Some(SCOPE_MESSAGES_WRITE),
+            "inbox_deliver" => Some(SCOPE_FILES_WRITE),
+            "desk_write" | "desk_edit" | "desk_append" | "desk_rm" | "desk_mv" => {
+                Some(SCOPE_WORKSPACE_WRITE)
+            }
+            "set_status" => Some(SCOPE_PROFILE_WRITE),
+            "leave_channel" | "open_direct_message" => Some(SCOPE_MEMBERSHIP_WRITE),
+            "respond_to_task_claim_evaluation" => Some(SCOPE_TASK_CLAIMS_WRITE),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn registry_reproduces_the_frozen_scope_table_exactly() {
+        for tool in registry::catalog().iter().filter_map(|s| s.tool) {
+            assert_eq!(
+                Some(tool.scope),
+                frozen_scope_table(tool.name),
+                "registry changed the frozen scope for {}",
+                tool.name
+            );
+        }
+        // inbox_stage is deliberately absent from both.
+        assert_eq!(frozen_scope_table("inbox_stage"), None);
+        assert_eq!(required_scope_for_tool("inbox_stage"), None);
+    }
+
     use super::*;
 
     #[test]

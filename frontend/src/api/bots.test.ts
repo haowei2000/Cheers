@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBot, createInstallation, redeemInstallationPairing } from "./bots";
+import { createBot, createHost, redeemHostPairing } from "./bots";
 
 function ok(body: unknown) {
   return Promise.resolve(new Response(JSON.stringify(body), {
@@ -10,7 +10,7 @@ function ok(body: unknown) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("bot and installation API separation", () => {
+describe("bot and host API separation", () => {
   it("creates only a bot identity", async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       ok({ bot_id: "bot-1", username: "helper" }));
@@ -26,33 +26,33 @@ describe("bot and installation API separation", () => {
     });
   });
 
-  it("creates a pending installation with its own agent", async () => {
+  it("creates a pending host with its own agent", async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => ok({
       bot_id: "bot-1",
-      installation_id: "installation-1",
+      host_id: "host-1",
       pairing_code: "agbpair_secret",
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await createInstallation("bot-1", "codex", "Build Mac");
+    await createHost("bot-1", "codex", "Build Mac");
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/bots\/bot-1\/installations$/);
+    expect(String(url)).toMatch(/\/bots\/bot-1\/hosts$/);
     expect(JSON.parse(init?.body as string)).toEqual({
       agent_type: "codex",
       device_name: "Build Mac",
     });
   });
 
-  it("redeems through the installation pairing endpoint", async () => {
+  it("redeems through the host pairing endpoint", async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
-      ok({ installation_id: "installation-1" }));
+      ok({ host_id: "host-1" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await redeemInstallationPairing("agbpair_secret", "Build Mac");
+    await redeemHostPairing("agbpair_secret", "Build Mac");
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/installations\/redeem$/);
+    expect(String(url)).toMatch(/\/hosts\/redeem$/);
     expect(JSON.parse(init?.body as string)).toEqual({
       pairing_code: "agbpair_secret",
       device_name: "Build Mac",

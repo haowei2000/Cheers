@@ -34,7 +34,13 @@ interface Manifest {
 }
 
 const idPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// The grammar from semver.org, matching what `semver::Version::parse` accepts on the
+// server. A looser pattern here lets an author pack a version no installer will take.
+const semverPattern =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/** Characters, not UTF-16 code units — the unit the installers count in. */
+const characters = (value: string): number => [...value].length;
 
 function zipEpoch(): Date {
   // fflate writes ZIP timestamps with local Date fields. Constructing local
@@ -56,11 +62,11 @@ export function validateManifest(manifest: Manifest): void {
   }
   for (const automation of manifest.contributes?.automations ?? []) {
     if (!idPattern.test(automation.id)) throw new Error(`invalid automation contribution: ${automation.id}`);
-    if (!automation.title?.trim() || automation.title.length > 120) throw new Error(`invalid automation title: ${automation.id}`);
-    if (!automation.message?.trim() || automation.message.length > 4000) throw new Error(`invalid automation message: ${automation.id}`);
+    if (!automation.title?.trim() || characters(automation.title) > 120) throw new Error(`invalid automation title: ${automation.id}`);
+    if (!automation.message?.trim() || characters(automation.message) > 4000) throw new Error(`invalid automation message: ${automation.id}`);
     const schedule = automation.defaultSchedule;
     const validInterval = schedule?.kind === "interval" && Number.isInteger(schedule.everyMinutes) && schedule.everyMinutes >= 5 && schedule.everyMinutes <= 10080;
-    const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone === undefined || (schedule.timezone.trim().length > 0 && schedule.timezone.length <= 64));
+    const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone == null || (schedule.timezone.trim().length > 0 && characters(schedule.timezone) <= 64));
     if (!validInterval && !validDaily) {
       throw new Error(`invalid automation schedule: ${automation.id}`);
     }

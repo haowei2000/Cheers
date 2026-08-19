@@ -1934,12 +1934,12 @@
         }
       }
     },
-    "Open Cheers on the machine that will run the agent, go to Fleet → Installations → Use pairing code, and scan or type this." : {
+    "Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在运行智能体的设备上打开 Cheers，前往“Fleet → Installations → 使用配对码”，然后扫描或输入此代码。"
+            "value" : "在运行智能体的设备上打开 Cheers，前往“Fleet → Hosts → 使用配对码”，然后扫描或输入此代码。"
           }
         }
       }

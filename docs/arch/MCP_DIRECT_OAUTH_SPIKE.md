@@ -17,8 +17,8 @@ Connector ── ACP over local stdio ──▶ Agent ── HTTP MCP + OAuth �
 ```
 
 There is no Connector MCP proxy. The Agent never gains more Cheers authority
-than the selected installation's Bot, scopes, channel membership and role, and
-must stop working immediately after its terminal installation is revoked.
+than the selected host's Bot, scopes, channel membership and role, and
+must stop working immediately after its connector host is revoked.
 
 > **Amended 2026-08-17 (connector 0.1.39).** The original spike also required the
 > Agent to discover OAuth itself and own its token lifecycle, with no
@@ -26,14 +26,14 @@ must stop working immediately after its terminal installation is revoked.
 > Agents: the Gateway publishes no `registration_endpoint`, so an Agent needs a
 > public HTTPS Client ID Metadata Document plus a consent round-trip surfaced
 > through ACP URL elicitation. The Connector now mints the token instead, using
-> the installation-bound `client_credentials` grant that
+> the host-bound `client_credentials` grant that
 > [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) §2 already defines
 > for unattended enrolled Agent terminals, and injects it as a header. This is
 > not the rejected static-Bearer workaround: tokens are short-lived and re-minted
-> on demand, and the Gateway re-validates installation status, revocation,
+> on demand, and the Gateway re-validates host status, revocation,
 > credential hash and bot enablement on every MCP request, so the revocation
 > guarantee above is unchanged. Native Agent OAuth remains supported and is still
-> the path taken when the Gateway advertises no installation id.
+> the path taken when the Gateway advertises no host id.
 
 The harness does not weaken the Gateway's CIMD SSRF checks. Authorization Code
 clients must publish a real public HTTPS Client ID Metadata Document. A localhost
@@ -92,7 +92,7 @@ scripts/run-mcp-direct-oauth-spike.sh \
 
 Interactive cases start the real Frontend consent surface. If the Agent emits an
 authorization URL, open it, log in as the temporary admin and select the matching
-installation. A public HTTPS CIMD is still mandatory; a purely local CIMD is
+host. A public HTTPS CIMD is still mandatory; a purely local CIMD is
 correctly rejected.
 
 ACP URL elicitation is advertised by the probe and recorded separately. Set
@@ -112,25 +112,25 @@ scripts/run-mcp-direct-oauth-spike.sh \
   --keep-artifacts
 ```
 
-Use `{{installation_id}}` and `{{installation_credential}}` as values where the
+Use `{{host_id}}` and `{{host_credential}}` as values where the
 documented provider needs the case-specific credentials. The harness substitutes
-them only after creating the isolated installation, passes them to the Agent
+them only after creating the isolated host, passes them to the Agent
 process, and never writes the resolved JSON to evidence.
 
-The harness deliberately has no generic mapping from installation credential to
+The harness deliberately has no generic mapping from host credential to
 Agent environment. If an Agent has no supported provider capable of consuming
-installation ID/credential and requesting `/oauth/token`, record
+host ID/credential and requesting `/oauth/token`, record
 `unsupported_client_credentials`; do not pass secrets through an invented env.
 
 Each case creates a disposable PostgreSQL container, Gateway, Frontend, Bot,
-installation, workspace and channel. It then:
+host, workspace and channel. It then:
 
 1. checks `mcpCapabilities.http`;
 2. sends `session/new` with URL and empty headers;
 3. asks the real model to call `get_channel_info` and `post_message`;
 4. waits 620 seconds and repeats the prompt to cross the ten-minute access-token TTL;
 5. restarts the ACP process and verifies token-state recovery;
-6. revokes the installation and requires the next direct MCP attempt to fail;
+6. revokes the host and requires the next direct MCP attempt to fail;
 7. checks the durable channel message and OAuth rows server-side;
 8. deletes the container and temporary secrets.
 
@@ -142,7 +142,7 @@ Cheers OAuth consent.
 
 `result.json`, restart/revocation results and `assertions.json` are safe to retain
 after automatic redaction. Gateway/Frontend logs are sanitized on cleanup. The
-private JWT key, installation credential, access token, refresh token,
+private JWT key, host credential, access token, refresh token,
 authorization code and PKCE verifier must never appear in committed evidence.
 
 Classify failures as one of:

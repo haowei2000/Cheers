@@ -3,7 +3,7 @@
 > **语言**：中文 | [English](本地Bot配置指南.md)
 
 面向**在本机以 host 守护进程方式**接入 ACP Agent（如 Codex、Claude）的用户 / 开发者。
-讲清楚：如何创建 Bot 身份、配对本机 Installation、保存其凭证、管理多个 Installation，以及如何排障。
+讲清楚：如何创建 Bot 身份、配对本机 Host、保存其凭证、管理多个 Host，以及如何排障。
 
 - 在 UI 里创建 Bot 的完整流程见 [AgentBridge 接入指南](AgentBridge接入指南.md)。
   本文聚焦**本地、从源码跑网关 + host 连接器**这条链路。
@@ -16,13 +16,13 @@
 
 ```
 你的浏览器 ──▶ 网关(:8000, 从源码跑) ◀──WebSocket── 连接器守护进程 ──stdio──▶ ACP Agent(codex/claude)
-                                                   └ 一个 TOML = 一个 Installation = 一个守护进程
+                                                   └ 一个 TOML = 一个 Host = 一个守护进程
 ```
 
 三条铁律：
 
-1. **Bot 是长期身份，Installation 是这个 Bot 的一个运行位置**。一个 TOML 文件 = 一个 Installation = 一个守护进程（用 `--name` 区分）。
-2. **Installation 凭证放在独立 sidecar 文件里**（`bot_token_file` 是连接器保留的历史配置键名），不要写进 TOML。
+1. **Bot 是长期身份，Host 是这个 Bot 的一个运行位置**。一个 TOML 文件 = 一个 Host = 一个守护进程（用 `--name` 区分）。
+2. **Host 凭证放在独立 sidecar 文件里**（`host_credential_file`），不要写进 TOML。
 3. 网关从源码跑、复用已有 Docker 基础设施（Postgres/Redis/RustFS）；**不要**对本仓库的 `docker-compose.yml` 跑 `up`（它已过时，且会和已有容器抢 5432/6379/9000 端口）。
 
 ---
@@ -71,8 +71,8 @@ Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生
 ~/.cheers/
 ├─ bin/
 │   └─ cce-acp-connector
-├─ cheers-daemon.codex.toml      # Installation：codex（一个 Installation 一个文件）
-├─ cheers-daemon.claude.toml     # Installation：claude
+├─ cheers-daemon.codex.toml      # Host：codex（一个 Host 一个文件）
+├─ cheers-daemon.claude.toml     # Host：claude
 ├─ secrets/
 │   ├─ codex.token   (chmod 600) # 仅 token 明文，gitignore
 │   └─ claude.token  (chmod 600)
@@ -85,12 +85,12 @@ Cheers 工具由 Gateway 的原生 HTTP MCP OAuth 端点提供，不安装伴生
 
 ---
 
-## 3. 通过 Installation 接入 Bot
+## 3. 通过 Host 接入 Bot
 
 下面以 **codex** 为例（claude 把名字/命令/bot_id 换掉即可）。
 
 ### 3.1 在 Cheers 里确认/创建 Bot 身份，拿到 `bot_id`
-UI：登录 → Fleet → **New bot**。这一步只创建身份，不选择 Agent，也不创建 Installation。或用 API 列出：
+UI：登录 → Fleet → **New bot**。这一步只创建身份，不选择 Agent，也不创建 Host。或用 API 列出：
 
 ```bash
 TOK=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
@@ -100,17 +100,17 @@ curl -s http://127.0.0.1:8000/api/v1/bots -H "Authorization: Bearer $TOK" \
   | jq -r '.[] | "\(.username)  \(.bot_id)"'
 ```
 
-### 3.2 创建并兑换 Installation Pairing
+### 3.2 创建并兑换 Host Pairing
 
-Agent 在 Installation 创建时选择。兑换后该 Installation 变为 active；同一 Bot 原有的 active Installation 会转为 standby。
+Agent 在 Host 创建时选择。兑换后该 Host 变为 active；同一 Bot 原有的 active Host 会转为 standby。
 
 ```bash
 mkdir -p ~/.cheers/secrets && chmod 700 ~/.cheers/secrets
-PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/installations" \
+PAIRING=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/bots/<BOT_ID>/hosts" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"agent_type":"codex","device_name":"Local Mac"}')
 PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
-REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/installations/redeem" \
+REDEEMED=$(curl -s -X POST "http://127.0.0.1:8000/api/v1/hosts/redeem" \
   -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg code "$PAIRING_CODE" --arg device 'Local Mac' '{pairing_code:$code,device_name:$device}')")
 printf '%s' "$REDEEMED" | jq -r .credential > ~/.cheers/secrets/codex.token
@@ -124,8 +124,8 @@ chmod 600 ~/.cheers/secrets/codex.token
 CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
 ```
 
-### 3.3 检查或定制生成的 Installation 配置
-（完整字段含义见 [§6 配置参考](#6-完整配置参考)。`bot_token_file` 相对**配置文件所在目录**解析。）
+### 3.3 检查或定制生成的 Host 配置
+（完整字段含义见 [§6 配置参考](#6-完整配置参考)。`host_credential_file` 相对**配置文件所在目录**解析。）
 
 ```toml
 version = 1
@@ -140,7 +140,7 @@ auto = true                          # 验签 ed25519 清单 + sha256，排空�
 [accounts.codex.bridge]
 control_url    = "ws://localhost:8000/ws/agent-bridge/control"
 data_url       = "ws://localhost:8000/ws/agent-bridge/data"
-bot_token_file = "secrets/codex.token"   # ← token 放文件，不内联、不用环境变量
+host_credential_file = "secrets/codex.token"   # ← token 放文件，不内联、不用环境变量
 
 [accounts.codex.adapter]
 type    = "stdio"
@@ -170,7 +170,7 @@ auto_allow         = false           # true=本地自动放行、不进频道
 ```
 
 > 上面是**精简版**（省略的字段都有合理默认）。要全字段模板，复制
-> `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` 再改 token 来源为 `bot_token_file`。
+> `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` 再改 token 来源为 `host_credential_file`。
 
 ### 3.4 启动守护进程
 ```bash
@@ -239,9 +239,9 @@ chmod +x ~/.cheers/cheers-bots.sh
 
 ## 5. Token 放哪：文件 vs 环境变量 vs 内联
 
-配置 schema **要求** `bot_token_env` 与 `bot_token_file` **二选一**，并**拒绝**在 TOML 里内联 `bot_token`（这是有意的安全设计）。
+配置 schema **要求** `host_credential_env` 与 `host_credential_file` **二选一**，并**拒绝**在 TOML 里内联 `bot_token`（这是有意的安全设计）。
 
-| | 内联进 TOML | 环境变量 `bot_token_env` | **独立文件 `bot_token_file`** ✅ 本地推荐 |
+| | 内联进 TOML | 环境变量 `host_credential_env` | **独立文件 `host_credential_file`** ✅ 本地推荐 |
 |---|---|---|---|
 | 是否支持 | ❌ 被拒绝 | ✅ | ✅ |
 | 提交安全 | 明文进 git/截图/工单 | 配置无明文 | 配置无明文，token 单独 gitignore |
@@ -250,7 +250,7 @@ chmod +x ~/.cheers/cheers-bots.sh
 | 轮换 | 改配置（易误改） | 重新 export + 重启 | 覆盖一个小文件即可 |
 | 适用场景 | 不要用 | **容器/CI**（密钥管理器注入、不想落盘） | **本地 host 守护进程** |
 
-**结论**：本地用 `bot_token_file`；只有当外部（容器编排 / CI 的密钥管理器）在运行期注入密钥时才用 `bot_token_env`。
+**结论**：本地用 `host_credential_file`；只有当外部（容器编排 / CI 的密钥管理器）在运行期注入密钥时才用 `host_credential_env`。
 
 ---
 
@@ -269,7 +269,7 @@ log_dir    = "logs-codex"            # 日志目录（<name>.stdout.log / .stder
 [accounts.codex.bridge]
 control_url           = "ws://localhost:8000/ws/agent-bridge/control"
 data_url              = "ws://localhost:8000/ws/agent-bridge/data"
-bot_token_file        = "secrets/codex.token"   # 或 bot_token_env = "VAR"，二选一
+host_credential_file        = "secrets/codex.token"   # 或 host_credential_env = "VAR"，二选一
 heartbeat_interval_ms = 25000
 ack_timeout_ms        = 600000
 [accounts.codex.bridge.reconnect]
@@ -348,7 +348,7 @@ $BIN stop    --name codex
 $BIN run     --config <file>     # 前台运行（调试用，不守护）
 ```
 
-- **替换 Installation 凭证**：按 §3.2 创建并配对新的 Installation。新实例会变为 active，旧实例转为 standby；确认不再需要后再撤销旧 Installation。
+- **替换 Host 凭证**：按 §3.2 创建并配对新的 Host。新实例会变为 active，旧实例转为 standby；确认不再需要后再撤销旧 Host。
 - **开机自启**：可写一个 launchd plist（每个 bot 一个，或一个跑 `cheers-bots.sh start`）。需要可让我补一份。
 
 ### 自动更新（连接器 >= 0.1.27）
@@ -373,8 +373,8 @@ $BIN run     --config <file>     # 前台运行（调试用，不守护）
 
 | 现象 | 多半原因 | 处理 |
 |---|---|---|
-| `start` 后立刻退出 / 日志报 token | token 来源缺失或空 | `bridge` 必须设 `bot_token_env` 或 `bot_token_file` 之一；检查文件存在且非空 |
-| `bot_token_env ... is not set` | 用了 env 但没 export | 改用 `bot_token_file`，或在启动前 export |
+| `start` 后立刻退出 / 日志报 token | token 来源缺失或空 | `bridge` 必须设 `host_credential_env` 或 `host_credential_file` 之一；检查文件存在且非空 |
+| `host_credential_env ... is not set` | 用了 env 但没 export | 改用 `host_credential_file`，或在启动前 export |
 | 日志 `ACP agent ... command not found` | Agent 二进制路径不对 | `command -v codex-acp`，把绝对路径填到 `adapter.command` |
 | Agent 起来但无回复 / 子进程鉴权失败 | 子进程拿不到鉴权 | `policy.env.allow` 要含 `HOME`（订阅鉴权）或对应 API Key 变量并已 export |
 | 网关连不上 / 一直重连 | 网关没跑或 URL 错 | `curl :8000/health`；`control_url/data_url` 指向 `ws://localhost:8000/ws/agent-bridge/...` |

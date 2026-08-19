@@ -34,10 +34,10 @@ approval inbox + #3 agent presence, merged into one surface).
 - **Zone B — bot roster**, grouped by bot (never workspace/channel): per bot a status chip
   (`online/offline` from presence, `working/idle` from session status), the bot's
   self-status line (`status_emoji status_text`), aggregated busy/idle session
-  counts, today's cost, Mine/Shared relationship, installations, and channel
+  counts, today's cost, Mine/Shared relationship, hosts, and channel
   context. Owned bots remain visible before they join any channel.
 
-- **Installations** — every registered device for bots the caller manages;
+- **Hosts** — every registered device for bots the caller manages;
   desktop enriches this with local connector runtime controls.
 - **Audit** — cursor-paginated management, connection, ACP, and approval events
   for manageable bots. Management history survives bot deletion.

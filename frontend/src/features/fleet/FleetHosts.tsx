@@ -4,36 +4,36 @@ import { cn } from "@/lib/cn";
 import { isTauri } from "@/lib/serverConfig";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ItemSection, OperationsItem } from "@/components/ui/item";
-import type { FleetInstallation } from "@/api/fleet";
+import type { FleetHost } from "@/api/fleet";
 import {
-  InstallationActions,
-  installationStatusLabel,
+  HostActions,
+  hostStatusLabel,
   mcpStateLabel,
   mcpStateTone,
-} from "@/features/bots/installationLifecycle";
+} from "@/features/bots/hostLifecycle";
 import { ConnectorManager } from "@/features/desktop/ConnectorManager";
 
-export function FleetInstallations({
+export function FleetHosts({
   items,
   refresh,
 }: {
-  items: FleetInstallation[];
+  items: FleetHost[];
   refresh: () => Promise<void>;
 }) {
   return (
     <div className="space-y-7">
       <ItemSection
-        label="Registered installations"
+        label="Registered hosts"
         description="Device registrations and credentials managed by the Cheers server."
         presentationLevel="max"
         controlSize="regular"
       >
         {items.length === 0 ? (
-          <EmptyState icon={Laptop} title="No installations yet" hint="Use Add installation to choose a bot and connect a device." />
+          <EmptyState icon={Laptop} title="No hosts yet" hint="Use Add host to choose a bot and connect a device." />
         ) : (
           items.map((item) => (
             <OperationsItem
-              key={item.installation_id}
+              key={item.host_id}
               title={`${item.bot_name} · ${item.device_name}`}
               subtitle={`${item.agent_type} · ${item.credential_prefix}`}
               metadata={`Last seen ${
@@ -42,10 +42,10 @@ export function FleetInstallations({
               leading={<Laptop className="h-4 w-4 text-content-muted" />}
               status={
                 <span className={cn("text-compact", statusToneClass(item))}>
-                  {installationStatusLabel(item)}
+                  {hostStatusLabel(item)}
                 </span>
               }
-              actions={<InstallationActions item={item} presentation="compact" onChanged={refresh} />}
+              actions={<HostActions item={item} presentation="compact" onChanged={refresh} />}
             />
           ))
         )}
@@ -65,7 +65,7 @@ export function FleetInstallations({
 
 /** Green only when it is actually connected; amber when the operator has
  *  something to do. Everything else is neutral. */
-function statusToneClass(item: FleetInstallation): string {
+function statusToneClass(item: FleetHost): string {
   if (item.revoked_at) return "text-content-muted";
   if (item.online) return "text-success-400";
   if (mcpStateTone(item.mcp_connection_state) === "warning") return "text-warning-400";

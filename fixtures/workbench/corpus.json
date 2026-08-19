@@ -1,0 +1,560 @@
+{
+  "$comment": [
+    "Packages whose verdict both validators must agree on.",
+    "The `.cheers-extension` grammar is enforced twice — in TypeScript by",
+    "frontend/src/features/chat/workbench/extensions/package.ts and in Rust by",
+    "server/src/domain/workbench_extensions.rs — because a personal-scope package is",
+    "never uploaded, so the client cannot delegate validation to the server. Two",
+    "hand-written validators drift, and these cases are the drifts that were actually",
+    "found, frozen so they cannot come back.",
+    "Each case is zipped and validated by both `cargo test` and `vitest`. `global` and",
+    "`personal` are the verdicts expected at each scope (Rust's `allow_code` is false for",
+    "global, true for personal). A file value that is a string is written verbatim; an",
+    "object is serialized as JSON; an object with `$repeat` is that unit repeated `$count`",
+    "times.",
+    "Container rules — how a ZIP entry's declared size relates to its deflate stream —",
+    "are not expressible here and stay hand-mirrored in each parser; the two sides use",
+    "different ZIP implementations (fflate vs the `zip` crate).",
+    "One known difference is deliberately absent: `\"schemaVersion\": 1.0` parses to the",
+    "number 1 in JavaScript and is rejected by serde as a float. JSON.parse erases the",
+    "distinction, so no TypeScript check can see it. The client accepting a package the",
+    "server refuses costs an error message at upload, nothing more."
+  ],
+  "cases": [
+    {
+      "name": "declarative-package",
+      "why": "A package of pure data is installable at every scope.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "file": "notes.md"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "package-carrying-renderer-code",
+      "why": "Renderer code is what global scope refuses and personal scope allows.",
+      "global": "reject",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "renderers": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "entry": "renderers/chart.js"
+              }
+            ]
+          }
+        },
+        "renderers/chart.js": "export function render() {}\n"
+      }
+    },
+    {
+      "name": "prerelease-and-build-metadata",
+      "why": "A full SemVer version stays valid.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0-alpha.1+build.5",
+          "title": "Example",
+          "contributes": {}
+        }
+      }
+    },
+    {
+      "name": "interval-schedule-carrying-a-daily-field",
+      "why": "An interval schedule with a localTime does not say when it runs.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "interval",
+                  "everyMinutes": 5,
+                  "localTime": "08:00"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "daily-schedule-carrying-an-interval-field",
+      "why": "The same ambiguity in the other direction.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "daily",
+                  "localTime": "08:00",
+                  "everyMinutes": 5
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "daily-schedule-with-an-omitted-timezone",
+      "why": "timezone is optional, so a daily schedule without one is complete.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "daily",
+                  "localTime": "08:00"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "daily-schedule-with-a-null-timezone",
+      "why": "An optional field explicitly set to null means the same as omitting it.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "daily",
+                  "localTime": "08:00",
+                  "timezone": null
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "manifest-description-that-is-not-a-string",
+      "why": "description is prose or it is absent.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {},
+          "description": 42
+        }
+      }
+    },
+    {
+      "name": "manifest-description-that-is-null",
+      "why": "A field with no null form does not accept one.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {},
+          "description": null
+        }
+      }
+    },
+    {
+      "name": "automation-description-that-is-not-a-string",
+      "why": "Same rule one level down.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "interval",
+                  "everyMinutes": 60
+                },
+                "description": []
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "version-with-a-leading-zero-prerelease",
+      "why": "SemVer forbids leading zeros in a numeric prerelease identifier.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0-01",
+          "title": "Example",
+          "contributes": {}
+        }
+      }
+    },
+    {
+      "name": "version-with-an-empty-prerelease-identifier",
+      "why": "`alpha..1` has an identifier between the dots that is not there.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0-alpha..1",
+          "title": "Example",
+          "contributes": {}
+        }
+      }
+    },
+    {
+      "name": "unreferenced-seed-file-over-the-cap",
+      "why": "A seed blob nothing points at is still bytes the package carries.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "file": "notes.md"
+            }
+          ]
+        },
+        "seed/main/unused.md": {
+          "$repeat": "a",
+          "$count": 262145
+        }
+      }
+    },
+    {
+      "name": "unreferenced-seed-file-at-the-cap",
+      "why": "The byte before the cap is still fine.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "file": "notes.md"
+            }
+          ]
+        },
+        "seed/main/unused.md": {
+          "$repeat": "a",
+          "$count": 262144
+        }
+      }
+    },
+    {
+      "name": "automation-title-of-120-characters-outside-the-basic-plane",
+      "why": "The limit counts characters, so an emoji costs one, not two.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "interval",
+                  "everyMinutes": 60
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "automation-title-of-121-characters",
+      "why": "One character past the limit is over it.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "message": "Summarize the week.",
+                "defaultSchedule": {
+                  "kind": "interval",
+                  "everyMinutes": 60
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "automation-message-of-4001-characters",
+      "why": "The same limit on the body.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "automations": [
+              {
+                "id": "digest",
+                "title": "Digest",
+                "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "defaultSchedule": {
+                  "kind": "interval",
+                  "everyMinutes": 60
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "permissions-set-to-null",
+      "why": "`permissions` has a default when omitted and no null form when written.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {},
+          "permissions": null
+        }
+      }
+    },
+    {
+      "name": "scene-item-renderer-set-to-null",
+      "why": "Same rule on a scene item's renderer.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "file": "notes.md",
+              "renderer": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "renderer-style-set-to-null",
+      "why": "An optional path, so null is an omission and legal.",
+      "global": "reject",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "renderers": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "entry": "renderers/chart.js",
+                "style": null
+              }
+            ]
+          }
+        },
+        "renderers/chart.js": "export function render() {}\n"
+      }
+    },
+    {
+      "name": "unknown-manifest-field",
+      "why": "The manifest grammar is closed.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {},
+          "publisher": "acme"
+        }
+      }
+    },
+    {
+      "name": "channel-resource-outside-the-vocabulary",
+      "why": "Permissions come from a fixed list.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {},
+          "permissions": {
+            "channel.resources": [
+              "channel.secrets"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

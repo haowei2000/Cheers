@@ -14,14 +14,14 @@ import {
 } from "../mcp-direct-oauth-agent-probe.mjs";
 import { redactFile } from "../redact-mcp-oauth-spike-evidence.mjs";
 
-test("redact removes OAuth and installation credentials", () => {
+test("redact removes OAuth and host credentials", () => {
   const value = redact({
     access_token: "secret-access",
     code: -32601,
     nested: "Bearer abc.def.ghi",
     url: "https://example.test/callback?code=one&state=ok",
     form: "refresh_token=refresh-me&code_verifier=verify-me",
-    installation: "agbi_super-secret",
+    host: "agbi_super-secret",
     message: "Enter ABCD-EFGHI to continue",
   });
   assert.equal(value.access_token, "[REDACTED]");
@@ -29,7 +29,7 @@ test("redact removes OAuth and installation credentials", () => {
   assert.equal(value.nested, "Bearer [REDACTED]");
   assert.equal(value.url, "https://example.test/callback?code=[REDACTED]&state=[REDACTED]");
   assert.equal(value.form, "refresh_token=[REDACTED]&code_verifier=[REDACTED]");
-  assert.equal(value.installation, "agbi_[REDACTED]");
+  assert.equal(value.host, "agbi_[REDACTED]");
   assert.equal(value.message, "Enter [REDACTED-DEVICE-CODE] to continue");
 });
 

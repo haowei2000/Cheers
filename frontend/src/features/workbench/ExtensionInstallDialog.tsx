@@ -1,11 +1,11 @@
-import { AlertTriangle, Globe2, Laptop, PackageCheck, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Globe2, Hourglass, Laptop, PackageCheck, ShieldCheck } from "lucide-react";
 import { Banner } from "@/components/ui/banner";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { permissionSummary } from "@/features/chat/workbench/extensions/package";
 import {
   expandedPermissions,
   installDisposition,
+  permissionSummary,
   type ExtensionInstallCandidate,
   type InstalledExtensionIdentity,
 } from "./extensionInstall";
@@ -28,12 +28,13 @@ export function ExtensionInstallDialog({
   const disposition = installDisposition(extension, installed);
   const permissions = permissionSummary(manifest);
   const expanded = expandedPermissions(manifest.permissions ?? {}, installed?.permissions);
-  const action = disposition === "update" ? "Update" : disposition === "replace" ? "Replace" : "Install";
-  const scope = candidate.scope === "global" ? "Global · all clients" : "This Mac";
+  const temporary = candidate.scope === "temporary";
+  const action = temporary ? "Load" : disposition === "update" ? "Update" : disposition === "replace" ? "Replace" : "Install";
+  const scope = candidate.scope === "global" ? "Global · all clients" : temporary ? "This session only" : "This Mac";
 
   return <Dialog title={`${action} ${manifest.title}`} onClose={() => !busy && onClose()} maxWidth="max-w-lg">
     <div className="flex items-start gap-3 rounded-sm bg-zinc-950/40 px-3 py-3">
-      {candidate.scope === "global" ? <Globe2 className="mt-1 h-4 w-4 text-accent-300" /> : <Laptop className="mt-1 h-4 w-4 text-success-300" />}
+      {candidate.scope === "global" ? <Globe2 className="mt-1 h-4 w-4 text-accent-300" /> : temporary ? <Hourglass className="mt-1 h-4 w-4 text-warning-300" /> : <Laptop className="mt-1 h-4 w-4 text-success-300" />}
       <div className="min-w-0 flex-1">
         <p className="text-regular font-medium text-content-primary">{manifest.title} · {manifest.version}</p>
         <p className="mt-1 text-compact text-content-muted">{scope} · {candidate.sourceLabel}</p>
@@ -53,10 +54,12 @@ export function ExtensionInstallDialog({
       <dt className="text-content-muted">SHA-256</dt><dd className="break-all font-code text-minimal text-content-muted">{extension.sha256}</dd>
     </dl>
 
-    <p className="text-compact text-content-muted">Installation validates and stores the package without running code. A personal renderer starts only after you select it for a file.</p>
+    <p className="text-compact text-content-muted">{temporary
+      ? "Loading activates this package for the current session only — nothing is stored, and it is gone when you reload. Its renderer runs as soon as a file selects it."
+      : "Installation validates and stores the package without running code. A personal renderer starts only after you select it for a file."}</p>
     <div className="flex justify-end gap-2">
       <UiButton action="cancel" content="text" variant="secondary" controlSize="regular" disabled={busy} onClick={onClose}>{disposition === "already" ? "Close" : "Cancel"}</UiButton>
-      {disposition !== "already" && <UiButton action={disposition === "update" ? "update" : "install"} content="text" variant={disposition === "replace" ? "danger" : "primary"} controlSize="regular" disabled={busy} onClick={onConfirm}>{busy ? `${action}…` : action}</UiButton>}
+      {disposition !== "already" && <UiButton action={temporary ? "loadTemporarily" : disposition === "update" ? "update" : "install"} content="text" variant={disposition === "replace" ? "danger" : "primary"} controlSize="regular" disabled={busy} onClick={onConfirm}>{busy ? `${action}…` : action}</UiButton>}
     </div>
   </Dialog>;
 }

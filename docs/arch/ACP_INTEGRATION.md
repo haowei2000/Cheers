@@ -22,7 +22,7 @@
 | 内置 Agent | **无**——平台外接优先，无内置 runtime | Intelligence 来自用户自己连接的外部 ACP Agent |
 | MCP Agent 接入 | **Gateway `/mcp` 原生 HTTP + OAuth** | Agent 直连 Gateway；Connector 不代理 MCP/OAuth |
 | Agent 工具访问 | **安装绑定的 OAuth token + MCP scopes** | Gateway 统一校验 Bot、频道成员关系与角色 |
-| connector 鉴权 | **installation credential 在 Rust Backend 验** | Connector 控制/数据 WS 与 MCP OAuth 归属同一 installation |
+| connector 鉴权 | **host credential 在 Rust Backend 验** | Connector 控制/数据 WS 与 MCP OAuth 归属同一 host |
 | 客户端线协议 | **不变** | Bot 输出经 Rust Backend realtime fan-out → 浏览器 |
 | NATS | **不需要** | Rust Backend 单进程处理所有 WS/REST，无需消息总线 |
 
@@ -112,7 +112,7 @@ Cheers 工具统一由 Agent 通过 Gateway 原生 HTTP MCP + OAuth 访问。
 |------|------|--------|
 | Connector → Agent | 本地 stdio ACP v1 | Connector 管理进程、session、prompt 与交互 |
 | Agent → Gateway tools | Streamable HTTP MCP + OAuth | Agent 负责 discovery、登录、token 保存与刷新 |
-| Connector → Gateway | Agent Bridge control/data WS | installation 鉴权、任务、流式输出与终态 |
+| Connector → Gateway | Agent Bridge control/data WS | host 鉴权、任务、流式输出与终态 |
 | Gateway → owner Connector | `workspace_req/workspace_res` | 仅为 `read_workspace` 读取 owner 本机文件的最后一跳 |
 
 不再支持 stdio Cheers MCP sidecar、Connector OAuth proxy、静态 Authorization
@@ -131,7 +131,7 @@ Rust Backend 通过 control WS 派发 task 帧给对应 bot:
   ▼
 外置 agent（OpenCode / Claude / Codex / Gemini）收到任务:
   ├─ HTTP MCP: get_channel_info / list_messages / fs.*
-  ├─ Gateway 以 installation、scope、频道 membership/role 做鉴权
+  ├─ Gateway 以 host、scope、频道 membership/role 做鉴权
   ├─ read_workspace 如需本机文件，由 Gateway 发 workspace_req 给 owner Connector
   ├─ 调本地 LLM（流式）
   │   ├─ data WS: delta(msg_id, seq:0, "...")  → Rust fan-out → 浏览器

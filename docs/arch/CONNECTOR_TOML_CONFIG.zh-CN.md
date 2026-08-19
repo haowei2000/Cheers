@@ -82,14 +82,13 @@ version = 1
 |-------------------------|--------|----------|------|
 | `control_url`           | string | 必填     | Agent Bridge **control** WebSocket，如 `wss://cheers.example.com/ws/agent-bridge/control`。 |
 | `data_url`              | string | 必填     | Agent Bridge **data** WebSocket（`…/ws/agent-bridge/data`）。 |
-| `bot_token_env`         | string | —        | 保存 bot token 的环境变量名。 |
-| `bot_token_file`        | string | —        | 保存 bot token 的文件路径（`chmod 600`）。 |
+| `host_credential_env`         | string | —        | 保存该 Host 凭证的环境变量名。 |
+| `host_credential_file`        | string | —        | 保存该 Host 凭证的文件路径（`chmod 600`）。 |
 | `heartbeat_interval_ms` | int    | `25000`  | control-WS 心跳间隔。 |
 | `ack_timeout_ms`        | int    | `600000` | 等待后端确认一个 data 帧的超时，超时视为发送失败。 |
 
-**`bot_token_env` / `bot_token_file` 恰好提供其一。** token 就是连接器用来鉴权的凭据
-（与你通过 `POST /api/v1/bots/{bot_id}/token` 铸造的是同一个）。守护进程优先用
-`bot_token_file`，shell/容器里用 `…_env`。
+**`host_credential_env` / `host_credential_file` 恰好提供其一。** 配对时一次性返回这个
+Host 绑定的凭证。守护进程优先用 `host_credential_file`，shell/容器里用 `…_env`。
 
 #### `[accounts.<id>.bridge.reconnect]`
 
@@ -253,7 +252,7 @@ log_dir    = "logs-codex"
 [accounts.haowei_codex.bridge]
 control_url    = "wss://www.structure.chat/ws/agent-bridge/control"
 data_url       = "wss://www.structure.chat/ws/agent-bridge/data"
-bot_token_file = "secrets/codex.token"   # chmod 600
+host_credential_file = "secrets/codex.token"   # chmod 600
 
 [accounts.haowei_codex.adapter]
 type    = "stdio"
@@ -291,7 +290,7 @@ cce-acp-connector stop   --name haowei_codex
 |------|----------|------|
 | 守护进程起不来，报 “unknown field” | 拼写错/多余键（`deny_unknown_fields`） | 按它点名的键修正 |
 | 起不来，报 “unsupported config version” | `version` ≠ `1` | 设 `version = 1` |
-| bot 迟迟不**上线** | `command` 找不到，或 token 缺失/没写 | `which <command>`；把 token 写进 `bot_token_file`；看 `logs` |
+| bot 迟迟不**上线** | `command` 找不到，或 token 缺失/没写 | `which <command>`；把 token 写进 `host_credential_file`；看 `logs` |
 | UI 里**设不上 config option** | 选项不在 `allowed_config_options`，或 bot 离线 | 把该 id 加进 `allowed_config_options`；让 bot 上线 |
 | **设不上 mode** | mode 不在 `allowed_modes`，或 `backend_may_set_mode = false` | 加上 mode id（或用 `[]` 表示任意）；开启 `backend_may_set_mode` |
 | agent 读不到上传的文件 | 它尝试 HTTP 网关 | agent 通过 `cheers` MCP 的 `inbox_open` 工具读附件，绝不 HTTP |

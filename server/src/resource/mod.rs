@@ -140,14 +140,18 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 }
 
 /// 浏览器用户经 WS 发起的 resource_req 入口。在通用 `dispatch` 之上加「用户路径」
-/// 专属策略：破坏性 `fs.rm` / `fs.mv` 需 owner/admin（bot 路径不受此限——bot 是
-/// 工作区文件的主要作者）。其余 verb 沿用 `dispatch` 内的 channel-role 鉴权。
+/// 专属策略：注册表中标记 `destructive` 的资源（当前 `fs.rm` / `fs.mv`）需 owner/admin
+/// （bot 路径不受此限——bot 是工作区文件的主要作者）。其余 verb 沿用 `dispatch` 内的
+/// channel-role 鉴权。
+///
+/// 门控名单来自 `cheers_mcp_server::registry`，不再是本文件里的字面量——新增破坏性
+/// 资源时只需在注册表里声明，不会漏掉这一侧。
 pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
     let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
     let principal = Principal::user(user_id);
 
-    if matches!(resource, "fs.rm" | "fs.mv") {
+    if cheers_mcp_server::registry::by_resource(resource).is_some_and(|spec| spec.destructive) {
         let params = frame.get("params").cloned().unwrap_or(Value::Null);
         if let Err((code, msg)) = require_channel_admin(db, &principal, &params).await {
             return err_res(req_id, &code, &msg);
@@ -301,5 +305,69 @@ mod tests {
         ] {
             assert!(!role_can_write(role), "{role} 必须只读");
         }
+    }
+}
+
+#[cfg(test)]
+mod registry_contract {
+    //! `dispatch` routes with a `match`, which cannot be enumerated at runtime,
+    //! so this reads the arms out of its own source. The same trick guards the
+    //! frontend's ActionKey call sites; it is exact enough because the arms are
+    //! plain string literals and drift is the only thing being checked.
+
+    use std::collections::BTreeSet;
+
+    /// Resource literals in `dispatch`'s match, in source order.
+    fn routed_resources() -> BTreeSet<&'static str> {
+        let source = include_str!("mod.rs");
+        let body_start = source
+            .find("    let result = match resource {")
+            .expect("dispatch match header moved");
+        let body_end = source[body_start..]
+            .find("        _ => Err(resource_error(")
+            .expect("dispatch fallthrough arm moved")
+            + body_start;
+
+        let mut found = BTreeSet::new();
+        let mut rest = &source[body_start..body_end];
+        while let Some(open) = rest.find('"') {
+            rest = &rest[open + 1..];
+            let close = rest.find('"').expect("unterminated literal in dispatch");
+            found.insert(&rest[..close]);
+            rest = &rest[close + 1..];
+        }
+        found
+    }
+
+    #[test]
+    fn dispatch_routes_exactly_the_registry_vocabulary() {
+        let declared: BTreeSet<&str> = cheers_mcp_server::registry::database_resources().collect();
+        let routed = routed_resources();
+
+        let unrouted: Vec<_> = declared.difference(&routed).collect();
+        assert!(
+            unrouted.is_empty(),
+            "declared in the registry but never routed by dispatch: {unrouted:?}"
+        );
+
+        let undeclared: Vec<_> = routed.difference(&declared).collect();
+        assert!(
+            undeclared.is_empty(),
+            "routed by dispatch but absent from the registry: {undeclared:?}"
+        );
+    }
+
+    #[test]
+    fn brokered_resources_never_reach_the_database_dispatcher() {
+        // `workspace.read` is intercepted by `gateway::resource_effects` and
+        // answered by the owner Bot's Connector. If it ever appears in the
+        // match, a Bot could reach a db handler that cannot serve it.
+        assert!(!routed_resources().contains("workspace.read"));
+    }
+
+    #[test]
+    fn the_destructive_gate_still_covers_the_fs_mutations() {
+        let gated: Vec<_> = cheers_mcp_server::registry::destructive_resources().collect();
+        assert_eq!(gated, vec!["fs.rm", "fs.mv"]);
     }
 }

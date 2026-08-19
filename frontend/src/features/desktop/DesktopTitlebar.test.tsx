@@ -16,7 +16,7 @@ describe("DesktopTitlebar", () => {
   });
 
   it("uses a personal page title outside chat", () => {
-    expect(resolveDesktopTitlebarContext("/fleet/installations", {})).toEqual({ title: "Fleet" });
+    expect(resolveDesktopTitlebarContext("/fleet/hosts", {})).toEqual({ title: "Fleet" });
     expect(resolveDesktopTitlebarContext("/activity", {})).toEqual({ title: "Activity" });
   });
 
@@ -25,7 +25,7 @@ describe("DesktopTitlebar", () => {
     expect(resolveDesktopParentPath("/chat/workspace")).toBeNull();
     expect(resolveDesktopParentPath("/chat")).toBeNull();
     expect(resolveDesktopParentPath("/fleet/bots/bot-id/overview")).toBe("/fleet/bots");
-    expect(resolveDesktopParentPath("/fleet/installations")).toBe("/fleet");
+    expect(resolveDesktopParentPath("/fleet/hosts")).toBe("/fleet");
     expect(resolveDesktopParentPath("/settings/account")).toBe("/settings");
     expect(resolveDesktopParentPath("/fleet")).toBe("/chat");
     expect(resolveDesktopParentPath("/activity")).toBe("/chat");

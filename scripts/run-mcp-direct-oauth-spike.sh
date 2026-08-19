@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Run one isolated Agent × OAuth-mode direct HTTP MCP spike case. This script
-# creates a disposable PostgreSQL/Gateway/Frontend stack, one Bot installation,
+# creates a disposable PostgreSQL/Gateway/Frontend stack, one Bot host,
 # and one channel. It never inserts an Authorization header into McpServerHttp.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,8 +28,8 @@ Options:
 Environment:
   CHEERS_SPIKE_AGENT_COMMAND_JSON  Optional argv override, e.g. ["codex-acp"]
   CHEERS_SPIKE_AGENT_ENV_JSON      Documented Agent-specific OAuth env template;
-                                   values may use {{installation_id}} and
-                                   {{installation_credential}}
+                                   values may use {{host_id}} and
+                                   {{host_credential}}
   CHEERS_SPIKE_ACCEPT_ELICITATION_URL=1  Accept opening an Agent URL elicitation
   CHEERS_SPIKE_PUBLIC_ORIGIN       Optional browser-reachable frontend origin
   CHEERS_SPIKE_RESULT_ROOT         Redacted evidence root (default: /tmp)
@@ -189,19 +189,19 @@ admin_token="$(curl -fsS -X POST "$gateway_origin/api/v1/auth/login" \
 workspace_id="$(api_json POST /api/v1/workspaces "$(jq -nc --arg name "OAuth spike ${case_id}" '{name:$name}')" | jq -er .workspace_id)"
 bot_id="$(api_json POST /api/v1/bots "$(jq -nc --arg username "spike-${case_id}" '{username:$username,display_name:$username,binding_type:"agent_bridge",bridge_provider:"generic"}')" | jq -er .bot_id)"
 channel_id="$(api_json POST /api/v1/channels "$(jq -nc --arg workspace_id "$workspace_id" --arg name "spike-${case_id}" --arg bot_id "$bot_id" '{workspace_id:$workspace_id,name:$name,type:"private",initial_bot_ids:[$bot_id]}')" | jq -er .channel_id)"
-pairing="$(api_json POST "/api/v1/bots/${bot_id}/installations" "$(jq -nc --arg agent_type "$agent" --arg device_name "$case_id" '{agent_type:$agent_type,device_name:$device_name}')")"
+pairing="$(api_json POST "/api/v1/bots/${bot_id}/hosts" "$(jq -nc --arg agent_type "$agent" --arg device_name "$case_id" '{agent_type:$agent_type,device_name:$device_name}')")"
 code="$(jq -er .pairing_code <<<"$pairing")"
-installation="$(curl -fsS -X POST "$gateway_origin/api/v1/installations/redeem" \
+host="$(curl -fsS -X POST "$gateway_origin/api/v1/hosts/redeem" \
   -H 'content-type: application/json' \
   --data "$(jq -nc --arg code "$code" --arg device_name "$case_id" '{pairing_code:$code,device_name:$device_name}')")"
-installation_id="$(jq -er .installation_id <<<"$installation")"
-installation_credential="$(jq -er .credential <<<"$installation")"
+host_id="$(jq -er .host_id <<<"$host")"
+host_credential="$(jq -er .credential <<<"$host")"
 
 if [[ -n "${CHEERS_SPIKE_AGENT_ENV_JSON:-}" ]]; then
   CHEERS_SPIKE_AGENT_ENV_JSON="$(jq -ce \
-    --arg installation_id "$installation_id" \
-    --arg installation_credential "$installation_credential" \
-    'walk(if type == "string" then gsub("\\{\\{installation_id\\}\\}"; $installation_id) | gsub("\\{\\{installation_credential\\}\\}"; $installation_credential) else . end)' \
+    --arg host_id "$host_id" \
+    --arg host_credential "$host_credential" \
+    'walk(if type == "string" then gsub("\\{\\{host_id\\}\\}"; $host_id) | gsub("\\{\\{host_credential\\}\\}"; $host_credential) else . end)' \
     <<<"$CHEERS_SPIKE_AGENT_ENV_JSON")"
   export CHEERS_SPIKE_AGENT_ENV_JSON
 fi
@@ -212,14 +212,14 @@ if [[ "$mode" == interactive ]]; then
     echo "Temporary Frontend: $frontend_origin"
     echo "Temporary username: $ADMIN_USERNAME"
     echo "Temporary password: $ADMIN_PASSWORD"
-    echo "Consent installation: $installation_id"
+    echo "Consent host: $host_id"
   } >"$case_dir/operator.txt"
   echo "interactive operator instructions (deleted during cleanup): $case_dir/operator.txt" >&2
 fi
 
 # Harness-only values are stripped by the probe before the Agent is spawned.
-export CHEERS_SPIKE_INSTALLATION_ID="$installation_id"
-export CHEERS_SPIKE_INSTALLATION_CREDENTIAL="$installation_credential"
+export CHEERS_SPIKE_HOST_ID="$host_id"
+export CHEERS_SPIKE_HOST_CREDENTIAL="$host_credential"
 export CHEERS_SPIKE_ADMIN_TOKEN="$admin_token"
 export CHEERS_SPIKE_AGENT_ID="$agent"
 export CHEERS_SPIKE_MCP_URL="$mcp_url"
@@ -252,13 +252,13 @@ fi
 posted_count="$(docker exec "$container" psql -U cheers -d "spike_${suffix}" -Atc \
   "SELECT COUNT(*) FROM messages WHERE channel_id='${channel_id}' AND sender_id='${bot_id}' AND sender_type='bot' AND content='MCP_DIRECT_OAUTH_${case_id}'")"
 oauth_rows="$(docker exec "$container" psql -U cheers -d "spike_${suffix}" -Atc \
-  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE installation_id='${installation_id}'")"
+  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE host_id='${host_id}'")"
 rotated_oauth_rows="$(docker exec "$container" psql -U cheers -d "spike_${suffix}" -Atc \
-  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE installation_id='${installation_id}' AND rotated_at IS NOT NULL")"
+  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE host_id='${host_id}' AND rotated_at IS NOT NULL")"
 scope_rows="$(docker exec "$container" psql -U cheers -d "spike_${suffix}" -Atc \
-  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE installation_id='${installation_id}' AND scope LIKE '%cheers:read%' AND scope LIKE '%cheers:messages:write%'")"
+  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE host_id='${host_id}' AND scope LIKE '%cheers:read%' AND scope LIKE '%cheers:messages:write%'")"
 resource_rows="$(docker exec "$container" psql -U cheers -d "spike_${suffix}" -Atc \
-  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE installation_id='${installation_id}' AND resource='${mcp_url}'")"
+  "SELECT COUNT(*) FROM mcp_oauth_refresh_tokens WHERE host_id='${host_id}' AND resource='${mcp_url}'")"
 jq -n --arg case_id "$case_id" --arg agent "$agent" --arg mode "$mode" \
   --arg channel_id "$channel_id" --argjson posted_count "$posted_count" \
   --argjson refresh_token_rows "$oauth_rows" --argjson rotated_refresh_token_rows "$rotated_oauth_rows" --argjson expected_scope_rows "$scope_rows" --argjson expected_resource_rows "$resource_rows" --argjson probe_status "$probe_status" \
@@ -267,15 +267,15 @@ jq -n --arg case_id "$case_id" --arg agent "$agent" --arg mode "$mode" \
   >"$case_dir/assertions.json"
 
 # Revocation is always exercised. A subsequent full-phase run against the same
-# case is intentionally impossible: the installation is now invalid.
-curl -fsS -X DELETE "$gateway_origin/api/v1/bots/${bot_id}/installations/${installation_id}" \
+# case is intentionally impossible: the host is now invalid.
+curl -fsS -X DELETE "$gateway_origin/api/v1/bots/${bot_id}/hosts/${host_id}" \
   -H "authorization: Bearer ${admin_token}" >/dev/null
 
 revoked_token_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$gateway_origin/oauth/token" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=client_credentials' \
-  --data-urlencode "client_id=${installation_id}" \
-  --data-urlencode "client_secret=${installation_credential}" \
+  --data-urlencode "client_id=${host_id}" \
+  --data-urlencode "client_secret=${host_credential}" \
   --data-urlencode 'scope=cheers:read' \
   --data-urlencode "resource=${mcp_url}")"
 jq --argjson revoked_token_status "$revoked_token_status" '. + {revoked_token_status:$revoked_token_status}' \

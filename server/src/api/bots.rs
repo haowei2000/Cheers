@@ -17,7 +17,7 @@ use crate::{
     },
     errors::AppError,
     gateway::realtime::frame::WireFrame,
-    infra::crypto::{generate_bot_token, hash_bot_token, hash_installation_credential},
+    infra::crypto::{generate_bot_token, hash_bot_token, hash_host_credential},
 };
 
 #[derive(Deserialize)]
@@ -495,7 +495,7 @@ pub async fn get_bot_status(
         Err(_) => false,
     };
 
-    // Pending-installation count is owner/admin-only: it reveals live pairing
+    // Pending-host count is owner/admin-only: it reveals live pairing
     // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
     let owner = row
         .try_get::<Option<String>, _>("created_by")
@@ -561,7 +561,7 @@ pub async fn get_bot_status(
         "bridge_connected": bridge_connected,
         "last_connected_at": last_connected_at.map(|t| t.to_rfc3339()),
         "last_disconnected_at": last_disconnected_at.map(|t| t.to_rfc3339()),
-        "pending_installation_count": live_codes,
+        "pending_host_count": live_codes,
         "connector_version": connector_version,
         "latest_connector_version": latest_version,
         "update_available": update_available,
@@ -741,7 +741,7 @@ pub async fn test_bot(
 
 /// Mint (or rotate) the legacy Bot bearer used only by the transitional remote
 /// MCP token-exchange endpoint. Agent Bridge deliberately rejects this token;
-/// connector terminals authenticate with installation credentials instead.
+/// connector terminals authenticate with host credentials instead.
 pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, String), AppError> {
     let token = generate_bot_token();
     let token_hash = hash_bot_token(&token);
@@ -995,11 +995,11 @@ pub struct BotSelfStatusRequest {
 }
 
 /// POST /api/v1/bots/{bot_id}/self-status — the bot updates ITS OWN status, authed
-/// by the connector's installation credential, NOT a user JWT.
+/// by the connector's host credential, NOT a user JWT.
 /// This is the write-back for "the bot updates itself": either ad-hoc, or on its
 /// schedule after re-running `status_update_prompt`. Bumps `status_last_auto_update_at`
 /// so the scheduler's "due?" clock resets. The path `bot_id` must match the token's
-/// bot (an installation credential is scoped to exactly one bot).
+/// bot (a host credential is scoped to exactly one bot).
 pub async fn bot_self_status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1012,13 +1012,13 @@ pub async fn bot_self_status(
         .and_then(|raw| raw.strip_prefix("Bearer "))
         .map(str::trim)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| AppError::Unauthorized("missing installation credential".into()))?;
+        .ok_or_else(|| AppError::Unauthorized("missing host credential".into()))?;
 
-    let token_hash = hash_installation_credential(token);
-    // Require the currently active, non-revoked installation. Matching the path
+    let token_hash = hash_host_credential(token);
+    // Require the currently active, non-revoked host. Matching the path
     // bot_id prevents a credential from editing another bot's profile.
     let matched: Option<String> = sqlx::query_scalar(
-        "SELECT installation_id FROM terminal_installations
+        "SELECT host_id FROM connector_hosts
          WHERE credential_hash = $1 AND bot_id = $2
            AND status = 'active' AND revoked_at IS NULL",
     )
@@ -1028,7 +1028,7 @@ pub async fn bot_self_status(
     .await?;
     if matched.is_none() {
         return Err(AppError::Unauthorized(
-            "invalid installation credential for this bot".into(),
+            "invalid host credential for this bot".into(),
         ));
     }
 
@@ -1326,6 +1326,7 @@ pub async fn refresh_bot_status(
             mention_names: vec![],
             session_id: None,
             context_bundle: None,
+            msg_id: None,
         },
     )
     .await?;

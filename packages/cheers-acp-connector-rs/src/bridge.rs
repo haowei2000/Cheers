@@ -388,7 +388,7 @@ pub struct BridgeClose {
 
 impl BridgeClose {
     /// Reconnecting cannot succeed until someone changes something server-side:
-    /// the credential was rejected (4401), or the installation is revoked or on
+    /// the credential was rejected (4401), or the host is revoked or on
     /// standby, or its bot is disabled (4403).
     ///
     /// Deliberately excludes 4402 (superseded — another connection took over,

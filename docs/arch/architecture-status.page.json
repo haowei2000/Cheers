@@ -589,8 +589,8 @@
         {
           "status": "done",
           "badge": "接入 ✓",
-          "title": "Installation 三模式接入（pairing）",
-          "body": "pairing code + 连接器配置生成器 · 安装脚本 `/install.sh` · 手动模式向导 · 自接入 `/installations/guidance`；NodePort / 公网可达性。"
+          "title": "Host 三模式接入（pairing）",
+          "body": "pairing code + 连接器配置生成器 · 安装脚本 `/install.sh` · 手动模式向导 · 自接入 `/hosts/guidance`；NodePort / 公网可达性。"
         },
         {
           "status": "done",

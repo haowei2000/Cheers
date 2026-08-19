@@ -10,7 +10,7 @@ import { listWorkspaces } from "@/api/workspaces";
 import { ActionButton } from "@/components/ui/action-button";
 import { EntityItem } from "@/components/ui/item";
 import { CreateBotDialog } from "./CreateBotDialog";
-import { CreateInstallationWizard } from "./CreateInstallationWizard";
+import { CreateHostWizard } from "./CreateHostWizard";
 import { BotDetailPanel } from "./BotDetailPanel";
 import type { BotItem, Channel, Workspace } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
@@ -65,7 +65,7 @@ export function BotsManager() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
-  const [installationBotId, setInstallationBotId] = useState<string | undefined>();
+  const [hostBotId, setHostBotId] = useState<string | undefined>();
   const [selectedId, setSelectedId] = useState("");
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
@@ -168,8 +168,8 @@ export function BotsManager() {
                 onError={(m) => toast.error(m)}
                 onChanged={refresh}
                 onPoll={pollRefresh}
-                onAddInstallation={() => {
-                  setInstallationBotId(selected.bot_id);
+                onAddHost={() => {
+                  setHostBotId(selected.bot_id);
                 }}
               />
             ) : (
@@ -184,21 +184,21 @@ export function BotsManager() {
       {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
         setCreateBotOpen(false);
         // Seed the list with what the POST returned instead of waiting for the
-        // refetch: the installation wizard resolves its bot out of `bots`, so
+        // refetch: the host wizard resolves its bot out of `bots`, so
         // opening before the round-trip lands would show it an empty selection.
         setBots((prev) => (prev.some((b) => b.bot_id === bot.bot_id) ? prev : [bot, ...prev]));
         setSelectedId(bot.bot_id);
         // A bot identity can't do anything until some device runs it — carry on
         // into that rather than ending the flow on an inert row.
-        setInstallationBotId(bot.bot_id);
+        setHostBotId(bot.bot_id);
         void refresh({ silent: true });
       }} />}
-      {installationBotId !== undefined && (
-        <CreateInstallationWizard
+      {hostBotId !== undefined && (
+        <CreateHostWizard
           bots={bots}
-          initialBotId={installationBotId}
+          initialBotId={hostBotId}
           onClose={() => {
-            setInstallationBotId(undefined);
+            setHostBotId(undefined);
           }}
           onDone={refresh}
         />

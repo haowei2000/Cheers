@@ -14,6 +14,7 @@ This directory stores architecture, protocol, and gateway design docs.
 - [Message Pagination](MESSAGE_PAGINATION.md)
 - [Task Delivery](TASK_DELIVERY.md)
 - [Gateway Architecture](GATEWAY_CODE_ARCH.md)
+- [Plugin System](PLUGIN_SYSTEM.md) — how integrations, workbench extensions, connectors and MCP servers relate, and how to maintain them
 
 ## ACP and Agent Integration
 

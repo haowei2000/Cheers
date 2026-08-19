@@ -903,24 +903,20 @@ pub async fn resolve_elicitation(
         .and_then(Value::as_str)
         == Some("mcp_oauth")
     {
-        if let Some(installation_id) = pending
-            .content_data
-            .get("installation_id")
-            .and_then(Value::as_str)
-        {
+        if let Some(host_id) = pending.content_data.get("host_id").and_then(Value::as_str) {
             let next_state = if action == "accept" {
                 "authorizing"
             } else {
                 "unconfigured"
             };
             sqlx::query(
-                "UPDATE terminal_installations
+                "UPDATE connector_hosts
                  SET mcp_connection_state = $1, mcp_state_updated_at = NOW()
-                 WHERE installation_id = $2 AND revoked_at IS NULL
+                 WHERE host_id = $2 AND revoked_at IS NULL
                    AND mcp_connection_state <> 'connected'",
             )
             .bind(next_state)
-            .bind(installation_id)
+            .bind(host_id)
             .execute(&state.db)
             .await?;
         }

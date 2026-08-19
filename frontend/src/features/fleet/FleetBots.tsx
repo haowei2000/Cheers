@@ -47,9 +47,9 @@ export function BotRow({ bot, onSelect }: { bot: FleetBot; onSelect: () => void 
       trailing={
         <span className="flex items-center gap-2 text-compact text-content-muted">
           <span>{bot.can_manage ? "Mine" : "Shared"}</span>
-          {bot.installation_count ? (
+          {bot.host_count ? (
             <span>
-              {bot.installation_count} installation{bot.installation_count === 1 ? "" : "s"}
+              {bot.host_count} host{bot.host_count === 1 ? "" : "s"}
             </span>
           ) : null}
           {bot.cost_today_usd > 0 ? <span className="tabular-nums">${bot.cost_today_usd.toFixed(2)}</span> : null}

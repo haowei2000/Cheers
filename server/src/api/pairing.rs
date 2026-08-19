@@ -1,11 +1,11 @@
-//! Installation pairing — the shared primitive behind all connector setup
+//! Host pairing — the shared primitive behind all connector setup
 //! modes (manual / install-script / agent-self-connect).
 //!
-//! Flow: an owner creates a pending installation and receives a short-lived,
+//! Flow: an owner creates a pending host and receives a short-lived,
 //! single-use pairing code. A host redeems it once, anonymously, over TLS, to
-//! activate that installation and receive its credential + connector config.
+//! activate that host and receive its credential + connector config.
 //! The code and credential plaintexts are never stored. Redeeming a new terminal
-//! makes it the bot's sole active installation; older installations remain
+//! makes it the bot's sole active host; older hosts remain
 //! registered as standby and can be reactivated by the owner.
 //!
 //! Public surface is intentionally tiny: only `redeem` is unauthenticated (it
@@ -34,14 +34,13 @@ use crate::{
     },
     errors::AppError,
     infra::crypto::{
-        generate_installation_credential, generate_pairing_code, hash_installation_credential,
-        hash_pairing_code,
+        generate_host_credential, generate_pairing_code, hash_host_credential, hash_pairing_code,
     },
 };
 
 /// How long a freshly minted code stays redeemable (15 minutes). Short by
 /// design: the code is an ownerless bearer secret, so TTL + single-use + its
-/// scope being exactly one pending installation are what bound it.
+/// scope being exactly one pending host are what bound it.
 const PAIRING_TTL_SECS: f64 = 900.0;
 
 /// Per-bot live (un-redeemed, un-revoked, un-expired) code cap. One code per
@@ -53,7 +52,7 @@ const MAX_LIVE_PAIRINGS_PER_BOT: i64 = 5;
 const MAX_LIVE_PAIRINGS_PER_OWNER: i64 = 20;
 
 /// Sidecar path (relative to the connector config dir) the generated config
-/// reads the installation credential from. The install script writes the
+/// reads the host credential from. The install script writes the
 /// plaintext here with 0600.
 fn token_file_path(account_id: &str) -> String {
     format!("secrets/{account_id}.token")
@@ -104,7 +103,7 @@ fn is_registry_agent_id(s: &str) -> bool {
 }
 
 #[derive(Deserialize)]
-pub struct CreateInstallationRequest {
+pub struct CreateHostRequest {
     /// claude | codex | opencode | generic | ACP registry id (drives adapter.command).
     pub agent_type: String,
     /// Optional label known before the terminal redeems the code. The terminal
@@ -113,13 +112,13 @@ pub struct CreateInstallationRequest {
     pub device_name: Option<String>,
 }
 
-/// POST /api/v1/bots/{bot_id}/installations — create one pending installation.
+/// POST /api/v1/bots/{bot_id}/hosts — create one pending host.
 /// Owner/admin only. Returns its plaintext pairing code **once**.
-pub async fn create_installation(
+pub async fn create_host(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
-    Json(body): Json<CreateInstallationRequest>,
+    Json(body): Json<CreateHostRequest>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let agent_type = validate_agent_type(&body.agent_type)?;
@@ -127,7 +126,7 @@ pub async fn create_installation(
     let pairing_code = generate_pairing_code();
     let code_hash = hash_pairing_code(&pairing_code);
     let pairing_id = Uuid::new_v4().to_string();
-    let installation_id = Uuid::new_v4().to_string();
+    let host_id = Uuid::new_v4().to_string();
     let device_name = normalize_device_name(body.device_name.as_deref())?;
 
     // Cap check + insert run in one transaction guarded by a per-owner advisory
@@ -151,7 +150,7 @@ pub async fn create_installation(
     .await?;
     if live_for_bot >= MAX_LIVE_PAIRINGS_PER_BOT {
         return Err(AppError::Forbidden(format!(
-            "too many pending installations for this bot (max {MAX_LIVE_PAIRINGS_PER_BOT}); revoke one first"
+            "too many pending hosts for this bot (max {MAX_LIVE_PAIRINGS_PER_BOT}); revoke one first"
         )));
     }
 
@@ -165,16 +164,16 @@ pub async fn create_installation(
     .await?;
     if live_for_owner >= MAX_LIVE_PAIRINGS_PER_OWNER {
         return Err(AppError::Forbidden(format!(
-            "too many pending installations (max {MAX_LIVE_PAIRINGS_PER_OWNER} per user); revoke one first"
+            "too many pending hosts (max {MAX_LIVE_PAIRINGS_PER_OWNER} per user); revoke one first"
         )));
     }
 
     sqlx::query(
-        "INSERT INTO terminal_installations
-           (installation_id, bot_id, device_name, agent_type, status)
+        "INSERT INTO connector_hosts
+           (host_id, bot_id, device_name, agent_type, status)
          VALUES ($1, $2, $3, $4, 'pending')",
     )
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .bind(&device_name)
     .bind(&agent_type)
@@ -183,7 +182,7 @@ pub async fn create_installation(
 
     let row = sqlx::query(
         "INSERT INTO enrollment_codes
-            (code_id, bot_id, code_hash, created_by, agent_type, installation_id, expires_at)
+            (code_id, bot_id, code_hash, created_by, agent_type, host_id, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(secs => $7))
          RETURNING expires_at",
     )
@@ -192,7 +191,7 @@ pub async fn create_installation(
     .bind(&code_hash)
     .bind(&claims.sub)
     .bind(&agent_type)
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(PAIRING_TTL_SECS)
     .fetch_one(&mut *tx)
     .await?;
@@ -201,9 +200,9 @@ pub async fn create_installation(
 
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.created",
+        "host.created",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         Some(&claims.sub),
         json!({ "device_name": device_name, "agent_type": agent_type, "status": "pending" }),
     )
@@ -217,20 +216,20 @@ pub async fn create_installation(
         code_prefix = &pairing_code[..pairing_code.len().min(12)],
         %agent_type,
         owner = %claims.sub,
-        "pending installation created with pairing code"
+        "pending host created with pairing code"
     );
 
     Ok(Json(json!({
         "pairing_code": pairing_code,
         "pairing_id": pairing_id,
         "bot_id": bot_id,
-        "installation_id": installation_id,
+        "host_id": host_id,
         "device_name": device_name,
         "agent_type": agent_type,
         "status": "pending",
         "expires_at": expires_at.to_rfc3339(),
         "ttl_secs": PAIRING_TTL_SECS as i64,
-        "redeem_path": "/api/v1/installations/redeem",
+        "redeem_path": "/api/v1/hosts/redeem",
         "control_url": control_url(&public_base),
         "reachability": {
             "public_base": public_base,
@@ -261,12 +260,12 @@ fn normalize_device_name(raw: Option<&str>) -> Result<String, AppError> {
     Ok(name.to_string())
 }
 
-/// POST /api/v1/installations/redeem — PUBLIC. Authenticated by the code itself.
-/// Atomically claims the code (single-use), activates the pending installation, and
+/// POST /api/v1/hosts/redeem — PUBLIC. Authenticated by the code itself.
+/// Atomically claims the code (single-use), activates the pending host, and
 /// returns its credential + a ready-to-run connector config. Every failure mode (unknown /
 /// expired / already-redeemed / revoked) returns the SAME opaque 400 so it isn't
 /// an existence/状态 oracle.
-pub async fn redeem_installation_pairing(
+pub async fn redeem_host_pairing(
     State(state): State<AppState>,
     connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     headers: HeaderMap,
@@ -291,8 +290,8 @@ pub async fn redeem_installation_pairing(
     let code_hash = hash_pairing_code(code);
     let device_name = normalize_device_name(body.device_name.as_deref())?;
 
-    let credential = generate_installation_credential();
-    let credential_hash = hash_installation_credential(&credential);
+    let credential = generate_host_credential();
+    let credential_hash = hash_host_credential(&credential);
     let credential_prefix = credential[..credential.len().min(13)].to_string();
     let mut tx = state.db.begin().await?;
 
@@ -302,7 +301,7 @@ pub async fn redeem_installation_pairing(
     let claimed = sqlx::query(
         "UPDATE enrollment_codes SET redeemed_at = NOW()
          WHERE code_hash = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()
-         RETURNING bot_id, agent_type, installation_id, created_by",
+         RETURNING bot_id, agent_type, host_id, created_by",
     )
     .bind(&code_hash)
     .fetch_optional(&mut *tx)
@@ -313,8 +312,8 @@ pub async fn redeem_installation_pairing(
         return Err(opaque());
     };
     let bot_id: String = row.try_get("bot_id").map_err(|_| opaque())?;
-    let installation_id: String = row
-        .try_get::<Option<String>, _>("installation_id")
+    let host_id: String = row
+        .try_get::<Option<String>, _>("host_id")
         .ok()
         .flatten()
         .ok_or_else(opaque)?;
@@ -344,25 +343,25 @@ pub async fn redeem_installation_pairing(
     let account_id = connector_config::sanitize_account_id(&username);
 
     // Active/passive v1: pairing is an owner-authorized takeover. Preserve
-    // old installations for audit/reactivation, but only the new one may connect.
+    // old hosts for audit/reactivation, but only the new one may connect.
     sqlx::query(
-        "UPDATE terminal_installations SET status = 'standby', updated_at = NOW()
+        "UPDATE connector_hosts SET status = 'standby', updated_at = NOW()
          WHERE bot_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
     let activated = sqlx::query(
-        "UPDATE terminal_installations
+        "UPDATE connector_hosts
          SET device_name = $1, credential_hash = $2, credential_prefix = $3,
              status = 'active', credential_rotated_at = NOW(), updated_at = NOW()
-         WHERE installation_id = $4 AND bot_id = $5
+         WHERE host_id = $4 AND bot_id = $5
            AND status = 'pending' AND revoked_at IS NULL",
     )
     .bind(&device_name)
     .bind(&credential_hash)
     .bind(&credential_prefix)
-    .bind(&installation_id)
+    .bind(&host_id)
     .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
@@ -373,15 +372,15 @@ pub async fn redeem_installation_pairing(
 
     crate::domain::bot_management_audit::record(
         &state.db,
-        "installation.paired",
+        "host.paired",
         Some(&bot_id),
-        Some(&installation_id),
+        Some(&host_id),
         created_by.as_deref(),
         json!({ "device_name": device_name, "agent_type": agent_type }),
     )
     .await;
 
-    // Disconnect the previously active installation immediately. Its secret is
+    // Disconnect the previously active host immediately. Its secret is
     // still independently valid but standby and therefore cannot reconnect.
     if let Ok(id) = Uuid::parse_str(&bot_id) {
         state.bot_registry.kick(id);
@@ -393,15 +392,15 @@ pub async fn redeem_installation_pairing(
         account_id: &username,
         agent_type: &agent_type,
         public_base: &public_base,
-        token_ref: TokenRef::InstallationFile(token_file.clone()),
+        token_ref: TokenRef::HostFile(token_file.clone()),
     });
 
     limiter.reset(&rl_key);
-    tracing::info!(%bot_id, %installation_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "installation pairing code redeemed");
+    tracing::info!(%bot_id, %host_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "host pairing code redeemed");
 
     Ok(Json(json!({
         "bot_id": bot_id,
-        "installation_id": installation_id,
+        "host_id": host_id,
         "device_name": device_name,
         "account_id": account_id,
         "agent_type": agent_type,
@@ -415,7 +414,7 @@ pub async fn redeem_installation_pairing(
             "public_base": public_base,
             "configured": configured,
         },
-        "note": "Write `credential` to <config_dir>/<token_file> (chmod 600), save config_toml, then start the connector. This credential belongs only to the returned installation.",
+        "note": "Write `credential` to <config_dir>/<token_file> (chmod 600), save config_toml, then start the connector. This credential belongs only to the returned host.",
     })))
 }
 
@@ -426,7 +425,7 @@ pub struct ConnectorConfigQuery {
 }
 
 /// GET /api/v1/bots/{bot_id}/connector-config — owner/admin config preview.
-/// The rendered file references an installation credential sidecar, but no
+/// The rendered file references a host credential sidecar, but no
 /// credential is issued here; a terminal must still redeem its pairing code.
 pub async fn get_connector_config(
     State(state): State<AppState>,
@@ -454,7 +453,7 @@ pub async fn get_connector_config(
         account_id: &username,
         agent_type: &agent_type,
         public_base: &public_base,
-        token_ref: TokenRef::InstallationFile(token_file.clone()),
+        token_ref: TokenRef::HostFile(token_file.clone()),
     });
 
     Ok(Json(json!({
@@ -471,7 +470,7 @@ pub async fn get_connector_config(
         },
         // Scheduled self-status: when enabled, the connector should, every
         // `interval_minutes`, run `prompt` through its agent and POST the answer to
-        // /api/v1/bots/{bot_id}/self-status (Bearer = installation credential). The gateway owns
+        // /api/v1/bots/{bot_id}/self-status (Bearer = host credential). The gateway owns
         // the config; the connector owns the timer + the write-back.
         "status_schedule": {
             "enabled": row.try_get::<bool, _>("status_auto_update").unwrap_or(false),
@@ -482,7 +481,7 @@ pub async fn get_connector_config(
                 .flatten(),
             "self_status_path": format!("/api/v1/bots/{bot_id}/self-status"),
         },
-        "note": "Redeem an installation pairing code, then write the returned credential to <config_dir>/<credential_file> (chmod 600).",
+        "note": "Redeem a host pairing code, then write the returned credential to <config_dir>/<credential_file> (chmod 600).",
     })))
 }
 
@@ -591,9 +590,12 @@ mod connector_asset_tests {
         use crate::api::pairing::{connector_version_below_floor, MIN_CONNECTOR_VERSION};
 
         /// The prod incident (#538): 0.1.36 cannot parse the config schema
-        /// 0.1.37 introduced — must be refused, along with anything unparsable.
+        /// 0.1.37 introduced. 0.1.39 is the same failure one rename later —
+        /// it rejects the `host_credential_*` keys 0.1.40 emits. Both must be
+        /// refused, along with anything unparsable.
         #[test]
         fn floor_rejects_older_and_malformed_versions() {
+            assert!(connector_version_below_floor("0.1.39"));
             assert!(connector_version_below_floor("0.1.36"));
             assert!(connector_version_below_floor("0.1.0"));
             assert!(connector_version_below_floor("latest"));
@@ -603,8 +605,8 @@ mod connector_asset_tests {
         #[test]
         fn floor_accepts_current_and_newer_versions() {
             assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
-            assert!(!connector_version_below_floor("0.1.38"));
-            assert!(!connector_version_below_floor("v0.1.37"));
+            assert!(!connector_version_below_floor("0.1.41"));
+            assert!(!connector_version_below_floor("v0.1.40"));
         }
     }
 }
@@ -612,12 +614,15 @@ mod connector_asset_tests {
 static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
 
 /// Minimum connector release that can parse the config this gateway's
-/// install.sh generates (`installation_credential_file` arrived in 0.1.37).
+/// install.sh generates (the `host_credential_*` keys arrived in 0.1.40,
+/// renaming the `installation_credential_*` pair 0.1.37 introduced; the
+/// connector's `[bridge]` table is `deny_unknown_fields`, so an older binary
+/// does not ignore the new key — it refuses the whole config).
 /// Bump it in the same change that adds a config field older binaries reject;
 /// the download proxy refuses anything below it (#539) so a forgotten
 /// `CHEERS_CONNECTOR_RELEASE_VERSION` bump fails loudly at the server instead
 /// of crash-looping on user machines.
-pub const MIN_CONNECTOR_VERSION: &str = "0.1.37";
+pub const MIN_CONNECTOR_VERSION: &str = "0.1.40";
 
 /// True when `v` must not be distributed: strictly older than
 /// [`MIN_CONNECTOR_VERSION`], or not a semver triple at all — a garbled pin
@@ -708,7 +713,7 @@ pub async fn connector_download(
     clippy::items_after_test_module,
     reason = "normalization tests stay beside pairing redemption; release-discovery handlers follow"
 )]
-mod installation_tests {
+mod host_tests {
     use super::{normalize_device_name, validate_agent_type};
 
     #[test]
@@ -805,7 +810,7 @@ const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat work
 
 The code is single-use and expires in ~15 minutes. Do not echo it back or save it anywhere except by running the command above."#;
 
-/// GET /api/v1/installations/guidance — authed. Returns the mode-1 agent prompt
+/// GET /api/v1/hosts/guidance — authed. Returns the mode-1 agent prompt
 /// template (with the install URL baked in) plus the install URL, so the wizard
 /// and any programmatic caller share one prompt. The client fills {PAIRING_CODE}.
 pub async fn pairing_guidance(
@@ -820,7 +825,7 @@ pub async fn pairing_guidance(
         "install_url": install_url,
         "prompt_template": prompt_template,
         "pairing_code_placeholder": "{PAIRING_CODE}",
-        "note": "Fill {PAIRING_CODE} with a freshly created installation pairing code before handing this to your agent.",
+        "note": "Fill {PAIRING_CODE} with a freshly created host pairing code before handing this to your agent.",
     })))
 }
 
