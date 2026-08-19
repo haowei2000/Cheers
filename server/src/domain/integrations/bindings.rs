@@ -26,6 +26,11 @@ pub struct Binding {
     pub external_kind: String,
     /// The provider's own identifier, e.g. `haowei2000/Cheers`.
     pub external_id: String,
+    /// Who bound the channel. Inbound events post as this user, following the
+    /// convention `domain::scheduled_messages` already uses for out-of-band
+    /// posting — which keeps an integration inside the permission model rather
+    /// than beside it.
+    pub created_by: String,
 }
 
 /// Link `channel_id` to an external resource.
@@ -72,10 +77,12 @@ fn read_binding(row: &sqlx::postgres::PgRow) -> anyhow::Result<Binding> {
         installation_id: row.try_get("installation_id")?,
         external_kind: row.try_get("external_kind")?,
         external_id: row.try_get("external_id")?,
+        created_by: row.try_get("created_by")?,
     })
 }
 
-const COLUMNS: &str = "channel_id, integration_id, installation_id, external_kind, external_id";
+const COLUMNS: &str =
+    "channel_id, integration_id, installation_id, external_kind, external_id, created_by";
 
 pub async fn for_channel(db: &PgPool, channel_id: &str) -> anyhow::Result<Option<Binding>> {
     let row = sqlx::query(&format!(

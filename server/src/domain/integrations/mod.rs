@@ -9,6 +9,9 @@
 pub mod bindings;
 pub mod catalog;
 pub mod credentials;
+pub mod delivery;
+pub mod mapper;
 pub mod projection;
 pub mod secret;
+pub mod template;
 pub mod webhook;
