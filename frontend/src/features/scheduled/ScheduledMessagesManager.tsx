@@ -23,7 +23,7 @@ import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { listExtensions, type ExtensionSummary } from "@/features/chat/workbench/extensions/api";
 import type { AutomationContribution } from "@/features/chat/workbench/extensions/package";
-import { parseExtensionPackageOffThread } from "@/features/chat/workbench/extensions/parseOffThread";
+import { parsePersonalExtension } from "@/features/chat/workbench/extensions/parseOffThread";
 import { listPersonalExtensions } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 import type { Channel, MemberItem } from "@/types";
@@ -53,11 +53,6 @@ interface FormState {
 function localInput(date: Date): string {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return shifted.toISOString().slice(0, 16);
-}
-
-function fromBase64(value: string): Uint8Array {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function emptyForm(): FormState {
@@ -143,7 +138,7 @@ export function ScheduledMessagesManager() {
       listExtensions().catch(() => []),
       isTauri()
         ? listPersonalExtensions().then(async (stored) => Promise.all(stored.map(async (entry) => {
-            const extension = await parseExtensionPackageOffThread(fromBase64(entry.contentBase64), "personal");
+            const extension = await parsePersonalExtension(entry);
             return (extension.manifest.contributes.automations ?? []).map((automation) => ({
               extensionId: extension.manifest.id,
               extensionTitle: `${extension.manifest.title} (This Mac)`,

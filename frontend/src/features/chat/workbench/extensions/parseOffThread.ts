@@ -1,3 +1,4 @@
+import type { PersonalExtension } from "@/lib/desktop";
 import type { ParsedExtension } from "./package";
 import type { ParseRequest, ParseResponse } from "./package.worker";
 
@@ -71,4 +72,46 @@ export function parseExtensionPackageOffThread(
       discardWorker(error instanceof Error ? error : new Error(String(error)));
     }
   });
+}
+
+/** Parsed packages, keyed by the bytes they came from. */
+const parsed = new Map<string, Promise<ParsedExtension>>();
+
+/** Enough for every extension a person has installed, several versions over. The
+ * cap exists so a long session that keeps replacing a package does not retain
+ * every version's bytes — each entry holds up to 4 MiB. */
+const CACHE_LIMIT = 16;
+
+/** Parse a package stored on this Mac, reusing the last result for the same bytes.
+ *
+ * Worth caching because the same handful of packages is re-parsed constantly: on
+ * every drawer open, on every `cheers:extensions-changed`, and by the scheduled
+ * messages screen, which inflates up to 8 MiB per package to read a list of
+ * `{id, title}`. Each parse is a base64 decode, a central-directory walk, an
+ * inflate, a JSON parse, a UTF-8 decode and a SHA-256.
+ *
+ * The identity is free: `plugins.rs` already hashes each file when it lists them,
+ * so the key needs no work here — which is the only reason a cache is possible at
+ * all, since the parse is what would otherwise produce the digest. Scope is part
+ * of the key because the same bytes legitimately parse into different scenes
+ * under different scopes.
+ *
+ * Referential stability is the second reason. `SandboxRenderer` memoizes its
+ * iframe document on the renderer extension's identity, so a fresh object per
+ * parse rebuilt the document and rebooted the iframe on every drawer open. */
+export function parsePersonalExtension(stored: PersonalExtension): Promise<ParsedExtension> {
+  const key = `personal:${stored.id}:${stored.sha256}`;
+  const hit = parsed.get(key);
+  if (hit) return hit;
+  const binary = atob(stored.contentBase64);
+  const pending = parseExtensionPackageOffThread(
+    Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+    "personal",
+  );
+  // A failed parse is not cached: it holds a rejected promise nobody may await,
+  // and re-reading a package the user has since replaced should try again.
+  pending.catch(() => parsed.delete(key));
+  parsed.set(key, pending);
+  if (parsed.size > CACHE_LIMIT) parsed.delete(parsed.keys().next().value!);
+  return pending;
 }

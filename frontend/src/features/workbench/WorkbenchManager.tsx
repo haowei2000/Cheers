@@ -21,7 +21,7 @@ import {
   permissionSummary,
   type ParsedExtension,
 } from "@/features/chat/workbench/extensions/package";
-import { parseExtensionPackageOffThread } from "@/features/chat/workbench/extensions/parseOffThread";
+import { parseExtensionPackageOffThread, parsePersonalExtension } from "@/features/chat/workbench/extensions/parseOffThread";
 import {
   isPersonalExtensionDisabled,
   listTemporaryExtensions,
@@ -71,11 +71,6 @@ export interface CatalogData {
   entries: (CatalogPackageEntry | { kind: "builtin"; id: string; [key: string]: unknown })[];
 }
 
-function fromBase64(value: string): Uint8Array {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
 export function WorkbenchManager() {
   const isAdmin = useIsAdmin();
   const desktop = isTauri();
@@ -99,7 +94,7 @@ export function WorkbenchManager() {
       if (desktop) {
         const stored = await listPersonalExtensions();
         const parsed = await Promise.all(
-          stored.map((entry) => parseExtensionPackageOffThread(fromBase64(entry.contentBase64), "personal"))
+          stored.map(parsePersonalExtension)
         );
         setPersonal(parsed);
       }

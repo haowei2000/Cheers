@@ -21,7 +21,7 @@ import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listGlobalScenes } from "./extensions/api";
 import { hasCode, type ParsedExtension } from "./extensions/package";
-import { parseExtensionPackageOffThread } from "./extensions/parseOffThread";
+import { parseExtensionPackageOffThread, parsePersonalExtension } from "./extensions/parseOffThread";
 import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
 import type { ExtensionInstallCandidate } from "@/features/workbench/extensionInstall";
 import {
@@ -189,11 +189,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     listPersonalExtensions()
       .then((ps) => {
         if (!alive) return;
-        return Promise.all(ps.map(async (p) => {
-          const binary = atob(p.contentBase64);
-          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-          return parseExtensionPackageOffThread(bytes, "personal");
-        })).then((extensions) => {
+        return Promise.all(ps.map(parsePersonalExtension)).then((extensions) => {
           if (!alive) return;
           const enabled = extensions.filter((extension) => !isPersonalExtensionDisabled(extension.manifest.id));
           setPersonalRendererExtensions(enabled.flatMap((extension) => extension.rendererExtension ? [extension.rendererExtension] : []));
