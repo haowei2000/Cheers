@@ -111,7 +111,7 @@ Two supporting engines run outside that flow:
 Adding a provider is an edit to one table plus configuration. In the common case there is
 **no new Rust logic**.
 
-1. Add an `IntegrationDescriptor` to `descriptors()` in
+1. Add an `IntegrationDescriptor` to the `ALL` table in
    [`catalog.rs`](../../server/src/domain/integrations/catalog.rs): the signature scheme,
    where the provider puts its event id and event type (`Header` or `BodyPointer`), the
    `resource_kind` and `resource_path`, the role projection, an optional `init_prompt`,
@@ -173,13 +173,25 @@ without changing its test deliberately.
 | A human's role edit is never silently reverted by the next sync | `api::channels::tests::setting_a_role_by_hand_releases_the_row_from_its_integration` |
 | A secret never reaches a log line | `secret::tests::debug_never_reveals_the_value` |
 | Delivery is idempotent across a crash | `delivery::tests::a_message_id_is_stable_for_one_delivery` |
+| A descriptor built outside the catalog gets no mappings | `catalog::tests::a_descriptor_outside_the_catalog_gets_no_mappings` |
+| Webhook throttling cannot be turned into a DoS by inventing ids | `ratelimit::tests::invented_installation_ids_cannot_grow_the_key_space` |
+| A throttled webhook is indistinguishable from an unknown one | `ratelimit::tests::a_key_looks_the_same_whatever_it_was_built_from` |
+| Both package parsers read the same archive | `workbench_extensions::tests::rejects_a_package_whose_declared_entry_size_is_a_lie`, `package.test.ts` "understates"/"overstates" |
+| Consent is required for exactly what the server refuses to store | `package.test.ts` "flags exactly the packages global scope refuses" |
 
-Two invariants are structural rather than test-guarded, and reviewers must hold them:
+Three invariants are structural rather than test-guarded, and reviewers must hold them:
 
 - **Verify before parse.** Every function in `webhook.rs` takes `&[u8]`. A signature
   helper that accepts a parsed value would silently undo this.
 - **Uniform rejection.** `Rejection` deliberately carries no cause. Adding a reason to
-  the response turns the ingress endpoint into an enumeration oracle.
+  the response turns the ingress endpoint into an enumeration oracle. The live pressure
+  point is the rate limiter: over-budget returns the same opaque rejection as everything
+  else, *not* `429`, because a distinguishable status tells a prober that an installation
+  exists and is being talked to. Copying the `429` from `invite_links.rs` would undo it.
+- **Third-party code never runs where it inherits ambient authority.** The server enforces
+  its half with `allow_code = false` at every install path. The client enforces its half
+  with consent: `hasCode` decides both what the server refuses and what a drag-and-drop
+  load must ask about, and they have to stay the same predicate.
 
 ### Release discipline
 
