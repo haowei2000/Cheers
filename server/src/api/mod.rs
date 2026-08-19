@@ -14,6 +14,7 @@ pub mod files;
 pub mod fleet;
 pub mod friends;
 pub mod installations;
+pub mod integration_channels;
 pub mod integrations;
 pub mod invite_links;
 pub mod mcp;

@@ -186,17 +186,56 @@ pub async fn load(
     subject_type: SubjectType,
     subject_id: &str,
 ) -> anyhow::Result<Option<Credential>> {
+    load_where(db, config, integration_id, subject_type, subject_id, None).await
+}
+
+/// Load the credential for one specific provider account.
+///
+/// [`load`] returns whichever row was updated last, which is the right answer
+/// when a subject has one account. A subject with two — a workspace that
+/// installed the same App on two GitHub organizations — needs the exact row, or
+/// a token minted for one installation is handed to a call against the other
+/// and comes back 404.
+pub async fn load_for_account(
+    db: &PgPool,
+    config: &crate::config::Config,
+    integration_id: &str,
+    subject_type: SubjectType,
+    subject_id: &str,
+    external_account: &str,
+) -> anyhow::Result<Option<Credential>> {
+    load_where(
+        db,
+        config,
+        integration_id,
+        subject_type,
+        subject_id,
+        Some(external_account),
+    )
+    .await
+}
+
+async fn load_where(
+    db: &PgPool,
+    config: &crate::config::Config,
+    integration_id: &str,
+    subject_type: SubjectType,
+    subject_id: &str,
+    external_account: Option<&str>,
+) -> anyhow::Result<Option<Credential>> {
     let row = sqlx::query(
         "SELECT credential_id, integration_id, subject_type, subject_id, external_account,
                 access_token_enc, refresh_token_enc, scopes, expires_at, revoked_at
            FROM integration_credentials
           WHERE integration_id = $1 AND subject_type = $2 AND subject_id = $3
+            AND ($4::text IS NULL OR external_account = $4)
           ORDER BY updated_at DESC
           LIMIT 1",
     )
     .bind(integration_id)
     .bind(subject_type.as_str())
     .bind(subject_id)
+    .bind(external_account)
     .fetch_optional(db)
     .await?;
 

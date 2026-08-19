@@ -10,6 +10,7 @@ pub mod bindings;
 pub mod catalog;
 pub mod credentials;
 pub mod delivery;
+pub mod github;
 pub mod mapper;
 pub mod projection;
 pub mod secret;

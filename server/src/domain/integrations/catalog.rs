@@ -7,6 +7,7 @@
 //! reliable; designing one against imagined integrations is not.
 
 use super::mapper::EventMapping;
+use super::projection::{ProjectionError, RoleProjection};
 use super::webhook::SignatureScheme;
 
 /// Where a provider puts a piece of event metadata.
@@ -34,12 +35,35 @@ pub struct IntegrationDescriptor {
     /// This is what turns an inbound event into a channel: the value is looked
     /// up against `channel_integration_bindings.external_id`.
     pub resource_path: &'static str,
+    /// How the provider's own permission vocabulary maps onto the four channel
+    /// roles. Data, not code: authorization stays channel-role only, and an
+    /// integration never gets its own axis. A provider role absent from this
+    /// table grants nothing at all — see [`super::projection`].
+    pub role_projection: &'static [(&'static str, &'static str)],
     /// Which events become channel messages, and how. An event type with no
     /// mapping is stored and marked processed without producing a message —
     /// GitHub sends dozens of types and a channel that echoed all of them would
     /// be unreadable.
     pub events: &'static [EventMapping],
 }
+
+/// GitHub's repository permissions, projected onto channel roles.
+///
+/// `admin` and `maintain` both administer the repository, so both become
+/// channel admins. `push` is the write bit — a contributor — and `triage`
+/// grants issue management without code write, which is still participation,
+/// so both become members. `pull` is read-only access and becomes `readonly`.
+///
+/// Nothing maps to `owner`: the channel's owner is whoever created it here, and
+/// letting an external service hand out ownership would let a repository admin
+/// take a Cheers channel away from the person who made it.
+const GITHUB_ROLE_PROJECTION: &[(&str, &str)] = &[
+    ("admin", "admin"),
+    ("maintain", "admin"),
+    ("push", "member"),
+    ("triage", "member"),
+    ("pull", "readonly"),
+];
 
 /// GitHub's mappings, as data. The whole point of issue #570 is that adding
 /// `issues` or `release` here is an edit to this table, not new Rust.
@@ -79,6 +103,21 @@ const GITHUB_EVENTS: &[EventMapping] = &[
     },
 ];
 
+impl IntegrationDescriptor {
+    /// The declared projection, validated.
+    ///
+    /// Returns an error rather than being built at startup so a broken
+    /// declaration is a test failure in `catalog`, not a panic in `main`.
+    pub fn projection(&self) -> Result<RoleProjection, ProjectionError> {
+        RoleProjection::new(
+            self.role_projection
+                .iter()
+                .map(|(from, to)| (from.to_string(), to.to_string()))
+                .collect(),
+        )
+    }
+}
+
 pub fn descriptors() -> Vec<IntegrationDescriptor> {
     vec![IntegrationDescriptor {
         id: "github",
@@ -96,6 +135,7 @@ pub fn descriptors() -> Vec<IntegrationDescriptor> {
         // Every repository-scoped GitHub event carries this, and it is the same
         // string a user types when binding a channel: `haowei2000/Cheers`.
         resource_path: "repository.full_name",
+        role_projection: GITHUB_ROLE_PROJECTION,
         events: GITHUB_EVENTS,
     }]
 }
@@ -145,6 +185,54 @@ mod tests {
             super::super::mapper::compile_all(descriptor.events)
                 .unwrap_or_else(|err| panic!("{}: {err}", descriptor.id));
         }
+    }
+
+    /// A projection naming a fifth role, or the same provider role twice, would
+    /// otherwise surface as a failed sync against a live repository.
+    #[test]
+    fn every_declared_role_projection_is_valid() {
+        for descriptor in descriptors() {
+            descriptor
+                .projection()
+                .unwrap_or_else(|err| panic!("{}: {err:?}", descriptor.id));
+        }
+    }
+
+    #[test]
+    fn no_integration_can_hand_out_channel_ownership() {
+        // An external service granting `owner` could take a channel away from
+        // the person who created it.
+        for descriptor in descriptors() {
+            for (provider_role, channel_role) in descriptor.role_projection {
+                assert_ne!(
+                    *channel_role, "owner",
+                    "{} projects {provider_role} onto owner",
+                    descriptor.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn github_projects_every_permission_level_it_can_receive() {
+        // The five names `api::canonical_role` can produce. A gap here is a
+        // collaborator who silently gets nothing.
+        let github = find("github").expect("github");
+        let projection = github.projection().expect("valid");
+        for permission in ["admin", "maintain", "push", "triage", "pull"] {
+            assert!(
+                projection.resolve(permission).is_some(),
+                "github does not project {permission}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_repository_reader_never_becomes_a_channel_writer() {
+        let projection = find("github").expect("github").projection().expect("valid");
+        assert_eq!(projection.resolve("pull"), Some("readonly"));
+        // And an unrecognized permission grants nothing rather than defaulting.
+        assert_eq!(projection.resolve("acme-custom-role"), None);
     }
 
     #[test]

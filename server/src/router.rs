@@ -312,6 +312,26 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/members",
             get(api::channels::list_channel_members).post(api::channels::add_channel_member),
         )
+        // Which external resource a channel mirrors, and the member projection
+        // that follows from it. Channel-admin only, like any other channel edit.
+        .route(
+            "/api/v1/channels/:channel_id/integration",
+            get(api::integration_channels::get_binding)
+                .put(api::integration_channels::bind_channel)
+                .delete(api::integration_channels::unbind_channel),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/integration/sync",
+            post(api::integration_channels::sync_channel_members),
+        )
+        .route(
+            "/api/v1/integrations/:integration_id/installations",
+            get(api::integration_channels::list_installations),
+        )
+        .route(
+            "/api/v1/integrations/:integration_id/installations/:installation_id/resources",
+            get(api::integration_channels::list_resources),
+        )
         .route(
             "/api/v1/channels/:channel_id/invitable",
             get(api::channels::search_invitable),

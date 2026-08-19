@@ -348,20 +348,74 @@ mod tests {
             .collect()
     }
 
+    /// Outside this module, `projected_from` may only ever be *cleared*.
+    ///
+    /// The invariant is that no authorization decision can branch on where a
+    /// membership came from — that is the per-source trust model CLAUDE.md
+    /// calls dead, and a projected membership must be indistinguishable from a
+    /// manual one at the permission layer. Nothing can branch on a value it
+    /// cannot read, so the guard is: every mention elsewhere in the tree
+    /// assigns NULL. A `SELECT`, a `WHERE`, or a comparison fails here.
+    ///
+    /// The one legitimate writer is the membership API: setting a role by hand
+    /// releases that row from its integration, so a later sync pass treats it
+    /// as human-owned instead of silently reverting the edit.
     #[test]
-    fn no_permission_check_consults_the_projection_marker() {
-        let escaped: Vec<_> = sources_mentioning("projected_from")
+    fn nothing_outside_this_module_can_read_the_projection_marker() {
+        let reads: Vec<_> = lines_mentioning("projected_from")
             .into_iter()
-            .filter(|path| !path.starts_with("domain/integrations/"))
+            .filter(|(path, _)| !path.starts_with("domain/integrations/"))
+            // Prose cannot read a column, and the rule is worth explaining
+            // where it is obeyed.
+            .filter(|(_, line)| !line.trim_start().starts_with("//"))
+            .filter(|(_, line)| !line.contains("projected_from = NULL"))
+            .map(|(path, line)| format!("{path}: {}", line.trim()))
             .collect();
         assert_eq!(
-            escaped,
+            reads,
             Vec::<String>::new(),
-            "`projected_from` escaped domain/integrations/. A permission check that \
-             reads it reintroduces the per-source trust model CLAUDE.md calls dead — \
-             a projected membership must be indistinguishable from a manual one at \
-             the authorization layer."
+            "`projected_from` is read outside domain/integrations/. Only clearing \
+             it (`projected_from = NULL`) is allowed there: anything that reads the \
+             marker can branch on it, which reintroduces the per-source trust model \
+             CLAUDE.md calls dead."
         );
+    }
+
+    /// Negative control for the rule above: the allowance is narrow enough that
+    /// a read would still be caught.
+    #[test]
+    fn the_marker_guard_still_rejects_a_read() {
+        let rejected = |line: &str| {
+            !line.trim_start().starts_with("//") && !line.contains("projected_from = NULL")
+        };
+        for line in [
+            "  WHERE projected_from IS NULL",
+            "  SELECT projected_from FROM channel_memberships",
+            "  if membership.projected_from.is_some() {",
+        ] {
+            assert!(rejected(line), "{line} would have slipped past the guard");
+        }
+        // ...while the two things the guard does allow still pass.
+        assert!(!rejected("/// clearing `projected_from` releases the row"));
+        assert!(!rejected("SET role = $3, projected_from = NULL"));
+    }
+
+    /// Every `(path, line)` in the tree mentioning `needle`.
+    fn lines_mentioning(needle: &str) -> Vec<(String, String)> {
+        sources_mentioning(needle)
+            .into_iter()
+            .flat_map(|path| {
+                let full = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("src")
+                    .join(&path);
+                let source = std::fs::read_to_string(full).unwrap_or_default();
+                source
+                    .lines()
+                    .filter(|line| line.contains(needle))
+                    .map(|line| (path.clone(), line.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
     #[test]
