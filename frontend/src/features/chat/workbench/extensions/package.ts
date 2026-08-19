@@ -7,6 +7,19 @@ export const MAX_EXTENSION_COMPRESSED = 4 * 1024 * 1024;
 export const MAX_EXTENSION_EXPANDED = 8 * 1024 * 1024;
 export const MAX_EXTENSION_FILES = 128;
 export const MAX_SEED_BYTES = 256 * 1024;
+export const MAX_AUTOMATION_TITLE_CHARS = 120;
+export const MAX_AUTOMATION_MESSAGE_CHARS = 4000;
+export const MIN_INTERVAL_MINUTES = 5;
+export const MAX_INTERVAL_MINUTES = 10080;
+export const MAX_TIMEZONE_CHARS = 64;
+export const EXTENSION_ID_PATTERN = "^[a-z0-9][a-z0-9._-]{0,63}$";
+export const EXTENSION_CHANNEL_RESOURCES = [
+  "channel.info",
+  "channel.members",
+  "channel.messages",
+  "channel.activity.read",
+  "channel.messages.index",
+] as const;
 
 export interface ExtensionPermissions {
   "file.write"?: boolean;
@@ -76,8 +89,22 @@ export interface ParsedExtension {
 }
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const ID = new RegExp(EXTENSION_ID_PATTERN);
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/** Characters, not UTF-16 code units — the unit `chars().count()` counts on the server.
+ * A title of 120 emoji is 120 characters and 240 code units. */
+function characters(value: string): number {
+  return [...value].length;
+}
+
+/** `undefined` means the field was omitted. `null` was written down, and only a field
+ * with an optional type accepts it — mirroring serde, where `#[serde(default)]` fills in
+ * a missing key and rejects an explicit null while `Option<T>` reads it as `None`. */
+function optionalText(value: unknown, label: string): void {
+  if (value !== undefined && typeof value !== "string") throw new Error(`${label} must be a string`);
+}
 
 function requireObject(value: unknown, label: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -177,6 +204,9 @@ function inspectZip(bytes: Uint8Array): ZipEntry[] {
     validatePath(name);
     if (names.has(name)) throw new Error(`Duplicate ZIP path: ${name}`);
     names.add(name);
+    if (name.startsWith("seed/") && declaredSize > MAX_SEED_BYTES) {
+      throw new Error(`Seed file exceeds 256 KiB: ${name}`);
+    }
     const unixMode = externalAttributes >>> 16;
     if ((unixMode & 0xf000) === 0xa000) throw new Error(`Symbolic link is not allowed: ${name}`);
     entries.push({ name, method, compressedSize, declaredSize, localOffset });
@@ -244,6 +274,7 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
   requireId("extension", manifest.id);
   if (!SEMVER.test(manifest.version)) throw new Error("manifest version must be SemVer");
   if (typeof manifest.title !== "string" || !manifest.title.trim()) throw new Error("manifest title is required");
+  optionalText(manifest.description, "manifest description");
   if (!manifest.contributes || typeof manifest.contributes !== "object") throw new Error("manifest contributes is required");
   requireObject(manifest.contributes, "manifest contributes");
   requireKnownKeys(manifest.contributes, ["scenes", "renderers", "automations"], "manifest contributes");
@@ -281,23 +312,41 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
     requireId("automation", automation.id);
     if (automationIds.has(automation.id)) throw new Error(`Duplicate automation id: ${automation.id}`);
     automationIds.add(automation.id);
-    if (typeof automation.title !== "string" || !automation.title.trim() || automation.title.length > 120) {
+    optionalText(automation.description, `automation description: ${automation.id}`);
+    if (typeof automation.title !== "string" || !automation.title.trim() || characters(automation.title) > MAX_AUTOMATION_TITLE_CHARS) {
       throw new Error(`Invalid automation title: ${automation.id}`);
     }
-    if (typeof automation.message !== "string" || !automation.message.trim() || automation.message.length > 4000) {
+    if (typeof automation.message !== "string" || !automation.message.trim() || characters(automation.message) > MAX_AUTOMATION_MESSAGE_CHARS) {
       throw new Error(`Invalid automation message: ${automation.id}`);
     }
-    const schedule = automation.defaultSchedule;
+    const schedule: unknown = automation.defaultSchedule;
     requireObject(schedule, `automation schedule: ${automation.id}`);
     requireKnownKeys(schedule, ["kind", "everyMinutes", "localTime", "timezone"], `automation schedule: ${automation.id}`);
-    const validInterval = schedule?.kind === "interval" && Number.isInteger(schedule.everyMinutes) && schedule.everyMinutes >= 5 && schedule.everyMinutes <= 10080;
-    const validDaily = schedule?.kind === "daily" && /^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime) && (schedule.timezone === undefined || (schedule.timezone.trim().length > 0 && schedule.timezone.length <= 64));
+    const { kind, everyMinutes, localTime, timezone } = schedule;
+    // Each kind names its own fields and no others: a schedule carrying both
+    // `everyMinutes` and `localTime` does not say when it runs, and reading it as
+    // either one means the server and the client could pick differently.
+    const validInterval =
+      kind === "interval" &&
+      localTime === undefined &&
+      timezone === undefined &&
+      Number.isInteger(everyMinutes) &&
+      (everyMinutes as number) >= MIN_INTERVAL_MINUTES &&
+      (everyMinutes as number) <= MAX_INTERVAL_MINUTES;
+    const validDaily =
+      kind === "daily" &&
+      everyMinutes === undefined &&
+      typeof localTime === "string" &&
+      /^([01]\d|2[0-3]):[0-5]\d$/.test(localTime) &&
+      (timezone === undefined ||
+        timezone === null ||
+        (typeof timezone === "string" && timezone.trim().length > 0 && characters(timezone) <= MAX_TIMEZONE_CHARS));
     if (!validInterval && !validDaily) {
       throw new Error(`Invalid automation schedule: ${automation.id}`);
     }
   }
-  const allowedResources = new Set(["channel.info", "channel.members", "channel.messages", "channel.activity.read", "channel.messages.index"]);
-  requireObject(manifest.permissions ?? {}, "manifest permissions");
+  const allowedResources = new Set<string>(EXTENSION_CHANNEL_RESOURCES);
+  if (manifest.permissions !== undefined) requireObject(manifest.permissions, "manifest permissions");
   const permissionKeys = new Set(["file.write", "channel.resources", "navigation.open", "composer.prefill", "automation.manage", "network"]);
   for (const key of Object.keys(manifest.permissions ?? {})) {
     if (!permissionKeys.has(key)) throw new Error(`Unknown permission: ${key}`);
@@ -382,6 +431,7 @@ export async function parseExtensionPackage(
       itemIds.add(item.id);
       if (typeof item.title !== "string" || !item.title.trim()) throw new Error(`Scene item title is required: ${item.id}`);
       validateWorkspacePath(item.file, `${contribution.id}/${item.id}`);
+      optionalText(item.renderer, `scene item renderer: ${item.id}`);
       const renderer = item.renderer ?? "auto";
       const selfId = renderer.startsWith("self:") ? renderer.slice(5) : null;
       if (!(renderer === "auto" || renderer.startsWith("builtin:") || (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId)))) {

@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     io::{Cursor, Read},
     path::{Component, Path},
+    sync::LazyLock,
 };
 
 use chrono::NaiveTime;
@@ -20,6 +21,19 @@ pub const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_EXPANDED_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_FILES: usize = 128;
 pub const MAX_SEED_BYTES: usize = 256 * 1024;
+pub const MAX_AUTOMATION_TITLE_CHARS: usize = 120;
+pub const MAX_AUTOMATION_MESSAGE_CHARS: usize = 4_000;
+pub const MIN_INTERVAL_MINUTES: i32 = 5;
+pub const MAX_INTERVAL_MINUTES: i32 = 10_080;
+pub const MAX_TIMEZONE_CHARS: usize = 64;
+pub const ID_PATTERN: &str = r"^[a-z0-9][a-z0-9._-]{0,63}$";
+pub const CHANNEL_RESOURCES: &[&str] = &[
+    "channel.info",
+    "channel.members",
+    "channel.messages",
+    "channel.activity.read",
+    "channel.messages.index",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -467,15 +481,19 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
         if !automation_ids.insert(automation.id.as_str()) {
             return Err(format!("duplicate automation id `{}`", automation.id));
         }
-        if automation.title.trim().is_empty() || automation.title.chars().count() > 120 {
+        if automation.title.trim().is_empty()
+            || automation.title.chars().count() > MAX_AUTOMATION_TITLE_CHARS
+        {
             return Err(format!(
-                "automation `{}` title must be between 1 and 120 characters",
+                "automation `{}` title must be between 1 and {MAX_AUTOMATION_TITLE_CHARS} characters",
                 automation.id
             ));
         }
-        if automation.message.trim().is_empty() || automation.message.chars().count() > 4_000 {
+        if automation.message.trim().is_empty()
+            || automation.message.chars().count() > MAX_AUTOMATION_MESSAGE_CHARS
+        {
             return Err(format!(
-                "automation `{}` message must be between 1 and 4000 characters",
+                "automation `{}` message must be between 1 and {MAX_AUTOMATION_MESSAGE_CHARS} characters",
                 automation.id
             ));
         }
@@ -486,7 +504,9 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
                     && automation
                         .default_schedule
                         .every_minutes
-                        .is_some_and(|minutes| (5..=10_080).contains(&minutes)) => {}
+                        .is_some_and(|minutes| {
+                            (MIN_INTERVAL_MINUTES..=MAX_INTERVAL_MINUTES).contains(&minutes)
+                        }) => {}
             "daily"
                 if automation.default_schedule.every_minutes.is_none()
                     && automation
@@ -498,7 +518,9 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
                         .default_schedule
                         .timezone
                         .as_deref()
-                        .is_none_or(|zone| !zone.trim().is_empty() && zone.len() <= 64) => {}
+                        .is_none_or(|zone| {
+                            !zone.trim().is_empty() && zone.chars().count() <= MAX_TIMEZONE_CHARS
+                        }) => {}
             _ => {
                 return Err(format!(
                     "automation `{}` has an invalid defaultSchedule",
@@ -520,13 +542,6 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
             "global extensions must be declarative and cannot request code permissions".into(),
         );
     }
-    const CHANNEL_RESOURCES: &[&str] = &[
-        "channel.info",
-        "channel.members",
-        "channel.messages",
-        "channel.activity.read",
-        "channel.messages.index",
-    ];
     for resource in &manifest.permissions.channel_resources {
         if !CHANNEL_RESOURCES.contains(&resource.as_str()) {
             return Err(format!("channel resource `{resource}` is not allowed"));
@@ -536,8 +551,8 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
 }
 
 fn validate_id(kind: &str, id: &str) -> Result<(), String> {
-    let regex = Regex::new(r"^[a-z0-9][a-z0-9._-]{0,63}$").expect("static id regex");
-    if regex.is_match(id) {
+    static ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(ID_PATTERN).expect("static id regex"));
+    if ID.is_match(id) {
         Ok(())
     } else {
         Err(format!("invalid {kind} id `{id}`"))
@@ -787,6 +802,119 @@ mod tests {
             validate_package(&raw, false).unwrap().manifest.id,
             "example"
         );
+    }
+
+    /// The `.cheers-extension` grammar is enforced twice — here and in
+    /// `frontend/src/features/chat/workbench/extensions/package.ts` — because a
+    /// personal-scope package is never uploaded, so the client cannot delegate
+    /// validation to this module. `fixtures/workbench/limits.json` and `corpus.json`
+    /// are the shared contract that keeps the two implementations one grammar: the
+    /// numbers and the verdicts, asserted here against these constants and in
+    /// `corpus.test.ts` against the client's.
+    mod shared_contract {
+        use super::*;
+
+        const LIMITS: &str = include_str!("../../../fixtures/workbench/limits.json");
+        const CORPUS: &str = include_str!("../../../fixtures/workbench/corpus.json");
+
+        #[derive(Deserialize)]
+        struct Case {
+            name: String,
+            why: String,
+            global: String,
+            personal: String,
+            files: serde_json::Map<String, Value>,
+        }
+
+        /// A string is written verbatim, an object is serialized as JSON, and
+        /// `$repeat` is that unit repeated `$count` times — the same three forms the
+        /// client materializes.
+        fn contents(spec: &Value) -> Vec<u8> {
+            match spec {
+                Value::String(text) => text.clone().into_bytes(),
+                Value::Object(map) if map.contains_key("$repeat") => {
+                    let unit = map["$repeat"].as_str().expect("$repeat is a string");
+                    let count = map["$count"].as_u64().expect("$count is a number") as usize;
+                    unit.repeat(count).into_bytes()
+                }
+                other => other.to_string().into_bytes(),
+            }
+        }
+
+        fn archive(files: &serde_json::Map<String, Value>) -> Vec<u8> {
+            let mut output = Cursor::new(Vec::new());
+            {
+                let mut writer = ZipWriter::new(&mut output);
+                for (name, spec) in files {
+                    writer
+                        .start_file(name, SimpleFileOptions::default())
+                        .unwrap();
+                    writer.write_all(&contents(spec)).unwrap();
+                }
+                writer.finish().unwrap();
+            }
+            output.into_inner()
+        }
+
+        #[test]
+        fn declares_the_limits_this_validator_enforces() {
+            let limits: Value = serde_json::from_str(LIMITS).expect("limits.json parses");
+            let number = |key: &str| limits[key].as_u64().expect(key) as usize;
+            assert_eq!(limits["mediaType"].as_str(), Some(MEDIA_TYPE));
+            assert_eq!(number("maxCompressedBytes"), MAX_COMPRESSED_BYTES);
+            assert_eq!(number("maxExpandedBytes"), MAX_EXPANDED_BYTES);
+            assert_eq!(number("maxFiles"), MAX_FILES);
+            assert_eq!(number("maxSeedBytes"), MAX_SEED_BYTES);
+            assert_eq!(
+                number("maxAutomationTitleChars"),
+                MAX_AUTOMATION_TITLE_CHARS
+            );
+            assert_eq!(
+                number("maxAutomationMessageChars"),
+                MAX_AUTOMATION_MESSAGE_CHARS
+            );
+            assert_eq!(number("minIntervalMinutes") as i32, MIN_INTERVAL_MINUTES);
+            assert_eq!(number("maxIntervalMinutes") as i32, MAX_INTERVAL_MINUTES);
+            assert_eq!(number("maxTimezoneChars"), MAX_TIMEZONE_CHARS);
+            assert_eq!(limits["idPattern"].as_str(), Some(ID_PATTERN));
+            let resources: Vec<&str> = limits["channelResources"]
+                .as_array()
+                .expect("channelResources")
+                .iter()
+                .map(|value| value.as_str().expect("resource is a string"))
+                .collect();
+            assert_eq!(resources, CHANNEL_RESOURCES);
+        }
+
+        #[test]
+        fn gives_every_corpus_package_the_verdict_it_declares() {
+            let corpus: Value = serde_json::from_str(CORPUS).expect("corpus.json parses");
+            let cases: Vec<Case> =
+                serde_json::from_value(corpus["cases"].clone()).expect("corpus cases");
+            assert!(!cases.is_empty(), "the corpus must have cases to run");
+
+            let mut disagreements = Vec::new();
+            for case in &cases {
+                let raw = archive(&case.files);
+                for (scope, expected) in [("global", &case.global), ("personal", &case.personal)] {
+                    let outcome = validate_package(&raw, scope != "global");
+                    let actual = if outcome.is_ok() { "accept" } else { "reject" };
+                    if actual != expected {
+                        disagreements.push(format!(
+                            "{} at {scope} scope: contract says {expected}, this validator says {actual}{}\n    {}",
+                            case.name,
+                            outcome.err().map(|e| format!(" ({e})")).unwrap_or_default(),
+                            case.why,
+                        ));
+                    }
+                }
+            }
+            assert!(
+                disagreements.is_empty(),
+                "the shared contract and this validator disagree:\n  {}",
+                disagreements.join("\n  ")
+            );
+        }
     }
 
     #[test]

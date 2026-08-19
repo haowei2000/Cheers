@@ -155,6 +155,37 @@ Official scene templates are seeded from `server/assets/workbench-templates/*.te
 and re-seeded when the embedded version rises — but never over an id an admin has claimed
 ([`should_seed`](../../server/src/domain/workbench_official_extensions.rs:22)).
 
+### Changing what a package may contain
+
+The `.cheers-extension` grammar is implemented three times, and has to be: a personal
+package is never uploaded, so the client cannot ask the server whether it is valid.
+
+| Implementation | Role |
+|---|---|
+| [`workbench_extensions.rs`](../../server/src/domain/workbench_extensions.rs) | the server's installer — the only one that sees a global package |
+| [`package.ts`](../../frontend/src/features/chat/workbench/extensions/package.ts) | the client's installer — the only one that sees a personal package |
+| [`cli.ts`](../../packages/cheers-workbench-sdk/src/cli.ts) | the author's pre-flight check, deliberately narrower than both |
+
+Two files keep them one grammar. [`limits.json`](../../fixtures/workbench/limits.json)
+declares the numbers and vocabularies; [`corpus.json`](../../fixtures/workbench/corpus.json)
+declares packages and the verdict each must get at each scope. Neither is read at runtime
+— every implementation keeps its own native constants and every test suite asserts they
+match what is declared, so a limit or a rule changed on one side fails the *other* sides'
+builds. The SDK is held to the weaker property its role calls for: it may check less, it
+may never refuse a manifest the installers accept.
+
+So add the case to `corpus.json` first, watch it fail on both sides, then make both sides
+pass. `fixtures/workbench/**` is in the gateway *and* frontend CI lanes, so a corpus change
+runs every suite that has to agree with it.
+
+Two things the corpus cannot cover. Container rules — how a ZIP entry's declared size
+relates to the deflate stream it describes — are not expressible as a set of files, and
+the two installers use different ZIP implementations (fflate and the `zip` crate); they
+stay hand-mirrored, guarded by the paired tests below. And `"schemaVersion": 1.0` parses
+to the number `1` in JavaScript while serde refuses it as a float: `JSON.parse` erases the
+distinction, so no TypeScript check can see it. That one costs an error message at upload
+and nothing more.
+
 ### Invariants, and the test that guards each
 
 Every row here is a property someone will eventually try to break. Do not change one
@@ -178,6 +209,9 @@ without changing its test deliberately.
 | A throttled webhook is indistinguishable from an unknown one | `ratelimit::tests::a_key_looks_the_same_whatever_it_was_built_from` |
 | Both package parsers read the same archive | `workbench_extensions::tests::rejects_a_package_whose_declared_entry_size_is_a_lie`, `package.test.ts` "understates"/"overstates" |
 | Consent is required for exactly what the server refuses to store | `package.test.ts` "flags exactly the packages global scope refuses" |
+| Both installers give one package one verdict | `workbench_extensions::tests::shared_contract::gives_every_corpus_package_the_verdict_it_declares`, `corpus.test.ts` "at %s scope" |
+| The declared limits are the enforced limits | `…::shared_contract::declares_the_limits_this_validator_enforces`, `corpus.test.ts` "declares the limits this validator enforces" |
+| The SDK never blocks a package the installers accept | `pack.test.ts` "never rejects a manifest the installers accept" |
 
 Three invariants are structural rather than test-guarded, and reviewers must hold them:
 
