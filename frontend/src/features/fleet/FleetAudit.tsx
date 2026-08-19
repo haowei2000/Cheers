@@ -14,7 +14,7 @@ export function FleetAudit({ events, bots }: { events: FleetAuditEvent[]; bots: 
       controlSize="regular"
     >
       {events.length === 0 ? (
-        <EmptyState icon={History} title="No audit events" hint="Bot and installation changes will appear here." />
+        <EmptyState icon={History} title="No audit events" hint="Bot and host changes will appear here." />
       ) : (
         events.map((event) => (
           <OperationsItem

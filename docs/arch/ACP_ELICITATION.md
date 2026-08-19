@@ -62,11 +62,11 @@ separate: elicitation is a resolvable ACP request, while `auth_required` is a
 runtime diagnostic. This keeps one visual integration point without pretending
 the protocols are interchangeable.
 
-Native HTTP MCP connectivity belongs to `terminal_installations`, not to a chat
+Native HTTP MCP connectivity belongs to `connector_hosts`, not to a chat
 card. Its state progresses through `unconfigured`, `action_required`,
 `authorizing`, `connected`, `refresh_failed`, or `revoked`. An accepted card or
 issued token can reach only `authorizing`; only a recognized MCP method handled
-by Gateway after installation-bound token validation establishes `connected`.
+by Gateway after host-bound token validation establishes `connected`.
 Gateway records first connection and last successful request timestamps.
 
 Agent profiles are presentation metadata only. They may provide a native login

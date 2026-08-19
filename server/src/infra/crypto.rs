@@ -15,16 +15,16 @@ pub fn hash_bot_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Installation-bound Agent Bridge credential. Unlike the legacy `agb_`
+/// Host-bound Agent Bridge credential. Unlike the legacy `agb_`
 /// token, this secret identifies one concrete connector device, not the bot
 /// identity itself. Only its SHA-256 is persisted.
-pub const INSTALLATION_CREDENTIAL_PREFIX: &str = "agbi_";
+pub const HOST_CREDENTIAL_PREFIX: &str = "agbi_";
 
-pub fn generate_installation_credential() -> String {
-    generate_prefixed_secret(INSTALLATION_CREDENTIAL_PREFIX)
+pub fn generate_host_credential() -> String {
+    generate_prefixed_secret(HOST_CREDENTIAL_PREFIX)
 }
 
-pub fn hash_installation_credential(credential: &str) -> String {
+pub fn hash_host_credential(credential: &str) -> String {
     hash_bot_token(credential)
 }
 
@@ -34,12 +34,12 @@ pub fn generate_bot_token() -> String {
     generate_prefixed_secret(BOT_TOKEN_PREFIX)
 }
 
-/// Installation pairing-code prefix. The plaintext is short-lived and
+/// Host pairing-code prefix. The plaintext is short-lived and
 /// single-use; only its hash is persisted.
 pub const PAIRING_CODE_PREFIX: &str = "agbpair_";
 
 /// Generate a one-time pairing code. The plaintext is returned only when the
-/// pending installation is created.
+/// pending host is created.
 pub fn generate_pairing_code() -> String {
     generate_prefixed_secret(PAIRING_CODE_PREFIX)
 }

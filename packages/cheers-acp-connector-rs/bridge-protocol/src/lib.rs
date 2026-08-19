@@ -487,7 +487,7 @@ pub enum ControlInbound {
         stream: Option<String>,
         bot_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        installation_id: Option<String>,
+        host_id: Option<String>,
         bot_username: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_display_name: Option<String>,
@@ -800,7 +800,7 @@ pub enum DataInbound {
         stream: String,
         bot_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        installation_id: Option<String>,
+        host_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connection_id: Option<String>,
         session_id: String,

@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { unzipSync } from "fflate";
-import { packExtension } from "../cli.js";
+import { packExtension, validateManifest } from "../cli.js";
 
 test("TypeScript scene example packs deterministically with canonical files", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "cheers-workbench-sdk-"));
@@ -39,4 +39,20 @@ test("official research planner stays byte-identical to the cross-runtime fixtur
   assert.equal(manifest.id, "research-planner");
   assert.deepEqual(manifest.permissions, {});
   assert.equal(manifest.contributes.automations[0].id, "deadline-check");
+});
+
+/** This SDK is the author's pre-flight check, not a third security boundary: the two
+ * that matter are the installers, in `frontend/src/features/chat/workbench/extensions/`
+ * and `server/src/domain/workbench_extensions.rs`. It deliberately checks less than they
+ * do — it runs before there is an archive to inspect. What it must never do is refuse a
+ * manifest they would accept, which would stop an author shipping valid work over a rule
+ * that does not exist. `fixtures/workbench/corpus.json` is the shared statement of what
+ * they accept, so it is the right thing to hold this to. */
+test("never rejects a manifest the installers accept", async () => {
+  const corpus = JSON.parse(await readFile(resolve("../../fixtures/workbench/corpus.json"), "utf8"));
+  const accepted = corpus.cases.filter((entry: { personal: string }) => entry.personal === "accept");
+  assert.ok(accepted.length > 0, "the corpus must contain accepted packages");
+  for (const entry of accepted) {
+    assert.doesNotThrow(() => validateManifest(entry.files["manifest.json"]), `${entry.name}: ${entry.why}`);
+  }
 });

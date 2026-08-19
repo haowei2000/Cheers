@@ -120,6 +120,7 @@ pub async fn send_message(
             mention_names: body.mention_names,
             session_id: body.session_id,
             context_bundle,
+            msg_id: None,
         },
     )
     .await?;

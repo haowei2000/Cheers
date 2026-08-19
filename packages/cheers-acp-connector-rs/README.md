@@ -11,17 +11,17 @@ Every session receives the canonical Gateway HTTP MCP URL from the authenticated
 Bridge hello, and the Connector requires `mcpCapabilities.http=true`.
 
 Since 0.1.39 the Connector mints the session's MCP access token itself. It is an
-enrolled terminal installation, so it is the principal the Gateway's
-`client_credentials` grant exists for: the installation id is the `client_id` and
-the installation credential — already held to authenticate the Bridge — is the
+enrolled connector host, so it is the principal the Gateway's
+`client_credentials` grant exists for: the host id is the `client_id` and
+the host credential — already held to authenticate the Bridge — is the
 `client_secret`. The minted token is injected as the `cheers` server's
 `Authorization` header. The Agent therefore needs no OAuth client, no Client ID
 Metadata Document, and no consent round-trip; it only has to speak HTTP MCP.
 
 Tokens are short-lived and re-minted on demand, and the Gateway re-validates the
-installation — status, revocation, credential hash, bot enablement — on every MCP
-request, so a revoked or rotated installation stops working immediately. When the
-Gateway advertises no installation id the Connector falls back to the headerless
+host — status, revocation, credential hash, bot enablement — on every MCP
+request, so a revoked or rotated host stops working immediately. When the
+Gateway advertises no host id the Connector falls back to the headerless
 entry so an OAuth-capable Agent can still authenticate natively. There is no
 stdio MCP or Connector OAuth-proxy fallback.
 
@@ -77,7 +77,7 @@ auto = false
 [accounts.haowei_claude.bridge]
 control_url = "wss://cheers.example.com/ws/agent-bridge/control"
 data_url = "wss://cheers.example.com/ws/agent-bridge/data"
-installation_credential_env = "CHEERS_CLAUDE_INSTALLATION_CREDENTIAL"
+host_credential_env = "CHEERS_CLAUDE_HOST_CREDENTIAL"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 

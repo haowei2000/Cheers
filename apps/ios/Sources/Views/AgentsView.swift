@@ -4,7 +4,7 @@ import SwiftUI
 /// (`docs/arch/CLIENT_NAV_IA.md` §5); this screen deep-links when any are pending.
 struct FleetView: View {
     private enum Section: String, CaseIterable, Identifiable {
-        case overview = "Overview", bots = "Bots", installations = "Installations", audit = "Audit"
+        case overview = "Overview", bots = "Bots", hosts = "Hosts", audit = "Audit"
         var id: String { rawValue }
     }
     @Environment(AppModel.self) private var app
@@ -61,12 +61,12 @@ struct FleetView: View {
                     case .bots:
                         sectionHeader("Bots")
                         botList(filteredBots)
-                    case .installations:
-                        sectionHeader("Registered installations")
-                        if model.installations.isEmpty {
-                            ContentUnavailableView("No installations", systemImage: "laptopcomputer", description: Text("Add one to choose where a bot runs."))
+                    case .hosts:
+                        sectionHeader("Registered hosts")
+                        if model.hosts.isEmpty {
+                            ContentUnavailableView("No hosts", systemImage: "laptopcomputer", description: Text("Add one to choose where a bot runs."))
                         } else {
-                            ForEach(model.installations) { installationRow($0) }
+                            ForEach(model.hosts) { hostRow($0) }
                         }
                     case .audit:
                         sectionHeader("Audit timeline")
@@ -133,13 +133,13 @@ struct FleetView: View {
         }
     }
 
-    private func installationRow(_ installation: FleetInstallationDto) -> some View {
+    private func hostRow(_ host: FleetHostDto) -> some View {
         CheersOperationsItem(row: CheersItemRow(
-            title: "\(installation.botName) · \(installation.deviceName)",
-            subtitle: "\(installation.agentType) · MCP \(installation.mcpConnectionState.replacingOccurrences(of: "_", with: " "))",
+            title: "\(host.botName) · \(host.deviceName)",
+            subtitle: "\(host.agentType) · MCP \(host.mcpConnectionState.replacingOccurrences(of: "_", with: " "))",
             leading: AnyView(Image(systemName: "laptopcomputer").foregroundStyle(Theme.textSecondary)),
-            status: AnyView(Text(installation.revokedAt != nil ? "Revoked" : installation.online ? "Online" : installation.status.capitalized)
-                .font(.caption).foregroundStyle(installation.online ? Theme.online : Theme.textSecondary))
+            status: AnyView(Text(host.revokedAt != nil ? "Revoked" : host.online ? "Online" : host.status.capitalized)
+                .font(.caption).foregroundStyle(host.online ? Theme.online : Theme.textSecondary))
         ))
     }
 

@@ -1778,6 +1778,18 @@ pub async fn decline_bot_channel_invite(
 mod tests {
     use super::*;
 
+    /// Regression guard for a silent revert: a channel admin promoted a member
+    /// the GitHub sync had added, the change was accepted, and the next sync
+    /// pass rewrote it back because the row still carried the integration's
+    /// marker. Setting a role by hand must release the row.
+    #[test]
+    fn setting_a_role_by_hand_releases_the_row_from_its_integration() {
+        assert!(
+            SET_HUMAN_ROLE.contains("projected_from = NULL"),
+            "a human role edit must clear the projection marker: {SET_HUMAN_ROLE}"
+        );
+    }
+
     #[test]
     fn dm_created_is_a_top_level_realtime_event() {
         let channel_id = Uuid::new_v4();
@@ -2056,6 +2068,19 @@ pub async fn leave_channel(
 /// role (admin-only)，用户与 bot 走同一入口。
 /// 用户：owner 相关变更需 owner/全局管理员；拒绝把最后一个 owner 降级；不能改自己。
 /// bot：只允许 member/readonly（bot 的 owner/admin 在 REST 权限层无意义，禁授）。
+/// Setting a role by hand also takes the row out of an integration's control.
+///
+/// Without clearing `projected_from`, a channel admin promoting a member the
+/// GitHub sync had added would see the change accepted and then silently
+/// reverted by the next sync pass — the projection would still consider the row
+/// its own and rewrite it back. Clearing the marker makes
+/// `integrations::projection::decide` treat the row as human-owned, which it now
+/// is, so the projection may still promote that member but will never demote
+/// them again.
+const SET_HUMAN_ROLE: &str = "UPDATE channel_memberships
+        SET role = $3, projected_from = NULL
+      WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'";
+
 pub async fn set_channel_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -2129,26 +2154,20 @@ pub async fn set_channel_member_role(
                 "can't demote the last owner — promote another owner first".into(),
             ));
         }
-        sqlx::query(
-            "UPDATE channel_memberships SET role = $3
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-        )
-        .bind(&channel_id)
-        .bind(&member_id)
-        .bind(&role)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query(SET_HUMAN_ROLE)
+            .bind(&channel_id)
+            .bind(&member_id)
+            .bind(&role)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
     } else {
-        sqlx::query(
-            "UPDATE channel_memberships SET role = $3
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-        )
-        .bind(&channel_id)
-        .bind(&member_id)
-        .bind(&role)
-        .execute(&state.db)
-        .await?;
+        sqlx::query(SET_HUMAN_ROLE)
+            .bind(&channel_id)
+            .bind(&member_id)
+            .bind(&role)
+            .execute(&state.db)
+            .await?;
     }
     Ok(Json(json!({ "member_id": member_id, "role": role })))
 }

@@ -23,9 +23,9 @@ use crate::{
     errors::AppError,
 };
 
-/// Read the active Installation's agent type + the Bot's persisted posture mode.
+/// Read the active Host's agent type + the Bot's persisted posture mode.
 /// `bridge_provider` is only a legacy fallback for Bots that have no active
-/// Installation yet; it never overrides an Installation choice.
+/// Host yet; it never overrides a Host choice.
 async fn load_posture(
     state: &AppState,
     bot_id: &str,
@@ -34,7 +34,7 @@ async fn load_posture(
         "SELECT b.binding_config,
                 COALESCE(
                     (SELECT NULLIF(TRIM(i.agent_type), '')
-                     FROM terminal_installations i
+                     FROM connector_hosts i
                      WHERE i.bot_id = b.bot_id AND i.status = 'active'
                        AND i.revoked_at IS NULL
                      ORDER BY i.updated_at DESC

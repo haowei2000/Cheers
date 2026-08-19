@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ParsedExtension } from "@/features/chat/workbench/extensions/package";
-import { compareSemver, expandedPermissions, installDisposition } from "./extensionInstall";
+import { EXTENSION_CHANNEL_RESOURCES, type ExtensionPermissions, type ParsedExtension } from "@/features/chat/workbench/extensions/package";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { compareSemver, expandedPermissions, installDisposition, permissionGrants, permissionSummary } from "./extensionInstall";
 
 function extension(version: string, sha256: string): ParsedExtension {
   return {
@@ -49,3 +51,58 @@ describe("extension installation decisions", () => {
   });
 });
 
+
+describe("what a permission actually reaches", () => {
+  const everything: ExtensionPermissions = {
+    "file.write": true,
+    "channel.resources": ["channel.info", "channel.members"],
+    "navigation.open": true,
+    "composer.prefill": true,
+    "automation.manage": true,
+    network: "unrestricted",
+  };
+
+  it("says which permissions have no resource counterpart", () => {
+    expect(permissionGrants(everything).map((grant) => [grant.permission, grant.reach])).toEqual([
+      ["file.write", "resource"],
+      ["channel.resources", "resource"],
+      ["navigation.open", "client"],
+      ["composer.prefill", "client"],
+      ["automation.manage", "rest"],
+      ["network", "client"],
+    ]);
+  });
+
+  it("grants nothing for a declarative package", () => {
+    expect(permissionGrants(undefined)).toEqual([]);
+    expect(permissionGrants({})).toEqual([]);
+  });
+
+  it("names only resources the gateway still dispatches", () => {
+    // The claim `permissionGrants` makes is only true while the gateway routes these
+    // names, so read the dispatcher rather than a copy of its list. `resource/mod.rs` is
+    // in the frontend CI lane (`.github/ci-paths.json`) so that renaming a resource there
+    // fails here.
+    const dispatcher = readFileSync(
+      fileURLToPath(new URL("../../../../server/src/resource/mod.rs", import.meta.url)),
+      "utf8",
+    );
+    const routed = new Set([...dispatcher.matchAll(/"([a-z][a-z0-9_]*(?:\.[a-z0-9_-]+)+)"\s*(?:=>|\|)/g)].map((match) => match[1]));
+    expect(routed.size).toBeGreaterThan(20);
+    const named = permissionGrants({ ...everything, "channel.resources": [...EXTENSION_CHANNEL_RESOURCES] })
+      .flatMap((grant) => grant.resources);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((resource) => !routed.has(resource))).toEqual([]);
+  });
+
+  it("is the one list the consent screen reads", () => {
+    expect(permissionSummary({ schemaVersion: 1, id: "notes", version: "1.0.0", title: "Notes", contributes: {}, permissions: everything })).toEqual([
+      "Write file",
+      "Read channel (2)",
+      "Open navigation",
+      "Prefill composer",
+      "Manage scheduled tasks",
+      "Unrestricted network",
+    ]);
+  });
+});

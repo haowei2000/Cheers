@@ -5,7 +5,7 @@ export async function listBots(): Promise<BotItem[]> {
   return apiJson<BotItem[]>("/bots");
 }
 
-/** ACP agent id for installation presets: legacy short names (`claude`/`codex`/
+/** ACP agent id for host presets: legacy short names (`claude`/`codex`/
  *  `opencode`/`generic`) or an ACP registry id (`gemini`, `cline`, …). */
 export type AgentType = string;
 
@@ -112,8 +112,8 @@ export interface BotStatus {
   /** Control bridge timeline anchors from bot_connection_events (RFC 3339). */
   last_connected_at?: string | null;
   last_disconnected_at?: string | null;
-  /** Owner/admin-only count of pending installations; null otherwise. */
-  pending_installation_count?: number | null;
+  /** Owner/admin-only count of pending hosts; null otherwise. */
+  pending_host_count?: number | null;
   /** Current status line (mirrors the profile) — lets a poller detect a fresh write. */
   status_text?: string | null;
   status_emoji?: string | null;
@@ -126,8 +126,8 @@ export async function getBotStatus(botId: string): Promise<BotStatus> {
   return apiJson<BotStatus>(`/bots/${botId}/status`);
 }
 
-export interface TerminalInstallation {
-  installation_id: string;
+export interface ConnectorHost {
+  host_id: string;
   device_name: string;
   agent_type: string;
   credential_prefix: string;
@@ -152,36 +152,36 @@ export interface TerminalInstallation {
   };
 }
 
-export async function listTerminalInstallations(botId: string): Promise<TerminalInstallation[]> {
-  const result = await apiJson<{ installations: TerminalInstallation[] }>(
-    `/bots/${botId}/installations`
+export async function listConnectorHosts(botId: string): Promise<ConnectorHost[]> {
+  const result = await apiJson<{ hosts: ConnectorHost[] }>(
+    `/bots/${botId}/hosts`
   );
-  return result.installations ?? [];
+  return result.hosts ?? [];
 }
 
-export async function activateTerminalInstallation(botId: string, installationId: string): Promise<void> {
-  await apiJson(`/bots/${botId}/installations/${installationId}/activate`, { method: "POST" });
+export async function activateConnectorHost(botId: string, hostId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/hosts/${hostId}/activate`, { method: "POST" });
 }
 
 export async function rotateTerminalCredential(
   botId: string,
-  installationId: string
+  hostId: string
 ): Promise<{ credential: string; credential_prefix: string }> {
-  return apiJson(`/bots/${botId}/installations/${installationId}/credential`, { method: "POST" });
+  return apiJson(`/bots/${botId}/hosts/${hostId}/credential`, { method: "POST" });
 }
 
-export async function reconnectTerminalInstallation(botId: string, installationId: string): Promise<void> {
-  await apiJson(`/bots/${botId}/installations/${installationId}/reconnect`, { method: "POST" });
+export async function reconnectConnectorHost(botId: string, hostId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/hosts/${hostId}/reconnect`, { method: "POST" });
 }
 
-export async function revokeTerminalInstallation(botId: string, installationId: string): Promise<void> {
-  await apiJson(`/bots/${botId}/installations/${installationId}`, { method: "DELETE" });
+export async function revokeConnectorHost(botId: string, hostId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/hosts/${hostId}`, { method: "DELETE" });
 }
 
-export async function deleteInstallationRecord(botId: string, installationId: string): Promise<void> {
-  await apiJson(`/bots/${botId}/installations/${installationId}/record`, { method: "DELETE" });
+export async function deleteHostRecord(botId: string, hostId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/hosts/${hostId}/record`, { method: "DELETE" });
 }
-// ── Installation pairing + connector config ──────────────────────────────────
+// ── Host pairing + connector config ──────────────────────────────────
 
 export interface Reachability {
   public_base: string;
@@ -201,7 +201,7 @@ export interface ConnectorConfig {
 }
 
 /** Connector config skeleton. Pairing is still required to obtain the
- * installation-bound credential referenced by this file. */
+ * host-bound credential referenced by this file. */
 export async function getConnectorConfig(
   botId: string,
   agentType?: AgentType
@@ -210,11 +210,11 @@ export async function getConnectorConfig(
   return apiJson<ConnectorConfig>(`/bots/${botId}/connector-config${q}`);
 }
 
-export interface InstallationPairing {
+export interface HostPairing {
   pairing_code: string;
   pairing_id: string;
   bot_id: string;
-  installation_id: string;
+  host_id: string;
   device_name: string;
   agent_type: string;
   status: "pending";
@@ -227,23 +227,23 @@ export interface InstallationPairing {
   note?: string;
 }
 
-/** Create a pending installation and return its one-time pairing code. */
-export async function createInstallation(
+/** Create a pending host and return its one-time pairing code. */
+export async function createHost(
   botId: string,
   agentType: AgentType,
   deviceName?: string
-): Promise<InstallationPairing> {
-  return apiJson<InstallationPairing>(`/bots/${botId}/installations`, {
+): Promise<HostPairing> {
+  return apiJson<HostPairing>(`/bots/${botId}/hosts`, {
     method: "POST",
     body: JSON.stringify({ agent_type: agentType, device_name: deviceName }),
   });
 }
 
 /** Result of redeeming a pairing code: a ready-to-run config plus the
- * one-time installation credential and its relative credential file. */
-export interface RedeemedInstallationPairing {
+ * one-time host credential and its relative credential file. */
+export interface RedeemedHostPairing {
   bot_id: string;
-  installation_id: string;
+  host_id: string;
   device_name: string;
   account_id: string;
   agent_type: string;
@@ -258,12 +258,12 @@ export interface RedeemedInstallationPairing {
 }
 
 /** Redeem a pairing code (single-use; authenticated by the code itself, so
- * no bearer needed). Returns the generated config + installation credential. */
-export async function redeemInstallationPairing(
+ * no bearer needed). Returns the generated config + host credential. */
+export async function redeemHostPairing(
   pairingCode: string,
   deviceName?: string
-): Promise<RedeemedInstallationPairing> {
-  return apiJson<RedeemedInstallationPairing>("/installations/redeem", {
+): Promise<RedeemedHostPairing> {
+  return apiJson<RedeemedHostPairing>("/hosts/redeem", {
     method: "POST",
     body: JSON.stringify({ pairing_code: pairingCode, device_name: deviceName }),
   });
@@ -291,7 +291,7 @@ export interface PairingGuidance {
 
 /** Mode-1 prompt template (install URL baked in); client fills the code. */
 export async function getPairingGuidance(): Promise<PairingGuidance> {
-  return apiJson<PairingGuidance>(`/installations/guidance`);
+  return apiJson<PairingGuidance>(`/hosts/guidance`);
 }
 
 // ── Bot posture (the agent's session mode) ────────────────────────────────────

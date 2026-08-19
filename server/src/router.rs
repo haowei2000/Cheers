@@ -249,10 +249,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // Primary Fleet page: workspace-agnostic bot roster + approvals.
         .route("/api/v1/fleet", get(api::fleet::get_fleet_all))
-        .route(
-            "/api/v1/fleet/installations",
-            get(api::fleet::list_installations_all),
-        )
+        .route("/api/v1/fleet/hosts", get(api::fleet::list_hosts_all))
         .route("/api/v1/fleet/audit", get(api::fleet::list_audit_all))
         // Rail badge: workspace-agnostic actionable-pending count
         .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
@@ -311,6 +308,30 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/channels/:channel_id/members",
             get(api::channels::list_channel_members).post(api::channels::add_channel_member),
+        )
+        // Which external resource a channel mirrors, and the member projection
+        // that follows from it. Channel-admin only, like any other channel edit.
+        .route(
+            "/api/v1/channels/:channel_id/integration",
+            get(api::integration_channels::get_binding)
+                .put(api::integration_channels::bind_channel)
+                .delete(api::integration_channels::unbind_channel),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/integration/sync",
+            post(api::integration_channels::sync_channel_members),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/integration/init",
+            post(api::integration_channels::init_project),
+        )
+        .route(
+            "/api/v1/integrations/:integration_id/installations",
+            get(api::integration_channels::list_installations),
+        )
+        .route(
+            "/api/v1/integrations/:integration_id/installations/:installation_id/resources",
+            get(api::integration_channels::list_resources),
         )
         .route(
             "/api/v1/channels/:channel_id/invitable",
@@ -560,41 +581,41 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/token",
             post(api::bots::issue_bot_token),
         )
-        // ── Installation pairing + connector config ──────────────────────────
+        // ── Host pairing + connector config ──────────────────────────
         .route(
             "/api/v1/bots/:bot_id/connector-config",
             get(api::pairing::get_connector_config),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations",
-            get(api::installations::list_installations).post(api::pairing::create_installation),
+            "/api/v1/bots/:bot_id/hosts",
+            get(api::connector_hosts::list_hosts).post(api::pairing::create_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/activate",
-            post(api::installations::activate_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id/activate",
+            post(api::connector_hosts::activate_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/credential",
-            post(api::installations::rotate_installation_credential),
+            "/api/v1/bots/:bot_id/hosts/:host_id/credential",
+            post(api::connector_hosts::rotate_host_credential),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/reconnect",
-            post(api::installations::reconnect_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id/reconnect",
+            post(api::connector_hosts::reconnect_host),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id/record",
-            delete(api::installations::delete_installation_record),
+            "/api/v1/bots/:bot_id/hosts/:host_id/record",
+            delete(api::connector_hosts::delete_host_record),
         )
         .route(
-            "/api/v1/bots/:bot_id/installations/:installation_id",
-            delete(api::installations::revoke_installation),
+            "/api/v1/bots/:bot_id/hosts/:host_id",
+            delete(api::connector_hosts::revoke_host),
         )
         .route(
             "/api/v1/ops/connector-discovery",
             get(api::pairing::connector_discovery),
         )
         .route(
-            "/api/v1/installations/guidance",
+            "/api/v1/hosts/guidance",
             get(api::pairing::pairing_guidance),
         )
         .route("/api/v1/acp/agents", get(api::pairing::list_acp_agents))
@@ -814,14 +835,9 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/admin/settings/stt/test",
             post(api::stt_settings::test_settings),
         )
-        .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
             "/api/v1/mcp/oauth/authorize",
             get(api::mcp::authorize_inspect).post(api::mcp::authorize_approve),
-        )
-        .route(
-            "/api/v1/mcp/parse-claude-config",
-            post(api::mcp::parse_claude_config),
         )
         .layer(middleware::from_fn_with_state(state.clone(), jwt_auth))
 }
@@ -919,11 +935,11 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/auth/reset-password",
             post(api::auth::reset_password),
         )
-        // Public, code-authenticated: a host redeems an installation pairing
-        // code for that installation's credential + connector config.
+        // Public, code-authenticated: a host redeems a host pairing
+        // code for that host's credential + connector config.
         .route(
-            "/api/v1/installations/redeem",
-            post(api::pairing::redeem_installation_pairing),
+            "/api/v1/hosts/redeem",
+            post(api::pairing::redeem_host_pairing),
         )
         // Public invite-link preview for the landing page: the visitor usually has
         // no account yet. Read-only + rate-limited; workspace details come back
@@ -953,6 +969,15 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/voice/livekit/webhook",
             post(api::voice::livekit_webhook).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        // Generic integration webhook ingress. Like the LiveKit route above it
+        // sits outside browser auth: the provider authenticates with its own
+        // signature over the raw body, verified before any JSON is parsed.
+        .route(
+            "/api/v1/integrations/:integration_id/:installation_id/events",
+            post(api::integrations::receive).layer(DefaultBodyLimit::max(
+                crate::domain::integrations::webhook::MAX_BODY_BYTES,
+            )),
         )
         .route(
             "/internal/v1/voice/sessions/:voice_session_id/transcript-segments",

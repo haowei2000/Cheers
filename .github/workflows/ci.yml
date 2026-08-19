@@ -183,7 +183,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
-      - name: Official server suite and installation OAuth path
+      - name: Official server suite and host-bound OAuth path
         run: bash scripts/run-mcp-conformance.sh
 
   # ─────────────────────────────────────────────

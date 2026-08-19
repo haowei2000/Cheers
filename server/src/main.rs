@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         config.approval_card_ttl_secs,
     );
 
-    // Reap spent/expired installation pairing codes (audit follow-up L2):
+    // Reap spent/expired host pairing codes (audit follow-up L2):
     // the per-owner/per-bot caps count only live codes, so terminal rows would
     // otherwise accumulate without bound. Hourly, keeping rows 1 day for audit.
     gateway::pairing_reaper::spawn(state.db.clone(), 3600, 86_400);
@@ -226,6 +226,10 @@ async fn main() -> anyhow::Result<()> {
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
     tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
+
+    // Verified inbound webhooks are stored by the ingress handler and turned
+    // into channel messages here, off the provider's request path.
+    gateway::integration_event_worker::spawn(state.clone());
 
     // User-owned scheduled messages use durable PostgreSQL state and leases, so
     // multiple gateway replicas can poll without posting the same run twice.

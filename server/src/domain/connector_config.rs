@@ -1,4 +1,4 @@
-//! Connector config (TOML) generator for the 3-mode Installation pairing flow.
+//! Connector config (TOML) generator for the 3-mode Host pairing flow.
 //!
 //! Renders a ready-to-run `cheers-daemon.<name>.toml` for the host-side
 //! `cce-acp-connector` from a bot + a chosen agent type. The schema mirrors the
@@ -13,7 +13,7 @@
 //! clearly-marked placeholder (`needs_edit`).
 //!
 //! The credential is NEVER inlined here. The config points at an
-//! `installation_credential_file`
+//! `host_credential_file`
 //! sidecar (mode 3 manual + mode 2 script write the plaintext there with 0600),
 //! keeping the secret out of the (potentially copied / committed) config body.
 
@@ -29,10 +29,10 @@ const DATA_PATH: &str = "/ws/agent-bridge/data";
 /// proxies to the gateway). Surfaced honestly via [`Reachability`].
 pub const DEFAULT_PUBLIC_BASE: &str = "ws://localhost:8000";
 
-/// How the rendered config references the installation credential.
+/// How the rendered config references the host credential.
 pub enum TokenRef {
-    InstallationFile(String),
-    InstallationEnv(String),
+    HostFile(String),
+    HostEnv(String),
 }
 
 /// A built-in or registry-derived agent profile: which ACP adapter binary to
@@ -347,11 +347,11 @@ pub fn render_toml(params: &RenderParams) -> String {
     let data = data_url(params.public_base);
 
     let token_line = match &params.token_ref {
-        TokenRef::InstallationFile(path) => {
-            format!("installation_credential_file = {}", toml_str(path))
+        TokenRef::HostFile(path) => {
+            format!("host_credential_file = {}", toml_str(path))
         }
-        TokenRef::InstallationEnv(name) => {
-            format!("installation_credential_env  = {}", toml_str(name))
+        TokenRef::HostEnv(name) => {
+            format!("host_credential_env  = {}", toml_str(name))
         }
     };
 
@@ -597,10 +597,10 @@ mod tests {
             account_id: "Codex",
             agent_type: "codex",
             public_base: "ws://localhost:30080",
-            token_ref: TokenRef::InstallationFile("secrets/codex.token".into()),
+            token_ref: TokenRef::HostFile("secrets/codex.token".into()),
         });
         assert!(toml.contains("[accounts.codex.bridge]"));
-        assert!(toml.contains("installation_credential_file = \"secrets/codex.token\""));
+        assert!(toml.contains("host_credential_file = \"secrets/codex.token\""));
         assert!(toml.contains("command = \"codex-acp\""));
         assert!(toml.contains("\"OPENAI_API_KEY\""));
         assert!(toml.contains("\"CODEX_API_KEY\""));
@@ -625,7 +625,7 @@ mod tests {
             account_id: "OpenCode",
             agent_type: "opencode",
             public_base: "wss://example.test",
-            token_ref: TokenRef::InstallationFile("secrets/opencode.token".into()),
+            token_ref: TokenRef::HostFile("secrets/opencode.token".into()),
         });
         assert!(toml.contains(r#"command = "opencode""#));
         assert!(toml.contains(r#"args    = ["acp"]"#));
@@ -642,7 +642,7 @@ mod tests {
                 account_id: "bot",
                 agent_type,
                 public_base: "wss://example.test",
-                token_ref: TokenRef::InstallationFile("secrets/bot.token".into()),
+                token_ref: TokenRef::HostFile("secrets/bot.token".into()),
             });
             assert!(
                 toml.contains("args    = []"),
@@ -657,10 +657,9 @@ mod tests {
             account_id: "claude",
             agent_type: "claude",
             public_base: "wss://cheers.example.com",
-            token_ref: TokenRef::InstallationEnv("CHEERS_CLAUDE_INSTALLATION_CREDENTIAL".into()),
+            token_ref: TokenRef::HostEnv("CHEERS_CLAUDE_HOST_CREDENTIAL".into()),
         });
-        assert!(toml
-            .contains("installation_credential_env  = \"CHEERS_CLAUDE_INSTALLATION_CREDENTIAL\""));
+        assert!(toml.contains("host_credential_env  = \"CHEERS_CLAUDE_HOST_CREDENTIAL\""));
         // "default" = prompts per tool (not "plan", which means no execution).
         assert!(toml.contains("permission_mode = \"default\""));
         // L0 set-mode envelope: claude's safe modes, no "bypassPermissions".
@@ -681,7 +680,7 @@ mod tests {
             account_id: "mybot",
             agent_type: "something-else",
             public_base: DEFAULT_PUBLIC_BASE,
-            token_ref: TokenRef::InstallationFile("secrets/mybot.token".into()),
+            token_ref: TokenRef::HostFile("secrets/mybot.token".into()),
         });
         assert!(toml.contains("PLACEHOLDER"));
         assert!(toml.contains("/path/to/your-acp-agent"));
@@ -709,7 +708,7 @@ mod tests {
             account_id: "gem",
             agent_type: "gemini",
             public_base: "ws://localhost:30080",
-            token_ref: TokenRef::InstallationFile("secrets/gem.token".into()),
+            token_ref: TokenRef::HostFile("secrets/gem.token".into()),
         });
         assert!(toml.contains("command = \"gemini\""));
         assert!(toml.contains(r#"args    = ["--acp"]"#));
@@ -738,7 +737,7 @@ mod tests {
             account_id: "fast",
             agent_type: "fast-agent",
             public_base: "ws://localhost:30080",
-            token_ref: TokenRef::InstallationFile("secrets/fast.token".into()),
+            token_ref: TokenRef::HostFile("secrets/fast.token".into()),
         });
         assert!(toml.contains("command = \"uvx\""));
         assert!(toml.contains(r#"args    = ["fast-agent-acp==0.9.22", "-x"]"#));
@@ -770,7 +769,7 @@ mod tests {
             account_id: "cur",
             agent_type: "cursor",
             public_base: "ws://localhost:30080",
-            token_ref: TokenRef::InstallationFile("secrets/cur.token".into()),
+            token_ref: TokenRef::HostFile("secrets/cur.token".into()),
         });
         assert!(toml.contains("command = \"cursor-agent\""));
         assert!(toml.contains(r#"args    = ["acp"]"#));

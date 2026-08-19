@@ -26,6 +26,7 @@ use crate::{
     api::middleware::Claims as BrowserClaims,
     app_state::AppState,
     domain::channel_seq,
+    domain::integrations,
     domain::stt_settings,
     domain::voice_config::VoiceConfig,
     errors::AppError,
@@ -1548,16 +1549,16 @@ fn verify_webhook(
     .claims;
     // Keep these fields read so serde/validation drift is visible to the compiler.
     let _ = (claims.iss, claims.exp, claims.nbf);
-    let expected = BASE64
-        .decode(claims.sha256.as_bytes())
-        .map_err(|_| AppError::Unauthorized("invalid LiveKit webhook body hash".into()))?;
-    let actual = Sha256::digest(body);
-    if expected.as_slice() != actual.as_slice() {
-        return Err(AppError::Unauthorized(
-            "LiveKit webhook body hash mismatch".into(),
-        ));
-    }
-    Ok(())
+    // The token proves the sender holds the shared secret; this proves the body
+    // is the one that was signed. Without the binding a captured token could be
+    // replayed over a different payload.
+    //
+    // Shared with every other integration via `domain::integrations::webhook`,
+    // which also makes the compare constant-time and caps the body — the
+    // hand-written version here compared decoded slices with `!=` and buffered
+    // an unbounded unauthenticated body.
+    integrations::webhook::verify_body_sha256_b64(&claims.sha256, body)
+        .map_err(|_| AppError::Unauthorized("LiveKit webhook body rejected".into()))
 }
 
 /// POST /api/v1/voice/livekit/webhook

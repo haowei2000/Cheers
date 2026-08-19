@@ -105,7 +105,7 @@ impl BridgeReady {
 #[derive(Debug, Clone)]
 pub struct ControlHelloState {
     pub bot_id: String,
-    pub installation_id: Option<String>,
+    pub host_id: Option<String>,
     pub bot_username: String,
     pub bot_display_name: Option<String>,
     pub connection_id: Option<String>,
@@ -120,7 +120,7 @@ pub struct ControlHelloState {
 #[derive(Debug, Clone)]
 pub struct DataHelloState {
     pub bot_id: String,
-    pub installation_id: Option<String>,
+    pub host_id: Option<String>,
     pub connection_id: Option<String>,
     pub session_id: String,
     pub last_event_seq: u64,
@@ -349,7 +349,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
             v,
             bridge_protocol_version,
             bot_id,
-            installation_id,
+            host_id,
             bot_username,
             bot_display_name,
             connection_id,
@@ -364,7 +364,7 @@ fn control_hello_from_value(value: Value) -> anyhow::Result<ControlHelloState> {
             ensure_supported_version(v, bridge_protocol_version, "control")?;
             Ok(ControlHelloState {
                 bot_id,
-                installation_id,
+                host_id,
                 bot_username,
                 bot_display_name,
                 connection_id,
@@ -387,7 +387,7 @@ fn data_hello_from_value(value: Value) -> anyhow::Result<DataHelloState> {
             bridge_protocol_version,
             stream,
             bot_id,
-            installation_id,
+            host_id,
             connection_id,
             session_id,
             last_event_seq,
@@ -400,7 +400,7 @@ fn data_hello_from_value(value: Value) -> anyhow::Result<DataHelloState> {
             ensure_supported_version(v, bridge_protocol_version, "data")?;
             Ok(DataHelloState {
                 bot_id,
-                installation_id,
+                host_id,
                 connection_id,
                 session_id,
                 last_event_seq,
@@ -436,11 +436,11 @@ fn validate_hello_pair(control: &ControlHelloState, data: &DataHelloState) -> an
             data.bot_id
         ));
     }
-    if control.installation_id != data.installation_id {
+    if control.host_id != data.host_id {
         return Err(anyhow!(
-            "control/data hello installation mismatch control={:?} data={:?}",
-            control.installation_id,
-            data.installation_id
+            "control/data hello host mismatch control={:?} data={:?}",
+            control.host_id,
+            data.host_id
         ));
     }
     Ok(())
@@ -512,7 +512,7 @@ mod tests {
     fn rejects_mismatched_control_and_data_bot() {
         let control = ControlHelloState {
             bot_id: "bot-control".to_string(),
-            installation_id: Some("installation-control".to_string()),
+            host_id: Some("host-control".to_string()),
             bot_username: "helper".to_string(),
             bot_display_name: None,
             connection_id: None,
@@ -525,7 +525,7 @@ mod tests {
         };
         let data = DataHelloState {
             bot_id: "bot-data".to_string(),
-            installation_id: Some("installation-data".to_string()),
+            host_id: Some("host-data".to_string()),
             connection_id: None,
             session_id: "data-session".to_string(),
             last_event_seq: 0,

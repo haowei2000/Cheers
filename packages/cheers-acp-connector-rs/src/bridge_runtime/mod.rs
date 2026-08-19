@@ -166,17 +166,17 @@ impl AccountRuntime {
                 "Gateway did not advertise a canonical Cheers HTTP MCP URL; refusing to derive one or fall back to stdio"
             ));
         };
-        // The Connector is itself an enrolled terminal installation, which is the
+        // The Connector is itself an enrolled connector host, which is the
         // principal the Gateway's `client_credentials` grant exists for. Minting
         // here means the Agent only has to speak HTTP MCP; it needs no OAuth
         // client, metadata document, or consent round-trip of its own. Without an
-        // installation id (older Gateway) we keep the headerless entry so an
+        // host id (older Gateway) we keep the headerless entry so an
         // OAuth-capable Agent can still authenticate natively.
-        let mcp_token = match bridge.control_hello().installation_id.clone() {
-            Some(installation_id) if !installation_id.trim().is_empty() => {
+        let mcp_token = match bridge.control_hello().host_id.clone() {
+            Some(host_id) if !host_id.trim().is_empty() => {
                 match McpTokenProvider::new(
                     mcp_url.clone(),
-                    installation_id,
+                    host_id,
                     self.config.bridge_credential.clone(),
                 ) {
                     Ok(provider) => Some(Arc::new(provider)),
@@ -193,7 +193,7 @@ impl AccountRuntime {
             _ => {
                 tracing::warn!(
                     account = %self.account_id,
-                    "Gateway hello carried no installation id; falling back to native Agent OAuth"
+                    "Gateway hello carried no host id; falling back to native Agent OAuth"
                 );
                 None
             }
@@ -571,8 +571,8 @@ struct RuntimeContext {
     identity: BotIdentity,
     /// Canonical native HTTP MCP endpoint advertised by the authenticated Gateway.
     mcp_url: String,
-    /// Mints installation-bound access tokens for [`Self::mcp_url`]. `None` when
-    /// the Gateway advertised no installation id, in which case the endpoint is
+    /// Mints host-bound access tokens for [`Self::mcp_url`]. `None` when
+    /// the Gateway advertised no host id, in which case the endpoint is
     /// injected headerless and the Agent must run native OAuth itself.
     mcp_token: Option<Arc<McpTokenProvider>>,
     state: Arc<Mutex<SessionStateStore>>,

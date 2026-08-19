@@ -1476,12 +1476,12 @@ struct BotDto: Decodable, Identifiable {
     }
 }
 
-struct FleetInstallationListDto: Decodable {
-    let installations: [FleetInstallationDto]
+struct FleetHostListDto: Decodable {
+    let hosts: [FleetHostDto]
 }
 
-struct FleetInstallationDto: Decodable, Identifiable {
-    let installationId: String
+struct FleetHostDto: Decodable, Identifiable {
+    let hostId: String
     let botId: String
     let botName: String
     let deviceName: String
@@ -1493,10 +1493,10 @@ struct FleetInstallationDto: Decodable, Identifiable {
     let revokedAt: String?
     let mcpConnectionState: String
 
-    var id: String { installationId }
+    var id: String { hostId }
 
     enum CodingKeys: String, CodingKey {
-        case installationId = "installation_id"
+        case hostId = "host_id"
         case botId = "bot_id"
         case botName = "bot_name"
         case deviceName = "device_name"
@@ -1518,19 +1518,19 @@ struct FleetAuditEventDto: Decodable, Identifiable {
     let source: String
     let eventType: String
     let botId: String?
-    let installationId: String?
+    let hostId: String?
     let createdAt: String
 
     enum CodingKeys: String, CodingKey {
         case id, source
         case eventType = "event_type"
         case botId = "bot_id"
-        case installationId = "installation_id"
+        case hostId = "host_id"
         case createdAt = "created_at"
     }
 }
 
-// MARK: - Bot identity and installation pairing (server/src/api/pairing.rs)
+// MARK: - Bot identity and host pairing (server/src/api/pairing.rs)
 //
 // iOS can never host a connector — there is no way to run a long-lived ACP
 // child process on the phone. So the phone's job is to CREATE the bot and hand
@@ -1587,11 +1587,11 @@ struct ReachabilityDto: Decodable {
     }
 }
 
-/// A pending installation and its single-use, TTL-bounded pairing code.
-struct InstallationPairingDto: Decodable {
+/// A pending host and its single-use, TTL-bounded pairing code.
+struct HostPairingDto: Decodable {
     let pairingCode: String
     let pairingId: String
-    let installationId: String
+    let hostId: String
     let botId: String
     let agentType: String?
     let status: String?
@@ -1605,7 +1605,7 @@ struct InstallationPairingDto: Decodable {
     enum CodingKeys: String, CodingKey {
         case pairingCode = "pairing_code"
         case pairingId = "pairing_id"
-        case installationId = "installation_id"
+        case hostId = "host_id"
         case botId = "bot_id"
         case agentType = "agent_type"
         case status
@@ -1685,7 +1685,7 @@ struct BotStatusDto: Decodable {
     let isDisabled: Bool?
     let isOnline: Bool?
     let bridgeConnected: Bool?
-    let pendingInstallationCount: Int?
+    let pendingHostCount: Int?
     let statusText: String?
     let statusEmoji: String?
 
@@ -1696,7 +1696,7 @@ struct BotStatusDto: Decodable {
         case isDisabled = "is_disabled"
         case isOnline = "is_online"
         case bridgeConnected = "bridge_connected"
-        case pendingInstallationCount = "pending_installation_count"
+        case pendingHostCount = "pending_host_count"
         case statusText = "status_text"
         case statusEmoji = "status_emoji"
     }

@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "The numeric and vocabulary limits of the `.cheers-extension` format, declared once.",
+    "Two validators enforce them — frontend/src/features/chat/workbench/extensions/package.ts",
+    "and server/src/domain/workbench_extensions.rs — because the client must validate",
+    "independently: the server never sees the bytes of a personal-scope package.",
+    "Neither reads this file at runtime. Each keeps its own native constants and each",
+    "test suite asserts they equal what is declared here, so a limit changed on one side",
+    "fails the other side's build. Pair it with corpus.json, which does the same for rules",
+    "rather than numbers."
+  ],
+  "mediaType": "application/vnd.cheers.extension+zip",
+  "maxCompressedBytes": 4194304,
+  "maxExpandedBytes": 8388608,
+  "maxFiles": 128,
+  "maxSeedBytes": 262144,
+  "maxAutomationTitleChars": 120,
+  "maxAutomationMessageChars": 4000,
+  "minIntervalMinutes": 5,
+  "maxIntervalMinutes": 10080,
+  "maxTimezoneChars": 64,
+  "idPattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+  "channelResources": [
+    "channel.info",
+    "channel.members",
+    "channel.messages",
+    "channel.activity.read",
+    "channel.messages.index"
+  ]
+}

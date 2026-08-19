@@ -1,4 +1,4 @@
-//! Periodic reaper for spent/expired installation pairing codes.
+//! Periodic reaper for spent/expired host pairing codes.
 //!
 //! The per-bot / per-owner caps in `api::pairing` count only **live** codes
 //! (`redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()`), so a paired,
@@ -19,13 +19,13 @@ use sqlx::PgPool;
 /// is redeemed, revoked, or past its TTL; the retention grace keeps a
 /// just-finished code around briefly for inspection before it is reaped.
 async fn reap_once(db: &PgPool, retention_secs: i64) {
-    // Pending installations contain no credential and are useful only while
+    // Pending hosts contain no credential and are useful only while
     // their bound pairing code is live. Delete them first; the FK cascades the matching
     // code and prevents abandoned device rows from accumulating.
     let pending = sqlx::query(
-        "DELETE FROM terminal_installations i
+        "DELETE FROM connector_hosts i
          USING enrollment_codes e
-         WHERE e.installation_id = i.installation_id
+         WHERE e.host_id = i.host_id
            AND i.status = 'pending'
            AND (e.redeemed_at IS NOT NULL OR e.revoked OR e.expires_at < NOW())
            AND e.created_at < NOW() - make_interval(secs => $1)",
@@ -34,7 +34,7 @@ async fn reap_once(db: &PgPool, retention_secs: i64) {
     .execute(db)
     .await;
     if let Err(e) = pending {
-        tracing::warn!(error = %e, "pending installation reaper failed");
+        tracing::warn!(error = %e, "pending host reaper failed");
         return;
     }
     let res = sqlx::query(

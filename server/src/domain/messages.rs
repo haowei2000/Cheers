@@ -53,6 +53,13 @@ pub struct CreateMessageParams {
     /// (docs/design/RESOURCE_CONTEXT.md). Persisted on the row and threaded into
     /// any triggered bot's task frame via `dispatcher::load_task_context`.
     pub context_bundle: Option<serde_json::Value>,
+    /// Pre-chosen message id, for a caller that must be able to retry safely.
+    ///
+    /// Inbound integration events are the case this exists for: the delivery
+    /// worker derives a v5 uuid from the provider's own delivery id, so a retry
+    /// after a crash collides on `messages_pkey` instead of posting the event a
+    /// second time. Every other caller passes `None` and gets a fresh v4.
+    pub msg_id: Option<Uuid>,
 }
 
 pub async fn create_message(
@@ -146,7 +153,7 @@ pub async fn create_message(
             "the mentioned bot is currently offline".into(),
         ));
     }
-    let msg_id = Uuid::new_v4();
+    let msg_id = params.msg_id.unwrap_or_else(Uuid::new_v4);
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
 

@@ -22,8 +22,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import {
-  getAllFleet, getFleetAudit, getFleetInstallations,
-  type FleetApproval, type FleetAuditEvent, type FleetBot, type FleetInstallation,
+  getAllFleet, getFleetAudit, getFleetHosts,
+  type FleetApproval, type FleetAuditEvent, type FleetBot, type FleetHost,
 } from "@/api/fleet";
 import { listBots } from "@/api/bots";
 import { listChannels } from "@/api/channels";
@@ -31,27 +31,27 @@ import { listWorkspaces } from "@/api/workspaces";
 import { useFleetLive } from "./useFleetLive";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
-import { CreateInstallationWizard } from "@/features/bots/CreateInstallationWizard";
+import { CreateHostWizard } from "@/features/bots/CreateHostWizard";
 import { BotDetailPanel } from "@/features/bots/BotDetailPanel";
 import type { BotItem, Channel, Workspace } from "@/types";
 import { FleetAudit } from "./FleetAudit";
 import { FleetBots } from "./FleetBots";
-import { FleetInstallations } from "./FleetInstallations";
+import { FleetHosts } from "./FleetHosts";
 import { FleetOverview } from "./FleetOverview";
 
 const POLL_MS = 30_000;
-type Section = "overview" | "bots" | "installations" | "audit";
+type Section = "overview" | "bots" | "hosts" | "audit";
 
 const sections: Array<{ id: Section; label: string; icon: typeof Radar }> = [
   { id: "overview", label: "Overview", icon: CircleGauge },
   { id: "bots", label: "Bots", icon: BotIcon },
-  { id: "installations", label: "Installations", icon: Laptop },
+  { id: "hosts", label: "Hosts", icon: Laptop },
   { id: "audit", label: "Audit", icon: History },
 ];
 
 function sectionFromPath(pathname: string): Section {
   const value = pathname.split("/")[2];
-  return value === "bots" || value === "installations" || value === "audit" ? value : "overview";
+  return value === "bots" || value === "hosts" || value === "audit" ? value : "overview";
 }
 function botRoute(pathname: string): { botId?: string; tab?: string } {
   const [, , section, botId, tab] = pathname.split("/");
@@ -60,21 +60,21 @@ function botRoute(pathname: string): { botId?: string; tab?: string } {
 
 function AddMenu({
   onNewBot,
-  onInstallation,
+  onHost,
   onRedeem,
 }: {
   onNewBot: () => void;
-  onInstallation: () => void;
+  onHost: () => void;
   onRedeem?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   usePopoverDismiss(open, () => setOpen(false), rootRef);
   return <div className="relative" ref={rootRef}>
-    <ActionButton action="add" context="toolbar" accessibleLabel="Create bot or installation" controlSize="regular" onClick={() => setOpen((value) => !value)} />
+    <ActionButton action="add" context="toolbar" accessibleLabel="Create bot or host" controlSize="regular" onClick={() => setOpen((value) => !value)} />
     {open && <PopoverPanel placement="down" align="end" className="w-56 p-1">
       <NavigationItem title="New bot" leading={<BotIcon className="h-4 w-4" />} onClick={() => { setOpen(false); onNewBot(); }} />
-      <NavigationItem title="Add installation" leading={<Laptop className="h-4 w-4" />} onClick={() => { setOpen(false); onInstallation(); }} />
+      <NavigationItem title="Add host" leading={<Laptop className="h-4 w-4" />} onClick={() => { setOpen(false); onHost(); }} />
       {isTauri() && <NavigationItem title="Use pairing code" leading={<ShieldAlert className="h-4 w-4" />} onClick={() => { setOpen(false); onRedeem?.(); }} />}
     </PopoverPanel>}
   </div>;
@@ -88,7 +88,7 @@ export default function FleetPage() {
   const [approvals, setApprovals] = useState<FleetApproval[]>([]);
   const [bots, setBots] = useState<FleetBot[]>([]);
   const [summary, setSummary] = useState({ online: 0, working: 0, offline: 0, waiting: 0 });
-  const [installations, setInstallations] = useState<FleetInstallation[]>([]);
+  const [hosts, setHosts] = useState<FleetHost[]>([]);
   const [audit, setAudit] = useState<FleetAuditEvent[]>([]);
   const [catalog, setCatalog] = useState<BotItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -96,14 +96,14 @@ export default function FleetPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
-  const [installationBotId, setInstallationBotId] = useState<string | undefined>();
+  const [hostBotId, setHostBotId] = useState<string | undefined>();
 
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     try {
-      const [fleet, botCatalog, channelCatalog, workspaceCatalog, installationItems, auditResult] = await Promise.all([
+      const [fleet, botCatalog, channelCatalog, workspaceCatalog, hostItems, auditResult] = await Promise.all([
         getAllFleet(), listBots(), listChannels().catch(() => [] as Channel[]),
-        listWorkspaces().catch(() => [] as Workspace[]), getFleetInstallations().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
+        listWorkspaces().catch(() => [] as Workspace[]), getFleetHosts().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
       ]);
       setApprovals(fleet.approvals);
       setBots(fleet.bots);
@@ -113,7 +113,7 @@ export default function FleetPage() {
         offline: fleet.bots.filter((bot) => !bot.online).length,
         waiting: fleet.approvals.filter((approval) => approval.actionable).length,
       });
-      setCatalog(botCatalog); setChannels(channelCatalog); setWorkspaces(workspaceCatalog); setInstallations(installationItems); setAudit(auditResult.events);
+      setCatalog(botCatalog); setChannels(channelCatalog); setWorkspaces(workspaceCatalog); setHosts(hostItems); setAudit(auditResult.events);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
     finally { setLoading(false); if (!quiet) setRefreshing(false); }
   }, []);
@@ -128,18 +128,18 @@ export default function FleetPage() {
   useFleetLive(liveChannelIds, () => void refresh(true));
   const selectedBot = catalog.find((bot) => bot.bot_id === route.botId);
   const actionableCount = approvals.filter((approval) => approval.actionable).length;
-  const installationIssues = installations.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
+  const hostIssues = hosts.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
   const manageableBots = catalog.filter((bot) => bot.can_manage);
 
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }
-  function openInstallation(botId?: string) { setInstallationBotId(botId ?? ""); }
+  function openHost(botId?: string) { setHostBotId(botId ?? ""); }
 
   const headerActions = (
     <>
       <AddMenu
         onNewBot={() => setCreateBotOpen(true)}
-        onInstallation={() => openInstallation()}
-        onRedeem={() => navigate("/fleet/installations?redeem=1")}
+        onHost={() => openHost()}
+        onRedeem={() => navigate("/fleet/hosts?redeem=1")}
       />
       <IconButton label="Refresh Fleet" disabled={refreshing} onClick={() => void refresh()}>
         <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} aria-hidden="true" />
@@ -209,25 +209,25 @@ export default function FleetPage() {
           <FleetOverview
             summary={summary}
             actionableCount={actionableCount}
-            installationIssues={installationIssues}
+            hostIssues={hostIssues}
             bots={bots}
             audit={audit}
             onOpenBot={openBot}
             onOpenAllBots={() => navigate("/fleet/bots")}
             onOpenActivity={() => navigate("/activity")}
-            onOpenInstallations={() => navigate("/fleet/installations")}
+            onOpenHosts={() => navigate("/fleet/hosts")}
           />
         ) : section === "bots" ? (
           <FleetBots bots={bots} onOpenBot={openBot} />
-        ) : section === "installations" ? (
-          <FleetInstallations items={installations} refresh={async () => { await refresh(true); }} />
+        ) : section === "hosts" ? (
+          <FleetHosts items={hosts} refresh={async () => { await refresh(true); }} />
         ) : (
           <FleetAudit events={audit} bots={bots} />
         )}
         </div>
       </main>
     </div>
-    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} workspaces={workspaces} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddInstallation={() => { navigate("/fleet/installations"); openInstallation(selectedBot.bot_id); }} /></Dialog>}
+    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} workspaces={workspaces} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
       setCreateBotOpen(false);
       // Seed from the POST response (it carries can_manage) rather than waiting
@@ -235,9 +235,9 @@ export default function FleetPage() {
       setCatalog((prev) => (prev.some((b) => b.bot_id === bot.bot_id) ? prev : [bot, ...prev]));
       // A bot identity can't do anything until a device runs it — continue there
       // instead of ending the flow on a row that has no runtime behind it.
-      openInstallation(bot.bot_id);
+      openHost(bot.bot_id);
       void refresh(true);
     }} />}
-    {installationBotId !== undefined && <CreateInstallationWizard bots={manageableBots} initialBotId={installationBotId || undefined} onClose={() => setInstallationBotId(undefined)} onDone={() => void refresh()} />}
+    {hostBotId !== undefined && <CreateHostWizard bots={manageableBots} initialBotId={hostBotId || undefined} onClose={() => setHostBotId(undefined)} onDone={() => void refresh()} />}
   </div>;
 }

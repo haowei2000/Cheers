@@ -301,7 +301,7 @@ The demo agent is **Codex** via `codex-acp`. Verified facts (static trace, devel
   `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml` (generic stdio
   adapter, binary `codex-acp`); docs-canonical "Minimal Codex example" in
   [CONNECTOR_TOML_CONFIG.md](./CONNECTOR_TOML_CONFIG.md). The gateway ships a codex
-  `AgentPreset` (`server/src/domain/connector_config.rs`) and installation creation accepts
+  `AgentPreset` (`server/src/domain/connector_config.rs`) and host creation accepts
   `agent_type=codex` (`server/src/api/pairing.rs`).
 - **Tools are agent-agnostic.** `inject_cheers=true` hands Codex the same
   `desk_*`/`inbox_*`/`post_message` MCP tools; there is zero agent-type branching in
@@ -445,11 +445,11 @@ online" cause.
    (`npm --prefix frontend run dev`) — the UI is at <http://localhost:5173> (`admin` /
    `admin12345`); the NodePort build is at <http://localhost:30080>.
 2. **Bot identity + channel + membership.** Reuse or create a Bot identity, then create a
-   pending Codex Installation and put the Bot in a channel. Headless equivalents:
+   pending Codex Host and put the Bot in a channel. Headless equivalents:
    ```bash
    TOKEN=$(curl -s -X POST :8000/api/v1/auth/login -H 'Content-Type: application/json' \
      -d '{"login":"admin","password":"admin12345"}' | jq -r .access_token)
-   PAIRING=$(curl -s -X POST :8000/api/v1/bots/<BOT_ID>/installations \
+   PAIRING=$(curl -s -X POST :8000/api/v1/bots/<BOT_ID>/hosts \
      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"agent_type":"codex","device_name":"Research host"}')
    PAIRING_CODE=$(printf '%s' "$PAIRING" | jq -r .pairing_code)
@@ -458,7 +458,7 @@ online" cause.
    curl -s -X POST :8000/api/v1/channels/<CH_ID>/members -H "Authorization: Bearer $TOKEN" \
      -d '{"member_id":"<BOT_ID>","member_type":"bot","role":"member"}'
    ```
-3. **Pair and start the Installation** (the Bot goes online after setup completes):
+3. **Pair and start the Host** (the Bot goes online after setup completes):
    ```bash
    CHEERS_PAIRING_CODE="$PAIRING_CODE" bash <(curl -fsSL http://127.0.0.1:8000/api/v1/install.sh)
    ```

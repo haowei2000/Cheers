@@ -66,7 +66,7 @@ export function ServerCard() {
 }
 
 /** Desktop shell only: register the app as a macOS login item, so the tray and
- * local installation supervisor are available after sign-in. */
+ * local connector supervisor are available after sign-in. */
 export function LaunchAtLoginCard() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,7 +102,7 @@ export function LaunchAtLoginCard() {
     <SettingsCard
       className="mt-4"
       title="Launch at login"
-      description="Start Cheers and keep local bot installations available when you sign in to your Mac."
+      description="Start Cheers and keep local bot hosts available when you sign in to your Mac."
       actions={
         <ActionButton action={enabled ? "disable" : "enable"} context="settings"
           accessibleLabel={`${enabled ? "Turn off" : "Turn on"} launch at login`}

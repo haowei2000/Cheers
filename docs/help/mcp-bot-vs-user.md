@@ -38,7 +38,7 @@ Rust gateway  (the only backend)
 
 So MCP is the **read/act surface** the agent uses to see and touch a channel; the **Agent
 Bridge WebSocket** transports prompts and streaming. MCP uses a separate OAuth
-installation identity and the Gateway rechecks channel authorization per call.
+host identity and the Gateway rechecks channel authorization per call.
 
 ---
 
@@ -86,16 +86,16 @@ Two file spaces to keep straight (baked into the MCP initialize prompt):
 ## 3. How a bot authenticates
 
 Prompt transport authenticates on the **Agent Bridge WebSocket**. MCP calls use
-the Agent's native OAuth lifecycle and an installation-bound access token; the
-Gateway validates installation state, scopes, audience, and channel membership
+the Agent's native OAuth lifecycle and a host-bound access token; the
+Gateway validates host state, scopes, audience, and channel membership
 on every call. The Bridge credential model remains:
 
 1. **Identity first.** `POST /api/v1/bots` creates only the durable Bot identity.
-2. **Installation creation.** `POST /api/v1/bots/{bot_id}/installations` creates a pending
-   device Installation and returns a 900-second, single-use pairing code.
-3. **Pairing.** `POST /api/v1/installations/redeem` authenticates by that code, activates
-   the Installation, and returns an `agbi_…` credential once. Only its SHA-256 is stored.
-4. **Handshake.** Agent Bridge accepts the Installation credential only when its Installation
+2. **Host creation.** `POST /api/v1/bots/{bot_id}/hosts` creates a pending
+   device Host and returns a 900-second, single-use pairing code.
+3. **Pairing.** `POST /api/v1/hosts/redeem` authenticates by that code, activates
+   the Host, and returns an `agbi_…` credential once. Only its SHA-256 is stored.
+4. **Handshake.** Agent Bridge accepts the Host credential only when its Host
    is active and not revoked and the Bot is enabled.
 
 Because the credential is high-entropy and random, an **unsalted SHA-256** at rest is correct here

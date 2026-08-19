@@ -20,8 +20,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  createInstallation,
-  revokeTerminalInstallation,
+  createHost,
+  revokeConnectorHost,
   getBotStatus,
   getConnectorDiscovery,
   getPairingGuidance,
@@ -29,7 +29,7 @@ import {
   type AgentType,
   type AcpAgentInfo,
   type ConnectorDiscovery,
-  type InstallationPairing,
+  type HostPairing,
   type PairingGuidance,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
@@ -155,7 +155,7 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
-        so an installation running anywhere else may not be able to sign in. Setting
+        so a host running anywhere else may not be able to sign in. Setting
         up on this same machine will still work. Whoever runs the server can fix
         this by configuring its public address.
       </span>
@@ -163,14 +163,14 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
   );
 }
 
-export function CreateInstallationWizard({
+export function CreateHostWizard({
   bots,
   initialBotId,
   onClose,
   onDone,
 }: {
   bots: BotItem[];
-  /** When opened from a bot detail, reuse that identity and add a device installation. */
+  /** When opened from a bot detail, reuse that identity and add a device host. */
   initialBotId?: string;
   onClose: () => void;
   onDone: () => void;
@@ -182,7 +182,7 @@ export function CreateInstallationWizard({
   const botFieldId = useId();
   const agentFieldId = useId();
 
-  // Step 0 — choose an existing bot and this installation's agent.
+  // Step 0 — choose an existing bot and this host's agent.
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
   const [existingId, setExistingId] = useState(initialBotId ?? bots[0]?.bot_id ?? "");
@@ -197,7 +197,7 @@ export function CreateInstallationWizard({
   // "ask an agent" is the install-script one-liner wrapped in a prompt — so
   // owning it here means switching modes re-presents one code instead of
   // minting a second and leaving the first live against the per-bot cap.
-  const [pairing, setPairing] = useState<InstallationPairing | null>(null);
+  const [pairing, setPairing] = useState<HostPairing | null>(null);
   const [pairingBusy, setPairingBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const mintingRef = useRef(false);
@@ -224,16 +224,16 @@ export function CreateInstallationWizard({
   /** Best-effort revoke of a code the wizard is about to stop showing. The code
    *  also expires on its own, so a failure here must not block the replacement
    *  the user asked for — hence no toast. */
-  const discardPairing = useCallback(async (current: InstallationPairing | null) => {
+  const discardPairing = useCallback(async (current: HostPairing | null) => {
     if (!current) return;
     try {
-      await revokeTerminalInstallation(current.bot_id, current.installation_id);
+      await revokeConnectorHost(current.bot_id, current.host_id);
     } catch {
       /* already revoked, redeemed, or expiring on its own */
     }
   }, []);
 
-  /** Create a pending installation and hold its one-time code. Replaces (and
+  /** Create a pending host and hold its one-time code. Replaces (and
    *  revokes) any code this wizard already minted. */
   const mint = useCallback(async () => {
     if (mintingRef.current) return;
@@ -250,7 +250,7 @@ export function CreateInstallationWizard({
       // Revoke first: the gateway caps live codes per bot, so replacing has to
       // free the old slot before asking for the next one.
       await discardPairing(previous);
-      setPairing(await createInstallation(target.bot_id, agentType));
+      setPairing(await createHost(target.bot_id, agentType));
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -260,7 +260,7 @@ export function CreateInstallationWizard({
   }, [agentType, bots, discardPairing, existingId, pairing]);
 
   // Arriving at "Connect" always needs a code; the old per-mode "Create
-  // installation" button only stood between the user and the command they came
+  // host" button only stood between the user and the command they came
   // for. Mint on arrival — the button below stays, for replacing an expired one.
   useEffect(() => {
     if (step !== 2 || !bot) return;
@@ -285,7 +285,7 @@ export function CreateInstallationWizard({
   }
 
   /** Changing either half of the identity invalidates a code already minted:
-   *  the agent type is baked into the pending installation row, so a code minted
+   *  the agent type is baked into the pending host row, so a code minted
    *  for `codex` would install a codex adapter for a bot now marked `claude`. */
   function repick(next: { botId?: string; agent?: AgentType }) {
     const previous = pairing;
@@ -311,7 +311,7 @@ export function CreateInstallationWizard({
     setStep(1);
   }
 
-  /** Desktop only: resolve the bot, then jump straight to the local installation
+  /** Desktop only: resolve the bot, then jump straight to the local host
    * setup with it pre-selected (skips the remote-device pairing modes). */
   async function setupLocally() {
     setError(null);
@@ -321,7 +321,7 @@ export function CreateInstallationWizard({
       if (!resolved) return;
       requestConnectorForBot(resolved.bot_id, agentType);
       onClose();
-      navigate("/fleet/installations?local=1");
+      navigate("/fleet/hosts?local=1");
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -340,7 +340,7 @@ export function CreateInstallationWizard({
     <Dialog
       title={
         <span className="flex items-center gap-2">
-          <Laptop className="w-5 h-5 text-accent-400" /> Create an installation
+          <Laptop className="w-5 h-5 text-accent-400" /> Create a host
         </span>
       }
       onClose={onClose}
@@ -355,19 +355,19 @@ export function CreateInstallationWizard({
           <p className="text-compact text-danger-400 break-words">{error}</p>
         )}
 
-        {/* ── Step 0: choose an existing bot and installation agent ─── */}
+        {/* ── Step 0: choose an existing bot and host agent ─── */}
         {step === 0 && (
           <div className="space-y-3">
             <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-accent-100">
-              <p className="font-medium">Create a runtime installation for an existing bot.</p>
+              <p className="font-medium">Create a runtime host for an existing bot.</p>
               <p className="mt-1 text-accent-200/75">
-                The bot identity stays unchanged. This installation chooses its own agent and device.
+                The bot identity stays unchanged. This host chooses its own agent and device.
               </p>
             </div>
             <Field
               label="Bot identity"
               htmlFor={initialBotId ? undefined : botFieldId}
-              hint={!bots.length ? <span className="text-warning-300">Create a bot identity before adding an installation.</span> : undefined}
+              hint={!bots.length ? <span className="text-warning-300">Create a bot identity before adding a host.</span> : undefined}
             >
               {initialBotId ? (
                 <p className="rounded-sm bg-zinc-800/40 px-3 py-2 text-regular text-content-secondary">
@@ -383,7 +383,7 @@ export function CreateInstallationWizard({
             <Field
               label="Agent type"
               htmlFor={agentFieldId}
-              hint="The ACP adapter this device will run. It is fixed when the pending installation is created."
+              hint="The ACP adapter this device will run. It is fixed when the pending host is created."
             >
               <UiSelect
                 id={agentFieldId}
@@ -426,7 +426,7 @@ export function CreateInstallationWizard({
                 icon={<Terminal className="w-5 h-5 text-accent-300" />}
                 title="Run one command on the host"
                 badge="Easiest"
-                desc="Recommended. One command pairs the bot and keeps its installation running in the background."
+                desc="Recommended. One command pairs the bot and keeps its host running in the background."
                 onClick={() => pickMode("script")}
                 disabled={busy}
               />
@@ -545,10 +545,10 @@ function ConnectionWatch({
         setOnline(bridged);
       } catch {
         // Transient failure: keep the last known state rather than flapping to
-        // "offline", which would read as the installation having dropped.
+        // "offline", which would read as the host having dropped.
       }
       if (!alive) return;
-      // The wizard asks one question — did this installation reach Cheers? — and
+      // The wizard asks one question — did this host reach Cheers? — and
       // a yes settles it. Stop rather than poll for as long as the dialog stays
       // open; the bot list and Fleet own ongoing liveness.
       if (bridged) {
@@ -575,12 +575,12 @@ function ConnectionWatch({
   return online ? (
     <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-compact text-success-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
-      @{username} is online — this installation reached Cheers. You're done.
+      @{username} is online — this host reached Cheers. You're done.
     </p>
   ) : (
     <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-compact text-content-muted">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-      Waiting for @{username}'s installation — finish setup on the device that
+      Waiting for @{username}'s host — finish setup on the device that
       runs the agent. This updates on its own.
     </p>
   );
@@ -631,7 +631,7 @@ function PairingSection({
   onMint,
   onRevoke,
 }: {
-  pairing: InstallationPairing | null;
+  pairing: HostPairing | null;
   secondsLeft: number;
   expired: boolean;
   busy: boolean;
@@ -668,7 +668,7 @@ function PairingSection({
       </div>
 
       {busy && !pairing && (
-        <p className="text-compact text-content-muted">Creating a pending installation…</p>
+        <p className="text-compact text-content-muted">Creating a pending host…</p>
       )}
 
       {pairing && connected && (
@@ -684,7 +684,7 @@ function PairingSection({
             Single-use. Expires in{" "}
             <span className="tabular-nums text-warning-300">{formatCountdown(secondsLeft)}</span>
             {pairing.live_pairings
-              ? ` · ${pairing.live_pairings} pending installation${pairing.live_pairings === 1 ? "" : "s"} for this bot`
+              ? ` · ${pairing.live_pairings} pending host${pairing.live_pairings === 1 ? "" : "s"} for this bot`
               : ""}
           </span>
         </p>
@@ -705,7 +705,7 @@ function PairingSection({
       {!pairing && !busy && (
         <p className="text-compact text-content-muted">
           No live code. Press <span className="text-content-secondary">Create code</span> to
-          register a pending installation for this bot.
+          register a pending host for this bot.
         </p>
       )}
     </div>
@@ -722,7 +722,7 @@ function ScriptPanel({
   bot: BotItem;
   agentType: AgentType;
   discovery: ConnectorDiscovery | null;
-  pairing: InstallationPairing | null;
+  pairing: HostPairing | null;
   expired: boolean;
 }) {
   const installUrl = `${serverOrigin()}/api/v1/install.sh`;
@@ -747,7 +747,7 @@ function ScriptPanel({
       <p className="text-compact text-content-muted">
         One command on the agent's machine for{" "}
         <span className="text-content-secondary">@{bot.username}</span> ({agentType}). It
-        trades the code above for an installation credential, saves both files, and installs the
+        trades the code above for a host credential, saves both files, and installs the
         connector so it restarts on its own after a reboot.
       </p>
 
@@ -781,7 +781,7 @@ function ScriptPanel({
           )}
           <p className="text-compact text-content-muted">
             No terminal handy? If that machine has the Cheers desktop app, open{" "}
-            <span className="text-content-secondary">Settings → Installations → I have a code</span>{" "}
+            <span className="text-content-secondary">Settings → Hosts → I have a code</span>{" "}
             and paste the code there instead.
           </p>
           <div className="flex items-center justify-between">
@@ -808,7 +808,7 @@ function AgentPanel({
 }: {
   bot: BotItem;
   discovery: ConnectorDiscovery | null;
-  pairing: InstallationPairing | null;
+  pairing: HostPairing | null;
   expired: boolean;
 }) {
   const [guidance, setGuidance] = useState<PairingGuidance | null>(null);
