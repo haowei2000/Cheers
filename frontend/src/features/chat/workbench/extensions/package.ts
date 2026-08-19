@@ -318,7 +318,13 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
   return manifest;
 }
 
-function hasCode(manifest: ExtensionManifest): boolean {
+/** True when the package would run code or hold a permission.
+ *
+ * One predicate, two uses that mean the same thing: it is what makes a package
+ * ineligible for global scope — the server stores no code and grants no
+ * permission — and therefore what a temporary, session-only load has to ask
+ * about before activating. */
+export function hasCode(manifest: ExtensionManifest): boolean {
   const p = manifest.permissions ?? {};
   return (
     (manifest.contributes.renderers?.length ?? 0) > 0 ||

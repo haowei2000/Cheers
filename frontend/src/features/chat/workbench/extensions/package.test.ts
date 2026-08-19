@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseExtensionPackage } from "./package";
+import { hasCode, parseExtensionPackage } from "./package";
 
 function archive(manifest: object, files: Record<string, string> = {}): Uint8Array {
   return zipSync(Object.fromEntries([
@@ -159,5 +159,31 @@ describe("parseExtensionPackage", () => {
     const bytes = archive({ ...base }, { "seed/main/notes.md": "# Notes" });
     const lying = understateSize(bytes, "seed/main/notes.md", 4096);
     await expect(parseExtensionPackage(lying, "personal")).rejects.toThrow(/declared size/);
+  });
+
+  /** `hasCode` decides two things that have to stay the same thing: whether the
+   * server refuses the package, and whether dropping it into the drawer asks for
+   * consent first. If they ever drift, a package the server would not store gets
+   * activated on desktop without a word. */
+  it("flags exactly the packages global scope refuses", async () => {
+    const declarative = { ...base };
+    expect(hasCode(declarative as never)).toBe(false);
+    await expect(parseExtensionPackage(archive(declarative), "global")).resolves.toBeTruthy();
+
+    const carriers: object[] = [
+      { ...base, permissions: { "file.write": true } },
+      { ...base, permissions: { "channel.resources": ["channel.info"] } },
+      { ...base, permissions: { "navigation.open": true } },
+      { ...base, permissions: { "composer.prefill": true } },
+      { ...base, permissions: { "automation.manage": true } },
+      { ...base, permissions: { network: "unrestricted" } },
+      { ...base, contributes: { scenes: [], renderers: [{ id: "view", title: "View", entry: "renderers/view.js" }] } },
+    ];
+    for (const manifest of carriers) {
+      expect(hasCode(manifest as never), JSON.stringify(manifest)).toBe(true);
+      await expect(
+        parseExtensionPackage(archive(manifest, { "renderers/view.js": "export default {};" }), "global")
+      ).rejects.toThrow(/declarative/);
+    }
   });
 });

@@ -20,7 +20,10 @@ import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listGlobalScenes } from "./extensions/api";
+import { hasCode, type ParsedExtension } from "./extensions/package";
 import { parseExtensionPackageOffThread } from "./extensions/parseOffThread";
+import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
+import type { ExtensionInstallCandidate } from "@/features/workbench/extensionInstall";
 import {
   isPersonalExtensionDisabled,
   registerTemporaryExtension,
@@ -140,6 +143,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
   const [dragOver, setDragOver] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** A dropped package waiting on consent. `thenActivate` remembers whether the
+   * drop was a "open this scenario" gesture, so confirming does what the drop
+   * would have done. */
+  const [pendingLoad, setPendingLoad] = useState<(ExtensionInstallCandidate & { thenActivate: boolean }) | null>(null);
   const [pinMenu, setPinMenu] = useState(false);
   const [rawMode, setRawMode] = useState(false);
   /** Focus request for the browser: a Desk-ref deep link (openFilePath) or the last
@@ -323,38 +330,66 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // the channel — that's the point of opening the scenario — but the template DEFINITION
   // is ephemeral. To share a template across channels/users, an admin installs it as a
   // global template in Settings → Workbench extensions.
-  const loadExtensionFile = useCallback(
-    (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".cheers-extension")) {
-        setNotice("Choose a .cheers-extension package");
-        return;
-      }
-      void file.arrayBuffer().then((bytes) => parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global")).then((extension) => {
-        registerTemporaryExtension(extension);
-        setSessionTemplates((current) => [
-          ...extension.scenes,
-          ...current.filter((scene) => !sceneBelongsToExtension(scene.id, extension.manifest.id)),
-        ]);
-        if (extension.rendererExtension) setSessionRendererExtensions((current) => [extension.rendererExtension!, ...current.filter((candidate) => candidate.extensionId !== extension.manifest.id)]);
-        const first = extension.scenes[0];
-        if (first) void activate(first);
-        setNotice(`Loaded temporarily: ${extension.manifest.title}`);
-      }).catch((reason) => setNotice(errMsg(reason)));
-    },
-    [activate]
-  );
-
-  const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
-    void parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global").then((extension) => {
+  //
+  // On desktop this scope is `temporary`, the one scope that may carry renderer code and
+  // `network: unrestricted` — the server refuses to store either. Dropping a file is not
+  // consent to run it, so anything with code or a permission goes through the same dialog
+  // Settings uses; a purely declarative package activates directly, because a modal with
+  // nothing in it teaches people to click through the ones that matter.
+  const admit = useCallback(
+    (extension: ParsedExtension, notice: string) => {
       registerTemporaryExtension(extension);
       setSessionTemplates((current) => [
         ...extension.scenes,
         ...current.filter((scene) => !sceneBelongsToExtension(scene.id, extension.manifest.id)),
       ]);
       if (extension.rendererExtension) setSessionRendererExtensions((current) => [extension.rendererExtension!, ...current.filter((candidate) => candidate.extensionId !== extension.manifest.id)]);
-      setNotice(`Loaded temporarily: ${title}`);
-    }).catch((reason) => setNotice(errMsg(reason)));
-  }, []);
+      setNotice(notice);
+    },
+    []
+  );
+
+  const offer = useCallback(
+    (extension: ParsedExtension, sourceLabel: string, thenActivate: boolean) => {
+      if (hasCode(extension.manifest)) {
+        setPendingLoad({ extension, scope: "temporary", source: "file", sourceLabel, thenActivate });
+        return;
+      }
+      admit(extension, `Loaded temporarily: ${extension.manifest.title}`);
+      const first = extension.scenes[0];
+      if (thenActivate && first) void activate(first);
+    },
+    [activate, admit]
+  );
+
+  const loadExtensionFile = useCallback(
+    (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".cheers-extension")) {
+        setNotice("Choose a .cheers-extension package");
+        return;
+      }
+      void file.arrayBuffer()
+        .then((bytes) => parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global"))
+        .then((extension) => offer(extension, file.name, true))
+        .catch((reason) => setNotice(errMsg(reason)));
+    },
+    [offer]
+  );
+
+  const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
+    void parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global")
+      .then((extension) => offer(extension, title, false))
+      .catch((reason) => setNotice(errMsg(reason)));
+  }, [offer]);
+
+  const confirmPendingLoad = useCallback(() => {
+    if (!pendingLoad) return;
+    const { extension, thenActivate } = pendingLoad;
+    setPendingLoad(null);
+    admit(extension, `Loaded temporarily: ${extension.manifest.title}`);
+    const first = extension.scenes[0];
+    if (thenActivate && first) void activate(first);
+  }, [pendingLoad, activate, admit]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -722,6 +757,15 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           />
           <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
         </div>
+
+        {pendingLoad && (
+          <ExtensionInstallDialog
+            candidate={pendingLoad}
+            busy={false}
+            onConfirm={confirmPendingLoad}
+            onClose={() => setPendingLoad(null)}
+          />
+        )}
 
         {!minimized && notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
