@@ -55,7 +55,7 @@ pub async fn receive(
 
     let installation = load_installation(&state, &integration_id, &installation_id).await?;
 
-    verify(&state, &descriptor, &installation, &headers, &body)?;
+    verify(&state, descriptor, &installation, &headers, &body)?;
 
     // Only now is the body trusted enough to parse.
     let payload: Value = serde_json::from_slice(&body).map_err(|_| {
@@ -149,8 +149,8 @@ fn verify(
     match &descriptor.signature {
         SignatureScheme::HmacSha256 { header, prefix } => webhook::verify_hmac_sha256(
             secret.as_bytes(),
-            prefix.as_deref(),
-            headers.get(header.as_str()).and_then(|v| v.to_str().ok()),
+            *prefix,
+            headers.get(*header).and_then(|v| v.to_str().ok()),
             body,
         )
         .map_err(|_| {

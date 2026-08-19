@@ -40,8 +40,8 @@ pub enum SignatureScheme {
     /// GitHub, Stripe, and most others: HMAC-SHA256 over the raw body, rendered
     /// hex in a named header, usually with an algorithm prefix (`sha256=`).
     HmacSha256 {
-        header: String,
-        prefix: Option<String>,
+        header: &'static str,
+        prefix: Option<&'static str>,
     },
     /// LiveKit: a JWT in `Authorization: Bearer`, whose `sha256` claim carries
     /// the base64 digest of the raw body. The JWT itself is verified by the

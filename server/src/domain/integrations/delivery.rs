@@ -204,9 +204,8 @@ async fn deliver(state: &AppState, event: &ClaimedEvent) -> Result<Outcome, AppE
         // Nothing will ever map it, so retrying is pointless.
         return Ok(Outcome::Ignored);
     };
-    let compiled = mapper::compile_all(descriptor.events)
-        .map_err(|err| AppError::Internal(err.to_string()))?;
-    let Some(mapping) = mapper::find(&compiled, &event.event_type) else {
+    let compiled = descriptor.compiled_events().map_err(AppError::Internal)?;
+    let Some(mapping) = mapper::find(compiled, &event.event_type) else {
         return Ok(Outcome::Ignored);
     };
     let Some(mapped) = mapping.render(&event.payload) else {
@@ -221,7 +220,7 @@ async fn deliver(state: &AppState, event: &ClaimedEvent) -> Result<Outcome, AppE
         );
     }
 
-    let Some(binding) = resolve_channel(&state.db, &descriptor, event).await? else {
+    let Some(binding) = resolve_channel(&state.db, descriptor, event).await? else {
         return Ok(Outcome::Unbound);
     };
     let channel_id: Uuid = binding

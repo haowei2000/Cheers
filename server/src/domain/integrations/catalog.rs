@@ -6,7 +6,9 @@
 //! source, not a redesign. Extracting a schema from two working verticals is
 //! reliable; designing one against imagined integrations is not.
 
-use super::mapper::EventMapping;
+use std::sync::OnceLock;
+
+use super::mapper::{self, CompiledMapping, EventMapping};
 use super::projection::{ProjectionError, RoleProjection};
 use super::webhook::SignatureScheme;
 
@@ -112,6 +114,15 @@ const GITHUB_EVENTS: &[EventMapping] = &[
 ];
 
 impl IntegrationDescriptor {
+    /// This declaration's event mappings, compiled once. See [`compiled_table`].
+    pub fn compiled_events(&self) -> Result<&'static [CompiledMapping], String> {
+        match compiled_table().iter().find(|(id, _)| *id == self.id) {
+            Some((_, Ok(compiled))) => Ok(compiled.as_slice()),
+            Some((_, Err(error))) => Err(error.clone()),
+            None => Err(format!("integration {} is not in the catalog", self.id)),
+        }
+    }
+
     /// The declared projection, validated.
     ///
     /// Returns an error rather than being built at startup so a broken
@@ -126,37 +137,73 @@ impl IntegrationDescriptor {
     }
 }
 
-pub fn descriptors() -> Vec<IntegrationDescriptor> {
-    vec![IntegrationDescriptor {
-        id: "github",
-        display_name: "GitHub",
-        signature: SignatureScheme::HmacSha256 {
-            header: "X-Hub-Signature-256".into(),
-            prefix: Some("sha256=".into()),
-        },
-        // GitHub guarantees a unique delivery id per webhook attempt, and
-        // repeats it on redelivery — which is exactly the dedupe semantics
-        // wanted: a redelivery of an event already handled is a no-op.
-        event_id: EventField::Header("X-GitHub-Delivery"),
-        event_type: EventField::Header("X-GitHub-Event"),
-        resource_kind: "repo",
-        // Every repository-scoped GitHub event carries this, and it is the same
-        // string a user types when binding a channel: `haowei2000/Cheers`.
-        resource_path: "repository.full_name",
-        role_projection: GITHUB_ROLE_PROJECTION,
-        init_prompt: Some(
-            "This channel now follows {{full_name}}. Please clone it into your \
-             workspace, check out {{default_branch}}, and index the tree so you \
-             can answer questions about the code. The clone URL is in this \
-             message's context bundle.",
-        ),
-        events: GITHUB_EVENTS,
-    }]
+/// Every known integration.
+///
+/// A `static` rather than a constructor: this is compiled-in data, and saying so
+/// in the type keeps `find` from handing out a clone of the whole table to read
+/// one row. Lifting it out of the binary (issue #572) changes this declaration,
+/// not its callers' shape.
+static ALL: &[IntegrationDescriptor] = &[IntegrationDescriptor {
+    id: "github",
+    display_name: "GitHub",
+    signature: SignatureScheme::HmacSha256 {
+        header: "X-Hub-Signature-256",
+        prefix: Some("sha256="),
+    },
+    // GitHub guarantees a unique delivery id per webhook attempt, and
+    // repeats it on redelivery — which is exactly the dedupe semantics
+    // wanted: a redelivery of an event already handled is a no-op.
+    event_id: EventField::Header("X-GitHub-Delivery"),
+    event_type: EventField::Header("X-GitHub-Event"),
+    resource_kind: "repo",
+    // Every repository-scoped GitHub event carries this, and it is the same
+    // string a user types when binding a channel: `haowei2000/Cheers`.
+    resource_path: "repository.full_name",
+    role_projection: GITHUB_ROLE_PROJECTION,
+    init_prompt: Some(
+        "This channel now follows {{full_name}}. Please clone it into your \
+         workspace, check out {{default_branch}}, and index the tree so you \
+         can answer questions about the code. The clone URL is in this \
+         message's context bundle.",
+    ),
+    events: GITHUB_EVENTS,
+}];
+
+pub fn descriptors() -> &'static [IntegrationDescriptor] {
+    ALL
 }
 
-pub fn find(integration_id: &str) -> Option<IntegrationDescriptor> {
-    descriptors()
-        .into_iter()
+/// One row of the compile cache: an integration's id, and either its compiled
+/// mappings or the reason its declaration does not compile.
+type CompiledEntry = (&'static str, Result<Vec<CompiledMapping>, String>);
+
+/// Every declaration's mappings, compiled once on first use.
+///
+/// Delivery used to call `mapper::compile_all` per event, re-parsing every
+/// template of every declared event type and discarding all but one. The cost is
+/// small at four mappings but grows with the table, and growing the table is the
+/// entire point of declaring mappings as data.
+///
+/// Compiled lazily rather than at startup, and each entry keeps its error rather
+/// than panicking, for the reason [`IntegrationDescriptor::projection`] already
+/// documents: a broken declaration is a test failure in `catalog`, not a panic in
+/// `main`. Delivery surfaces the error per event instead of taking down a worker.
+fn compiled_table() -> &'static [CompiledEntry] {
+    static COMPILED: OnceLock<Vec<CompiledEntry>> = OnceLock::new();
+    COMPILED.get_or_init(|| {
+        ALL.iter()
+            .map(|descriptor| {
+                (
+                    descriptor.id,
+                    mapper::compile_all(descriptor.events).map_err(|error| error.to_string()),
+                )
+            })
+            .collect()
+    })
+}
+
+pub fn find(integration_id: &str) -> Option<&'static IntegrationDescriptor> {
+    ALL.iter()
         .find(|descriptor| descriptor.id == integration_id)
 }
 
@@ -179,8 +226,8 @@ mod tests {
         assert_eq!(
             github.signature,
             SignatureScheme::HmacSha256 {
-                header: "X-Hub-Signature-256".into(),
-                prefix: Some("sha256=".into()),
+                header: "X-Hub-Signature-256",
+                prefix: Some("sha256="),
             }
         );
     }
@@ -236,10 +283,49 @@ mod tests {
 
     #[test]
     fn every_declared_mapping_compiles() {
+        // Through `compiled_events` rather than `mapper::compile_all` directly,
+        // so this guards the path delivery actually takes.
         for descriptor in descriptors() {
-            super::super::mapper::compile_all(descriptor.events)
+            descriptor
+                .compiled_events()
                 .unwrap_or_else(|err| panic!("{}: {err}", descriptor.id));
         }
+    }
+
+    #[test]
+    fn a_descriptor_is_one_shared_value_not_a_copy_per_lookup() {
+        // `find` used to hand back a row of a table rebuilt with owned `String`s
+        // on every call. Callers now share one compiled-in value, which is what
+        // `&'static` is claiming in the type.
+        let first = find("github").expect("github");
+        let second = find("github").expect("github");
+        assert!(std::ptr::eq(first, second));
+    }
+
+    #[test]
+    fn event_mappings_are_compiled_once_and_shared() {
+        // Delivery asks for these per inbound event. Recompiling would
+        // re-tokenize every template of every declared type each time.
+        let first = find("github")
+            .expect("github")
+            .compiled_events()
+            .expect("compiles");
+        let second = find("github")
+            .expect("github")
+            .compiled_events()
+            .expect("compiles");
+        assert_eq!(first.as_ptr(), second.as_ptr());
+        assert_eq!(first.len(), GITHUB_EVENTS.len());
+    }
+
+    #[test]
+    fn a_descriptor_outside_the_catalog_gets_no_mappings() {
+        // The cache is keyed by id, so a descriptor built outside `ALL` has to
+        // fail loudly rather than quietly resolving to another integration's
+        // mappings.
+        let mut stray = find("github").expect("github").clone();
+        stray.id = "not-in-the-catalog";
+        assert!(stray.compiled_events().is_err());
     }
 
     /// A projection naming a fifth role, or the same provider role twice, would
