@@ -179,6 +179,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None, // 默认 = 频道 primary session（本测试不针对 other session）
+                msg_id: None,
             },
         )
         .await
@@ -253,6 +254,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -285,6 +287,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -471,6 +474,7 @@ async fn issue_330_concurrent_distinct_messages_all_persist_and_dispatch_once_ea
                     mention_ids: vec![],
                     mention_names: vec![],
                     session_id: None,
+                    msg_id: None,
                 },
             )
             .await
@@ -2274,6 +2278,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None,
+                msg_id: None,
             },
         )
         .await
@@ -2358,6 +2363,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
                 mention_ids: vec![],
                 mention_names: vec![],
                 session_id: None,
+                msg_id: None,
             },
         )
         .await
@@ -2682,6 +2688,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -2718,6 +2725,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3038,6 +3046,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
             mention_ids: vec![me],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3058,6 +3067,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3140,6 +3150,7 @@ async fn human_group_bots_mention_triggers_all_bots(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec!["bots".to_string()],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3191,6 +3202,7 @@ async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
             mention_ids: vec![bot],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
@@ -3723,6 +3735,7 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
             mention_ids: vec![],
             mention_names: vec![],
             session_id: None,
+            msg_id: None,
         },
     )
     .await
