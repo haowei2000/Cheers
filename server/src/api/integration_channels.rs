@@ -20,6 +20,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
+use uuid::Uuid;
 
 use crate::{
     api::{channels::ensure_channel_admin, middleware::Claims},
@@ -28,7 +29,9 @@ use crate::{
         bindings::{self, Binding, ExternalCollaborator, SyncReport},
         catalog,
         github::{api as gh, app as gh_app},
+        template,
     },
+    domain::messages::{create_message, CreateMessageParams},
     errors::AppError,
 };
 
@@ -427,6 +430,132 @@ async fn project(
         tracing::warn!(%error, %channel_id, "member sync failed");
         AppError::Internal("member sync failed".into())
     })
+}
+
+#[derive(Debug, Serialize)]
+pub struct InitResponse {
+    /// The bots asked to do the work. Empty means nothing was posted.
+    pub prompted: Vec<String>,
+    pub message_id: Option<String>,
+}
+
+/// `POST /channels/:channel_id/integration/init` — ask this channel's agents to
+/// set the project up.
+///
+/// The gateway never runs `git`. Project init is a prompt: the agent already
+/// runs on the user's machine inside its own `allowed_roots`, so cloning is its
+/// job, under its own policy, with its own credentials. What the gateway
+/// contributes is the instruction and the facts to carry it out.
+///
+/// Those facts travel in the message's `context_bundle`, not in the sentence.
+/// A repository named `my_repo` would arrive in the body as `my\_repo` —
+/// message bodies are markdown-escaped so an externally-chosen name cannot
+/// forge structure — and an agent pasting that into a clone command would fetch
+/// nothing. The bundle is the typed channel that reaches the agent's task frame
+/// verbatim.
+pub async fn init_project(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<InitResponse>, AppError> {
+    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
+    let binding = bindings::for_channel(&state.db, &channel_id)
+        .await
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .ok_or(AppError::NotFound)?;
+    let descriptor = catalog::find(&binding.integration_id).ok_or(AppError::NotFound)?;
+    let prompt = descriptor
+        .init_prompt
+        .ok_or_else(|| AppError::BadRequest("this integration has no project init".into()))?;
+    let installation = installation_for_user(
+        &state,
+        &binding.integration_id,
+        &binding.installation_id,
+        &claims.sub,
+    )
+    .await?;
+
+    let token = token(&state, &installation).await?;
+    let repository = gh::get_repository(&state.config, &token, &binding.external_id)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the repository for init failed");
+            AppError::BadRequest("could not read that repository".into())
+        })?
+        .ok_or_else(|| {
+            AppError::BadRequest("this installation can no longer read that repository".into())
+        })?;
+
+    let facts = json!({
+        "full_name": repository.full_name,
+        "default_branch": repository.default_branch,
+        "clone_url": repository.clone_url,
+    });
+    let rendered = template::Template::parse(prompt)
+        .map_err(|error| AppError::Internal(format!("invalid init prompt: {error}")))?
+        .render(&facts);
+
+    // Every bot in the channel. Mentioning by id rather than by name is the
+    // same path `bot_status_scheduler` uses to prompt out of band.
+    let bot_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships
+          WHERE channel_id = $1 AND member_type = 'bot'
+          ORDER BY member_id",
+    )
+    .bind(&channel_id)
+    .fetch_all(&state.db)
+    .await?;
+    if bot_ids.is_empty() {
+        // Not an error: binding a channel before inviting an agent is a normal
+        // order to do things in, and the caller can init again afterwards.
+        return Ok(Json(InitResponse {
+            prompted: vec![],
+            message_id: None,
+        }));
+    }
+
+    let mention_ids = bot_ids
+        .iter()
+        .map(|id| Uuid::parse_str(id).map_err(|_| AppError::Internal("malformed bot id".into())))
+        .collect::<Result<Vec<_>, _>>()?;
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("channel_id must be a uuid".into()))?;
+    let author =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::Internal("malformed user id".into()))?;
+
+    let message = create_message(
+        &state.db,
+        &state.fanout,
+        &state.stream_registry,
+        &state.bot_locator,
+        CreateMessageParams {
+            user_id: author,
+            channel_id: channel_uuid,
+            content: rendered.text,
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids,
+            mention_names: vec![],
+            session_id: None,
+            context_bundle: Some(json!({
+                "integration": {
+                    "id": binding.integration_id,
+                    "kind": binding.external_kind,
+                    "external_id": binding.external_id,
+                    "action": "project_init",
+                    "resource": facts,
+                }
+            })),
+            msg_id: None,
+        },
+    )
+    .await?;
+
+    Ok(Json(InitResponse {
+        prompted: bot_ids,
+        message_id: Some(message.msg_id),
+    }))
 }
 
 /// `GET /channels/:channel_id/integration`

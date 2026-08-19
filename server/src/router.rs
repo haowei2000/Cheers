@@ -325,6 +325,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::integration_channels::sync_channel_members),
         )
         .route(
+            "/api/v1/channels/:channel_id/integration/init",
+            post(api::integration_channels::init_project),
+        )
+        .route(
             "/api/v1/integrations/:integration_id/installations",
             get(api::integration_channels::list_installations),
         )

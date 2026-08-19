@@ -193,6 +193,32 @@ pub async fn list_repositories(config: &Config, token: &Secret) -> anyhow::Resul
     Ok(all)
 }
 
+/// One repository, for the facts project init needs (clone URL, default
+/// branch). `Ok(None)` when the installation cannot see it.
+pub async fn get_repository(
+    config: &Config,
+    token: &Secret,
+    full_name: &str,
+) -> anyhow::Result<Option<Repository>> {
+    if !valid_full_name(full_name) {
+        anyhow::bail!("not a repository name");
+    }
+    let url = format!("{}/repos/{full_name}", config.github_api_base_url);
+    let Some(raw) = get_json::<RawRepository>(token, &url).await? else {
+        return Ok(None);
+    };
+    Ok(Some(Repository {
+        id: raw.id,
+        full_name: raw.full_name,
+        name: raw.name,
+        private: raw.private,
+        description: raw.description,
+        default_branch: raw.default_branch.unwrap_or_else(|| "main".into()),
+        clone_url: raw.clone_url.unwrap_or_default(),
+        html_url: raw.html_url.unwrap_or_default(),
+    }))
+}
+
 /// Everyone with access to `full_name`, with their access reduced to one name.
 ///
 /// `Ok(None)` means GitHub answered 404 — the repository is gone, or the

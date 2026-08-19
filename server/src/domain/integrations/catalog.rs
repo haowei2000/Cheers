@@ -40,6 +40,14 @@ pub struct IntegrationDescriptor {
     /// integration never gets its own axis. A provider role absent from this
     /// table grants nothing at all — see [`super::projection`].
     pub role_projection: &'static [(&'static str, &'static str)],
+    /// What to ask a channel's agent to do when the channel is first bound.
+    ///
+    /// A template like any other, and for the same reason: "clone it and index
+    /// it" is one sentence of English that differs per provider, not logic. The
+    /// prose is the message body; the machine-readable facts travel beside it
+    /// in the message's context bundle, because CLAUDE.md keeps operations out
+    /// of message bodies.
+    pub init_prompt: Option<&'static str>,
     /// Which events become channel messages, and how. An event type with no
     /// mapping is stored and marked processed without producing a message —
     /// GitHub sends dozens of types and a channel that echoed all of them would
@@ -136,6 +144,12 @@ pub fn descriptors() -> Vec<IntegrationDescriptor> {
         // string a user types when binding a channel: `haowei2000/Cheers`.
         resource_path: "repository.full_name",
         role_projection: GITHUB_ROLE_PROJECTION,
+        init_prompt: Some(
+            "This channel now follows {{full_name}}. Please clone it into your \
+             workspace, check out {{default_branch}}, and index the tree so you \
+             can answer questions about the code. The clone URL is in this \
+             message's context bundle.",
+        ),
         events: GITHUB_EVENTS,
     }]
 }
@@ -179,6 +193,47 @@ mod tests {
 
     /// A malformed template in this table would otherwise surface as a delivery
     /// failure on a live event, long after the typo was written.
+    /// Same reason as the event mappings: a typo here would otherwise surface
+    /// the first time somebody binds a channel.
+    #[test]
+    fn every_declared_init_prompt_compiles() {
+        for descriptor in descriptors() {
+            let Some(prompt) = descriptor.init_prompt else {
+                continue;
+            };
+            super::super::template::Template::parse(prompt)
+                .unwrap_or_else(|err| panic!("{}: {err}", descriptor.id));
+        }
+    }
+
+    /// Why project init carries its facts in the message's context bundle
+    /// rather than in the sentence: a body is markdown-escaped, so a repository
+    /// whose name contains an underscore — a very ordinary name — arrives with
+    /// a backslash in it. Prose can absorb that; a clone command cannot.
+    #[test]
+    fn an_init_body_is_escaped_so_the_facts_must_travel_beside_it() {
+        let github = find("github").expect("github");
+        let prompt = github.init_prompt.expect("github declares one");
+        let rendered = super::super::template::Template::parse(prompt)
+            .expect("compiles")
+            .render(&serde_json::json!({
+                "full_name": "haowei2000/my_repo",
+                "default_branch": "main",
+                "clone_url": "https://github.com/haowei2000/my_repo.git",
+            }));
+        assert!(
+            rendered.text.contains("my\\_repo"),
+            "expected an escaped body, got: {}",
+            rendered.text
+        );
+        // And therefore the body must not be where a machine reads the URL.
+        assert!(
+            !rendered.text.contains("https://"),
+            "the clone URL must not be interpolated into the body: {}",
+            rendered.text
+        );
+    }
+
     #[test]
     fn every_declared_mapping_compiles() {
         for descriptor in descriptors() {
