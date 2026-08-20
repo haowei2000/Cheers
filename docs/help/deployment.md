@@ -48,7 +48,11 @@ Desktop users should give the VM at least 4 GB of memory (6–8 GB with the bot)
   `GOOGLE_WEB_CLIENT_SECRET`, and `GOOGLE_WEB_REDIRECT_URI`; all three must be
   set together. Google requests only `openid email profile` and no offline access.
   GitHub login similarly requires `GITHUB_OAUTH_CLIENT_ID`,
-  `GITHUB_OAUTH_CLIENT_SECRET`, and `GITHUB_OAUTH_REDIRECT_URI`. GitHub OAuth is
+  `GITHUB_OAUTH_CLIENT_SECRET`, and `GITHUB_OAUTH_REDIRECT_URI` in the Gateway.
+  For the GitHub Actions `production` environment, configure these respectively as
+  `CHEERS_GITHUB_OAUTH_CLIENT_ID`, `CHEERS_GITHUB_OAUTH_CLIENT_SECRET`, and
+  `CHEERS_GITHUB_OAUTH_REDIRECT_URI`, because GitHub reserves the `GITHUB_` prefix.
+  GitHub OAuth is
   identity-only; repository authorization remains on the GitHub App installation.
   Leave these unset on normal self-hosted instances; `/api/v1/auth/capabilities`
   then reports the provider disabled. Never distribute the official `.p8` key

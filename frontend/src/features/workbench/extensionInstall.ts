@@ -3,7 +3,7 @@ import type { ExtensionManifest, ExtensionPermissions, ParsedExtension } from "@
 /** `temporary` is a load rather than an install: the package is activated for
  * this session and never persisted. It still goes through the consent dialog,
  * because it is the only scope that may carry renderer code and permissions. */
-export type InstallScope = "global" | "personal" | "temporary";
+export type InstallScope = "personal" | "temporary";
 export type InstallDisposition = "install" | "update" | "replace" | "already";
 
 export interface ExtensionInstallCandidate {

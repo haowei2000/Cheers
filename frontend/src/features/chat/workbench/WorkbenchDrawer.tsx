@@ -19,7 +19,7 @@ import { seedManifest, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
-import { listGlobalScenes } from "./extensions/api";
+import { listOfficialScenes } from "./extensions/api";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { workbenchPanelsFor } from "./workbenchPanels";
 import "./panels/GitHubCodeWorkbenchPanel";
@@ -126,7 +126,7 @@ export function parseCfg(content: string): WbConfig {
 
 // Right-side per-channel workbench: scenes contain native content tabs; Raw is the
 // explicit escape hatch to the complete file browser.
-// Scenes come from global, personal, or temporary `.cheers-extension` packages. Only
+// Scenes come from official, personal, or temporary `.cheers-extension` packages. Only
 // personal/temporary macOS packages may contribute sandboxed renderers.
 function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator, onCompose }: Props) {
   const navigate = useNavigate();
@@ -185,7 +185,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     fs.read(WORKBENCH_CONFIG_PATH)
       .then((f) => alive && setCfg(parseCfg(f.content)))
       .catch(() => alive && setCfg({}));
-    listGlobalScenes()
+    listOfficialScenes()
       .then((t) => alive && setGlobalTemplates(t))
       .catch(() => {});
     // Desktop only: personal extensions stored under ~/.cheers/extensions. Renderer
@@ -329,7 +329,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // never shared), and activate it. Activating still seeds the scenario's data files into
   // the channel — that's the point of opening the scenario — but the template DEFINITION
   // is ephemeral. To share a template across channels/users, an admin installs it as a
-  // global template in Settings → Workbench extensions.
+  // official template in Settings → Workbench extensions.
   //
   // On desktop this scope is `temporary`, the one scope that may carry renderer code and
   // `network: unrestricted` — the server refuses to store either. Dropping a file is not
@@ -494,7 +494,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
   useEffect(() => stopWatch, [stopWatch]);
 
-  // Session templates first so a temporary upload overrides a same-id global for this session.
+  // Session templates first so a temporary upload overrides a same-id official template for this session.
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
     for (const e of [...sessionTemplates, ...personalTemplates, ...globalTemplates])

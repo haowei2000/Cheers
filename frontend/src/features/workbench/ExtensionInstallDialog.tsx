@@ -1,4 +1,4 @@
-import { AlertTriangle, Globe2, Hourglass, Laptop, PackageCheck, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Hourglass, Laptop, PackageCheck, ShieldCheck } from "lucide-react";
 import { Banner } from "@/components/ui/banner";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -30,11 +30,11 @@ export function ExtensionInstallDialog({
   const expanded = expandedPermissions(manifest.permissions ?? {}, installed?.permissions);
   const temporary = candidate.scope === "temporary";
   const action = temporary ? "Load" : disposition === "update" ? "Update" : disposition === "replace" ? "Replace" : "Install";
-  const scope = candidate.scope === "global" ? "Global · all clients" : temporary ? "This session only" : "This Mac";
+  const scope = temporary ? "This session only" : "This Mac";
 
   return <Dialog title={`${action} ${manifest.title}`} onClose={() => !busy && onClose()} maxWidth="max-w-lg">
     <div className="flex items-start gap-3 rounded-sm bg-zinc-950/40 px-3 py-3">
-      {candidate.scope === "global" ? <Globe2 className="mt-1 h-4 w-4 text-accent-300" /> : temporary ? <Hourglass className="mt-1 h-4 w-4 text-warning-300" /> : <Laptop className="mt-1 h-4 w-4 text-success-300" />}
+      {temporary ? <Hourglass className="mt-1 h-4 w-4 text-warning-300" /> : <Laptop className="mt-1 h-4 w-4 text-success-300" />}
       <div className="min-w-0 flex-1">
         <p className="text-regular font-medium text-content-primary">{manifest.title} · {manifest.version}</p>
         <p className="mt-1 text-compact text-content-muted">{scope} · {candidate.sourceLabel}</p>

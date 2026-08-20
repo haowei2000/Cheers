@@ -43,8 +43,11 @@ Docker Desktop 用户请把虚拟机内存至少设为 4 GB（含 bot 时 6–8 
   Google OAuth 还需要同时配置 `GOOGLE_WEB_CLIENT_ID`、
   `GOOGLE_WEB_CLIENT_SECRET` 和 `GOOGLE_WEB_REDIRECT_URI`；Google 仅申请
   `openid email profile`，不申请离线访问。
-  GitHub 登录需要同时配置 `GITHUB_OAUTH_CLIENT_ID`、
-  `GITHUB_OAUTH_CLIENT_SECRET` 和 `GITHUB_OAUTH_REDIRECT_URI`。GitHub OAuth
+  Gateway 的 GitHub 登录需要同时配置 `GITHUB_OAUTH_CLIENT_ID`、
+  `GITHUB_OAUTH_CLIENT_SECRET` 和 `GITHUB_OAUTH_REDIRECT_URI`。在 GitHub Actions 的
+  `production` 环境中，应分别配置为 `CHEERS_GITHUB_OAUTH_CLIENT_ID`、
+  `CHEERS_GITHUB_OAUTH_CLIENT_SECRET` 和 `CHEERS_GITHUB_OAUTH_REDIRECT_URI`，因为
+  GitHub 保留了 `GITHUB_` 前缀。GitHub OAuth
   仅用于确认用户身份；仓库授权仍由 GitHub App installation 负责。
 
 ### 官方生产环境 OAuth 凭据
