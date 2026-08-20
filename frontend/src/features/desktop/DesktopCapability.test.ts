@@ -32,4 +32,21 @@ describe("Desktop window capability", () => {
     ]);
     expect(capability.permissions).toEqual(["allow-desktop-open-oauth-url"]);
   });
+
+  it("opens desktop windows from the React app shell instead of the public website", () => {
+    const configPaths = [
+      "../apps/macos/src-tauri/tauri.conf.json",
+      "../apps/macos/src-tauri/tauri.macos.conf.json",
+    ];
+
+    for (const configPath of configPaths) {
+      const config = JSON.parse(readFileSync(resolve(process.cwd(), configPath), "utf8")) as {
+        app: { windows: Array<{ label: string; url?: string }> };
+      };
+      const windows = new Map(config.app.windows.map((window) => [window.label, window.url]));
+
+      expect(windows.get("main")).toBe("app.html?desktop=1");
+      expect(windows.get("quickpanel")).toBe("app.html?quickpanel=1");
+    }
+  });
 });

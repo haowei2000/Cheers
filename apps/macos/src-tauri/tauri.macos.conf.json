@@ -5,6 +5,7 @@
       {
         "label": "main",
         "title": "Cheers",
+        "url": "app.html?desktop=1",
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -20,7 +21,7 @@
       {
         "label": "quickpanel",
         "title": "Cheers Quick Panel",
-        "url": "index.html?quickpanel=1",
+        "url": "app.html?quickpanel=1",
         "width": 560,
         "height": 340,
         "resizable": false,
