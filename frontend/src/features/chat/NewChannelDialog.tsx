@@ -1,6 +1,6 @@
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useEffect, useState } from "react";
-import { GitFork, Hash, Lock, Volume2 } from "lucide-react";
+import { GitFork, Hash, Lock, MessagesSquare, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createChannel, deleteChannel } from "@/api/channels";
 import { putCodeProfile } from "@/api/channelProfiles";
@@ -19,10 +19,7 @@ import { ChoiceGroup } from "@/components/ui/choice-button";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { Select } from "@/components/ui/select";
 import { isComposing } from "@/lib/ime";
-import {
-  ConversationModePicker,
-  type ConversationMode,
-} from "./ConversationModePicker";
+import type { ConversationMode } from "./ConversationModePicker";
 
 // Create a channel in the given workspace, then add it to the store and select it
 // (it opens in the normal chat view). Mirrors the NewDmDialog pattern.
@@ -40,14 +37,15 @@ export function NewChannelDialog({
   const selectChannel = useChatStore((s) => s.selectChannel);
   const [name, setName] = useState("");
   const [type, setType] = useState<"public" | "private">("public");
-  const [profile, setProfile] = useState<"standard" | "code">("standard");
+  const [channelType, setChannelType] = useState<"chat" | "discuss" | "code">("chat");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [installations, setInstallations] = useState<IntegrationInstallation[]>([]);
   const [installationId, setInstallationId] = useState("");
   const [repositories, setRepositories] = useState<IntegrationResource[]>([]);
   const [repositoryId, setRepositoryId] = useState("");
-  const [conversationMode, setConversationMode] = useState<ConversationMode>("chat");
   const [busy, setBusy] = useState(false);
+  const profile = channelType === "code" ? "code" : "standard";
+  const conversationMode: ConversationMode = channelType === "discuss" ? "discuss" : "chat";
 
   useEffect(() => {
     if (profile !== "code") return;
@@ -164,23 +162,23 @@ export function NewChannelDialog({
 
         <div className="space-y-2">
           <p className="text-compact font-medium uppercase tracking-label text-content-muted">
-            Conversation layout
+            Channel type
           </p>
-          <ConversationModePicker value={conversationMode} onChange={setConversationMode} />
+          <ChoiceGroup
+            ariaLabel="Channel type"
+            value={channelType}
+            onChange={setChannelType}
+            className="grid-cols-3"
+            options={[
+              { value: "chat", label: "Chat", leading: <Hash /> },
+              { value: "discuss", label: "Discuss", leading: <MessagesSquare /> },
+              { value: "code", label: "Code", leading: <GitFork /> },
+            ]}
+          />
         </div>
 
-        <ChoiceGroup
-          ariaLabel="Channel profile"
-          value={profile}
-          onChange={setProfile}
-          options={[
-            { value: "standard", label: "Standard", leading: <Hash /> },
-            { value: "code", label: "Code", leading: <GitFork /> },
-          ]}
-        />
-
         <CheckboxField
-          label={<span className="inline-flex items-center gap-2"><Volume2 className="h-4 w-4" />Voice</span>}
+          label={<span className="inline-flex items-center gap-2"><Volume2 className="h-4 w-4" />Enable Voice</span>}
           checked={voiceEnabled}
           onChange={(event) => setVoiceEnabled(event.target.checked)}
         />
