@@ -5,6 +5,7 @@ import {
   type AutomationContribution,
   type ExtensionManifest,
   type ExtensionPermissions,
+  type PanelContribution,
   type RendererContribution,
   type SceneContribution,
 } from "./package";
@@ -19,6 +20,9 @@ export interface ExtensionSummary {
   scenes: SceneContribution[];
   renderers: RendererContribution[];
   automations: AutomationContribution[];
+  /** Declarative lane panels (Tier A). Absent on a gateway older than the panels
+   *  contribution, hence optional. */
+  panels?: PanelContribution[];
   permissions: ExtensionPermissions;
   updatedAt: string;
 }

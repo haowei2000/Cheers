@@ -13,6 +13,12 @@ export const MIN_INTERVAL_MINUTES = 5;
 export const MAX_INTERVAL_MINUTES = 10080;
 export const MAX_TIMEZONE_CHARS = 64;
 export const EXTENSION_ID_PATTERN = "^[a-z0-9][a-z0-9._-]{0,63}$";
+export const MAX_PANELS = 32;
+/** Source kinds a package may declare. `workspace` names paths on a bot's own machine,
+ *  authorized per-bot against the session-workdir root-set rather than by channel-role;
+ *  `rest` is an arbitrary endpoint rather than a vocabulary. Both stay first-party.
+ *  Mirrors PANEL_SOURCE_KINDS on the server and PLUGGABLE_SOURCE_KINDS in the panel model. */
+export const PANEL_SOURCE_KINDS = ["resource", "fs"] as const;
 export const EXTENSION_CHANNEL_RESOURCES = [
   "channel.info",
   "channel.members",
@@ -44,6 +50,18 @@ export interface RendererContribution {
   match?: string[];
 }
 
+export type PanelSourceContribution =
+  | { kind: "resource"; verb: string }
+  | { kind: "fs"; path: string };
+
+/** A declarative board: where its data lives plus which compiled view renders it. */
+export interface PanelContribution {
+  id: string;
+  title: string;
+  source: PanelSourceContribution;
+  view: string;
+}
+
 export interface AutomationContribution {
   id: string;
   title: string;
@@ -64,6 +82,7 @@ export interface ExtensionManifest {
     scenes?: SceneContribution[];
     renderers?: RendererContribution[];
     automations?: AutomationContribution[];
+    panels?: PanelContribution[];
   };
   permissions?: ExtensionPermissions;
 }
@@ -277,10 +296,11 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
   optionalText(manifest.description, "manifest description");
   if (!manifest.contributes || typeof manifest.contributes !== "object") throw new Error("manifest contributes is required");
   requireObject(manifest.contributes, "manifest contributes");
-  requireKnownKeys(manifest.contributes, ["scenes", "renderers", "automations"], "manifest contributes");
+  requireKnownKeys(manifest.contributes, ["scenes", "renderers", "automations", "panels"], "manifest contributes");
   if (manifest.contributes.scenes !== undefined && !Array.isArray(manifest.contributes.scenes)) throw new Error("manifest scenes must be an array");
   if (manifest.contributes.renderers !== undefined && !Array.isArray(manifest.contributes.renderers)) throw new Error("manifest renderers must be an array");
   if (manifest.contributes.automations !== undefined && !Array.isArray(manifest.contributes.automations)) throw new Error("manifest automations must be an array");
+  if (manifest.contributes.panels !== undefined && !Array.isArray(manifest.contributes.panels)) throw new Error("manifest panels must be an array");
   const sceneIds = new Set<string>();
   for (const scene of manifest.contributes.scenes ?? []) {
     requireObject(scene, "scene contribution");
@@ -344,6 +364,38 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
     if (!validInterval && !validDaily) {
       throw new Error(`Invalid automation schedule: ${automation.id}`);
     }
+  }
+  if ((manifest.contributes.panels ?? []).length > MAX_PANELS) {
+    throw new Error(`A package may contribute at most ${MAX_PANELS} panels`);
+  }
+  const panelIds = new Set<string>();
+  for (const panel of manifest.contributes.panels ?? []) {
+    requireObject(panel, "panel contribution");
+    requireKnownKeys(panel, ["id", "title", "source", "view"], "panel contribution");
+    requireId("panel", panel.id);
+    if (typeof panel.title !== "string" || !panel.title.trim()) throw new Error(`Panel title is required: ${panel.id}`);
+    if (panelIds.has(panel.id)) throw new Error(`Duplicate panel id: ${panel.id}`);
+    panelIds.add(panel.id);
+    const source: unknown = panel.source;
+    requireObject(source, `panel source: ${panel.id}`);
+    // `workspace` and `rest` are absent from the vocabulary on purpose: one names paths
+    // on a bot's own machine under an authorization model channel-role does not cover,
+    // the other is an arbitrary endpoint rather than a vocabulary.
+    if (typeof source.kind !== "string" || !(PANEL_SOURCE_KINDS as readonly string[]).includes(source.kind)) {
+      throw new Error(`Unsupported panel source kind: ${String(source.kind)}`);
+    }
+    if (source.kind === "resource") {
+      requireKnownKeys(source, ["kind", "verb"], `panel source: ${panel.id}`);
+      // A panel's verb comes from the SAME fixed list as channel.resources. Declaring
+      // a source must never widen what a package can read.
+      if (typeof source.verb !== "string" || !EXTENSION_CHANNEL_RESOURCES.includes(source.verb as never)) {
+        throw new Error(`Panel reads a resource that is not allowed: ${String(source.verb)}`);
+      }
+    } else {
+      requireKnownKeys(source, ["kind", "path"], `panel source: ${panel.id}`);
+      validateWorkspacePath(source.path, `panel source: ${panel.id}`);
+    }
+    if (typeof panel.view !== "string" || !panel.view.trim()) throw new Error(`Panel view is required: ${panel.id}`);
   }
   const allowedResources = new Set<string>(EXTENSION_CHANNEL_RESOURCES);
   if (manifest.permissions !== undefined) requireObject(manifest.permissions, "manifest permissions");
@@ -412,6 +464,22 @@ export async function parseExtensionPackage(
   for (const renderer of manifest.contributes.renderers ?? []) {
     if (!files[renderer.entry]) throw new Error(`Missing renderer entry: ${renderer.entry}`);
     if (renderer.style && !files[renderer.style]) throw new Error(`Missing renderer style: ${renderer.style}`);
+  }
+
+  // A `self:` view is code and follows the same scope split as a renderer contribution:
+  // resolvable only in a personal/temporary package that also carries that renderer.
+  for (const panel of manifest.contributes.panels ?? []) {
+    const view = panel.view;
+    const selfId = view.startsWith("self:") ? view.slice(5) : null;
+    if (
+      !(
+        view === "auto" ||
+        view.startsWith("builtin:") ||
+        (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId))
+      )
+    ) {
+      throw new Error(`Unsupported panel view: ${view}`);
+    }
   }
 
   const scenes: TemplateManifest[] = [];

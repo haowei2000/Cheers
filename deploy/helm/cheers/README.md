@@ -43,7 +43,7 @@ kind create cluster --name cheers --config deploy/kind-config.yaml
 
 # 1) build the app images and load them into the cluster
 docker build -t cheers/gateway:dev -f server/Dockerfile .
-docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 -f frontend/Dockerfile .
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
 
 # 2) generate the RS256 JWT keypair the gateway requires

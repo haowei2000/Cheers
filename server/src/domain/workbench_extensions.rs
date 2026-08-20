@@ -27,6 +27,12 @@ pub const MIN_INTERVAL_MINUTES: i32 = 5;
 pub const MAX_INTERVAL_MINUTES: i32 = 10_080;
 pub const MAX_TIMEZONE_CHARS: usize = 64;
 pub const ID_PATTERN: &str = r"^[a-z0-9][a-z0-9._-]{0,63}$";
+pub const MAX_PANELS: usize = 32;
+/// Source kinds a package may declare. `workspace` names paths on a bot's own machine,
+/// authorized per-bot against the session-workdir root-set rather than by channel-role;
+/// `rest` is an arbitrary endpoint rather than a vocabulary. Both stay first-party, so
+/// neither appears here. Mirrors PLUGGABLE_SOURCE_KINDS on the client.
+pub const PANEL_SOURCE_KINDS: &[&str] = &["resource", "fs"];
 pub const CHANNEL_RESOURCES: &[&str] = &[
     "channel.info",
     "channel.members",
@@ -58,6 +64,29 @@ pub struct Contributions {
     pub renderers: Vec<RendererContribution>,
     #[serde(default)]
     pub automations: Vec<AutomationContribution>,
+    #[serde(default)]
+    pub panels: Vec<PanelContribution>,
+}
+
+/// A declarative board: where its data lives plus which compiled view renders it.
+/// Carries no code — the view resolves to a built-in, or (personal scope only) to a
+/// renderer the same package contributes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PanelContribution {
+    pub id: String,
+    pub title: String,
+    pub source: PanelSource,
+    pub view: String,
+}
+
+/// Only the kinds in PANEL_SOURCE_KINDS are variants here, so serde rejects a
+/// `workspace` or `rest` source before any validation runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum PanelSource {
+    Resource { verb: String },
+    Fs { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -529,6 +558,34 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
             }
         }
     }
+    if manifest.contributes.panels.len() > MAX_PANELS {
+        return Err(format!("a package may contribute at most {MAX_PANELS} panels"));
+    }
+    let mut panel_ids = HashSet::new();
+    for panel in &manifest.contributes.panels {
+        validate_id("panel", &panel.id)?;
+        if panel.title.trim().is_empty() {
+            return Err(format!("panel `{}` title is required", panel.id));
+        }
+        if !panel_ids.insert(panel.id.as_str()) {
+            return Err(format!("duplicate panel id `{}`", panel.id));
+        }
+        match &panel.source {
+            // A panel's verb comes from the SAME fixed list as channel.resources.
+            // Declaring a source must never widen what a package can read.
+            PanelSource::Resource { verb } => {
+                if !CHANNEL_RESOURCES.contains(&verb.as_str()) {
+                    return Err(format!(
+                        "panel `{}` reads `{verb}`, which is not an allowed channel resource",
+                        panel.id
+                    ));
+                }
+            }
+            PanelSource::Fs { path } => validate_workspace_path(path)?,
+        }
+        // A `self:` view is code and follows the renderer scope split.
+        validate_renderer_reference(&panel.view, allow_code, manifest)?;
+    }
     if !allow_code
         && (!manifest.contributes.renderers.is_empty()
             || manifest.permissions.file_write
@@ -634,6 +691,7 @@ pub async fn list(db: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
             'scenes', COALESCE(manifest->'manifest'->'contributes'->'scenes', '[]'::jsonb),
             'renderers', COALESCE(manifest->'manifest'->'contributes'->'renderers', '[]'::jsonb),
             'automations', COALESCE(manifest->'manifest'->'contributes'->'automations', '[]'::jsonb),
+            'panels', COALESCE(manifest->'manifest'->'contributes'->'panels', '[]'::jsonb),
             'permissions', COALESCE(manifest->'manifest'->'permissions', '{}'::jsonb),
             'updatedAt', updated_at
          )
@@ -884,6 +942,14 @@ mod tests {
                 .map(|value| value.as_str().expect("resource is a string"))
                 .collect();
             assert_eq!(resources, CHANNEL_RESOURCES);
+            assert_eq!(number("maxPanelsPerExtension"), MAX_PANELS);
+            let kinds: Vec<&str> = limits["panelSources"]
+                .as_array()
+                .expect("panelSources")
+                .iter()
+                .map(|value| value.as_str().expect("source kind is a string"))
+                .collect();
+            assert_eq!(kinds, PANEL_SOURCE_KINDS);
         }
 
         #[test]

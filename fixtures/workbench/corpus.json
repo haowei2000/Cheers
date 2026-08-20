@@ -555,6 +555,204 @@
           }
         }
       }
+    },
+    {
+      "name": "panel-over-a-resource-verb",
+      "why": "The whole point of the contribution: a board over an allowlisted verb is pure data, so it installs at every scope.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "recent",
+                "title": "Recent activity",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.activity.read"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-over-a-workspace-file",
+      "why": "An fs source reads the channel workspace, which channel-role already governs.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "plan",
+                "title": "Plan",
+                "source": {
+                  "kind": "fs",
+                  "path": "dev/plan.yaml"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-over-a-workspace-source",
+      "why": "A workspace source names paths on a bot's own machine, authorized per-bot against the session-workdir root-set rather than by channel-role. A manifest is attacker-controlled data and may never reach it, at any scope.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "repo",
+                "title": "Repo",
+                "source": {
+                  "kind": "workspace",
+                  "botId": "b1",
+                  "path": "src"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-over-a-rest-source",
+      "why": "An arbitrary REST endpoint is not a vocabulary. The resource verbs are, and they are already allowlisted; rest stays first-party.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "audit",
+                "title": "Audit",
+                "source": {
+                  "kind": "rest",
+                  "endpoint": "/approvals/audit"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-naming-a-verb-outside-the-vocabulary",
+      "why": "A panel's verb comes from the same fixed list as channel.resources — declaring a source must not widen what a package can read.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "secrets",
+                "title": "Secrets",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.secrets"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-with-an-unknown-view",
+      "why": "A view resolves to compiled UI. An unresolvable one is rejected at install rather than rendering as nothing.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "odd",
+                "title": "Odd",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.info"
+                },
+                "view": "wat:thing"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-with-a-self-view",
+      "why": "A panel rendered by the package's own renderer is code, so it follows the same scope split as a renderer contribution.",
+      "global": "reject",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.info"
+                },
+                "view": "self:chart"
+              }
+            ],
+            "renderers": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "entry": "renderers/chart.js"
+              }
+            ]
+          }
+        },
+        "renderers/chart.js": "export function render() {}\n"
+      }
     }
   ]
 }
