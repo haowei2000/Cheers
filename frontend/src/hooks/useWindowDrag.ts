@@ -219,10 +219,15 @@ export function useWindowDrag(
     // Size may already be persisted; don't write until the user drags/resizes.
   }, [enabled, panelOpen, getBounds, anchorRef, reanchorOnOpen, anchorPlacement]);
 
-  const z = useSyncExternalStore(subscribeZ, () => {
+  const readZ = useCallback(() => {
     const i = zOrder.indexOf(storageKey);
     return 40 + (i === -1 ? 0 : i);
-  });
+  }, [storageKey]);
+  // The third argument is the server snapshot. Without it any server render of a panel
+  // throws rather than degrading, which is why FloatingPanel had no component tests —
+  // the repo's component tests are renderToStaticMarkup. Off the client there is no
+  // stacking order, so every window reports the base layer.
+  const z = useSyncExternalStore(subscribeZ, readZ, () => 40);
 
   const toFront = useCallback(() => raise(storageKey), [storageKey]);
 

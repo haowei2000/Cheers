@@ -198,14 +198,18 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
    `surface: "header" | "lane" | "inline"` field. Pure refactor. Immediately collapses
    GitHub Code from three implementations to one.
 
-2. **One host.** Extract the chrome duplicated across
-   [WorkbenchDrawer.tsx](../../frontend/src/features/chat/workbench/WorkbenchDrawer.tsx)
-   (844 lines),
-   [ViewBoardDrawer.tsx](../../frontend/src/features/chat/workbench/ViewBoardDrawer.tsx)
-   (381) and
-   [ViewBoardMinimized.tsx](../../frontend/src/features/chat/workbench/ViewBoardMinimized.tsx)
-   (475) into a single `PanelHost`: title bar, minimize, tab strip, keep-alive, scope
-   selector, tick debounce. Largest line-count win in the sequence.
+2. **One host — which already exists.** The host is not something to extract:
+   [`FloatingPanel`](../../frontend/src/components/ui/floating-panel.tsx) already
+   provides lane-vs-viewport float, drag, resize, snap, z-order, collapse-with-glance,
+   the mobile sheet, and DESIGN.md-correct `ActionButton` chrome, and
+   `ChannelFilesDialog`, `BotTracePanel` and `RemoteWorkspaceDialog` already use it. The
+   only two lane occupants that hand-rolled all of it were `WorkbenchDrawer` and
+   `ViewBoardDrawer`, so the work is migrating those two onto it and giving it the three
+   props they need that no other caller did: `open` (closed but MOUNTED, so the file
+   tree and visited tabs survive), controlled `collapsed` (the ViewBoard's flag is owned
+   by `useChannelInstruments`), and `dropTarget` (the Workbench's `.cheers-extension`
+   drop). `useLaneWindow` had exactly those two callers and retires with them; only
+   `LaneBoundsContext` survives, in `hooks/laneBounds.ts`.
 
 3. **Source abstraction.** Introduce `PanelSource` and the per-kind liveness adapter.
    `useResourceQuery` becomes the loader for every kind;
