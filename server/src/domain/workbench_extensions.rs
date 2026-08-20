@@ -559,7 +559,9 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
         }
     }
     if manifest.contributes.panels.len() > MAX_PANELS {
-        return Err(format!("a package may contribute at most {MAX_PANELS} panels"));
+        return Err(format!(
+            "a package may contribute at most {MAX_PANELS} panels"
+        ));
     }
     let mut panel_ids = HashSet::new();
     for panel in &manifest.contributes.panels {

@@ -8,6 +8,12 @@ export interface LensProps {
   data: unknown;
   config: unknown;
   onChange: (next: unknown) => void;
+  /** Suppress every edit affordance. Set by the HOST from the data's SOURCE, not by the
+   *  lens: a projection read from a resource verb carries no version to write back
+   *  against, so an edit control over it promises something that cannot happen. An inert
+   *  onChange is not enough — the affordance itself has to be absent. Distinct from
+   *  `Lens.viewOnly`, which is a lens saying it never edits ANY data. */
+  readOnly?: boolean;
 }
 
 export interface Lens {

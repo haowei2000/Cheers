@@ -1,6 +1,7 @@
 # Panel model
 
-> Status: 📝 **Proposal (draft)** — 2026-08-20. Not implemented, not decided. Argues that
+> Status: **Steps 1–4 implemented** — 2026-08-20. Step 5 (one picker) is deliberately
+> unbuilt; see the note under Migration order. Argues that
 > Workbench, ViewBoard, and Remote workspace are one concept differing only in data
 > source, and that collapsing them is the precondition for making any of them
 > plugin-able. Related: [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md) (the authority boundary this
@@ -228,11 +229,18 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.
 
-5. **Then decide the UX.** Four toolbar toggles become one "add panel" control plus a
-   picker. This is the step that makes plugins *discoverable* — a contributed panel
-   appears in the same list as the built-ins instead of hiding inside whichever subsystem
-   happened to accept it. It is listed last because it is the only step a user can see,
-   and it should land on machinery that already works.
+5. **Then decide the UX.** ~~Four toolbar toggles become one "add panel" control plus a
+   picker.~~ **Not built, on purpose.** Building steps 1–4 showed the step conflates two
+   lists: the toolbar toggles four *windows* (Channel files, Remote workspace, ViewBoard,
+   Workbench), while `panelsFor("lane")` returns *boards* that render as tabs **inside**
+   one of those windows. Merging them needs the four windows promoted to registered
+   panels first — a design decision this document never made, and one worth making on its
+   own terms rather than as a side effect of a toolbar change.
+
+   The payoff it was reaching for already landed in step 4: a contributed panel appears in
+   the ViewBoard's tab strip beside Plan and Cost, so it is discoverable without the
+   picker. Whoever picks this up should start by deciding whether a window and a board are
+   one concept with a `presentation` axis, or two.
 
 `ChannelFilesDialog` (80 lines) is the fourth lane occupant and fits the model unchanged;
 it is the cheapest first consumer of `PanelHost` in step 2.

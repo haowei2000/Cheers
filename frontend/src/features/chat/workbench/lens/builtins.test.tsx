@@ -1,5 +1,8 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { inferColumns, parseCodemap, updateRowCell, codemapLayout } from "./builtins";
+import { getLens } from "./registry";
+import "./builtins"; // side effect: register the lenses under test
 
 // The registry only OFFERS the table for arrays of plain objects, but the lens can
 // still receive anything (template bindings, files edited after binding) — these are
@@ -79,5 +82,54 @@ describe("codemap layout", () => {
     expect(positions.has("b")).toBe(true);
     expect(width).toBeGreaterThan(0);
     expect(height).toBeGreaterThan(0);
+  });
+});
+
+// A panel over a resource verb is a PROJECTION: it carries no version, so a write
+// would overwrite whatever an agent wrote in the meantime with a stale snapshot. The
+// host passes `readOnly` from the SOURCE (guardrail 3 in docs/arch/PANEL_MODEL.md).
+// An inert onChange is not enough — the affordance itself has to be gone, which is
+// how this shipped broken the first time: builtin:table offered "Add row" over a
+// channel.members projection and silently did nothing.
+describe("read-only lenses hide their edit affordances", () => {
+  const render = (id: string, data: unknown, readOnly: boolean) =>
+    renderToStaticMarkup(
+      <>{getLens(id)!.render({ data, config: undefined, onChange: () => {}, readOnly })}</>
+    );
+
+  it("table drops Add row, Delete, and the cell inputs", () => {
+    const rows = [{ name: "alpha" }];
+    const editable = render("table", rows, false);
+    const locked = render("table", rows, true);
+
+    expect(editable).toContain("Add row");
+    expect(editable).toContain("<input");
+    expect(locked).not.toContain("Add row");
+    expect(locked).not.toContain("<input");
+    expect(locked).not.toMatch(/Delete row/);
+    // The DATA still shows — read-only is not empty.
+    expect(locked).toContain("alpha");
+  });
+
+  it("table's empty state stops telling you to add a row you cannot add", () => {
+    expect(render("table", [], true)).toContain("Nothing to show");
+    expect(render("table", [], false)).toContain("Add row");
+  });
+
+  it("kanban drops the compose row and the per-card controls", () => {
+    const board = { columns: [{ name: "Doing", items: ["ship it"] }] };
+    const editable = render("kanban", board, false);
+    const locked = render("kanban", board, true);
+
+    expect(editable).toContain("+ Task");
+    expect(editable).toMatch(/Move left/);
+    expect(locked).not.toContain("+ Task");
+    expect(locked).not.toMatch(/Move left/);
+    expect(locked).toContain("ship it");
+  });
+
+  it("markdown renders a non-editable textarea", () => {
+    expect(render("markdown", "# hi", true)).toMatch(/readonly/i);
+    expect(render("markdown", "# hi", false)).not.toMatch(/readonly/i);
   });
 });

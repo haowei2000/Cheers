@@ -48,12 +48,12 @@ export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
             lens.render({
               data,
               config: undefined,
-              // READ-ONLY, whatever the view would allow. Guardrail 3 in
-              // docs/arch/PANEL_MODEL.md: writability belongs to the SOURCE, not the
-              // view. A resource source is a projection with no version to write back
-              // against, so a Save here would overwrite a concurrent agent write with a
-              // stale snapshot. Write-back for `fs` panels is deliberately not wired
-              // yet; when it is, it branches on the source and never on the lens.
+              // The SOURCE decides, never the view — guardrail 3 in
+              // docs/arch/PANEL_MODEL.md. `readOnly` removes the edit affordances
+              // rather than leaving them inert: an Add row that silently does nothing
+              // is worse than no Add row. Write-back for fs panels is not wired yet,
+              // so onChange stays a no-op for now and the flag is what the user sees.
+              readOnly: true,
               onChange: () => {},
             }),
         })
