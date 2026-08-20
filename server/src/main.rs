@@ -142,10 +142,6 @@ async fn main() -> anyhow::Result<()> {
     // migration), so the gateway is reachable for the login/demo flow.
     server::domain::seed::ensure_admin_user(&db).await?;
 
-    // Official scenes are ordinary data-only extension packages and pass through the
-    // same package parser used by admin uploads.
-    server::domain::workbench_official_extensions::seed(&db).await?;
-
     // S3 / RustFS client for gateway-proxied file storage. Bucket bootstrap is
     // best-effort: a missing object store must not block the core chat loop.
     let s3 = infra::s3::build_client(&config);
