@@ -152,6 +152,26 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
             crate::api::bots::broadcast_bot_member_update(state, &bot_id).await;
             audit_status_write(state, &bot_id, frame).await;
         }
+        Some("channel.code.status.write") => {
+            if let Some(cid) = resp
+                .get("data")
+                .and_then(|data| data.get("channel_id"))
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+            {
+                state
+                    .fanout
+                    .broadcast_channel(
+                        cid,
+                        WireFrame::channel(
+                            cid,
+                            "board_signal",
+                            json!({ "channel_id": cid, "board": "github-code" }),
+                        ),
+                    )
+                    .await;
+            }
+        }
         Some("dm.open") => {
             if let Some(data) = resp.get("data") {
                 if data.get("created").and_then(Value::as_bool) == Some(true) {

@@ -26,7 +26,7 @@ pub struct ExternalIdentityStatus {
 
 fn checked_provider(provider: &str) -> Result<&str, AppError> {
     match provider {
-        "apple" | "google" => Ok(provider),
+        "apple" | "google" | "github" => Ok(provider),
         _ => Err(AppError::NotFound),
     }
 }

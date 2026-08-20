@@ -552,6 +552,17 @@ pub async fn init_project(
     )
     .await?;
 
+    if let Some(profile) = crate::domain::channel_profiles::get(&state.db, &channel_id).await? {
+        if profile.profile == "code" {
+            let mut status: crate::domain::channel_profiles::CodeProfileStatus =
+                serde_json::from_value(profile.status).unwrap_or_default();
+            status.state = "importing".into();
+            status.last_error = None;
+            crate::domain::channel_profiles::update_code_status(&state.db, &channel_id, &status)
+                .await?;
+        }
+    }
+
     Ok(Json(InitResponse {
         prompted: bot_ids,
         message_id: Some(message.msg_id),

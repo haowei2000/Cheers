@@ -5,6 +5,8 @@ pub mod auth;
 pub mod avatars;
 pub mod bot_permission;
 pub mod bots;
+pub mod channel_features;
+pub mod channel_profiles;
 pub mod channels;
 pub mod compliance;
 pub mod connector_hosts;

@@ -13,6 +13,7 @@ import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
 import type { Message } from "@/types";
 import type { SendResourceReq } from "./fsClient";
+import type { ChannelProfile } from "@/api/channelProfiles";
 import { useResourceQuery } from "./useResourceQuery";
 
 /** The minimal context a ViewBoard needs — channel + resource client + the selected
@@ -35,6 +36,7 @@ export interface ViewBoardContext {
   /** Live pending permission messages in this channel (minimal Approvals glance). */
   pendingApprovals?: Message[];
   currentUserId?: string;
+  profile?: ChannelProfile | null;
 }
 
 // Trailing-coalesce window for tick-driven refetches. A user↔bot exchange or a
@@ -127,6 +129,7 @@ export interface ViewBoardPanel {
   icon?: LucideIcon;
   /** True when the board's data is per-session — the host shows a session-scope selector. */
   sessionScoped?: boolean;
+  profiles?: string[];
   render: (ctx: ViewBoardContext) => ReactNode;
 }
 
@@ -142,6 +145,7 @@ export function registerComponentViewBoard(def: {
   id: string;
   title: string;
   icon?: LucideIcon;
+  profiles?: string[];
   component: (ctx: ViewBoardContext) => ReactNode;
 }): void {
   if (registry.some((b) => b.id === def.id)) return;
@@ -149,6 +153,7 @@ export function registerComponentViewBoard(def: {
     id: def.id,
     title: def.title,
     icon: def.icon,
+    profiles: def.profiles,
     render: (ctx) => def.component(ctx),
   });
 }
@@ -188,8 +193,8 @@ export function ViewBoardShell({
   );
 }
 
-export function getViewBoards(): ViewBoardPanel[] {
-  return registry;
+export function getViewBoards(profile?: string | null): ViewBoardPanel[] {
+  return registry.filter((board) => !board.profiles || (profile ? board.profiles.includes(profile) : false));
 }
 
 export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {

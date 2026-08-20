@@ -21,7 +21,10 @@ pub struct ChannelDto {
     #[serde(rename = "type")]
     pub channel_type: String,
     /// Interaction kind, orthogonal to public/private/DM access semantics.
+    /// Deprecated compatibility projection: `voice` when the Voice feature is enabled.
     pub kind: String,
+    /// Composable capabilities enabled for this channel.
+    pub features: Vec<String>,
     /// Message presentation, orthogonal to access and interaction kind.
     /// `chat` is chronological with own messages on the right; `discuss`
     /// groups replies below their root and keeps every participant on the left.
@@ -64,6 +67,8 @@ pub struct ChannelCreateRequest {
     #[serde(rename = "type")]
     pub channel_type: Option<String>,
     pub kind: Option<String>,
+    #[serde(default)]
+    pub features: Vec<String>,
     pub conversation_mode: Option<String>,
     pub purpose: Option<String>,
     pub allow_member_invites: Option<bool>,
@@ -119,13 +124,26 @@ pub struct DmCreateRequest {
 }
 
 fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
+    let stored_kind: String = row.try_get("kind").unwrap_or_else(|_| "text".to_string());
+    let mut features: Vec<String> = row.try_get("features").unwrap_or_default();
+    // Before migration 0090, voice lived only in kind. Keeping this fallback
+    // makes rolling deploys safe while the migration and binary overlap.
+    if stored_kind == "voice" && !features.iter().any(|feature| feature == "voice") {
+        features.push("voice".into());
+    }
+    let legacy_kind = if features.iter().any(|feature| feature == "voice") {
+        "voice".to_string()
+    } else {
+        "text".to_string()
+    };
     ChannelDto {
         channel_id: row.try_get("channel_id").unwrap_or_default(),
         workspace_id: row.try_get("workspace_id").unwrap_or_default(),
         name: row.try_get("name").unwrap_or_default(),
         avatar_url: row.try_get("avatar_url").ok(),
         channel_type: row.try_get("type").unwrap_or_else(|_| "public".to_string()),
-        kind: row.try_get("kind").unwrap_or_else(|_| "text".to_string()),
+        kind: legacy_kind,
+        features,
         conversation_mode: row
             .try_get("conversation_mode")
             .unwrap_or_else(|_| "chat".to_string()),
@@ -222,6 +240,9 @@ pub async fn list_channels(
         // scan zero rows and an aggregate over zero rows still yields one row of 0 —
         // preserving the old CASE-based "non-members get 0" invariant.
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                ARRAY(SELECT cf.feature FROM channel_features cf
+                      WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
+                      ORDER BY cf.feature) AS features,
                 c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                 (cm.member_id IS NOT NULL) AS is_member,
@@ -367,7 +388,11 @@ pub async fn create_dm(
             .await;
     }
     let row = sqlx::query(
-        "SELECT channel_id, workspace_id, name, avatar_url, type, kind, conversation_mode,
+        "SELECT channel_id, workspace_id, name, avatar_url, type, kind,
+                ARRAY(SELECT cf.feature FROM channel_features cf
+                      WHERE cf.channel_id = channels.channel_id AND cf.enabled = TRUE
+                      ORDER BY cf.feature) AS features,
+                conversation_mode,
                 purpose, auto_assist,
                 allow_member_invites, allow_bot_adds
          FROM channels WHERE channel_id = $1",
@@ -411,6 +436,9 @@ pub async fn list_dms(
 ) -> Result<Json<Vec<Value>>, AppError> {
     let rows = sqlx::query(
         "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                ARRAY(SELECT cf.feature FROM channel_features cf
+                      WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
+                      ORDER BY cf.feature) AS features,
                 c.conversation_mode, c.purpose, c.auto_assist,
                 c.allow_member_invites, c.allow_bot_adds,
                 COALESCE((
@@ -497,6 +525,18 @@ pub async fn create_channel(
             "channel kind must be text or voice".into(),
         ));
     }
+    let mut features = body.features;
+    if kind == "voice" && !features.iter().any(|feature| feature == "voice") {
+        features.push("voice".into());
+    }
+    features.sort();
+    features.dedup();
+    if features
+        .iter()
+        .any(|feature| !crate::domain::channel_features::supported(feature))
+    {
+        return Err(AppError::BadRequest("unsupported channel feature".into()));
+    }
     let conversation_mode = body.conversation_mode.unwrap_or_else(|| "chat".into());
     if !matches!(conversation_mode.as_str(), "chat" | "discuss") {
         return Err(AppError::BadRequest(
@@ -544,13 +584,24 @@ pub async fn create_channel(
     .bind(&body.workspace_id)
     .bind(body.name.trim())
     .bind(&channel_type)
-    .bind(&kind)
+    // `kind=voice` is accepted from old clients, but storage is feature-based.
+    .bind("text")
     .bind(&conversation_mode)
     .bind(&body.purpose)
     .bind(body.allow_member_invites.unwrap_or(true))
     .bind(body.allow_bot_adds.unwrap_or(true))
     .fetch_one(&mut *tx)
     .await?;
+    for feature in &features {
+        sqlx::query(
+            "INSERT INTO channel_features (channel_id, feature, config, enabled)
+             VALUES ($1, $2, '{}'::jsonb, TRUE)",
+        )
+        .bind(&channel_id)
+        .bind(feature)
+        .execute(&mut *tx)
+        .await?;
+    }
     if activate_creator_membership {
         // Platform admins retain their channel-creation bypass, but the deferred
         // non-DM membership invariant still requires every human channel member
@@ -722,7 +773,14 @@ pub async fn create_channel(
             .await?;
         }
     }
-    Ok(Json(dto(row)))
+    let mut response = dto(row);
+    response.features = features;
+    response.kind = if response.features.iter().any(|feature| feature == "voice") {
+        "voice".into()
+    } else {
+        "text".into()
+    };
+    Ok(Json(response))
 }
 
 pub async fn get_channel(
@@ -735,6 +793,9 @@ pub async fn get_channel(
     }
     let row = sqlx::query(
         "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                ARRAY(SELECT cf.feature FROM channel_features cf
+                      WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
+                      ORDER BY cf.feature) AS features,
                 c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds,
                 cm.role AS my_role,
@@ -790,7 +851,14 @@ pub async fn update_channel(
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    Ok(Json(dto(row)))
+    let mut response = dto(row);
+    response.features = crate::domain::channel_features::list(&state.db, &channel_id).await?;
+    response.kind = if response.features.iter().any(|feature| feature == "voice") {
+        "voice".into()
+    } else {
+        "text".into()
+    };
+    Ok(Json(response))
 }
 
 /// PUT /channels/:channel_id/notification-preference — per-user, cross-device mute.

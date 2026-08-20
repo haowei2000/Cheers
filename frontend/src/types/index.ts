@@ -26,9 +26,11 @@ export interface Channel {
   name: string;
   avatar_url?: string | null;
   type: string;
-  /** Interaction kind, independent from public/private/DM access semantics. */
+  /** Deprecated compatibility projection. New clients should read features. */
   kind?: "text" | "voice";
-  /** Message presentation, independent from access and text/voice semantics. */
+  /** Optional capabilities that compose with the channel profile and access type. */
+  features?: string[];
+  /** Message presentation, independent from access and channel features. */
   conversation_mode?: "chat" | "discuss";
   workspace_id?: string;
   purpose?: string | null;

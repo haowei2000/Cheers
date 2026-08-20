@@ -57,6 +57,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { ChannelChrome } from "./ChannelChrome";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
+import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
@@ -1310,6 +1311,7 @@ export function ChannelView({
         Mobile: the panels stay full/near-full-screen overlay sheets. */}
       <div className="flex flex-col h-full">
         <ChannelChrome
+          channelId={channel.channel_id}
           title={channelTitle}
           purpose={channel.purpose}
           isDm={isDm}
@@ -1337,7 +1339,7 @@ export function ChannelView({
                   : "md:mx-auto md:max-w-[52rem]"
               }`}
             >
-              {channel.kind === "voice" && (
+              {hasChannelFeature(channel, CHANNEL_FEATURE_VOICE) && (
                 <Suspense
                   fallback={
                     <div className="mx-4 mb-3 h-[74px] rounded-sm bg-zinc-900/50 animate-pulse" />

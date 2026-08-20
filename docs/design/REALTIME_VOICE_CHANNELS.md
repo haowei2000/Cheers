@@ -1,7 +1,7 @@
-# Real-time voice channels
+# Real-time Voice Feature
 
 > Status: 🚧 **Voice V1 + explicitly dispatched final-transcript worker implemented; task claims proposed** (2026-07)
-> Product goal: Discord-style persistent voice channels with live, speaker-attributed
+> Product goal: Discord-style persistent voice spaces with live, speaker-attributed
 > transcription as a first-class collaboration stream
 > Related: [Proactive task claims](PROACTIVE_TASK_CLAIMS.md) ·
 > [Conversation model](../arch/CONVERSATION_MODEL.md) ·
@@ -9,7 +9,7 @@
 
 ## The one-sentence pitch
 
-A Cheers voice channel is a persistent place people can enter and leave freely, backed by
+A Cheers channel with the Voice feature is a persistent place people can enter and leave freely, backed by
 a WebRTC SFU for low-latency audio and a consent-aware transcription worker that turns
 final speech segments into durable channel activity, allowing bots to notice and claim work
 without receiving raw room audio.
@@ -31,7 +31,7 @@ during a meeting.
 
 Voice V1 now provides:
 
-- persistent `text` and `voice` channel kinds;
+- a composable `voice` channel feature on normal text channels;
 - membership-authorized, short-lived, room-scoped LiveKit join tokens;
 - browser join/leave, microphone mute, remote audio, participant count, and active-speaker UI;
 - idempotent signed LiveKit webhook ingestion for room, participant, and microphone lifecycle state;
@@ -88,15 +88,16 @@ The existing `channels.type` means access/conversation semantics (`public`, `pri
 
 ```text
 channels.type: public | private | dm       # existing access/conversation semantics
-channels.kind: text | voice                # new interaction kind
+channel_features.feature: voice            # composable channel capability
 ```
 
-A `kind='voice'` channel still owns a durable text timeline for system notices, transcript
-history, task claims, files, and bot results. A voice channel is persistent even when its
+A channel with `features` containing `voice` still owns a durable text timeline for system
+notices, transcript history, task claims, files, and bot results. The channel is persistent even when its
 media room has no participants, matching the Discord mental model.
 
-DM voice calls and mixed text/voice channels can be added later without changing this
-separation. The MVP permits `kind='voice'` only for `public` and `private` channels.
+Voice composes with standard and Code channel profiles without changing access semantics.
+The compatibility API may project `kind='voice'` for older clients, but storage and new
+clients use `channel_features` as the authority.
 
 ### 3.3 Audio and transcript take different paths
 
@@ -621,7 +622,7 @@ a higher claim count is not success if participants reject the claims.
 
 ### V1 — real-time room foundation
 
-- add `channels.kind`, voice configuration, session and participant models;
+- add the Voice channel feature, feature configuration, session and participant models;
 - add provider interface and LiveKit adapter;
 - add join tokens, webhooks, reconciliation, and React room controls;
 - support audio-only rooms, mute, active speaker, and connection quality;

@@ -19,7 +19,7 @@ import { onOAuthHandoff } from "@/lib/oauthCallback";
 import { getPasskey } from "@/lib/webauthn";
 import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { AppleMark, GoogleMark } from "@/components/ui/provider-marks";
+import { AppleMark, GitHubMark, GoogleMark } from "@/components/ui/provider-marks";
 import { Input } from "@/components/ui/input";
 import {
   PublicPageShell,
@@ -329,6 +329,23 @@ export default function LoginPage() {
                   }}
                 >
                   <GoogleMark className="h-4 w-4" />
+                </Button>
+              )}
+              {capabilities.providers.github && (
+                <Button action="continueWithGitHub" content="iconText" controlWidth="fill"
+                  type="button"
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={() => {
+                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
+                    setLoading(true);
+                    void startOAuth("github").catch((error) => {
+                      setLoading(false);
+                      toast.error(errorMessage(error, "GitHub sign-in failed"));
+                    });
+                  }}
+                >
+                  <GitHubMark className="h-4 w-4" />
                 </Button>
               )}
             </div>

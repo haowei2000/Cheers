@@ -77,7 +77,7 @@ export async function sendTwoFactorEmail(transactionId: string): Promise<{
 
 export interface AuthCapabilities {
   client: "web" | "ios" | "macos";
-  providers: { password: boolean; apple: boolean; google: boolean };
+  providers: { password: boolean; apple: boolean; google: boolean; github: boolean };
   self_service_registration: boolean;
   passkey?: boolean;
   passkey_rp_id?: string | null;
@@ -174,7 +174,7 @@ export async function passkeyFactorVerify(input: {
   });
 }
 
-export async function startOAuth(provider: "apple" | "google"): Promise<void> {
+export async function startOAuth(provider: "apple" | "google" | "github"): Promise<void> {
   const client = isTauri() ? "macos" : "web";
   const response = await apiJson<{ authorization_url: string }>(
     `/auth/oauth/${provider}/start`,
@@ -203,7 +203,7 @@ export async function exchangeOAuthHandoff(code: string): Promise<LoginResponse>
 }
 
 export interface ExternalIdentityStatus {
-  provider: "apple" | "google";
+  provider: "apple" | "google" | "github";
   linked: boolean;
   display_name: string | null;
   email: string | null;
@@ -213,20 +213,20 @@ export interface ExternalIdentityStatus {
 }
 
 export async function getExternalIdentity(
-  provider: "apple" | "google"
+  provider: "apple" | "google" | "github"
 ): Promise<ExternalIdentityStatus> {
   return apiJson(`/users/me/external-identities/${provider}`);
 }
 
 export async function unlinkExternalIdentity(
-  provider: "apple" | "google"
+  provider: "apple" | "google" | "github"
 ): Promise<{ provider: string; linked: false }> {
   return apiJson(`/users/me/external-identities/${provider}`, { method: "DELETE" });
 }
 
 /** Authenticated Google link: starts OAuth that returns `?linked=google` on success. */
 export async function startExternalIdentityOAuthLink(
-  provider: "google",
+  provider: "google" | "github",
   client: "web" | "macos" | "ios" = isTauri() ? "macos" : "web"
 ): Promise<{ authorization_url: string }> {
   return apiJson(`/users/me/external-identities/${provider}/oauth-start`, {

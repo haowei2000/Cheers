@@ -20,6 +20,9 @@ import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listGlobalScenes } from "./extensions/api";
+import { useChannelProfile } from "@/hooks/useChannelProfile";
+import { workbenchPanelsFor } from "./workbenchPanels";
+import "./panels/GitHubCodeWorkbenchPanel";
 import { hasCode, type ParsedExtension } from "./extensions/package";
 import { parseExtensionPackageOffThread, parsePersonalExtension } from "./extensions/parseOffThread";
 import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
@@ -129,6 +132,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   const navigate = useNavigate();
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
+  const profile = useChannelProfile(channelId, open);
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
   const [personalTemplates, setPersonalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
@@ -200,7 +204,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     return () => {
       alive = false;
     };
-  }, [open, fs, extensionsRevision]);
+  }, [open, fs, channelId, extensionsRevision]);
 
   useEffect(() => {
     try { setLocalBindings(JSON.parse(localStorage.getItem(localBindingKey) ?? "{}")); }
@@ -538,6 +542,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     () => ({
       active: open,
       channelId,
+      profile,
       fs,
       sendResourceReq,
       pinned,
@@ -551,8 +556,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       openLocator: onOpenLocator,
       composeMessage: onCompose,
     }),
-    [open, channelId, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
+    [open, channelId, profile, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
   );
+  const profilePanels = workbenchPanelsFor(profile?.profile);
 
   // Desktop: the original card chrome, placed in the work area — hidden (but
   // mounted) while closed so the browser tree/selection state survives.
@@ -812,18 +818,21 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         )}
         {/* Content-first by default: scene → item tabs → renderer. Raw is an explicit
             mode that mounts the complete file tree and editor. */}
-        <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
-          {open && (rawMode ? (
-            <FilePanel ctx={ctx} />
-          ) : (
-            <SceneWorkbench
-              ctx={ctx}
-              sceneState={cfg.scene_state}
-              legacyEnvironment={cfg.environment}
-              templates={allEnvs}
-              onAddScene={activate}
-            />
-          ))}
+        <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+          {open && profilePanels.map(({ id, component: Panel }) => <Panel key={id} ctx={ctx} />)}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {open && (rawMode ? (
+              <FilePanel ctx={ctx} />
+            ) : (
+              <SceneWorkbench
+                ctx={ctx}
+                sceneState={cfg.scene_state}
+                legacyEnvironment={cfg.environment}
+                templates={allEnvs}
+                onAddScene={activate}
+              />
+            ))}
+          </div>
         </div>
         {float && !minimized && <ResizeGrip resizeProps={drag.resizeProps} />}
       </aside>

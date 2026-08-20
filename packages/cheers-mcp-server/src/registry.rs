@@ -430,6 +430,22 @@ pub fn catalog() -> &'static [ResourceSpec] {
             ),
         ),
         db(
+            "channel.code.status.write",
+            write_tool(
+                "report_code_workspace",
+                "Report Code workspace",
+                "Report repository import or sync state for this Bot's Code Channel.",
+                SCOPE_WORKSPACE_WRITE,
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::opt("state", ParamKind::String),
+                    Param::opt("workspace_path", ParamKind::String),
+                    Param::opt("head_commit", ParamKind::String),
+                    Param::opt("last_error", ParamKind::String),
+                ],
+            ),
+        ),
+        db(
             "channel.files.create",
             write_tool(
                 "inbox_deliver",

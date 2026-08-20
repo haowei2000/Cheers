@@ -148,7 +148,7 @@ export function ScheduledMessagesManager() {
         : Promise.resolve([]),
     ]);
     setTasks(nextTasks);
-    setChannels(nextChannels.filter((channel) => channel.is_member !== false && channel.kind !== "voice"));
+    setChannels(nextChannels.filter((channel) => channel.is_member !== false));
     setExtensions(nextExtensions);
     setPersonalTemplates(nextPersonal);
   }, []);

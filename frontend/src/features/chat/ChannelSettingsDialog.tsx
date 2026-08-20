@@ -30,7 +30,10 @@ import {
   setChannelMemberRole,
   searchInvitable,
   type InvitableItem,
+  enableChannelFeature,
+  disableChannelFeature,
 } from "@/api/channels";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 
 const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
 // Bots can never own/administer a channel — the backend rejects those roles.
@@ -52,6 +55,7 @@ import {
   ConversationModePicker,
   type ConversationMode,
 } from "./ConversationModePicker";
+import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
 // AND bots, invited alike), and delete. Management controls are gated on the
@@ -84,6 +88,7 @@ export function ChannelSettingsDialog({
   const [editingMeta, setEditingMeta] = useState<"name" | "purpose" | "layout" | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
+  const [savingVoice, setSavingVoice] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
@@ -190,6 +195,25 @@ export function ChannelSettingsDialog({
     const avatar_url = await uploadChannelAvatar(channel.channel_id, file);
     patchChannel(channel.channel_id, { avatar_url });
     return avatar_url;
+  }
+
+  async function setVoiceEnabled(enabled: boolean) {
+    if (savingVoice) return;
+    setSavingVoice(true);
+    try {
+      const result = enabled
+        ? await enableChannelFeature(channel.channel_id, CHANNEL_FEATURE_VOICE)
+        : await disableChannelFeature(channel.channel_id, CHANNEL_FEATURE_VOICE);
+      patchChannel(channel.channel_id, {
+        features: result.features,
+        kind: result.features.includes(CHANNEL_FEATURE_VOICE) ? "voice" : "text",
+      });
+      toast.success(enabled ? "Voice enabled" : "Voice disabled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update Voice");
+    } finally {
+      setSavingVoice(false);
+    }
   }
 
   async function addMember(it: InvitableItem) {
@@ -359,6 +383,18 @@ export function ChannelSettingsDialog({
             </p>
           )}
         </div>
+
+        {channel.type !== "dm" && (
+          <div className="border-t border-zinc-800 pt-3">
+            <CheckboxField
+              label="Voice"
+              hint="Add a voice room above this channel's normal chat timeline."
+              checked={hasChannelFeature(channel, CHANNEL_FEATURE_VOICE)}
+              disabled={!canManage || savingVoice}
+              onChange={(event) => void setVoiceEnabled(event.target.checked)}
+            />
+          </div>
+        )}
 
         {/* Members use the same browse/add/delete collection anatomy as Claims and Links. */}
         <CollectionManager

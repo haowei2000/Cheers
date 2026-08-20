@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// New channel (name + text/voice + public/private → POST /channels) or New DM
+/// New channel (name + optional voice + public/private → POST /channels) or New DM
 /// (pick a friend or bot → POST /channels/dm). On success it opens the conversation.
 struct NewConversationSheet: View {
     let startAsDM: Bool
@@ -10,23 +10,11 @@ struct NewConversationSheet: View {
 
     @State private var name = ""
     @State private var isPrivate = false
-    @State private var kind: ChannelKind = .text
+    @State private var voiceEnabled = false
     @State private var bots: [BotDto] = []
     @State private var friends: [FriendDto] = []
     @State private var busy = false
     @State private var errorText: String?
-
-    private enum ChannelKind: String, CaseIterable, Identifiable {
-        case text, voice
-        var id: String { rawValue }
-        var label: String { self == .text ? "Text" : "Voice" }
-        var symbol: String { self == .text ? "number" : "waveform" }
-        var footer: String {
-            self == .text
-                ? "Standard chat timeline."
-                : "Chat plus a LiveKit voice room. Join from the meeting strip at the top."
-        }
-    }
 
     var body: some View {
         NavigationStack {
@@ -62,14 +50,11 @@ struct NewConversationSheet: View {
             }
 
             Section {
-                Picker("Type", selection: $kind) {
-                    ForEach(ChannelKind.allCases) { option in
-                        Label(option.label, systemImage: option.symbol).tag(option)
-                    }
+                Toggle(isOn: $voiceEnabled) {
+                    Label("Voice", systemImage: "waveform")
                 }
-                .pickerStyle(.segmented)
             } footer: {
-                Text(kind.footer)
+                Text("Add a voice room above the normal chat timeline.")
             }
 
             Section {
@@ -104,7 +89,7 @@ struct NewConversationSheet: View {
                     workspaceId: wsId,
                     name: name.trimmingCharacters(in: .whitespaces),
                     isPrivate: isPrivate,
-                    kind: kind.rawValue,
+                    voiceEnabled: voiceEnabled,
                     purpose: nil
                 )
                 dismiss()
