@@ -228,7 +228,7 @@ export function NewChannelDialog({
             </Select>
             {installations.length === 0 && <p className="text-compact text-warning-400">No GitHub App installation is available in this workspace.</p>}
             <Button
-              label="Connect GitHub"
+              action="connect"
               content="iconText"
               variant="secondary"
               controlSize="compact"
