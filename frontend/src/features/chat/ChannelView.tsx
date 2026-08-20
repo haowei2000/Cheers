@@ -48,7 +48,7 @@ import {
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
-import { LaneBoundsContext } from "@/hooks/useLaneWindow";
+import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { LaneZones } from "./workbench/LaneZones";
 import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";

@@ -26,5 +26,10 @@
     "channel.messages",
     "channel.activity.read",
     "channel.messages.index"
+  ],
+  "maxPanelsPerExtension": 32,
+  "panelSources": [
+    "resource",
+    "fs"
   ]
 }

@@ -5,19 +5,18 @@ import { Select as UiSelect } from "@/components/ui/select";
 // floating window inside the channel's work lane; dragging snaps it to the lane's
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
-import { LayoutDashboard, X, Minimize2, Maximize2, Layers, Plus } from "lucide-react";
-import { useIsMobile } from "@/hooks/useIsMobile";
+import { FloatingPanel } from "@/components/ui/floating-panel";
+import { LayoutDashboard, Layers, Plus } from "lucide-react";
 import {
   useContextPickStore,
   type ContextItem,
 } from "@/features/chat/context/contextPick";
 import { addToContextTitle } from "@/features/chat/context/contextLabels";
-import { useLaneWindow } from "@/hooks/useLaneWindow";
-import { ResizeGrip } from "@/components/ui/resize-grip";
-import { cn } from "@/lib/cn";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
-import { getViewBoards, type ViewBoardContext } from "./viewBoard";
+import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
+import { listExtensions } from "./extensions/api";
+import { registerExtensionPanels } from "@/features/chat/panels/extensionPanels";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
 import type { Message } from "@/types";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -27,7 +26,7 @@ import "./panels/CostPanel";
 import "./panels/SessionsPanel";
 import "./panels/AuditPanel";
 import "./panels/ActivityPanel";
-import "./panels/GitHubCodePanel";
+import "@/features/chat/panels/builtin/githubCode";
 
 interface Props {
   open: boolean;
@@ -52,6 +51,8 @@ interface Props {
    *  `nonce` lets a repeat request for the same board re-apply. */
   focusBoard?: { id: string; nonce: number };
 }
+
+let extensionPanelsLoaded = false;
 
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
 
@@ -87,7 +88,25 @@ function ViewBoardDrawerImpl({
   focusBoard,
 }: Props) {
   const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
-  const boards = getViewBoards(profile?.profile);
+  // Installed packages contribute lane panels declaratively. Registration is global and
+  // idempotent, so this runs once per session. The value is never read: panelsFor() below
+  // reads the module registry on every render, so bumping this simply re-renders once the
+  // contributions land.
+  const [, setExtensionPanelsRevision] = useState(0);
+  useEffect(() => {
+    if (!open || extensionPanelsLoaded) return;
+    extensionPanelsLoaded = true;
+    listExtensions()
+      .then((extensions) => {
+        registerExtensionPanels(extensions);
+        setExtensionPanelsRevision((revision) => revision + 1);
+      })
+      .catch(() => {
+        // A gateway that cannot list extensions just means no contributed panels.
+        extensionPanelsLoaded = false;
+      });
+  }, [open]);
+  const boards = panelsFor("lane", profile?.profile);
   const [active, setActive] = useState<string>(
     () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
   );
@@ -162,12 +181,12 @@ function ViewBoardDrawerImpl({
     };
   }, [open, minimal, channelId, sendResourceReq, sessionsTick]);
 
-  const ctx: ViewBoardContext = useMemo(
+  const ctx: PanelContext = useMemo(
     () => ({
       channelId,
       sendResourceReq,
-      selectedSessionId: scope || null,
-      boardTick,
+      scopeSessionId: scope || null,
+      tick: boardTick,
       onJumpToMessage,
       pendingApprovals,
       currentUserId,
@@ -185,75 +204,35 @@ function ViewBoardDrawerImpl({
     ],
   );
 
-  const isMobile = useIsMobile();
   // Desktop: a draggable/resizable floating window inside the work lane; dragging
-  // snaps it to the lane's grid zones. Minimal collapses to a content-height
-  // glance card that keeps its dragged spot. Closed keeps it mounted (hidden) so
-  // board state survives. Mobile keeps the overlay-sheet.
-  const { float, drag } = useLaneWindow("cheers.float.viewboard", {
-    open,
-    spawnKind: "viewboard",
-  });
-
-  // NB: no `flex` here — the shell toggles display via `open ? "flex" : "hidden"`,
-  // and `cn` runs tailwind-merge: a hardcoded `flex` in this chrome would win the
-  // display conflict over `hidden`, so a CLOSED drawer would still render visible.
-  const cardChrome =
-    "min-h-0 flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-xl shadow-black/45 backdrop-blur-sm";
-  const shellClass = isMobile
-    ? // z-40: above the chat chrome (z-30 header, z-10/z-20 composer popups,
-      // sticky DiffView headers) but below true modals (z-50).
-      `fixed top-14 left-2 right-3 z-40 flex flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-xl shadow-black/45 backdrop-blur-sm transition-[opacity,transform] duration-200 ${
-        minimal
-          ? "max-h-[calc(100dvh-4.5rem)]"
-          : "bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
-      } ${
-        open
-          ? "opacity-100 translate-x-0 pointer-events-auto"
-          : "opacity-0 translate-x-4 pointer-events-none"
-      }`
-    : float
-      ? // Floating window in the lane: `absolute`, capped to the box; a default
-        // top-left spot until dragged; drag.style overrides w/h inline.
-        cn(
-          open ? "flex" : "hidden",
-          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
-          cardChrome,
-          !drag.pos && "top-2 left-2",
-          minimal ? "w-[280px]" : "w-[420px] h-[70%]"
-        )
-      : // Fallback (no lane context): a plain docked column.
-        cn(
-          open ? "flex" : "hidden",
-          cardChrome,
-          minimal ? "w-[280px] self-start max-h-full" : "w-[420px] h-full"
-        );
-
-  // Minimal keeps its dragged spot but sheds the resized size (content-height).
-  const shellStyle = float ? (minimal ? drag.posStyle : drag.style) : undefined;
-
+  // snaps it to the lane's grid zones. Minimal collapses to a glance card that keeps
+  // its dragged spot. Closed keeps it MOUNTED so visited-board state survives. Mobile
+  // is a full-screen sheet. All of that is FloatingPanel's job — see its `open` and
+  // `collapsed` props; `minimal` is controlled because useChannelInstruments owns it.
   return (
-    <aside
-      ref={float ? drag.ref : undefined}
-      onPointerDownCapture={float ? drag.toFront : undefined}
-      style={shellStyle}
-      className={shellClass}
-    >
-      <div
-        {...(float ? drag.handleProps : {})}
-        className="mx-3 mt-2 flex h-9 flex-shrink-0 select-none items-center gap-2 border-y border-zinc-800/90 px-1"
-      >
-        <LayoutDashboard className="w-4 h-4 text-content-muted" />
-        <span className="text-compact font-semibold uppercase tracking-section text-content-muted">
-          ViewBoard
-        </span>
-        <div className="flex-1" />
-        {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
-          <UiButton variant="plain"
-            content="icon" controlSize="compact"
+    <FloatingPanel
+      title="ViewBoard"
+      icon={LayoutDashboard}
+      onClose={onClose}
+      storageKey="cheers.float.viewboard"
+      open={open}
+      collapsed={minimal}
+      onToggleCollapsed={onToggleMinimal}
+      spawnKind="viewboard"
+      className="w-[420px] h-[70%]"
+      defaultPosClassName="top-2 left-2"
+      // Tab strip + scope selector + the keep-alive stack are a non-scrolling flex
+      // column; each board owns its own scrolling.
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+      headerExtra={
+        activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? (
+          <UiButton
+            variant="plain"
+            content="icon"
+            controlSize="compact"
             onClick={() => {
               const meta = ATTACHABLE_BOARDS[activeBoard.id];
-              const scoped = activeBoard.sessionScoped && scope;
+              const scoped = activeBoard.scope === "session" && scope;
               useContextPickStore.getState().add(channelId, {
                 id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
                 verb: meta.verb,
@@ -267,111 +246,95 @@ function ViewBoardDrawerImpl({
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
-        )}
-        {onToggleMinimal && (
-          <UiButton variant="plain"
-            content="icon" controlSize="compact"
-            onClick={onToggleMinimal}
-            title={minimal ? "Expand" : "Minimize"}
-            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-          >
-            {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </UiButton>
-        )}
-        <UiButton variant="plain"
-          content="icon" controlSize="compact"
-          onClick={onClose}
-          title="Close"
-          className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-        >
-          <X className="w-4 h-4" />
-        </UiButton>
-      </div>
-
-      {minimal ? (
+        ) : null
+      }
+      collapsedSummary={(expand) => (
         // Minimized: a purpose-built glance (not the board shrunk). Clicking a row
         // expands straight to that board.
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {open && (
-            <ViewBoardMinimized
-              ctx={ctx}
-              onExpand={(id) => {
-                setActive(id);
-                onToggleMinimal?.();
-              }}
-            />
-          )}
+        <ViewBoardMinimized
+          ctx={ctx}
+          onExpand={(id) => {
+            setActive(id);
+            expand();
+          }}
+        />
+      )}
+    >
+      <div
+        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1"
+        role="tablist"
+        aria-label="ViewBoard sections"
+      >
+        {boards.map((b) => {
+          const isActive = activeBoard?.id === b.id;
+          const Icon = b.icon;
+          return (
+            <UiButton
+              variant="plain"
+              role="tab"
+              aria-selected={isActive}
+              key={b.id}
+              onClick={() => setActive(b.id)}
+              controlSize="regular"
+              className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
+                isActive
+                  ? "border-zinc-200 text-content-primary"
+                  : "border-transparent text-content-primary hover:text-content-strong"
+              }`}
+            >
+              {Icon && <Icon className="w-3.5 h-3.5" />}
+              {b.title}
+            </UiButton>
+          );
+        })}
+      </div>
+
+      {activeBoard?.scope === "session" && (
+        <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
+          <Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
+          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
+          <UiSelect
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            controlSize="regular"
+            className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All sessions</option>
+            {sessions.map((s) => (
+              <option
+                key={s.session_id}
+                value={s.session_id}
+                title={`bot ${s.bot_id} · session ${s.session_id}`}
+              >
+                {s.bot_name || s.bot_id.slice(0, 8)} ·{" "}
+                {sessionTag({
+                  is_primary: s.is_primary,
+                  session_id: s.session_id,
+                  cwd: s.cwd,
+                  when: s.created_at,
+                })}
+              </option>
+            ))}
+          </UiSelect>
         </div>
-      ) : (
-        <>
-          <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1" role="tablist" aria-label="ViewBoard sections">
-            {boards.map((b) => {
-              const isActive = activeBoard?.id === b.id;
-              const Icon = b.icon;
+      )}
+
+      {/* Keep visited boards mounted (hidden) so tab switches restore instantly;
+          hidden boards defer tick refetches until re-shown (ctx.visible). */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {open &&
+          boards
+            .filter((b) => visited.has(b.id) || b.id === activeBoard?.id)
+            .map((b) => {
+              const isActive = b.id === activeBoard?.id;
               return (
-                <UiButton variant="plain" role="tab" aria-selected={isActive}
-                  key={b.id}
-                  onClick={() => setActive(b.id)}
-                  controlSize="regular" className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
- isActive
- ? "border-zinc-200 text-content-primary": "border-transparent text-content-primary hover:text-content-strong"
- }`}
-                >
-                  {Icon && <Icon className="w-3.5 h-3.5" />}
-                  {b.title}
-                </UiButton>
+                <div key={b.id} className={isActive ? "h-full" : "hidden"}>
+                  {b.render({ ...ctx, visible: isActive })}
+                </div>
               );
             })}
-          </div>
-
-          {activeBoard?.sessionScoped && (
-            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
-              <Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-              <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
-              <UiSelect
-                value={scope}
-                onChange={(e) => setScope(e.target.value)}
-                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">All sessions</option>
-                {sessions.map((s) => (
-                  <option
-                    key={s.session_id}
-                    value={s.session_id}
-                    title={`bot ${s.bot_id} · session ${s.session_id}`}
-                  >
-                    {s.bot_name || s.bot_id.slice(0, 8)} ·{" "}
-                    {sessionTag({
-                      is_primary: s.is_primary,
-                      session_id: s.session_id,
-                      cwd: s.cwd,
-                      when: s.created_at,
-                    })}
-                  </option>
-                ))}
-              </UiSelect>
-            </div>
-          )}
-
-          {/* Keep visited boards mounted (hidden) so tab switches restore instantly;
-              hidden boards defer tick refetches until re-shown (ctx.visible). */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {open &&
-              boards
-                .filter((b) => visited.has(b.id) || b.id === activeBoard?.id)
-                .map((b) => {
-                  const isActive = b.id === activeBoard?.id;
-                  return (
-                    <div key={b.id} className={isActive ? "h-full" : "hidden"}>
-                      {b.render({ ...ctx, visible: isActive })}
-                    </div>
-                  );
-                })}
-          </div>
-        </>
-      )}
-      {float && !minimal && <ResizeGrip resizeProps={drag.resizeProps} />}
-    </aside>
+      </div>
+    </FloatingPanel>
   );
 }
 

@@ -2,12 +2,11 @@ import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Tip } from "@/components/ui/tip";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { useLaneWindow } from "@/hooks/useLaneWindow";
-import { ResizeGrip } from "@/components/ui/resize-grip";
+import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { cn } from "@/lib/cn";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
@@ -21,8 +20,8 @@ import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listOfficialScenes } from "./extensions/api";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
-import { workbenchPanelsFor } from "./workbenchPanels";
-import "./panels/GitHubCodeWorkbenchPanel";
+import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
+import "@/features/chat/panels/builtin/githubCode";
 import { hasCode, type ParsedExtension } from "./extensions/package";
 import { parseExtensionPackageOffThread, parsePersonalExtension } from "./extensions/parseOffThread";
 import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
@@ -531,12 +530,6 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     });
   };
   const minimized = collapsed && !isMobile;
-  // Desktop: a draggable/resizable floating window inside the work lane; dragging
-  // snaps it to the lane's grid zones.
-  const { float, drag } = useLaneWindow("cheers.float.workbench", {
-    open,
-    spawnKind: "workbench",
-  });
 
   const ctx: WorkbenchContext = useMemo(
     () => ({
@@ -558,62 +551,56 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     }),
     [open, channelId, profile, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
   );
-  const profilePanels = workbenchPanelsFor(profile?.profile);
+  const profilePanels = panelsFor("inline", profile?.profile);
+  // Inline panels are ordinary contributions and get the shared PanelContext, not the
+  // Workbench's own — its pin/binding/config state belongs to the fs-source body
+  // (SceneWorkbench / FilePanel / RendererHost), which are not contributions.
+  const panelCtx: PanelContext = useMemo(
+    () => ({
+      channelId,
+      profile,
+      sendResourceReq,
+      fs,
+      visible: open,
+      openLocator: onOpenLocator,
+      composeMessage: onCompose,
+    }),
+    [channelId, profile, sendResourceReq, fs, open, onOpenLocator, onCompose]
+  );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but
   // mounted) while closed so the browser tree/selection state survives.
   // Mobile: the original full-screen overlay sheet.
-  const shellClass = isMobile
-    ? // z-40: above the z-30 channel header (which otherwise paints over and
-      // tap-blocks this sheet's own title bar) but below true modals (z-50) —
-      // the band the floating window used to get inline from useWindowDrag.
-      `fixed inset-0 z-40 flex flex-col bg-zinc-900/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] transition-[opacity,transform] duration-200 ${
-        open
-          ? "opacity-100 translate-x-0 pointer-events-auto"
-          : "opacity-0 translate-x-4 pointer-events-none"
-      }`
-    : float
-      ? // Floating window in the lane: `absolute`, capped to the box; a default
-        // top-left spot until dragged; drag.style overrides w/h inline.
-        cn(
-          open ? "flex" : "hidden",
-          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
-          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
-          !drag.pos && "top-2 left-2",
-          minimized ? "w-[300px]" : "w-[560px] h-[75%]",
-          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
-        )
-      : // Fallback (no lane context): a plain docked column.
-        cn(
-          open ? "flex" : "hidden",
-          "min-h-0 flex-col rounded-sm shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
-          minimized ? "w-[300px] self-start max-h-full" : "w-[560px] h-full",
-          dragOver || busy ? "ring-2 ring-amber-500/60" : ""
-        );
-
-  // Minimized keeps its dragged spot but sheds the resized size (content-height).
-  const shellStyle = float ? (minimized ? drag.posStyle : drag.style) : undefined;
-
+  // Desktop: a draggable/resizable floating window in the work lane. Closed keeps it
+  // MOUNTED so the file tree and selection survive; minimized swaps the body for a
+  // glance. FloatingPanel owns all of that — see its `open`, `collapsed` and
+  // `dropTarget` props. Mobile is a full-screen sheet.
   return (
-      <aside
-        ref={float ? drag.ref : undefined}
-        onPointerDownCapture={float ? drag.toFront : undefined}
-        style={shellStyle}
-        onDragOver={(e) => {
+    <FloatingPanel
+      title="Workbench"
+      icon={Package}
+      onClose={onClose}
+      storageKey="cheers.float.workbench"
+      open={open}
+      collapsed={minimized}
+      onToggleCollapsed={toggleCollapsed}
+      spawnKind="workbench"
+      className="w-[560px] h-[75%]"
+      defaultPosClassName="top-2 left-2"
+      // Scene tabs / raw tree own their own scrolling; the body is a flush column.
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+      // Dropping a .cheers-extension anywhere on the panel loads it (after consent).
+      dropTarget={{
+        active: dragOver || busy,
+        onDragOver: (e: DragEvent) => {
           e.preventDefault();
           setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        className={shellClass}
-      >
-        <div
-          {...(float ? drag.handleProps : {})}
-          className="mx-2 mt-2 flex h-11 flex-shrink-0 select-none items-center gap-2 rounded-sm bg-zinc-900/70 px-3"
-        >
-          <span className="text-regular font-semibold text-content-primary">Workbench</span>
-          {!minimized && (
-          <>
+        },
+        onDragLeave: () => setDragOver(false),
+        onDrop,
+      }}
+      headerExtra={
+        <>
           <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
             <ControlTrigger
               type="button"
@@ -737,8 +724,6 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               </div>
             )}
           </div>
-          </>
-          )}
           {/* design-system-native: file-input */}
 <input
             ref={fileRef}
@@ -748,54 +733,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             onChange={onPickFile}
             className="hidden"
           />
-          <div className="flex-1" />
-          <ActionButton
-            action={minimized ? "expand" : "collapse"}
-            context="toolbar"
-            accessibleLabel={minimized ? "Expand Workbench" : "Minimize Workbench"}
-            onClick={toggleCollapsed}
-            controlSize={workbenchControlSize.chrome}
-            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong max-md:hidden"
-          />
-          <ActionButton action="close" context="windowChrome" accessibleLabel="Close Workbench" onClick={onClose} />
-        </div>
-
-        {pendingLoad && (
-          <ExtensionInstallDialog
-            candidate={pendingLoad}
-            busy={false}
-            onConfirm={confirmPendingLoad}
-            onClose={() => setPendingLoad(null)}
-          />
-        )}
-
-        {!minimized && notice && (
-          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
-            <span className="flex-1">{notice}</span>
-            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize={workbenchControlSize.chrome} onClick={() => setNotice(null)} />
-          </div>
-        )}
-
-        {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-content-muted">
-            <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-            <span className="flex-1">
-              No scenes yet. Load a .cheers-extension package or install one in Settings.
-            </span>
-            <ActionButton
-              action="open"
-              context="settings"
-              onClick={() => navigate("/settings/workbench")}
-              controlSize="regular"
-              className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
-            />
-          </div>
-        )}
-
-        {/* Minimized: a ViewBoard-style glance (scenario + pinned files) in place
-            of the full browser. Clicking a row expands back to the browser. */}
-        {minimized && (
-          <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
+        </>
+      }
+      collapsedSummary={() => (
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
             <GlanceRow
               Icon={Package}
               label="Scenario"
@@ -815,11 +756,43 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               {pinned.length > 4 && <DetailLine name={`+${pinned.length - 4} more`} />}
             </GlanceRow>
           </div>
+      )}
+    >
+        {pendingLoad && (
+          <ExtensionInstallDialog
+            candidate={pendingLoad}
+            busy={false}
+            onConfirm={confirmPendingLoad}
+            onClose={() => setPendingLoad(null)}
+          />
+        )}
+
+        {notice && (
+          <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
+            <span className="flex-1">{notice}</span>
+            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize={workbenchControlSize.chrome} onClick={() => setNotice(null)} />
+          </div>
+        )}
+
+        {allEnvs.length === 0 && selectedId === null && (
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-content-muted">
+            <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
+            <span className="flex-1">
+              No scenes yet. Load a .cheers-extension package or install one in Settings.
+            </span>
+            <ActionButton
+              action="open"
+              context="settings"
+              onClick={() => navigate("/settings/workbench")}
+              controlSize="regular"
+              className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
+            />
+          </div>
         )}
         {/* Content-first by default: scene → item tabs → renderer. Raw is an explicit
             mode that mounts the complete file tree and editor. */}
         <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-          {open && profilePanels.map(({ id, component: Panel }) => <Panel key={id} ctx={ctx} />)}
+          {open && profilePanels.map((panel) => <Fragment key={panel.id}>{panel.render(panelCtx)}</Fragment>)}
           <div className="min-h-0 flex-1 overflow-hidden">
             {open && (rawMode ? (
               <FilePanel ctx={ctx} />
@@ -834,8 +807,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             ))}
           </div>
         </div>
-        {float && !minimized && <ResizeGrip resizeProps={drag.resizeProps} />}
-      </aside>
+    </FloatingPanel>
   );
 }
 

@@ -1,14 +1,44 @@
 # Workbench Extensions
 
-Workbench has one extension system. Scenes, seed files, declarative Automation templates,
-and optional macOS personal renderers ship in `.cheers-extension` ZIP packages.
+Workbench has one extension system. Scenes, panels, seed files, declarative Automation
+templates, and optional macOS personal renderers ship in `.cheers-extension` ZIP packages.
 
 ## Package contract
 
-`manifest.json` uses `schemaVersion: 1`. Extension, scene, renderer, and Automation IDs
-match `^[a-z0-9][a-z0-9._-]{0,63}$`; versions are SemVer. Scene definitions contain
-`items`, `seed`, and `pin`. Renderer references are `auto`, `builtin:<id>`, or
-`self:<id>`; `self:` is valid only for personal macOS packages.
+`manifest.json` uses `schemaVersion: 1`. Extension, scene, panel, renderer, and Automation
+IDs match `^[a-z0-9][a-z0-9._-]{0,63}$`; versions are SemVer. Scene definitions contain
+`items`, `seed`, and `pin`.
+
+A **panel** contribution is a declarative board: `{ id, title, source, view }`, at most 32
+per package. `source` is `{ kind: "resource", verb }` or `{ kind: "fs", path }` and nothing
+else — `workspace` names paths on a bot's own machine under an authorization model
+channel-role does not cover, and `rest` is an arbitrary endpoint rather than a vocabulary,
+so both stay first-party. A resource `verb` must come from the same allowlist as
+`channel.resources`: declaring a source never widens what a package can read. `view` follows
+the renderer reference rules below.
+
+A panel is pure data — the host performs the read and renders it into a compiled built-in
+view, so the package never receives the bytes as code. That is why panels need no permission
+and install at global scope. The install dialog still lists the verbs a package's panels
+will display, because putting a channel's activity on screen is worth seeing before you
+agree to it. Panels are read-only regardless of the view: writability belongs to the source,
+and a projection carries no version to write back against.
+
+Official templates may declare `panels` too, in
+`server/assets/workbench-templates/*.template.json`. The catalog validates them against the
+SAME vocabulary the package installers enforce — it is a second way to declare a panel, not
+a second grammar — and rejects a `self:` view, since a release-managed extension carries no
+renderer bundle. Malformed catalog data panics at build time rather than failing a request.
+
+**Known gap:** every `channel.*` verb returns a wrapper object (`{"members": [...]}`), while
+`builtin:table` accepts a bare array, so a resource-source panel over one currently renders
+empty. A `pick` field on the source (naming the key to unwrap) would close this; until then,
+useful declarative panels are limited to `fs` sources whose file is already the right shape.
+
+Renderer references are `auto`, `builtin:<id>`, or `self:<id>`; `self:` is valid only for
+personal macOS packages. A panel with a `self:` view validates at personal scope on both
+installers, but the host does not yet mount a sandboxed renderer for a panel — only for a
+file. Until it does, ship panels with `builtin:` views.
 
 Renderer capabilities are denied unless declared in `permissions`: `file.write`,
 allowlisted `channel.resources`, `navigation.open`, `composer.prefill`,
