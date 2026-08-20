@@ -1,0 +1,58 @@
+[[permission]]
+identifier = "allow-desktop-commands"
+description = "Allows the local bundled Cheers interface to invoke its native desktop commands."
+commands.allow = [
+  "connector_list",
+  "connector_start",
+  "connector_stop",
+  "connector_restart",
+  "connector_delete",
+  "connector_logs",
+  "connector_read_config",
+  "connector_write_config",
+  "connector_config_read_fields",
+  "connector_config_write_fields",
+  "connector_write_onboarded",
+  "connector_set_start_with_app",
+  "connector_roots",
+  "detect_agents",
+  "install_agent",
+  "available_openers",
+  "open_path",
+  "local_root_available",
+  "open_local_path",
+  "open_remote_file",
+  "extensions_list",
+  "extensions_install",
+  "extensions_remove",
+  "extension_dev_read",
+  "extension_catalog_download",
+  "connector_watch_start",
+  "connector_watch_stop",
+  "connector_git_status",
+  "connector_file_diff",
+  "connector_file_revert",
+  "connector_open_pr",
+  "connector_health",
+  "connector_validate_workspace",
+  "connector_add_allowed_roots",
+  "check_agent_updates",
+  "connector_audit_timeline",
+  "permission_context",
+  "tray_update_liveness",
+  "take_pending_deep_link",
+  "desktop_password_login",
+  "desktop_verify_factor",
+  "desktop_oauth_handoff",
+  "desktop_refresh_session",
+  "desktop_logout_session",
+  "desktop_open_oauth_url",
+  "capture_screenshot",
+  "take_pending_quick_attach",
+  "release_quick_attach",
+]
+
+[[permission]]
+identifier = "allow-desktop-open-oauth-url"
+description = "Allows the official website to open a validated OAuth authorization URL in the system browser."
+commands.allow = ["desktop_open_oauth_url"]
