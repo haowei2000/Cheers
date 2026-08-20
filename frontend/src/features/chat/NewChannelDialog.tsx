@@ -1,6 +1,6 @@
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useEffect, useState } from "react";
-import { GitFork, Hash, Lock, MessagesSquare, Volume2 } from "lucide-react";
+import { GitFork, Hash, Link2, Lock, MessagesSquare, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createChannel, deleteChannel } from "@/api/channels";
 import { putCodeProfile } from "@/api/channelProfiles";
@@ -9,6 +9,7 @@ import {
   initializeChannelIntegration,
   listIntegrationInstallations,
   listIntegrationResources,
+  startGitHubInstallation,
   type IntegrationInstallation,
   type IntegrationResource,
 } from "@/api/integrations";
@@ -20,6 +21,9 @@ import { CheckboxField } from "@/components/ui/checkbox-field";
 import { Select } from "@/components/ui/select";
 import { isComposing } from "@/lib/ime";
 import type { ConversationMode } from "./ConversationModePicker";
+import { Button } from "@/components/ui/button";
+import { invokeDesktop } from "@/lib/desktop";
+import { isTauri } from "@/lib/serverConfig";
 
 // Create a channel in the given workspace, then add it to the store and select it
 // (it opens in the normal chat view). Mirrors the NewDmDialog pattern.
@@ -44,15 +48,23 @@ export function NewChannelDialog({
   const [repositories, setRepositories] = useState<IntegrationResource[]>([]);
   const [repositoryId, setRepositoryId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [connectBusy, setConnectBusy] = useState(false);
   const profile = channelType === "code" ? "code" : "standard";
   const conversationMode: ConversationMode = channelType === "discuss" ? "discuss" : "chat";
 
-  useEffect(() => {
-    if (profile !== "code") return;
-    void listIntegrationInstallations("github").then((items) => {
+  function refreshInstallations() {
+    return listIntegrationInstallations("github").then((items) => {
       setInstallations(items.filter((item) => item.workspace_id === workspaceId));
       setInstallationId((current) => current || items.find((item) => item.workspace_id === workspaceId)?.installation_id || "");
     }).catch(() => setInstallations([]));
+  }
+
+  useEffect(() => {
+    if (profile !== "code") return;
+    void refreshInstallations();
+    const refreshOnFocus = () => { void refreshInstallations(); };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
   }, [profile, workspaceId]);
 
   useEffect(() => {
@@ -61,6 +73,23 @@ export function NewChannelDialog({
       .then((items) => setRepositories(items))
       .catch(() => setRepositories([]));
   }, [profile, installationId]);
+
+  async function connectGitHub() {
+    if (connectBusy) return;
+    setConnectBusy(true);
+    try {
+      const response = await startGitHubInstallation(workspaceId);
+      if (isTauri()) {
+        await invokeDesktop("desktop_open_oauth_url", { url: response.authorization_url });
+      } else {
+        window.open(response.authorization_url, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't connect GitHub");
+    } finally {
+      setConnectBusy(false);
+    }
+  }
 
   async function submit() {
     const trimmed = name.trim();
@@ -198,6 +227,16 @@ export function NewChannelDialog({
               {repositories.map((item) => <option key={item.external_id} value={item.external_id}>{item.external_id}{item.private ? " · Private" : ""}</option>)}
             </Select>
             {installations.length === 0 && <p className="text-compact text-warning-400">No GitHub App installation is available in this workspace.</p>}
+            <Button
+              label="Connect GitHub"
+              content="iconText"
+              variant="secondary"
+              controlSize="compact"
+              loading={connectBusy}
+              onClick={() => void connectGitHub()}
+            >
+              <Link2 />
+            </Button>
           </div>
         )}
 
