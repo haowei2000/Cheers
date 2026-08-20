@@ -88,6 +88,138 @@ struct TokenResponse {
     expires_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AppResponse {
+    slug: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallationResponse {
+    id: i64,
+    account: InstallationAccount,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallationAccount {
+    login: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct UserTokenResponse {
+    access_token: Option<String>,
+    error: Option<String>,
+}
+
+async fn app_get<T: serde::de::DeserializeOwned>(config: &Config, path: &str) -> anyhow::Result<T> {
+    let app = config
+        .github_app
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))?;
+    let jwt = app_jwt(app, Utc::now())?;
+    let response = http()
+        .get(format!("{}{}", config.github_api_base_url, path))
+        .bearer_auth(jwt.expose())
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub rejected the App request ({status})");
+    }
+    Ok(response.json().await?)
+}
+
+/// Public slug used by GitHub's browser installation URL.
+pub async fn app_slug(config: &Config) -> anyhow::Result<String> {
+    Ok(app_get::<AppResponse>(config, "/app").await?.slug)
+}
+
+/// Verify that an installation belongs to this App and return its account.
+pub async fn installation_account(
+    config: &Config,
+    external_installation_id: &str,
+) -> anyhow::Result<String> {
+    let installation = app_get::<InstallationResponse>(
+        config,
+        &format!("/app/installations/{external_installation_id}"),
+    )
+    .await?;
+    if installation.id.to_string() != external_installation_id {
+        anyhow::bail!("GitHub installation id did not match");
+    }
+    Ok(installation.account.login)
+}
+
+/// Exchange the short-lived callback code issued to this GitHub App. The
+/// resulting user token is deliberately returned only to the callback stack.
+pub async fn exchange_user_code(config: &Config, code: &str) -> anyhow::Result<Secret> {
+    let app = config
+        .github_app
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))?;
+    let client_id = app
+        .client_id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("GITHUB_APP_CLIENT_ID is not configured"))?;
+    let client_secret = app
+        .client_secret
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("GITHUB_APP_CLIENT_SECRET is not configured"))?;
+    let response = http()
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+            ("code", code),
+        ])
+        .send()
+        .await?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("GitHub rejected the installer authorization ({status})");
+    }
+    let body: UserTokenResponse = response.json().await?;
+    let token = body.access_token.ok_or_else(|| {
+        anyhow::anyhow!(
+            "GitHub installer authorization failed: {}",
+            body.error.unwrap_or_else(|| "missing token".into())
+        )
+    })?;
+    Ok(Secret::new(token))
+}
+
+/// GitHub returns 404 when the user token is not associated with this
+/// installation. This is the anti-spoofing check required for Setup callbacks.
+pub async fn user_can_access_installation(
+    config: &Config,
+    token: &Secret,
+    external_installation_id: &str,
+) -> anyhow::Result<bool> {
+    let response = http()
+        .get(format!(
+            "{}/user/installations/{external_installation_id}",
+            config.github_api_base_url
+        ))
+        .bearer_auth(token.expose())
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "GitHub refused the installer verification ({})",
+            response.status()
+        );
+    }
+    let installation: InstallationResponse = response.json().await?;
+    Ok(installation.id.to_string() == external_installation_id)
+}
+
 /// Exchange the App JWT for an installation token. Always a network call —
 /// [`installation_token`] is the caching entry point.
 pub async fn mint_installation_token(
@@ -225,6 +357,9 @@ mod tests {
         let broken = GitHubAppConfig {
             app_id: "1".into(),
             private_key_pem: "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----".into(),
+            client_id: None,
+            client_secret: None,
+            webhook_secret: None,
         };
         let error = app_jwt(&broken, at(1)).expect_err("must not sign");
         assert!(

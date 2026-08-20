@@ -113,6 +113,98 @@ pub async fn receive(
     ))
 }
 
+/// Fixed GitHub App webhook endpoint. GitHub has one URL for the App, so the
+/// provider installation id is taken from the signed payload and resolved to
+/// Cheers' workspace-scoped installation row only after verification.
+pub async fn receive_github(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    if body.len() > webhook::MAX_BODY_BYTES {
+        return Err(rejected());
+    }
+    let descriptor = catalog::find("github").ok_or_else(rejected)?;
+    let secret = state
+        .config
+        .github_app
+        .as_ref()
+        .and_then(|app| app.webhook_secret.as_deref())
+        .ok_or_else(|| {
+            tracing::warn!("GitHub App webhook secret is not configured");
+            rejected()
+        })?;
+    let SignatureScheme::HmacSha256 { header, prefix } = &descriptor.signature else {
+        return Err(rejected());
+    };
+    webhook::verify_hmac_sha256(
+        secret.as_bytes(),
+        *prefix,
+        headers.get(*header).and_then(|value| value.to_str().ok()),
+        &body,
+    )
+    .map_err(|_| rejected())?;
+
+    let payload: Value =
+        serde_json::from_slice(&body).map_err(|_| AppError::BadRequest("invalid JSON".into()))?;
+    let external_id = github_installation_id(&payload)
+        .ok_or_else(|| AppError::BadRequest("webhook is missing installation.id".into()))?;
+    if !ratelimit::integration_webhook_limiter()
+        .try_hit(&ratelimit::integration_webhook_key("github", &external_id))
+    {
+        return Err(rejected());
+    }
+    let installations = sqlx::query(
+        "SELECT installation_id FROM integration_installations
+          WHERE integration_id = 'github' AND external_account = $1
+            AND disabled_at IS NULL",
+    )
+    .bind(&external_id)
+    .fetch_all(&state.db)
+    .await?;
+    if installations.is_empty() {
+        return Err(rejected());
+    }
+    let event_id = field(&descriptor.event_id, &headers, &payload)
+        .ok_or_else(|| AppError::BadRequest("webhook is missing its event id".into()))?;
+    let event_type = field(&descriptor.event_type, &headers, &payload)
+        .ok_or_else(|| AppError::BadRequest("webhook is missing its event type".into()))?;
+    let mut admitted = false;
+    for installation in installations {
+        let installation_id: String = installation.try_get("installation_id")?;
+        admitted |= sqlx::query(
+            "INSERT INTO integration_webhook_events
+                 (integration_id, installation_id, event_id, event_type, payload)
+             VALUES ('github', $1, $2, $3, $4)
+             ON CONFLICT (integration_id, installation_id, event_id) DO NOTHING",
+        )
+        .bind(&installation_id)
+        .bind(&event_id)
+        .bind(&event_type)
+        .bind(&payload)
+        .execute(&state.db)
+        .await?
+        .rows_affected()
+            == 1;
+    }
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "accepted": true, "duplicate": !admitted })),
+    ))
+}
+
+fn github_installation_id(payload: &Value) -> Option<String> {
+    payload
+        .pointer("/installation/id")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .map(|id| id.to_string())
+                .or_else(|| value.as_str().map(str::to_string))
+        })
+        .filter(|value| !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()))
+}
+
 struct Installation {
     webhook_secret_enc: Option<String>,
 }
@@ -287,5 +379,29 @@ mod tests {
         // Unknown integration, unknown installation, missing secret, and bad
         // signature must be indistinguishable to the caller.
         assert_eq!(rejected().to_string(), "unauthorized: webhook rejected");
+    }
+
+    #[test]
+    fn reads_github_installation_id_from_signed_payload() {
+        assert_eq!(
+            github_installation_id(&json!({"installation": {"id": 12345}})).as_deref(),
+            Some("12345")
+        );
+        assert_eq!(
+            github_installation_id(&json!({"installation": {"id": "67890"}})).as_deref(),
+            Some("67890")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_github_installation_ids() {
+        for payload in [
+            json!({}),
+            json!({"installation": {"id": -1}}),
+            json!({"installation": {"id": ""}}),
+            json!({"installation": {"id": "12/not-an-id"}}),
+        ] {
+            assert_eq!(github_installation_id(&payload), None);
+        }
     }
 }

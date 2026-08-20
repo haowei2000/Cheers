@@ -52,8 +52,24 @@ Desktop users should give the VM at least 4 GB of memory (6–8 GB with the bot)
   For the GitHub Actions `production` environment, configure these respectively as
   `CHEERS_GITHUB_OAUTH_CLIENT_ID`, `CHEERS_GITHUB_OAUTH_CLIENT_SECRET`, and
   `CHEERS_GITHUB_OAUTH_REDIRECT_URI`, because GitHub reserves the `GITHUB_` prefix.
-  GitHub OAuth is
-  identity-only; repository authorization remains on the GitHub App installation.
+  GitHub OAuth is identity-only; repository authorization remains on the GitHub
+  App installation.
+
+  To let workspace administrators connect repositories themselves, configure the
+  GitHub App with `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`,
+  `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, and
+  `GITHUB_APP_WEBHOOK_SECRET`. In the GitHub Actions `production` environment,
+  use the same names prefixed with `CHEERS_`. The App settings must use:
+
+  - Callback URL: `https://www.tocheers.com/api/v1/integrations/github/installations/callback`
+  - Webhook URL: `https://www.tocheers.com/api/v1/integrations/github/events`
+  - **Request user authorization (OAuth) during installation:** enabled
+  - Repository events: Push, Pull request, Issues, and Release
+
+  Generate a high-entropy webhook secret and store it only as the environment
+  Secret. The installation callback verifies the one-time Cheers state and then
+  verifies that the authorized GitHub user can access the returned installation;
+  the `installation_id` callback parameter alone is never trusted.
   Leave these unset on normal self-hosted instances; `/api/v1/auth/capabilities`
   then reports the provider disabled. Never distribute the official `.p8` key
   to self-hosted operators.

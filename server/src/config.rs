@@ -79,6 +79,11 @@ pub struct GitHubAppConfig {
     pub app_id: String,
     /// RSA private key PEM downloaded when the App was created.
     pub private_key_pem: String,
+    /// GitHub App OAuth credentials used only to verify the installing user.
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    /// Shared secret configured on the GitHub App's single webhook endpoint.
+    pub webhook_secret: Option<String>,
 }
 
 impl std::fmt::Debug for GitHubAppConfig {
@@ -86,6 +91,15 @@ impl std::fmt::Debug for GitHubAppConfig {
         f.debug_struct("GitHubAppConfig")
             .field("app_id", &self.app_id)
             .field("private_key_pem", &"<redacted>")
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "webhook_secret",
+                &self.webhook_secret.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -324,6 +338,9 @@ impl Config {
             (Some(app_id), Some(private_key_pem)) => Some(GitHubAppConfig {
                 app_id,
                 private_key_pem,
+                client_id: optional("GITHUB_APP_CLIENT_ID"),
+                client_secret: optional("GITHUB_APP_CLIENT_SECRET"),
+                webhook_secret: optional("GITHUB_APP_WEBHOOK_SECRET"),
             }),
             (None, None) => None,
             _ => {
