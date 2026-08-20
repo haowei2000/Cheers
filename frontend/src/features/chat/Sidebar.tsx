@@ -15,6 +15,7 @@ import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
+import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 
 interface SectionProps {
   label: string;
@@ -56,6 +57,7 @@ interface ChannelItemProps {
 }
 
 function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemProps) {
+  const voiceEnabled = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
   const participants = voicePresence?.participants ?? [];
   const unread = (channel.mention_count ?? 0) > 0 ? (
     <UnreadBadge
@@ -80,20 +82,19 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
         title={<span className={cn(channel.is_member === false && "opacity-50")}>{channel.name}</span>}
         leading={channel.avatar_url ? (
           <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
-        ) : channel.kind === "voice" ? (
-          <Radio className="h-4 w-4 flex-shrink-0 opacity-70" />
         ) : (
           <EditorialIcon name="section" contentSize="regular" className="flex-shrink-0 opacity-70" />
         )}
-        status={participants.length > 0 ? (
-          <span className={cn(controlTextClasses.compact, "tabular-nums text-success-400")}>
-            {participants.length}
+        status={voiceEnabled ? (
+          <span className={cn(controlTextClasses.compact, "inline-flex items-center gap-1 tabular-nums", participants.length > 0 ? "text-success-400" : "text-content-muted")}>
+            <Radio className="h-3.5 w-3.5" />
+            {participants.length > 0 ? participants.length : null}
           </span>
         ) : undefined}
         criticalStatus={unread}
         className="rounded-sm border-0"
       />
-      {channel.kind === "voice" && participants.length > 0 && (
+      {voiceEnabled && participants.length > 0 && (
         <div className="space-y-1 pb-1 pl-7 pr-1">
           {participants.map((participant) => (
             <EntityItem
@@ -153,10 +154,9 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   const isPersonal = workspace?.kind === "personal";
 
   const publicChannels = channels.filter(
-    (c) => c.type !== "dm" && c.type !== "private" && c.kind !== "voice"
+    (c) => c.type !== "dm" && c.type !== "private"
   );
-  const privateChannels = channels.filter((c) => c.type === "private" && c.kind !== "voice");
-  const voiceChannels = channels.filter((c) => c.type !== "dm" && c.kind === "voice");
+  const privateChannels = channels.filter((c) => c.type === "private");
   const dms = channels.filter((c) => c.type === "dm");
 
   // Selecting a channel also notifies the mobile layout (push the chat screen).
@@ -205,23 +205,10 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
               channel={ch}
               selected={selectedChannelId === ch.channel_id}
               onClick={() => pick(ch.channel_id)}
+              voicePresence={voicePresenceByChannel[ch.channel_id]}
             />
           ))}
         </Section>
-
-        {voiceChannels.length > 0 && (
-          <Section label="Voice Channels">
-            {voiceChannels.map((ch) => (
-              <ChannelItem
-                key={ch.channel_id}
-                channel={ch}
-                selected={selectedChannelId === ch.channel_id}
-                onClick={() => pick(ch.channel_id)}
-                voicePresence={voicePresenceByChannel[ch.channel_id]}
-              />
-            ))}
-          </Section>
-        )}
 
         {privateChannels.length > 0 && (
           <Section label="Private">
@@ -231,6 +218,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 channel={ch}
                 selected={selectedChannelId === ch.channel_id}
                 onClick={() => pick(ch.channel_id)}
+                voicePresence={voicePresenceByChannel[ch.channel_id]}
               />
             ))}
           </Section>

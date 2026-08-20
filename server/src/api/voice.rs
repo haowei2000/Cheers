@@ -210,7 +210,7 @@ pub struct TranscriptListQuery {
 }
 
 pub(crate) struct VoiceMember {
-    pub(crate) channel_kind: String,
+    pub(crate) voice_enabled: bool,
     pub(crate) channel_role: String,
     pub(crate) display_name: String,
 }
@@ -323,7 +323,9 @@ pub(crate) async fn voice_member(
     user_id: &str,
 ) -> Result<VoiceMember, AppError> {
     let row = sqlx::query(
-        "SELECT c.kind,
+        "SELECT EXISTS(SELECT 1 FROM channel_features cf
+                       WHERE cf.channel_id = c.channel_id
+                         AND cf.feature = 'voice' AND cf.enabled = TRUE) AS voice_enabled,
                 cm.role AS channel_role,
                 COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name
          FROM channels c
@@ -339,7 +341,7 @@ pub(crate) async fn voice_member(
     .ok_or_else(|| AppError::Forbidden("active channel membership required".into()))?;
 
     Ok(VoiceMember {
-        channel_kind: row.try_get("kind").unwrap_or_else(|_| "text".into()),
+        voice_enabled: row.try_get("voice_enabled").unwrap_or(false),
         channel_role: row
             .try_get("channel_role")
             .unwrap_or_else(|_| "member".into()),
@@ -411,7 +413,7 @@ pub async fn join(
 ) -> Result<Json<VoiceJoinResponse>, AppError> {
     Uuid::parse_str(&channel_id).map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));
@@ -542,8 +544,13 @@ pub async fn state(
 
     let can_manage = can_manage_voice(&member, &claims);
     Ok(Json(VoiceStateResponse {
-        enabled: state.config.livekit().is_some(),
-        channel_kind: member.channel_kind,
+        enabled: member.voice_enabled && state.config.livekit().is_some(),
+        channel_kind: if member.voice_enabled {
+            "voice"
+        } else {
+            "text"
+        }
+        .into(),
         can_manage,
         session,
     }))
@@ -665,7 +672,7 @@ pub async fn start_transcription(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" || !can_manage_voice(&member, &claims) {
+    if !member.voice_enabled || !can_manage_voice(&member, &claims) {
         return Err(AppError::Forbidden(
             "channel owner or admin is required to start transcription".into(),
         ));
@@ -779,7 +786,7 @@ pub async fn stop_transcription(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" || !can_manage_voice(&member, &claims) {
+    if !member.voice_enabled || !can_manage_voice(&member, &claims) {
         return Err(AppError::Forbidden(
             "channel owner or admin is required to stop transcription".into(),
         ));
@@ -890,7 +897,9 @@ pub async fn presence(
                 COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,
                 u.avatar_url, vps.mic_published_at
          FROM voice_sessions vs
-         JOIN channels c ON c.channel_id = vs.channel_id AND c.kind = 'voice'
+         JOIN channel_features cf ON cf.channel_id = vs.channel_id
+              AND cf.feature = 'voice' AND cf.enabled = TRUE
+         JOIN channels c ON c.channel_id = vs.channel_id
          JOIN channel_memberships viewer ON viewer.channel_id = vs.channel_id
               AND viewer.member_id = $1 AND viewer.member_type = 'user'
          LEFT JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id
@@ -1318,7 +1327,7 @@ pub async fn transcript(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));
@@ -1350,7 +1359,7 @@ pub async fn grant_consent(
     Path(channel_id): Path<String>,
 ) -> Result<Json<VoiceConsentResponse>, AppError> {
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));
@@ -1446,7 +1455,7 @@ pub async fn withdraw_consent(
     Path(channel_id): Path<String>,
 ) -> Result<Json<VoiceConsentResponse>, AppError> {
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));

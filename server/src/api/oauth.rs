@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{
     api::auth,
     app_state::AppState,
-    config::{AppleAuthConfig, GoogleAuthConfig},
+    config::{AppleAuthConfig, GitHubOAuthConfig, GoogleAuthConfig},
     domain::{auth as auth_domain, auth_sessions, two_factor},
     errors::AppError,
     infra::crypto,
@@ -37,6 +37,9 @@ const APPLE_TOKEN_URL: &str = "https://appleid.apple.com/auth/token";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_KEYS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 const GOOGLE_ISSUER: [&str; 2] = ["https://accounts.google.com", "accounts.google.com"];
+const GITHUB_ISSUER: &str = "https://github.com";
+const GITHUB_AUTHORIZE_URL: &str = "https://github.com/login/oauth/authorize";
+const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 
 #[derive(Debug, Deserialize)]
 pub struct StartRequest {
@@ -122,6 +125,25 @@ struct GoogleTokenResponse {
     id_token: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct GitHubTokenResponse {
+    access_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubUser {
+    id: i64,
+    login: String,
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubEmail {
+    email: String,
+    primary: bool,
+    verified: bool,
+}
+
 fn random_url_secret() -> Result<String, AppError> {
     let mut bytes = [0_u8; 32];
     getrandom::getrandom(&mut bytes)
@@ -137,7 +159,24 @@ fn provider_name(path: &str) -> Result<&'static str, AppError> {
     match path {
         "apple" => Ok("apple"),
         "google" => Ok("google"),
+        "github" => Ok("github"),
         _ => Err(AppError::NotFound),
+    }
+}
+
+fn authorization_response_type(provider: &str) -> &'static str {
+    if provider == "apple" {
+        "code id_token"
+    } else {
+        "code"
+    }
+}
+
+fn authorization_scope(provider: &str) -> &'static str {
+    match provider {
+        "apple" => "name email",
+        "github" => "read:user user:email",
+        _ => "openid email profile",
     }
 }
 
@@ -173,6 +212,12 @@ fn google_config(state: &AppState) -> Result<&GoogleAuthConfig, AppError> {
     })
 }
 
+fn github_oauth_config(state: &AppState) -> Result<&GitHubOAuthConfig, AppError> {
+    state.config.github_oauth.as_ref().ok_or_else(|| {
+        AppError::ServiceUnavailable("GitHub sign-in is not configured on this server".into())
+    })
+}
+
 pub async fn start(
     State(state): State<AppState>,
     Path(provider_path): Path<String>,
@@ -199,6 +244,14 @@ pub async fn start(
             let config = google_config(&state)?;
             (
                 "https://accounts.google.com/o/oauth2/v2/auth",
+                config.client_id.clone(),
+                config.redirect_uri.clone(),
+            )
+        }
+        "github" => {
+            let config = github_oauth_config(&state)?;
+            (
+                GITHUB_AUTHORIZE_URL,
                 config.client_id.clone(),
                 config.redirect_uri.clone(),
             )
@@ -258,29 +311,17 @@ pub async fn start(
         let mut query = url.query_pairs_mut();
         query.append_pair("client_id", &provider_client_id);
         query.append_pair("redirect_uri", &provider_redirect_uri);
-        query.append_pair(
-            "response_type",
-            if provider == "apple" {
-                "code id_token"
-            } else {
-                "code"
-            },
-        );
-        query.append_pair(
-            "scope",
-            if provider == "apple" {
-                "name email"
-            } else {
-                "openid email profile"
-            },
-        );
+        query.append_pair("response_type", authorization_response_type(provider));
+        query.append_pair("scope", authorization_scope(provider));
         query.append_pair("state", &state_secret);
-        query.append_pair("nonce", &nonce);
+        if provider != "github" {
+            query.append_pair("nonce", &nonce);
+        }
         query.append_pair("code_challenge", &pkce_challenge(&verifier));
         query.append_pair("code_challenge_method", "S256");
         if provider == "apple" {
             query.append_pair("response_mode", "form_post");
-        } else {
+        } else if provider == "google" {
             query.append_pair("access_type", "online");
             query.append_pair("prompt", "select_account");
         }
@@ -302,24 +343,25 @@ pub async fn link_start(
     Json(body): Json<StartRequest>,
 ) -> Result<Json<StartResponse>, AppError> {
     let provider = provider_name(&provider_path)?;
-    if provider != "google" {
+    if !matches!(provider, "google" | "github") {
         return Err(AppError::BadRequest(
-            "only Google supports in-session OAuth linking; use Sign in with Apple for Apple"
+            "only Google and GitHub support in-session OAuth linking; use Sign in with Apple for Apple"
                 .into(),
         ));
     }
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     let linked: Option<String> = sqlx::query_scalar(
         "SELECT identity_id FROM auth_external_identities
-         WHERE user_id = $1 AND provider = 'google' LIMIT 1",
+         WHERE user_id = $1 AND provider = $2 LIMIT 1",
     )
     .bind(&claims.sub)
+    .bind(provider)
     .fetch_optional(&state.db)
     .await?;
     if linked.is_some() {
-        return Err(AppError::Conflict(
-            "Google is already linked to this account".into(),
-        ));
+        return Err(AppError::Conflict(format!(
+            "{provider} is already linked to this account"
+        )));
     }
 
     let client = auth_sessions::ClientType::parse(body.client.as_deref())?;
@@ -329,10 +371,24 @@ pub async fn link_start(
         ));
     }
     let return_uri = return_uri(&state, client)?;
-    let config = google_config(&state)?;
-    let authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth";
-    let provider_client_id = config.client_id.clone();
-    let provider_redirect_uri = config.redirect_uri.clone();
+    let (authorization_endpoint, provider_client_id, provider_redirect_uri, scope) =
+        if provider == "github" {
+            let config = github_oauth_config(&state)?;
+            (
+                GITHUB_AUTHORIZE_URL,
+                config.client_id.clone(),
+                config.redirect_uri.clone(),
+                "read:user user:email",
+            )
+        } else {
+            let config = google_config(&state)?;
+            (
+                "https://accounts.google.com/o/oauth2/v2/auth",
+                config.client_id.clone(),
+                config.redirect_uri.clone(),
+                "openid email profile",
+            )
+        };
 
     let transaction_id = Uuid::new_v4().to_string();
     let state_secret = random_url_secret()?;
@@ -381,13 +437,17 @@ pub async fn link_start(
         query.append_pair("client_id", &provider_client_id);
         query.append_pair("redirect_uri", &provider_redirect_uri);
         query.append_pair("response_type", "code");
-        query.append_pair("scope", "openid email profile");
+        query.append_pair("scope", scope);
         query.append_pair("state", &state_secret);
-        query.append_pair("nonce", &nonce);
+        if provider != "github" {
+            query.append_pair("nonce", &nonce);
+        }
         query.append_pair("code_challenge", &pkce_challenge(&verifier));
         query.append_pair("code_challenge_method", "S256");
-        query.append_pair("access_type", "online");
-        query.append_pair("prompt", "select_account");
+        if provider == "google" {
+            query.append_pair("access_type", "online");
+            query.append_pair("prompt", "select_account");
+        }
     }
     Ok(Json(StartResponse {
         transaction_id,
@@ -401,6 +461,13 @@ pub async fn google_callback(
     Query(query): Query<GoogleCallback>,
 ) -> Result<Response, AppError> {
     complete_callback(&state, "google", query.state, query.code, query.error).await
+}
+
+pub async fn github_callback(
+    State(state): State<AppState>,
+    Query(query): Query<GoogleCallback>,
+) -> Result<Response, AppError> {
+    complete_callback(&state, "github", query.state, query.code, query.error).await
 }
 
 pub async fn apple_callback(
@@ -480,6 +547,7 @@ async fn complete_callback(
     let (subject, email, name, verified, refresh_token) = match provider {
         "apple" => verify_apple_callback(state, &code, &verifier, nonce).await?,
         "google" => verify_google_callback(state, &code, &verifier, nonce).await?,
+        "github" => verify_github_callback(state, &code, &verifier).await?,
         _ => unreachable!(),
     };
     if !verified {
@@ -568,11 +636,7 @@ async fn link_provider_to_user(
     name: Option<&str>,
     user_id: &str,
 ) -> Result<(), AppError> {
-    let issuer = if provider == "apple" {
-        APPLE_ISSUER
-    } else {
-        "https://accounts.google.com"
-    };
+    let issuer = provider_issuer(provider);
     let existing = sqlx::query(
         "SELECT DISTINCT user_id FROM auth_external_identities
          WHERE provider = $1 AND issuer = $2 AND subject = $3",
@@ -720,6 +784,73 @@ async fn verify_google_callback(
     ))
 }
 
+async fn verify_github_callback(
+    state: &AppState,
+    code: &str,
+    verifier: &str,
+) -> Result<(String, Option<String>, Option<String>, bool, Option<String>), AppError> {
+    let config = github_oauth_config(state)?;
+    let http = reqwest::Client::new();
+    let token: GitHubTokenResponse = http
+        .post(GITHUB_TOKEN_URL)
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", config.client_secret.as_str()),
+            ("code", code),
+            ("redirect_uri", config.redirect_uri.as_str()),
+            ("code_verifier", verifier),
+        ])
+        .send()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("could not reach GitHub token service".into()))?
+        .error_for_status()
+        .map_err(|_| AppError::Unauthorized("GitHub authorization code was rejected".into()))?
+        .json()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("invalid GitHub token response".into()))?;
+    let user: GitHubUser = http
+        .get(format!("{}/user", state.config.github_api_base_url))
+        .bearer_auth(&token.access_token)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "cheers-gateway")
+        .send()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("could not reach GitHub user service".into()))?
+        .error_for_status()
+        .map_err(|_| AppError::Unauthorized("GitHub user token was rejected".into()))?
+        .json()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("invalid GitHub user response".into()))?;
+    // `/user.email` is profile data and carries no verification bit. Identity
+    // establishment therefore always uses the email endpoint's explicit flag.
+    let emails: Vec<GitHubEmail> = http
+        .get(format!("{}/user/emails", state.config.github_api_base_url))
+        .bearer_auth(&token.access_token)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "cheers-gateway")
+        .send()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("could not reach GitHub email service".into()))?
+        .error_for_status()
+        .map_err(|_| AppError::Unauthorized("GitHub email scope was rejected".into()))?
+        .json()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("invalid GitHub email response".into()))?;
+    let email = emails
+        .into_iter()
+        .find(|value| value.primary && value.verified)
+        .map(|value| value.email);
+    let verified = email.is_some();
+    Ok((
+        user.id.to_string(),
+        email,
+        user.name.or(Some(user.login)),
+        verified,
+        None,
+    ))
+}
+
 fn is_true(value: &Value) -> bool {
     value.as_bool().unwrap_or(false) || value.as_str().map(|v| v == "true").unwrap_or(false)
 }
@@ -858,11 +989,7 @@ async fn resolve_identity(
     name: Option<&str>,
     invite_token: Option<&str>,
 ) -> Result<String, AppError> {
-    let issuer = if provider == "apple" {
-        APPLE_ISSUER
-    } else {
-        "https://accounts.google.com"
-    };
+    let issuer = provider_issuer(provider);
     let existing = sqlx::query(
         "SELECT DISTINCT user_id FROM auth_external_identities
          WHERE provider = $1 AND issuer = $2 AND subject = $3",
@@ -943,6 +1070,14 @@ async fn resolve_identity(
         .bind(&identity_id).bind(provider).bind(issuer).bind(subject).bind(&user_id).bind(provider).bind(name).bind(email).bind(json!({})).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(user_id)
+}
+
+fn provider_issuer(provider: &str) -> &'static str {
+    match provider {
+        "apple" => APPLE_ISSUER,
+        "github" => GITHUB_ISSUER,
+        _ => "https://accounts.google.com",
+    }
 }
 
 async fn persist_apple_refresh_token(
@@ -1076,7 +1211,13 @@ mod tests {
     fn provider_path_is_allowlisted() {
         assert_eq!(provider_name("apple").unwrap(), "apple");
         assert_eq!(provider_name("google").unwrap(), "google");
-        assert!(provider_name("github").is_err());
+        assert_eq!(provider_name("github").unwrap(), "github");
+    }
+
+    #[test]
+    fn github_authorization_uses_code_flow_and_identity_scopes() {
+        assert_eq!(authorization_response_type("github"), "code");
+        assert_eq!(authorization_scope("github"), "read:user user:email");
     }
 
     #[test]

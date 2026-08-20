@@ -3,6 +3,7 @@ import { ArrowLeft, Hash, MessageSquare } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { WindowChromeActions } from "@/features/desktop/WindowChromeActions";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
+import { ChannelHeaderSlot } from "./extensions/ChannelHeaderSlot";
 
 export function ChannelChrome({
   title,
@@ -11,6 +12,7 @@ export function ChannelChrome({
   sidebarToggle,
   onBack,
   actions,
+  channelId,
 }: {
   title: string;
   purpose?: string | null;
@@ -18,6 +20,7 @@ export function ChannelChrome({
   sidebarToggle?: ReactNode;
   onBack?: () => void;
   actions: ReactNode;
+  channelId?: string;
 }) {
   const placement = useWindowChromePlacement();
 
@@ -54,6 +57,7 @@ export function ChannelChrome({
           <span className="truncate text-compact text-content-muted">{purpose}</span>
         </div>
       )}
+      {channelId && <ChannelHeaderSlot channelId={channelId} />}
       <div className="flex-1" />
       {actions}
     </div>

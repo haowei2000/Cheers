@@ -21,11 +21,25 @@ clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
-// SPA fallback: navigations render the precached shell; the gateway paths the
-// frontend proxies must pass through untouched.
+// SPA fallback: app navigations render the precached React shell. The public
+// website owns / and static .html pages, so the service worker must not turn
+// those navigations back into the app.
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL("index.html"), {
-    denylist: [/^\/api\//, /^\/ws/, /^\/docs/, /^\/health/],
+  new NavigationRoute(createHandlerBoundToURL("app.html"), {
+    allowlist: [
+      /^\/login(?:\/|$)/,
+      /^\/auth\/callback(?:\/|$)/,
+      /^\/mcp-authorize(?:\/|$)/,
+      /^\/register(?:\/|$)/,
+      /^\/forgot(?:\/|$)/,
+      /^\/reset(?:\/|$)/,
+      /^\/invite(?:\/|$)/,
+      /^\/chat(?:\/|$)/,
+      /^\/settings(?:\/|$)/,
+      /^\/friends(?:\/|$)/,
+      /^\/fleet(?:\/|$)/,
+      /^\/activity(?:\/|$)/,
+    ],
   })
 );
 

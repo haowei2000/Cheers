@@ -558,6 +558,44 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Report repository import or sync state for this Bot's Code Channel.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "head_commit": {
+          "type": "string"
+        },
+        "last_error": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "workspace_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "name": "report_code_workspace",
+    "title": "Report Code workspace"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
         "cheers:files:write"
       ]
     },

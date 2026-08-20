@@ -2,48 +2,28 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url));
 const WEBSITE_DIR = path.resolve(FRONTEND_DIR, "../website");
-const PUBLIC_POLICY_PAGES = [
-  "privacy.html",
-  "privacy.zh-CN.html",
-  "support.html",
-  "support.zh-CN.html",
-  "terms.html",
-  "account-deletion.html",
-  "remote-operations.html",
-  "remote-operations.zh-CN.html",
-] as const;
-const PUBLIC_POLICY_ASSETS = [
-  ["favicon.svg", "favicon.svg"],
-  ["editorial.css", "editorial.css"],
-  ["assets/SourceSerif4Variable-Roman.ttf.woff2", "assets/SourceSerif4Variable-Roman.ttf.woff2"],
-  ["assets/SourceSerif4-OFL.txt", "assets/SourceSerif4-OFL.txt"],
-  ["assets/SourceHanSerifCN-VF.ttf.woff2", "assets/SourceHanSerifCN-VF.ttf.woff2"],
-  ["assets/SourceHanSerif-OFL.txt", "assets/SourceHanSerif-OFL.txt"],
-  ["assets/SourceSans3VF-Upright.ttf.woff2", "assets/SourceSans3VF-Upright.ttf.woff2"],
-  ["assets/SourceSans3-OFL.txt", "assets/SourceSans3-OFL.txt"],
-] as const;
 
-/** Keep website/ authoritative while shipping the App Store public URLs from
- * the same Nginx origin as the app. This runs for local and Docker builds. */
-function publicPolicyPages() {
+/** Keep website/ authoritative on the production origin while preserving the
+ * React app shell separately for /login, /chat, and the other SPA routes. */
+function publicWebsite() {
   return {
-    name: "cheers-public-policy-pages",
+    name: "cheers-public-website",
     apply: "build" as const,
     closeBundle() {
       const outputDir = path.resolve(FRONTEND_DIR, "dist");
       mkdirSync(outputDir, { recursive: true });
-      for (const page of PUBLIC_POLICY_PAGES) {
-        copyFileSync(path.join(WEBSITE_DIR, page), path.join(outputDir, page));
-      }
-      for (const [source, destination] of PUBLIC_POLICY_ASSETS) {
-        const destinationPath = path.join(outputDir, destination);
-        mkdirSync(path.dirname(destinationPath), { recursive: true });
-        copyFileSync(path.join(WEBSITE_DIR, source), destinationPath);
+      copyFileSync(path.join(outputDir, "index.html"), path.join(outputDir, "app.html"));
+      for (const entry of readdirSync(WEBSITE_DIR)) {
+        if (entry === "README.md") continue;
+        cpSync(path.join(WEBSITE_DIR, entry), path.join(outputDir, entry), {
+          force: true,
+          recursive: true,
+        });
       }
     },
   };
@@ -61,7 +41,7 @@ const WS_PROXY_TARGET =
 export default defineConfig({
   plugins: [
     react(),
-    publicPolicyPages(),
+    publicWebsite(),
     // PWA: installable app + Web Push. injectManifest (not generateSW) because
     // the service worker is hand-written (src/sw.ts) — push/notificationclick
     // handlers need app-specific logic, not just caching. The SW precaches the
@@ -83,7 +63,7 @@ export default defineConfig({
         theme_color: "#09090b",
         background_color: "#09090b",
         display: "standalone",
-        start_url: "/",
+        start_url: "/login",
         icons: [
           { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },

@@ -232,7 +232,7 @@ precache; CJK utility text falls through to the locale-correct platform sans.
 | Code / path / ID | `font-code text-compact` |
 | Mini scale (dense panels) | `text-compact` / `text-minimal` — floor is 10px |
 
-Sidebar group labels such as Channels, Voice Channels, Private, and Direct
+Sidebar group labels such as Channels, Private, and Direct
 Messages use the static header of `<ItemSection>`. They are typographic
 dividers, not disclosure buttons: do not add a chevron, collapsed state, or
 `aria-expanded`. A create action, when available, remains a separate labeled

@@ -67,7 +67,9 @@ export async function createChannel(data: {
   workspace_id: string;
   name: string;
   type?: string;
+  /** Deprecated request compatibility; use features for new callers. */
   kind?: "text" | "voice";
+  features?: string[];
   conversation_mode?: "chat" | "discuss";
   purpose?: string;
   initial_bot_ids?: string[];
@@ -75,6 +77,24 @@ export async function createChannel(data: {
   return apiJson<Channel>("/channels", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export async function enableChannelFeature(
+  channelId: string,
+  feature: string,
+): Promise<{ channel_id: string; features: string[] }> {
+  return apiJson(`/channels/${channelId}/features/${encodeURIComponent(feature)}`, {
+    method: "PUT",
+  });
+}
+
+export async function disableChannelFeature(
+  channelId: string,
+  feature: string,
+): Promise<{ channel_id: string; features: string[] }> {
+  return apiJson(`/channels/${channelId}/features/${encodeURIComponent(feature)}`, {
+    method: "DELETE",
   });
 }
 

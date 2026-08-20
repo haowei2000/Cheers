@@ -331,9 +331,12 @@ mod tests {
             | "desk_list" | "desk_read" | "read_workspace" | "list_task_claims" => Some(SCOPE_READ),
             "post_message" => Some(SCOPE_MESSAGES_WRITE),
             "inbox_deliver" => Some(SCOPE_FILES_WRITE),
-            "desk_write" | "desk_edit" | "desk_append" | "desk_rm" | "desk_mv" => {
-                Some(SCOPE_WORKSPACE_WRITE)
-            }
+            "desk_write"
+            | "desk_edit"
+            | "desk_append"
+            | "desk_rm"
+            | "desk_mv"
+            | "report_code_workspace" => Some(SCOPE_WORKSPACE_WRITE),
             "set_status" => Some(SCOPE_PROFILE_WRITE),
             "leave_channel" | "open_direct_message" => Some(SCOPE_MEMBERSHIP_WRITE),
             "respond_to_task_claim_evaluation" => Some(SCOPE_TASK_CLAIMS_WRITE),

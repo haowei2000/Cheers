@@ -1,10 +1,8 @@
 //! The set of known integrations, as data.
 //!
-//! This is the "hardcoded vertical" stage of the plan on purpose. Everything
-//! here is already declarative — endpoints, signature scheme, where the event
-//! id and type live — so lifting it into a signed manifest is a change of
-//! source, not a redesign. Extracting a schema from two working verticals is
-//! reliable; designing one against imagined integrations is not.
+//! This catalog is deliberately compiled into the trusted gateway release.
+//! Descriptors are declarative so provider behavior stays reviewable and shared
+//! engines remain reusable, but they are not remotely installable server plugins.
 
 use std::sync::OnceLock;
 
@@ -137,12 +135,8 @@ impl IntegrationDescriptor {
     }
 }
 
-/// Every known integration.
-///
-/// A `static` rather than a constructor: this is compiled-in data, and saying so
-/// in the type keeps `find` from handing out a clone of the whole table to read
-/// one row. Lifting it out of the binary (issue #572) changes this declaration,
-/// not its callers' shape.
+/// Every trusted first-party integration. A `static` makes the release-coupled
+/// trust boundary explicit and lets `find` return shared descriptor references.
 static ALL: &[IntegrationDescriptor] = &[IntegrationDescriptor {
     id: "github",
     display_name: "GitHub",
@@ -164,7 +158,9 @@ static ALL: &[IntegrationDescriptor] = &[IntegrationDescriptor {
         "This channel now follows {{full_name}}. Please clone it into your \
          workspace, check out {{default_branch}}, and index the tree so you \
          can answer questions about the code. The clone URL is in this \
-         message's context bundle.",
+         message's context bundle. When the import finishes, call \
+         report_code_workspace with the channel id, workspace path, branch \
+         HEAD commit, and ready status; report error status if setup fails.",
     ),
     events: GITHUB_EVENTS,
 }];

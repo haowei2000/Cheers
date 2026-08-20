@@ -20,12 +20,14 @@ import type { SendResourceReq } from "./fsClient";
 import { getViewBoards, type ViewBoardContext } from "./viewBoard";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
 import type { Message } from "@/types";
+import { useChannelProfile } from "@/hooks/useChannelProfile";
 // Built-in boards register themselves on import (side effect).
 import "./panels/PlanBoardPanel";
 import "./panels/CostPanel";
 import "./panels/SessionsPanel";
 import "./panels/AuditPanel";
 import "./panels/ActivityPanel";
+import "./panels/GitHubCodePanel";
 
 interface Props {
   open: boolean;
@@ -84,7 +86,8 @@ function ViewBoardDrawerImpl({
   currentUserId,
   focusBoard,
 }: Props) {
-  const boards = getViewBoards();
+  const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
+  const boards = getViewBoards(profile?.profile);
   const [active, setActive] = useState<string>(
     () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
   );
@@ -168,6 +171,7 @@ function ViewBoardDrawerImpl({
       onJumpToMessage,
       pendingApprovals,
       currentUserId,
+      profile,
     }),
     [
       channelId,
@@ -177,6 +181,7 @@ function ViewBoardDrawerImpl({
       onJumpToMessage,
       pendingApprovals,
       currentUserId,
+      profile,
     ],
   );
 

@@ -189,13 +189,17 @@ export function ExternalIdentitiesCard() {
   const queryClient = useQueryClient();
   const identities = useQuery({
     queryKey: queryKeys.externalIdentities,
-    queryFn: () => Promise.all([getExternalIdentity("apple"), getExternalIdentity("google")]),
+    queryFn: () => Promise.all([
+      getExternalIdentity("apple"),
+      getExternalIdentity("google"),
+      getExternalIdentity("github"),
+    ]),
   });
-  const [linkingProvider, setLinkingProvider] = useState<"google" | null>(null);
+  const [linkingProvider, setLinkingProvider] = useState<"google" | "github" | null>(null);
   const unlinkIdentity = useMutation({
     mutationFn: unlinkExternalIdentity,
     onSuccess: async (_, provider) => {
-      toast.success(`${provider === "apple" ? "Apple" : "Google"} unlinked`);
+      toast.success(`${provider === "apple" ? "Apple" : provider === "github" ? "GitHub" : "Google"} unlinked`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.externalIdentities }),
         queryClient.invalidateQueries({ queryKey: queryKeys.authSessions }),
@@ -207,7 +211,7 @@ export function ExternalIdentitiesCard() {
   async function unlink(identity: ExternalIdentityStatus) {
     if (
       !window.confirm(
-        `Unlink ${identity.provider === "apple" ? "Apple" : "Google"}? Other devices will be signed out.`
+        `Unlink ${identity.provider === "apple" ? "Apple" : identity.provider === "github" ? "GitHub" : "Google"}? Other devices will be signed out.`
       )
     ) {
       return;
@@ -219,15 +223,17 @@ export function ExternalIdentitiesCard() {
     }
   }
 
-  async function linkGoogle(identity: ExternalIdentityStatus) {
+  async function linkOAuth(identity: ExternalIdentityStatus) {
+    if (identity.provider !== "google" && identity.provider !== "github") return;
+    const label = identity.provider === "github" ? "GitHub" : "Google";
     if (!identity.recent_authentication) {
-      toast.error("Sign in again (within 5 minutes), then link Google.");
+      toast.error(`Sign in again (within 5 minutes), then link ${label}.`);
       return;
     }
-    setLinkingProvider("google");
+    setLinkingProvider(identity.provider);
     try {
       sessionStorage.setItem("cheers.oauth_redirect", "/settings/account");
-      const started = await startExternalIdentityOAuthLink("google");
+      const started = await startExternalIdentityOAuthLink(identity.provider);
       if (isTauri()) {
         const { invokeDesktop } = await import("@/lib/desktop");
         await invokeDesktop("desktop_open_oauth_url", { url: started.authorization_url });
@@ -235,7 +241,7 @@ export function ExternalIdentitiesCard() {
         window.location.assign(started.authorization_url);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn't start Google link");
+      toast.error(error instanceof Error ? error.message : `Couldn't start ${label} link`);
     } finally {
       // Tauri opens an external browser and returns immediately; clear busy so
       // canceling OAuth doesn't leave the control stuck on “Opening…”.
@@ -256,7 +262,7 @@ export function ExternalIdentitiesCard() {
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
           {(identities.data ?? []).map((identity) => {
-            const label = identity.provider === "apple" ? "Apple" : "Google";
+            const label = identity.provider === "apple" ? "Apple" : identity.provider === "github" ? "GitHub" : "Google";
             return (
               <OperationsItem
                 key={identity.provider}
@@ -282,19 +288,19 @@ export function ExternalIdentitiesCard() {
                     }
                     onClick={() => void unlink(identity)}
                   />
-                ) : identity.provider === "google" ? (
+                ) : identity.provider === "google" || identity.provider === "github" ? (
                   <ActionButton
                     action="link"
                     context="security"
-                    accessibleLabel="Link Google sign-in method"
-                    loading={busy === "google"}
+                    accessibleLabel={`Link ${label} sign-in method`}
+                    loading={busy === identity.provider}
                     disabled={busy !== null || !identity.recent_authentication}
                     title={
                       !identity.recent_authentication
                         ? "Sign in again to make this change"
-                        : "Link Google"
+                        : `Link ${label}`
                     }
-                    onClick={() => void linkGoogle(identity)}
+                    onClick={() => void linkOAuth(identity)}
                   />
                 ) : undefined}
               />

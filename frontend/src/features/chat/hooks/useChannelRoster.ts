@@ -4,6 +4,7 @@ import type { Channel, MemberItem, VoiceTranscriptSegment } from "@/types";
 import { getChannelCache, setChannelCache } from "../chatCache";
 import type { MentionCandidate } from "../MessageComposer";
 import type { ProfileData } from "../ProfileHovercard";
+import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "../channelFeatures";
 
 export function useChannelRoster({
   channel,
@@ -15,7 +16,7 @@ export function useChannelRoster({
   activeChannelRef: MutableRefObject<string | null>;
 }) {
   const channelId = channel?.channel_id;
-  const channelKind = channel?.kind;
+  const voiceEnabled = channel ? hasChannelFeature(channel, CHANNEL_FEATURE_VOICE) : false;
   const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [voiceTranscripts, setVoiceTranscripts] = useState<VoiceTranscriptSegment[]>([]);
@@ -73,7 +74,7 @@ export function useChannelRoster({
   );
 
   const loadVoiceTranscript = useCallback(async () => {
-    if (!channelId || channelKind !== "voice" || preview) {
+    if (!channelId || !voiceEnabled || preview) {
       setVoiceTranscripts([]);
       return;
     }
@@ -83,7 +84,7 @@ export function useChannelRoster({
     } catch {
       if (activeChannelRef.current === channelId) setVoiceTranscripts([]);
     }
-  }, [activeChannelRef, channelId, channelKind, preview]);
+  }, [activeChannelRef, channelId, preview, voiceEnabled]);
 
   useEffect(() => {
     void loadVoiceTranscript();

@@ -1,17 +1,17 @@
 # Plugin system
 
-> Status: **partially adopted** — 2026-08-19. The integration half landed with the
-> *Pluggable integrations* milestone; the workbench half predates it. They enforce the
-> same rule but do not yet share a manifest — see [Known inconsistencies](#known-inconsistencies).
+> Status: **adopted boundary** — 2026-08-19. Server integrations are trusted,
+> release-coupled catalog entries. Client plugins are presentation extensions and
+> cannot register server behavior.
 
 ## The rule everything follows
 
 **Third-party code never runs where it would inherit ambient authority.**
 
-The gateway holds the database, the decrypted credentials, and every authorization
-decision. Code running there has all of it, and no in-process sandbox is credible. So
-the gateway runs **no third-party code at all**: an integration is *data* describing how
-to drive engines the gateway itself owns.
+The gateway holds the database, decrypted credentials, and every authorization decision.
+Code running there has all of it, and no in-process sandbox is credible. The gateway
+therefore runs **no third-party code**. Its declarative integration catalog is first-party
+Rust data, reviewed and shipped with the gateway binary.
 
 The browser holds the user's session token and the DOM. Code running there could
 exfiltrate the session. So client extensions run in an opaque-origin iframe with
@@ -29,8 +29,8 @@ than from precedent.
 
 | Site | Runs | Trust basis | Blast radius |
 |---|---|---|---|
-| **Gateway** | Declarations only — templates, projections, signature schemes | The gateway's own engines interpret them; nothing third-party executes | Whole workspace |
-| **Client** | Sandboxed renderer JS (macOS personal installs only) | Opaque-origin iframe, no host DOM/cookies/token, manifest-checked JSON-RPC | One user, one device |
+| **Gateway** | First-party catalog declarations and generic engines | Code review plus the signed gateway release | Whole workspace |
+| **Client** | Controlled header, ViewBoard and Workbench contributions; renderer JS only in the sandbox | Profile filtering plus capability-checked JSON-RPC | One user, one device |
 | **Agent host** | Arbitrary code, by design | Out of process; the connector's own L0 host policy is the floor | One bot's machine |
 
 ## What exists today
@@ -38,8 +38,8 @@ than from precedent.
 | Mechanism | Package | Install record | Signed | Permission vocabulary |
 |---|---|---|---|---|
 | Bot + ACP connector | `connector-manifest.json` | `connector_hosts` | ed25519 vs pinned key | capability delegations, bot-grants, event-access |
-| Workbench extension — global | `.cheers-extension` zip | `workbench_extensions`, `origin IN ('admin','system')` | sha256 only | **none permitted** (see below) |
-| Workbench extension — personal | same zip | none — client-side only | sha256 only | `file.write`, `channel.resources`, `network`… |
+| Workbench extension — global | `.cheers-extension` zip | `workbench_extensions`, `origin IN ('admin','system')` | sha256 transport integrity | **none permitted** (see below) |
+| Workbench extension — personal | same zip | none — client-side only | local package consent | `file.write`, `channel.resources`, `network`… |
 | Integration | compiled into `catalog.rs` | `integration_installations` | n/a (in-tree) | channel-role projection |
 
 Three clarifications the table cannot carry:
@@ -105,12 +105,18 @@ Two supporting engines run outside that flow:
   permission vocabulary mapped onto the four channel roles, written as ordinary
   `channel_memberships` rows. Nothing in a permission check knows the row came from GitHub.
 
+GitHub Code layers the standard `code` profile onto an ordinary text channel. The
+Gateway retains repository binding and import state; the selected Agent reports clone,
+checkout, workspace, and HEAD state through the scoped `report_code_workspace` MCP tool.
+The header, ViewBoard, and Workbench receive only that profile JSON, never OAuth or App
+installation credentials.
+
 ## Maintaining it
 
 ### Adding an integration
 
-Adding a provider is an edit to one table plus configuration. In the common case there is
-**no new Rust logic**.
+Adding a provider is a first-party gateway change. It must go through ordinary code
+review, tests, and a gateway release; there is intentionally no server plugin install API.
 
 1. Add an `IntegrationDescriptor` to the `ALL` table in
    [`catalog.rs`](../../server/src/domain/integrations/catalog.rs): the signature scheme,
@@ -280,22 +286,17 @@ together they are why the system reads as chaotic.
    So a personal install is invisible to admins and does not follow the user to a second
    device. Whether the fix is a scope column on the same table depends on an unanswered
    question — see "Where this is going".
-4. **No authorship check on packages.** sha256 proves the bytes were not altered in
-   transit, not who wrote them. The ed25519 + pinned-key mechanism already exists in
-   [`self_update.rs:93`](../../packages/cheers-acp-connector-rs/src/self_update.rs:93) and
-   should be pointed at packages too — mattering most for personal installs, which are the
-   only ones that may hold `network: unrestricted`.
-5. **`catalog.rs` is compiled-in data.** It is data the gateway interprets, yet changing
-   it requires a gateway rebuild. That is the test for what can move out of tree, and the
-   catalog currently fails it.
+4. **Official remote client packages still need a dedicated signing root.** sha256 proves
+   transport integrity, not authorship. This key must be separate from connector-release
+   signing. Until that rollout lands, code-bearing catalog packages remain personal macOS
+   installs; Web and iOS use the bundled safe fallback.
 
 ## Where this is going
 
-One manifest whose `contributes` block names the target surface, so a single package can
-carry a server-side integration *and* a client-side renderer — which is exactly what an
-Overleaf integration needs (`.tex` rendering plus project binding). The workbench manifest
-already has the right shape; extending its `contributes` with `integrations` is a change
-of source, not a redesign.
+The client format will grow explicit `channelHeader`, `viewBoards`, and
+`workbenchPanels` contributions, signed by the dedicated Cheers plugin key. These are
+presentation surfaces only. A package never carries OAuth endpoints, webhook rules,
+credentials, role projection, or any other gateway authority.
 
 Giving personal scope a server record (inconsistency 3) waits on one product question,
 because the answer changes the architecture rather than the schema: **does the server store
@@ -307,10 +308,14 @@ admin visibility and cross-device *discovery* but not cross-device *install*: th
 device learns the extension exists and has no way to obtain it. Neither is obviously right,
 so the column is not the decision.
 
-The repo split follows that work rather than preceding it. The boundary is **engine vs
-content**, not plugin vs core: the engines above stay in-tree and version with the gateway;
-individual descriptors and renderer bundles move to a signed-package repo. The test for
-which side something belongs on is whether changing it requires a gateway rebuild.
+The boundary is authority vs presentation: provider engines and catalog descriptors stay
+in-tree and version with the gateway; signed renderer bundles may be distributed remotely.
+Changing server authority must require a gateway rebuild.
+
+Channel behavior follows the same compositional boundary. A first-party workflow such as
+`code` is stored as a channel profile, while standard capabilities such as `voice` are
+stored in `channel_features`. Features compose with profiles; neither a client package nor
+an integration catalog entry may invent a new server-side feature at runtime.
 
 ## Related
 

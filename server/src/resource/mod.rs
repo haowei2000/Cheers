@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod bot_status;
 pub mod channel_info;
+pub mod channel_profile;
 pub mod commands;
 pub mod context;
 pub mod dms;
@@ -109,6 +110,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── 写操作（频道成员 role 可写）────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        "channel.code.status.write" => {
+            channel_profile::handle_code_status(db, &principal, &params).await
+        }
         "channel.task_claims.evaluate" => {
             task_claims::handle_evaluate(db, &principal, &params).await
         }
