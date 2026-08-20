@@ -24,6 +24,17 @@ will display, because putting a channel's activity on screen is worth seeing bef
 agree to it. Panels are read-only regardless of the view: writability belongs to the source,
 and a projection carries no version to write back against.
 
+Official templates may declare `panels` too, in
+`server/assets/workbench-templates/*.template.json`. The catalog validates them against the
+SAME vocabulary the package installers enforce — it is a second way to declare a panel, not
+a second grammar — and rejects a `self:` view, since a release-managed extension carries no
+renderer bundle. Malformed catalog data panics at build time rather than failing a request.
+
+**Known gap:** every `channel.*` verb returns a wrapper object (`{"members": [...]}`), while
+`builtin:table` accepts a bare array, so a resource-source panel over one currently renders
+empty. A `pick` field on the source (naming the key to unwrap) would close this; until then,
+useful declarative panels are limited to `fs` sources whose file is already the right shape.
+
 Renderer references are `auto`, `builtin:<id>`, or `self:<id>`; `self:` is valid only for
 personal macOS packages. A panel with a `self:` view validates at personal scope on both
 installers, but the host does not yet mount a sandboxed renderer for a panel — only for a
