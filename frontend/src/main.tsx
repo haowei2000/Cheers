@@ -9,6 +9,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PresentationProvider } from "./components/ui/presentation";
 import { ControlSizeProvider } from "./components/ui/control-size";
 import { ThemeProvider } from "./components/ui/theme";
+import { TitleTooltip } from "./components/ui/title-tooltip";
 import "./index.css";
 import { queryClient } from "./lib/queryClient";
 
@@ -29,6 +30,7 @@ createRoot(document.getElementById("root")!).render(
               </ControlSizeProvider>
             </PresentationProvider>
           </ErrorBoundary>
+          <TitleTooltip />
           <Toaster
             position="bottom-right"
             toastOptions={{

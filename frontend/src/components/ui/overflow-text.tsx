@@ -11,6 +11,7 @@ import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
+import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
 
 export type OverflowStrategy = "singleLine" | "wrap" | "horizontalScroll";
 
@@ -123,7 +124,10 @@ export function OverflowText({
           align="start"
           id={id}
           role="tooltip"
-          className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap rounded-sm bg-zinc-700 px-3 py-2 font-utility text-regular text-content-primary shadow-xl shadow-black/40 [overflow-wrap:anywhere]"
+          className={cn(
+            contrastTooltipSurfaceClasses,
+            "max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap text-regular font-normal [overflow-wrap:anywhere]",
+          )}
         >
           {fullText}
         </FloatingLayer>
