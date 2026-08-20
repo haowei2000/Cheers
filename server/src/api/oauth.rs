@@ -1053,7 +1053,7 @@ async fn resolve_identity(
         .await?
         .is_some()
         {
-            return Err(AppError::Conflict("account_link_required: sign in with your password, then link this provider in Settings".into()));
+            return Err(account_link_required(provider));
         }
     }
     let user_id = Uuid::new_v4().to_string();
@@ -1070,6 +1070,17 @@ async fn resolve_identity(
         .bind(&identity_id).bind(provider).bind(issuer).bind(subject).bind(&user_id).bind(provider).bind(name).bind(email).bind(json!({})).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(user_id)
+}
+
+fn account_link_required(provider: &str) -> AppError {
+    AppError::Conflict(
+        json!({
+            "code": "account_link_required",
+            "provider": provider,
+            "message": "An existing Cheers account already uses this verified email. Sign in with an existing method, then link this provider in Settings."
+        })
+        .to_string(),
+    )
 }
 
 fn provider_issuer(provider: &str) -> &'static str {
@@ -1232,6 +1243,17 @@ mod tests {
     fn provider_errors_are_reduced_to_public_codes() {
         assert_eq!(error_code("access_denied"), "access_denied");
         assert_eq!(error_code("internal_provider_detail"), "provider_error");
+    }
+
+    #[test]
+    fn existing_email_requires_an_explicit_account_link() {
+        let AppError::Conflict(payload) = account_link_required("github") else {
+            panic!("expected a conflict response");
+        };
+        let body: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(body["code"], "account_link_required");
+        assert_eq!(body["provider"], "github");
+        assert!(body["message"].as_str().unwrap().contains("Sign in"));
     }
 
     #[test]

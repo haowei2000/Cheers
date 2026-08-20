@@ -56,9 +56,17 @@ export async function apiFetch(
 // from the gateway body (safe to render straight into a toast).
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  provider?: string;
+  constructor(
+    message: string,
+    status: number,
+    metadata?: { code?: string; provider?: string }
+  ) {
     super(message);
     this.status = status;
+    this.code = metadata?.code;
+    this.provider = metadata?.provider;
   }
 }
 
@@ -105,14 +113,20 @@ function humanizeDetail(raw: string): string {
 async function toApiError(res: Response): Promise<ApiError> {
   const text = await res.text().catch(() => "");
   let detail = "";
+  let code: string | undefined;
+  let provider: string | undefined;
   if (text) {
     try {
       const body = JSON.parse(text) as {
         detail?: unknown;
         message?: unknown;
+        code?: unknown;
+        provider?: unknown;
       };
       const raw = body.detail ?? body.message;
       if (typeof raw === "string") detail = humanizeDetail(raw);
+      if (typeof body.code === "string") code = body.code;
+      if (typeof body.provider === "string") provider = body.provider;
     } catch {
       // Body wasn't JSON (e.g. a proxy HTML error page) — only reuse it if it
       // looks like a short plain message, never dump markup at the user.
@@ -126,7 +140,10 @@ async function toApiError(res: Response): Promise<ApiError> {
   if (res.status === 409 && (!detail || detail.toLowerCase() === "conflict")) {
     detail = "That name is already taken — choose another, or use Existing bot";
   }
-  return new ApiError(detail || `Request failed (HTTP ${res.status})`, res.status);
+  return new ApiError(detail || `Request failed (HTTP ${res.status})`, res.status, {
+    code,
+    provider,
+  });
 }
 
 export async function apiJson<T>(
