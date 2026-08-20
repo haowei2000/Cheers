@@ -759,9 +759,10 @@ struct ChannelDto: Codable, Identifiable, Hashable {
     let avatarUrl: String?
     /// serde: struct field `channel_type` is renamed to "type".
     let channelType: String
-    /// `text` (default) or `voice`. Voice channels retain the normal message
-    /// timeline and composer, with a LiveKit meeting strip above them.
+    /// Deprecated rolling-upgrade projection. New clients read `features`.
     let kind: String?
+    /// Capabilities that compose with the channel profile and access type.
+    let features: [String]?
     /// `chat` (default) or `discuss`. Older gateways omit this field.
     let conversationMode: String?
     let purpose: String?
@@ -774,7 +775,7 @@ struct ChannelDto: Codable, Identifiable, Hashable {
 
     var id: String { channelId }
     var isDM: Bool { channelType == "dm" }
-    var isVoice: Bool { kind == "voice" }
+    var isVoice: Bool { features?.contains("voice") ?? (kind == "voice") }
     var isDiscuss: Bool { conversationMode == "discuss" }
     var displayName: String {
         if isDM, let peerName, !peerName.isEmpty { return peerName }
@@ -788,7 +789,7 @@ struct ChannelDto: Codable, Identifiable, Hashable {
         case name
         case avatarUrl = "avatar_url"
         case channelType = "type"
-        case kind
+        case kind, features
         case conversationMode = "conversation_mode"
         case purpose
         case autoAssist = "auto_assist"
@@ -1904,12 +1905,13 @@ struct ChannelCreateRequest: Encodable {
     let workspaceId: String
     let name: String
     let type: String          // "public" | "private"
-    let kind: String          // "text" | "voice"
+    let kind: String          // compatibility field; always "text" in new clients
+    let features: [String]
     var purpose: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case workspaceId = "workspace_id"
-        case name, type, kind, purpose
+        case name, type, kind, features, purpose
     }
 }
 

@@ -794,6 +794,8 @@ pub async fn capabilities(
     };
     let google_enabled = state.config.google_auth.is_some()
         && (client != "web" || state.config.oauth_web_return_url.is_some());
+    let github_enabled = state.config.github_oauth.is_some()
+        && (client != "web" || state.config.oauth_web_return_url.is_some());
     let passkey_enabled = state.webauthn.is_some();
     Json(json!({
         "client": client,
@@ -801,6 +803,7 @@ pub async fn capabilities(
             "password": true,
             "apple": apple_enabled,
             "google": google_enabled,
+            "github": github_enabled,
         },
         "passkey": passkey_enabled,
         "passkey_rp_id": state.webauthn.as_ref().map(|w| w.rp_id()),

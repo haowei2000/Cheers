@@ -97,6 +97,23 @@ pub struct GoogleAuthConfig {
     pub redirect_uri: String,
 }
 
+#[derive(Clone)]
+pub struct GitHubOAuthConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+impl std::fmt::Debug for GitHubOAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitHubOAuthConfig")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("redirect_uri", &self.redirect_uri)
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for GoogleAuthConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GoogleAuthConfig")
@@ -175,6 +192,8 @@ pub struct Config {
     /// Google is intentionally limited to the Web client and the basic
     /// `openid email profile` scopes. No offline access is requested.
     pub google_auth: Option<GoogleAuthConfig>,
+    /// GitHub OAuth identifies users; repository access stays on `github_app`.
+    pub github_oauth: Option<GitHubOAuthConfig>,
     /// Exact browser destination after a successful provider callback.
     pub oauth_web_return_url: Option<String>,
 
@@ -376,6 +395,26 @@ impl Config {
             }
         };
 
+        let github_oauth_values = (
+            optional("GITHUB_OAUTH_CLIENT_ID"),
+            optional("GITHUB_OAUTH_CLIENT_SECRET"),
+            optional("GITHUB_OAUTH_REDIRECT_URI"),
+        );
+        let github_oauth = match github_oauth_values {
+            (Some(client_id), Some(client_secret), Some(redirect_uri)) => Some(GitHubOAuthConfig {
+                client_id,
+                client_secret,
+                redirect_uri,
+            }),
+            (None, None, None) => None,
+            _ => {
+                tracing::warn!(
+                    "partial GITHUB_OAUTH_* configuration ignored; GitHub login disabled"
+                );
+                None
+            }
+        };
+
         Self {
             database_url: require("DATABASE_URL"),
             port: env::var("PORT")
@@ -434,6 +473,7 @@ impl Config {
                 .filter(|v| !v.trim().is_empty()),
             apple_auth,
             google_auth,
+            github_oauth,
             oauth_web_return_url: optional("OAUTH_WEB_RETURN_URL"),
 
             github_app,

@@ -43,7 +43,7 @@ pub async fn export_transcript(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = crate::api::voice::voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));
@@ -91,7 +91,7 @@ pub async fn delete_transcript_segment(
     Path((channel_id, seq)): Path<(String, i64)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let member = crate::api::voice::voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" {
+    if !member.voice_enabled {
         return Err(AppError::BadRequest(
             "channel is not a voice channel".into(),
         ));
@@ -148,6 +148,11 @@ pub async fn update_voice_config(
     Json(body): Json<VoiceConfig>,
 ) -> Result<Json<VoiceConfig>, AppError> {
     let member = crate::api::voice::voice_member(&state, &channel_id, &claims.sub).await?;
+    if !member.voice_enabled {
+        return Err(AppError::BadRequest(
+            "Voice is not enabled for this channel".into(),
+        ));
+    }
     if !matches!(member.channel_role.as_str(), "owner" | "admin") {
         return Err(AppError::Forbidden(
             "channel owner or admin required".into(),

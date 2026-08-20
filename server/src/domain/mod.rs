@@ -12,6 +12,8 @@ pub mod bot_events;
 pub mod bot_management_audit;
 pub mod bot_status_scheduler;
 pub mod chains;
+pub mod channel_features;
+pub mod channel_profiles;
 pub mod channel_seq;
 pub mod commands_store;
 pub mod connector_config;

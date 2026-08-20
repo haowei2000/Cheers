@@ -35,6 +35,7 @@ export function ChannelPreview({
   return (
     <div className="flex flex-col h-full">
       <ChannelChrome
+        channelId={channel.channel_id}
         title={channel.name}
         isDm={false}
         sidebarToggle={sidebarToggle}

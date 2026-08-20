@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-<title>Cheers — 人类与 AI 智能体共用的协作平台</title>
-<meta name="description" content="Cheers 是一个开源协作平台：团队与 AI 智能体在同一频道里工作，支持实时聊天、文件对话、权限管控与外部 ACP 智能体。" />
+<title>Cheers — 团队、智能体与扩展共用的协作空间</title>
+<meta name="description" content="Cheers 是一个开源协作平台：团队、AI 智能体、Workbench 扩展与 GitHub 集成在同一套实时频道中工作。" />
 <link rel="alternate" hreflang="en" href="./index.html" />
 <link rel="alternate" hreflang="zh-CN" href="./index.zh-CN.html" />
 <style>
@@ -431,6 +431,7 @@
     <nav class="nav-links" aria-label="主导航">
       <a href="#product">产品</a>
       <a href="./downloads.zh-CN.html">下载</a>
+      <a href="./plugins.zh-CN.html">扩展</a>
       <a href="./docs.zh-CN.html">文档</a>
       <a href="#developers">开发者</a>
     </nav>
@@ -445,10 +446,10 @@
 <main>
   <section class="hero" aria-label="介绍">
     <div class="hero-top">
-      <h1>Cheers 让团队与 AI 智能体在同一空间协作。</h1>
-      <p class="lead">实时频道、支持文件的对话、带权限的外部智能体 —— 一个开源协作平台搞定。</p>
+      <h1>Cheers 让团队、AI 智能体与扩展在同一空间协作。</h1>
+      <p class="lead">实时频道、共享 Workbench 文件、GitHub 集成与带权限的 ACP 智能体，共同组成一个开源协作平台。</p>
       <div class="hero-cta">
-        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com">免费开始</a>
+        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com/login">免费开始</a>
         <a class="btn btn-outline btn-lg" href="./downloads.zh-CN.html">下载 →</a>
       </div>
     </div>
@@ -465,22 +466,23 @@
   <section id="product">
     <div class="wrap">
       <div class="section-head center reveal">
-        <h2>智能体是一等成员</h2>
-        <p>聊天、文件和 Bot 都在熟悉的频道里。@ 提及智能体即可交办任务 —— 而不是再挂一个外挂工具。</p>
+        <h2>面向人、智能体与扩展的协作层</h2>
+        <p>聊天、文件、Bot、Workbench 工具与外部集成都进入熟悉的频道，让工作从想法到审计都保持可见。</p>
       </div>
       <div class="values reveal">
         <div class="value">
           <h3>实时频道</h3>
-          <p>工作区、频道与私信，基于为大量长连接设计的低延迟 WebSocket 网关。</p>
+          <p>工作区、频道、私信、线程与流式智能体回复，都运行在低延迟 WebSocket 网关之上。</p>
         </div>
         <div class="value">
-          <h3>外部智能体</h3>
-          <p>接入 ACP 智能体 —— OpenCode、Claude、Codex —— 并在任意频道 @ 提及。路由是确定性的。</p>
+          <h3>连接器主机</h3>
+          <p>通过托管的 connector hosts 运行 OpenCode、Claude、Codex 等 ACP 兼容智能体，并在任意频道 @ 提及。</p>
           <a href="./connector.zh-CN.html">连接智能体 →</a>
         </div>
         <div class="value">
-          <h3>权限管控</h3>
-          <p>频道角色与审批流控制 Bot 可读、可写、可执行的范围 —— 含敏感操作。</p>
+          <h3>受治理的扩展能力</h3>
+          <p>频道角色、Bot 授权、签名包、Webhook 验证与沙箱 Renderer，让新增能力始终处在清晰边界内。</p>
+          <a href="./plugins.zh-CN.html">浏览扩展 →</a>
         </div>
       </div>
     </div>
@@ -492,7 +494,7 @@
     <div class="wrap">
       <div class="section-head reveal">
         <h2>为日常协作而设计</h2>
-        <p>从流式回复到共享工作台与审计轨迹 —— 都是团队真正会用到的界面。</p>
+        <p>从流式回复到共享工作台、扩展工具、外部集成与审计轨迹 —— 都是团队真正会用到的界面。</p>
       </div>
 
       <article class="feature reveal">
@@ -530,8 +532,8 @@
 
       <article class="feature reverse reveal">
         <div class="feature-copy">
-          <h3>Workbench：共享文件与看板</h3>
-          <p>人类与智能体共同编辑的工作台。结构化文件可实时渲染 —— 一份 board.json 直接呈现为看板，支持原文/预览切换与可复用模板。</p>
+          <h3>Workbench：共享文件、看板与扩展</h3>
+          <p>人类与智能体共同编辑的工作台。结构化文件可实时渲染，.cheers-extension 包还能加入场景、模板、定时工作流与沙箱 macOS Renderer。</p>
         </div>
         <figure class="feature-media">
           <img src="imgs/workbench.png" width="1452" height="1138" loading="lazy"
@@ -541,8 +543,8 @@
 
       <article class="feature reveal">
         <div class="feature-copy">
-          <h3>细粒度 Bot 权限</h3>
-          <p>权限授予矩阵管控谁可以给 bot 发消息、取消任务、修改设置、远程写文件或回答审批请求。冲突时拒绝优先；敏感能力默认仅所有者可用。</p>
+          <h3>细粒度 Bot 与集成权限</h3>
+          <p>权限授予矩阵管控 bot 消息、任务取消、设置、远程写文件与审批回复。GitHub Webhook 会先验证、去重，再投递到频道。</p>
         </div>
         <figure class="feature-media">
           <img src="imgs/grant.png" width="1036" height="1598" loading="lazy"
@@ -558,17 +560,17 @@
     <div class="wrap">
       <div class="section-head center reveal">
         <h2>一个网关，每块屏幕</h2>
-        <p>浏览器、macOS、iOS、Android —— 端到端同一套 REST 与 WebSocket 协议。</p>
+        <p>浏览器、macOS、iOS、Android 共用同一套 REST、WebSocket、connector host 与扩展包模型。</p>
       </div>
       <div class="platform-grid reveal">
         <div class="platform">
           <h3>Web <span class="tag">在线</span></h3>
-          <p>任意现代浏览器打开即用 —— 频道、文件预览、Viewboard、Workbench。添加到主屏即成 PWA，支持 Web Push。
-            <a href="https://www.tocheers.com">打开应用</a></p>
+          <p>任意现代浏览器打开即用：频道、文件预览、Viewboard、Workbench、管理员安装扩展与 Web Push。
+            <a href="https://www.tocheers.com/login">打开应用</a></p>
         </div>
         <div class="platform">
           <h3>macOS <span class="tag">桌面</span></h3>
-          <p>面向 Apple 芯片的原生 Tauri 应用：管理本机 ACP 连接器、系统级审批横幅、在编辑器中打开智能体文件。
+          <p>面向 Apple 芯片的原生 Tauri 应用：管理 connector hosts、安装个人 Renderer 扩展、审批敏感操作，并在编辑器中打开智能体文件。
             <a href="https://github.com/haowei2000/Cheers/releases">下载 .dmg</a></p>
         </div>
         <div class="platform">
@@ -590,8 +592,8 @@
   <section id="teams">
     <div class="wrap">
       <div class="section-head reveal">
-        <h2>熟悉的聊天，全新的队友</h2>
-        <p>如果你用过 Slack 或 Discord，你已经会用 Cheers —— 智能体是唯一的新东西。</p>
+        <h2>熟悉的聊天，全新的队友，更多上下文</h2>
+        <p>如果你用过 Slack 或 Discord，你已经会用 Cheers；Cheers 把智能体、Workbench 文件与集成事件也放进同一频道。</p>
       </div>
       <div class="split reveal">
         <div class="panel">
@@ -599,8 +601,8 @@
           <ul class="feat">
             <li><span class="k">频道与私信</span><span class="v">加入频道、发送消息、在线程中回复。</span></li>
             <li><span class="k">提及 Bot</span><span class="v">输入 <code>@opencode &lt;任务&gt;</code>，把工作交给智能体。</span></li>
-            <li><span class="k">分享文件</span><span class="v">上传文档并内联预览；智能体也能读取。</span></li>
-            <li><span class="k">实时跟进</span><span class="v">看着回复随工作进展流式出现。</span></li>
+            <li><span class="k">使用 Workbench</span><span class="v">共享文件、看板与扩展场景，智能体也能查看。</span></li>
+            <li><span class="k">绑定 GitHub</span><span class="v">把仓库事件通过已验证 Webhook 投递到频道，并映射协作者角色。</span></li>
           </ul>
         </div>
         <div class="panel">
@@ -608,8 +610,8 @@
           <ul class="feat">
             <li><span class="k">1 · 登录</span><span class="v">打开应用，用你的账号登录。</span></li>
             <li><span class="k">2 · 打开频道</span><span class="v">在侧边栏选一个频道，或发起私信。</span></li>
-            <li><span class="k">3 · 添加 Bot</span><span class="v">通过成员列表把智能体加入频道。</span></li>
-            <li><span class="k">4 · 提问</span><span class="v"><code>@bot</code> 你的第一个问题，看它回复。</span></li>
+            <li><span class="k">3 · 添加主机</span><span class="v">注册 connector host，并把它的 bot 加入频道。</span></li>
+            <li><span class="k">4 · 扩展频道</span><span class="v">安装官方扩展，或绑定一个 GitHub 仓库。</span></li>
           </ul>
           <p style="margin-top:18px;font-size: 14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.zh-CN.md">阅读用户指南 →</a></p>
         </div>
@@ -622,8 +624,8 @@
   <section id="developers">
     <div class="wrap">
       <div class="section-head reveal">
-        <h2>一个 Rust 网关，外部智能体</h2>
-        <p>唯一的后端进程同时提供 REST、浏览器 WebSocket 网关与 Agent Bridge。没有需要 fork 的内置 bot 运行时。</p>
+        <h2>一个 Rust 网关，外部智能体，可扩展工作区</h2>
+        <p>唯一的后端进程同时提供 REST、WebSocket、Agent Bridge、MCP、Workbench 扩展包与已验证的集成事件。没有需要 fork 的内置 bot 运行时。</p>
       </div>
       <div class="split reveal">
         <div class="panel">
@@ -633,7 +635,9 @@
             <li><span class="k">前端</span><span class="v">React · TypeScript · Tailwind · Vite。</span></li>
             <li><span class="k">数据</span><span class="v">PostgreSQL 存业务数据与频道历史。</span></li>
             <li><span class="k">文件</span><span class="v">S3 兼容对象存储（RustFS），可选预览。</span></li>
-            <li><span class="k">智能体</span><span class="v">外部 ACP 智能体，经网关的 HTTP MCP 端点 / 连接器接入。</span></li>
+            <li><span class="k">智能体</span><span class="v">外部 ACP 智能体经 connector hosts 与网关 HTTP MCP 端点接入。</span></li>
+            <li><span class="k">扩展</span><span class="v">签名 .cheers-extension 包提供场景、工作流、模板与沙箱 Renderer。</span></li>
+            <li><span class="k">集成</span><span class="v">HMAC 验证 Webhook、去重、频道绑定与投递 worker。</span></li>
             <li><span class="k">横向扩展</span><span class="v">可选 Redis 做多实例广播。</span></li>
           </ul>
         </div>
@@ -641,10 +645,10 @@
           <h3>整体结构</h3>
           <div class="arch">
             <div class="arch-row">
-              <div class="node"><div class="t">浏览器（React）</div><div class="s">WebSocket + REST</div></div>
-              <div class="node"><div class="t">ACP 智能体</div><div class="s">OpenCode · Claude · Codex</div></div>
+              <div class="node"><div class="t">应用</div><div class="s">Web · macOS · 移动端</div></div>
+              <div class="node"><div class="t">Connector Hosts</div><div class="s">OpenCode · Claude · Codex</div></div>
             </div>
-            <div class="arch-link">↓ &nbsp;&nbsp; Agent Bridge &nbsp;&nbsp; ↑</div>
+            <div class="arch-link">↓ &nbsp;&nbsp; WebSocket · REST · Agent Bridge · MCP &nbsp;&nbsp; ↑</div>
             <div class="arch-row">
               <div class="node accent"><div class="t">Rust 网关</div><div class="s">唯一后端</div></div>
             </div>
@@ -652,10 +656,12 @@
             <div class="arch-row">
               <div class="node"><div class="t">PostgreSQL</div><div class="s">数据 · 历史</div></div>
               <div class="node"><div class="t">RustFS（S3）</div><div class="s">文件</div></div>
+              <div class="node"><div class="t">扩展</div><div class="s">目录 · 扩展包</div></div>
+              <div class="node"><div class="t">集成</div><div class="s">GitHub 事件</div></div>
               <div class="node"><div class="t">Redis</div><div class="s">可选</div></div>
             </div>
           </div>
-          <p class="arch-caption">浏览器与智能体都连接网关。</p>
+          <p class="arch-caption">应用、connector hosts、扩展包与 Webhook 都在网关汇合。</p>
         </div>
       </div>
       <div class="link-grid reveal" style="margin-top:48px;">
@@ -778,7 +784,7 @@ cd frontend && npm install && npm run dev</pre>
     <div class="wrap reveal">
       <h2>现在就试试 Cheers。</h2>
       <div class="hero-cta">
-        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com">免费开始</a>
+        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com/login">免费开始</a>
         <a class="btn btn-outline btn-lg" href="https://github.com/haowei2000/Cheers">查看 GitHub →</a>
       </div>
     </div>
@@ -802,7 +808,7 @@ cd frontend && npm install && npm run dev</pre>
         <a href="#product">概览</a>
         <a href="#features">功能</a>
         <a href="./downloads.zh-CN.html">下载</a>
-        <a href="https://www.tocheers.com">打开应用</a>
+        <a href="https://www.tocheers.com/login">打开应用</a>
       </div>
       <div class="foot-col">
         <h4>开发者</h4>

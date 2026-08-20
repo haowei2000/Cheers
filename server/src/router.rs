@@ -803,6 +803,23 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::compliance::disclosures),
         )
         .route(
+            "/api/v1/channels/:channel_id/profile",
+            get(api::channel_profiles::get_profile),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/profile/code",
+            put(api::channel_profiles::put_code_profile),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/profile/code/status",
+            put(api::channel_profiles::put_code_status),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/features/:feature",
+            put(api::channel_features::enable_feature)
+                .delete(api::channel_features::disable_feature),
+        )
+        .route(
             "/api/v1/channels/:channel_id/bots/:bot_id/ai-consent",
             post(api::compliance::grant_consent).delete(api::compliance::revoke_consent),
         )
@@ -911,6 +928,10 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/auth/oauth/google/callback",
             get(api::oauth::google_callback),
+        )
+        .route(
+            "/api/v1/auth/oauth/github/callback",
+            get(api::oauth::github_callback),
         )
         .route("/api/v1/auth/oauth/handoff", post(api::oauth::handoff))
         .route(

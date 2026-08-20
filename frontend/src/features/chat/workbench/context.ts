@@ -1,5 +1,6 @@
 import type { FsClient, SendResourceReq } from "./fsClient";
 import type { RendererExtension } from "./sandbox/rendererExtension";
+import type { ChannelProfile } from "@/api/channelProfiles";
 
 // The shared context handed to scene navigation, the Raw file browser, and renderer
 // hosts. Paths remain the storage contract; scene items are the default navigation.
@@ -9,6 +10,8 @@ export interface WorkbenchContext {
   /** False while the drawer is closed so code renderers can dispose instead of running hidden. */
   active: boolean;
   channelId: string;
+  /** Capability-filtered workflow metadata; credentials are never included. */
+  profile?: ChannelProfile | null;
   fs: FsClient;
   /** Raw resource client used to proxy manifest-whitelisted channel reads. */
   sendResourceReq: SendResourceReq;

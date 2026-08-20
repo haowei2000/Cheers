@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-<title>Cheers — Collaboration for humans and AI agents</title>
-<meta name="description" content="Cheers is an open-source collaboration platform where teams and AI agents work in the same channels: real-time chat, file-aware conversations, permissions, and external ACP agents." />
+<title>Cheers — Shared workspaces for teams, agents, and extensions</title>
+<meta name="description" content="Cheers is an open-source collaboration platform where teams, AI agents, Workbench extensions, and GitHub integrations share the same real-time channels." />
 <link rel="alternate" hreflang="zh-CN" href="./index.zh-CN.html" />
 <link rel="alternate" hreflang="en" href="./index.html" />
 <style>
@@ -453,6 +453,7 @@
     <nav class="nav-links" aria-label="Primary">
       <a href="#product">Product</a>
       <a href="./downloads.html">Download</a>
+      <a href="./plugins.html">Extensions</a>
       <a href="./docs.html">Docs</a>
       <a href="#developers">Developers</a>
     </nav>
@@ -467,10 +468,10 @@
 <main>
   <section class="hero" aria-label="Introduction">
     <div class="hero-top">
-      <h1>Cheers is where your team and AI agents work together.</h1>
-      <p class="lead">Real-time channels, file-aware conversations, and permissioned external agents — in one open-source collaboration platform.</p>
+      <h1>Cheers is where teams, AI agents, and extensions work together.</h1>
+      <p class="lead">Real-time channels, shared Workbench files, GitHub-backed integrations, and permissioned ACP agents in one open-source collaboration platform.</p>
       <div class="hero-cta">
-        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com">Start free</a>
+        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com/login">Start free</a>
         <a class="btn btn-outline btn-lg" href="./downloads.html">Download →</a>
       </div>
     </div>
@@ -487,22 +488,23 @@
   <section id="product">
     <div class="wrap">
       <div class="section-head center reveal">
-        <h2>Agents as first-class teammates</h2>
-        <p>Chat, files, and bots live in familiar channels. Mention an agent to hand off work — not bolt on another tool.</p>
+        <h2>A collaboration layer for people, agents, and extensions</h2>
+        <p>Chat, files, bots, Workbench tools, and inbound integrations meet in familiar channels so work stays visible from idea to audit.</p>
       </div>
       <div class="values reveal">
         <div class="value">
           <h3>Real-time channels</h3>
-          <p>Workspaces, channels, and DMs over a low-latency WebSocket gateway built for many long-lived connections.</p>
+          <p>Workspaces, channels, DMs, threads, and streaming agent replies run through a low-latency WebSocket gateway.</p>
         </div>
         <div class="value">
-          <h3>External agents</h3>
-          <p>Connect ACP agents — OpenCode, Claude, Codex — and @-mention them in any channel. Routing is deterministic.</p>
+          <h3>Connector hosts</h3>
+          <p>Run ACP-compatible agents such as OpenCode, Claude, and Codex through managed connector hosts, then @-mention them in any channel.</p>
           <a href="./connector.html">Connect an agent →</a>
         </div>
         <div class="value">
-          <h3>Governed access</h3>
-          <p>Channel roles and approval flows control what bots can read, write, and execute — including sensitive actions.</p>
+          <h3>Governed extensibility</h3>
+          <p>Channel roles, bot grants, signed packages, webhook verification, and sandboxed renderers keep new capabilities inside clear boundaries.</p>
+          <a href="./plugins.html">Browse extensions →</a>
         </div>
       </div>
     </div>
@@ -514,7 +516,7 @@
     <div class="wrap">
       <div class="section-head reveal">
         <h2>Built for day-to-day collaboration</h2>
-        <p>From streaming replies to shared workspaces and audit trails — the surfaces your team actually uses.</p>
+        <p>From streaming replies to shared workspaces, extension-powered tools, integrations, and audit trails: the surfaces your team actually uses.</p>
       </div>
 
       <article class="feature reveal">
@@ -552,8 +554,8 @@
 
       <article class="feature reverse reveal">
         <div class="feature-copy">
-          <h3>Workbench: shared files &amp; boards</h3>
-          <p>A workspace humans and agents edit together. Structured files render live — a board.json becomes a kanban with raw/preview toggle and reusable templates.</p>
+          <h3>Workbench: shared files, boards &amp; extensions</h3>
+          <p>A workspace humans and agents edit together. Structured files render live, and .cheers-extension packages add scenes, templates, scheduled workflows, and sandboxed macOS renderers.</p>
         </div>
         <figure class="feature-media">
           <img src="imgs/workbench.png" width="1452" height="1138" loading="lazy"
@@ -563,8 +565,8 @@
 
       <article class="feature reveal">
         <div class="feature-copy">
-          <h3>Fine-grained bot permissions</h3>
-          <p>A permission-grant matrix governs who may message a bot, cancel tasks, change settings, write files remotely, or answer approval requests. Deny wins ties; sensitive capabilities start owner-only.</p>
+          <h3>Fine-grained bot and integration permissions</h3>
+          <p>A permission-grant matrix governs bot messaging, task cancellation, settings, remote file writes, and approval replies. GitHub webhooks are verified, deduped, and delivered through channels.</p>
         </div>
         <figure class="feature-media">
           <img src="imgs/grant.png" width="1036" height="1598" loading="lazy"
@@ -580,17 +582,17 @@
     <div class="wrap">
       <div class="section-head center reveal">
         <h2>One gateway. Every screen.</h2>
-        <p>Browser, macOS, iOS, and Android — the same REST and WebSocket protocol end to end.</p>
+        <p>Browser, macOS, iOS, and Android share the same REST, WebSocket, connector-host, and extension package model.</p>
       </div>
       <div class="platform-grid reveal">
         <div class="platform">
           <h3>Web <span class="tag">Live</span></h3>
-          <p>Full client in any modern browser — channels, file previews, Viewboard, Workbench. Add to home screen as a PWA with Web Push.
-            <a href="https://www.tocheers.com">Open app</a></p>
+          <p>Full client in any modern browser: channels, file previews, Viewboard, Workbench, admin-managed extensions, and Web Push.
+            <a href="https://www.tocheers.com/login">Open app</a></p>
         </div>
         <div class="platform">
           <h3>macOS <span class="tag">Desktop</span></h3>
-          <p>Native Tauri app for Apple Silicon: manage local ACP connectors, native approval banners, open agent files in your editor.
+          <p>Native Tauri app for Apple Silicon: manage connector hosts, install personal renderer extensions, approve sensitive actions, and open agent files in your editor.
             <a href="https://github.com/haowei2000/Cheers/releases">Download .dmg</a></p>
         </div>
         <div class="platform">
@@ -612,8 +614,8 @@
   <section id="teams">
     <div class="wrap">
       <div class="section-head reveal">
-        <h2>Familiar chat. New teammates.</h2>
-        <p>If you know Slack or Discord, you already know the basics — agents are the new part.</p>
+        <h2>Familiar chat. New teammates. More context.</h2>
+        <p>If you know Slack or Discord, you already know the basics; Cheers adds agents, Workbench files, and integration events to the same channels.</p>
       </div>
       <div class="split reveal">
         <div class="panel">
@@ -621,8 +623,8 @@
           <ul class="feat">
             <li><span class="k">Channels &amp; DMs</span><span class="v">Join channels, send messages, reply in threads.</span></li>
             <li><span class="k">Mention a bot</span><span class="v">Type <code>@opencode &lt;task&gt;</code> to hand work to an agent.</span></li>
-            <li><span class="k">Share files</span><span class="v">Upload documents with inline preview; agents can read them.</span></li>
-            <li><span class="k">Follow along</span><span class="v">Watch replies stream in as the agent works.</span></li>
+            <li><span class="k">Use Workbench</span><span class="v">Share files, boards, and extension scenes that agents can inspect.</span></li>
+            <li><span class="k">Bind GitHub</span><span class="v">Route repository events into channels with verified webhooks and collaborator-aware roles.</span></li>
           </ul>
         </div>
         <div class="panel">
@@ -630,8 +632,8 @@
           <ul class="feat">
             <li><span class="k">1 · Sign in</span><span class="v">Open the app and log in with your account.</span></li>
             <li><span class="k">2 · Open a channel</span><span class="v">Pick a channel from the sidebar, or start a DM.</span></li>
-            <li><span class="k">3 · Add a bot</span><span class="v">Use the member list to add an agent to the channel.</span></li>
-            <li><span class="k">4 · Ask it</span><span class="v"><code>@bot</code> your first question and see it reply.</span></li>
+            <li><span class="k">3 · Add a host</span><span class="v">Register a connector host and add its bot to the channel.</span></li>
+            <li><span class="k">4 · Extend it</span><span class="v">Install an official extension or bind a GitHub repository.</span></li>
           </ul>
           <p style="margin-top:18px;font-size: 14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.md">Read the user guide →</a></p>
         </div>
@@ -644,8 +646,8 @@
   <section id="developers">
     <div class="wrap">
       <div class="section-head reveal">
-        <h2>One Rust gateway. External agents.</h2>
-        <p>A single backend process serves REST, the browser WebSocket gateway, and the Agent Bridge. No built-in bot runtime to fork.</p>
+        <h2>One Rust gateway. External agents. Pluggable workspaces.</h2>
+        <p>A single backend process serves REST, WebSocket, Agent Bridge, MCP, Workbench packages, and verified integration events. No built-in bot runtime to fork.</p>
       </div>
       <div class="split reveal">
         <div class="panel">
@@ -655,7 +657,9 @@
             <li><span class="k">Frontend</span><span class="v">React · TypeScript · Tailwind · Vite.</span></li>
             <li><span class="k">Data</span><span class="v">PostgreSQL for business data and channel history.</span></li>
             <li><span class="k">Files</span><span class="v">S3-compatible object storage (RustFS), optional preview.</span></li>
-            <li><span class="k">Agents</span><span class="v">External ACP agents via the gateway's HTTP MCP endpoint / connectors.</span></li>
+            <li><span class="k">Agents</span><span class="v">External ACP agents via connector hosts and the gateway's HTTP MCP endpoint.</span></li>
+            <li><span class="k">Extensions</span><span class="v">Signed .cheers-extension packages for scenes, workflows, templates, and sandboxed renderers.</span></li>
+            <li><span class="k">Integrations</span><span class="v">HMAC-verified webhooks, dedupe, channel bindings, and delivery workers.</span></li>
             <li><span class="k">Scale-out</span><span class="v">Optional Redis for multi-instance fan-out.</span></li>
           </ul>
         </div>
@@ -663,10 +667,10 @@
           <h3>Architecture</h3>
           <div class="arch">
             <div class="arch-row">
-              <div class="node"><div class="t">Browser (React)</div><div class="s">WebSocket + REST</div></div>
-              <div class="node"><div class="t">ACP Agents</div><div class="s">OpenCode · Claude · Codex</div></div>
+              <div class="node"><div class="t">Apps</div><div class="s">Web · macOS · mobile</div></div>
+              <div class="node"><div class="t">Connector Hosts</div><div class="s">OpenCode · Claude · Codex</div></div>
             </div>
-            <div class="arch-link">↓ &nbsp;&nbsp; Agent Bridge &nbsp;&nbsp; ↑</div>
+            <div class="arch-link">↓ &nbsp;&nbsp; WebSocket · REST · Agent Bridge · MCP &nbsp;&nbsp; ↑</div>
             <div class="arch-row">
               <div class="node accent"><div class="t">Rust Gateway</div><div class="s">the only backend</div></div>
             </div>
@@ -674,10 +678,12 @@
             <div class="arch-row">
               <div class="node"><div class="t">PostgreSQL</div><div class="s">data · history</div></div>
               <div class="node"><div class="t">RustFS (S3)</div><div class="s">files</div></div>
+              <div class="node"><div class="t">Extensions</div><div class="s">catalog · packages</div></div>
+              <div class="node"><div class="t">Integrations</div><div class="s">GitHub events</div></div>
               <div class="node"><div class="t">Redis</div><div class="s">optional</div></div>
             </div>
           </div>
-          <p class="arch-caption">Browsers and agents both connect to the gateway.</p>
+          <p class="arch-caption">Apps, connector hosts, extension packages, and webhooks all meet at the gateway.</p>
         </div>
       </div>
       <div class="link-grid reveal" style="margin-top:48px;">
@@ -800,7 +806,7 @@ cd frontend && npm install && npm run dev</pre>
     <div class="wrap reveal">
       <h2>Try Cheers now.</h2>
       <div class="hero-cta">
-        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com">Start free</a>
+        <a class="btn btn-solid btn-lg" href="https://www.tocheers.com/login">Start free</a>
         <a class="btn btn-outline btn-lg" href="https://github.com/haowei2000/Cheers">View on GitHub →</a>
       </div>
     </div>
@@ -824,7 +830,7 @@ cd frontend && npm install && npm run dev</pre>
         <a href="#product">Overview</a>
         <a href="#features">Features</a>
         <a href="./downloads.html">Download</a>
-        <a href="https://www.tocheers.com">Open app</a>
+        <a href="https://www.tocheers.com/login">Open app</a>
       </div>
       <div class="foot-col">
         <h4>Developers</h4>

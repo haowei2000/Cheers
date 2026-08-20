@@ -1359,7 +1359,7 @@ extension APIClient {
         workspaceId: String,
         name: String,
         isPrivate: Bool,
-        kind: String = "text",
+        voiceEnabled: Bool = false,
         purpose: String?
     ) async throws -> ChannelDto {
         try await postJSON(
@@ -1368,7 +1368,8 @@ extension APIClient {
                 workspaceId: workspaceId,
                 name: name,
                 type: isPrivate ? "private" : "public",
-                kind: kind,
+                kind: "text",
+                features: voiceEnabled ? ["voice"] : [],
                 purpose: purpose
             ),
             as: ChannelDto.self

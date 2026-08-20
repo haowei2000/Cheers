@@ -96,6 +96,7 @@ export const slotActionLabels = {
 // scope visible because it acts on every agent at once.
 export const fillActionLabels = {
   continueWithApple: "Continue with Apple",
+  continueWithGitHub: "Continue with GitHub",
   continueWithGoogle: "Continue with Google",
   upgradeAll: "Upgrade all",
 } as const;
