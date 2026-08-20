@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { initializeChannelIntegration } from "@/api/integrations";
 import type { WorkbenchContext } from "../context";
 import { registerWorkbenchPanel } from "../workbenchPanels";
+import { IconButton } from "@/components/ui/icon-button";
 
 function GitHubCodeWorkbenchPanel({ ctx }: { ctx: WorkbenchContext }) {
   const config = ctx.profile?.config;
@@ -34,15 +35,13 @@ function GitHubCodeWorkbenchPanel({ ctx }: { ctx: WorkbenchContext }) {
         )}
         <span className="ml-auto shrink-0 capitalize text-content-secondary">{status?.state ?? "pending"}</span>
         {(status?.state === "error" || status?.state === "pending") && (
-          <button
-            type="button"
-            className="rounded-sm p-1 text-content-muted hover:bg-zinc-800 hover:text-content-primary"
+          <IconButton
+            controlSize="compact"
             onClick={() => void retryImport()}
-            title="Retry repository import"
-            aria-label="Retry repository import"
+            label="Retry repository import"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-          </button>
+          </IconButton>
         )}
       </div>
       {status?.last_error && <p className="mt-1 truncate text-minimal text-danger-400">{status.last_error}</p>}

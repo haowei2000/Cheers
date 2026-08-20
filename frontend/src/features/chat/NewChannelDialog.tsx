@@ -17,6 +17,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ActionButton } from "@/components/ui/action-button";
 import { ChoiceGroup } from "@/components/ui/choice-button";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { Select } from "@/components/ui/select";
 import { isComposing } from "@/lib/ime";
 import {
   ConversationModePicker,
@@ -187,17 +188,17 @@ export function NewChannelDialog({
         {profile === "code" && (
           <div className="space-y-2 border-t border-zinc-800 pt-3">
             <label className="block text-compact text-content-muted" htmlFor="code-installation">GitHub installation</label>
-            <select id="code-installation" className="h-9 w-full rounded-sm border border-zinc-700 bg-zinc-900 px-2 text-regular text-content-primary"
+            <Select id="code-installation" controlSize="regular"
               value={installationId} onChange={(event) => { setInstallationId(event.target.value); setRepositoryId(""); }}>
               <option value="">Select installation…</option>
               {installations.map((item) => <option key={item.installation_id} value={item.installation_id}>{item.external_account}</option>)}
-            </select>
+            </Select>
             <label className="block text-compact text-content-muted" htmlFor="code-repository">Repository</label>
-            <select id="code-repository" className="h-9 w-full rounded-sm border border-zinc-700 bg-zinc-900 px-2 text-regular text-content-primary"
+            <Select id="code-repository" controlSize="regular"
               value={repositoryId} onChange={(event) => setRepositoryId(event.target.value)} disabled={!installationId}>
               <option value="">Select repository…</option>
               {repositories.map((item) => <option key={item.external_id} value={item.external_id}>{item.external_id}{item.private ? " · Private" : ""}</option>)}
-            </select>
+            </Select>
             {installations.length === 0 && <p className="text-compact text-warning-400">No GitHub App installation is available in this workspace.</p>}
           </div>
         )}

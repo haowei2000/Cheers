@@ -332,7 +332,7 @@ export default function LoginPage() {
                 </Button>
               )}
               {capabilities.providers.github && (
-                <Button content="iconText" controlWidth="fill"
+                <Button action="continueWithGitHub" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
                   disabled={loading}
@@ -346,7 +346,6 @@ export default function LoginPage() {
                   }}
                 >
                   <GitHubMark className="h-4 w-4" />
-                  Continue with GitHub
                 </Button>
               )}
             </div>
