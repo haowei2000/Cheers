@@ -2,7 +2,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Tip } from "@/components/ui/tip";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -792,7 +792,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         {/* Content-first by default: scene → item tabs → renderer. Raw is an explicit
             mode that mounts the complete file tree and editor. */}
         <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-          {open && profilePanels.map((panel) => <div key={panel.id}>{panel.render(panelCtx)}</div>)}
+          {open && profilePanels.map((panel) => <Fragment key={panel.id}>{panel.render(panelCtx)}</Fragment>)}
           <div className="min-h-0 flex-1 overflow-hidden">
             {open && (rawMode ? (
               <FilePanel ctx={ctx} />

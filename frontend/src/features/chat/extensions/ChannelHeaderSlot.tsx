@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { panelsFor } from "@/features/chat/panels/registry";
 import "@/features/chat/panels/builtin/githubCode";
@@ -12,7 +13,9 @@ export function ChannelHeaderSlot({ channelId }: { channelId: string }) {
   return (
     <>
       {panelsFor("header", profile.profile).map((panel) => (
-        <div key={panel.id}>{panel.render({ channelId, profile })}</div>
+        // Keyed Fragment, not a wrapper div: the key is the only reason a container
+        // would exist here, and the header's own flex row lays these out.
+        <Fragment key={panel.id}>{panel.render({ channelId, profile })}</Fragment>
       ))}
     </>
   );
