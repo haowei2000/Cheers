@@ -162,10 +162,6 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::workbench::list_extensions),
         )
         .route(
-            "/api/v1/workbench/extensions/:extension_id",
-            put(api::workbench::put_extension).delete(api::workbench::delete_extension),
-        )
-        .route(
             "/api/v1/workbench/extensions/:extension_id/scenes/:scene_id",
             get(api::workbench::get_scene),
         )

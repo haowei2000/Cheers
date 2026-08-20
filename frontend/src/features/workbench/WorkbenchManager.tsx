@@ -3,7 +3,6 @@ import { AlertCircle, Blocks, CircleCheck, ExternalLink, Laptop, Package, Power,
 import { Button as UiButton } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
-import { useIsAdmin } from "@/stores/authStore";
 import { isTauri } from "@/lib/serverConfig";
 import {
   downloadCatalogExtension,
@@ -11,12 +10,7 @@ import {
   listPersonalExtensions,
   removePersonalExtension,
 } from "@/lib/desktop";
-import {
-  deleteExtension,
-  installGlobalExtension,
-  listExtensions,
-  type ExtensionSummary,
-} from "@/features/chat/workbench/extensions/api";
+import { listExtensions, type ExtensionSummary } from "@/features/chat/workbench/extensions/api";
 import type { ParsedExtension } from "@/features/chat/workbench/extensions/package";
 import { parseExtensionPackageOffThread, parsePersonalExtension } from "@/features/chat/workbench/extensions/parseOffThread";
 import {
@@ -70,9 +64,8 @@ export interface CatalogData {
 }
 
 export function WorkbenchManager() {
-  const isAdmin = useIsAdmin();
   const desktop = isTauri();
-  const [global, setGlobal] = useState<ExtensionSummary[]>([]);
+  const [official, setOfficial] = useState<ExtensionSummary[]>([]);
   const [personal, setPersonal] = useState<ParsedExtension[]>([]);
   const [catalogEntries, setCatalogEntries] = useState<CatalogPackageEntry[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -82,13 +75,12 @@ export function WorkbenchManager() {
   const [candidate, setCandidate] = useState<ExtensionInstallCandidate | null>(null);
   const [installing, setInstalling] = useState(false);
   const [, setRuntimeRevision] = useState(0);
-  const globalRef = useRef<HTMLInputElement>(null);
   const personalRef = useRef<HTMLInputElement>(null);
   const catalogLoading = useRef(false);
 
   const reload = useCallback(async () => {
     try {
-      setGlobal(await listExtensions());
+      setOfficial(await listExtensions());
       if (desktop) {
         const stored = await listPersonalExtensions();
         const parsed = await Promise.all(
@@ -197,26 +189,17 @@ export function WorkbenchManager() {
 
   const installed = useMemo<InstalledExtensionIdentity | undefined>(() => {
     if (!candidate) return undefined;
-    if (candidate.scope === "global") {
-      const match = global.find((extension) => extension.id === candidate.extension.manifest.id);
-      return match ? { version: match.version, sha256: match.sha256, permissions: match.permissions } : undefined;
-    }
     const match = personal.find((extension) => extension.manifest.id === candidate.extension.manifest.id);
     return match ? { version: match.manifest.version, sha256: match.sha256, permissions: match.manifest.permissions ?? {} } : undefined;
-  }, [candidate, global, personal]);
+  }, [candidate, personal]);
 
   const confirmInstall = useCallback(async () => {
     if (!candidate || installing) return;
     setInstalling(true);
     setError(null);
     try {
-      if (candidate.scope === "global") {
-        await installGlobalExtension(candidate.extension.manifest, candidate.extension.bytes);
-        setNotice(`Installed globally: ${candidate.extension.manifest.title}`);
-      } else {
-        await installPersonalExtension(candidate.extension.manifest.id, candidate.extension.bytes, candidate.extension.sha256);
-        setNotice(`Installed on this Mac: ${candidate.extension.manifest.title}`);
-      }
+      await installPersonalExtension(candidate.extension.manifest.id, candidate.extension.bytes, candidate.extension.sha256);
+      setNotice(`Installed on this Mac: ${candidate.extension.manifest.title}`);
       setCandidate(null);
       await reload();
     } catch (reason) {
@@ -241,30 +224,24 @@ export function WorkbenchManager() {
         presentationLevel="medium"
         controlSize="regular"
         className="border-t border-zinc-800 pt-2"
-        description="Scenes and renderers installed from verified packages."
+        description="Official Workbench from this Gateway release, plus extensions installed on this Mac."
         action={<div className="flex items-center gap-2">
           <UiButton action="open" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => { const popup = window.open(OFFICIAL_CATALOG_URL, "_blank", "noopener,noreferrer"); if (popup) popup.opener = null; }}>
             <ExternalLink className="h-3.5 w-3.5" />
           </UiButton>
-          {isAdmin && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => globalRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" />
-          </UiButton>}
           {desktop && <UiButton action="upload" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => personalRef.current?.click()}>
             <Laptop className="h-3.5 w-3.5" />
           </UiButton>}
           {/* design-system-native: file-input */}
-          <input ref={globalRef} aria-label="Choose a global extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareFile(file, "global"); event.target.value = ""; }} />
-          {/* design-system-native: file-input */}
           <input ref={personalRef} aria-label="Choose a personal extension package" type="file" accept=".cheers-extension,application/vnd.cheers.extension+zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareFile(file, "personal"); event.target.value = ""; }} />
         </div>}
       >
-        {global.map((extension) => (
+        {official.map((extension) => (
           <WorkbenchItem
-            key={`global:${extension.id}`}
+            key={`official:${extension.id}`}
             title={`${extension.title} · ${extension.version}`}
             leading={<Package className="h-3.5 w-3.5 text-accent-300" />}
-            status={<span className="text-minimal text-content-muted">{extension.origin === "system" ? "Official" : "Global"} · Installed · Ready · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
-            actions={<UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.title}`} title="Uninstall" onClick={async () => { await deleteExtension(extension.id); await reload(); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>}
+            status={<span className="text-minimal text-content-muted">Official · This Gateway release · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
           />
         ))}
         {personal.map((extension) => {
@@ -293,7 +270,7 @@ export function WorkbenchManager() {
             actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-content-primary hover:text-danger-400"><X className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}
-        {global.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
+        {official.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
 
       <ItemSection
@@ -304,14 +281,13 @@ export function WorkbenchManager() {
         description="Verified extensions from the official Cheers catalog."
       >
         {catalogEntries.map((entry) => {
-          const isInstalledGlobal = global.find((e) => e.id === entry.id);
+          const isInstalledOfficial = official.find((e) => e.id === entry.id);
           const isInstalledPersonal = personal.find((e) => e.manifest.id === entry.id);
-          const installedVer = isInstalledPersonal?.manifest.version ?? isInstalledGlobal?.version;
+          const installedVer = isInstalledPersonal?.manifest.version ?? isInstalledOfficial?.version;
           const hasUpdate = Boolean(installedVer && compareSemver(entry.version, installedVer) > 0);
-          const isInstalled = Boolean(isInstalledGlobal || isInstalledPersonal);
-          const targetScope: InstallScope = desktop ? "personal" : "global";
-          const canInstall = !isInstalled || hasUpdate;
-          const isPermitted = desktop || (isAdmin && entry.globalCapable);
+          const isInstalled = Boolean(isInstalledOfficial || isInstalledPersonal);
+          const targetScope: InstallScope = "personal";
+          const canInstall = desktop && (!isInstalled || hasUpdate);
 
           return (
             <WorkbenchItem
@@ -330,7 +306,7 @@ export function WorkbenchManager() {
               }
               actions={
                 <div className="flex items-center gap-2">
-                  {canInstall && isPermitted && (
+                  {canInstall && (
                     <UiButton
                       action={hasUpdate ? "update" : "install"}
                       content="iconText"

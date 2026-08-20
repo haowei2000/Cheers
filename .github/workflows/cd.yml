@@ -190,6 +190,11 @@ jobs:
           GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
           GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}
+          GITHUB_OAUTH_CLIENT_ID: ${{ vars.CHEERS_GITHUB_OAUTH_CLIENT_ID }}
+          GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.CHEERS_GITHUB_OAUTH_CLIENT_SECRET }}
+          GITHUB_OAUTH_REDIRECT_URI: ${{ vars.CHEERS_GITHUB_OAUTH_REDIRECT_URI }}
+          GITHUB_APP_ID: ${{ vars.CHEERS_GITHUB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.CHEERS_GITHUB_APP_PRIVATE_KEY }}
           OAUTH_WEB_RETURN_URL: ${{ vars.OAUTH_WEB_RETURN_URL }}
         run: |
           set +x
@@ -224,6 +229,21 @@ jobs:
             exit 1
           fi
 
+          github_oauth_count=0
+          for name in GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET GITHUB_OAUTH_REDIRECT_URI; do
+            if [ -n "${!name:-}" ]; then github_oauth_count=$((github_oauth_count + 1)); fi
+          done
+          if [ "$github_oauth_count" -ne 0 ] && [ "$github_oauth_count" -ne 3 ]; then
+            echo "GitHub OAuth settings must be configured together" >&2; exit 1
+          fi
+          github_app_count=0
+          for name in GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY; do
+            if [ -n "${!name:-}" ]; then github_app_count=$((github_app_count + 1)); fi
+          done
+          if [ "$github_app_count" -ne 0 ] && [ "$github_app_count" -ne 2 ]; then
+            echo "GitHub App settings must be configured together" >&2; exit 1
+          fi
+
           payload="$(mktemp)"
           trap 'rm -f "$payload"' EXIT
           chmod 600 "$payload"
@@ -248,6 +268,15 @@ jobs:
             append_payload_field GOOGLE_WEB_CLIENT_ID "$GOOGLE_WEB_CLIENT_ID"
             append_payload_field GOOGLE_WEB_CLIENT_SECRET "$GOOGLE_WEB_CLIENT_SECRET"
             append_payload_field GOOGLE_WEB_REDIRECT_URI "$GOOGLE_WEB_REDIRECT_URI"
+          fi
+          if [ "$github_oauth_count" -eq 3 ]; then
+            append_payload_field GITHUB_OAUTH_CLIENT_ID "$GITHUB_OAUTH_CLIENT_ID"
+            append_payload_field GITHUB_OAUTH_CLIENT_SECRET "$GITHUB_OAUTH_CLIENT_SECRET"
+            append_payload_field GITHUB_OAUTH_REDIRECT_URI "$GITHUB_OAUTH_REDIRECT_URI"
+          fi
+          if [ "$github_app_count" -eq 2 ]; then
+            append_payload_field GITHUB_APP_ID "$GITHUB_APP_ID"
+            append_payload_field GITHUB_APP_PRIVATE_KEY "$GITHUB_APP_PRIVATE_KEY"
           fi
           append_payload_field OAUTH_WEB_RETURN_URL "$OAUTH_WEB_RETURN_URL"
 

@@ -1,7 +1,6 @@
-import { apiFetch, apiJson } from "@/api/client";
+import { apiJson } from "@/api/client";
 import type { TemplateManifest } from "../manifest";
 import {
-  EXTENSION_MEDIA_TYPE,
   type AutomationContribution,
   type ExtensionManifest,
   type ExtensionPermissions,
@@ -15,7 +14,7 @@ export interface ExtensionSummary {
   title: string;
   description: string;
   sha256: string;
-  origin: "admin" | "system";
+  origin: "system";
   scenes: SceneContribution[];
   renderers: RendererContribution[];
   automations: AutomationContribution[];
@@ -35,7 +34,7 @@ export function listExtensions(): Promise<ExtensionSummary[]> {
   return apiJson<ExtensionSummary[]>("/workbench/extensions");
 }
 
-export async function listGlobalScenes(): Promise<TemplateManifest[]> {
+export async function listOfficialScenes(): Promise<TemplateManifest[]> {
   const extensions = await listExtensions();
   return Promise.all(
     extensions.flatMap((extension) =>
@@ -56,18 +55,4 @@ export async function listGlobalScenes(): Promise<TemplateManifest[]> {
       })
     )
   );
-}
-
-export async function installGlobalExtension(manifest: ExtensionManifest, bytes: Uint8Array): Promise<void> {
-  const res = await apiFetch(`/workbench/extensions/${encodeURIComponent(manifest.id)}`, {
-    method: "PUT",
-    headers: { "Content-Type": EXTENSION_MEDIA_TYPE },
-    body: new Blob([new Uint8Array(bytes)], { type: EXTENSION_MEDIA_TYPE }),
-  });
-  if (!res.ok) throw new Error(`install ${res.status}: ${await res.text()}`);
-}
-
-export async function deleteExtension(id: string): Promise<void> {
-  const res = await apiFetch(`/workbench/extensions/${encodeURIComponent(id)}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`delete ${res.status}: ${await res.text()}`);
 }
