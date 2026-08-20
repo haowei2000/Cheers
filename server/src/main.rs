@@ -13,6 +13,83 @@ use server::gateway::realtime::manager::ConnectionManager;
 use server::gateway::stream::StreamRegistry;
 use server::{api, gateway, infra, router, AppState, Config};
 
+/// Migration 0090 originally moved existing voice-channel rows and then altered
+/// `channels` in one transaction. The foreign-key insert leaves pending trigger
+/// events on PostgreSQL, which prevents the later ALTER TABLE when voice rows
+/// actually exist. Keep the published migration checksum stable by committing
+/// that data move immediately before 0090; the migration then completes its
+/// schema constraint change with no rows left to move.
+async fn prepare_channel_feature_migration(db: &sqlx::PgPool) -> anyhow::Result<()> {
+    let migrations_table_exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+            .fetch_one(db)
+            .await?;
+    if !migrations_table_exists {
+        return Ok(());
+    }
+
+    let migration_pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 89)\
+             AND NOT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 90)",
+    )
+    .fetch_one(db)
+    .await?;
+    if !migration_pending {
+        return Ok(());
+    }
+
+    let has_voice_channels: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM channels WHERE kind = 'voice')")
+            .fetch_one(db)
+            .await?;
+    if !has_voice_channels {
+        return Ok(());
+    }
+
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS channel_features (\
+             channel_id VARCHAR(36) NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,\
+             feature VARCHAR(64) NOT NULL,\
+             config JSONB NOT NULL DEFAULT '{}'::jsonb,\
+             enabled BOOLEAN NOT NULL DEFAULT TRUE,\
+             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\
+             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\
+             PRIMARY KEY (channel_id, feature)\
+         )",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS ix_channel_features_enabled \
+         ON channel_features(feature, channel_id) WHERE enabled = TRUE",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO channel_features (channel_id, feature, config, enabled) \
+         SELECT channel_id, 'voice', voice_config, TRUE FROM channels WHERE kind = 'voice' \
+         ON CONFLICT (channel_id, feature) DO UPDATE \
+         SET enabled = TRUE, \
+             config = CASE WHEN channel_features.config = '{}'::jsonb \
+                           THEN EXCLUDED.config ELSE channel_features.config END, \
+             updated_at = NOW()",
+    )
+    .execute(&mut *tx)
+    .await?;
+    let migrated = sqlx::query("UPDATE channels SET kind = 'text' WHERE kind = 'voice'")
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+
+    info!(
+        migrated,
+        "prepared existing voice channels for migration 0090"
+    );
+    Ok(())
+}
+
 /// Start the HTTP/WebSocket gateway service.
 ///
 /// Runtime flow:
@@ -57,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
     let db = infra::db::create_pool(&config.database_url).await?;
     info!("database pool ready");
 
+    prepare_channel_feature_migration(&db).await?;
     sqlx::migrate!("./migrations").run(&db).await?;
     info!("migrations applied");
 
