@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "official-site-oauth-browser-handoff",
+  "description": "The official Cheers website may open a provider authorization URL in the system browser. No other desktop command is exposed to remote content.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://tocheers.com/*", "https://www.tocheers.com/*"]
+  },
+  "permissions": ["allow-desktop-open-oauth-url"]
+}
