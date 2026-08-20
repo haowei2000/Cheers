@@ -36,6 +36,17 @@ export default function LoginPage() {
   const rawRedirect = params.get("redirect") ?? "";
   const redirect =
     rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/chat";
+  const accountLinkProvider = ["apple", "google", "github"].includes(
+    params.get("account_link") ?? ""
+  )
+    ? params.get("account_link")
+    : null;
+  const accountLinkLabel =
+    accountLinkProvider === "github"
+      ? "GitHub"
+      : accountLinkProvider === "google"
+        ? "Google"
+        : "Apple";
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
@@ -243,6 +254,11 @@ export default function LoginPage() {
           onSubmit={handleSubmit}
           className={publicPanelClass}
         >
+          {accountLinkProvider && (
+            <div className="rounded-sm bg-indigo-600/15 px-3 py-2 text-regular text-accent-200">
+              Sign in with a method already connected to your account. You&apos;ll link {accountLinkLabel} next.
+            </div>
+          )}
           <div className="space-y-2">
             <label
               htmlFor="login"
@@ -290,7 +306,7 @@ export default function LoginPage() {
             Sign in
           </Button>
 
-          {(capabilities?.providers.apple || capabilities?.providers.google) && (
+          {(capabilities?.providers.apple || capabilities?.providers.google || capabilities?.providers.github) && (
             <div className="space-y-3 pt-1">
               <div className="flex items-center gap-3" aria-hidden="true">
                 <span className="h-px flex-1 bg-zinc-800" />
@@ -301,7 +317,8 @@ export default function LoginPage() {
                 <Button action="continueWithApple" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
-                  disabled={loading}
+                  disabled={loading || accountLinkProvider === "apple"}
+                  title={accountLinkProvider === "apple" ? "Sign in with an existing method before linking Apple" : undefined}
                   onClick={() => {
                     sessionStorage.setItem("cheers.oauth_redirect", redirect);
                     setLoading(true);
@@ -318,7 +335,8 @@ export default function LoginPage() {
                 <Button action="continueWithGoogle" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
-                  disabled={loading}
+                  disabled={loading || accountLinkProvider === "google"}
+                  title={accountLinkProvider === "google" ? "Sign in with an existing method before linking Google" : undefined}
                   onClick={() => {
                     sessionStorage.setItem("cheers.oauth_redirect", redirect);
                     setLoading(true);
@@ -335,7 +353,8 @@ export default function LoginPage() {
                 <Button action="continueWithGitHub" content="iconText" controlWidth="fill"
                   type="button"
                   variant="secondary"
-                  disabled={loading}
+                  disabled={loading || accountLinkProvider === "github"}
+                  title={accountLinkProvider === "github" ? "Sign in with an existing method before linking GitHub" : undefined}
                   onClick={() => {
                     sessionStorage.setItem("cheers.oauth_redirect", redirect);
                     setLoading(true);

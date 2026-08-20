@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Fingerprint, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, Fingerprint, ShieldCheck } from "lucide-react";
+import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import {
   deletePasskey,
@@ -23,13 +24,28 @@ import { Field } from "@/components/ui/field";
 const inputCls =
   "bg-zinc-800 text-content-primary";
 
-/** Authenticator (TOTP) setup / disable — mirrors iOS TwoFactorSettingsView. */
+export function authenticatorQrDataUrl(provisioningUri: string): Promise<string> {
+  if (!provisioningUri.startsWith("otpauth://totp/")) {
+    return Promise.reject(new Error("Invalid authenticator provisioning URI"));
+  }
+  return QRCode.toDataURL(provisioningUri, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    width: 192,
+    color: { dark: "#111111", light: "#ffffff" },
+  });
+}
+
+/** Two-step verification entry point. TOTP enables the policy; login can then
+ * use any enrolled/available factor (TOTP, recovery code, email, or passkey). */
 export function TwoFactorCard() {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [phase, setPhase] = useState<"idle" | "setup" | "backup" | "disable">("idle");
   const [secret, setSecret] = useState("");
   const [provisioningUri, setProvisioningUri] = useState("");
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [qrCodeFailed, setQrCodeFailed] = useState(false);
   const [code, setCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -44,11 +60,34 @@ export function TwoFactorCard() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (!provisioningUri) {
+      setQrCodeDataUrl(null);
+      setQrCodeFailed(false);
+      return;
+    }
+    let active = true;
+    setQrCodeDataUrl(null);
+    setQrCodeFailed(false);
+    void authenticatorQrDataUrl(provisioningUri)
+      .then((dataUrl) => {
+        if (active) setQrCodeDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (active) setQrCodeFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [provisioningUri]);
+
   function closeDialog() {
     if (busy) return;
     setPhase("idle");
     setSecret("");
     setProvisioningUri("");
+    setQrCodeDataUrl(null);
+    setQrCodeFailed(false);
     setCode("");
     setBackupCodes([]);
     setOpen(false);
@@ -63,7 +102,7 @@ export function TwoFactorCard() {
       setCode("");
       setPhase("setup");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't start 2FA setup");
+      toast.error(e instanceof Error ? e.message : "Couldn't start two-step verification");
     } finally {
       setBusy(false);
     }
@@ -78,7 +117,7 @@ export function TwoFactorCard() {
       setEnabled(true);
       setPhase("backup");
       setCode("");
-      toast.success("Two-factor authentication is on");
+      toast.success("Two-step verification is on");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Invalid code");
     } finally {
@@ -95,9 +134,9 @@ export function TwoFactorCard() {
       setPhase("idle");
       setCode("");
       setOpen(false);
-      toast.success("Two-factor authentication is off");
+      toast.success("Two-step verification is off");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't disable 2FA");
+      toast.error(e instanceof Error ? e.message : "Couldn't turn off two-step verification");
     } finally {
       setBusy(false);
     }
@@ -123,12 +162,19 @@ export function TwoFactorCard() {
 
   return (
     <>
-      <ActionButton
-        action="manageTwoFactor"
-        context="security"
-        controlWidth="fill"
-        accessibleLabel={enabled ? "Manage two-factor authentication" : "Set up two-factor authentication"}
-        loading={busy && !open}
+      <OperationsItem
+        leading={<ShieldCheck className="h-4 w-4 text-content-muted" />}
+        title="Two-step verification"
+        subtitle={enabled
+          ? "Use an authenticator, email code, passkey, or recovery code"
+          : "Require another verification step when you sign in"}
+        criticalStatus={enabled != null ? (
+          <span className={enabled ? "text-success-400" : "text-content-muted"}>
+            {enabled ? "On" : "Off"}
+          </span>
+        ) : undefined}
+        trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
+        aria-label={enabled ? "Manage two-step verification" : "Set up two-step verification"}
         disabled={enabled == null}
         onClick={() => {
           setOpen(true);
@@ -136,36 +182,64 @@ export function TwoFactorCard() {
         }}
       />
       {open && (
-        <Dialog title={enabled ? "Manage 2FA" : "Set up 2FA"} onClose={closeDialog}>
+        <Dialog title="Two-step verification" onClose={closeDialog}>
           {phase === "idle" && enabled && (
             <div className="space-y-3">
-              <p className="text-caption">Two-factor authentication is on. You can turn it off using an authenticator or backup code.</p>
-              <ActionButton action="disable" context="security" accessibleLabel="Turn off authenticator app" onClick={() => { setCode(""); setPhase("disable"); }} />
+              <p className="text-caption">
+                An extra verification step is required at sign-in. Use any method offered for your account: authenticator app, email code, passkey, or recovery code.
+              </p>
+              <ActionButton action="disable" context="security" accessibleLabel="Turn off two-step verification" onClick={() => { setCode(""); setPhase("disable"); }} />
             </div>
           )}
           {phase === "idle" && !enabled && (
-            <p className="text-caption">{busy ? "Preparing authenticator setup…" : "Authenticator setup could not be started. Close this dialog and try again."}</p>
+            <p className="text-caption">{busy ? "Preparing two-step verification…" : "Setup could not be started. Close this dialog and try again."}</p>
           )}
 
           {phase === "setup" && (
             <div className="space-y-3">
-          <p className="text-compact text-content-muted">
-            Add this account in your authenticator app using the secret below
-            (or open the otpauth link).
-          </p>
-          <div className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary break-all">
-            {secret}
+          <div>
+            <p className="text-regular font-medium text-content-secondary">Authenticator app</p>
+            <p className="mt-1 text-compact text-content-muted">
+              Scan the QR code with your authenticator app. This turns on two-step verification; other available methods can also complete the second step.
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <ActionButton action="copy" context="security" accessibleLabel="Copy authenticator secret" controlSize="compact" onClick={() => void copySecret()} />
-            {provisioningUri && (
-              <a
-                href={provisioningUri}
-                className="inline-flex items-center gap-1 font-utility text-regular font-medium text-accent-300 underline underline-offset-4 hover:text-accent-200"
-              >
-                Open otpauth:// <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
-            )}
+          <div className="grid grid-cols-[12rem_minmax(0,1fr)] items-start gap-4 max-sm:grid-cols-1">
+            <div className="flex h-48 w-48 items-center justify-center rounded-sm bg-white" aria-live="polite">
+              {qrCodeDataUrl ? (
+                <img
+                  src={qrCodeDataUrl}
+                  alt="QR code for adding Cheers to an authenticator app"
+                  width={192}
+                  height={192}
+                  className="h-48 w-48 rounded-sm"
+                />
+              ) : qrCodeFailed ? (
+                <span className="px-4 text-center text-compact text-content-on-light">
+                  QR code unavailable. Use the setup key.
+                </span>
+              ) : (
+                <span className="px-4 text-center text-compact text-content-on-light">
+                  Generating QR code…
+                </span>
+              )}
+            </div>
+            <div className="min-w-0 space-y-2">
+              <p className="text-compact font-medium text-content-secondary">Can&apos;t scan it?</p>
+              <div className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary break-all">
+                {secret}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <ActionButton action="copy" context="security" accessibleLabel="Copy authenticator secret" controlSize="compact" onClick={() => void copySecret()} />
+                {provisioningUri && (
+                  <a
+                    href={provisioningUri}
+                    className="inline-flex min-h-11 items-center gap-1 font-utility text-regular font-medium text-accent-300 underline underline-offset-4 hover:text-accent-200"
+                  >
+                    Open authenticator app <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
           <Field label="Verification code">
             <Input
@@ -177,14 +251,14 @@ export function TwoFactorCard() {
             />
           </Field>
           <div className="flex gap-2">
-            <ActionButton action="enable" context="security" accessibleLabel="Enable authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
+            <ActionButton action="enable" context="security" accessibleLabel="Turn on two-step verification" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
             <ActionButton
               action="cancel"
               context="dialog"
               onClick={() => {
                 closeDialog();
               }}
-              accessibleLabel="Cancel authenticator setup"
+              accessibleLabel="Cancel two-step verification setup"
             />
           </div>
             </div>
@@ -193,7 +267,7 @@ export function TwoFactorCard() {
           {phase === "backup" && (
             <div className="space-y-3">
           <p className="text-compact text-warning-200/90">
-            Save these backup codes now — each works once if you lose your authenticator.
+            Save these recovery codes now. Each code works once when your other verification methods are unavailable.
           </p>
           <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
             {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
@@ -202,8 +276,8 @@ export function TwoFactorCard() {
             ))}
           </ul>
           <div className="flex gap-2">
-            <ActionButton action="copy" context="security" accessibleLabel="Copy backup codes" onClick={() => void copyBackup()} />
-            <ActionButton action="done" context="security" accessibleLabel="Finish authenticator setup"
+            <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyBackup()} />
+            <ActionButton action="done" context="security" accessibleLabel="Finish two-step verification setup"
               onClick={() => {
                 closeDialog();
               }}
@@ -215,12 +289,12 @@ export function TwoFactorCard() {
           {phase === "disable" && (
             <div className="space-y-3">
           <p className="text-compact text-content-muted">
-            Enter an authenticator or backup code to turn off 2FA.
+            Enter an authenticator or recovery code to turn off two-step verification.
           </p>
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Authenticator or backup code"
+            placeholder="Authenticator or recovery code"
             autoComplete="one-time-code"
             className={inputCls}
           />
@@ -228,7 +302,7 @@ export function TwoFactorCard() {
             <ActionButton
               action="disable"
               context="security"
-              accessibleLabel="Confirm turning off authenticator app"
+              accessibleLabel="Confirm turning off two-step verification"
               loading={busy}
               disabled={busy || !code.trim()}
               onClick={() => void confirmDisable()}
@@ -239,7 +313,7 @@ export function TwoFactorCard() {
               onClick={() => {
                 closeDialog();
               }}
-              accessibleLabel="Cancel turning off authenticator app"
+              accessibleLabel="Cancel turning off two-step verification"
             />
           </div>
             </div>
@@ -322,29 +396,36 @@ export function PasskeyCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-content-secondary flex items-center gap-2 mb-1">
-        <Fingerprint className="w-4 h-4 text-accent-400" /> Passkeys
-      </p>
-      <p className="text-compact text-content-muted mb-4">
-        Sign in with Face ID, Touch ID, or a device passkey when 2FA is required.
-      </p>
-
-      <p className="text-regular text-content-secondary mb-3">
-        Status:{" "}
-        <span className={available ? "text-success-400" : "text-content-muted"}>
-          {loading ? "…" : available ? "Available" : "Not configured on server"}
-        </span>
-        {rpId && (
-          <span className="ml-2 font-code text-compact text-content-muted">{rpId}</span>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
+            <Fingerprint className="h-4 w-4 text-accent-400" /> Passkeys
+            {!loading && available && (
+              <span className="text-compact font-normal text-content-muted">
+                {credentials.length} added
+              </span>
+            )}
+          </p>
+          <p className="mt-1 text-compact text-content-muted">
+            {loading
+              ? "Loading passkeys…"
+              : available
+                ? "Use Face ID, Touch ID, or your device lock for verification."
+                : "Passkeys are not configured on this server."}
+            {rpId && <span className="ml-2 font-code">{rpId}</span>}
+          </p>
+        </div>
+        {available && (
+          <ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} />
         )}
-      </p>
+      </div>
 
       {loading ? (
-        <p className="text-compact text-content-muted">Loading…</p>
+        null
       ) : credentials.length === 0 ? (
-        <p className="text-compact text-content-muted mb-3">No passkeys yet.</p>
+        available ? <p className="text-compact text-content-muted">No passkeys added.</p> : null
       ) : (
-        <ItemList presentationLevel="medium" controlSize="regular" className="mb-4">
+        <ItemList presentationLevel="medium" controlSize="regular">
           {credentials.map((c) => (
             <OperationsItem
               key={c.credential_pk}
@@ -356,7 +437,6 @@ export function PasskeyCard() {
         </ItemList>
       )}
 
-      {available && <ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} />}
       {addOpen && (
         <Dialog title="Add passkey" onClose={closeAddDialog}>
           <p className="text-caption">Give this passkey an optional device name before the system security prompt opens.</p>
