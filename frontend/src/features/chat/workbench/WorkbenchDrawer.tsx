@@ -21,8 +21,8 @@ import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
 import { listGlobalScenes } from "./extensions/api";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
-import { workbenchPanelsFor } from "./workbenchPanels";
-import "./panels/GitHubCodeWorkbenchPanel";
+import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
+import "@/features/chat/panels/builtin/githubCode";
 import { hasCode, type ParsedExtension } from "./extensions/package";
 import { parseExtensionPackageOffThread, parsePersonalExtension } from "./extensions/parseOffThread";
 import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
@@ -558,7 +558,22 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     }),
     [open, channelId, profile, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
   );
-  const profilePanels = workbenchPanelsFor(profile?.profile);
+  const profilePanels = panelsFor("inline", profile?.profile);
+  // Inline panels are ordinary contributions and get the shared PanelContext, not the
+  // Workbench's own — its pin/binding/config state belongs to the fs-source body
+  // (SceneWorkbench / FilePanel / RendererHost), which are not contributions.
+  const panelCtx: PanelContext = useMemo(
+    () => ({
+      channelId,
+      profile,
+      sendResourceReq,
+      fs,
+      visible: open,
+      openLocator: onOpenLocator,
+      composeMessage: onCompose,
+    }),
+    [channelId, profile, sendResourceReq, fs, open, onOpenLocator, onCompose]
+  );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but
   // mounted) while closed so the browser tree/selection state survives.
@@ -819,7 +834,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         {/* Content-first by default: scene → item tabs → renderer. Raw is an explicit
             mode that mounts the complete file tree and editor. */}
         <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-          {open && profilePanels.map(({ id, component: Panel }) => <Panel key={id} ctx={ctx} />)}
+          {open && profilePanels.map((panel) => <div key={panel.id}>{panel.render(panelCtx)}</div>)}
           <div className="min-h-0 flex-1 overflow-hidden">
             {open && (rawMode ? (
               <FilePanel ctx={ctx} />

@@ -39,7 +39,8 @@ import { statusColor } from "@/features/chat/sessionLabel";
 import { bustBotControls } from "@/features/chat/sessionControlsCache";
 import { cn } from "@/lib/cn";
 import { OperationsItem } from "@/components/ui/item";
-import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
+import { type PanelContext } from "@/features/chat/panels/registry";
+import { registerResourcePanel, channelSessionParams } from "@/features/chat/panels/defineResourcePanel";
 
 interface SessionRow {
   session_id: string;
@@ -518,11 +519,11 @@ function SessionsBody({
   refetch,
 }: {
   data: SessionsRead;
-  ctx: ViewBoardContext;
+  ctx: PanelContext;
   refetch: () => void;
 }) {
   const sessions = data.sessions ?? [];
-  const selected = ctx.selectedSessionId || "";
+  const selected = ctx.scopeSessionId || "";
 
   // The bot universe = bots with sessions on the board ∪ bot members of the channel
   // (so a first session can be created from an empty board). id → display label.
@@ -667,12 +668,11 @@ function SessionsBody({
   );
 }
 
-registerViewBoard<SessionsRead>({
+registerResourcePanel<SessionsRead>({
   id: "sessions",
   title: "Sessions",
   icon: Layers,
   verb: "channel.sessions.read",
-  sessionScoped: false,
   makeParams: (ctx) => ({ channel_id: ctx.channelId }),
   render: (data, ctx, refetch) => <SessionsBody data={data} ctx={ctx} refetch={refetch} />,
 });

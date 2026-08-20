@@ -6,7 +6,7 @@ import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { PermissionCard } from "@/features/chat/PermissionCard";
 import type { Message, PermissionContentData } from "@/types";
-import type { ViewBoardContext } from "./viewBoard";
+import type { PanelContext } from "@/features/chat/panels/registry";
 import { permissionSourceId } from "@/features/chat/messageTree";
 
 // Compact number formatting for the glance (never the full precision the boards show).
@@ -107,7 +107,7 @@ function ApprovalsGlance({
   auditCount,
   onExpandAudit,
 }: {
-  ctx: ViewBoardContext;
+  ctx: PanelContext;
   auditSummary: string;
   auditCount: string;
   onExpandAudit: () => void;
@@ -222,7 +222,7 @@ export function ViewBoardMinimized({
   ctx,
   onExpand,
 }: {
-  ctx: ViewBoardContext;
+  ctx: PanelContext;
   onExpand: (boardId: string) => void;
 }) {
   const [s, setS] = useState<Summary>({
@@ -238,39 +238,42 @@ export function ViewBoardMinimized({
   // captures the channel it fetched for and only commits if it's still current.
   const cidRef = useRef(ctx.channelId);
   cidRef.current = ctx.channelId;
+  // Narrowed once: the glance is lane-only, so a client is always present here. A
+  // surface that mounts it without one simply loads nothing rather than throwing.
+  const send = ctx.sendResourceReq;
 
   const loadPlan = useCallback(() => {
     const cid = ctx.channelId;
-    ctx
-      .sendResourceReq("channel.plan.read", { channel_id: cid })
+    if (!send) return;
+    send("channel.plan.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
         setS((p) => ({ ...p, plans: (r as { plans?: PlanLite[] }).plans ?? [] }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, plans: null })));
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   const loadCost = useCallback(() => {
     const cid = ctx.channelId;
-    ctx
-      .sendResourceReq("channel.usage.read", { channel_id: cid })
+    if (!send) return;
+    send("channel.usage.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
         setS((p) => ({ ...p, usage: (r as { bots?: UsageLite[] }).bots ?? [] }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, usage: null })));
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   const loadSessions = useCallback(() => {
     const cid = ctx.channelId;
-    ctx
-      .sendResourceReq("channel.sessions.read", { channel_id: cid })
+    if (!send) return;
+    send("channel.sessions.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
         setS((p) => ({ ...p, sessions: (r as { sessions?: SessionLite[] }).sessions ?? [] }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, sessions: null })));
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   const loadAudit = useCallback(() => {
     const cid = ctx.channelId;
@@ -281,8 +284,8 @@ export function ViewBoardMinimized({
 
   const loadActivity = useCallback(() => {
     const cid = ctx.channelId;
-    ctx
-      .sendResourceReq("channel.activity.read", {
+    if (!send) return;
+    send("channel.activity.read", {
         channel_id: cid,
         limit: ACTIVITY_WINDOW,
         desc: true,
@@ -310,12 +313,12 @@ export function ViewBoardMinimized({
         }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, latest: null })));
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   const loadNames = useCallback(() => {
     const cid = ctx.channelId;
-    ctx
-      .sendResourceReq("channel.members", { channel_id: cid })
+    if (!send) return;
+    send("channel.members", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
         const names: Record<string, string> = {};
@@ -327,21 +330,21 @@ export function ViewBoardMinimized({
         setS((p) => ({ ...p, names }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, names: null })));
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   // Targeted live-push: each summary re-reads only on ITS signal (plus mount /
   // channel change, when the loader identity changes) — not on every board tick.
-  const planTick = ctx.boardTick?.plan ?? 0;
+  const planTick = ctx.tick?.plan ?? 0;
   useEffect(() => loadPlan(), [planTick, loadPlan]);
-  const costTick = ctx.boardTick?.cost ?? 0;
+  const costTick = ctx.tick?.cost ?? 0;
   useEffect(() => loadCost(), [costTick, loadCost]);
-  const sessionsTick = ctx.boardTick?.sessions ?? 0;
+  const sessionsTick = ctx.tick?.sessions ?? 0;
   useEffect(() => loadSessions(), [sessionsTick, loadSessions]);
-  const auditTick = ctx.boardTick?.audit ?? 0;
+  const auditTick = ctx.tick?.audit ?? 0;
   useEffect(() => loadAudit(), [auditTick, loadAudit]);
   useEffect(() => loadActivity(), [loadActivity]);
   useEffect(() => loadNames(), [loadNames]);
-  const activityTick = ctx.boardTick?.activity ?? 0;
+  const activityTick = ctx.tick?.activity ?? 0;
 
   // Sessions have no dedicated signal — they change with agent activity, so refresh
   // them (and the latest-activity line) on the per-message "activity" tick, debounced

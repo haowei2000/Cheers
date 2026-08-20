@@ -50,6 +50,7 @@ Working engineering plans — actively maintained, but not the source of truth f
 ## Proposals (draft)
 
 - 📝 [Research Scenario ("research-lab")](RESEARCH_SCENARIO.md) — not yet implemented; scenario proposal
+- 📝 [Panel Model](PANEL_MODEL.md) — merging Workbench / ViewBoard / Remote workspace into one plugin-able Panel concept; not decided
 
 ## Back to Hub
 

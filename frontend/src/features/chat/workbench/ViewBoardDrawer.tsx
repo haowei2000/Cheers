@@ -17,7 +17,7 @@ import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
-import { getViewBoards, type ViewBoardContext } from "./viewBoard";
+import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
 import type { Message } from "@/types";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -27,7 +27,7 @@ import "./panels/CostPanel";
 import "./panels/SessionsPanel";
 import "./panels/AuditPanel";
 import "./panels/ActivityPanel";
-import "./panels/GitHubCodePanel";
+import "@/features/chat/panels/builtin/githubCode";
 
 interface Props {
   open: boolean;
@@ -87,7 +87,7 @@ function ViewBoardDrawerImpl({
   focusBoard,
 }: Props) {
   const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
-  const boards = getViewBoards(profile?.profile);
+  const boards = panelsFor("lane", profile?.profile);
   const [active, setActive] = useState<string>(
     () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
   );
@@ -162,12 +162,12 @@ function ViewBoardDrawerImpl({
     };
   }, [open, minimal, channelId, sendResourceReq, sessionsTick]);
 
-  const ctx: ViewBoardContext = useMemo(
+  const ctx: PanelContext = useMemo(
     () => ({
       channelId,
       sendResourceReq,
-      selectedSessionId: scope || null,
-      boardTick,
+      scopeSessionId: scope || null,
+      tick: boardTick,
       onJumpToMessage,
       pendingApprovals,
       currentUserId,
@@ -253,7 +253,7 @@ function ViewBoardDrawerImpl({
             content="icon" controlSize="compact"
             onClick={() => {
               const meta = ATTACHABLE_BOARDS[activeBoard.id];
-              const scoped = activeBoard.sessionScoped && scope;
+              const scoped = activeBoard.scope === "session" && scope;
               useContextPickStore.getState().add(channelId, {
                 id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
                 verb: meta.verb,
@@ -324,7 +324,7 @@ function ViewBoardDrawerImpl({
             })}
           </div>
 
-          {activeBoard?.sessionScoped && (
+          {activeBoard?.scope === "session" && (
             <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
               <Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
               <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>

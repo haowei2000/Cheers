@@ -18,12 +18,8 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
-import {
-  registerComponentViewBoard,
-  useBoardTickRefetch,
-  ViewBoardShell,
-  type ViewBoardContext,
-} from "../viewBoard";
+import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
+import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/defineResourcePanel";
 
 function fmtTime(iso?: string | null): string {
   if (!iso) return "";
@@ -309,7 +305,7 @@ function AuditRow({
   );
 }
 
-function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
+function AuditBody({ ctx }: { ctx: PanelContext }) {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -332,7 +328,7 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
 
   // Live-push: ChannelView bumps the "audit" tick when a permission resolves.
   // Deferred while the board is kept-alive but hidden; catches up on reveal.
-  useBoardTickRefetch(ctx, "audit", load);
+  usePanelTickRefetch(ctx, "audit", load);
 
   const byId = useMemo(() => {
     const m = new Map<string, MemberItem>();
@@ -342,7 +338,7 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   const memberOf: MemberLookup = useCallback((id) => (id ? byId.get(id) : undefined), [byId]);
 
   return (
-    <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
+    <PanelShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
       {events == null ? (
         <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
       ) : events.length === 0 ? (
@@ -365,13 +361,14 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
           })}
         </ul>
       )}
-    </ViewBoardShell>
+    </PanelShell>
   );
 }
 
-registerComponentViewBoard({
+registerPanel({
   id: "audit",
   title: "Audit",
   icon: ShieldCheck,
-  component: (ctx) => <AuditBody ctx={ctx} />,
+  surface: "lane",
+  render: (ctx) => <AuditBody ctx={ctx} />,
 });
