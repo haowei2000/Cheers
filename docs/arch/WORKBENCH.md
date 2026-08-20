@@ -31,15 +31,14 @@ file. Until it does, ship panels with `builtin:` views.
 
 Renderer capabilities are denied unless declared in `permissions`: `file.write`,
 allowlisted `channel.resources`, `navigation.open`, `composer.prefill`,
-`automation.manage`, and `network: "unrestricted"`. Global extensions may contribute
+`automation.manage`, and `network: "unrestricted"`. Official extensions may contribute
 Automation templates but cannot request code capabilities.
 
 Packages are limited to 4 MiB compressed, 8 MiB expanded, 128 files, and 256 KiB per seed file. Parsers reject traversal, absolute paths, backslashes, symlinks, duplicate paths, encrypted entries, and unknown executable files.
 
 ## Scope
 
-- `Official`: release-managed global data extensions.
-- `Global`: admin-installed data extensions shared by all clients.
+- `Official`: release-managed catalog contributions shared by all clients.
 - `This Mac`: personal packages that may contain renderer code.
 - `Temporary`: in-memory packages; code is accepted only in the macOS app.
 
@@ -47,7 +46,9 @@ Stable scene IDs are `extension:<extension-id>:<scene-id>` and `personal:<extens
 
 `.workbench.json` stores shared scene state and built-in renderer bindings. Personal renderer bindings stay in device-local settings. Uninstalling an extension leaves seeded channel files intact.
 
-The settings list presents Official, Global, This Mac, and Temporary extensions together.
+The settings list presents Official, This Mac, and Temporary extensions together. The
+Gateway has no administrator upload or uninstall path for Workbench packages: official
+content is compiled into the first-party catalog and changes only with a Gateway release.
 Personal extensions can be disabled locally. Renderer state is reported as Ready, Running,
 or Failed; a failed or missing renderer is excluded from the current file's candidates so
 the host selects the next built-in match or displays inert Raw content.
@@ -62,7 +63,5 @@ See [Scheduled Messages](SCHEDULED_MESSAGES.md).
 
 - `GET /api/v1/workbench/extensions`
 - `GET /api/v1/workbench/extensions/:id/scenes/:sceneId`
-- `PUT /api/v1/workbench/extensions/:id`
-- `DELETE /api/v1/workbench/extensions/:id`
 
 Uploads use `application/vnd.cheers.extension+zip`. The old `/workbench/plugins` and `/workbench/templates` routes are removed; their database tables remain historical and are not read or written.

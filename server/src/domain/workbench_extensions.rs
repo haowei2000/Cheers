@@ -1,4 +1,4 @@
-//! Unified `.cheers-extension` package validation and persistence.
+//! Shared `.cheers-extension` package validation contract.
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -11,9 +11,8 @@ use chrono::NaiveTime;
 use regex::Regex;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use zip::ZipArchive;
 
 pub const MEDIA_TYPE: &str = "application/vnd.cheers.extension+zip";
@@ -678,103 +677,10 @@ fn validate_renderer_reference(
     Err(format!("unsupported renderer reference `{renderer}`"))
 }
 
-fn stored_manifest(package: &ValidatedPackage) -> Value {
-    json!({
-        "manifest": package.manifest,
-        "scenes": package.scenes,
-    })
-}
-
-pub async fn list(db: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT jsonb_build_object(
-            'id', extension_id, 'version', version, 'title', title,
-            'description', description, 'sha256', sha256, 'origin', origin,
-            'scenes', COALESCE(manifest->'manifest'->'contributes'->'scenes', '[]'::jsonb),
-            'renderers', COALESCE(manifest->'manifest'->'contributes'->'renderers', '[]'::jsonb),
-            'automations', COALESCE(manifest->'manifest'->'contributes'->'automations', '[]'::jsonb),
-            'panels', COALESCE(manifest->'manifest'->'contributes'->'panels', '[]'::jsonb),
-            'permissions', COALESCE(manifest->'manifest'->'permissions', '{}'::jsonb),
-            'updatedAt', updated_at
-         )
-         FROM workbench_extensions ORDER BY origin DESC, title ASC",
-    )
-    .fetch_all(db)
-    .await
-}
-
-pub async fn get_scene(
-    db: &PgPool,
-    extension_id: &str,
-    scene_id: &str,
-) -> Result<Option<Value>, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT manifest->'scenes'->$2 FROM workbench_extensions WHERE extension_id = $1",
-    )
-    .bind(extension_id)
-    .bind(scene_id)
-    .fetch_optional(db)
-    .await
-    .map(Option::flatten)
-}
-
-pub async fn install(
-    db: &PgPool,
-    package: &ValidatedPackage,
-    installed_by: &str,
-    origin: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO workbench_extensions
-         (extension_id, version, title, description, manifest, package, sha256, origin, installed_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (extension_id) DO UPDATE SET
-           version=$2, title=$3, description=$4, manifest=$5, package=$6,
-           sha256=$7, origin=$8, installed_by=$9, updated_at=NOW()",
-    )
-    .bind(&package.manifest.id)
-    .bind(&package.manifest.version)
-    .bind(&package.manifest.title)
-    .bind(&package.manifest.description)
-    .bind(stored_manifest(package))
-    .bind(&package.raw)
-    .bind(&package.sha256)
-    .bind(origin)
-    .bind(installed_by)
-    .execute(db)
-    .await?;
-    Ok(())
-}
-
-pub async fn origin(db: &PgPool, id: &str) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT origin FROM workbench_extensions WHERE extension_id=$1")
-        .bind(id)
-        .fetch_optional(db)
-        .await
-}
-
-pub async fn is_official_id(db: &PgPool, id: &str) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM workbench_official_extension_state WHERE extension_id=$1)",
-    )
-    .bind(id)
-    .fetch_one(db)
-    .await
-}
-
-pub async fn delete(db: &PgPool, id: &str) -> Result<u64, sqlx::Error> {
-    Ok(
-        sqlx::query("DELETE FROM workbench_extensions WHERE extension_id=$1")
-            .bind(id)
-            .execute(db)
-            .await?
-            .rows_affected(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::io::Write;
     use zip::{write::SimpleFileOptions, ZipWriter};
 

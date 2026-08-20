@@ -43,9 +43,27 @@ Docker Desktop 用户请把虚拟机内存至少设为 4 GB（含 bot 时 6–8 
   Google OAuth 还需要同时配置 `GOOGLE_WEB_CLIENT_ID`、
   `GOOGLE_WEB_CLIENT_SECRET` 和 `GOOGLE_WEB_REDIRECT_URI`；Google 仅申请
   `openid email profile`，不申请离线访问。
-  GitHub 登录需要同时配置 `GITHUB_OAUTH_CLIENT_ID`、
-  `GITHUB_OAUTH_CLIENT_SECRET` 和 `GITHUB_OAUTH_REDIRECT_URI`。GitHub OAuth
-  仅用于确认用户身份；仓库授权仍由 GitHub App installation 负责。
+  Gateway 的 GitHub 登录需要同时配置 `GITHUB_OAUTH_CLIENT_ID`、
+  `GITHUB_OAUTH_CLIENT_SECRET` 和 `GITHUB_OAUTH_REDIRECT_URI`。在 GitHub Actions 的
+  `production` 环境中，应分别配置为 `CHEERS_GITHUB_OAUTH_CLIENT_ID`、
+  `CHEERS_GITHUB_OAUTH_CLIENT_SECRET` 和 `CHEERS_GITHUB_OAUTH_REDIRECT_URI`，因为
+  GitHub 保留了 `GITHUB_` 前缀。GitHub OAuth 仅用于确认用户身份；仓库授权仍由
+  GitHub App installation 负责。
+
+  若要让工作区管理员自行连接仓库，需要配置 `GITHUB_APP_ID`、
+  `GITHUB_APP_PRIVATE_KEY`、`GITHUB_APP_CLIENT_ID`、
+  `GITHUB_APP_CLIENT_SECRET` 和 `GITHUB_APP_WEBHOOK_SECRET`。GitHub Actions
+  的 `production` Environment 使用加上 `CHEERS_` 前缀的同名字段。GitHub App
+  设置如下：
+
+  - Callback URL：`https://www.tocheers.com/api/v1/integrations/github/installations/callback`
+  - Webhook URL：`https://www.tocheers.com/api/v1/integrations/github/events`
+  - **Request user authorization (OAuth) during installation**：开启
+  - Repository events：Push、Pull request、Issues、Release
+
+  Webhook secret 应使用高熵随机值，并且只保存为 Environment Secret。安装回调会
+  同时校验 Cheers 一次性 state，以及完成授权的 GitHub 用户能否访问返回的
+  installation；不能单独信任回调参数里的 `installation_id`。
 
 ### 官方生产环境 OAuth 凭据
 

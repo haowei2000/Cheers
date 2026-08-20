@@ -14,16 +14,20 @@
 //! channel-creation path.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
+    response::Redirect,
     Extension, Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    api::{channels::ensure_channel_admin, middleware::Claims},
+    api::{channels::ensure_channel_admin, middleware::Claims, workspaces::ensure_workspace_admin},
     app_state::AppState,
     domain::integrations::{
         bindings::{self, Binding, ExternalCollaborator, SyncReport},
@@ -34,6 +38,206 @@ use crate::{
     domain::messages::{create_message, CreateMessageParams},
     errors::AppError,
 };
+
+const INSTALL_STATE_TTL_MINUTES: i64 = 10;
+
+#[derive(Debug, Deserialize)]
+pub struct StartGitHubInstallationRequest {
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartGitHubInstallationResponse {
+    pub authorization_url: String,
+    pub expires_in: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitHubInstallationCallback {
+    pub installation_id: Option<String>,
+    pub setup_action: Option<String>,
+    pub state: Option<String>,
+    pub code: Option<String>,
+    pub error: Option<String>,
+}
+
+fn state_hash(state: &str) -> String {
+    format!("{:x}", Sha256::digest(state.as_bytes()))
+}
+
+fn github_installation_id(value: String) -> Option<String> {
+    (!value.is_empty() && value.chars().all(|c| c.is_ascii_digit())).then_some(value)
+}
+
+fn installation_return_url(state: &AppState, status: &str) -> String {
+    let base = state
+        .config
+        .oauth_web_return_url
+        .as_deref()
+        .and_then(|value| url::Url::parse(value).ok())
+        .map(|mut url| {
+            url.set_path("/");
+            url.set_query(None);
+            url.set_fragment(None);
+            url
+        })
+        .unwrap_or_else(|| url::Url::parse("http://localhost:5173/").expect("static URL"));
+    let mut url = base;
+    url.query_pairs_mut()
+        .append_pair("github_installation", status);
+    url.to_string()
+}
+
+/// Begin a GitHub App installation for a workspace the caller administers.
+pub async fn start_github_installation(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<StartGitHubInstallationRequest>,
+) -> Result<Json<StartGitHubInstallationResponse>, AppError> {
+    ensure_workspace_admin(&state, &body.workspace_id, &claims.sub, &claims.role).await?;
+    let app = state
+        .config
+        .github_app
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("GitHub App is not configured".into()))?;
+    if app.client_id.is_none() || app.client_secret.is_none() {
+        return Err(AppError::ServiceUnavailable(
+            "GitHub App user authorization is not configured".into(),
+        ));
+    }
+
+    // Keep this one-time table bounded without needing a separate cleanup job.
+    sqlx::query(
+        "DELETE FROM github_app_installation_sessions
+          WHERE expires_at < NOW() OR consumed_at < NOW() - INTERVAL '1 day'",
+    )
+    .execute(&state.db)
+    .await?;
+
+    let mut bytes = [0_u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|error| AppError::Internal(format!("secure random generation failed: {error}")))?;
+    let secret = URL_SAFE_NO_PAD.encode(bytes);
+    let expires_at = Utc::now() + Duration::minutes(INSTALL_STATE_TTL_MINUTES);
+    sqlx::query(
+        "INSERT INTO github_app_installation_sessions
+             (state_hash, workspace_id, user_id, expires_at)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(state_hash(&secret))
+    .bind(&body.workspace_id)
+    .bind(&claims.sub)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
+    let slug = gh_app::app_slug(&state.config).await.map_err(|error| {
+        tracing::warn!(%error, "could not resolve GitHub App slug");
+        AppError::ServiceUnavailable("GitHub App is not available".into())
+    })?;
+    let mut url = url::Url::parse(&format!("https://github.com/apps/{slug}/installations/new"))
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    url.query_pairs_mut().append_pair("state", &secret);
+    Ok(Json(StartGitHubInstallationResponse {
+        authorization_url: url.to_string(),
+        expires_in: INSTALL_STATE_TTL_MINUTES * 60,
+    }))
+}
+
+/// GitHub App user-authorization callback. The one-time state supplies the
+/// authenticated Cheers user and workspace; GitHub's user token proves the
+/// installer can access the installation before it is stored.
+pub async fn github_installation_callback(
+    State(state): State<AppState>,
+    Query(query): Query<GitHubInstallationCallback>,
+) -> Result<Redirect, AppError> {
+    if query.setup_action.as_deref() == Some("request") {
+        return Ok(Redirect::to(&installation_return_url(&state, "pending")));
+    }
+    if let Some(error) = query.error {
+        tracing::warn!(%error, "GitHub App installer authorization was denied");
+        return Ok(Redirect::to(&installation_return_url(&state, "denied")));
+    }
+    let external_id = query
+        .installation_id
+        .and_then(github_installation_id)
+        .ok_or_else(|| AppError::BadRequest("missing GitHub installation".into()))?;
+    let state_secret = query
+        .state
+        .filter(|value| value.len() >= 32)
+        .ok_or_else(|| AppError::BadRequest("missing installation state".into()))?;
+    let code = query
+        .code
+        .ok_or_else(|| AppError::BadRequest("missing GitHub installer authorization".into()))?;
+    let valid_state = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1 FROM github_app_installation_sessions
+             WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
+        )",
+    )
+    .bind(state_hash(&state_secret))
+    .fetch_one(&state.db)
+    .await?;
+    if !valid_state {
+        return Err(AppError::BadRequest(
+            "installation state expired or already used".into(),
+        ));
+    }
+    let user_token = gh_app::exchange_user_code(&state.config, &code)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "GitHub installer authorization failed");
+            AppError::BadRequest("GitHub installer authorization failed".into())
+        })?;
+    if !gh_app::user_can_access_installation(&state.config, &user_token, &external_id)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "GitHub installer access check failed");
+            AppError::BadRequest("GitHub installation could not be verified".into())
+        })?
+    {
+        return Err(AppError::Forbidden(
+            "GitHub user cannot access this installation".into(),
+        ));
+    }
+    let account_login = gh_app::installation_account(&state.config, &external_id)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "GitHub installation verification failed");
+            AppError::BadRequest("GitHub installation could not be verified".into())
+        })?;
+
+    let mut tx = state.db.begin().await?;
+    let row = sqlx::query(
+        "UPDATE github_app_installation_sessions
+            SET consumed_at = NOW()
+          WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
+      RETURNING workspace_id, user_id",
+    )
+    .bind(state_hash(&state_secret))
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("installation state expired or already used".into()))?;
+    let workspace_id: String = row.try_get("workspace_id")?;
+    let user_id: String = row.try_get("user_id")?;
+    sqlx::query(
+        "INSERT INTO integration_installations
+             (installation_id, integration_id, workspace_id, external_account, config, installed_by)
+         VALUES ($1, 'github', $2, $3, $4, $5)
+         ON CONFLICT (integration_id, workspace_id, external_account) DO UPDATE
+             SET config = EXCLUDED.config, installed_by = EXCLUDED.installed_by,
+                 disabled_at = NULL, updated_at = NOW()",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(&workspace_id)
+    .bind(&external_id)
+    .bind(json!({ "account_login": account_login }))
+    .bind(&user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Redirect::to(&installation_return_url(&state, "connected")))
+}
 
 /// An installation row, already checked against the caller.
 struct Installation {
@@ -117,7 +321,7 @@ pub async fn list_installations(
 ) -> Result<Json<Vec<InstallationDto>>, AppError> {
     let descriptor = catalog::find(&integration_id).ok_or(AppError::NotFound)?;
     let rows = sqlx::query(
-        "SELECT i.installation_id, i.workspace_id, i.external_account
+        "SELECT i.installation_id, i.workspace_id, i.external_account, i.config
            FROM integration_installations i
            JOIN workspace_memberships m
              ON m.workspace_id = i.workspace_id
@@ -134,12 +338,17 @@ pub async fn list_installations(
     let installations = rows
         .into_iter()
         .map(|row| {
+            let config: serde_json::Value = row.try_get("config")?;
             Ok(InstallationDto {
                 installation_id: row.try_get("installation_id")?,
                 integration_id: integration_id.clone(),
                 workspace_id: row.try_get("workspace_id")?,
                 display_name: descriptor.display_name.to_string(),
-                external_account: row.try_get("external_account")?,
+                external_account: config
+                    .get("account_login")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+                    .unwrap_or(row.try_get("external_account")?),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
@@ -593,4 +802,30 @@ pub async fn unbind_channel(
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?;
     Ok(Json(json!({ "unbound": removed })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installation_state_is_stored_only_as_a_fixed_length_hash() {
+        let first = state_hash("one-time-browser-secret");
+        let second = state_hash("another-one-time-browser-secret");
+        assert_eq!(first.len(), 64);
+        assert_eq!(second.len(), 64);
+        assert_ne!(first, second);
+        assert!(!first.contains("one-time-browser-secret"));
+    }
+
+    #[test]
+    fn callback_installation_id_is_strictly_numeric_and_nonempty() {
+        assert_eq!(
+            github_installation_id("12345".into()).as_deref(),
+            Some("12345")
+        );
+        assert_eq!(github_installation_id(String::new()), None);
+        assert_eq!(github_installation_id("12/path".into()), None);
+        assert_eq!(github_installation_id("-1".into()), None);
+    }
 }

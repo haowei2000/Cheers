@@ -38,7 +38,7 @@ than from precedent.
 | Mechanism | Package | Install record | Signed | Permission vocabulary |
 |---|---|---|---|---|
 | Bot + ACP connector | `connector-manifest.json` | `connector_hosts` | ed25519 vs pinned key | capability delegations, bot-grants, event-access |
-| Workbench extension — global | `.cheers-extension` zip | `workbench_extensions`, `origin IN ('admin','system')` | sha256 transport integrity | **none permitted** (see below) |
+| Workbench contribution — official | compiled catalog data | none | signed Gateway release | **none permitted** (see below) |
 | Workbench extension — personal | same zip | none — client-side only | local package consent | `file.write`, `channel.resources`, `network`… |
 | Integration | compiled into `catalog.rs` | `integration_installations` | n/a (in-tree) | channel-role projection |
 
@@ -54,15 +54,13 @@ the table was still `terminal_installations`), not an
 install record of its own. It appears in this section only because its OAuth scopes are
 one of the permission vocabularies below.
 
-**The server refuses to store code.** Every server-side install path calls
-`validate_package(raw, allow_code = false)` — [api/workbench.rs:73](../../server/src/api/workbench.rs:73)
-and [workbench_official_extensions.rs:104](../../server/src/domain/workbench_official_extensions.rs:104).
-That rejects any package contributing a renderer *or* requesting any permission at all
-([workbench_extensions.rs:495](../../server/src/domain/workbench_extensions.rs:495)). A
-globally installed extension is therefore purely declarative: scenes and automations over
-`builtin:` renderers. Renderer JavaScript exists only in personal, client-side installs on
-macOS; browser and iOS ignore renderer contributions entirely. The execution boundary is
-enforced in code, not by convention.
+**The server exposes catalog data only.** Gateway releases compile official Workbench
+contributions into the first-party catalog; there is no server-side package store and no
+administrator upload or uninstall API. Official contributions are purely declarative:
+scenes and automations over `builtin:` renderers.
+Renderer JavaScript exists only in personal, client-side installs on macOS; browser and iOS
+ignore renderer contributions entirely. The execution boundary is enforced in code, not by
+convention.
 
 **LiveKit is a half-citizen.** It uses the shared verification primitive
 (`webhook::verify_body_sha256_b64`, called from [api/voice.rs:1560](../../server/src/api/voice.rs:1560))
@@ -123,11 +121,12 @@ review, tests, and a gateway release; there is intentionally no server plugin in
    where the provider puts its event id and event type (`Header` or `BodyPointer`), the
    `resource_kind` and `resource_path`, the role projection, an optional `init_prompt`,
    and the event mappings.
-2. Add config only if the provider needs app-level credentials — GitHub needs
-   `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` in [`config.rs`](../../server/src/config.rs).
-   Per-installation webhook secrets do **not** go in config; they live encrypted in
-   `integration_installations.webhook_secret_enc`, because a provider issues a distinct
-   secret per installation.
+2. Add config only if the provider needs app-level credentials. GitHub uses
+   `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` for installation tokens, its App
+   OAuth client pair to verify installers, and one App-level webhook secret in
+   [`config.rs`](../../server/src/config.rs). Providers that issue a distinct
+   webhook secret per installation keep it encrypted in
+   `integration_installations.webhook_secret_enc` instead.
 3. Add a provider API client under `domain/integrations/<provider>/` only if the
    integration must *read* the provider (repo lists, collaborator rosters). This is the
    one place new Rust is expected.
@@ -135,8 +134,10 @@ review, tests, and a gateway release; there is intentionally no server plugin in
    invariant table below. A malformed projection or an uncompilable template fails there,
    not at delivery time.
 
-Do not add a new route, a new signature check, or a new dedupe table. If you find
-yourself wanting one, that is the signal the descriptor is missing a field.
+Do not add a provider-specific signature implementation or a new dedupe table.
+GitHub's fixed App webhook route still delegates signature fields and event mapping
+to the catalog; it exists only because GitHub supplies the provider installation ID
+inside the signed payload rather than in a per-installation URL.
 
 ### Adding an event mapping
 
@@ -152,15 +153,14 @@ Build with `cheers-workbench pack` from
 [`packages/cheers-workbench-sdk`](../../packages/cheers-workbench-sdk). Then decide the
 scope *first*, because it determines what the package may contain:
 
-- **Global** (admin-installed, server-stored): declarative only. No renderers, no
-  permissions. If validation rejects your package with "global extensions must be
-  declarative", the package wants to be personal.
+- **Official** (Gateway-release-managed catalog contribution): declarative only. No
+  renderers, no permissions. This scope is authored in-tree, not uploaded by an administrator.
 - **Personal** (macOS, client-installed): may carry renderer JS and request permissions.
   Never leaves the device.
 
-Official scene templates are seeded from `server/assets/workbench-templates/*.template.json`
-and re-seeded when the embedded version rises — but never over an id an admin has claimed
-([`should_seed`](../../server/src/domain/workbench_official_extensions.rs:22)).
+Official scene templates are compiled from `server/assets/workbench-templates/*.template.json`
+into [`catalog/workbench.rs`](../../server/src/domain/catalog/workbench.rs) and change only
+with the Gateway release.
 
 ### Changing what a package may contain
 
@@ -169,7 +169,8 @@ package is never uploaded, so the client cannot ask the server whether it is val
 
 | Implementation | Role |
 |---|---|
-| [`workbench_extensions.rs`](../../server/src/domain/workbench_extensions.rs) | the server's installer — the only one that sees a global package |
+| [`catalog/workbench.rs`](../../server/src/domain/catalog/workbench.rs) | the Gateway's official Workbench catalog |
+| [`workbench_extensions.rs`](../../server/src/domain/workbench_extensions.rs) | shared parser contract tests for package authors |
 | [`package.ts`](../../frontend/src/features/chat/workbench/extensions/package.ts) | the client's installer — the only one that sees a personal package |
 | [`cli.ts`](../../packages/cheers-workbench-sdk/src/cli.ts) | the author's pre-flight check, deliberately narrower than both |
 
@@ -215,7 +216,7 @@ without changing its test deliberately.
 | Webhook throttling cannot be turned into a DoS by inventing ids | `ratelimit::tests::invented_installation_ids_cannot_grow_the_key_space` |
 | A throttled webhook is indistinguishable from an unknown one | `ratelimit::tests::a_key_looks_the_same_whatever_it_was_built_from` |
 | Both package parsers read the same archive | `workbench_extensions::tests::rejects_a_package_whose_declared_entry_size_is_a_lie`, `package.test.ts` "understates"/"overstates" |
-| Consent is required for exactly what the server refuses to store | `package.test.ts` "flags exactly the packages global scope refuses" |
+| Consent is required for exactly what the server refuses to store | `package.test.ts` "flags exactly the packages declarative scope refuses" |
 | Both installers give one package one verdict | `workbench_extensions::tests::shared_contract::gives_every_corpus_package_the_verdict_it_declares`, `corpus.test.ts` "at %s scope" |
 | The declared limits are the enforced limits | `…::shared_contract::declares_the_limits_this_validator_enforces`, `corpus.test.ts` "declares the limits this validator enforces" |
 | The SDK never blocks a package the installers accept | `pack.test.ts` "never rejects a manifest the installers accept" |
@@ -281,8 +282,8 @@ together they are why the system reads as chaotic.
    at `0o600` ([plugins.rs:197](../../apps/macos/src-tauri/src/plugins.rs:197)), with
    enable/disable in `localStorage`
    ([runtime.ts:11](../../frontend/src/features/chat/workbench/extensions/runtime.ts:11)).
-   What is missing is the *server's* copy: the `origin` check allows only `'admin'` and
-   `'system'`, while the client's `InstallScope` is `"global" | "personal" | "temporary"`.
+   What is missing is the *server's* copy: the `origin` check allows only `'system'`, while
+   the client's `InstallScope` is `"personal" | "temporary"`.
    So a personal install is invisible to admins and does not follow the user to a second
    device. Whether the fix is a scope column on the same table depends on an unanswered
    question — see "Where this is going".

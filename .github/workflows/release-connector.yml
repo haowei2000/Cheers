@@ -197,6 +197,15 @@ jobs:
           GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
           GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}
+          GITHUB_OAUTH_CLIENT_ID: ${{ vars.CHEERS_GITHUB_OAUTH_CLIENT_ID }}
+          GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.CHEERS_GITHUB_OAUTH_CLIENT_SECRET }}
+          GITHUB_OAUTH_REDIRECT_URI: ${{ vars.CHEERS_GITHUB_OAUTH_REDIRECT_URI }}
+          GITHUB_APP_ID: ${{ vars.CHEERS_GITHUB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.CHEERS_GITHUB_APP_PRIVATE_KEY }}
+          GITHUB_APP_CLIENT_ID: ${{ vars.CHEERS_GITHUB_APP_CLIENT_ID }}
+          GITHUB_APP_CLIENT_SECRET: ${{ secrets.CHEERS_GITHUB_APP_CLIENT_SECRET }}
+          GITHUB_APP_WEBHOOK_SECRET: ${{ secrets.CHEERS_GITHUB_APP_WEBHOOK_SECRET }}
+          GITHUB_AUTH_SYNC_ENABLED: ${{ vars.CHEERS_GITHUB_AUTH_SYNC_ENABLED }}
           OAUTH_WEB_RETURN_URL: ${{ vars.OAUTH_WEB_RETURN_URL }}
           CONNECTOR_VERSION: ${{ github.ref_name }}
         run: |
@@ -237,6 +246,24 @@ jobs:
             echo "Google OAuth settings must be configured together" >&2
             exit 1
           fi
+          github_oauth_count=0
+          github_app_count=0
+          github_app_user_count=0
+          if [ "$GITHUB_AUTH_SYNC_ENABLED" = "true" ]; then
+            for name in GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET GITHUB_OAUTH_REDIRECT_URI; do
+              if [ -n "${!name:-}" ]; then github_oauth_count=$((github_oauth_count + 1)); fi
+            done
+            for name in GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY; do
+              if [ -n "${!name:-}" ]; then github_app_count=$((github_app_count + 1)); fi
+            done
+            for name in GITHUB_APP_CLIENT_ID GITHUB_APP_CLIENT_SECRET; do
+              if [ -n "${!name:-}" ]; then github_app_user_count=$((github_app_user_count + 1)); fi
+            done
+            if [ "$github_oauth_count" -ne 0 ] && [ "$github_oauth_count" -ne 3 ]; then echo "GitHub OAuth settings must be configured together" >&2; exit 1; fi
+            if [ "$github_app_count" -ne 0 ] && [ "$github_app_count" -ne 2 ]; then echo "GitHub App settings must be configured together" >&2; exit 1; fi
+            if [ "$github_app_user_count" -ne 0 ] && [ "$github_app_user_count" -ne 2 ]; then echo "GitHub App user authorization settings must be configured together" >&2; exit 1; fi
+            if { [ "$github_app_user_count" -eq 2 ] || [ -n "$GITHUB_APP_WEBHOOK_SECRET" ]; } && [ "$github_app_count" -ne 2 ]; then echo "GitHub App OAuth/webhook settings require the App ID and private key" >&2; exit 1; fi
+          fi
 
           payload="$(mktemp)"
           trap 'rm -f "$payload"' EXIT
@@ -262,6 +289,22 @@ jobs:
             append_payload_field GOOGLE_WEB_CLIENT_ID "$GOOGLE_WEB_CLIENT_ID"
             append_payload_field GOOGLE_WEB_CLIENT_SECRET "$GOOGLE_WEB_CLIENT_SECRET"
             append_payload_field GOOGLE_WEB_REDIRECT_URI "$GOOGLE_WEB_REDIRECT_URI"
+          fi
+          if [ "$github_oauth_count" -eq 3 ]; then
+            append_payload_field GITHUB_OAUTH_CLIENT_ID "$GITHUB_OAUTH_CLIENT_ID"
+            append_payload_field GITHUB_OAUTH_CLIENT_SECRET "$GITHUB_OAUTH_CLIENT_SECRET"
+            append_payload_field GITHUB_OAUTH_REDIRECT_URI "$GITHUB_OAUTH_REDIRECT_URI"
+          fi
+          if [ "$github_app_count" -eq 2 ]; then
+            append_payload_field GITHUB_APP_ID "$GITHUB_APP_ID"
+            append_payload_field GITHUB_APP_PRIVATE_KEY "$GITHUB_APP_PRIVATE_KEY"
+            if [ "$github_app_user_count" -eq 2 ]; then
+              append_payload_field GITHUB_APP_CLIENT_ID "$GITHUB_APP_CLIENT_ID"
+              append_payload_field GITHUB_APP_CLIENT_SECRET "$GITHUB_APP_CLIENT_SECRET"
+            fi
+            if [ -n "$GITHUB_APP_WEBHOOK_SECRET" ]; then
+              append_payload_field GITHUB_APP_WEBHOOK_SECRET "$GITHUB_APP_WEBHOOK_SECRET"
+            fi
           fi
           append_payload_field OAUTH_WEB_RETURN_URL "$OAUTH_WEB_RETURN_URL"
           append_payload_field CHEERS_CONNECTOR_RELEASE_VERSION "$VERSION"

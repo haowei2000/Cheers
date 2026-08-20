@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { errorMessage } from "./client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, apiJson, errorMessage } from "./client";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("errorMessage", () => {
   it("preserves Error messages", () => {
@@ -16,5 +20,28 @@ describe("errorMessage", () => {
     expect(errorMessage({ detail: "secret" }, "OAuth login failed"))
       .toBe("OAuth login failed");
     expect(errorMessage("   ", "OAuth login failed")).toBe("OAuth login failed");
+  });
+});
+
+describe("apiJson", () => {
+  it("preserves structured recovery metadata from API errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "account_link_required",
+      provider: "github",
+      message: "Sign in with an existing method, then link GitHub.",
+    }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    const error = await apiJson("/auth/oauth/handoff").catch((reason) => reason);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "account_link_required",
+      provider: "github",
+      message: "Sign in with an existing method, then link GitHub.",
+    });
   });
 });

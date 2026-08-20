@@ -41,10 +41,10 @@ import {
   DevicesSessionsCard,
   ExternalAIPermissionsCard,
   ExternalIdentitiesCard,
-  ForgotPasswordAction,
   LegalLinks,
   SignOutAction,
 } from "./AccountSettings";
+import { ItemList } from "@/components/ui/item";
 
 type SectionId =
   | "profile"
@@ -212,31 +212,14 @@ export default function SettingsPage() {
 
               <div className="bg-zinc-900 px-6 max-md:px-4">
                 <section className="py-5 first:pt-0">
-                  <p className="text-title text-content-secondary">Account actions</p>
-                  <p className="mt-1 text-caption">
-                    Open an action when you need it. Security details stay hidden until then.
+                  <p className="text-title text-content-secondary">Sign-in and security</p>
+                  <p className="mb-4 mt-1 text-caption">
+                    Manage how you sign in and verify sensitive actions.
                   </p>
-                  <div className="mt-4 grid grid-cols-2 gap-2 max-md:grid-cols-1">
+                  <ItemList presentationLevel="max" controlSize="regular">
                     <ChangePasswordAction onRotated={(token) => setToken(token)} />
-                    <ForgotPasswordAction />
                     <TwoFactorCard />
-                    <DeleteAccountAction
-                      onDeleted={() => {
-                        logout();
-                        navigate("/login", { replace: true });
-                      }}
-                    />
-                    <SignOutAction
-                      onSignOut={async () => {
-                        // Push first (the DELETE needs the auth token), then
-                        // best-effort server revocation, then clear local state.
-                        await disablePush().catch(() => {});
-                        await logoutApi().catch(() => {});
-                        logout();
-                        navigate("/login", { replace: true });
-                      }}
-                    />
-                  </div>
+                  </ItemList>
                 </section>
 
                 <PasskeyCard />
@@ -247,12 +230,32 @@ export default function SettingsPage() {
 
                 <ExternalAIPermissionsCard />
 
-                {/* Desktop shell: also linked from About — keep a copy here so
-                    Account remains a one-stop for signed-in session controls. */}
-                <AppUpdateCard />
-
                 <PushNotificationsCard />
 
+                <section className="border-t border-zinc-600/70 py-5">
+                  <p className="text-title text-content-secondary">Account access</p>
+                  <p className="mb-4 mt-1 text-caption">
+                    End this session or permanently remove your account.
+                  </p>
+                  <ItemList presentationLevel="max" controlSize="regular">
+                    <SignOutAction
+                      onSignOut={async () => {
+                        // Push first (the DELETE needs the auth token), then
+                        // best-effort server revocation, then clear local state.
+                        await disablePush().catch(() => {});
+                        await logoutApi().catch(() => {});
+                        logout();
+                        navigate("/login", { replace: true });
+                      }}
+                    />
+                    <DeleteAccountAction
+                      onDeleted={() => {
+                        logout();
+                        navigate("/login", { replace: true });
+                      }}
+                    />
+                  </ItemList>
+                </section>
               </div>
 
               <LegalLinks />

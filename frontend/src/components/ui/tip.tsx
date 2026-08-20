@@ -3,11 +3,12 @@ import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
+import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
-// The bubble is a lighter transient layer (bg-zinc-700) so it separates from the
-// zinc-900 card, role="tooltip", associated to its trigger via aria-describedby.
+// The bubble is a high-contrast transient layer, role="tooltip", associated to
+// its trigger via aria-describedby.
 //
 // Two forms:
 //  - default trigger: `<Tip content="…" />` renders a small ⓘ info button.
@@ -38,12 +39,14 @@ export function Tip({
 
   const trigger =
     children && isValidElement(children) ? (
-      cloneElement(children as ReactElement<{ "aria-describedby"?: string }>, {
+      cloneElement(children as ReactElement<{ "aria-describedby"?: string; title?: string }>, {
         "aria-describedby": id,
+        title: "",
       })
     ) : (
       <IconButton
         label={label}
+        title=""
         controlSize="compact"
         aria-describedby={id}
         className="-m-1 text-content-primary transition-colors hover:text-content-strong"
@@ -56,6 +59,7 @@ export function Tip({
     <span
       ref={rootRef}
       className={cn("relative inline-flex", className)}
+      data-managed-tooltip="true"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       onFocusCapture={() => setOpen(true)}
@@ -69,7 +73,7 @@ export function Tip({
           align={align}
           id={id}
           role="tooltip"
-          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-3 py-2 text-left text-compact font-normal normal-case leading-heading tracking-normal text-content-primary shadow-xl shadow-black/40"
+          className={cn(contrastTooltipSurfaceClasses, "max-w-[230px] font-normal")}
         >
           {content}
         </FloatingLayer>

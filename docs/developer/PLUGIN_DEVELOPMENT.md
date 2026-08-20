@@ -18,7 +18,11 @@ renderers/<renderer-id>.js
 renderers/<renderer-id>.css
 ```
 
-Global extensions are declarative and may contain scenes, seed files, and inert Automation templates. Browser and iOS clients never execute extension code. A personal extension installed on macOS may contain renderers; the package is stored in `~/.cheers/extensions` and runs only after a renderer is selected.
+Official extensions are declarative and released with the Gateway; they may contain scenes,
+seed files, and inert Automation templates. Administrators cannot upload server-side
+Workbench packages. Browser and iOS clients never execute extension code. A personal
+extension installed on macOS may contain renderers; the package is stored in
+`~/.cheers/extensions` and runs only after a renderer is selected.
 
 Renderer source exports no HTML document. Call `defineRenderer({ activate(ctx) { ... } })`; `activate` may return a disposer. The packer bundles TypeScript and ordinary dependencies into a single IIFE. Runtime imports between extensions are unsupported.
 

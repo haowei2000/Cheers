@@ -163,6 +163,10 @@ export default function App() {
         <Route path="/register" element={<DesktopPageFrame><RegisterPage /></DesktopPageFrame>} />
         <Route path="/forgot" element={<DesktopPageFrame><ForgotPasswordPage /></DesktopPageFrame>} />
         <Route path="/reset" element={<DesktopPageFrame><ResetPasswordPage /></DesktopPageFrame>} />
+        {/* The Tauri production bundle keeps the public website in index.html and
+            loads the React shell from app.html. Enter the app shell at sign-in. */}
+        <Route path="/app.html" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
         {/* Public: the landing page itself routes signed-out visitors to auth. */}
         <Route path="/invite/:token" element={<DesktopPageFrame><InvitePage /></DesktopPageFrame>} />
         {/* The open workspace/channel live in the path so they survive a reload and
