@@ -26,6 +26,13 @@ export function listIntegrationResources(id: string, installationId: string): Pr
   return apiJson(`/integrations/${id}/installations/${installationId}/resources`);
 }
 
+export function startGitHubInstallation(workspaceId: string): Promise<{ authorization_url: string; expires_in: number }> {
+  return apiJson("/integrations/github/installations/start", {
+    method: "POST",
+    body: JSON.stringify({ workspace_id: workspaceId }),
+  });
+}
+
 export function bindChannelIntegration(channelId: string, input: {
   integration_id: string;
   installation_id: string;

@@ -121,11 +121,12 @@ review, tests, and a gateway release; there is intentionally no server plugin in
    where the provider puts its event id and event type (`Header` or `BodyPointer`), the
    `resource_kind` and `resource_path`, the role projection, an optional `init_prompt`,
    and the event mappings.
-2. Add config only if the provider needs app-level credentials — GitHub needs
-   `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` in [`config.rs`](../../server/src/config.rs).
-   Per-installation webhook secrets do **not** go in config; they live encrypted in
-   `integration_installations.webhook_secret_enc`, because a provider issues a distinct
-   secret per installation.
+2. Add config only if the provider needs app-level credentials. GitHub uses
+   `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` for installation tokens, its App
+   OAuth client pair to verify installers, and one App-level webhook secret in
+   [`config.rs`](../../server/src/config.rs). Providers that issue a distinct
+   webhook secret per installation keep it encrypted in
+   `integration_installations.webhook_secret_enc` instead.
 3. Add a provider API client under `domain/integrations/<provider>/` only if the
    integration must *read* the provider (repo lists, collaborator rosters). This is the
    one place new Rust is expected.
@@ -133,8 +134,10 @@ review, tests, and a gateway release; there is intentionally no server plugin in
    invariant table below. A malformed projection or an uncompilable template fails there,
    not at delivery time.
 
-Do not add a new route, a new signature check, or a new dedupe table. If you find
-yourself wanting one, that is the signal the descriptor is missing a field.
+Do not add a provider-specific signature implementation or a new dedupe table.
+GitHub's fixed App webhook route still delegates signature fields and event mapping
+to the catalog; it exists only because GitHub supplies the provider installation ID
+inside the signed payload rather than in a per-installation URL.
 
 ### Adding an event mapping
 

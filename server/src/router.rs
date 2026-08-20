@@ -326,6 +326,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::integration_channels::list_installations),
         )
         .route(
+            "/api/v1/integrations/github/installations/start",
+            post(api::integration_channels::start_github_installation),
+        )
+        .route(
             "/api/v1/integrations/:integration_id/installations/:installation_id/resources",
             get(api::integration_channels::list_resources),
         )
@@ -928,6 +932,16 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/auth/oauth/github/callback",
             get(api::oauth::github_callback),
+        )
+        .route(
+            "/api/v1/integrations/github/installations/callback",
+            get(api::integration_channels::github_installation_callback),
+        )
+        .route(
+            "/api/v1/integrations/github/events",
+            post(api::integrations::receive_github).layer(DefaultBodyLimit::max(
+                crate::domain::integrations::webhook::MAX_BODY_BYTES,
+            )),
         )
         .route("/api/v1/auth/oauth/handoff", post(api::oauth::handoff))
         .route(

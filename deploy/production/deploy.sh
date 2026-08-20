@@ -102,6 +102,9 @@ sync_auth_environment() {
         GITHUB_OAUTH_REDIRECT_URI | \
         GITHUB_APP_ID | \
         GITHUB_APP_PRIVATE_KEY | \
+        GITHUB_APP_CLIENT_ID | \
+        GITHUB_APP_CLIENT_SECRET | \
+        GITHUB_APP_WEBHOOK_SECRET | \
         OAUTH_WEB_RETURN_URL | \
         CHEERS_CONNECTOR_RELEASE_VERSION)
         ;;
@@ -127,11 +130,16 @@ sync_auth_environment() {
   done
   [[ "$google_count" -eq 0 || "$google_count" -eq 3 ]] ||
     fail "Google OAuth fields must be configured together"
-  local github_oauth_count=0 github_app_count=0
+  local github_oauth_count=0 github_app_count=0 github_app_user_count=0
   for key in GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET GITHUB_OAUTH_REDIRECT_URI; do [[ -n "${values[$key]:-}" ]] && github_oauth_count=$((github_oauth_count + 1)); done
   for key in GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY; do [[ -n "${values[$key]:-}" ]] && github_app_count=$((github_app_count + 1)); done
+  for key in GITHUB_APP_CLIENT_ID GITHUB_APP_CLIENT_SECRET; do [[ -n "${values[$key]:-}" ]] && github_app_user_count=$((github_app_user_count + 1)); done
   [[ "$github_oauth_count" -eq 0 || "$github_oauth_count" -eq 3 ]] || fail "GitHub OAuth fields must be configured together"
   [[ "$github_app_count" -eq 0 || "$github_app_count" -eq 2 ]] || fail "GitHub App fields must be configured together"
+  [[ "$github_app_user_count" -eq 0 || "$github_app_user_count" -eq 2 ]] || fail "GitHub App user authorization fields must be configured together"
+  if [[ "$github_app_user_count" -eq 2 || -n "${values[GITHUB_APP_WEBHOOK_SECRET]:-}" ]]; then
+    [[ "$github_app_count" -eq 2 ]] || fail "GitHub App OAuth/webhook fields require the App ID and private key"
+  fi
 
   [[ "${values[APPLE_TEAM_ID]}" =~ ^[A-Z0-9]{10}$ ]] ||
     fail "APPLE_TEAM_ID has an invalid format"
@@ -164,6 +172,15 @@ sync_auth_environment() {
   fi
   if [[ "$github_oauth_count" -eq 3 ]]; then
     [[ "${values[GITHUB_OAUTH_REDIRECT_URI]}" == "https://www.tocheers.com/api/v1/auth/oauth/github/callback" ]] || fail "GITHUB_OAUTH_REDIRECT_URI is not the production callback"
+  fi
+  if [[ "$github_app_user_count" -eq 2 ]]; then
+    [[ "${values[GITHUB_APP_CLIENT_ID]}" =~ ^[A-Za-z0-9._-]+$ ]] || fail "GITHUB_APP_CLIENT_ID has an invalid format"
+    [[ "${values[GITHUB_APP_CLIENT_SECRET]}" != *"'"* ]] || fail "GITHUB_APP_CLIENT_SECRET contains an unsupported character"
+    [[ "${values[GITHUB_APP_CLIENT_SECRET]}" != *$'\n'* ]] || fail "GITHUB_APP_CLIENT_SECRET contains an unsupported newline"
+  fi
+  if [[ -n "${values[GITHUB_APP_WEBHOOK_SECRET]:-}" ]]; then
+    [[ "${values[GITHUB_APP_WEBHOOK_SECRET]}" != *"'"* ]] || fail "GITHUB_APP_WEBHOOK_SECRET contains an unsupported character"
+    [[ "${values[GITHUB_APP_WEBHOOK_SECRET]}" != *$'\n'* ]] || fail "GITHUB_APP_WEBHOOK_SECRET contains an unsupported newline"
   fi
 
   # The connector release pin is optional in the payload (only the connector
@@ -213,6 +230,13 @@ sync_auth_environment() {
     if [[ "$github_app_count" -eq 2 ]]; then
       printf "GITHUB_APP_ID='%s'\n" "${values[GITHUB_APP_ID]}"
       printf "GITHUB_APP_PRIVATE_KEY='%s'\n" "${values[GITHUB_APP_PRIVATE_KEY]}"
+      if [[ "$github_app_user_count" -eq 2 ]]; then
+        printf "GITHUB_APP_CLIENT_ID='%s'\n" "${values[GITHUB_APP_CLIENT_ID]}"
+        printf "GITHUB_APP_CLIENT_SECRET='%s'\n" "${values[GITHUB_APP_CLIENT_SECRET]}"
+      fi
+      if [[ -n "${values[GITHUB_APP_WEBHOOK_SECRET]:-}" ]]; then
+        printf "GITHUB_APP_WEBHOOK_SECRET='%s'\n" "${values[GITHUB_APP_WEBHOOK_SECRET]}"
+      fi
     fi
     printf "OAUTH_WEB_RETURN_URL='%s'\n" "${values[OAUTH_WEB_RETURN_URL]}"
     # Empty (deliberately unpinned) omits the line entirely.
