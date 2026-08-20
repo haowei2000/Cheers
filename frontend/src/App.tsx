@@ -163,6 +163,9 @@ export default function App() {
         <Route path="/register" element={<DesktopPageFrame><RegisterPage /></DesktopPageFrame>} />
         <Route path="/forgot" element={<DesktopPageFrame><ForgotPasswordPage /></DesktopPageFrame>} />
         <Route path="/reset" element={<DesktopPageFrame><ResetPasswordPage /></DesktopPageFrame>} />
+        {/* Tauri's main window starts at index.html (/). Keep the desktop entry
+            on the sign-in surface instead of letting the catch-all send it to chat. */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
         {/* Public: the landing page itself routes signed-out visitors to auth. */}
         <Route path="/invite/:token" element={<DesktopPageFrame><InvitePage /></DesktopPageFrame>} />
         {/* The open workspace/channel live in the path so they survive a reload and
