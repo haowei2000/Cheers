@@ -9,8 +9,8 @@ import { Button as UiButton } from "@/components/ui/button";
 // docs/arch/PANEL_MODEL.md for why boards stopped being their own subsystem.
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
-import { useResourceQuery } from "@/features/chat/workbench/useResourceQuery";
 import { registerPanel, type PanelContext, type PanelContribution } from "./registry";
+import { tickKeyFor, usePanelData, type PanelSource } from "./source";
 
 // Trailing-coalesce window for tick-driven refetches. A user↔bot exchange or a
 // board_signal burst bumps the tick several times in quick succession; without this
@@ -19,7 +19,7 @@ import { registerPanel, type PanelContext, type PanelContribution } from "./regi
 // then swallow further bumps into one trailing refetch per window.
 const PANEL_REFETCH_DEBOUNCE_MS = 500;
 
-/** Tick-driven refetch that (a) skips the mount (useResourceQuery / the panel's own
+/** Tick-driven refetch that (a) skips the mount (usePanelData / the panel's own
  *  initial load already fetched), (b) defers while hidden, catching up once the panel
  *  becomes visible again, and (c) coalesces bursts of ticks into at most one refetch
  *  per ~500ms window. Shared by defineResourcePanel and self-fetching panels. */
@@ -79,15 +79,14 @@ export function usePanelTickRefetch(
   );
 }
 
-export interface ResourcePanelDef<T> {
+export interface DataPanelDef<T> {
   id: string;
   title: string;
   icon?: LucideIcon;
   profiles?: string[];
-  /** The resource verb to read (e.g. "channel.plan.read"). */
-  verb: string;
-  /** Build the verb params from ctx. Session-scoped panels add session_id here. */
-  makeParams: (ctx: PanelContext) => Record<string, unknown>;
+  /** Where this panel's data lives. The panel declares it and nothing else — one
+   *  loader serves every kind. */
+  source: PanelSource;
   /** When "session", the host shows its session-scope selector. */
   scope?: "channel" | "session";
   /** Render the loaded data (owns both the populated and the empty presentation).
@@ -134,23 +133,16 @@ export function PanelShell({
   );
 }
 
-export function defineResourcePanel<T>(def: ResourcePanelDef<T>): PanelContribution {
+export function defineDataPanel<T>(def: DataPanelDef<T>): PanelContribution {
   function Panel({ ctx }: { ctx: PanelContext }) {
-    const send = ctx.sendResourceReq;
-    const { data, loading, error, refetch } = useResourceQuery<T>(
-      // Held off entirely when the surface has no resource channel, so the no-op
-      // below is never actually called.
-      send ?? (() => Promise.resolve(null)),
-      def.verb,
-      def.makeParams(ctx),
-      !!ctx.channelId && !!send
-    );
+    const { data, loading, error, refetch } = usePanelData<T>(def.source, ctx);
     const onRefresh = useCallback(() => refetch(), [refetch]);
     const Icon = def.icon;
 
-    // Live-push: re-fetch when this panel's tick bumps (a board_signal arrived).
+    // Live-push: re-fetch when the signal for THIS SOURCE bumps — its own
+    // board_signal for a verb, the shared files tick for a workspace file.
     // Deferred while the panel is kept-alive but hidden; catches up on reveal.
-    usePanelTickRefetch(ctx, def.id, refetch);
+    usePanelTickRefetch(ctx, tickKeyFor(def.source, def.id), refetch);
 
     return (
       <div className="flex flex-col h-full text-regular">
@@ -191,12 +183,12 @@ export function defineResourcePanel<T>(def: ResourcePanelDef<T>): PanelContribut
   };
 }
 
-/** Register a verb-bound lane panel. */
-export function registerResourcePanel<T>(def: ResourcePanelDef<T>): void {
-  registerPanel(defineResourcePanel(def));
+/** Register a lane panel that loads from a declared source. */
+export function registerDataPanel<T>(def: DataPanelDef<T>): void {
+  registerPanel(defineDataPanel(def));
 }
 
-/** Standard params for a session-scoped panel: `{ channel_id, session_id? }`. */
+/** Standard params for a session-scoped resource panel: `{ channel_id, session_id? }`. */
 export function channelSessionParams(ctx: PanelContext): Record<string, unknown> {
   return {
     channel_id: ctx.channelId,

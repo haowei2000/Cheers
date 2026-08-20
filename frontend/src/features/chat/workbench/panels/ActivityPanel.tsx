@@ -36,7 +36,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
 import { agentIconFor } from "@/components/ui/agentIcons";
 import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
-import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/defineResourcePanel";
+import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
 import {
   buildEpisodes,
   isNotableEpisode,

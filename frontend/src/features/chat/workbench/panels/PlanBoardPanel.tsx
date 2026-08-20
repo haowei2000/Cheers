@@ -14,7 +14,7 @@ import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { type PanelContext } from "@/features/chat/panels/registry";
-import { registerResourcePanel, channelSessionParams } from "@/features/chat/panels/defineResourcePanel";
+import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
 
 interface PlanEntry {
@@ -157,12 +157,11 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: PanelContext }) 
   );
 }
 
-registerResourcePanel<PlanReadResponse>({
+registerDataPanel<PlanReadResponse>({
   id: "plan",
   title: "Plan",
   icon: ClipboardList,
-  verb: "channel.plan.read",
+  source: { kind: "resource", verb: "channel.plan.read", params: channelSessionParams },
   scope: "session",
-  makeParams: channelSessionParams,
   render: (data, ctx) => <PlanBody data={data} ctx={ctx} />,
 });

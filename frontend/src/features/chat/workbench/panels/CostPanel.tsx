@@ -12,7 +12,7 @@
 import { Coins, Gauge } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { type PanelContext } from "@/features/chat/panels/registry";
-import { registerResourcePanel, channelSessionParams } from "@/features/chat/panels/defineResourcePanel";
+import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel } from "../useMembersIndex";
 
 interface BotUsage {
@@ -122,12 +122,11 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: PanelContext }) {
   );
 }
 
-registerResourcePanel<UsageRead>({
+registerDataPanel<UsageRead>({
   id: "cost",
   title: "Cost",
   icon: Coins,
-  verb: "channel.usage.read",
+  source: { kind: "resource", verb: "channel.usage.read", params: channelSessionParams },
   scope: "session",
-  makeParams: channelSessionParams,
   render: (data, ctx) => <UsageBody data={data} ctx={ctx} />,
 });

@@ -109,13 +109,21 @@ type PanelSource =
   | { kind: "rest";      endpoint: string };       // Audit today
 ```
 
-Each source kind supplies one liveness adapter behind a single interface — `filesTick`,
-`board_signal`, and `workspace_signal` are three implementations of "this data changed,
-refetch." The coalescing and visibility-deferral logic already written once in
-[useBoardTickRefetch](../../frontend/src/features/chat/workbench/viewBoard.tsx:53) becomes
-the shared implementation, and
-[useResourceQuery](../../frontend/src/features/chat/workbench/useResourceQuery.ts:24)
-becomes the generic loader.
+`fetcherFor(source, ctx)` is the routing seam, and it is a pure function — which client
+a source reaches is assertable without rendering anything. `usePanelData` supersedes
+`useResourceQuery` outright rather than wrapping it; two loaders would drift.
+
+`tickKeyFor` collapses the liveness question. `filesTick`, `board_signal`, and
+`workspace_signal` were three independently-wired answers to "did my source change?";
+they become one lookup over the source, so every fs panel waits on the single tick the
+channel workspace actually emits rather than one named after itself. The coalescing and
+visibility-deferral logic carries over unchanged.
+
+**`workspace` is deliberately unserved.** It exists in the union so the model names every
+source honestly and so the manifest validators have something to reject, but `fetcherFor`
+returns null for it: `RemoteWorkspaceDialog` still owns that plane through the bot-scoped
+REST client, under the authorization model guardrail 1 protects. Building a second path
+to a real filesystem before anything needs one is how that guardrail erodes by accident.
 
 `Scope` replaces three ad-hoc mechanisms: the ViewBoard's own session selector, the
 Workbench's channel binding, and Remote workspace's bot selector. They are the same
@@ -211,10 +219,11 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
    drop). `useLaneWindow` had exactly those two callers and retires with them; only
    `LaneBoundsContext` survives, in `hooks/laneBounds.ts`.
 
-3. **Source abstraction.** Introduce `PanelSource` and the per-kind liveness adapter.
-   `useResourceQuery` becomes the loader for every kind;
+3. **Source abstraction.** Introduce `PanelSource`, `usePanelData`, and `tickKeyFor`.
    [makeFsClient](../../frontend/src/features/chat/workbench/fsClient.ts:25) becomes one
-   adapter among several rather than the Workbench's private door.
+   adapter among several rather than the Workbench's private door, and
+   `PLUGGABLE_SOURCE_KINDS` becomes the single declaration of which kinds a manifest may
+   name — the one step 4's corpus enforces on both sides.
 
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.

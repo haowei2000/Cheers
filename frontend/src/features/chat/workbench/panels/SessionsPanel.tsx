@@ -40,7 +40,7 @@ import { bustBotControls } from "@/features/chat/sessionControlsCache";
 import { cn } from "@/lib/cn";
 import { OperationsItem } from "@/components/ui/item";
 import { type PanelContext } from "@/features/chat/panels/registry";
-import { registerResourcePanel, channelSessionParams } from "@/features/chat/panels/defineResourcePanel";
+import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 
 interface SessionRow {
   session_id: string;
@@ -668,11 +668,10 @@ function SessionsBody({
   );
 }
 
-registerResourcePanel<SessionsRead>({
+registerDataPanel<SessionsRead>({
   id: "sessions",
   title: "Sessions",
   icon: Layers,
-  verb: "channel.sessions.read",
-  makeParams: (ctx) => ({ channel_id: ctx.channelId }),
+  source: { kind: "resource", verb: "channel.sessions.read" },
   render: (data, ctx, refetch) => <SessionsBody data={data} ctx={ctx} refetch={refetch} />,
 });

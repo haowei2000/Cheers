@@ -19,7 +19,7 @@ import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
 import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
-import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/defineResourcePanel";
+import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
 
 function fmtTime(iso?: string | null): string {
   if (!iso) return "";

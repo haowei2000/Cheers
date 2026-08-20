@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { initializeChannelIntegration } from "@/api/integrations";
 import { IconButton } from "@/components/ui/icon-button";
 import { registerPanel, type PanelContext } from "../registry";
-import { PanelShell } from "../defineResourcePanel";
+import { PanelShell } from "../definePanel";
 
 // The `code` profile's status, on all three surfaces it appears on. Before the panels
 // refactor this lived in three files against three registries and three context types
