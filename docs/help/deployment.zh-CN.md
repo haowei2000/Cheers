@@ -88,6 +88,11 @@ Variables。未配置整组 Google 变量时 capabilities 会关闭 Google；只
 重建 gateway 前原子替换 `/opt/cheers/.env` 中权限为 `0600` 的受管区块。镜像拉取、
 容器重建或健康检查失败时会恢复旧环境。部署日志不得打印载荷、私钥或完整环境文件。
 
+构建生产镜像前，CD 会通过同一个 forced-command SSH key 发送不含敏感信息的
+preflight 请求，并比较生产脚本与仓库版本的 SHA-256。摘要不一致时，CD 会在镜像构建
+前停止，并要求管理员安装经过审查的 `deploy/production/deploy.sh`；工作流本身不会自动
+改写这个由 root 持有的脚本。
+
 不要手工修改以下标记之间的内容：
 
 ```text

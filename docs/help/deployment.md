@@ -103,6 +103,12 @@ configuration, and atomically replaces the root-only (`0600`) managed block in
 failures restore the previous environment. Deployment logs must never print the
 payload, private key, or complete environment file.
 
+Before building production images, CD sends a secret-free preflight request
+through the same forced-command key and compares the installed script's SHA-256
+with the repository copy. A mismatch stops CD before image builds and requires
+an administrator to install the reviewed `deploy/production/deploy.sh`. The
+workflow deliberately cannot update this root-owned script by itself.
+
 Do not manually edit content between these markers:
 
 ```text

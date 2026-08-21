@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -124,6 +126,37 @@ class MetricsTests(unittest.TestCase):
 class AuditTests(unittest.TestCase):
     def test_repository_workflows_match_the_dependency_map(self):
         self.assertEqual(ci_tool.audit(ci_tool.load_config()), [])
+
+
+class DeployContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.script = MODULE_PATH.parents[1] / "deploy" / "production" / "deploy.sh"
+        cls.expected_sha = hashlib.sha256(cls.script.read_bytes()).hexdigest()
+
+    def run_preflight(self, expected_sha):
+        return subprocess.run(
+            ["bash", str(self.script)],
+            input=f"CHEERS_DEPLOY_PREFLIGHT_V1\n{expected_sha}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_deploy_contract_accepts_the_exact_script(self):
+        result = self.run_preflight(self.expected_sha)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sha256={self.expected_sha}", result.stdout)
+
+    def test_deploy_contract_rejects_script_drift(self):
+        result = self.run_preflight("0" * 64)
+        self.assertEqual(result.returncode, 78)
+        self.assertIn("deploy contract mismatch", result.stderr)
+
+    def test_deploy_contract_rejects_an_invalid_digest(self):
+        result = self.run_preflight("not-a-sha")
+        self.assertEqual(result.returncode, 78)
+        self.assertIn("invalid SHA-256", result.stderr)
 
 
 if __name__ == "__main__":
