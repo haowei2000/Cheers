@@ -46,8 +46,10 @@
         ".dockerignore",
         ".github/ci-paths.json",
         ".github/workflows/cd.yml",
+        "deploy/production/deploy.sh",
         "docker-compose.yml.template",
-        "scripts/ci_tool.py"
+        "scripts/ci_tool.py",
+        "scripts/verify-deploy-contract.sh"
       ],
       "lanes": {
         "gateway": [

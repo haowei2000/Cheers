@@ -8,6 +8,7 @@ readonly ENV_FILE="${DEPLOY_ROOT}/.env"
 readonly COMPOSE_FILE="${DEPLOY_ROOT}/docker-compose.yml"
 readonly TLS_COMPOSE_FILE="${DEPLOY_ROOT}/docker-compose.production.tls.yml"
 readonly PAYLOAD_VERSION="CHEERS_DEPLOY_AUTH_ENV_V1"
+readonly PREFLIGHT_VERSION="CHEERS_DEPLOY_PREFLIGHT_V1"
 readonly MANAGED_BEGIN="# BEGIN CHEERS GITHUB-MANAGED AUTH"
 readonly MANAGED_END="# END CHEERS GITHUB-MANAGED AUTH"
 
@@ -31,6 +32,32 @@ trap cleanup EXIT HUP INT TERM
 fail() {
   echo "[deploy] rejected authentication configuration: $1" >&2
   exit 1
+}
+
+verify_deploy_contract() {
+  local expected_sha actual_sha extra
+
+  IFS= read -r expected_sha || {
+    echo "[deploy] deploy contract preflight is missing the expected SHA-256." >&2
+    exit 78
+  }
+  [[ "$expected_sha" =~ ^[a-f0-9]{64}$ ]] || {
+    echo "[deploy] deploy contract preflight contains an invalid SHA-256." >&2
+    exit 78
+  }
+  if IFS= read -r extra; then
+    echo "[deploy] deploy contract preflight contains unexpected data." >&2
+    exit 78
+  fi
+
+  actual_sha="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+  if [[ "$actual_sha" != "$expected_sha" ]]; then
+    echo "[deploy] deploy contract mismatch: server=${actual_sha} expected=${expected_sha}." >&2
+    echo "[deploy] install deploy/production/deploy.sh on the server before retrying CD." >&2
+    exit 78
+  fi
+
+  echo "[deploy] deploy contract ok: sha256=${actual_sha}"
 }
 
 # Last CHEERS_CONNECTOR_RELEASE_VERSION= line in the env file — quoted
@@ -306,13 +333,17 @@ rollback_environment() {
   fi
 }
 
-cd "$DEPLOY_ROOT"
-
 if IFS= read -r payload_header; then
+  if [[ "$payload_header" == "$PREFLIGHT_VERSION" ]]; then
+    verify_deploy_contract
+    exit 0
+  fi
   sync_auth_environment "$payload_header"
 else
   echo "[deploy] no authentication payload supplied; keeping existing configuration."
 fi
+
+cd "$DEPLOY_ROOT"
 
 COMPOSE=(
   docker compose
