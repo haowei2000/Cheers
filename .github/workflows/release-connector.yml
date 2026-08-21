@@ -180,6 +180,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify forced-command script
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: scripts/verify-deploy-contract.sh
+
       - name: Sync pin via SSH deploy
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
