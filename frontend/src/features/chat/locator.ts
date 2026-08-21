@@ -22,7 +22,17 @@ export type Locator =
   | { kind: "desk"; path: string; line?: number; lineEnd?: number }
   | { kind: "ws"; bot: string; path: string; line?: number; lineEnd?: number }
   | { kind: "msg"; messageId: string }
-  | { kind: "inbox"; fileId: string };
+  | { kind: "inbox"; fileId: string }
+  // Channel-scoped projections: no tail, no anchor — the channel IS the address.
+  | { kind: "plan" | "sessions" | "cost" | "activity" };
+
+/** The projections addressed by a bare `cheers:<kind>`. */
+const CHANNEL_KINDS = ["plan", "sessions", "cost", "activity"] as const;
+type ChannelKind = (typeof CHANNEL_KINDS)[number];
+
+function isChannelKind(value: string): value is ChannelKind {
+  return (CHANNEL_KINDS as readonly string[]).includes(value);
+}
 
 export const LOCATOR_SCHEME = "cheers:";
 /** Sanity cap for locators arriving from sandboxed plugins (a path plus an anchor —
@@ -66,10 +76,12 @@ export function parseLocator(uri: string): Locator | null {
   const body = hash < 0 ? rest : rest.slice(0, hash);
   const frag = hash < 0 ? null : rest.slice(hash + 1);
 
+  // A leading slash means an authority form (`cheers://…`) — a deep link, not a
+  // locator. No slash at all is a channel-scoped kind.
   const slash = body.indexOf("/");
-  if (slash <= 0) return null;
-  const scheme = body.slice(0, slash);
-  const tail = body.slice(slash + 1);
+  if (slash === 0) return null;
+  const scheme = slash < 0 ? body : body.slice(0, slash);
+  const tail = slash < 0 ? "" : body.slice(slash + 1);
 
   let anchor: { line: number; lineEnd?: number } | null = null;
   if (frag !== null) {
@@ -98,5 +110,37 @@ export function parseLocator(uri: string): Locator | null {
     if (!tail || tail.includes("/") || anchor) return null;
     return { kind: "inbox", fileId: tail };
   }
+  if (isChannelKind(scheme)) {
+    if (tail || anchor) return null;
+    return { kind: scheme };
+  }
   return null;
+}
+
+function anchorSuffix(line?: number, lineEnd?: number): string {
+  if (line === undefined) return "";
+  return lineEnd === undefined ? `#L${line}` : `#L${line}-L${lineEnd}`;
+}
+
+/** Render a locator back to its URI.
+ *
+ * The half this module never had. Without it a resource could be read from text an agent
+ * wrote but never named in text the UI produces — so "copy a link to this" could not
+ * exist, and every surface hand-rolled its own reference instead.
+ *
+ * Mirrored by `format` in packages/cheers-mcp-server/src/locator.rs; both are pinned to
+ * fixtures/locator/corpus.json so the two cannot drift. */
+export function formatLocator(loc: Locator): string {
+  switch (loc.kind) {
+    case "desk":
+      return `${LOCATOR_SCHEME}desk/${loc.path}${anchorSuffix(loc.line, loc.lineEnd)}`;
+    case "ws":
+      return `${LOCATOR_SCHEME}ws/${loc.bot}/${loc.path}${anchorSuffix(loc.line, loc.lineEnd)}`;
+    case "msg":
+      return `${LOCATOR_SCHEME}msg/${loc.messageId}`;
+    case "inbox":
+      return `${LOCATOR_SCHEME}inbox/${loc.fileId}`;
+    default:
+      return `${LOCATOR_SCHEME}${loc.kind}`;
+  }
 }

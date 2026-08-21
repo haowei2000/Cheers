@@ -2,6 +2,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use url::Url;
 
+pub mod locator;
 pub mod registry;
 pub mod tools;
 

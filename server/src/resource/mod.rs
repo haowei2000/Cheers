@@ -74,12 +74,84 @@ pub struct ChannelMembership {
     pub role: String,
 }
 
+/// Rewrite a `cheers:` locator frame into the `{resource, params}` call it names.
+///
+/// Returns the frame's own resource/params untouched when it is not a locator, so every
+/// existing caller is unaffected.
+///
+/// **The safety argument, and why it holds.** Resolution happens BEFORE any authorization
+/// and produces exactly a call the caller could have sent directly — same resource, same
+/// params, same handler, same channel-role check inside it. A URI therefore reaches
+/// nothing a verb call could not; it is sugar over an already-authorized request, not a
+/// new path. Two things keep that true and must not be loosened:
+///
+/// 1. `cheers_mcp_server::locator::resolve` is a pure function of (locator, channel), and
+///    a test there asserts every resource it can name is declared in the registry catalog.
+/// 2. A locator frame may carry ONLY `channel_id`. Anything else is refused rather than
+///    ignored — a frame whose extra params silently did nothing would be a frame saying
+///    something the reader disregards, which is how callers come to believe they set a
+///    limit or a range that was never applied.
+fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (String, String)> {
+    use cheers_mcp_server::locator;
+
+    if !resource.starts_with(locator::SCHEME) {
+        return Ok((resource.to_string(), params.clone()));
+    }
+    let parsed = locator::parse(resource).ok_or_else(|| {
+        resource_error("INVALID_LOCATOR", format!("malformed locator: {resource}"))
+    })?;
+
+    // Channel scope is deliberately absent from the URI (locators are channel-implicit and
+    // the shipped, agent-writable format has no channel segment), so it rides in params
+    // exactly as it does for every other call.
+    let channel_id = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", "a locator needs channel_id"))?;
+
+    if let Some(extra) = params
+        .as_object()
+        .and_then(|o| o.keys().find(|k| k.as_str() != "channel_id").cloned())
+    {
+        return Err(resource_error(
+            "INVALID_PARAMS",
+            format!("a locator names its own params; `{extra}` would be ignored"),
+        ));
+    }
+
+    let (resolved, resolved_params) = locator::resolve(&parsed, channel_id).map_err(|why| {
+        // Each reason gets its own message: "this cannot be read" and "this needs more
+        // than a locator can carry" are different problems, and a caller who is told the
+        // wrong one will try the wrong fix.
+        let detail = match why {
+            locator::Unresolvable::MessageIdHasNoReadResource => {
+                "a message locator addresses a message by id, which no read resource accepts"
+            }
+            locator::Unresolvable::WorkspacePathNeedsMoreThanALocator => {
+                "a workspace locator cannot carry the browse root, the bot id, or the \
+                 channel a workspace read needs — open it from the workspace browser"
+            }
+        };
+        resource_error("UNRESOLVABLE_LOCATOR", detail)
+    })?;
+    Ok((resolved.to_string(), resolved_params))
+}
+
 /// resource_req 的入口分发器。
 /// 收到帧后按 resource 字段路由到对应 handler。
 pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value {
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
-    let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
-    let params = frame.get("params").cloned().unwrap_or(Value::Null);
+    let raw_resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
+    let raw_params = frame.get("params").cloned().unwrap_or(Value::Null);
+
+    // A `cheers:` URI becomes the call it names before anything else looks at it, so the
+    // match below — and every handler's authorization — sees only resources it already
+    // knew. See resolve_frame.
+    let (resource, params) = match resolve_frame(raw_resource, &raw_params) {
+        Ok(pair) => pair,
+        Err((code, msg)) => return err_res(req_id, &code, &msg),
+    };
+    let resource = resource.as_str();
 
     let result = match resource {
         // ── 读操作（频道成员可读）──────────────────────────────────────
@@ -155,12 +227,24 @@ pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
     let principal = Principal::user(user_id);
 
-    if cheers_mcp_server::registry::by_resource(resource).is_some_and(|spec| spec.destructive) {
-        let params = frame.get("params").cloned().unwrap_or(Value::Null);
+    // Resolve BEFORE the destructive gate. Checking the raw string would let a locator
+    // slip past it the moment any kind resolves to a destructive resource — none does
+    // today, and this is what keeps that from becoming a hole when one does.
+    let raw_params = frame.get("params").cloned().unwrap_or(Value::Null);
+    let (resource, params) = match resolve_frame(resource, &raw_params) {
+        Ok(pair) => pair,
+        Err((code, msg)) => return err_res(req_id, &code, &msg),
+    };
+
+    if cheers_mcp_server::registry::by_resource(&resource).is_some_and(|spec| spec.destructive) {
         if let Err((code, msg)) = require_channel_admin(db, &principal, &params).await {
             return err_res(req_id, &code, &msg);
         }
     }
+    // `dispatch` resolves the frame again. That is intentional rather than wasteful
+    // plumbing: `resolve_frame` is pure, so both calls agree by construction, and
+    // handing `dispatch` a rebuilt frame would create a second place where the
+    // resolved call could diverge from the one this gate just inspected.
     dispatch(db, principal, frame).await
 }
 
@@ -293,6 +377,134 @@ pub fn role_can_admin(role: &str) -> bool {
 mod tests {
     use super::*;
 
+    // ── locator frames ──────────────────────────────────────────────────────────
+    // resolve_frame is pure, so the interesting properties are testable without a DB.
+
+    #[test]
+    fn a_plain_resource_frame_passes_through_untouched() {
+        let params = json!({ "channel_id": "c-1", "limit": 20 });
+        let (resource, resolved) = resolve_frame("channel.messages", &params).unwrap();
+        assert_eq!(resource, "channel.messages");
+        assert_eq!(
+            resolved, params,
+            "a non-locator frame must not be rewritten"
+        );
+    }
+
+    #[test]
+    fn a_locator_becomes_the_call_it_names() {
+        let (resource, params) = resolve_frame(
+            "cheers:desk/dev/plan.yaml#L3-L9",
+            &json!({ "channel_id": "c-1" }),
+        )
+        .unwrap();
+        assert_eq!(resource, "fs.read");
+        assert_eq!(
+            params,
+            json!({ "channel_id": "c-1", "path": "dev/plan.yaml", "start_line": 3, "end_line": 9 })
+        );
+    }
+
+    #[test]
+    fn a_locator_frame_refuses_params_it_would_ignore() {
+        // Silently dropping them would let a caller believe a limit or a range applied.
+        let err = resolve_frame(
+            "cheers:activity",
+            &json!({ "channel_id": "c-1", "limit": 5 }),
+        )
+        .unwrap_err();
+        assert_eq!(err.0, "INVALID_PARAMS");
+        assert!(
+            err.1.contains("limit"),
+            "the refusal should name the offending key"
+        );
+    }
+
+    #[test]
+    fn a_locator_needs_a_channel() {
+        // Channel scope is deliberately not in the URI, so it has to arrive in params.
+        assert_eq!(
+            resolve_frame("cheers:plan", &json!({})).unwrap_err().0,
+            "INVALID_PARAMS"
+        );
+    }
+
+    #[test]
+    fn a_malformed_or_unresolvable_locator_fails_loudly() {
+        assert_eq!(
+            resolve_frame("cheers:desk/../etc/passwd", &json!({ "channel_id": "c" }))
+                .unwrap_err()
+                .0,
+            "INVALID_LOCATOR"
+        );
+        assert_eq!(
+            resolve_frame("cheers:msg/abc", &json!({ "channel_id": "c" }))
+                .unwrap_err()
+                .0,
+            "UNRESOLVABLE_LOCATOR"
+        );
+    }
+
+    #[test]
+    fn no_locator_resolves_to_a_brokered_resource() {
+        // `dispatch_with_effects` intercepts brokered resources — today `workspace.read`,
+        // answered by the owner Bot's live Connector — by matching the frame's RAW
+        // resource string. A locator that resolved to one would sail past that check and
+        // die in dispatch's match as UNKNOWN_RESOURCE, because brokered resources are
+        // deliberately not arms there.
+        //
+        // `cheers:ws/...` looked like it should resolve and does not, for reasons that
+        // are about the locator rather than about routing: it cannot carry the browse
+        // root, cannot turn @handle into a bot id without a member lookup, and carries no
+        // channel. This is the alarm if some future kind reaches a brokered resource.
+        for uri in [
+            "cheers:desk/a.md",
+            "cheers:ws/bot/a.rs",
+            "cheers:inbox/f-1",
+            "cheers:plan",
+            "cheers:sessions",
+            "cheers:cost",
+            "cheers:activity",
+        ] {
+            let Ok((resource, _)) = resolve_frame(uri, &json!({ "channel_id": "c-1" })) else {
+                continue; // does not resolve at all — nothing can be brokered
+            };
+            assert_ne!(
+                resource, "workspace.read",
+                "{uri} resolves to a brokered resource; dispatch_with_effects matches the \
+                 raw string and would not intercept it"
+            );
+        }
+    }
+
+    #[test]
+    fn no_locator_reaches_a_destructive_resource_behind_the_user_gate() {
+        // dispatch_user gates destructive resources on owner/admin. It resolves the
+        // locator BEFORE that check, so a locator cannot slip past it — but only as long
+        // as resolution keeps landing on reads. This is the alarm for the day someone
+        // adds a kind that does not.
+        for uri in [
+            "cheers:desk/a.md",
+            "cheers:ws/bot/a.rs",
+            "cheers:inbox/f-1",
+            "cheers:plan",
+            "cheers:sessions",
+            "cheers:cost",
+            "cheers:activity",
+        ] {
+            let Ok((resource, _)) = resolve_frame(uri, &json!({ "channel_id": "c-1" })) else {
+                continue; // does not resolve — it can reach nothing at all
+            };
+            let destructive = cheers_mcp_server::registry::by_resource(&resource)
+                .is_some_and(|spec| spec.destructive);
+            assert!(
+                !destructive,
+                "{uri} resolves to the destructive {resource}; dispatch_user's gate must be \
+                 re-examined before allowing this"
+            );
+        }
+    }
+
     /// I8：owner/admin/member 可写。
     #[test]
     fn writer_roles_can_write() {
@@ -320,6 +532,28 @@ mod registry_contract {
     //! plain string literals and drift is the only thing being checked.
 
     use std::collections::BTreeSet;
+
+    #[test]
+    fn a_locator_only_ever_names_a_resource_dispatch_already_routes() {
+        // The safety property in one assertion: a URI reaches nothing a verb call could
+        // not. If a future locator kind named an unrouted resource, this fails here
+        // rather than as an UNKNOWN_RESOURCE at runtime.
+        for uri in [
+            "cheers:desk/a.md",
+            "cheers:inbox/f-1",
+            "cheers:plan",
+            "cheers:sessions",
+            "cheers:cost",
+            "cheers:activity",
+        ] {
+            let (resource, _) =
+                super::resolve_frame(uri, &serde_json::json!({ "channel_id": "c-1" })).unwrap();
+            assert!(
+                routed_resources().contains(resource.as_str()),
+                "{uri} resolves to {resource}, which dispatch does not route"
+            );
+        }
+    }
 
     /// Resource literals in `dispatch`'s match, in source order.
     fn routed_resources() -> BTreeSet<&'static str> {

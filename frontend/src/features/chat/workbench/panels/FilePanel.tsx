@@ -24,6 +24,7 @@ import {
   Copy,
   Eye,
   Paperclip,
+  Link as LinkIcon,
 } from "lucide-react";
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
@@ -36,6 +37,7 @@ import {
   selectionLineRange,
   rangedFileContextItem,
 } from "@/features/chat/context/contextPick";
+import { formatLocator } from "@/features/chat/locator";
 import { previewOptions } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
@@ -221,6 +223,20 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             label: basename(selected),
             kind: "file",
           }),
+        },
+        {
+          id: "copy-link",
+          label: "Copy link",
+          icon: <LinkIcon className="h-4 w-4" />,
+          group: "secondary",
+          // The other half of the URI: until formatLocator existed, a resource could be
+          // named in text an agent wrote but never in text the UI produced. Paste this
+          // into the composer and the agent resolves the same file.
+          run: () => {
+            const uri = formatLocator({ kind: "desk", path: selected });
+            void navigator.clipboard?.writeText(uri);
+            setStatus(`Copied ${uri}`);
+          },
         },
       ];
     },
