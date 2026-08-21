@@ -874,6 +874,12 @@ export function ChannelView({
         setRefError("Message locators (cheers:msg/…) aren't supported yet.");
         return;
       }
+      if (loc.kind !== "ws") {
+        // A channel projection names a lane board directly. `cost` is the one place the
+        // URI and the board id differ: the board is "cost", the verb is channel.usage.read.
+        openBoard(loc.kind);
+        return;
+      }
       // ws: "@handle" resolves through this channel's bot members; anything else is a bot id.
       let botId = loc.bot;
       if (botId.startsWith("@")) {
@@ -937,6 +943,7 @@ export function ChannelView({
     [
       channel,
       botLabels,
+      openBoard,
       openInstrument,
       setFilesFocus,
       setFilesOpen,

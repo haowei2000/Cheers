@@ -1,7 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
+import { messageContextItem, useContextPickStore } from "./context/contextPick";
 import {
   Square,
+  Paperclip,
   MessageCircleMore,
   Copy,
   Forward,
@@ -805,6 +807,23 @@ function RegularMessageItem({
       { id: "forward", label: "Forward", icon: <Forward className="h-4 w-4" />, run: () => actions.onForward(message) },
       { id: "select", label: "Select message", icon: <CheckSquare className="h-4 w-4" />, run: () => actions.onToggleSelect(message) },
     ];
+    // The gap this closes: every other pickable resource had an "Add to context" — a
+    // file tile, a Workbench file — but the message itself, the most obvious thing to
+    // right-click, had none, even though `kind: "message"` was already in the model.
+    //
+    // Addressed by SEQ, not by the `cheers:msg/<id>` locator: no read resource takes a
+    // message id (channel.messages.by-seq takes a seq window), so the URI can name this
+    // message for navigation but cannot name it as a read. See locator.rs.
+    const contextRef = channelId ? messageContextItem(message) : undefined;
+    if (channelId && contextRef) {
+      next.push({
+        id: "add-context",
+        label: "Add message to context",
+        icon: <Paperclip className="h-4 w-4" />,
+        group: "secondary",
+        run: () => useContextPickStore.getState().add(channelId, contextRef),
+      });
+    }
     if (canMention && actions.onMention) {
       next.push({ id: "mention", label: `Mention @${name}`, icon: <AtSign className="h-4 w-4" />, group: "secondary", run: () => actions.onMention?.(message) });
     }

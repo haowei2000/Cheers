@@ -458,6 +458,17 @@ mod tests {
             }
             let parsed = parsed.unwrap_or_else(|| panic!("{uri} must parse — {why}"));
 
+            // Rendering must produce a locator that reads back identically. NOT equality
+            // with the input: parsing is deliberately tolerant, so `#L9-L3` canonicalizes
+            // to `#L3-L9`. What must hold is that the canonical form is stable, or a
+            // rendered link could parse to a different resource than the one it names.
+            let rendered = format(&parsed);
+            assert_eq!(
+                parse(&rendered),
+                Some(parsed.clone()),
+                "{uri} -> {rendered}"
+            );
+
             if let Some(kind) = case.get("unresolvable").and_then(|v| v.as_str()) {
                 assert_eq!(
                     resolve(&parsed, CH).unwrap_err(),
