@@ -753,6 +753,126 @@
         },
         "renderers/chart.js": "export function render() {}\n"
       }
+    },
+    {
+      "name": "panel-picking-a-key-out-of-a-resource-wrapper",
+      "why": "Every channel.* verb wraps its payload ({\"members\": [...]}) while the table view wants a bare array. `pick` names the key to unwrap — a lookup on data the panel already read, so it widens expressiveness and not reach.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "roster",
+                "title": "Roster",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.members",
+                  "pick": "members"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-picking-with-a-non-string-key",
+      "why": "`pick` is a key name.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "roster",
+                "title": "Roster",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.members",
+                  "pick": 3
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "fs-panel-trying-to-pick",
+      "why": "Only a resource source wraps its payload. An fs source hands back file content, so `pick` there is a field the reader would silently ignore — reject it rather than accept a manifest that does not mean what it says.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "plan",
+                "title": "Plan",
+                "source": {
+                  "kind": "fs",
+                  "path": "dev/plan.yaml",
+                  "pick": "rows"
+                },
+                "view": "builtin:table"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "panel-carrying-lens-config",
+      "why": "A panel may carry view config the same way a scene item does — column choices are data, not code.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "roster",
+                "title": "Roster",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.members",
+                  "pick": "members"
+                },
+                "view": "builtin:table",
+                "config": {
+                  "columns": [
+                    {
+                      "key": "display_name",
+                      "label": "Name"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
     }
   ]
 }

@@ -25,8 +25,9 @@ interface Manifest {
     panels?: Array<{
       id: string;
       title: string;
-      source: { kind: "resource"; verb: string } | { kind: "fs"; path: string };
+      source: { kind: "resource"; verb: string; pick?: string } | { kind: "fs"; path: string };
       view: string;
+      config?: unknown;
     }>;
   };
   permissions?: {
