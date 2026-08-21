@@ -225,13 +225,20 @@ struct MessageBubbleView: View {
         .contextMenu {
             // Web bubble actions (MessageItem.tsx): Reply · Copy text · Forward.
             if let onReply {
-                Button { onReply() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                Button {
+                    NativeFeedback.selection()
+                    onReply()
+                } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
             }
             Button {
+                NativeFeedback.selection()
                 UIPasteboard.general.string = message.content
             } label: { Label("Copy text", systemImage: "doc.on.doc") }
             if let onForward {
-                Button { onForward() } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
+                Button {
+                    NativeFeedback.selection()
+                    onForward()
+                } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
             }
             if !isOwn, let onReport {
                 Button(role: .destructive) { onReport() } label: { Label("Report message", systemImage: "exclamationmark.bubble") }
