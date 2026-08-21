@@ -14,12 +14,14 @@ import {
 import { useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
+  Copy,
   ChevronRight,
   Loader2,
   MessageCircle,
   Plus,
   Users,
 } from "lucide-react";
+import { useContextSurface } from "@/components/ui/context-actions";
 import {
   getDiscussion,
   listDiscussions,
@@ -86,6 +88,71 @@ function relativeActivity(value: string) {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d`;
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function DiscussionTopicRow({
+  topic,
+  selected,
+  onOpen,
+}: {
+  topic: DiscussionSummary;
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const copy = titleAndPreview(topic.root);
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => [
+      { id: "open", label: "Open discussion", icon: <MessageCircle className="h-4 w-4" />, run: onOpen },
+      { id: "copy", label: "Copy topic text", icon: <Copy className="h-4 w-4" />, run: () => navigator.clipboard.writeText(topic.root.content ?? "") },
+    ],
+  });
+  return (
+    // Context-menu gestures are delegated to the semantic ItemRow button.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      ref={surfaceRef}
+      role="group"
+      onContextMenu={contextSurface.onContextMenu}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      <ItemRow
+        kind="conversation"
+        presentationLevel="medium"
+        controlSize="regular"
+        onClick={onOpen}
+        selected={selected}
+        leading={<Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="regular" />}
+        title={<span title={[
+          copy.title,
+          copy.preview,
+          topic.last_reply ? `${topic.last_reply.sender_name}: ${topic.last_reply.content || "Attachment"}` : null,
+        ].filter(Boolean).join(" · ")}>
+          {copy.title}{copy.preview ? ` — ${copy.preview}` : ""}
+        </span>}
+        status={(
+          <span className={cn("inline-flex shrink-0 items-center gap-2 text-content-muted", controlTextClasses.compact)}>
+            <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
+            <span className="inline-flex items-center gap-1"><Users className={controlIconClasses.compact} />{topic.participant_count}</span>
+          </span>
+        )}
+        trailing={(
+          <span className={cn("inline-flex items-center gap-1 tabular-nums text-content-muted", controlTextClasses.compact)}>
+            {relativeActivity(topic.last_activity_at)}
+            <ChevronRight className={cn(controlIconClasses.regular, "text-content-muted transition-transform group-hover/item:translate-x-0.5")} />
+          </span>
+        )}
+        className={cn("border-b-0", !selected && "bg-zinc-900/45 hover:bg-zinc-900/80")}
+      />
+    </div>
+  );
 }
 
 /** Render a searchable, paginated topic list with an inline thread reader. */
@@ -346,40 +413,13 @@ export function DiscussionView({
         ) : (
           <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
             {topics.map((topic) => {
-              const copy = titleAndPreview(topic.root);
               const selected = selectedId === topic.root.msg_id && !creating;
               return (
-                <ItemRow
+                <DiscussionTopicRow
                   key={topic.root.msg_id}
-                  kind="conversation"
-                  presentationLevel="medium"
-                  controlSize="regular"
-                  onClick={() => selectDiscussion(topic.root.msg_id)}
+                  topic={topic}
                   selected={selected}
-                  leading={<Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="regular" />}
-                  title={<span title={[
-                    copy.title,
-                    copy.preview,
-                    topic.last_reply ? `${topic.last_reply.sender_name}: ${topic.last_reply.content || "Attachment"}` : null,
-                  ].filter(Boolean).join(" · ")}>
-                    {copy.title}{copy.preview ? ` — ${copy.preview}` : ""}
-                  </span>}
-                  status={(
-                    <span className={cn("inline-flex shrink-0 items-center gap-2 text-content-muted", controlTextClasses.compact)}>
-                      <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
-                      <span className="inline-flex items-center gap-1"><Users className={controlIconClasses.compact} />{topic.participant_count}</span>
-                    </span>
-                  )}
-                  trailing={(
-                    <span className={cn("inline-flex items-center gap-1 tabular-nums text-content-muted", controlTextClasses.compact)}>
-                      {relativeActivity(topic.last_activity_at)}
-                      <ChevronRight className={cn(controlIconClasses.regular, "text-content-muted transition-transform group-hover/item:translate-x-0.5")} />
-                    </span>
-                  )}
-                  className={cn(
-                    "border-b-0",
-                    !selected && "bg-zinc-900/45 hover:bg-zinc-900/80",
-                  )}
+                  onOpen={() => selectDiscussion(topic.root.msg_id)}
                 />
               );
             })}

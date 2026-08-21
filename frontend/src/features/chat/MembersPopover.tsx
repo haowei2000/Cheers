@@ -1,12 +1,67 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { useEffect, useState } from "react";
-import { Users, Bot, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AtSign, Bot, MessageCircle, Settings, UserRound, Users } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
 import { PopoverPanel } from "@/components/ui/popover";
 import { EntityItem, ItemList, OperationsItem } from "@/components/ui/item";
 import { useProfileCard } from "./ProfileHovercard";
 import type { MemberItem } from "@/types";
+import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
+
+function MemberRow({
+  member,
+  currentUserId,
+  onOpenProfile,
+  onMention,
+  onStartDm,
+}: {
+  member: MemberItem;
+  currentUserId?: string;
+  onOpenProfile: (anchor: HTMLElement, member: MemberItem) => void;
+  onMention?: (member: MemberItem) => void;
+  onStartDm?: (member: MemberItem) => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const name = member.display_name || member.username || member.member_id.slice(0, 8);
+  const isSelf = member.member_id === currentUserId;
+  const openProfile = () => {
+    const anchor = surfaceRef.current;
+    if (anchor) onOpenProfile(anchor, member);
+  };
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => [
+      { id: "profile", label: "View profile", icon: <UserRound className="h-4 w-4" />, run: openProfile },
+      ...(!isSelf && onMention ? [{ id: "mention", label: `Mention @${name}`, icon: <AtSign className="h-4 w-4" />, group: "secondary", run: () => onMention(member) } satisfies ContextAction] : []),
+      ...(!isSelf && onStartDm ? [{ id: "dm", label: "Start direct message", icon: <MessageCircle className="h-4 w-4" />, run: () => onStartDm(member) } satisfies ContextAction] : []),
+    ],
+  });
+  return (
+    // Context-menu gestures are delegated to the semantic EntityItem button.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      ref={surfaceRef}
+      role="group"
+      onContextMenu={contextSurface.onContextMenu}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      <EntityItem
+        onClick={openProfile}
+        title={name}
+        leading={<Avatar name={name} src={member.avatar_url ?? undefined} id={member.member_id} size="regular" online={member.is_online ?? undefined} />}
+        status={member.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-accent-400" /> : undefined}
+        trailing={member.role && member.role !== "member" ? <span className="text-minimal capitalize text-content-muted">{member.role}</span> : undefined}
+      />
+    </div>
+  );
+}
 
 /**
  * Header "Members" dropdown — the quick answer to "who is in this channel?".
@@ -23,11 +78,17 @@ export function MembersPopover({
   isDm,
   onManage,
   onClose,
+  currentUserId,
+  onMention,
+  onStartDm,
 }: {
   channelId: string;
   isDm: boolean;
   onManage: () => void;
   onClose: () => void;
+  currentUserId?: string;
+  onMention?: (member: MemberItem) => void;
+  onStartDm?: (member: MemberItem) => void;
 }) {
   const [members, setMembers] = useState<MemberItem[] | null>(null);
   const card = useProfileCard();
@@ -59,23 +120,17 @@ export function MembersPopover({
             <OperationsItem title="No members found" />
           ) : (
             members.map((m) => {
-              const name = m.display_name || m.username || m.member_id.slice(0, 8);
               return (
-                <EntityItem
+                <MemberRow
                   key={m.member_id}
-                  onClick={(e) => {
-                    // Close this popover before opening the hovercard so the two
-                    // transient layers never stack (one popover at a time). The
-                    // rect is captured synchronously here, so the anchor unmounting
-                    // right after is fine — mirrors the "Manage members…" pattern.
-                    const anchor = e.currentTarget;
+                  member={m}
+                  currentUserId={currentUserId}
+                  onOpenProfile={(anchor, member) => {
                     onClose();
-                    card?.open(anchor, m);
+                    card?.open(anchor, member);
                   }}
-                  title={name}
-                  leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="regular" online={m.is_online ?? undefined} />}
-                  status={m.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-accent-400" /> : undefined}
-                  trailing={m.role && m.role !== "member" ? <span className="text-minimal capitalize text-content-muted">{m.role}</span> : undefined}
+                  onMention={onMention}
+                  onStartDm={onStartDm}
                 />
               );
             })

@@ -1,7 +1,8 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import { useState } from "react";
-import { Plus, Menu, Radio, Settings } from "lucide-react";
+import { useRef, useState } from "react";
+import { FolderOpen, LogOut, Plus, Menu, Radio, Settings } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
@@ -16,6 +17,9 @@ import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
+import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { leaveChannel } from "@/api/channels";
 
 interface SectionProps {
   label: string;
@@ -54,9 +58,12 @@ interface ChannelItemProps {
   selected: boolean;
   onClick: () => void;
   voicePresence?: VoicePresenceSnapshot;
+  onSettings?: () => void;
+  onLeave?: () => void;
 }
 
-function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemProps) {
+function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, onLeave }: ChannelItemProps) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const voiceEnabled = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
   const participants = voicePresence?.participants ?? [];
   const unread = (channel.mention_count ?? 0) > 0 ? (
@@ -73,8 +80,30 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
       {channel.unread_count}
     </UnreadBadge>
   ) : null;
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => [
+      { id: "open", label: "Open", icon: <FolderOpen className="h-4 w-4" />, run: onClick },
+      ...(onSettings ? [{ id: "settings", label: "Channel settings", icon: <Settings className="h-4 w-4" />, group: "secondary", run: onSettings } satisfies ContextAction] : []),
+      ...(onLeave ? [{ id: "leave", label: "Leave channel", icon: <LogOut className="h-4 w-4" />, group: "danger", run: onLeave } satisfies ContextAction] : []),
+    ],
+  });
   return (
-    <ItemGroup>
+    // Context-menu gestures are delegated to the semantic ItemRow button.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      ref={surfaceRef}
+      role="group"
+      onContextMenu={contextSurface.onContextMenu}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      <ItemGroup>
       <ItemRow
         kind="navigation"
         onClick={onClick}
@@ -83,7 +112,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
         leading={channel.avatar_url ? (
           <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
         ) : (
-          <EditorialIcon name="section" contentSize="regular" className="flex-shrink-0 opacity-70" />
+          <EditorialIcon
+            name={channel.type === "dm" ? "correspondence" : "section"}
+            contentSize="regular"
+            className="flex-shrink-0 opacity-70"
+          />
         )}
         status={voiceEnabled ? (
           <span className={cn(controlTextClasses.compact, "inline-flex items-center gap-1 tabular-nums", participants.length > 0 ? "text-success-400" : "text-content-muted")}>
@@ -116,7 +149,8 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
           ))}
         </div>
       )}
-    </ItemGroup>
+      </ItemGroup>
+    </div>
   );
 }
 
@@ -135,6 +169,8 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
     selectChannel,
     selectedWorkspaceId,
     voicePresenceByChannel,
+    setChannels,
+    requestChannelSettings,
   } = useChatStore(
     useShallow((state) => ({
       channels: state.channels,
@@ -142,11 +178,15 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
       selectChannel: state.selectChannel,
       selectedWorkspaceId: state.selectedWorkspaceId,
       voicePresenceByChannel: state.voicePresenceByChannel,
+      setChannels: state.setChannels,
+      requestChannelSettings: state.requestChannelSettings,
     })),
   );
   const [dmOpen, setDmOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
+  const [leaveTarget, setLeaveTarget] = useState<Channel | null>(null);
+  const [leaving, setLeaving] = useState(false);
   // Only team workspaces have a settings panel (the personal workspace isn't managed).
   const canOpenSettings = !!workspace && workspace.kind !== "personal";
   // DMs are consolidated into the personal workspace; team workspaces list only
@@ -163,6 +203,25 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   const pick = (id: string) => {
     selectChannel(id);
     onChannelSelected?.();
+  };
+  const openSettings = (channel: Channel) => {
+    pick(channel.channel_id);
+    requestChannelSettings(channel.channel_id);
+  };
+  const confirmLeave = async () => {
+    if (!leaveTarget) return;
+    setLeaving(true);
+    try {
+      await leaveChannel(leaveTarget.channel_id);
+      setChannels(channels.filter((channel) => channel.channel_id !== leaveTarget.channel_id));
+      if (selectedChannelId === leaveTarget.channel_id) selectChannel(null);
+      toast.success(`Left ${leaveTarget.name}`);
+      setLeaveTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to leave channel");
+    } finally {
+      setLeaving(false);
+    }
   };
 
   return (
@@ -206,6 +265,8 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
               selected={selectedChannelId === ch.channel_id}
               onClick={() => pick(ch.channel_id)}
               voicePresence={voicePresenceByChannel[ch.channel_id]}
+              onSettings={() => openSettings(ch)}
+              onLeave={ch.is_member === false ? undefined : () => setLeaveTarget(ch)}
             />
           ))}
         </Section>
@@ -219,6 +280,8 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 selected={selectedChannelId === ch.channel_id}
                 onClick={() => pick(ch.channel_id)}
                 voicePresence={voicePresenceByChannel[ch.channel_id]}
+                onSettings={() => openSettings(ch)}
+                onLeave={() => setLeaveTarget(ch)}
               />
             ))}
           </Section>
@@ -229,14 +292,11 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         {isPersonal && (
           <Section label="Direct Messages" addLabel="New direct message" onAdd={() => setDmOpen(true)}>
             {dms.map((ch) => (
-              <ItemRow
+              <ChannelItem
                 key={ch.channel_id}
-                onClick={() => pick(ch.channel_id)}
-                kind="navigation"
+                channel={{ ...ch, name: ch.peer_name || ch.name || "Direct Message" }}
                 selected={selectedChannelId === ch.channel_id}
-                title={ch.peer_name || ch.name || "Direct Message"}
-                leading={<EditorialIcon name="correspondence" contentSize="regular" className="flex-shrink-0 opacity-70" />}
-                className="rounded-sm border-0"
+                onClick={() => pick(ch.channel_id)}
               />
             ))}
           </Section>
@@ -257,6 +317,18 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           workspace={workspace}
           onClose={() => setWsSettingsOpen(false)}
         />
+      )}
+      {leaveTarget && (
+        <ConfirmDialog
+          title="Leave channel?"
+          confirmAction="leave"
+          confirmLabel="Leave channel"
+          busy={leaving}
+          onConfirm={() => void confirmLeave()}
+          onClose={() => !leaving && setLeaveTarget(null)}
+        >
+          You will leave <strong className="text-content-primary">{leaveTarget.name}</strong> and it will be removed from this sidebar.
+        </ConfirmDialog>
       )}
     </div>
   );
