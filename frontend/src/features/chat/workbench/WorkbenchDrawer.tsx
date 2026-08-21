@@ -609,7 +609,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
               aria-pressed={rawMode}
               title={rawMode ? "Show scenes" : "Show raw workspace files"}
-              controlSize={workbenchControlSize.toolbar} className={cn(
+              controlSize={workbenchControlSize.chrome} className={cn(
  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
  rawMode
  ? "bg-indigo-500/15 text-accent-200": "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
@@ -627,7 +627,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 action="upload"
                 context="toolbar"
                 wideLabel="Load extension"
-                controlSize={workbenchControlSize.toolbar}
+                controlSize={workbenchControlSize.chrome}
                 onClick={() => fileRef.current?.click()}
                 disabled={busy}
                 aria-label="Load template or extension"
@@ -646,7 +646,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     action="stop"
                     context="toolbar"
                     wideLabel="Stop watching"
-                    controlSize={workbenchControlSize.toolbar}
+                    controlSize={workbenchControlSize.chrome}
                     onClick={stopWatch}
                     aria-label={`Stop watching ${watching}`}
                     title="Stop watching extension"
@@ -663,7 +663,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     action="watch"
                     context="toolbar"
                     wideLabel="Watch extension"
-                    controlSize={workbenchControlSize.toolbar}
+                    controlSize={workbenchControlSize.chrome}
                     onClick={() => void startWatch()}
                     disabled={busy}
                     aria-label="Watch an extension file on disk"
@@ -680,6 +680,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     <ActionButton
                       action="pin"
                       context="toolbar"
+                      controlSize={workbenchControlSize.chrome}
                       onClick={() => setPinMenu((o) => !o)}
                       aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
                       aria-expanded={pinMenu}
@@ -803,6 +804,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 legacyEnvironment={cfg.environment}
                 templates={allEnvs}
                 onAddScene={activate}
+                onShowRaw={() => setRawMode(true)}
               />
             ))}
           </div>

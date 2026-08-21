@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ContextActionsProvider } from "@/components/ui/context-actions";
 import { createRoot, type Root } from "react-dom/client";
 import { Folder, LayoutGrid, Maximize2, X } from "lucide-react";
 import "@/index.css";
@@ -88,11 +89,12 @@ const templates: TemplateManifest[] = [{
   views: [],
 }];
 
+const installedTemplates = templates.slice(0, 2);
 const sceneState: WorkbenchSceneState = {
   version: 1,
-  order: templates.map((template) => template.id),
-  titles: Object.fromEntries(templates.map((template) => [template.id, template.title])),
-  items: Object.fromEntries(templates.map((template) => [template.id, template.views.map((view) => view.file)])),
+  order: installedTemplates.map((template) => template.id),
+  titles: Object.fromEntries(installedTemplates.map((template) => [template.id, template.title])),
+  items: Object.fromEntries(installedTemplates.map((template) => [template.id, template.views.map((view) => view.file)])),
 };
 
 localStorage.setItem("cheers.workbench.preview.scene", "cheers-code-project");
@@ -124,7 +126,8 @@ const context: WorkbenchContext = {
 
 function Preview() {
   return (
-    <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-content-primary">
+    <ContextActionsProvider>
+      <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-content-primary">
       <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-sm bg-zinc-900 shadow-2xl shadow-black/50">
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <LayoutGrid className="h-4 w-4 text-accent-300" />
@@ -142,10 +145,12 @@ function Preview() {
             sceneState={sceneState}
             templates={templates}
             onAddScene={async () => true}
+            onShowRaw={() => undefined}
           />
         </div>
       </section>
-    </main>
+      </main>
+    </ContextActionsProvider>
   );
 }
 

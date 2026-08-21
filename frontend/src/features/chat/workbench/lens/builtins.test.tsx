@@ -1,13 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { inferColumns, parseCodemap, updateRowCell, codemapLayout } from "./builtins";
-import { getLens } from "./registry";
+import { inferColumns, parseCodemap, tableRowContextLabel, updateRowCell, codemapLayout } from "./builtins";
+import { getLens, lensIds } from "./registry";
 import "./builtins"; // side effect: register the lenses under test
 
 // The registry only OFFERS the table for arrays of plain objects, but the lens can
 // still receive anything (template bindings, files edited after binding) — these are
 // the lens's own last-line guards against crashing or corrupting the file.
 describe("table lens row guards", () => {
+  it("uses the first non-empty business field as the row context label", () => {
+    const columns = [{ key: "run", label: "Run" }, { key: "status", label: "Status" }];
+    expect(tableRowContextLabel({ run: "baseline", status: "queued" }, columns, 0)).toBe("baseline");
+    expect(tableRowContextLabel(null, columns, 1)).toBe("Row 2");
+  });
+
   it("inferColumns unions keys across plain-object rows, first-seen order", () => {
     expect(inferColumns([{ a: 1 }, { b: 2, a: 3 }])).toEqual([
       { key: "a", label: "a" },
@@ -131,5 +137,23 @@ describe("read-only lenses hide their edit affordances", () => {
   it("markdown renders a non-editable textarea", () => {
     expect(render("markdown", "# hi", true)).toMatch(/readonly/i);
     expect(render("markdown", "# hi", false)).not.toMatch(/readonly/i);
+  });
+});
+
+describe("official built-in lens context contract", () => {
+  it("requires granular context conversion from every registered lens", () => {
+    expect(lensIds().sort()).toEqual(["chart", "codemap", "kanban", "markdown", "table"]);
+    for (const id of lensIds()) expect(getLens(id)?.contextPick).toBe("granular");
+  });
+
+  it("marks every built-in semantic item as a context target", () => {
+    const render = (id: string, data: unknown) => renderToStaticMarkup(
+      <>{getLens(id)!.render({ data, config: undefined, onChange: () => {}, requestContextPick: () => {} })}</>,
+    );
+    expect(render("table", [{ run: "baseline" }])).toContain('data-workbench-context-target="row"');
+    expect(render("kanban", { columns: [{ name: "Todo", items: ["ship"] }] })).toContain('data-workbench-context-target="card"');
+    expect(render("markdown", "# Notes")).toContain('data-workbench-context-target="markdown"');
+    expect(render("chart", { series: [{ name: "loss", points: [[1, 0.5]] }] })).toContain('data-workbench-context-target="chart-point"');
+    expect(render("codemap", { codemap: 1, nodes: { api: { label: "API" } }, edges: [] })).toContain('data-workbench-context-target="codemap-node"');
   });
 });

@@ -53,6 +53,7 @@ export function RendererHost({
         extension={extension}
         rendererId={renderer.rendererId ?? ""}
         path={path}
+        channelId={ctx.channelId}
         readChannel={readChannel}
         onOpen={ctx.openLocator}
         onCompose={ctx.composeMessage}
@@ -73,5 +74,5 @@ export function RendererHost({
   // the LensPanel — a fresh instance resets its `dirty`/`seenTick` refs and useFile
   // state. Without this, a stale `dirty` carried over from an unsaved edit in another
   // file permanently gates live-push reload on a view-only lens (e.g. the metrics chart).
-  return <LensPanel key={`${renderer.id}:${path}`} fs={ctx.fs} view={view} reloadTick={ctx.filesTick} />;
+  return <LensPanel key={`${renderer.id}:${path}`} fs={ctx.fs} view={view} channelId={ctx.channelId} reloadTick={ctx.filesTick} />;
 }

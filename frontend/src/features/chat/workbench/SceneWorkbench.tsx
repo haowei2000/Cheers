@@ -1,18 +1,36 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
-import { Tip } from "@/components/ui/tip";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { TabOption } from "@/components/ui/tab-option";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
   CheckSquare2,
   Code2,
   FileQuestion,
+  Folder,
   FolderPlus,
   LayoutGrid,
+  Paperclip,
   Server,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import {
+  pointRect,
+  preservesNativeContextMenu,
+  useContextActions,
+  useContextSurface,
+  type ContextAction,
+} from "@/components/ui/context-actions";
+import {
+  rangedFileContextItem,
+  selectionLineRange,
+  useContextPickStore,
+  usePendingContext,
+  workbenchFileContextItem,
+} from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import type { TemplateManifest } from "./manifest";
@@ -35,6 +53,108 @@ function metaFor(id: string) {
   return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-content-secondary" };
 }
 
+export function sceneTabContextActions(
+  label: string,
+  onSelect: () => void,
+  onShowRaw: () => void,
+  onAddToContext: () => void,
+  contextAdded = false,
+  contextAvailable = true,
+): ContextAction[] {
+  return [
+    {
+      id: "open-scene",
+      label: `Open ${label}`,
+      icon: <LayoutGrid className="h-4 w-4" />,
+      run: onSelect,
+    },
+    {
+      id: "add-context",
+      label: !contextAvailable
+        ? "No scene files to add"
+        : contextAdded
+          ? "Already added to context"
+          : "Add scene to context",
+      icon: <Paperclip className="h-4 w-4" />,
+      disabled: !contextAvailable || contextAdded,
+      group: "secondary",
+      run: onAddToContext,
+    },
+    {
+      id: "raw",
+      label: "Raw",
+      icon: <Folder className="h-4 w-4" />,
+      group: "secondary",
+      run: onShowRaw,
+    },
+  ];
+}
+
+function SceneTab({
+  label,
+  Icon,
+  iconColor,
+  selected,
+  compact,
+  onSelect,
+  onShowRaw,
+  onAddToContext,
+  contextAdded,
+  contextAvailable,
+}: {
+  label: string;
+  Icon: typeof Code2;
+  iconColor: string;
+  selected: boolean;
+  compact: boolean;
+  onSelect: () => void;
+  onShowRaw: () => void;
+  onAddToContext: () => void;
+  contextAdded: boolean;
+  contextAvailable: boolean;
+}) {
+  const surfaceRef = useRef<HTMLButtonElement>(null);
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => sceneTabContextActions(label, onSelect, onShowRaw, onAddToContext, contextAdded, contextAvailable),
+  });
+  const contextHandlers = {
+    onContextMenu: contextSurface.onContextMenu,
+    onKeyDown: contextSurface.onKeyDown,
+    onPointerDown: contextSurface.onPointerDown,
+    onPointerMove: contextSurface.onPointerMove,
+    onPointerUp: contextSurface.onPointerUp,
+    onPointerCancel: contextSurface.onPointerCancel,
+    onPointerLeave: contextSurface.onPointerLeave,
+    onClickCapture: contextSurface.onClickCapture,
+  };
+
+  return compact ? (
+    <TabOption
+      ref={surfaceRef}
+      label={label}
+      leading={<Icon className={cn("h-4 w-4", selected && iconColor)} />}
+      selected={selected}
+      onClick={onSelect}
+      controlSize={workbenchControlSize.tab}
+      className="flex-shrink-0"
+      {...contextHandlers}
+    />
+  ) : (
+    <MenuOption
+      ref={surfaceRef}
+      role="tab"
+      aria-selected={selected}
+      label={label}
+      leading={<Icon className={cn("h-4 w-4", selected && iconColor)} />}
+      selected={selected}
+      onClick={onSelect}
+      controlSize={workbenchControlSize.navigation}
+      {...contextHandlers}
+    />
+  );
+}
+
 function AddSceneControl({
   available,
   onSelect,
@@ -45,30 +165,20 @@ function AddSceneControl({
   if (available.length === 0) return null;
 
   return (
-    <div className="relative flex-shrink-0">
-      <FolderPlus
-        className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-content-secondary"
-        aria-hidden="true"
+    <DropdownSelect
+        ariaLabel="Add scene"
+        label="Add scene"
+        leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
+        options={available.map((template) => ({ value: template.id, label: template.title }))}
+        onSelect={(value) => {
+          const manifest = available.find((candidate) => candidate.id === value);
+          if (manifest) onSelect(manifest);
+        }}
+        placement="up"
+        controlSize={workbenchControlSize.tab}
+        controlWidth="fill"
+        className="flex-shrink-0"
       />
-      <Tip content="Add a scene" align="end">
-        <UiSelect
-          aria-label="Add scene"
-          title="Add scene"
-          defaultValue=""
-          onChange={(event) => {
-            const manifest = available.find((candidate) => candidate.id === event.target.value);
-            if (manifest) onSelect(manifest);
-            event.currentTarget.value = "";
-          }}
-          controlSize={workbenchControlSize.tab}
-          controlWidth="icon"
-          className="cursor-pointer appearance-none bg-zinc-900 text-transparent hover:bg-zinc-800"
-        >
-          <option value="" disabled className="text-content-primary">Add scene</option>
-          {available.map((template) => <option className="text-content-primary" key={template.id} value={template.id}>{template.title}</option>)}
-        </UiSelect>
-      </Tip>
-    </div>
   );
 }
 
@@ -80,6 +190,143 @@ function fallbackItemTitle(path: string) {
   const file = basename(path);
   const stem = file.includes(".") ? file.slice(0, file.lastIndexOf(".")) : file;
   return stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ItemTab({
+  label,
+  selected,
+  contextAdded,
+  onSelect,
+  onAddToContext,
+}: {
+  label: string;
+  selected: boolean;
+  contextAdded: boolean;
+  onSelect: () => void;
+  onAddToContext: () => void;
+}) {
+  const surfaceRef = useRef<HTMLButtonElement>(null);
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => [{
+      id: "add-context",
+      label: contextAdded ? "Already added to context" : "Add to context",
+      icon: <Paperclip className="h-4 w-4" />,
+      disabled: contextAdded,
+      run: onAddToContext,
+    }],
+  });
+
+  return (
+    <UiButton
+      ref={surfaceRef}
+      variant="plain"
+      role="tab"
+      aria-selected={selected}
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? "page" : undefined}
+      controlSize={workbenchControlSize.tab}
+      className={cn(
+        "relative flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+        selected ? "text-accent-300" : "text-content-primary hover:text-content-strong",
+      )}
+      onContextMenu={contextSurface.onContextMenu}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      {label}
+      {selected && <span data-design-system-exempt="progress" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
+    </UiButton>
+  );
+}
+
+function ContextPickSurface({
+  channelId,
+  path,
+  content,
+  children,
+  onAdded,
+}: {
+  channelId: string;
+  path: string;
+  content: string;
+  children: ReactNode;
+  onAdded: (label: string) => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const { open } = useContextActions();
+  const addContext = useContextPickStore((state) => state.add);
+  const picked = usePendingContext(channelId);
+  const item = workbenchFileContextItem(path);
+  const added = picked.some((candidate) => candidate.id === item.id);
+  const actions = () => [{
+    id: "add-context",
+    label: added ? "Already added to context" : "Add to context",
+    icon: <Paperclip className="h-4 w-4" />,
+    disabled: added,
+    run: () => {
+      addContext(channelId, item);
+      onAdded(item.label);
+    },
+  } satisfies ContextAction];
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions,
+    selectionActions: (selection) => {
+      const range = selectionLineRange(content, selection.text);
+      return [{
+        id: "add-lines",
+        label: "Add selected lines to context",
+        icon: <Paperclip className="h-4 w-4" />,
+        disabled: !range,
+        run: () => {
+          if (!range) throw new Error("The selected text could not be mapped to file lines");
+          const ranged = rangedFileContextItem(path, range.start, range.end);
+          addContext(channelId, ranged);
+          onAdded(ranged.label);
+        },
+      } satisfies ContextAction];
+    },
+  });
+
+  const onContextMenuCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest("[data-workbench-context-target]")) return;
+    if (!preservesNativeContextMenu(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    open({
+      actions: actions(),
+      anchor: pointRect(event.clientX, event.clientY),
+      source: "pointer",
+      restoreFocus: event.target instanceof HTMLElement ? event.target : surfaceRef.current,
+    });
+  };
+
+  return (
+    <div
+      ref={surfaceRef}
+      className="h-full min-h-0"
+      tabIndex={0}
+      onContextMenuCapture={onContextMenuCapture}
+      onContextMenu={contextSurface.onContextMenu}
+      onMouseUp={contextSurface.onMouseUp}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function reconcileSceneItems(
@@ -159,12 +406,14 @@ export function SceneWorkbench({
   legacyEnvironment,
   templates,
   onAddScene,
+  onShowRaw,
 }: {
   ctx: WorkbenchContext;
   sceneState?: WorkbenchSceneState;
   legacyEnvironment?: string | null;
   templates: TemplateManifest[];
   onAddScene: (manifest: TemplateManifest) => Promise<boolean>;
+  onShowRaw: () => void;
 }) {
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [contents, setContents] = useState<Record<string, string>>({});
@@ -180,6 +429,9 @@ export function SceneWorkbench({
     () => localStorage.getItem(`${storagePrefix}.scene`) || reconciled.order[0] || ""
   );
   const [selectedByScene, setSelectedByScene] = useState<Record<string, string>>({});
+  const addContext = useContextPickStore((state) => state.add);
+  const picked = usePendingContext(ctx.channelId);
+  const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -267,6 +519,21 @@ export function SceneWorkbench({
     localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
   };
 
+  const addPathToContext = (path: string) => {
+    const item = workbenchFileContextItem(path);
+    addContext(ctx.channelId, item);
+    setStatus(`Added ${item.label} to context`);
+  };
+
+  const addSceneToContext = (id: string) => {
+    const paths = id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [];
+    const existingPaths = paths.filter((path) => existing.has(path));
+    for (const path of existingPaths) addContext(ctx.channelId, workbenchFileContextItem(path));
+    if (existingPaths.length) {
+      setStatus(`Added ${existingPaths.length} ${existingPaths.length === 1 ? "file" : "files"} to context`);
+    }
+  };
+
   useEffect(() => {
     const target = ctx.openTarget;
     if (!target || !renderers[target]) return;
@@ -315,23 +582,31 @@ export function SceneWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-950/30">
-      <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden">
+      <div
+        role="tablist"
+        aria-label="Scenes"
+        className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden"
+      >
         {sceneIds.map((id) => {
           const meta = metaFor(id);
-          const Icon = meta.Icon;
+          const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+          const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
+            .filter((path) => existing.has(path));
           return (
-            <UiButton content="iconText" variant="plain" role="tab" aria-selected={activeScene === id}
+            <SceneTab
               key={id}
-              type="button"
-              onClick={() => setActiveScene(id)}
-              controlSize={workbenchControlSize.tab} className={cn(
- "flex flex-shrink-0 items-center gap-2 rounded-sm  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- activeScene === id ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
- )}
-            >
-              <Icon className="h-4 w-4" />
-              {id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id}
-            </UiButton>
+              label={label}
+              Icon={meta.Icon}
+              iconColor={meta.color}
+              selected={activeScene === id}
+              compact
+              onSelect={() => setActiveScene(id)}
+              onShowRaw={onShowRaw}
+              onAddToContext={() => addSceneToContext(id)}
+              contextAdded={contextPaths.length > 0
+                && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+              contextAvailable={contextPaths.length > 0}
+            />
           );
         })}
         <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
@@ -339,24 +614,28 @@ export function SceneWorkbench({
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
           <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-overline text-content-muted">Scenes</div>
-          <div className="space-y-1">
+          <div role="tablist" aria-label="Scenes" aria-orientation="vertical" className="space-y-1">
             {sceneIds.map((id) => {
               const meta = metaFor(id);
-              const Icon = meta.Icon;
               const selected = activeScene === id;
+              const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+              const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
+                .filter((path) => existing.has(path));
               return (
-                <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={selected}
+                <SceneTab
                   key={id}
-                  type="button"
-                  onClick={() => setActiveScene(id)}
-                  controlSize={workbenchControlSize.navigation} className={cn(
- "flex items-center gap-2 rounded-sm text-left  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- selected ? "bg-indigo-500/15 text-accent-200": "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
- )}
-                >
-                  <Icon className={cn("h-4 w-4 flex-shrink-0", selected && meta.color)} />
-                  <span className="min-w-0 truncate">{id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id}</span>
-                </UiButton>
+                  label={label}
+                  Icon={meta.Icon}
+                  iconColor={meta.color}
+                  selected={selected}
+                  compact={false}
+                  onSelect={() => setActiveScene(id)}
+                  onShowRaw={onShowRaw}
+                  onAddToContext={() => addSceneToContext(id)}
+                  contextAdded={contextPaths.length > 0
+                    && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+                  contextAvailable={contextPaths.length > 0}
+                />
               );
             })}
           </div>
@@ -371,47 +650,51 @@ export function SceneWorkbench({
               {activePaths.map((path) => {
                 const selected = path === selectedPath;
                 return (
-                  <UiButton variant="plain" role="tab" aria-selected={selected}
+                  <ItemTab
                     key={path}
-                    type="button"
-                    onClick={() => selectPath(path)}
-                    aria-current={selected ? "page" : undefined}
-                    controlSize={workbenchControlSize.tab} className={cn(
- "relative flex-shrink-0  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
- selected ? "text-accent-300": "text-content-primary hover:text-content-strong"
- )}
-                  >
-                    {itemTitle(activeScene, path, templates)}
-                    {selected && <span data-design-system-exempt="progress" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
-                  </UiButton>
+                    label={itemTitle(activeScene, path, templates)}
+                    selected={selected}
+                    onSelect={() => selectPath(path)}
+                    onAddToContext={() => addPathToContext(path)}
+                    contextAdded={pickedIds.has(workbenchFileContextItem(path).id)}
+                  />
                 );
               })}
             </nav>
           )}
           <div className="min-h-0 flex-1 overflow-hidden">
-            {selectedPath && renderers[selectedPath] ? (
-              <RendererHost
-                ctx={ctx}
+            {selectedPath ? (
+              <ContextPickSurface
+                channelId={ctx.channelId}
                 path={selectedPath}
-                renderer={renderers[selectedPath]}
-                config={ctx.configs[selectedPath]}
-                onFailure={(rendererId, reason) => {
-                  setFailedRenderers((current) => ({
-                    ...current,
-                    [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
-                  }));
-                  if (contents[selectedPath] === undefined) {
-                    void ctx.fs.read(selectedPath).then((file) =>
-                      setContents((current) => ({ ...current, [selectedPath]: file.content }))
-                    ).catch(() => undefined);
-                  }
-                  setStatus(`${renderers[selectedPath].title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
-                }}
-              />
-            ) : selectedPath ? (
-              <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
-                {contents[selectedPath] ?? "Loading Raw content…"}
-              </pre>
+                content={contents[selectedPath] ?? ""}
+                onAdded={(label) => setStatus(`Added ${label} to context`)}
+              >
+                {renderers[selectedPath] ? (
+                  <RendererHost
+                    ctx={ctx}
+                    path={selectedPath}
+                    renderer={renderers[selectedPath]}
+                    config={ctx.configs[selectedPath]}
+                    onFailure={(rendererId, reason) => {
+                      setFailedRenderers((current) => ({
+                        ...current,
+                        [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                      }));
+                      if (contents[selectedPath] === undefined) {
+                        void ctx.fs.read(selectedPath).then((file) =>
+                          setContents((current) => ({ ...current, [selectedPath]: file.content }))
+                        ).catch(() => undefined);
+                      }
+                      setStatus(`${renderers[selectedPath].title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
+                    }}
+                  />
+                ) : (
+                  <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
+                    {contents[selectedPath] ?? "Loading Raw content…"}
+                  </pre>
+                )}
+              </ContextPickSurface>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
                 <FileQuestion className="h-5 w-5 text-content-muted" />

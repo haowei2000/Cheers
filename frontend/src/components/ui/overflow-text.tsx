@@ -18,7 +18,7 @@ export type OverflowStrategy = "singleLine" | "wrap" | "horizontalScroll";
 export interface OverflowTextProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
   fullText: string;
   strategy?: OverflowStrategy;
-  reveal?: "auto" | "none";
+  reveal?: "auto" | "always" | "none";
   children?: ReactNode;
   onOverflowChange?: (overflowing: boolean) => void;
   /** ItemRow owns its separate touch disclosure action. */
@@ -48,8 +48,8 @@ export function OverflowText({
     const next = node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1;
     setOverflowing(next);
     onOverflowChange?.(next);
-    if (!next) setOpen(false);
-  }, [onOverflowChange]);
+    if (!next && reveal !== "always") setOpen(false);
+  }, [onOverflowChange, reveal]);
 
   useEffect(() => {
     measure();
@@ -76,7 +76,7 @@ export function OverflowText({
     };
   }, [open]);
 
-  const canReveal = reveal === "auto" && overflowing;
+  const canReveal = reveal === "always" || (reveal === "auto" && overflowing);
   const showLater = () => {
     if (!canReveal) return;
     window.clearTimeout(hoverTimer.current);

@@ -27,6 +27,8 @@ describe("renderer document", () => {
     }, "demo");
     expect(document).toContain("margin:0;}\n.demo{color:red}");
     expect(document).toContain("automation.create");
+    expect(document).toContain("context.pick");
+    expect(document).toContain("Renderer must implement toContext(target)");
     expect(document).toContain("lifecycle.dispose");
   });
 });

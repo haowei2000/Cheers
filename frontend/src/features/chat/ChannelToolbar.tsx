@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LayoutGrid, Settings, Users } from "lucide-react";
+import { Check, LayoutGrid, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { PresenceDot } from "@/components/ui/presence-dot";
@@ -7,6 +7,7 @@ import { usePopoverDismiss } from "@/components/ui/popover";
 import { MembersPopover } from "./MembersPopover";
 import { PopoverPanel } from "@/components/ui/popover";
 import { MenuOption } from "@/components/ui/menu-option";
+import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
 import { LANE_WINDOWS } from "@/features/chat/panels/laneWindows";
 import type { PanelContribution } from "@/features/chat/panels/registry";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
@@ -44,6 +45,7 @@ export function ChannelToolbar(props: Props) {
 
   const [panelsOpen, setPanelsOpen] = useState(false);
   const panelsRootRef = useRef<HTMLDivElement>(null);
+  const panelsButtonRef = useRef<HTMLButtonElement>(null);
   const closePanels = useCallback(() => setPanelsOpen(false), []);
   usePopoverDismiss(panelsOpen, closePanels, panelsRootRef);
   useEffect(() => setPanelsOpen(false), [props.channelId]);
@@ -63,6 +65,45 @@ export function ChannelToolbar(props: Props) {
     workbench: props.onToggleWorkbench,
   };
   const openCount = LANE_WINDOWS.filter((w) => windowOpen[w.id]).length;
+  const panelContextSurface = useContextSurface({
+    surfaceRef: panelsButtonRef,
+    actions: () => {
+      const actions: ContextAction[] = [
+        {
+          id: "open-picker",
+          label: "Open panels picker",
+          icon: <LayoutGrid className="h-4 w-4" />,
+          run: () => setPanelsOpen(true),
+        },
+      ];
+      for (const { id, title, icon: Icon } of LANE_WINDOWS) {
+        actions.push({
+          id: `toggle-${id}`,
+          label: `${windowOpen[id] ? "Hide" : "Show"} ${title}`,
+          icon: windowOpen[id] ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />,
+          group: "secondary",
+          run: () => {
+            closePanels();
+            toggleWindow[id]();
+          },
+        });
+      }
+      for (const board of props.boards) {
+        const Icon = board.icon;
+        actions.push({
+          id: `board-${board.id}`,
+          label: `Open ${board.title}`,
+          icon: Icon ? <Icon className="h-4 w-4" /> : undefined,
+          group: "secondary",
+          run: () => {
+            props.onOpenBoard(board.id);
+            closePanels();
+          },
+        });
+      }
+      return actions;
+    },
+  });
 
   return (
     <>
@@ -106,8 +147,17 @@ export function ChannelToolbar(props: Props) {
           lives behind the ViewBoard tab strip. */}
       <div className="relative" ref={panelsRootRef}>
         <Button
+          ref={panelsButtonRef}
           variant="plain"
           onClick={() => setPanelsOpen((open) => !open)}
+          onContextMenu={panelContextSurface.onContextMenu}
+          onKeyDown={panelContextSurface.onKeyDown}
+          onPointerDown={panelContextSurface.onPointerDown}
+          onPointerMove={panelContextSurface.onPointerMove}
+          onPointerUp={panelContextSurface.onPointerUp}
+          onPointerCancel={panelContextSurface.onPointerCancel}
+          onPointerLeave={panelContextSurface.onPointerLeave}
+          onClickCapture={panelContextSurface.onClickCapture}
           title="Panels"
           aria-label="Panels"
           aria-expanded={panelsOpen}

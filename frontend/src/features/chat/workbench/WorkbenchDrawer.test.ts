@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCfg } from "./WorkbenchDrawer";
-import { reconcileSceneItems } from "./SceneWorkbench";
+import { reconcileSceneItems, sceneTabContextActions } from "./SceneWorkbench";
 
 describe("workbench scene config", () => {
   it("preserves native multi-scene navigation state", () => {
@@ -52,5 +52,40 @@ describe("reconcileSceneItems", () => {
     expect(state.order).toEqual(["cheers-code-project", "custom"]);
     expect(state.items["cheers-code-project"]).toEqual(["dev/plan.yaml", "codemap/map.yaml"]);
     expect(state.items.custom).toEqual(["custom/view.md"]);
+  });
+});
+
+describe("scene context actions", () => {
+  it("switches from a scene to Raw through the shared drawer callback", () => {
+    let selected = false;
+    let raw = false;
+    const actions = sceneTabContextActions(
+      "Research lab",
+      () => { selected = true; },
+      () => { raw = true; },
+      () => undefined,
+    );
+
+    expect(actions.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "open-scene", label: "Open Research lab" },
+      { id: "add-context", label: "Add scene to context" },
+      { id: "raw", label: "Raw" },
+    ]);
+    actions.find((action) => action.id === "raw")?.run();
+    expect(raw).toBe(true);
+    expect(selected).toBe(false);
+  });
+
+  it("disables context attachment for a scene with no files", () => {
+    const action = sceneTabContextActions(
+      "Other",
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      false,
+      false,
+    ).find((candidate) => candidate.id === "add-context");
+
+    expect(action).toMatchObject({ label: "No scene files to add", disabled: true });
   });
 });

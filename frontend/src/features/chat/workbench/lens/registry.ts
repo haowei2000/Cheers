@@ -1,4 +1,10 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
+
+export interface LensContextTarget {
+  label: string;
+  sourcePath?: ReadonlyArray<string | number>;
+  sourceText?: string;
+}
 
 // A Lens is a generic, reusable renderer: (data, config) -> editable UI.
 // Templates pick lenses declaratively (data), so a lens is the compiled "vocabulary"
@@ -14,10 +20,12 @@ export interface LensProps {
    *  onChange is not enough — the affordance itself has to be absent. Distinct from
    *  `Lens.viewOnly`, which is a lens saying it never edits ANY data. */
   readOnly?: boolean;
+  requestContextPick?: (event: MouseEvent<Element>, target: LensContextTarget) => void;
 }
 
 export interface Lens {
   id: string;
+  contextPick: "granular";
   // never calls onChange (machine-written data, humans only view) — hosts hide Save,
   // so a stale snapshot can't be written back over a concurrent agent write
   viewOnly?: boolean;
