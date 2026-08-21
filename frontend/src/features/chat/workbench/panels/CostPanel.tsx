@@ -11,7 +11,8 @@
 // panel; wire it where turns are admitted, not in the dashboard.
 import { Coins, Gauge } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { registerViewBoard, channelSessionParams, type ViewBoardContext } from "../viewBoard";
+import { type PanelContext } from "@/features/chat/panels/registry";
+import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel } from "../useMembersIndex";
 
 interface BotUsage {
@@ -45,7 +46,7 @@ function fmtUsd(n: number | null | undefined): string {
   });
 }
 
-function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
+function UsageBody({ data, ctx }: { data: UsageRead; ctx: PanelContext }) {
   // bot_id → member, so the Bot column reads as avatar + name, not a raw uuid.
   const members = useMembersIndex(ctx.channelId);
   const bots = data.bots ?? [];
@@ -121,12 +122,11 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   );
 }
 
-registerViewBoard<UsageRead>({
+registerDataPanel<UsageRead>({
   id: "cost",
   title: "Cost",
   icon: Coins,
-  verb: "channel.usage.read",
-  sessionScoped: true,
-  makeParams: channelSessionParams,
+  source: { kind: "resource", verb: "channel.usage.read", params: channelSessionParams },
+  scope: "session",
   render: (data, ctx) => <UsageBody data={data} ctx={ctx} />,
 });

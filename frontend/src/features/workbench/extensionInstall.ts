@@ -132,8 +132,34 @@ export function permissionGrants(permissions: ExtensionPermissions | undefined):
   return grants;
 }
 
+/** What a package's declarative panels will read.
+ *
+ * NOT a permission, and deliberately not folded into `permissionGrants`: a Tier-A panel
+ * is data, and the HOST performs the read and renders it into a compiled built-in view.
+ * The package never receives the bytes as code, which is exactly why the source vocabulary
+ * needs no grant and why such a package installs at global scope at all.
+ *
+ * It is still worth showing. "This package will put your channel's activity on screen" is
+ * something a person installing it should see, even though nothing is being granted. The
+ * verbs come from the same allowlist as `channel.resources`, so this can never name
+ * something the installers would have rejected.
+ *
+ * fs-source panels are omitted: they display files in the channel workspace, which the
+ * package's own scene seeds already write and the workbench already shows. */
+export function panelReads(manifest: ExtensionManifest): string[] {
+  const verbs: string[] = [];
+  for (const panel of manifest.contributes.panels ?? []) {
+    if (panel.source.kind !== "resource") continue;
+    if (!verbs.includes(panel.source.verb)) verbs.push(panel.source.verb);
+  }
+  return verbs;
+}
+
 /** The consent-screen labels, in manifest order. One list, derived from the grants, so
  * a permission cannot be added to the vocabulary and forgotten here. */
 export function permissionSummary(manifest: ExtensionManifest): string[] {
-  return permissionGrants(manifest.permissions).map((grant) => grant.label);
+  return [
+    ...permissionGrants(manifest.permissions).map((grant) => grant.label),
+    ...panelReads(manifest).map((verb) => `Display ${verb}`),
+  ];
 }

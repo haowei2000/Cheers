@@ -5,6 +5,7 @@ import { ControlTrigger } from "@/components/ui/control-trigger";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import { usePopoverDismiss } from "@/components/ui/popover";
 import { MembersPopover } from "./MembersPopover";
+import type { MemberItem } from "@/types";
 
 type Props = {
   channelId: string;
@@ -16,6 +17,9 @@ type Props = {
   viewBoardOpen: boolean;
   workbenchOpen: boolean;
   onManage: () => void;
+  currentUserId?: string;
+  onMentionMember?: (member: MemberItem) => void;
+  onStartDm?: (member: MemberItem) => void;
   onToggleFiles: () => void;
   onToggleWorkspace: () => void;
   onToggleViewBoard: () => void;
@@ -84,6 +88,9 @@ export function ChannelToolbar(props: Props) {
               isDm={props.isDm}
               onManage={props.onManage}
               onClose={closeMembers}
+              currentUserId={props.currentUserId}
+              onMention={props.onMentionMember}
+              onStartDm={props.onStartDm}
             />
           )}
         </div>

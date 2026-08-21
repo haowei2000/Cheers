@@ -35,12 +35,8 @@ import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
 import { agentIconFor } from "@/components/ui/agentIcons";
-import {
-  registerComponentViewBoard,
-  useBoardTickRefetch,
-  ViewBoardShell,
-  type ViewBoardContext,
-} from "../viewBoard";
+import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
+import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
 import {
   buildEpisodes,
   isNotableEpisode,
@@ -449,7 +445,7 @@ function ParticipantStrip({
 }
 
 // ── the board ────────────────────────────────────────────────────────────────
-function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
+function ActivityBody({ ctx }: { ctx: PanelContext }) {
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -468,10 +464,12 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   }, []);
   const clearSelection = useCallback(() => setSelected(new Set()), []);
 
+  const send = ctx.sendResourceReq;
   const load = useCallback(async () => {
+    if (!send) return; // lane-only panel; a surface without a resource client shows nothing
     setLoading(true);
     const [activityRes, membersRes] = await Promise.allSettled([
-      ctx.sendResourceReq("channel.activity.read", {
+      send("channel.activity.read", {
         channel_id: ctx.channelId,
         limit: 200,
         desc: true,
@@ -485,12 +483,12 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
     );
     if (membersRes.status === "fulfilled") setMembers(membersRes.value ?? []);
     setLoading(false);
-  }, [ctx.channelId, ctx.sendResourceReq]);
+  }, [ctx.channelId, send]);
 
   useEffect(() => {
     void load();
   }, [load]);
-  useBoardTickRefetch(ctx, "activity", load);
+  usePanelTickRefetch(ctx, "activity", load);
 
   const byId = useMemo(() => {
     const m = new Map<string, MemberItem>();
@@ -542,7 +540,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   );
 
   return (
-    <ViewBoardShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
+    <PanelShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
       <div className="flex flex-col h-full min-h-0">
         {participantIds.length > 1 && (
           <ParticipantStrip
@@ -618,7 +616,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
           )}
         </div>
       </div>
-    </ViewBoardShell>
+    </PanelShell>
   );
 }
 
@@ -774,9 +772,10 @@ function MemberFilter({
   );
 }
 
-registerComponentViewBoard({
+registerPanel({
   id: "activity",
   title: "Activity",
   icon: Activity,
-  component: (ctx) => <ActivityBody ctx={ctx} />,
+  surface: "lane",
+  render: (ctx) => <ActivityBody ctx={ctx} />,
 });

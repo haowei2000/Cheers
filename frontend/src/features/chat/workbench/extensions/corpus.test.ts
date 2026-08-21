@@ -16,6 +16,8 @@ import {
   MAX_TIMEZONE_CHARS,
   MIN_INTERVAL_MINUTES,
   parseExtensionPackage,
+  MAX_PANELS,
+  PANEL_SOURCE_KINDS,
 } from "./package";
 
 /** The `.cheers-extension` grammar is enforced twice — here and in
@@ -70,6 +72,8 @@ describe("the shared extension contract", () => {
       maxTimezoneChars: MAX_TIMEZONE_CHARS,
       idPattern: EXTENSION_ID_PATTERN,
       channelResources: [...EXTENSION_CHANNEL_RESOURCES],
+      maxPanelsPerExtension: MAX_PANELS,
+      panelSources: [...PANEL_SOURCE_KINDS],
     });
   });
 

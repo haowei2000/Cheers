@@ -21,6 +21,9 @@ import {
   Trash2,
   X,
   TextQuote,
+  Copy,
+  Eye,
+  Paperclip,
 } from "lucide-react";
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
@@ -38,6 +41,7 @@ import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
 import { FileTreeItem } from "@/components/ui/item";
+import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
 
 // Click-gated: the CodeMirror editor (its own chunk, incl. md/json language packs) only
 // downloads when a user actually opens Raw mode — keeps it off the chat critical path, like
@@ -186,6 +190,64 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // The selected file's content/edit/save (optimistic lock + conflict reload) is the shared
   // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
   const editor = useFileEditor(fs, selected ?? "");
+  const fileSurfaceRef = useRef<HTMLDivElement>(null);
+  const fileContextActions = useContextSurface({
+    surfaceRef: fileSurfaceRef,
+    actions: () => {
+      if (!selected) return [];
+      return [
+        {
+          id: "preview",
+          label: "Open preview",
+          icon: <Eye className="h-4 w-4" />,
+          run: () => setMode("preview"),
+        },
+        {
+          id: "download",
+          label: "Download",
+          icon: <Download className="h-4 w-4" />,
+          run: () => downloadText(selected, editor.content),
+        },
+        {
+          id: "add-context",
+          label: pinned.includes(selected) ? "Already pinned" : "Add file to context",
+          icon: <Paperclip className="h-4 w-4" />,
+          disabled: pinned.includes(selected),
+          group: "secondary",
+          run: () => addContext(ctx.channelId, {
+            id: `file:${selected}`,
+            verb: "fs.read",
+            params: { path: selected },
+            label: basename(selected),
+            kind: "file",
+          }),
+        },
+      ];
+    },
+    selectionActions: (selection) => {
+      if (!selected) return [];
+      const range = selectionLineRange(editor.content, selection.text);
+      return [
+        {
+          id: selection.isCode ? "copy-code" : "copy-selection",
+          label: selection.isCode ? "Copy code" : "Copy selection",
+          icon: <Copy className="h-4 w-4" />,
+          run: () => navigator.clipboard.writeText(selection.text),
+        },
+        {
+          id: "add-lines",
+          label: "Add selected lines to context",
+          icon: <TextQuote className="h-4 w-4" />,
+          disabled: !range || pinned.includes(selected),
+          run: () => {
+            if (!range) throw new Error("The selected text could not be mapped to file lines");
+            addContext(ctx.channelId, rangedFileContextItem(selected, range.start, range.end));
+            setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
+          },
+        } satisfies ContextAction,
+      ];
+    },
+  });
 
   useEffect(() => {
     setMode("auto");
@@ -525,7 +587,24 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       )}
 
       {/* selected file: preview (matching renderer) or raw (textarea fallback) */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Context gestures are delegated to the selected file's native controls. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div
+        ref={fileSurfaceRef}
+        role="region"
+        aria-label="Selected file"
+        className="flex-1 flex flex-col min-w-0"
+        tabIndex={-1}
+        onContextMenu={fileContextActions.onContextMenu}
+        onMouseUp={fileContextActions.onMouseUp}
+        onKeyDown={fileContextActions.onKeyDown}
+        onPointerDown={fileContextActions.onPointerDown}
+        onPointerMove={fileContextActions.onPointerMove}
+        onPointerUp={fileContextActions.onPointerUp}
+        onPointerCancel={fileContextActions.onPointerCancel}
+        onPointerLeave={fileContextActions.onPointerLeave}
+        onClickCapture={fileContextActions.onClickCapture}
+      >
         {selected === null ? (
           <div className="flex-1 flex items-center justify-center text-content-muted text-compact gap-2">
             <FolderOpen className="w-4 h-4" /> Select a file

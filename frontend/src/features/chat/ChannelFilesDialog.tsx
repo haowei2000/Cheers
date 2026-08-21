@@ -73,7 +73,7 @@ export function ChannelFilesDialog({
           hint="Upload with the paperclip in the composer."
         />
       ) : (
-        <FileGrid files={files} focusFileId={focusFileId} />
+        <FileGrid files={files} focusFileId={focusFileId} channelId={channelId} />
       )}
     </FloatingPanel>
   );

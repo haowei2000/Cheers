@@ -1,11 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Laptop, Link2, Shield } from "lucide-react";
+import {
+  ChevronRight,
+  ExternalLink,
+  KeyRound,
+  Laptop,
+  Link2,
+  LogOut,
+  Shield,
+  Trash2,
+} from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   changePassword,
   deleteAccount,
-  forgotPassword,
   getExternalIdentity,
   unlinkExternalIdentity,
   startExternalIdentityOAuthLink,
@@ -20,12 +29,14 @@ import {
   type StoredAIConsent,
 } from "@/api/accountSecurity";
 import { ActionButton } from "@/components/ui/action-button";
+import { Banner } from "@/components/ui/banner";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input as UiInput } from "@/components/ui/input";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { isTauri } from "@/lib/serverConfig";
 import { queryKeys } from "@/lib/queryClient";
+import { onOAuthLinked } from "@/lib/oauthCallback";
 
 export function ChangePasswordAction({ onRotated }: { onRotated: (token: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -76,7 +87,14 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
 
   return (
     <>
-      <ActionButton action="changePassword" context="security" controlWidth="fill" onClick={() => setOpen(true)} />
+      <OperationsItem
+        leading={<KeyRound className="h-4 w-4 text-content-muted" />}
+        title="Password"
+        subtitle="Change your password and sign out other devices"
+        trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
+        aria-label="Change password"
+        onClick={() => setOpen(true)}
+      />
       {open && (
         <Dialog title="Change password" onClose={closeDialog} maxWidth="max-w-lg">
           <p className="text-caption">Updating your password signs out every other device.</p>
@@ -90,8 +108,8 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
             <Field label="Confirm password" htmlFor="cp-confirm">
               <UiInput id="cp-confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} autoComplete="new-password" />
             </Field>
-            <Field label="2FA code" htmlFor="cp-two-factor">
-              <UiInput id="cp-two-factor" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="Authenticator or backup code" autoComplete="one-time-code" />
+            <Field label="Verification code" htmlFor="cp-two-factor">
+              <UiInput id="cp-two-factor" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="Authenticator or recovery code" autoComplete="one-time-code" />
             </Field>
           </div>
           <div className="flex justify-end gap-2">
@@ -104,51 +122,6 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
               onClick={() => void submit()}
               disabled={!current || !next}
             />
-          </div>
-        </Dialog>
-      )}
-    </>
-  );
-}
-
-export function ForgotPasswordAction() {
-  const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  function closeDialog() {
-    if (busy) return;
-    setEmail("");
-    setOpen(false);
-  }
-
-  async function submit() {
-    if (!email.trim()) return;
-    setBusy(true);
-    try {
-      await forgotPassword(email.trim());
-      toast.success("If the account exists, a reset code has been sent");
-      setEmail("");
-      setOpen(false);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn't request a reset code");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <ActionButton action="forgotPassword" context="security" controlWidth="fill" onClick={() => setOpen(true)} />
-      {open && (
-        <Dialog title="Forgot password" onClose={closeDialog}>
-          <p className="text-caption">Request a reset code for the email address attached to your account.</p>
-          <Field label="Email" htmlFor="forgot-password-email">
-            <UiInput id="forgot-password-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void submit()} autoComplete="email" />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
-            <ActionButton action="request" context="security" loading={busy} disabled={!email.trim()} onClick={() => void submit()} />
           </div>
         </Dialog>
       )}
@@ -171,7 +144,13 @@ export function SignOutAction({ onSignOut }: { onSignOut: () => Promise<void> })
 
   return (
     <>
-      <ActionButton action="signOut" context="settings" controlWidth="fill" onClick={() => setOpen(true)} />
+      <OperationsItem
+        leading={<LogOut className="h-4 w-4 text-content-muted" />}
+        title="Sign out"
+        subtitle="End the session on this device"
+        trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
+        onClick={() => setOpen(true)}
+      />
       {open && (
         <Dialog title="Sign out" onClose={() => !busy && setOpen(false)}>
           <p className="text-caption">This session will be revoked and you will return to the sign-in page.</p>
@@ -187,6 +166,12 @@ export function SignOutAction({ onSignOut }: { onSignOut: () => Promise<void> })
 
 export function ExternalIdentitiesCard() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedProvider = ["google", "github"].includes(
+    searchParams.get("link_provider") ?? ""
+  )
+    ? (searchParams.get("link_provider") as "google" | "github")
+    : null;
   const identities = useQuery({
     queryKey: queryKeys.externalIdentities,
     queryFn: () => Promise.all([
@@ -207,6 +192,23 @@ export function ExternalIdentitiesCard() {
     },
   });
   const busy = linkingProvider ?? (unlinkIdentity.isPending ? unlinkIdentity.variables : null);
+  const requestedIdentity = identities.data?.find(
+    (identity) => identity.provider === requestedProvider
+  );
+
+  useEffect(() => onOAuthLinked((provider) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.externalIdentities });
+    const next = new URLSearchParams(searchParams);
+    next.delete("link_provider");
+    setSearchParams(next, { replace: true });
+    toast.success(`${provider === "github" ? "GitHub" : "Google"} linked`);
+  }), [queryClient, searchParams, setSearchParams]);
+
+  function dismissLinkRequest() {
+    const next = new URLSearchParams(searchParams);
+    next.delete("link_provider");
+    setSearchParams(next, { replace: true });
+  }
 
   async function unlink(identity: ExternalIdentityStatus) {
     if (
@@ -252,54 +254,57 @@ export function ExternalIdentitiesCard() {
   return (
     <section className="border-t border-zinc-600/70 py-5">
       <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
-        <Link2 className="w-4 h-4 text-accent-400" /> Sign-in methods
+        <Link2 className="w-4 h-4 text-accent-400" /> Connected sign-in methods
       </p>
       <p className="text-compact text-content-muted mt-1 mb-4">
-        Removing a provider signs out other sessions and removes trusted devices.
+        Use a connected account to sign in. Removing one signs out other sessions.
       </p>
+      {requestedProvider && !requestedIdentity?.linked && (
+        <Banner
+          severity="info"
+          icon={Link2}
+          className="mb-4"
+          action={requestedIdentity?.recent_authentication ? {
+            label: `Link ${requestedProvider === "github" ? "GitHub" : "Google"}`,
+            onClick: () => void linkOAuth(requestedIdentity),
+          } : undefined}
+          onDismiss={dismissLinkRequest}
+        >
+          You&apos;re signed in. Link {requestedProvider === "github" ? "GitHub" : "Google"} to use it next time.
+        </Banner>
+      )}
       {identities.isError ? (
         <ActionButton action="retry" context="settings" accessibleLabel="Retry loading sign-in methods" onClick={() => void identities.refetch()} />
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
-          {(identities.data ?? []).map((identity) => {
+          {(identities.data ?? []).filter((identity) =>
+            identity.linked || identity.provider === "google" || identity.provider === "github"
+          ).map((identity) => {
             const label = identity.provider === "apple" ? "Apple" : identity.provider === "github" ? "GitHub" : "Google";
             return (
               <OperationsItem
                 key={identity.provider}
                 title={label}
                 status={identity.linked ? identity.email || identity.display_name || "Linked" : "Not linked"}
-                actions={identity.linked ? (
+                subtitle={!identity.recent_authentication ? "Sign in again to make changes" : undefined}
+                actions={identity.linked && identity.can_unlink && identity.recent_authentication ? (
                   <ActionButton
                     action="unlink"
                     context="security"
                     accessibleLabel={`Unlink ${label} sign-in method`}
                     loading={busy === identity.provider}
-                    disabled={
-                      busy !== null ||
-                      !identity.can_unlink ||
-                      !identity.recent_authentication
-                    }
-                    title={
-                      !identity.can_unlink
-                        ? "Add another sign-in method first"
-                        : !identity.recent_authentication
-                          ? "Sign in again to make this change"
-                          : `Unlink ${label}`
-                    }
+                    disabled={busy !== null}
+                    title={`Unlink ${label}`}
                     onClick={() => void unlink(identity)}
                   />
-                ) : identity.provider === "google" || identity.provider === "github" ? (
+                ) : !identity.linked && identity.recent_authentication && (identity.provider === "google" || identity.provider === "github") ? (
                   <ActionButton
                     action="link"
                     context="security"
                     accessibleLabel={`Link ${label} sign-in method`}
                     loading={busy === identity.provider}
-                    disabled={busy !== null || !identity.recent_authentication}
-                    title={
-                      !identity.recent_authentication
-                        ? "Sign in again to make this change"
-                        : `Link ${label}`
-                    }
+                    disabled={busy !== null}
+                    title={`Link ${label}`}
                     onClick={() => void linkOAuth(identity)}
                   />
                 ) : undefined}
@@ -311,7 +316,7 @@ export function ExternalIdentitiesCard() {
       )}
       {identities.data?.some((identity) => !identity.recent_authentication) && (
         <p className="text-compact text-warning-400 mt-4">
-          Sign in again before linking or unlinking an identity.
+          Sign in again to change your sign-in methods.
         </p>
       )}
     </section>
@@ -348,7 +353,14 @@ export function DeleteAccountAction({ onDeleted }: { onDeleted: () => void }) {
 
   return (
     <>
-      <ActionButton action="delete" context="confirmation" controlWidth="fill" accessibleLabel="Delete account" onClick={() => setOpen(true)} />
+      <OperationsItem
+        leading={<Trash2 className="h-4 w-4 text-danger-400" />}
+        title={<span className="text-danger-400">Delete account</span>}
+        subtitle="Permanently remove your account and personal data"
+        trailing={<ChevronRight className="h-4 w-4 text-danger-400" aria-hidden="true" />}
+        aria-label="Delete account"
+        onClick={() => setOpen(true)}
+      />
       {open && (
         <Dialog title="Delete account" onClose={closeDialog}>
           <p className="text-caption text-danger-300">

@@ -13,6 +13,8 @@ import {
   ListTree,
   AtSign,
   UserRound,
+  TextQuote,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -39,17 +41,26 @@ import {
 import { MessageRecordInspector } from "./MessageRecordInspector";
 import { identityRailWidthClasses } from "@/components/ui/content-size";
 import { ControlTrigger } from "@/components/ui/control-trigger";
+import {
+  type ContextAction,
+  useContextSurface,
+} from "@/components/ui/context-actions";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
  *  props so memo() only re-renders the rows whose bits actually changed. */
 export interface MessageActionHandlers {
   onReply: (m: Message) => void;
+  /** Reply to this message and append the selected excerpt to the draft. */
+  onReplyWithQuote?: (m: Message, selectedText: string) => void;
   onForward: (m: Message) => void;
   /** Insert this sender as a picked composer mention. Never sends. */
   onMention?: (m: Message) => void;
   /** Toggle this message in the multi-select set (entering select mode if off). */
   onToggleSelect: (m: Message) => void;
+  onCopySelection?: () => void | Promise<void>;
+  onForwardSelection?: () => void;
+  onClearSelection?: () => void;
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
   onRetry?: (m: Message) => void;
 }
@@ -779,6 +790,68 @@ function RegularMessageItem({
     />
   ) : null;
   const selected = Boolean(selectedProp);
+  const messageContextActions = (): ContextAction[] => {
+    if (!actions || active || message._status) return [];
+    if (selectMode && selected && actions.onCopySelection && actions.onForwardSelection && actions.onClearSelection) {
+      return [
+        { id: "copy-selected", label: "Copy selected", icon: <Copy className="h-4 w-4" />, run: actions.onCopySelection },
+        { id: "forward-selected", label: "Forward selected", icon: <Forward className="h-4 w-4" />, run: actions.onForwardSelection },
+        { id: "clear-selection", label: "Clear selection", icon: <X className="h-4 w-4" />, group: "secondary", run: actions.onClearSelection },
+      ];
+    }
+    const next: ContextAction[] = [
+      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, run: () => actions.onReply(message) },
+      { id: "copy", label: "Copy message", icon: <Copy className="h-4 w-4" />, run: () => copyMessage(message) },
+      { id: "forward", label: "Forward", icon: <Forward className="h-4 w-4" />, run: () => actions.onForward(message) },
+      { id: "select", label: "Select message", icon: <CheckSquare className="h-4 w-4" />, run: () => actions.onToggleSelect(message) },
+    ];
+    if (canMention && actions.onMention) {
+      next.push({ id: "mention", label: `Mention @${name}`, icon: <AtSign className="h-4 w-4" />, group: "secondary", run: () => actions.onMention?.(message) });
+    }
+    if (profileCard) {
+      next.push({ id: "profile", label: "View profile", icon: <UserRound className="h-4 w-4" />, group: "secondary", run: () => {
+        const anchor = rowRef.current;
+        if (anchor) openProfile(anchor);
+      } });
+    }
+    if (detailsMeta.hasDetails) {
+      next.push({ id: "record", label: "Message record", icon: <ListTree className="h-4 w-4" />, group: "secondary", run: () => {
+        const anchor = rowRef.current;
+        if (anchor) openInspector(anchor);
+      } });
+    }
+    return next;
+  };
+  const contextSurface = useContextSurface({
+    surfaceRef: rowRef,
+    actions: messageContextActions,
+    selectionActions: selectMode || !actions
+      ? undefined
+      : (selection) => [
+          {
+            id: selection.isCode ? "copy-code" : "copy-selection",
+            label: selection.isCode ? "Copy code" : "Copy selection",
+            icon: <Copy className="h-4 w-4" />,
+            run: async () => {
+              try {
+                await navigator.clipboard.writeText(selection.text);
+                toast.success(selection.isCode ? "Code copied" : "Selection copied");
+              } catch {
+                toast.error("Clipboard unavailable");
+              }
+            },
+          },
+          ...(actions.onReplyWithQuote
+            ? [{
+                id: "reply-with-quote",
+                label: "Reply with quote",
+                icon: <TextQuote className="h-4 w-4" />,
+                run: () => actions.onReplyWithQuote?.(message, selection.text),
+              } satisfies ContextAction]
+            : []),
+        ],
+    disabled: Boolean(message._status),
+  });
   const rowSelectProps = selectable
     ? {
         onClick: (e: React.MouseEvent) => {
@@ -787,22 +860,28 @@ function RegularMessageItem({
           if ((e.target as HTMLElement).closest("button, a")) return;
           actions?.onToggleSelect(message);
         },
-        onKeyDown: (e: React.KeyboardEvent) => {
-          // The row is announced as role="checkbox"; make it keyboard-operable —
-          // Space/Enter toggles it. Ignore keys bubbling from inner controls.
-          if (e.key !== " " && e.key !== "Enter") return;
-          if ((e.target as HTMLElement).closest("button, a")) return;
-          e.preventDefault();
-          actions?.onToggleSelect(message);
-        },
-        role: "checkbox" as const,
         "aria-checked": selected,
         tabIndex: 0,
       }
     : {};
+  const handleRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      selectable &&
+      (e.key === " " || e.key === "Enter") &&
+      !(e.target as HTMLElement).closest("button, a")
+    ) {
+      e.preventDefault();
+      actions?.onToggleSelect(message);
+      return;
+    }
+    contextSurface.onKeyDown(e);
+  };
 
   if (isConsecutive || nested) {
     return (
+      // The row becomes a checkbox only in select mode; otherwise its child
+      // controls remain the tab stops while context gestures bubble here.
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
         data-item-kind="conversation"
         data-presentation-level={presentationLevel}
@@ -813,10 +892,20 @@ function RegularMessageItem({
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
           isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
-          selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
+          selected && "bg-zinc-800/70 hover:bg-zinc-800/80",
         )}
         {...rowSelectProps}
         ref={rowRef}
+        role={selectable ? "checkbox" : "group"}
+        onKeyDown={handleRowKeyDown}
+        onContextMenu={contextSurface.onContextMenu}
+        onMouseUp={contextSurface.onMouseUp}
+        onPointerDown={contextSurface.onPointerDown}
+        onPointerMove={contextSurface.onPointerMove}
+        onPointerUp={contextSurface.onPointerUp}
+        onPointerCancel={contextSurface.onPointerCancel}
+        onPointerLeave={contextSurface.onPointerLeave}
+        onClickCapture={contextSurface.onClickCapture}
         onMouseEnter={showActionBar}
         onMouseLeave={hideActionBar}
       >
@@ -871,6 +960,7 @@ function RegularMessageItem({
   }
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       data-item-kind="conversation"
       data-presentation-level={presentationLevel}
@@ -878,10 +968,20 @@ function RegularMessageItem({
         "group relative mx-2 flex items-start gap-3 rounded-sm px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
         isOwnAlignedRight && "flex-row-reverse",
         selectable && "cursor-pointer",
-        selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
+        selected && "bg-zinc-800/70 hover:bg-zinc-800/80",
       )}
       {...rowSelectProps}
       ref={rowRef}
+      role={selectable ? "checkbox" : "group"}
+      onKeyDown={handleRowKeyDown}
+      onContextMenu={contextSurface.onContextMenu}
+      onMouseUp={contextSurface.onMouseUp}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
       onMouseEnter={showActionBar}
       onMouseLeave={hideActionBar}
     >
@@ -1057,7 +1157,7 @@ function MessageBody({
           <StopButton channelId={channelId} msgId={message.msg_id} />
         </div>
       )}
-      <FileGrid files={files} className="mt-1" />
+      <FileGrid files={files} className="mt-1" channelId={channelId} />
     </div>
   );
 }

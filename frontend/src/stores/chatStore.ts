@@ -10,6 +10,8 @@ interface ChatState {
   voicePresenceByChannel: Record<string, VoicePresenceSnapshot>;
   selectedWorkspaceId: string | null;
   selectedChannelId: string | null;
+  /** One-shot request from navigation surfaces to open the active channel settings. */
+  channelSettingsRequestId: string | null;
   /**
    * Last channel opened per workspace, persisted across reloads. Lets switching
    * workspace A→B→A restore A's open channel instead of dumping the user on the
@@ -25,6 +27,8 @@ interface ChatState {
   updateVoicePresence: (snapshot: VoicePresenceSnapshot) => void;
   selectWorkspace: (id: string | null) => void;
   selectChannel: (id: string | null) => void;
+  requestChannelSettings: (id: string) => void;
+  consumeChannelSettingsRequest: () => void;
   patchChannel: (id: string, patch: Partial<Channel>) => void;
   /** Add a channel if absent, else patch it (used when a DM is found-or-created). */
   upsertChannel: (ch: Channel) => void;
@@ -48,6 +52,7 @@ export const useChatStore = create<ChatState>()(
       voicePresenceByChannel: {},
       selectedWorkspaceId: null,
       selectedChannelId: null,
+      channelSettingsRequestId: null,
       lastChannelByWorkspace: {},
 
       setWorkspaces: (ws) => set({ workspaces: ws }),
@@ -85,6 +90,8 @@ export const useChatStore = create<ChatState>()(
           else delete map[wsId];
           return { selectedChannelId: id, lastChannelByWorkspace: map };
         }),
+      requestChannelSettings: (id) => set({ channelSettingsRequestId: id }),
+      consumeChannelSettingsRequest: () => set({ channelSettingsRequestId: null }),
       patchChannel: (id, patch) =>
         set((s) => ({
           channels: s.channels.map((c) =>

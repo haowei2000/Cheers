@@ -80,6 +80,8 @@ export function resolveDesktopParentPath(pathname: string): string | null {
   const segments = pathname.split("/").filter(Boolean);
   const [section] = segments;
 
+  if (section === "register") return "/login";
+
   if (section === "chat") {
     if (segments.length >= 3) return `/chat/${segments[1]}`;
     return null;
@@ -233,7 +235,7 @@ export function DesktopTitlebar({
     settings: Settings,
   };
   const ContextIcon = section === "chat" ? (channel ? Hash : Building2) : (contextIcons[section] ?? Building2);
-  const parentPath = user ? resolveDesktopParentPath(location.pathname) : null;
+  const parentPath = resolveDesktopParentPath(location.pathname);
 
   useEffect(() => {
     if (!user) return;

@@ -29,6 +29,7 @@ describe("DesktopTitlebar", () => {
     expect(resolveDesktopParentPath("/settings/account")).toBe("/settings");
     expect(resolveDesktopParentPath("/fleet")).toBe("/chat");
     expect(resolveDesktopParentPath("/activity")).toBe("/chat");
+    expect(resolveDesktopParentPath("/register")).toBe("/login");
     expect(resolveDesktopParentPath("/login")).toBeNull();
   });
 

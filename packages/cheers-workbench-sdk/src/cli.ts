@@ -22,6 +22,12 @@ interface Manifest {
         | { kind: "interval"; everyMinutes: number }
         | { kind: "daily"; localTime: string; timezone?: string };
     }>;
+    panels?: Array<{
+      id: string;
+      title: string;
+      source: { kind: "resource"; verb: string } | { kind: "fs"; path: string };
+      view: string;
+    }>;
   };
   permissions?: {
     "file.write"?: boolean;
@@ -59,6 +65,13 @@ export function validateManifest(manifest: Manifest): void {
   for (const renderer of manifest.contributes?.renderers ?? []) {
     if (!idPattern.test(renderer.id) || renderer.entry !== `renderers/${renderer.id}.js`) throw new Error(`invalid renderer contribution: ${renderer.id}`);
     if (renderer.style && renderer.style !== `renderers/${renderer.id}.css`) throw new Error(`invalid renderer style: ${renderer.id}`);
+  }
+  // Deliberately narrower than the installers: id and title only. The source
+  // vocabulary and the view reference are theirs to enforce — this must never refuse
+  // a manifest they accept, and duplicating a list is how that starts.
+  for (const panel of manifest.contributes?.panels ?? []) {
+    if (!idPattern.test(panel.id)) throw new Error(`invalid panel contribution: ${panel.id}`);
+    if (!panel.title?.trim()) throw new Error(`invalid panel title: ${panel.id}`);
   }
   for (const automation of manifest.contributes?.automations ?? []) {
     if (!idPattern.test(automation.id)) throw new Error(`invalid automation contribution: ${automation.id}`);

@@ -48,7 +48,7 @@ import {
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
-import { LaneBoundsContext } from "@/hooks/useLaneWindow";
+import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { LaneZones } from "./workbench/LaneZones";
 import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
@@ -58,6 +58,7 @@ import { ChannelChrome } from "./ChannelChrome";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
+import { quoteSelectedText } from "@/components/ui/context-actions";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
@@ -97,6 +98,8 @@ import { ChannelToolbar } from "./ChannelToolbar";
 import { useChannelRoster } from "./hooks/useChannelRoster";
 import { useChannelInstruments } from "./hooks/useChannelInstruments";
 import { useChannelMessages } from "./hooks/useChannelMessages";
+import { createDm } from "@/api/channels";
+import type { MemberItem } from "@/types";
 
 export { ChannelSelectionState } from "./ChannelSelectionState";
 
@@ -121,6 +124,10 @@ export function ChannelView({
 }: Props) {
   const user = useAuthStore((s) => s.user);
   const patchChannel = useChatStore((s) => s.patchChannel);
+  const upsertChannel = useChatStore((s) => s.upsertChannel);
+  const selectChannel = useChatStore((s) => s.selectChannel);
+  const channelSettingsRequestId = useChatStore((s) => s.channelSettingsRequestId);
+  const consumeChannelSettingsRequest = useChatStore((s) => s.consumeChannelSettingsRequest);
   // Public channel the caller can see (as a workspace member) but hasn't joined
   // yet — everything membership-gated (history, members, realtime, composer) is
   // skipped and a join prompt renders instead. Joining patches the store, which
@@ -522,6 +529,11 @@ export function ChannelView({
     commitLaneWidth,
     openInstrument,
   } = useChannelInstruments();
+  useEffect(() => {
+    if (!channel || channelSettingsRequestId !== channel.channel_id) return;
+    setSettingsOpen(true);
+    consumeChannelSettingsRequest();
+  }, [channel, channelSettingsRequestId, consumeChannelSettingsRequest, setSettingsOpen]);
   permissionResolvedRef.current = () =>
     setBoardTick((ticks) => ({ ...ticks, audit: (ticks.audit ?? 0) + 1 }));
 
@@ -1065,6 +1077,8 @@ export function ChannelView({
     () => messages.filter((m) => selectedIds.has(m.msg_id)),
     [messages, selectedIds],
   );
+  const selectedMessagesRef = useRef(selectedMessages);
+  selectedMessagesRef.current = selectedMessages;
   const discussionRealtimeVersion = useMemo(
     () =>
       messages.reduce(
@@ -1161,6 +1175,22 @@ export function ChannelView({
     },
     [mentionables, user?.user_id, setComposePrefill],
   );
+  const startDirectMessage = useCallback(async (member: MemberItem) => {
+    try {
+      const dm = await createDm(
+        member.member_type === "bot"
+          ? { target_bot_id: member.member_id }
+          : { target_user_id: member.member_id },
+      );
+      const name = member.display_name || member.username || member.member_id.slice(0, 8);
+      upsertChannel({ ...dm, peer_name: name });
+      selectChannel(dm.channel_id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't start direct message");
+    }
+  }, [selectChannel, upsertChannel]);
+  const copySelectedRef = useRef<() => void | Promise<void>>(() => {});
+  const clearSelectionRef = useRef<() => void>(() => {});
 
   // Stable identity: selection state deliberately NOT captured here (it travels
   // as scalar props), so a selection toggle only re-renders the affected rows
@@ -1170,6 +1200,15 @@ export function ChannelView({
       onReply: (m) => {
         setReplyTo(m);
         applyReplyDefaults(m);
+      },
+      onReplyWithQuote: (m, selectedText) => {
+        setReplyTo(m);
+        applyReplyDefaults(m);
+        setComposePrefill((previous) => ({
+          kind: "text",
+          text: `${quoteSelectedText(selectedText)}\n\n`,
+          seq: (previous?.seq ?? 0) + 1,
+        }));
       },
       onForward: (m) =>
         setForward({ content: buildForwardContent([m]), count: 1 }),
@@ -1186,18 +1225,32 @@ export function ChannelView({
           return next;
         });
       },
+      onCopySelection: () => copySelectedRef.current(),
+      onForwardSelection: () =>
+        setForward({
+          content: buildForwardContent(selectedMessagesRef.current),
+          count: selectedMessagesRef.current.length,
+        }),
+      onClearSelection: () => clearSelectionRef.current(),
       onRetry: retryMessage,
     }),
-    [buildForwardContent, retryMessage, applyReplyDefaults, mentionMember],
+    [
+      buildForwardContent,
+      retryMessage,
+      applyReplyDefaults,
+      mentionMember,
+      setComposePrefill,
+    ],
   );
 
-  const clearSelection = () => {
+  function clearSelection() {
     setSelectMode(false);
     setSelectedIds(new Set());
-  };
+  }
 
   async function copySelected() {
-    const text = selectedMessages
+    const currentSelection = selectedMessagesRef.current;
+    const text = currentSelection
       .map(
         (m) =>
           `${displayName(m)}: ${(m.content ?? "").replace(/<#file:[^>]+>/g, "").trim()}`,
@@ -1206,13 +1259,15 @@ export function ChannelView({
     try {
       await navigator.clipboard.writeText(text);
       toast.success(
-        `Copied ${selectedMessages.length} message${selectedMessages.length > 1 ? "s" : ""}`,
+        `Copied ${currentSelection.length} message${currentSelection.length > 1 ? "s" : ""}`,
       );
       clearSelection();
     } catch {
       toast.error("Clipboard unavailable");
     }
   }
+  copySelectedRef.current = copySelected;
+  clearSelectionRef.current = clearSelection;
 
   // Inline shells keep the collapse toggle in the channel surface (and float it
   // in the empty state). The desktop window frame owns the hosted toggle.
@@ -1269,6 +1324,9 @@ export function ChannelView({
       viewBoardOpen={vbOpen}
       workbenchOpen={wbOpen}
       onManage={() => setSettingsOpen(true)}
+      currentUserId={user?.user_id}
+      onMentionMember={(member) => mentionMember(member.member_id)}
+      onStartDm={(member) => void startDirectMessage(member)}
       onToggleFiles={() => {
         setFilesFocus(undefined);
         setFilesOpen((open) => {

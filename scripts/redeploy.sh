@@ -51,7 +51,9 @@ if $do_gateway; then
 fi
 if $do_frontend; then
   echo "▸ [1/3] building ${FRONTEND_IMAGE}…"
-  docker build -t "$FRONTEND_IMAGE" --build-arg VITE_API_BASE_URL=/api/v1 frontend
+  # Root context: the Dockerfile COPYs both frontend/ and website/ (the policy
+  # pages Vite folds into dist), so it cannot build from the frontend/ dir.
+  docker build -t "$FRONTEND_IMAGE" --build-arg VITE_API_BASE_URL=/api/v1 -f frontend/Dockerfile .
   images+=("$FRONTEND_IMAGE")
 fi
 

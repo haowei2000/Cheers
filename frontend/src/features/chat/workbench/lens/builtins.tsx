@@ -61,7 +61,7 @@ export function updateRowCell(rows: unknown[], i: number, key: string, v: string
   if (!isPlainRow(rows[i])) return null;
   return rows.map((r, j) => (j === i && isPlainRow(r) ? { ...r, [key]: v } : r));
 }
-function TableLens({ data, config, onChange }: LensProps) {
+function TableLens({ data, config, onChange, readOnly }: LensProps) {
   const rows = Array.isArray(data) ? (data as unknown[]) : [];
   const configured = (config as TableConfig | undefined)?.columns;
   const columns = configured?.length ? configured : inferColumns(rows);
@@ -93,6 +93,8 @@ function TableLens({ data, config, onChange }: LensProps) {
                     // null/scalar row: read-only placeholder — an input would promise an
                     // edit that update() must refuse. Delete (index-based) still works.
                     <span className="text-content-muted">—</span>
+                  ) : readOnly ? (
+                    <span className="text-content-secondary">{String(r[c.key] ?? "")}</span>
                   ) : c.options ? (
                     <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-content-secondary rounded-sm outline-none">
                       {c.options.map((o) => (
@@ -105,33 +107,39 @@ function TableLens({ data, config, onChange }: LensProps) {
                 </td>
               ))}
               <td className="p-1">
-                <ResponsiveActionButton
-                  action="delete"
-                  context="toolbar"
-                  wideLabel="Delete"
-                  accessibleLabel={`Delete row ${i + 1}`}
-                  controlSize={workbenchControlSize.rowAction}
-                  onClick={() => del(i)}
-                />
+                {!readOnly && (
+                  <ResponsiveActionButton
+                    action="delete"
+                    context="toolbar"
+                    wideLabel="Delete"
+                    accessibleLabel={`Delete row ${i + 1}`}
+                    controlSize={workbenchControlSize.rowAction}
+                    onClick={() => del(i)}
+                  />
+                )}
               </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length + 1} className="p-3 text-content-muted">Empty — click "Add row" below</td>
+              <td colSpan={columns.length + 1} className="p-3 text-content-muted">
+                {readOnly ? "Nothing to show" : 'Empty — click "Add row" below'}
+              </td>
             </tr>
           )}
         </tbody>
       </table>
-      <ResponsiveActionButton
-        action="add"
-        context="toolbar"
-        wideLabel="Add row"
-        accessibleLabel="Add row"
-        controlSize={workbenchControlSize.data}
-        onClick={add}
-        containerClassName="mt-2 w-full"
-      />
+      {!readOnly && (
+        <ResponsiveActionButton
+          action="add"
+          context="toolbar"
+          wideLabel="Add row"
+          accessibleLabel="Add row"
+          controlSize={workbenchControlSize.data}
+          onClick={add}
+          containerClassName="mt-2 w-full"
+        />
+      )}
     </div>
   );
 }
@@ -140,7 +148,7 @@ function TableLens({ data, config, onChange }: LensProps) {
 interface BoardData {
   columns: { name: string; items: string[] }[];
 }
-function KanbanLens({ data, onChange }: LensProps) {
+function KanbanLens({ data, onChange, readOnly }: LensProps) {
   const cols = (data as BoardData | null)?.columns ?? [];
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setCols = (next: BoardData["columns"]) => onChange({ columns: next });
@@ -180,7 +188,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 key={ii}
                 presentationLevel="minimal"
                 title={it}
-                actions={<>
+                actions={readOnly ? undefined : <>
                   <UiButton content="icon" variant="plain" controlSize={workbenchControlSize.rowAction} aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
                 </UiButton>
@@ -199,6 +207,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 className="border-b-0 bg-zinc-800/70 text-content-secondary"
               />
             ))}
+            {!readOnly && (
             <div className="flex items-center gap-1 pt-1">
               <UiInput
                 controlSize={workbenchControlSize.data}
@@ -218,6 +227,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 onClick={() => addItem(ci)}
               />
             </div>
+            )}
           </div>
         </div>
       ))}
@@ -227,11 +237,12 @@ function KanbanLens({ data, onChange }: LensProps) {
 
 // ── markdown: a string (prompt templates, notes, drafts). Inert <UiTextarea> edit;
 //    never dangerouslySetInnerHTML. (A sanitized preview can be added later.)
-function MarkdownLens({ data, onChange }: LensProps) {
+function MarkdownLens({ data, onChange, readOnly }: LensProps) {
   const text = typeof data === "string" ? data : "";
   return (
     <UiTextarea
       value={text}
+      readOnly={readOnly}
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"

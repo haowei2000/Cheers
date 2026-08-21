@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Selection belongs to the content layer: high-contrast enough to remain
+   legible in both themes, but neutral so it never reads like an app command. */
+::selection {
+  background: rgb(var(--tone-ink-700));
+  color: rgb(var(--text-strong));
+}
+
+input::selection,
+textarea::selection,
+[contenteditable]:not([contenteditable="false"])::selection,
+.cm-editor ::selection {
+  background: Highlight;
+  color: HighlightText;
+}
+
 /* Source Serif 4 is self-hosted under SIL OFL 1.1. One variable file supplies
    both the classical display cut and the sturdier text cut through `opsz`. */
 @font-face {

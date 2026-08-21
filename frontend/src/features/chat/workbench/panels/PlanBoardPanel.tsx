@@ -13,7 +13,8 @@ import { useMemo } from "react";
 import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
-import { registerViewBoard, channelSessionParams, type ViewBoardContext } from "../viewBoard";
+import { type PanelContext } from "@/features/chat/panels/registry";
+import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
 
 interface PlanEntry {
@@ -133,7 +134,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
   );
 }
 
-function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext }) {
+function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: PanelContext }) {
   const members = useMembersIndex(ctx.channelId);
   const plans = data.plans ?? [];
   if (plans.length === 0) {
@@ -156,12 +157,11 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext
   );
 }
 
-registerViewBoard<PlanReadResponse>({
+registerDataPanel<PlanReadResponse>({
   id: "plan",
   title: "Plan",
   icon: ClipboardList,
-  verb: "channel.plan.read",
-  sessionScoped: true,
-  makeParams: channelSessionParams,
+  source: { kind: "resource", verb: "channel.plan.read", params: channelSessionParams },
+  scope: "session",
   render: (data, ctx) => <PlanBody data={data} ctx={ctx} />,
 });

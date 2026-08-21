@@ -509,9 +509,11 @@ card whose header shows the identity doesn't also need a "Profile" heading).
 Supplementary explanation — what a control does, a constraint, a one-time
 note, a consequence preview — lives behind `<Tip>`
 (`src/components/ui/tip.tsx`), not as a resting paragraph of body copy. The
-bubble shows on **hover and keyboard focus** (touch: tap the trigger); it is a
-lighter transient layer (`bg-zinc-700`) so it separates from the `zinc-900`
-card, `role="tooltip"`, associated to its trigger via `aria-describedby`.
+bubble shows on **hover and keyboard focus** (touch: tap the trigger). It is a
+compact inverse surface (`bg-content-strong text-content-on-light`) with `role="tooltip"`,
+associated to its trigger via `aria-describedby`. The app-level `TitleTooltip`
+applies the same surface to existing native `title` hints without changing the
+trigger's layout or hover treatment.
 
 ```tsx
 <Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}

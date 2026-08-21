@@ -1,12 +1,14 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Captions, FileText, Loader2 } from "lucide-react";
+import { Captions, Download, Eye, FileText, Loader2, Paperclip } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiFetch } from "@/api/client";
 import { transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
+import { useContextSurface } from "@/components/ui/context-actions";
+import { useContextPickStore } from "./context/contextPick";
 
 // Click-gated: keeps pdfjs-dist (~364 kB) and the full highlight.js barrel out of the
 // chat critical path — they download on first file-preview click. Named export → default shim.
@@ -188,17 +190,55 @@ function UnavailableFileTile({ file }: { file: FileInfo }) {
 
 // One durable file: an image thumbnail or a typed chip. Historical non-uploaded
 // records remain visible as unavailable metadata and cannot trigger realization.
-export function FileTile({ file }: { file: FileInfo }) {
+export function FileTile({ file, channelId }: { file: FileInfo; channelId?: string }) {
   const [open, setOpen] = useState(false);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const addContext = useContextPickStore((state) => state.add);
+  const durable = !file.status || ["uploaded", "converted"].includes(file.status);
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => durable ? [
+      { id: "preview", label: "Open preview", icon: <Eye className="h-4 w-4" />, run: () => setOpen(true) },
+      { id: "download", label: "Download", icon: <Download className="h-4 w-4" />, run: () => downloadFile(file) },
+      ...(channelId ? [{
+        id: "context",
+        label: "Add file to context",
+        icon: <Paperclip className="h-4 w-4" />,
+        group: "secondary" as const,
+        run: () => addContext(channelId, {
+          id: `file:${file.file_id}`,
+          verb: "channel.files.read",
+          params: { file_id: file.file_id },
+          label: file.original_filename || file.file_id,
+          kind: "file",
+        }),
+      }] : []),
+    ] : [],
+  });
   if (file.status && !["uploaded", "converted"].includes(file.status)) {
     return <UnavailableFileTile file={file} />;
   }
 
   const isImage = (file.content_type ?? "").startsWith("image/");
-  if (isAudioFile(file)) return <AudioTile file={file} />;
   return (
-    <>
-      {isImage ? (
+    // Context-menu gestures are delegated to the file tile's native controls.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      ref={surfaceRef}
+      role="group"
+      tabIndex={-1}
+      onContextMenu={contextSurface.onContextMenu}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
+      {isAudioFile(file) ? (
+        <AudioTile file={file} />
+      ) : isImage ? (
         <UiButton variant="plain" role="option"
           type="button"
           onClick={() => setOpen(true)}
@@ -226,7 +266,7 @@ export function FileTile({ file }: { file: FileInfo }) {
           <FilePreviewModal file={file} onClose={() => setOpen(false)} />
         </Suspense>
       )}
-    </>
+    </div>
   );
 }
 
@@ -234,10 +274,12 @@ export function FileGrid({
   files,
   className = "",
   focusFileId,
+  channelId,
 }: {
   files: FileInfo[];
   className?: string;
   focusFileId?: string;
+  channelId?: string;
 }) {
   const focusRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -256,7 +298,7 @@ export function FileGrid({
             ref={focused ? focusRef : undefined}
             className={focused ? "rounded-sm ring-2 ring-indigo-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
           >
-            <FileTile file={f} />
+            <FileTile file={f} channelId={channelId} />
           </div>
         );
       })}
