@@ -477,6 +477,36 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Resolve a `cheers:` resource locator and return what it names. Accepts the same locator form that appears in channel text.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "name": "read_locator",
+    "title": "Read a cheers: resource locator"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
         "cheers:messages:write"
       ]
     },

@@ -103,6 +103,11 @@ pub enum Routing {
     /// Intercepted before `dispatch` and brokered elsewhere (currently only
     /// `workspace.read`, which is answered by the owner Bot's live Connector).
     Brokered,
+    /// Rewritten into a different call before `dispatch`'s match sees it, so the
+    /// resource is declared and tool-exposed but never routed under its own name
+    /// (currently only `locator.read`, which resolves a `cheers:` URI into the call
+    /// it names). Like [`Routing::Brokered`], excluded from [`database_resources`].
+    Normalized,
 }
 
 /// The MCP tool that exposes a resource. Not every resource has one — some are
@@ -391,6 +396,30 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("path", ParamKind::String),
                     Param::opt("session_id", ParamKind::String),
                     Param::opt("root", ParamKind::String),
+                ],
+            ),
+        },
+        // Normalized into the call its `uri` names before `dispatch`'s match, so this
+        // resource never routes under its own name. It exists so an MCP client that calls
+        // tools rather than raw resources can act on a locator it read in a message
+        // WITHOUT knowing the URI-to-verb mapping — which is the knowledge the URI exists
+        // to remove.
+        //
+        // SCOPE_READ grants nothing new: every resource a locator resolves to is already
+        // exposed by a read-only tool at this same scope, asserted by
+        // `tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for`.
+        ResourceSpec {
+            resource: "locator.read",
+            routing: Routing::Normalized,
+            destructive: false,
+            tool: read_tool(
+                "read_locator",
+                "Read a cheers: resource locator",
+                "Resolve a `cheers:` resource locator and return what it names. \
+                 Accepts the same locator form that appears in channel text.",
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("uri", ParamKind::String),
                 ],
             ),
         },

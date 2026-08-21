@@ -87,19 +87,39 @@ pub struct ChannelMembership {
 ///
 /// 1. `cheers_mcp_server::locator::resolve` is a pure function of (locator, channel), and
 ///    a test there asserts every resource it can name is declared in the registry catalog.
-/// 2. A locator frame may carry ONLY `channel_id`. Anything else is refused rather than
-///    ignored — a frame whose extra params silently did nothing would be a frame saying
-///    something the reader disregards, which is how callers come to believe they set a
-///    limit or a range that was never applied.
+/// 2. A locator frame carries only the params the spelling needs. Anything else is refused
+///    rather than ignored — a frame whose extra params silently did nothing would be a
+///    frame saying something the reader disregards, which is how callers come to believe
+///    they set a limit or a range that was never applied.
+///
+/// Two spellings, one output. The resource may BE the URI (`cheers:plan`), which is what
+/// the browser and the Agent Bridge send; or it may be `locator.read` with the URI in a
+/// `uri` param, which is what an MCP client calling the `read_locator` tool sends. They
+/// normalize identically, so there is one code path and one set of refusals.
 fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (String, String)> {
     use cheers_mcp_server::locator;
 
-    if !resource.starts_with(locator::SCHEME) {
+    /// The resource whose `uri` param is the locator. Declared `Routing::Normalized`, so
+    /// it is tool-exposed but never routed under its own name — it always becomes the
+    /// call its URI names, right here.
+    const LOCATOR_RESOURCE: &str = "locator.read";
+
+    let by_param = resource == LOCATOR_RESOURCE;
+    if !by_param && !resource.starts_with(locator::SCHEME) {
         return Ok((resource.to_string(), params.clone()));
     }
-    let parsed = locator::parse(resource).ok_or_else(|| {
-        resource_error("INVALID_LOCATOR", format!("malformed locator: {resource}"))
-    })?;
+
+    let uri = if by_param {
+        params
+            .get("uri")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| resource_error("INVALID_PARAMS", "locator.read needs a uri"))?
+    } else {
+        resource
+    };
+
+    let parsed = locator::parse(uri)
+        .ok_or_else(|| resource_error("INVALID_LOCATOR", format!("malformed locator: {uri}")))?;
 
     // Channel scope is deliberately absent from the URI (locators are channel-implicit and
     // the shipped, agent-writable format has no channel segment), so it rides in params
@@ -109,10 +129,13 @@ fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (Str
         .and_then(|v| v.as_str())
         .ok_or_else(|| resource_error("INVALID_PARAMS", "a locator needs channel_id"))?;
 
-    if let Some(extra) = params
-        .as_object()
-        .and_then(|o| o.keys().find(|k| k.as_str() != "channel_id").cloned())
-    {
+    // `uri` is a legitimate param of the `locator.read` spelling — there the URI IS a
+    // param — and never of the URI-as-resource one.
+    if let Some(extra) = params.as_object().and_then(|o| {
+        o.keys()
+            .find(|k| k.as_str() != "channel_id" && !(by_param && k.as_str() == "uri"))
+            .cloned()
+    }) {
         return Err(resource_error(
             "INVALID_PARAMS",
             format!("a locator names its own params; `{extra}` would be ignored"),
@@ -406,6 +429,51 @@ mod tests {
     }
 
     #[test]
+    fn both_spellings_of_a_locator_produce_the_same_call() {
+        // The URI can be the resource (browser, Agent Bridge) or a `uri` param on
+        // `locator.read` (an MCP client calling read_locator). If these ever diverged,
+        // an agent and a human clicking the same link would read different things.
+        for uri in [
+            "cheers:plan",
+            "cheers:activity",
+            "cheers:desk/dev/plan.yaml#L3-L9",
+            "cheers:inbox/f-1",
+        ] {
+            let as_resource = resolve_frame(uri, &json!({ "channel_id": "c-1" }));
+            let as_param =
+                resolve_frame("locator.read", &json!({ "channel_id": "c-1", "uri": uri }));
+            assert_eq!(as_resource, as_param, "{uri}");
+        }
+    }
+
+    #[test]
+    fn the_locator_resource_needs_a_uri() {
+        assert_eq!(
+            resolve_frame("locator.read", &json!({ "channel_id": "c-1" }))
+                .unwrap_err()
+                .0,
+            "INVALID_PARAMS"
+        );
+    }
+
+    #[test]
+    fn both_spellings_refuse_the_same_things() {
+        // One code path, one set of refusals — an agent gets the same answer a human does.
+        for (uri, code) in [
+            ("cheers:desk/../etc/passwd", "INVALID_LOCATOR"),
+            ("cheers:msg/abc", "UNRESOLVABLE_LOCATOR"),
+            ("cheers:ws/@x/y.rs", "UNRESOLVABLE_LOCATOR"),
+        ] {
+            for frame in [
+                resolve_frame(uri, &json!({ "channel_id": "c-1" })),
+                resolve_frame("locator.read", &json!({ "channel_id": "c-1", "uri": uri })),
+            ] {
+                assert_eq!(frame.unwrap_err().0, code, "{uri}");
+            }
+        }
+    }
+
+    #[test]
     fn a_locator_frame_refuses_params_it_would_ignore() {
         // Silently dropping them would let a caller believe a limit or a range applied.
         let err = resolve_frame(
@@ -601,6 +669,23 @@ mod registry_contract {
         // answered by the owner Bot's Connector. If it ever appears in the
         // match, a Bot could reach a db handler that cannot serve it.
         assert!(!routed_resources().contains("workspace.read"));
+    }
+
+    #[test]
+    fn normalized_resources_never_reach_the_database_dispatcher() {
+        // `locator.read` is rewritten into the call its `uri` names before the match, so
+        // it must not appear there. If it did, an MCP client's read_locator call would
+        // fall through to a db handler that has no idea what a URI is — and the routing
+        // contract above would not catch it, since a routed arm is exactly what it wants.
+        assert!(!routed_resources().contains("locator.read"));
+        assert!(
+            cheers_mcp_server::registry::by_resource("locator.read").is_some(),
+            "declared in the catalog, so the tool exists"
+        );
+        assert!(
+            !cheers_mcp_server::registry::database_resources().any(|r| r == "locator.read"),
+            "and excluded from the routing contract, like workspace.read"
+        );
     }
 
     #[test]

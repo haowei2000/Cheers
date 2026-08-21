@@ -22,11 +22,31 @@
 //! works and how the Gateway pins scope everywhere else. [`Locator::resolve`] takes the
 //! channel and puts it in the params.
 //!
+//! ## Relationship to the MCP resource templates
+//!
+//! This crate already exposes a *second* resource-URI form: the MCP resource templates
+//! `cheers://channel/{channel_id}/plan` and friends, resolved by
+//! [`crate::build_uri_resource_call`]. They overlap — both name plan, sessions, usage,
+//! files and desk — and having two URI vocabularies for one platform is the very thing a
+//! single resource name was meant to end. Worth converging; not converged here, because
+//! those templates are wire contract for already-connected Agents.
+//!
+//! Until then the split is by origin rather than preference, and a locator earns its keep
+//! on two things the template form cannot do:
+//!
+//! - **Line anchors.** `cheers:desk/notes.md#L3-L9` names a passage. A template names a
+//!   whole file.
+//! - **The text form.** An Agent reads `cheers:desk/notes.md#L3` in a channel message. It
+//!   cannot hand that to `resources/read`, which wants the `cheers://channel/{id}/…` form
+//!   — converting between them means knowing the mapping, which is the knowledge the URI
+//!   exists to remove. `read_locator` takes what the message actually said.
+//!
 //! ## `cheers:` is crowded, and that is guarded
 //!
-//! The scheme already means five other things: OAuth scopes (`cheers:read`), the resource
-//! guide (`cheers://help/resources`), the desktop callback (`cheers://auth/callback`), a
-//! task-claim namespace string, and a LiveKit participant identity. None of them is a
+//! The scheme already means six other things: OAuth scopes (`cheers:read`), the resource
+//! guide (`cheers://help/resources`), the MCP resource templates
+//! (`cheers://channel/…`), the desktop callback (`cheers://auth/callback`), a task-claim
+//! namespace string, and a LiveKit participant identity. None of them is a
 //! locator, and none of them parses as one — the shapes genuinely differ. That was luck
 //! until [`tests::the_other_meanings_of_the_scheme_are_not_locators`] froze it.
 
@@ -379,6 +399,8 @@ mod tests {
             crate::SCOPE_MESSAGES_WRITE,
             crate::SCOPE_TASK_CLAIMS_WRITE,
             crate::RESOURCE_GUIDE_URI,
+            "cheers://channel/c-1/plan",
+            "cheers://channel/c-1/desk/notes.md",
             "cheers://auth/callback",
             "cheers:task-claim:11111111-2222-3333-4444-555555555555",
             "cheers:sess-1:user-2:nonce-3",
@@ -486,6 +508,54 @@ mod tests {
                 resolve(&parsed, CH).unwrap_or_else(|_| panic!("{uri} should resolve — {why}"));
             assert_eq!(resource, case["resource"], "{uri} — {why}");
             assert_eq!(params, case["params"], "{uri} — {why}");
+        }
+    }
+
+    #[test]
+    fn the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for() {
+        // Why `read_locator` can sit at SCOPE_READ. Every resource a locator resolves to
+        // is already exposed by a read-only tool at that same scope, so the tool is a
+        // different SPELLING of calls a client already holds — not new reach.
+        //
+        // That is a fact about the catalog, not a judgment, which is why it belongs in a
+        // test: a future kind that resolves to something with a stronger scope — or to a
+        // resource with no tool at all, the subtler failure — would silently hand a read
+        // token more than it should have. It fails here instead.
+        let tool = crate::registry::by_tool("read_locator")
+            .and_then(|spec| spec.tool)
+            .expect("read_locator is declared");
+        assert_eq!(tool.scope, crate::SCOPE_READ);
+        assert!(tool.read_only, "a locator only ever reads");
+
+        for locator in [
+            Locator::Desk {
+                path: "a.md".into(),
+                line: None,
+                line_end: None,
+            },
+            Locator::Inbox {
+                file_id: "f".into(),
+            },
+            Locator::Plan,
+            Locator::Sessions,
+            Locator::Cost,
+            Locator::Activity,
+        ] {
+            let (resource, _) = resolve(&locator, CH).expect("resolves");
+            let spec = crate::registry::by_resource(resource)
+                .unwrap_or_else(|| panic!("{resource} is not in the catalog"));
+            let stood_in_for = spec.tool.unwrap_or_else(|| {
+                panic!(
+                    "{resource} has no tool, so read_locator would be the only way to \
+                        reach it — that is new reach, not a new spelling"
+                )
+            });
+            assert_eq!(
+                stood_in_for.scope, tool.scope,
+                "{resource} needs {} but read_locator only asks for {}",
+                stood_in_for.scope, tool.scope
+            );
+            assert!(stood_in_for.read_only, "{resource} is not read-only");
         }
     }
 
