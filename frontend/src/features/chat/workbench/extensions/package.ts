@@ -51,7 +51,12 @@ export interface RendererContribution {
 }
 
 export type PanelSourceContribution =
-  | { kind: "resource"; verb: string }
+  /** `pick` names a key to unwrap before the data reaches the view — every `channel.*`
+   *  verb wraps its payload while the array views want the bare list. A lookup on data
+   *  the panel already read: it widens what a package can EXPRESS, never what it can
+   *  REACH. */
+  | { kind: "resource"; verb: string; pick?: string }
+  /** No `pick`: a file source hands back content, not a wrapper. */
   | { kind: "fs"; path: string };
 
 /** A declarative board: where its data lives plus which compiled view renders it. */
@@ -60,6 +65,9 @@ export interface PanelContribution {
   title: string;
   source: PanelSourceContribution;
   view: string;
+  /** View config (e.g. table columns), passed to the built-in view untouched — the same
+   *  data-only field a scene item carries. */
+  config?: unknown;
 }
 
 export interface AutomationContribution {
@@ -371,7 +379,7 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
   const panelIds = new Set<string>();
   for (const panel of manifest.contributes.panels ?? []) {
     requireObject(panel, "panel contribution");
-    requireKnownKeys(panel, ["id", "title", "source", "view"], "panel contribution");
+    requireKnownKeys(panel, ["id", "title", "source", "view", "config"], "panel contribution");
     requireId("panel", panel.id);
     if (typeof panel.title !== "string" || !panel.title.trim()) throw new Error(`Panel title is required: ${panel.id}`);
     if (panelIds.has(panel.id)) throw new Error(`Duplicate panel id: ${panel.id}`);
@@ -385,7 +393,10 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
       throw new Error(`Unsupported panel source kind: ${String(source.kind)}`);
     }
     if (source.kind === "resource") {
-      requireKnownKeys(source, ["kind", "verb"], `panel source: ${panel.id}`);
+      requireKnownKeys(source, ["kind", "verb", "pick"], `panel source: ${panel.id}`);
+      if (source.pick !== undefined && (typeof source.pick !== "string" || !source.pick)) {
+        throw new Error(`Panel pick must be a key name: ${panel.id}`);
+      }
       // A panel's verb comes from the SAME fixed list as channel.resources. Declaring
       // a source must never widen what a package can read.
       if (typeof source.verb !== "string" || !EXTENSION_CHANNEL_RESOURCES.includes(source.verb as never)) {

@@ -15,7 +15,16 @@ import type { PanelContext } from "./registry";
 
 export type PanelSource =
   /** A live, read-only projection read from a resource verb (`*.read`). */
-  | { kind: "resource"; verb: string; params?: (ctx: PanelContext) => Record<string, unknown> }
+  | {
+      kind: "resource";
+      verb: string;
+      params?: (ctx: PanelContext) => Record<string, unknown>;
+      /** Key to unwrap from the response before the view sees it. Every `channel.*` verb
+       *  wraps its payload (`{"members": [...], "total": N}`) while the array views want
+       *  the bare list. A missing key yields undefined, which views already render as
+       *  empty — this must not throw. */
+      pick?: string;
+    }
   /** A file in the channel workspace (`context_files`), read through `fs.*`. */
   | { kind: "fs"; path: string }
   /** A gateway REST endpoint, for state with no resource verb (the approval audit). */
@@ -69,7 +78,11 @@ export function fetcherFor(
       const send = ctx.sendResourceReq;
       if (!send) return null;
       const params = source.params?.(ctx) ?? { channel_id: ctx.channelId };
-      return () => send(source.verb, params);
+      const pick = source.pick;
+      return () =>
+        send(source.verb, params).then((value) =>
+          pick ? (value as Record<string, unknown> | null)?.[pick] : value
+        );
     }
     case "fs": {
       const send = ctx.sendResourceReq;
@@ -115,7 +128,7 @@ export function usePanelData<T = unknown>(
   const key = JSON.stringify([
     source.kind,
     ctx.channelId,
-    source.kind === "resource" ? [source.verb, source.params?.(ctx) ?? null] : null,
+    source.kind === "resource" ? [source.verb, source.pick ?? null, source.params?.(ctx) ?? null] : null,
     source.kind === "fs" ? source.path : null,
     source.kind === "rest" ? source.endpoint(ctx) : null,
     source.kind === "workspace" ? [source.botId, source.path] : null,

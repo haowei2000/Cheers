@@ -21,7 +21,7 @@ export function extensionPanelId(extensionId: string, panelId: string): string {
 
 function sourceOf(panel: ManifestPanel): PanelSource {
   return panel.source.kind === "resource"
-    ? { kind: "resource", verb: panel.source.verb }
+    ? { kind: "resource", verb: panel.source.verb, pick: panel.source.pick }
     : { kind: "fs", path: panel.source.path };
 }
 
@@ -47,7 +47,7 @@ export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
           render: (data) =>
             lens.render({
               data,
-              config: undefined,
+              config: panel.config,
               // The SOURCE decides, never the view — guardrail 3 in
               // docs/arch/PANEL_MODEL.md. `readOnly` removes the edit affordances
               // rather than leaving them inert: an Add row that silently does nothing

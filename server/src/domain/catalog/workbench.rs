@@ -114,7 +114,19 @@ fn build_panels(source: &Value, extension_id: &str) -> Vec<Value> {
                     CHANNEL_RESOURCES.contains(&verb),
                     "{extension_id}/{panel_id}: panel reads `{verb}`, which is not an allowed channel resource"
                 );
+                // `pick` names the key to unwrap. Any key is legal — it is a lookup on
+                // data the panel already read — but it has to be a name.
+                if let Some(pick) = panel["source"].get("pick") {
+                    assert!(
+                        pick.as_str().is_some_and(|key| !key.is_empty()),
+                        "{extension_id}/{panel_id}: panel pick must be a key name"
+                    );
+                }
             } else {
+                assert!(
+                    panel["source"].get("pick").is_none(),
+                    "{extension_id}/{panel_id}: an fs source has no wrapper to pick from"
+                );
                 let path = panel["source"]["path"]
                     .as_str()
                     .unwrap_or_else(|| panic!("{extension_id}/{panel_id}: fs panel has no path"));
@@ -132,7 +144,12 @@ fn build_panels(source: &Value, extension_id: &str) -> Vec<Value> {
                 view == "auto" || view.starts_with("builtin:"),
                 "{extension_id}/{panel_id}: panel view `{view}` must be auto or builtin:*"
             );
-            json!({"id": panel_id, "title": title, "source": panel["source"], "view": view})
+            let mut built =
+                json!({"id": panel_id, "title": title, "source": panel["source"], "view": view});
+            if let Some(config) = panel.get("config") {
+                built["config"] = config.clone();
+            }
+            built
         })
         .collect()
 }
@@ -223,6 +240,60 @@ mod tests {
     // The catalog is a second way to DECLARE a panel, never a second grammar. These are
     // the same refusals the package installers make; a template that could smuggle past
     // them would make the vocabulary meaningless.
+
+    #[test]
+    fn the_shipped_roster_panel_unwraps_its_wrapper() {
+        // The one shipped panel, and the proof `pick` is load-bearing: channel.members
+        // answers {members: [...]} while builtin:table wants the bare array, so without
+        // `pick` this board renders empty.
+        let team_ops = list()
+            .into_iter()
+            .find(|e| e["id"] == "cheers-team-ops")
+            .expect("team ops ships");
+        let roster = &team_ops["panels"][0];
+        assert_eq!(roster["id"], "roster");
+        assert_eq!(roster["source"]["verb"], "channel.members");
+        assert_eq!(roster["source"]["pick"], "members");
+        assert_eq!(roster["view"], "builtin:table");
+        // Columns, or the table infers every member key and reads as debug output.
+        assert!(roster["config"]["columns"]
+            .as_array()
+            .is_some_and(|c| !c.is_empty()));
+    }
+
+    #[test]
+    #[should_panic(expected = "pick must be a key name")]
+    fn a_template_cannot_pick_with_a_non_key() {
+        build(
+            &json!({
+                "id": "bad", "version": 1, "title": "Bad",
+                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "seed": {"n.md": "x"},
+                "panels": [{"id": "r", "title": "R",
+                    "source": {"kind": "resource", "verb": "channel.members", "pick": 3},
+                    "view": "builtin:table"}]
+            })
+            .to_string(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "no wrapper to pick from")]
+    fn an_fs_template_panel_cannot_pick() {
+        // A file source hands back content, not a wrapper; accepting `pick` would let a
+        // template say something the reader silently ignores.
+        build(
+            &json!({
+                "id": "bad", "version": 1, "title": "Bad",
+                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "seed": {"n.md": "x"},
+                "panels": [{"id": "r", "title": "R",
+                    "source": {"kind": "fs", "path": "ops/servers.yaml", "pick": "rows"},
+                    "view": "builtin:table"}]
+            })
+            .to_string(),
+        );
+    }
 
     #[test]
     #[should_panic(expected = "is not one of")]
