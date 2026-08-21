@@ -49,6 +49,9 @@ import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
+import { panelsFor } from "@/features/chat/panels/registry";
+import { useExtensionPanels } from "@/features/chat/panels/useExtensionPanels";
+import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { LaneZones } from "./workbench/LaneZones";
 import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
@@ -630,15 +633,19 @@ export function ChannelView({
     id: string;
     nonce: number;
   } | null>(null);
-  const openSessionsBoard = useCallback(() => {
-    setVbMinimal(false);
-    openInstrument("viewboard", "open", true);
-    setVbOpen(true);
-    setFocusBoard((prev) => ({
-      id: "sessions",
-      nonce: (prev?.nonce ?? 0) + 1,
-    }));
-  }, [openInstrument, setVbMinimal, setVbOpen]);
+  // Open the ViewBoard focused on one board. The nonce lets a repeat request for the
+  // same board re-apply (see focusBoard). Used by the toolbar's Panels picker and by the
+  // session chip below.
+  const openBoard = useCallback(
+    (id: string) => {
+      setVbMinimal(false);
+      openInstrument("viewboard", "open", true);
+      setVbOpen(true);
+      setFocusBoard((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
+    },
+    [openInstrument, setVbMinimal, setVbOpen]
+  );
+  const openSessionsBoard = useCallback(() => openBoard("sessions"), [openBoard]);
 
   // Add-context menu → open a side surface (untargeted) so the user can pick a
   // file to attach from its own panel.
@@ -1288,6 +1295,15 @@ export function ChannelView({
     </UiButton>
   ) : null;
 
+  // Boards for the toolbar's Panels picker — the same list the ViewBoard tab strip
+  // renders, so a contributed board is reachable from both. Must sit ABOVE the early
+  // returns below: hooks run in the same order on every render.
+  useExtensionPanels();
+  // `enabled` gates the fetch until a channel is selected — the hook itself must still
+  // run every render, which is why this sits above the guards rather than inside them.
+  const laneChannelProfile = useChannelProfile(channelIdForPush ?? "", !!channelIdForPush);
+  const laneBoards = panelsFor("lane", laneChannelProfile?.profile);
+
   if (!channel) {
     return (
       <ChannelSelectionState
@@ -1323,6 +1339,8 @@ export function ChannelView({
       workspaceOpen={wsOpen}
       viewBoardOpen={vbOpen}
       workbenchOpen={wbOpen}
+      boards={laneBoards}
+      onOpenBoard={openBoard}
       onManage={() => setSettingsOpen(true)}
       currentUserId={user?.user_id}
       onMentionMember={(member) => mentionMember(member.member_id)}
