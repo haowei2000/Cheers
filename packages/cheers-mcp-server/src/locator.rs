@@ -218,6 +218,20 @@ pub enum Unresolvable {
     /// agent-writable format. Navigation still works: the client jumps by id without
     /// needing a read verb at all.
     MessageIdHasNoReadResource,
+    /// `cheers:ws/<bot>/<path>` names a file on a bot's machine, and three things a
+    /// locator cannot carry are needed to read one:
+    ///
+    /// - the **browse root** the path is relative to. The same relative path under two
+    ///   roots is two different files, so a reference without it can resolve the wrong
+    ///   one.
+    /// - a bot **id**. A locator's `<bot>` may be `@handle`, which only resolves against
+    ///   the channel's member list — a lookup, not a translation.
+    /// - the **channel**, which `workspace.read` needs and a bare bot/path pair lacks.
+    ///
+    /// Navigation is unaffected: the client resolves the handle against members it
+    /// already has and probes for the file before jumping. This says only that the
+    /// Gateway cannot turn one into a read on its own.
+    WorkspacePathNeedsMoreThanALocator,
 }
 
 /// Translate a locator into the `{resource, params}` a caller could have sent directly.
@@ -258,23 +272,6 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
                 lines(line, line_end),
             ),
         ),
-        // NOTE: no `root`. A locator cannot express the browse root a workspace path is
-        // relative to, and the same relative path under two roots is two different files.
-        // The connector falls back to its default root, exactly as it does for navigation
-        // today — so this is honest for jumping, and NOT a complete replacement for a
-        // context reference that carries `root`. See the client's workspaceContextItem.
-        Locator::Ws {
-            bot,
-            path,
-            line,
-            line_end,
-        } => (
-            "workspace.read",
-            merge(
-                json!({ "bot_id": bot, "path": path }),
-                lines(line, line_end),
-            ),
-        ),
         Locator::Inbox { file_id } => (
             "channel.files.read",
             json!({ "channel_id": channel_id, "file_id": file_id }),
@@ -284,6 +281,7 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
         Locator::Cost => ("channel.usage.read", json!({ "channel_id": channel_id })),
         Locator::Activity => ("channel.activity.read", json!({ "channel_id": channel_id })),
         Locator::Msg { .. } => return Err(Unresolvable::MessageIdHasNoReadResource),
+        Locator::Ws { .. } => return Err(Unresolvable::WorkspacePathNeedsMoreThanALocator),
     })
 }
 
@@ -474,6 +472,9 @@ mod tests {
                     resolve(&parsed, CH).unwrap_err(),
                     match kind {
                         "MessageIdHasNoReadResource" => Unresolvable::MessageIdHasNoReadResource,
+                        "WorkspacePathNeedsMoreThanALocator" => {
+                            Unresolvable::WorkspacePathNeedsMoreThanALocator
+                        }
                         other => panic!("{uri}: unknown unresolvable `{other}`"),
                     },
                     "{uri} — {why}"
@@ -500,12 +501,6 @@ mod tests {
         for locator in [
             Locator::Desk {
                 path: "a.md".into(),
-                line: None,
-                line_end: None,
-            },
-            Locator::Ws {
-                bot: "b".into(),
-                path: "a.rs".into(),
                 line: None,
                 line_end: None,
             },

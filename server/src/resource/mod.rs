@@ -120,11 +120,19 @@ fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (Str
     }
 
     let (resolved, resolved_params) = locator::resolve(&parsed, channel_id).map_err(|why| {
-        let locator::Unresolvable::MessageIdHasNoReadResource = why;
-        resource_error(
-            "UNRESOLVABLE_LOCATOR",
-            "a message locator addresses a message by id, which no read resource accepts",
-        )
+        // Each reason gets its own message: "this cannot be read" and "this needs more
+        // than a locator can carry" are different problems, and a caller who is told the
+        // wrong one will try the wrong fix.
+        let detail = match why {
+            locator::Unresolvable::MessageIdHasNoReadResource => {
+                "a message locator addresses a message by id, which no read resource accepts"
+            }
+            locator::Unresolvable::WorkspacePathNeedsMoreThanALocator => {
+                "a workspace locator cannot carry the browse root, the bot id, or the \
+                 channel a workspace read needs — open it from the workspace browser"
+            }
+        };
+        resource_error("UNRESOLVABLE_LOCATOR", detail)
     })?;
     Ok((resolved.to_string(), resolved_params))
 }
@@ -438,6 +446,38 @@ mod tests {
     }
 
     #[test]
+    fn no_locator_resolves_to_a_brokered_resource() {
+        // `dispatch_with_effects` intercepts brokered resources — today `workspace.read`,
+        // answered by the owner Bot's live Connector — by matching the frame's RAW
+        // resource string. A locator that resolved to one would sail past that check and
+        // die in dispatch's match as UNKNOWN_RESOURCE, because brokered resources are
+        // deliberately not arms there.
+        //
+        // `cheers:ws/...` looked like it should resolve and does not, for reasons that
+        // are about the locator rather than about routing: it cannot carry the browse
+        // root, cannot turn @handle into a bot id without a member lookup, and carries no
+        // channel. This is the alarm if some future kind reaches a brokered resource.
+        for uri in [
+            "cheers:desk/a.md",
+            "cheers:ws/bot/a.rs",
+            "cheers:inbox/f-1",
+            "cheers:plan",
+            "cheers:sessions",
+            "cheers:cost",
+            "cheers:activity",
+        ] {
+            let Ok((resource, _)) = resolve_frame(uri, &json!({ "channel_id": "c-1" })) else {
+                continue; // does not resolve at all — nothing can be brokered
+            };
+            assert_ne!(
+                resource, "workspace.read",
+                "{uri} resolves to a brokered resource; dispatch_with_effects matches the \
+                 raw string and would not intercept it"
+            );
+        }
+    }
+
+    #[test]
     fn no_locator_reaches_a_destructive_resource_behind_the_user_gate() {
         // dispatch_user gates destructive resources on owner/admin. It resolves the
         // locator BEFORE that check, so a locator cannot slip past it — but only as long
@@ -452,7 +492,9 @@ mod tests {
             "cheers:cost",
             "cheers:activity",
         ] {
-            let (resource, _) = resolve_frame(uri, &json!({ "channel_id": "c-1" })).unwrap();
+            let Ok((resource, _)) = resolve_frame(uri, &json!({ "channel_id": "c-1" })) else {
+                continue; // does not resolve — it can reach nothing at all
+            };
             let destructive = cheers_mcp_server::registry::by_resource(&resource)
                 .is_some_and(|spec| spec.destructive);
             assert!(

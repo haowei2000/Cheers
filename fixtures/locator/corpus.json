@@ -19,70 +19,98 @@
       "why": "The simplest Desk file.",
       "parses": true,
       "resource": "fs.read",
-      "params": { "channel_id": "c-1", "path": "notes.md" }
+      "params": {
+        "channel_id": "c-1",
+        "path": "notes.md"
+      }
     },
     {
       "uri": "cheers:desk/dev/plan.yaml#L3-L9",
       "why": "A picked passage becomes an explicit line window the agent resolves on demand.",
       "parses": true,
       "resource": "fs.read",
-      "params": { "channel_id": "c-1", "path": "dev/plan.yaml", "start_line": 3, "end_line": 9 }
+      "params": {
+        "channel_id": "c-1",
+        "path": "dev/plan.yaml",
+        "start_line": 3,
+        "end_line": 9
+      }
     },
     {
       "uri": "cheers:desk/a.md#L7",
       "why": "A single line is a one-line window, not an open-ended one.",
       "parses": true,
       "resource": "fs.read",
-      "params": { "channel_id": "c-1", "path": "a.md", "start_line": 7, "end_line": 7 }
+      "params": {
+        "channel_id": "c-1",
+        "path": "a.md",
+        "start_line": 7,
+        "end_line": 7
+      }
     },
     {
       "uri": "cheers:desk/a.md#L9-L3",
       "why": "Tolerant on intent: a reversed range names the same lines.",
       "parses": true,
       "resource": "fs.read",
-      "params": { "channel_id": "c-1", "path": "a.md", "start_line": 3, "end_line": 9 }
+      "params": {
+        "channel_id": "c-1",
+        "path": "a.md",
+        "start_line": 3,
+        "end_line": 9
+      }
     },
     {
       "uri": "cheers:ws/@claude/src/main.rs",
-      "why": "A bot's real workspace file, addressed by handle.",
+      "why": "A bot's real workspace file. Parses and navigates, but does not resolve: a locator cannot carry the browse root the path is relative to, cannot turn @handle into a bot id without a member lookup, and carries no channel.",
       "parses": true,
-      "resource": "workspace.read",
-      "params": { "bot_id": "@claude", "path": "src/main.rs" }
+      "unresolvable": "WorkspacePathNeedsMoreThanALocator"
     },
     {
       "uri": "cheers:inbox/file-9",
       "why": "A chat attachment.",
       "parses": true,
       "resource": "channel.files.read",
-      "params": { "channel_id": "c-1", "file_id": "file-9" }
+      "params": {
+        "channel_id": "c-1",
+        "file_id": "file-9"
+      }
     },
     {
       "uri": "cheers:plan",
       "why": "A channel projection is addressed by the channel alone — no tail.",
       "parses": true,
       "resource": "channel.plan.read",
-      "params": { "channel_id": "c-1" }
+      "params": {
+        "channel_id": "c-1"
+      }
     },
     {
       "uri": "cheers:sessions",
       "why": "As above.",
       "parses": true,
       "resource": "channel.sessions.read",
-      "params": { "channel_id": "c-1" }
+      "params": {
+        "channel_id": "c-1"
+      }
     },
     {
       "uri": "cheers:cost",
       "why": "As above; the verb is channel.usage.read, not channel.cost.read.",
       "parses": true,
       "resource": "channel.usage.read",
-      "params": { "channel_id": "c-1" }
+      "params": {
+        "channel_id": "c-1"
+      }
     },
     {
       "uri": "cheers:activity",
       "why": "As above.",
       "parses": true,
       "resource": "channel.activity.read",
-      "params": { "channel_id": "c-1" }
+      "params": {
+        "channel_id": "c-1"
+      }
     },
     {
       "uri": "cheers:msg/abc-123",
@@ -90,29 +118,125 @@
       "parses": true,
       "unresolvable": "MessageIdHasNoReadResource"
     },
-    { "uri": "cheers:desk/../etc/passwd", "why": "Dot-segments never appear in an honest locator.", "parses": false },
-    { "uri": "cheers:desk//etc/passwd", "why": "Nor empty segments.", "parses": false },
-    { "uri": "cheers:desk/a/./b", "why": "Nor a single-dot segment.", "parses": false },
-    { "uri": "cheers:desk/a\\b", "why": "Backslashes are not path separators here.", "parses": false },
-    { "uri": "cheers:desk/a b.md", "why": "A locator is a single token; whitespace means it is something else.", "parses": false },
-    { "uri": "cheers:desk/a.md#top", "why": "A fragment that is not a line anchor makes the whole locator malformed.", "parses": false },
-    { "uri": "cheers:desk/a.md#L0", "why": "Lines are 1-indexed.", "parses": false },
-    { "uri": "cheers:desk", "why": "A kind that needs a tail, without one.", "parses": false },
-    { "uri": "cheers:desk/", "why": "An empty tail.", "parses": false },
-    { "uri": "cheers:plan/x", "why": "A channel projection takes no tail.", "parses": false },
-    { "uri": "cheers:plan#L1", "why": "Nor an anchor.", "parses": false },
-    { "uri": "cheers:msg/a/b", "why": "A message id has no path.", "parses": false },
-    { "uri": "cheers:msg/a#L1", "why": "Nor an anchor.", "parses": false },
-    { "uri": "cheers:ws/@/x", "why": "An empty handle.", "parses": false },
-    { "uri": "cheers:ws/bot", "why": "A workspace path is required.", "parses": false },
-    { "uri": "cheers:nope/a", "why": "An unknown kind.", "parses": false },
-    { "uri": "cheers:", "why": "No kind at all.", "parses": false },
-    { "uri": "desk/a.md", "why": "No scheme.", "parses": false },
-    { "uri": "cheers:read", "why": "An OAuth scope, not a locator — the scheme is shared.", "parses": false },
-    { "uri": "cheers:messages:write", "why": "As above.", "parses": false },
-    { "uri": "cheers://help/resources", "why": "The resource guide URI: an authority form, not a locator.", "parses": false },
-    { "uri": "cheers://auth/callback", "why": "The desktop OAuth callback: likewise.", "parses": false },
-    { "uri": "cheers:task-claim:11111111-2222-3333-4444-555555555555", "why": "A task-claim namespace string fed to Uuid::new_v5.", "parses": false },
-    { "uri": "cheers:sess-1:user-2:nonce-3", "why": "A LiveKit participant identity.", "parses": false }
+    {
+      "uri": "cheers:desk/../etc/passwd",
+      "why": "Dot-segments never appear in an honest locator.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk//etc/passwd",
+      "why": "Nor empty segments.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a/./b",
+      "why": "Nor a single-dot segment.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a\\b",
+      "why": "Backslashes are not path separators here.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a b.md",
+      "why": "A locator is a single token; whitespace means it is something else.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a.md#top",
+      "why": "A fragment that is not a line anchor makes the whole locator malformed.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a.md#L0",
+      "why": "Lines are 1-indexed.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk",
+      "why": "A kind that needs a tail, without one.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/",
+      "why": "An empty tail.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:plan/x",
+      "why": "A channel projection takes no tail.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:plan#L1",
+      "why": "Nor an anchor.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:msg/a/b",
+      "why": "A message id has no path.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:msg/a#L1",
+      "why": "Nor an anchor.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:ws/@/x",
+      "why": "An empty handle.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:ws/bot",
+      "why": "A workspace path is required.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:nope/a",
+      "why": "An unknown kind.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:",
+      "why": "No kind at all.",
+      "parses": false
+    },
+    {
+      "uri": "desk/a.md",
+      "why": "No scheme.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:read",
+      "why": "An OAuth scope, not a locator — the scheme is shared.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:messages:write",
+      "why": "As above.",
+      "parses": false
+    },
+    {
+      "uri": "cheers://help/resources",
+      "why": "The resource guide URI: an authority form, not a locator.",
+      "parses": false
+    },
+    {
+      "uri": "cheers://auth/callback",
+      "why": "The desktop OAuth callback: likewise.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:task-claim:11111111-2222-3333-4444-555555555555",
+      "why": "A task-claim namespace string fed to Uuid::new_v5.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:sess-1:user-2:nonce-3",
+      "why": "A LiveKit participant identity.",
+      "parses": false
+    }
   ]
 }
