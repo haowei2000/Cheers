@@ -1,7 +1,7 @@
 # Panel model
 
-> Status: **Steps 1–4 implemented** — 2026-08-20. Step 5 (one picker) is deliberately
-> unbuilt; see the note under Migration order. Argues that
+> Status: **Implemented** — 2026-08-21. All five steps landed; the open question about
+> windows vs. boards is answered under step 5. Argues that
 > Workbench, ViewBoard, and Remote workspace are one concept differing only in data
 > source, and that collapsing them is the precondition for making any of them
 > plugin-able. Related: [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md) (the authority boundary this
@@ -120,6 +120,12 @@ they become one lookup over the source, so every fs panel waits on the single ti
 channel workspace actually emits rather than one named after itself. The coalescing and
 visibility-deferral logic carries over unchanged.
 
+A resource source may name `pick`, the key to unwrap before the data reaches the view —
+every `channel.*` verb wraps its payload (`{"members": [...], "total": N}`) while the array
+views want the bare list. It is a lookup on data the panel already read, so it widens what a
+package can EXPRESS, never what it can REACH. Only `resource` may pick: an `fs` source hands
+back content, not a wrapper.
+
 **`workspace` is deliberately unserved.** It exists in the union so the model names every
 source honestly and so the manifest validators have something to reject, but `fetcherFor`
 returns null for it: `RemoteWorkspaceDialog` still owns that plane through the bot-scoped
@@ -229,18 +235,29 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.
 
-5. **Then decide the UX.** ~~Four toolbar toggles become one "add panel" control plus a
-   picker.~~ **Not built, on purpose.** Building steps 1–4 showed the step conflates two
-   lists: the toolbar toggles four *windows* (Channel files, Remote workspace, ViewBoard,
-   Workbench), while `panelsFor("lane")` returns *boards* that render as tabs **inside**
-   one of those windows. Merging them needs the four windows promoted to registered
-   panels first — a design decision this document never made, and one worth making on its
-   own terms rather than as a side effect of a toolbar change.
+5. **One picker.** Done. The four toolbar toggles are one Panels control listing
+   **Windows** (Channel files, Remote workspace, ViewBoard, Workbench) and **Boards**
+   (Plan, Cost, Sessions, Audit, Activity, plus anything a package contributes). Choosing
+   a board opens the ViewBoard focused on it, through the same `openBoard` the session
+   chip's "Manage sessions…" uses.
 
-   The payoff it was reaching for already landed in step 4: a contributed panel appears in
-   the ViewBoard's tab strip beside Plan and Cost, so it is discoverable without the
-   picker. Whoever picks this up should start by deciding whether a window and a board are
-   one concept with a `presentation` axis, or two.
+   **The question this raised, answered: a window and a board are two concepts that share
+   identity, not rendering.** The windows take wildly different props —
+   `RemoteWorkspaceDialog` alone takes nine, including presence and bot-scoped signals — so
+   one `render(ctx)` contract would need exactly the god-context `PanelContext` was
+   designed to avoid. But `{id, title, icon}` plus open state is common to both, and that
+   is all a picker needs. Hence
+   [`laneWindows.ts`](../../frontend/src/features/chat/panels/laneWindows.ts) is a
+   descriptor list rather than a registry: `ChannelView` still renders each window itself
+   with its own props.
+
+   This needed no `openPanels: Set<string>` refactor. `openInstrument` and the four
+   booleans have ~15 deep-link call sites, and rewriting them buys the picker nothing.
+
+   Contributed panels load from `ChannelView`
+   ([`useExtensionPanels`](../../frontend/src/features/chat/panels/useExtensionPanels.ts)),
+   not from the ViewBoard drawer — a board nobody can find until they first open the drawer
+   it lives behind is not discoverable, which was the point of listing it.
 
 `ChannelFilesDialog` (80 lines) is the fourth lane occupant and fits the model unchanged;
 it is the cheapest first consumer of `PanelHost` in step 2.

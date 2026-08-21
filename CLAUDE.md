@@ -52,6 +52,9 @@ npm run dev                        # Vite dev server
 npm run typecheck                  # tsc --noEmit
 npm run test                       # vitest run
 npm run build
+npm run design-system:check        # DESIGN.md conformance — CI gate; typecheck/test/lint do NOT catch it
+npm run design-system:test         # the checker's own tests
+npm run security:check             # frontend security rules + npm audit — CI gate
 
 # Connector / MCP crates: cargo fmt --check, cargo test, cargo check inside each package dir
 ```
@@ -69,7 +72,10 @@ Cluster: kind cluster `cheers` (kube context `kind-cheers`), namespace `cheers`.
 UI: frontend NodePort → <http://localhost:30080> (sign in `admin` / `admin12345`).
 
 ```bash
-# First-time install: build images → load into kind → install the release
+# First-time install: create the cluster → build images → load into kind → install.
+# The config maps NodePort 30080 to the host; without it the UI is NOT reachable at
+# localhost:30080 (a plain `kind create cluster` exposes NodePorts on the node IP only).
+kind create cluster --name cheers --config deploy/kind-config.yaml
 docker build -t cheers/gateway:dev -f server/Dockerfile .   # root context: server needs packages/.../bridge-protocol
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 -f frontend/Dockerfile .
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers

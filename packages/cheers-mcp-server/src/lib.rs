@@ -2,6 +2,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use url::Url;
 
+pub mod locator;
 pub mod registry;
 pub mod tools;
 
@@ -320,15 +321,24 @@ fn safe_mime(supplied: &str, binary: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    /// The scope table exactly as it was hand-written before the registry.
-    /// Kept as a test fixture so the registry migration is provably behaviour-
+    /// The scope table as it was hand-written before the registry, plus every tool added
+    /// since. Kept as a test fixture so the registry migration is provably behaviour-
     /// preserving; it is not reachable from production code.
+    ///
+    /// It has outgrown that original purpose and is now the better one: a second,
+    /// deliberate statement of each tool's scope. A new tool cannot be added without
+    /// writing its scope down twice, in two files, which is the point — the scope is the
+    /// one thing about a tool that must never be decided by accident.
     fn frozen_scope_table(name: &str) -> Option<&'static str> {
         match name {
             "get_channel_info" | "list_members" | "read_messages" | "messages_index"
             | "messages_by_seq" | "search_messages" | "read_activity" | "get_context"
             | "read_plan" | "read_sessions" | "read_cost" | "inbox_list" | "inbox_open"
-            | "desk_list" | "desk_read" | "read_workspace" | "list_task_claims" => Some(SCOPE_READ),
+            | "desk_list" | "desk_read" | "read_workspace" | "list_task_claims"
+            // Resolves a cheers: URI. SCOPE_READ grants nothing the tools above did not
+            // already: every resource a locator can name is one of them. Asserted by
+            // locator::tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for.
+            | "read_locator" => Some(SCOPE_READ),
             "post_message" => Some(SCOPE_MESSAGES_WRITE),
             "inbox_deliver" => Some(SCOPE_FILES_WRITE),
             "desk_write"

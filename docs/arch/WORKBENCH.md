@@ -30,10 +30,12 @@ SAME vocabulary the package installers enforce — it is a second way to declare
 a second grammar — and rejects a `self:` view, since a release-managed extension carries no
 renderer bundle. Malformed catalog data panics at build time rather than failing a request.
 
-**Known gap:** every `channel.*` verb returns a wrapper object (`{"members": [...]}`), while
-`builtin:table` accepts a bare array, so a resource-source panel over one currently renders
-empty. A `pick` field on the source (naming the key to unwrap) would close this; until then,
-useful declarative panels are limited to `fs` sources whose file is already the right shape.
+A resource source may name `pick`: the key to unwrap before the data reaches the view, since
+every `channel.*` verb wraps its payload (`{"members": [...], "total": N}`) while the array
+views want the bare list. A key that is absent yields an empty view rather than an error. Only
+a resource source may pick — an `fs` source hands back file content, not a wrapper. A panel may
+also carry `config`, passed to the view untouched, the same data-only field a scene item has.
+`cheers-team-ops` ships a Roster board built this way; copy it.
 
 Renderer references are `auto`, `builtin:<id>`, or `self:<id>`; `self:` is valid only for
 personal macOS packages. A panel with a `self:` view validates at personal scope on both

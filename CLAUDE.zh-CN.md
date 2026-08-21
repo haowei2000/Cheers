@@ -41,6 +41,9 @@
 cd server && cargo build && cargo test
 ```
 
+前端推送前需要跑的命令（含 typecheck/test/lint 覆盖不到的 CI 门禁）见
+[CLAUDE.md](CLAUDE.md) 的 Commands 一节。
+
 ### 本地运行：Kubernetes（规范路径）
 
 本地服务栈通过 `deploy/helm/cheers` 的 **Helm chart** 运行在 **kind** 集群上 ——
@@ -53,7 +56,10 @@ gateway + frontend + postgres + rustfs（redis 可选启用）。
 UI：前端 NodePort → <http://localhost:30080>（登录 `admin` / `admin12345`）。
 
 ```bash
-# 首次安装：构建镜像 → 加载进 kind → 安装 release
+# 首次安装：创建集群 → 构建镜像 → 加载进 kind → 安装 release
+# 该 config 会把 NodePort 30080 映射到宿主机；不带它则 localhost:30080 无法访问
+# （普通的 `kind create cluster` 只在节点容器 IP 上暴露 NodePort）。
+kind create cluster --name cheers --config deploy/kind-config.yaml
 docker build -t cheers/gateway:dev -f server/Dockerfile .   # 根上下文：server 依赖 packages/.../bridge-protocol
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 -f frontend/Dockerfile .
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers

@@ -77,6 +77,10 @@ pub struct PanelContribution {
     pub title: String,
     pub source: PanelSource,
     pub view: String,
+    /// View config (e.g. table columns), handed to the built-in view untouched. Data,
+    /// exactly like a scene item's config — it selects presentation, never behavior.
+    #[serde(default)]
+    pub config: Option<Value>,
 }
 
 /// Only the kinds in PANEL_SOURCE_KINDS are variants here, so serde rejects a
@@ -84,7 +88,17 @@ pub struct PanelContribution {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum PanelSource {
-    Resource { verb: String },
+    Resource {
+        verb: String,
+        /// Key to unwrap before the data reaches the view. Every `channel.*` verb wraps
+        /// its payload (`{"members": [...], "total": N}`) while the array views want the
+        /// bare list. This is a lookup on data the panel already read: it widens what a
+        /// package can EXPRESS, never what it can REACH — the verb allowlist is untouched.
+        #[serde(default)]
+        pick: Option<String>,
+    },
+    /// No `pick`: a file source hands back content, not a wrapper. Accepting the field
+    /// here would let a manifest say something the reader silently ignores.
     Fs { path: String },
 }
 
@@ -574,7 +588,10 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
         match &panel.source {
             // A panel's verb comes from the SAME fixed list as channel.resources.
             // Declaring a source must never widen what a package can read.
-            PanelSource::Resource { verb } => {
+            // `pick` needs no validation beyond being a string, which serde already
+            // enforced: any key is legal, and one that is absent at read time yields
+            // an empty view rather than an error.
+            PanelSource::Resource { verb, pick: _ } => {
                 if !CHANNEL_RESOURCES.contains(&verb.as_str()) {
                     return Err(format!(
                         "panel `{}` reads `{verb}`, which is not an allowed channel resource",

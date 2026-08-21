@@ -15,8 +15,6 @@ import { addToContextTitle } from "@/features/chat/context/contextLabels";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
 import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
-import { listExtensions } from "./extensions/api";
-import { registerExtensionPanels } from "@/features/chat/panels/extensionPanels";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
 import type { Message } from "@/types";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -52,8 +50,6 @@ interface Props {
   focusBoard?: { id: string; nonce: number };
 }
 
-let extensionPanelsLoaded = false;
-
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
 
 // Boards that map to a resource verb an agent can resolve (docs/design/RESOURCE_CONTEXT.md).
@@ -88,24 +84,8 @@ function ViewBoardDrawerImpl({
   focusBoard,
 }: Props) {
   const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
-  // Installed packages contribute lane panels declaratively. Registration is global and
-  // idempotent, so this runs once per session. The value is never read: panelsFor() below
-  // reads the module registry on every render, so bumping this simply re-renders once the
-  // contributions land.
-  const [, setExtensionPanelsRevision] = useState(0);
-  useEffect(() => {
-    if (!open || extensionPanelsLoaded) return;
-    extensionPanelsLoaded = true;
-    listExtensions()
-      .then((extensions) => {
-        registerExtensionPanels(extensions);
-        setExtensionPanelsRevision((revision) => revision + 1);
-      })
-      .catch(() => {
-        // A gateway that cannot list extensions just means no contributed panels.
-        extensionPanelsLoaded = false;
-      });
-  }, [open]);
+  // Contributed panels are loaded by ChannelView (useExtensionPanels) so the toolbar's
+  // picker can list them before this drawer has ever been opened.
   const boards = panelsFor("lane", profile?.profile);
   const [active, setActive] = useState<string>(
     () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
