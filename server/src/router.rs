@@ -603,6 +603,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::connector_hosts::reconnect_host),
         )
         .route(
+            "/api/v1/bots/:bot_id/hosts/:host_id/repositories",
+            get(api::connector_hosts::list_host_repositories),
+        )
+        .route(
             "/api/v1/bots/:bot_id/hosts/:host_id/record",
             delete(api::connector_hosts::delete_host_record),
         )

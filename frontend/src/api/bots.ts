@@ -159,6 +159,18 @@ export async function listConnectorHosts(botId: string): Promise<ConnectorHost[]
   return result.hosts ?? [];
 }
 
+export interface HostRepository {
+  path: string;
+  branch?: string | null;
+}
+
+export async function listHostRepositories(
+  botId: string,
+  hostId: string,
+): Promise<{ repositories: HostRepository[]; default_cwd?: string | null; git_ops?: string | null }> {
+  return apiJson(`/bots/${botId}/hosts/${hostId}/repositories`);
+}
+
 export async function activateConnectorHost(botId: string, hostId: string): Promise<void> {
   await apiJson(`/bots/${botId}/hosts/${hostId}/activate`, { method: "POST" });
 }

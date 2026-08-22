@@ -3,25 +3,35 @@ import { apiJson } from "./client";
 export interface ChannelProfile {
   profile: "code" | string;
   config: Record<string, unknown> & {
-    integration_id?: string;
-    installation_id?: string;
-    repository?: string;
-    branch?: string;
-    bot_id?: string;
+    remote_source?: CodeRemoteSource;
+    execution_target?: CodeExecutionTarget;
   };
   status: Record<string, unknown> & {
-    state?: "pending" | "importing" | "ready" | "syncing" | "error";
-    workspace_path?: string;
+    state?: "unconfigured" | "pending" | "importing" | "ready" | "syncing" | "error";
     head_commit?: string;
     last_error?: string;
+    target_online?: boolean;
+    target_device?: string;
+    target_bot_name?: string;
   };
 }
 
-export interface CodeProfileConfig {
+export interface CodeRemoteSource {
+  kind: "github";
   installation_id: string;
   repository: string;
   branch: string;
-  bot_id?: string;
+}
+
+export interface CodeExecutionTarget {
+  bot_id: string;
+  host_id: string;
+  checkout_id?: string;
+}
+
+export interface CodeProfileConfig {
+  remote_source?: CodeRemoteSource;
+  execution_target?: Omit<CodeExecutionTarget, "checkout_id">;
 }
 
 export function getChannelProfile(channelId: string): Promise<ChannelProfile | null> {

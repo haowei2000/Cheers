@@ -1,8 +1,8 @@
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useEffect, useState } from "react";
-import { GitFork, Hash, Link2, Lock, MessagesSquare, Volume2 } from "lucide-react";
+import { FolderGit2, GitFork, Github, Hash, Link2, Lock, MessagesSquare, Server, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { createChannel, deleteChannel } from "@/api/channels";
+import { addChannelMember, createChannel, deleteChannel } from "@/api/channels";
 import { putCodeProfile } from "@/api/channelProfiles";
 import {
   bindChannelIntegration,
@@ -24,6 +24,9 @@ import type { ConversationMode } from "./ConversationModePicker";
 import { Button } from "@/components/ui/button";
 import { invokeDesktop } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
+import { getFleetHosts, type FleetHost } from "@/api/fleet";
+import { listHostRepositories, type HostRepository } from "@/api/bots";
+import { createChannelBotSession, setPrimaryChannelBotSession } from "@/api/sessionControl";
 
 // Create a channel in the given workspace, then add it to the store and select it
 // (it opens in the normal chat view). Mirrors the NewDmDialog pattern.
@@ -43,6 +46,11 @@ export function NewChannelDialog({
   const [type, setType] = useState<"public" | "private">("public");
   const [channelType, setChannelType] = useState<"chat" | "discuss" | "code">("chat");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [sourceMode, setSourceMode] = useState<"local" | "github">("local");
+  const [hosts, setHosts] = useState<FleetHost[]>([]);
+  const [targetHostId, setTargetHostId] = useState("");
+  const [hostRepositories, setHostRepositories] = useState<HostRepository[]>([]);
+  const [checkoutPath, setCheckoutPath] = useState("");
   const [installations, setInstallations] = useState<IntegrationInstallation[]>([]);
   const [installationId, setInstallationId] = useState("");
   const [repositories, setRepositories] = useState<IntegrationResource[]>([]);
@@ -52,27 +60,49 @@ export function NewChannelDialog({
   const profile = channelType === "code" ? "code" : "standard";
   const conversationMode: ConversationMode = channelType === "discuss" ? "discuss" : "chat";
 
-  function refreshInstallations() {
-    return listIntegrationInstallations("github").then((items) => {
-      setInstallations(items.filter((item) => item.workspace_id === workspaceId));
-      setInstallationId((current) => current || items.find((item) => item.workspace_id === workspaceId)?.installation_id || "");
-    }).catch(() => setInstallations([]));
-  }
-
   useEffect(() => {
     if (profile !== "code") return;
+    void getFleetHosts().then((items) => {
+      const available = items.filter((item) => item.status === "active" && !item.revoked_at);
+      setHosts(available);
+      setTargetHostId((current) => current || available.find((item) => item.online)?.host_id || "");
+    }).catch(() => setHosts([]));
+    if (sourceMode !== "github") return;
+    const refreshInstallations = () => listIntegrationInstallations("github").then((items) => {
+      const workspaceItems = items.filter((item) => item.workspace_id === workspaceId);
+      setInstallations(workspaceItems);
+      setInstallationId((current) => current || workspaceItems[0]?.installation_id || "");
+    }).catch(() => setInstallations([]));
     void refreshInstallations();
     const refreshOnFocus = () => { void refreshInstallations(); };
     window.addEventListener("focus", refreshOnFocus);
     return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [profile, workspaceId]);
+  }, [profile, sourceMode, workspaceId]);
 
   useEffect(() => {
-    if (profile !== "code" || !installationId) { setRepositories([]); return; }
+    if (profile !== "code" || sourceMode !== "github" || !installationId) { setRepositories([]); return; }
     void listIntegrationResources("github", installationId)
       .then((items) => setRepositories(items))
       .catch(() => setRepositories([]));
-  }, [profile, installationId]);
+  }, [profile, sourceMode, installationId]);
+
+  useEffect(() => {
+    const host = hosts.find((item) => item.host_id === targetHostId);
+    if (profile !== "code" || !host?.online) {
+      setHostRepositories([]);
+      setCheckoutPath("");
+      return;
+    }
+    void listHostRepositories(host.bot_id, host.host_id)
+      .then((result) => {
+        setHostRepositories(result.repositories);
+        setCheckoutPath((current) => current || result.repositories.find((repo) => repo.path === result.default_cwd)?.path || result.repositories[0]?.path || "");
+      })
+      .catch(() => {
+        setHostRepositories([]);
+        setCheckoutPath("");
+      });
+  }, [hosts, profile, targetHostId]);
 
   async function connectGitHub() {
     if (connectBusy) return;
@@ -98,6 +128,7 @@ export function NewChannelDialog({
     let createdChannel: Awaited<ReturnType<typeof createChannel>> | null = null;
     let codeProfileCreated = false;
     try {
+      const target = hosts.find((item) => item.host_id === targetHostId);
       const ch = await createChannel({
         workspace_id: workspaceId,
         name: trimmed,
@@ -108,20 +139,40 @@ export function NewChannelDialog({
       });
       createdChannel = ch;
       if (profile === "code") {
-        const repository = repositories.find((item) => item.external_id === repositoryId);
-        if (!repository || !installationId) throw new Error("Select a GitHub repository");
-        await bindChannelIntegration(ch.channel_id, {
-          integration_id: "github",
-          installation_id: installationId,
-          external_id: repository.external_id,
-        });
+        if (target) {
+          await addChannelMember(ch.channel_id, {
+            member_id: target.bot_id,
+            member_type: "bot",
+          });
+          if (checkoutPath) {
+            const session = await createChannelBotSession(ch.channel_id, target.bot_id, {
+              cwd: checkoutPath,
+            });
+            await setPrimaryChannelBotSession(ch.channel_id, target.bot_id, session.session_id);
+          }
+        }
+        const repository = sourceMode === "github"
+          ? repositories.find((item) => item.external_id === repositoryId)
+          : undefined;
+        if (sourceMode === "github") {
+          if (!repository || !installationId) throw new Error("Select a GitHub repository");
+          await bindChannelIntegration(ch.channel_id, {
+            integration_id: "github",
+            installation_id: installationId,
+            external_id: repository.external_id,
+          });
+        }
         await putCodeProfile(ch.channel_id, {
-          installation_id: installationId,
-          repository: repository.external_id,
-          branch: repository.detail.default_branch || "main",
+          remote_source: repository && installationId ? {
+            kind: "github",
+            installation_id: installationId,
+            repository: repository.external_id,
+            branch: repository.detail.default_branch || "main",
+          } : undefined,
+          execution_target: target ? { bot_id: target.bot_id, host_id: target.host_id } : undefined,
         });
         codeProfileCreated = true;
-        await initializeChannelIntegration(ch.channel_id);
+        if (repository) await initializeChannelIntegration(ch.channel_id);
       }
       upsertChannel(ch);
       selectChannel(ch.channel_id);
@@ -156,7 +207,7 @@ export function NewChannelDialog({
         selectChannel(createdChannel.channel_id);
         onPicked?.();
         onClose();
-        toast.error(`Channel created, but repository import needs retry — ${detail}`);
+        toast.error(`Channel created, but project setup needs retry — ${detail}`);
         return;
       }
       toast.error(`Couldn't create channel — ${detail}`);
@@ -214,29 +265,72 @@ export function NewChannelDialog({
 
         {profile === "code" && (
           <div className="space-y-2 border-t border-zinc-800 pt-3">
-            <label className="block text-compact text-content-muted" htmlFor="code-installation">GitHub installation</label>
-            <Select id="code-installation" controlSize="regular"
-              value={installationId} onChange={(event) => { setInstallationId(event.target.value); setRepositoryId(""); }}>
-              <option value="">Select installation…</option>
-              {installations.map((item) => <option key={item.installation_id} value={item.installation_id}>{item.external_account}</option>)}
+            <p className="text-compact font-medium uppercase tracking-label text-content-muted">Repository source</p>
+            <ChoiceGroup
+              ariaLabel="Repository source"
+              value={sourceMode}
+              onChange={setSourceMode}
+              options={[
+                { value: "local", label: "Local", leading: <FolderGit2 /> },
+                { value: "github", label: "GitHub", leading: <Github /> },
+              ]}
+            />
+
+            {sourceMode === "github" && (
+              <div className="space-y-2">
+                {installations.length > 1 && (
+                  <>
+                    <span className="block text-compact text-content-muted">GitHub account</span>
+                    <Select aria-label="GitHub account" controlSize="regular"
+                      value={installationId} onChange={(event) => { setInstallationId(event.target.value); setRepositoryId(""); }}>
+                      <option value="">Select account…</option>
+                      {installations.map((item) => <option key={item.installation_id} value={item.installation_id}>{item.external_account}</option>)}
+                    </Select>
+                  </>
+                )}
+                <span className="block text-compact text-content-muted">Repository</span>
+                <Select aria-label="Repository" controlSize="regular"
+                  value={repositoryId} onChange={(event) => setRepositoryId(event.target.value)} disabled={!installationId}>
+                  <option value="">Select repository…</option>
+                  {repositories.map((item) => <option key={item.external_id} value={item.external_id}>{item.external_id}{item.private ? " · Private" : ""}</option>)}
+                </Select>
+                {installations.length === 0 && (
+                  <Button action="connect" content="iconText" variant="secondary" controlSize="compact"
+                    loading={connectBusy} onClick={() => void connectGitHub()}>
+                    <Link2 />
+                  </Button>
+                )}
+              </div>
+            )}
+
+            <span className="block text-compact text-content-muted">Execution target</span>
+            <Select aria-label="Execution target" controlSize="regular" value={targetHostId}
+              onChange={(event) => { setTargetHostId(event.target.value); setCheckoutPath(""); }}>
+              <option value="">Set up later</option>
+              {hosts.map((host) => (
+                <option key={host.host_id} value={host.host_id} disabled={!host.online}>
+                  {host.bot_name} · {host.device_name}{host.online ? "" : " · Offline"}
+                </option>
+              ))}
             </Select>
-            <label className="block text-compact text-content-muted" htmlFor="code-repository">Repository</label>
-            <Select id="code-repository" controlSize="regular"
-              value={repositoryId} onChange={(event) => setRepositoryId(event.target.value)} disabled={!installationId}>
-              <option value="">Select repository…</option>
-              {repositories.map((item) => <option key={item.external_id} value={item.external_id}>{item.external_id}{item.private ? " · Private" : ""}</option>)}
-            </Select>
-            {installations.length === 0 && <p className="text-compact text-warning-400">No GitHub App installation is available in this workspace.</p>}
-            <Button
-              action="connect"
-              content="iconText"
-              variant="secondary"
-              controlSize="compact"
-              loading={connectBusy}
-              onClick={() => void connectGitHub()}
-            >
-              <Link2 />
-            </Button>
+            {hostRepositories.length > 0 && (
+              <>
+                <span className="block text-compact text-content-muted">Repository checkout</span>
+                <Select aria-label="Repository checkout" controlSize="regular" value={checkoutPath}
+                  onChange={(event) => setCheckoutPath(event.target.value)}>
+                  {hostRepositories.map((repository) => (
+                    <option key={repository.path} value={repository.path}>
+                      {repository.path}{repository.branch ? ` · ${repository.branch}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </>
+            )}
+            {hosts.length === 0 && (
+              <p className="inline-flex items-center gap-2 text-compact text-content-muted">
+                <Server className="h-4 w-4" /> No connected Bot Hosts
+              </p>
+            )}
           </div>
         )}
 
@@ -245,7 +339,7 @@ export function NewChannelDialog({
           <ActionButton
             action="create"
             context="form"
-            disabled={!name.trim() || busy || (profile === "code" && (!installationId || !repositoryId))}
+            disabled={!name.trim() || busy || (profile === "code" && sourceMode === "github" && (!installationId || !repositoryId))}
             loading={busy}
             onClick={() => void submit()}
           />

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBot, createHost, redeemHostPairing } from "./bots";
+import { createBot, createHost, listHostRepositories, redeemHostPairing } from "./bots";
 
 function ok(body: unknown) {
   return Promise.resolve(new Response(JSON.stringify(body), {
@@ -57,5 +57,18 @@ describe("bot and host API separation", () => {
       pairing_code: "agbpair_secret",
       device_name: "Build Mac",
     });
+  });
+
+  it("discovers repositories through one concrete Bot Host", async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      ok({ repositories: [{ path: "/repo", branch: "main" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listHostRepositories("bot-1", "host-1");
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(
+      /\/bots\/bot-1\/hosts\/host-1\/repositories$/,
+    );
+    expect(result.repositories[0]).toEqual({ path: "/repo", branch: "main" });
   });
 });

@@ -75,6 +75,31 @@ pub async fn list_hosts(
     Ok(Json(json!({ "bot_id": bot_id, "hosts": hosts })))
 }
 
+pub async fn list_host_repositories(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((bot_id, host_id)): Path<(String, String)>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM connector_hosts
+          WHERE host_id = $1 AND bot_id = $2 AND status = 'active' AND revoked_at IS NULL)",
+    )
+    .bind(&host_id)
+    .bind(&bot_id)
+    .fetch_one(&state.db)
+    .await?;
+    if !active {
+        return Err(AppError::BadRequest(
+            "repository discovery requires the Bot's active Host".into(),
+        ));
+    }
+    let bot_id = Uuid::parse_str(&bot_id).map_err(|_| AppError::NotFound)?;
+    Ok(Json(
+        crate::api::workspace::discover_bot_repositories(&state, bot_id).await?,
+    ))
+}
+
 pub async fn activate_host(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
