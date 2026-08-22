@@ -2,7 +2,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Boxes,
@@ -13,11 +13,11 @@ import {
   FileCode2,
   Maximize2,
   Minus,
+  PanelRightClose,
   Plus,
   RotateCcw,
   Server,
   TriangleAlert,
-  X,
 } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
 import { isComposing } from "@/lib/ime";
@@ -669,6 +669,20 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
   return (
     <aside className="floating-control-surface h-full w-full overflow-y-auto rounded-concentric p-4 text-compact">
       <div className="flex items-start gap-3">
+        {onClose && (
+          <UiButton
+            variant="plain"
+            type="button"
+            onClick={onClose}
+            aria-label="Close node details"
+            title="Close node details"
+            content="icon"
+            controlSize="compact"
+            className="flex-shrink-0 rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </UiButton>
+        )}
         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
           <CodemapKindIcon kind={node.kind} />
         </span>
@@ -676,11 +690,6 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
           <h3 className="truncate text-regular font-semibold text-content-primary">{node.label}</h3>
           <p className="mt-1 text-compact capitalize text-content-muted">{node.kind}</p>
         </div>
-        {onClose && (
-          <UiButton variant="plain" type="button" onClick={onClose} aria-label="Close node details" content="icon" controlSize="compact" className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
-            <X className="h-4 w-4" />
-          </UiButton>
-        )}
       </div>
       <dl className="mt-5 space-y-5">
         <div>
@@ -714,7 +723,8 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
 const DRAG_SLOP_PX = 4;
 
 function CodemapLens({ data, requestContextPick }: LensProps) {
-  const document = parseCodemap(data);
+  // Keep local selection changes from looking like a newly loaded document.
+  const document = useMemo(() => parseCodemap(data), [data]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const initializedDocRef = useRef<unknown>(null);
   const [scale, setScale] = useState(1);
@@ -855,7 +865,11 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
         </div>
       </div>
       {selected && (
-        <div className="absolute bottom-16 right-3 top-[var(--floating-panel-safe-top)] z-20 w-72 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-concentric max-md:left-3 max-md:w-auto">
+        <div
+          data-codemap-inspector=""
+          className="absolute bottom-16 right-3 z-20 w-72 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-concentric max-md:left-3 max-md:w-auto"
+          style={{ top: "calc(var(--floating-panel-safe-top) + 0.5rem)" }}
+        >
           <CodemapInspector node={selected} onClose={() => setSelectedId(null)} />
         </div>
       )}
