@@ -448,6 +448,10 @@ pub async fn upsert_event_rule(
             )))
         }
     };
+    if allow {
+        crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
+            .await?;
+    }
     let subject_id = body.subject_id.trim();
     if subject_id.is_empty() {
         return Err(AppError::BadRequest("subject_id required".into()));
@@ -489,19 +493,42 @@ pub async fn delete_event_rule(
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let capability = parse_capability(q.capability.trim())?;
     let channel = normalize_channel(q.channel_id);
-    let removed = bot_event_policy::delete_rule(
-        &state.db,
-        &bot_id,
-        &channel,
-        q.subject_kind.trim(),
-        q.subject_id.trim(),
-        q.event_class.trim(),
-        capability,
+    let mut tx = state.db.begin().await?;
+    let decision = sqlx::query_scalar::<_, String>(
+        "SELECT decision FROM bot_event_access
+         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
+           AND subject_id = $4 AND event_class = $5 AND capability = $6
+         FOR UPDATE",
     )
+    .bind(&bot_id)
+    .bind(&channel)
+    .bind(q.subject_kind.trim())
+    .bind(q.subject_id.trim())
+    .bind(q.event_class.trim())
+    .bind(capability.as_str())
+    .fetch_optional(&mut *tx)
     .await?;
-    if !removed {
+    let Some(decision) = decision else {
         return Err(AppError::NotFound);
+    };
+    if decision == "deny" {
+        crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
+            .await?;
     }
+    sqlx::query(
+        "DELETE FROM bot_event_access
+         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
+           AND subject_id = $4 AND event_class = $5 AND capability = $6",
+    )
+    .bind(&bot_id)
+    .bind(&channel)
+    .bind(q.subject_kind.trim())
+    .bind(q.subject_id.trim())
+    .bind(q.event_class.trim())
+    .bind(capability.as_str())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -637,6 +664,10 @@ pub async fn upsert_bot_grant(
             )))
         }
     };
+    if allow {
+        crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
+            .await?;
+    }
     let subject_id = body.subject_id.trim();
     if subject_id.is_empty() {
         return Err(AppError::BadRequest("subject_id required".into()));
@@ -683,19 +714,40 @@ pub async fn delete_bot_grant(
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let (event_class, capability) = bot_grant_key(q.grant.trim())?;
     let channel = normalize_channel(q.channel_id);
-    let removed = bot_event_policy::delete_rule(
-        &state.db,
-        &bot_id,
-        &channel,
-        bot_event_policy::SUBJECT_BOT,
-        q.subject_id.trim(),
-        event_class,
-        capability,
+    let mut tx = state.db.begin().await?;
+    let decision = sqlx::query_scalar::<_, String>(
+        "SELECT decision FROM bot_event_access
+         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = 'bot'
+           AND subject_id = $3 AND event_class = $4 AND capability = $5
+         FOR UPDATE",
     )
+    .bind(&bot_id)
+    .bind(&channel)
+    .bind(q.subject_id.trim())
+    .bind(event_class)
+    .bind(capability.as_str())
+    .fetch_optional(&mut *tx)
     .await?;
-    if !removed {
+    let Some(decision) = decision else {
         return Err(AppError::NotFound);
+    };
+    if decision == "deny" {
+        crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
+            .await?;
     }
+    sqlx::query(
+        "DELETE FROM bot_event_access
+         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = 'bot'
+           AND subject_id = $3 AND event_class = $4 AND capability = $5",
+    )
+    .bind(&bot_id)
+    .bind(&channel)
+    .bind(q.subject_id.trim())
+    .bind(event_class)
+    .bind(capability.as_str())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
 

@@ -1,3 +1,4 @@
+use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
 /// One password policy for self-service and administrator-provisioned accounts.
@@ -79,6 +80,27 @@ pub fn sha256_hex(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+/// Keyed digest for short email OTPs. A plain SHA-256 digest would still be
+/// brute-forceable from a database snapshot because the code space is small.
+pub fn hash_email_code(
+    secret_store_key: Option<&str>,
+    jwt_private_key_pem: &str,
+    email: &str,
+    purpose: &str,
+    code: &str,
+) -> String {
+    let key = derive_master_key(secret_store_key, jwt_private_key_pem);
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(&key).expect("SHA-256 accepts a 32-byte HMAC key");
+    mac.update(b"cheers-email-code-v1:");
+    mac.update(email.trim().to_lowercase().as_bytes());
+    mac.update(b":");
+    mac.update(purpose.as_bytes());
+    mac.update(b":");
+    mac.update(code.trim().to_uppercase().as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 // ── Secrets at rest (AES-256-GCM) ────────────────────────────────────────────
@@ -164,7 +186,8 @@ pub async fn verify_password(plain: String, hash: String) -> Result<bool, bcrypt
 
 /// A short, unambiguous one-time code for email flows (e.g. password reset). 8 chars
 /// from a 31-symbol alphabet (no 0/O/1/I/L) → ~31^8 ≈ 8.5e11 combos, fits the
-/// `email_codes.code` column (VARCHAR(10)). Pair with a short TTL + rate limiting.
+/// legacy transport shape. Persist only `hash_email_code`, with a short TTL and
+/// rate limiting; never persist the returned plaintext.
 pub fn generate_email_code() -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0 O 1 I L
     let mut bytes = [0u8; 8];
@@ -188,6 +211,25 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(decrypt_secret(&key, &a).unwrap(), "sk-abc123");
         assert_eq!(decrypt_secret(&key, &b).unwrap(), "sk-abc123");
+    }
+
+    #[test]
+    fn email_code_hash_is_canonical_and_keyed() {
+        let one = hash_email_code(Some("key-one"), "jwt", "User@Example.com", "login", "ab23");
+        assert_eq!(
+            one,
+            hash_email_code(
+                Some("key-one"),
+                "jwt",
+                " user@example.com ",
+                "login",
+                "AB23"
+            )
+        );
+        assert_ne!(
+            one,
+            hash_email_code(Some("key-two"), "jwt", "user@example.com", "login", "AB23")
+        );
     }
 
     /// 主密钥变化（如 JWT 轮换且未设 SECRET_STORE_KEY）→ 解密报错而非乱码。

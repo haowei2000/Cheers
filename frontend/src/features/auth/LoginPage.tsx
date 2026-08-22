@@ -5,12 +5,17 @@ import toast from "react-hot-toast";
 import {
   exchangeOAuthHandoff,
   getAuthCapabilities,
-  login,
+  loginFlowPasskeyOptions,
   passkeyFactorOptions,
   passkeyFactorVerify,
   sendTwoFactorEmail,
+  sendLoginFlowEmail,
   startOAuth,
+  startLoginFlow,
+  verifyLoginFlowCode,
+  verifyLoginFlowPassword,
   verifyTwoFactorLogin,
+  verifyLoginFlowPasskey,
   type AuthCapabilities,
   type LoginResponse,
 } from "@/api/auth";
@@ -21,6 +26,7 @@ import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { AppleMark, GitHubMark, GoogleMark } from "@/components/ui/provider-marks";
 import { Input } from "@/components/ui/input";
+import { Fingerprint, Mail } from "lucide-react";
 import {
   PublicPageShell,
   publicLabelClass,
@@ -64,6 +70,7 @@ export default function LoginPage() {
   const [factorCode, setFactorCode] = useState("");
   const [emailHint, setEmailHint] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
+  const [unifiedFlow, setUnifiedFlow] = useState(false);
   const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
 
   useEffect(() => {
@@ -84,7 +91,7 @@ export default function LoginPage() {
     if (res.status === "factor_required" || res.requires_2fa) {
       if (!res.transaction_id) throw new Error("Authentication transaction is missing");
       setTransactionId(res.transaction_id);
-      setAllowedFactors(res.allowed_factors ?? ["totp", "recovery_code"]);
+      setAllowedFactors(res.methods ?? res.allowed_factors ?? ["totp", "recovery_code"]);
       setEmailHint(null);
       setEmailSent(false);
       setFactorCode("");
@@ -108,8 +115,9 @@ export default function LoginPage() {
     if (!form.login || !form.password) return;
     setLoading(true);
     try {
-      const res = await login({ ...form, client: "web" });
-      completeOutcome(res);
+      const flow = await startLoginFlow(form.login);
+      setUnifiedFlow(true);
+      completeOutcome(await verifyLoginFlowPassword(flow.transaction_id, form.password));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -122,11 +130,17 @@ export default function LoginPage() {
     if (!transactionId || !factorCode) return;
     setLoading(true);
     try {
-      const res = await verifyTwoFactorLogin({
-        transaction_id: transactionId,
-        code: factorCode,
-        remember_device: true,
-      });
+      const res = unifiedFlow
+        ? await verifyLoginFlowCode(
+            transactionId,
+            allowedFactors.includes("email") ? "email" : "totp",
+            factorCode
+          )
+        : await verifyTwoFactorLogin({
+            transaction_id: transactionId,
+            code: factorCode,
+            remember_device: true,
+          });
       completeOutcome(res);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Verification failed");
@@ -139,8 +153,10 @@ export default function LoginPage() {
     if (!transactionId) return;
     setLoading(true);
     try {
-      const res = await sendTwoFactorEmail(transactionId);
-      setEmailHint(res.email_hint ?? null);
+      const res = unifiedFlow
+        ? await sendLoginFlowEmail(transactionId)
+        : await sendTwoFactorEmail(transactionId);
+      setEmailHint(typeof res.email_hint === "string" ? res.email_hint : null);
       setEmailSent(true);
       toast.success(
         res.email_hint
@@ -158,13 +174,17 @@ export default function LoginPage() {
     if (!transactionId) return;
     setLoading(true);
     try {
-      const options = await passkeyFactorOptions(transactionId);
+      const options = unifiedFlow
+        ? await loginFlowPasskeyOptions(transactionId)
+        : await passkeyFactorOptions(transactionId);
       const credential = await getPasskey(options);
-      const res = await passkeyFactorVerify({
-        transaction_id: transactionId,
-        credential,
-        remember_device: true,
-      });
+      const res = unifiedFlow
+        ? await verifyLoginFlowPasskey(transactionId, credential)
+        : await passkeyFactorVerify({
+            transaction_id: transactionId,
+            credential,
+            remember_device: true,
+          });
       completeOutcome(res);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Passkey verification failed";
@@ -175,12 +195,61 @@ export default function LoginPage() {
     }
   }
 
+  async function handlePrimaryPasskey() {
+    if (!form.login.trim()) {
+      toast.error("Enter your username or email first");
+      return;
+    }
+    setLoading(true);
+    try {
+      const flow = await startLoginFlow(form.login);
+      if (!flow.methods.includes("passkey")) {
+        throw new Error("No passkey is registered for this account");
+      }
+      const options = await loginFlowPasskeyOptions(flow.transaction_id);
+      const credential = await getPasskey(options);
+      setUnifiedFlow(true);
+      completeOutcome(await verifyLoginFlowPasskey(flow.transaction_id, credential));
+    } catch (err) {
+      const message = errorMessage(err, "Passkey sign-in failed");
+      if (!/cancel|abort/i.test(message)) toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePrimaryEmail() {
+    if (!form.login.trim()) {
+      toast.error("Enter your username or email first");
+      return;
+    }
+    setLoading(true);
+    try {
+      const flow = await startLoginFlow(form.login);
+      await sendLoginFlowEmail(flow.transaction_id);
+      setUnifiedFlow(true);
+      setTransactionId(flow.transaction_id);
+      setAllowedFactors(["email"]);
+      setEmailHint(null);
+      setEmailSent(true);
+      setFactorCode("");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not send a sign-in code"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const factorHelp = (() => {
-    const parts = ["authenticator app", "backup code"];
-    if (allowedFactors.includes("email")) parts.push("email code");
+    const parts: string[] = [];
+    if (allowedFactors.includes("totp")) parts.push("authenticator app");
+    if (allowedFactors.includes("recovery_code")) parts.push("backup code");
+    if (allowedFactors.includes("email")) parts.push("email");
     if (allowedFactors.includes("passkey")) parts.push("Passkey");
-    if (parts.length === 2) return `Enter a code from your ${parts[0]} or ${parts[1]}.`;
-    return `Enter a code from your ${parts.slice(0, -1).join(", ")}, or ${parts[parts.length - 1]}.`;
+    if (parts.length === 0) return "Verify your identity to finish signing in.";
+    if (parts.length === 1) return `Continue with your ${parts[0]}.`;
+    if (parts.length === 2) return `Continue with your ${parts[0]} or ${parts[1]}.`;
+    return `Continue with your ${parts.slice(0, -1).join(", ")}, or ${parts[parts.length - 1]}.`;
   })();
 
   return (
@@ -246,6 +315,7 @@ export default function LoginPage() {
               setEmailHint(null);
               setEmailSent(false);
               setFactorCode("");
+              setUnifiedFlow(false);
             }}
           >
             Back to sign in
@@ -278,6 +348,25 @@ export default function LoginPage() {
             />
           </div>
 
+          {capabilities?.passkey && (
+            <Button action="usePasskey" content="iconText" controlWidth="fill"
+              type="button"
+              variant="emphasis"
+              disabled={loading || !form.login.trim()}
+              onClick={() => void handlePrimaryPasskey()}
+            >
+              <Fingerprint className="h-4 w-4" />
+            </Button>
+          )}
+
+          {capabilities?.passkey && (
+            <div className="flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-zinc-800" />
+              <span className="text-compact text-content-muted">Try another method</span>
+              <span className="h-px flex-1 bg-zinc-800" />
+            </div>
+          )}
+
           <div className="space-y-2">
             <label
               htmlFor="password"
@@ -304,6 +393,18 @@ export default function LoginPage() {
             loading={loading}
           >
             Sign in
+          </Button>
+
+          <Button
+            action="emailCode"
+            content="iconText"
+            controlWidth="fill"
+            type="button"
+            variant="secondary"
+            disabled={loading || !form.login.trim()}
+            onClick={() => void handlePrimaryEmail()}
+          >
+            <Mail className="h-4 w-4" />
           </Button>
 
           {(capabilities?.providers.apple || capabilities?.providers.google || capabilities?.providers.github) && (

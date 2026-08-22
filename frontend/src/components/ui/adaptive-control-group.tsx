@@ -24,8 +24,8 @@ export interface AdaptiveControlItem {
   disabled?: boolean;
   priority?: "primary" | "secondary";
   onSelect?: () => void;
-  /** Compound controls can retain a custom full rendering and overflow row. */
-  control?: ReactNode;
+  /** Compound controls may adapt their rich rendering to the chosen presentation. */
+  control?: ReactNode | ((presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => ReactNode);
   overflow?: ReactNode;
 }
 
@@ -66,6 +66,7 @@ function AdaptiveItemControl({
   kind: "navigation" | "actions";
   controlSize: ControlSize;
 }) {
+  if (typeof item.control === "function") return <>{item.control(presentation)}</>;
   if (item.control) return <>{item.control}</>;
   const Icon = item.icon;
   const iconOnly = presentation === "icon" && Icon != null;

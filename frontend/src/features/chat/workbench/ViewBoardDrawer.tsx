@@ -215,9 +215,7 @@ function ViewBoardDrawerImpl({
       spawnKind="viewboard"
       className="w-[420px] h-[70%]"
       defaultPosClassName="top-2 left-2"
-      // Tab strip + scope selector + the keep-alive stack are a non-scrolling flex
-      // column; each board owns its own scrolling.
-      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pt-[var(--floating-panel-safe-top)]"
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
         items: boards.map((board) => ({
@@ -228,6 +226,35 @@ function ViewBoardDrawerImpl({
           onSelect: () => setActive(board.id),
         })),
       }}
+      panelContext={activeBoard?.scope === "session" ? (
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" />
+          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
+          <UiSelect
+            value={scope}
+            onChange={(event) => setScope(event.target.value)}
+            controlSize="regular"
+            className="min-w-0 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All sessions</option>
+            {sessions.map((session) => (
+              <option
+                key={session.session_id}
+                value={session.session_id}
+                title={`bot ${session.bot_id} · session ${session.session_id}`}
+              >
+                {session.bot_name || session.bot_id.slice(0, 8)} ·{" "}
+                {sessionTag({
+                  is_primary: session.is_primary,
+                  session_id: session.session_id,
+                  cwd: session.cwd,
+                  when: session.created_at,
+                })}
+              </option>
+            ))}
+          </UiSelect>
+        </div>
+      ) : undefined}
       panelActions={activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? [{
         id: "add-context",
         label: "Add board to context",
@@ -287,36 +314,6 @@ function ViewBoardDrawerImpl({
           );
         })}
       </div>
-
-      {activeBoard?.scope === "session" && (
-        <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-2">
-          <Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
-          <UiSelect
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            controlSize="regular"
-            className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All sessions</option>
-            {sessions.map((s) => (
-              <option
-                key={s.session_id}
-                value={s.session_id}
-                title={`bot ${s.bot_id} · session ${s.session_id}`}
-              >
-                {s.bot_name || s.bot_id.slice(0, 8)} ·{" "}
-                {sessionTag({
-                  is_primary: s.is_primary,
-                  session_id: s.session_id,
-                  cwd: s.cwd,
-                  when: s.created_at,
-                })}
-              </option>
-            ))}
-          </UiSelect>
-        </div>
-      )}
 
       {/* Keep visited boards mounted (hidden) so tab switches restore instantly;
           hidden boards defer tick refetches until re-shown (ctx.visible). */}

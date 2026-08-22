@@ -589,7 +589,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       className="w-[560px] h-[75%]"
       defaultPosClassName="top-2 left-2"
       // Scene tabs / raw tree own their own scrolling; the body is a flush column.
-      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pt-[var(--floating-panel-safe-top)]"
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       // Dropping a .cheers-extension anywhere on the panel loads it (after consent).
       dropTarget={{
         active: dragOver || busy,

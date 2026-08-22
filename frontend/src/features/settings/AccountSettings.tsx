@@ -229,7 +229,7 @@ export function ExternalIdentitiesCard() {
     if (identity.provider !== "google" && identity.provider !== "github") return;
     const label = identity.provider === "github" ? "GitHub" : "Google";
     if (!identity.recent_authentication) {
-      toast.error(`Sign in again (within 5 minutes), then link ${label}.`);
+      toast.error(`Confirm your identity, then link ${label}.`);
       return;
     }
     setLinkingProvider(identity.provider);

@@ -135,7 +135,7 @@ function Preview() {
           storageKey="cheers.preview.adaptive-workbench"
           className="h-[min(720px,calc(100%-4rem))] w-[min(1040px,calc(100%-4rem))]"
           defaultPosClassName="left-1/2 top-8 -translate-x-1/2"
-          bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pt-[var(--floating-panel-safe-top)]"
+          bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
           panelActions={[{
             id: "raw-mode",
             label: "Show raw workspace files",

@@ -106,8 +106,6 @@ pub async fn unlink(
     Path(provider): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let provider = checked_provider(&provider)?;
-    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
-
     let mut tx = state.db.begin().await?;
     // Serialize identity removal per user. Otherwise simultaneous Apple and
     // Google requests could each observe the other as the remaining method.

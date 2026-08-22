@@ -90,7 +90,7 @@ export async function updateBotProfile(
 }
 
 export async function issueBotToken(botId: string): Promise<IssuedToken> {
-  return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" });
+  return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" }, { recentAuth: "auto", actionClass: "bot_token_issue" });
 }
 
 /** POST /bots/:id/status/refresh — owner/admin triggers the agent to update its own
@@ -172,14 +172,14 @@ export async function listHostRepositories(
 }
 
 export async function activateConnectorHost(botId: string, hostId: string): Promise<void> {
-  await apiJson(`/bots/${botId}/hosts/${hostId}/activate`, { method: "POST" });
+  await apiJson(`/bots/${botId}/hosts/${hostId}/activate`, { method: "POST" }, { recentAuth: "auto", actionClass: "host_activation" });
 }
 
 export async function rotateTerminalCredential(
   botId: string,
   hostId: string
 ): Promise<{ credential: string; credential_prefix: string }> {
-  return apiJson(`/bots/${botId}/hosts/${hostId}/credential`, { method: "POST" });
+  return apiJson(`/bots/${botId}/hosts/${hostId}/credential`, { method: "POST" }, { recentAuth: "auto", actionClass: "host_credential_rotation" });
 }
 
 export async function reconnectConnectorHost(botId: string, hostId: string): Promise<void> {
@@ -248,7 +248,7 @@ export async function createHost(
   return apiJson<HostPairing>(`/bots/${botId}/hosts`, {
     method: "POST",
     body: JSON.stringify({ agent_type: agentType, device_name: deviceName }),
-  });
+  }, { recentAuth: "auto", actionClass: "host_pairing_issue" });
 }
 
 /** Result of redeeming a pairing code: a ready-to-run config plus the
@@ -451,7 +451,7 @@ export async function upsertEventRule(
   await apiJson(`/bots/${botId}/event-access`, {
     method: "PUT",
     body: JSON.stringify(rule),
-  });
+  }, { recentAuth: "auto", actionClass: "policy_mutation" });
 }
 
 /** One row of the complete ACP event timeline (acp_event_log). */
@@ -492,7 +492,7 @@ export async function deleteEventRule(
   if (q.channel_id) params.set("channel_id", q.channel_id);
   await apiJson(`/bots/${botId}/event-access?${params.toString()}`, {
     method: "DELETE",
-  });
+  }, { recentAuth: "auto", actionClass: "policy_mutation" });
 }
 
 // ── Bot-to-bot grants (dispatch / workspace_read; bot-subject rules) ───────────
@@ -559,7 +559,7 @@ export async function upsertBotGrant(
   await apiJson(`/bots/${botId}/bot-grants`, {
     method: "PUT",
     body: JSON.stringify(grant),
-  });
+  }, { recentAuth: "auto", actionClass: "capability_grant" });
 }
 
 /** Owner/admin: remove one bot-to-bot grant (back to the member-allow default). */
@@ -571,7 +571,7 @@ export async function deleteBotGrant(
   if (q.channel_id) params.set("channel_id", q.channel_id);
   await apiJson(`/bots/${botId}/bot-grants?${params.toString()}`, {
     method: "DELETE",
-  });
+  }, { recentAuth: "auto", actionClass: "policy_mutation" });
 }
 
 // ── Bridge connection history ─────────────────────────────────────────────────

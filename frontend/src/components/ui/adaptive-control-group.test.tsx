@@ -44,4 +44,25 @@ describe("AdaptiveControlGroup", () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain("ViewBoard sections");
   });
+
+  it("passes each measured presentation to rich controls", () => {
+    const markup = renderToStaticMarkup(
+      <AdaptiveControlGroup
+        kind="navigation"
+        ariaLabel="Scenes"
+        items={[{
+          id: "board",
+          label: "Board",
+          selected: true,
+          control: (presentation) => (
+            <button type="button" data-rich-presentation={presentation}>Board</button>
+          ),
+        }]}
+      />,
+    );
+
+    expect(markup).toContain('data-rich-presentation="iconText"');
+    expect(markup).toContain('data-rich-presentation="text"');
+    expect(markup).toContain('data-rich-presentation="icon"');
+  });
 });

@@ -96,10 +96,15 @@ export const slotActionLabels = {
 // scope visible because it acts on every agent at once.
 export const fillActionLabels = {
   addContext: "Add context",
+  anotherMethod: "Try another method",
+  authenticator: "Authenticator or recovery code",
   continueWithApple: "Continue with Apple",
   continueWithGitHub: "Continue with GitHub",
   continueWithGoogle: "Continue with Google",
+  emailCode: "Email code",
+  sendCode: "Send code",
   upgradeAll: "Upgrade all",
+  usePasskey: "Use passkey",
 } as const;
 
 export const actionLabels = { ...slotActionLabels, ...fillActionLabels } as const;

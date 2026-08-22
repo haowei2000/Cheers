@@ -93,7 +93,7 @@ export async function grantApprover(
   return apiJson(`/bots/${botId}/approvers`, {
     method: "POST",
     body: JSON.stringify({ channel_id: channelId, user_id: userId }),
-  });
+  }, { recentAuth: "auto", actionClass: "approver_grant" });
 }
 
 export async function revokeApprover(

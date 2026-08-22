@@ -27,10 +27,10 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use server::api::{friends, notifications};
-use server::domain::channel_seq;
 use server::domain::dms;
 use server::domain::messages::{self, CreateMessageParams};
 use server::domain::workspaces;
+use server::domain::{auth_sessions, channel_seq};
 use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
 use server::gateway::registry::{BotLocator, InProcessBotLocator};
@@ -113,6 +113,61 @@ async fn add_member_role(
 
 fn fanout() -> Arc<dyn Fanout> {
     InProcessFanout::new()
+}
+
+#[sqlx::test]
+async fn recent_auth_accepts_fresh_or_stepped_up_sessions_only(db: PgPool) {
+    let user_id = seed_user(&db).await.to_string();
+    let session_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO auth_sessions
+         (session_id, user_id, client_type, token_family_id, authenticated_at,
+          absolute_expires_at)
+         VALUES ($1, $2, 'web', $3, NOW(), NOW() + INTERVAL '1 day')",
+    )
+    .bind(&session_id)
+    .bind(&user_id)
+    .bind(Uuid::new_v4().to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    auth_sessions::require_recent_auth(&db, &user_id, &session_id)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "UPDATE auth_sessions
+         SET authenticated_at = NOW() - INTERVAL '16 minutes'
+         WHERE session_id = $1",
+    )
+    .bind(&session_id)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(matches!(
+        auth_sessions::require_recent_auth(&db, &user_id, &session_id).await,
+        Err(server::errors::AppError::PreconditionRequired(_))
+    ));
+
+    sqlx::query("UPDATE auth_sessions SET step_up_at = NOW() WHERE session_id = $1")
+        .bind(&session_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    auth_sessions::require_recent_auth(&db, &user_id, &session_id)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE auth_sessions SET revoked_at = NOW() WHERE session_id = $1")
+        .bind(&session_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(matches!(
+        auth_sessions::require_recent_auth(&db, &user_id, &session_id).await,
+        Err(server::errors::AppError::PreconditionRequired(_))
+    ));
 }
 
 // ── I2：channel_seq 并发分配 gap-free ─────────────────────────────────────────

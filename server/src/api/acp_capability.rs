@@ -325,6 +325,7 @@ pub async fn create_delegation(
     Json(body): Json<CreateCapabilityDelegationRequest>,
 ) -> Result<Json<DelegationItem>, AppError> {
     ensure_bot_owner_or_admin(&state.db, &bot_id, &claims).await?;
+    crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
 
     let scope_type = normalize_scope_type(
         body.scope_type

@@ -593,7 +593,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
 
         {/* Content-local controls float over the Board; list padding keeps the final row reachable. */}
         <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl">
+          <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <UiButton variant="plain" role="tab" aria-selected={lens === l}
@@ -611,7 +611,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           </div>
           <div className="flex-1" />
           {members.length > 0 && (
-            <div className="pointer-events-auto rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl">
+            <div className="floating-control-surface pointer-events-auto rounded-concentric p-1">
               <MemberFilter
                 members={members}
                 memberOf={memberOf}

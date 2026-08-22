@@ -26,7 +26,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    api::bots::{ensure_bot_owner_or_admin, version_triple},
+    api::bots::{ensure_bot_owner_or_admin, ensure_recent_bot_owner_or_admin, version_triple},
     api::middleware::Claims,
     app_state::AppState,
     domain::connector_config::{
@@ -120,7 +120,7 @@ pub async fn create_host(
     Path(bot_id): Path<String>,
     Json(body): Json<CreateHostRequest>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    ensure_recent_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let agent_type = validate_agent_type(&body.agent_type)?;
 
     let pairing_code = generate_pairing_code();
