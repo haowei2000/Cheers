@@ -22,6 +22,29 @@ final result: passed
 
 ---
 
+# Adaptive Floating Panel Controls QA
+
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-adaptive-controls.png`
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- State: local Workbench preview with Scene and item navigation visible during hover
+
+## Evidence
+
+- The Panel and Content client rectangles matched at `1040 x 560` and again after resizing, confirming that Content is full-bleed rather than offset by desktop chrome.
+- At `1040px`, Scene navigation used icon + text. At `574px`, it changed to text and Panel actions changed to icons. At `374px`, Scene navigation changed to icons and item navigation collapsed to a current-item dropdown.
+- The title, navigation, actions, and context islands had opacity `0` at rest and opacity `1` while the pointer was inside the Panel.
+- Scene item tabs are rendered through the Panel context portal, outside the Content surface, while retaining selection and context-menu actions.
+- Panel chrome uses a higher stacking layer than business-content overlays, keeping promoted controls visible and interactive over drawers and canvases.
+
+## Verification
+
+- Vitest: 84 files, 484 tests passed.
+- TypeScript, ESLint, design-system check, and production build passed. ESLint reported existing warnings and no errors.
+
+final result: passed
+
+---
+
 # Floating Panel Full-size Content Design QA
 
 ## Target
