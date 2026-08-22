@@ -438,3 +438,24 @@ final result: passed
 - TypeScript, production build, design-system check, design-system tests, and ESLint passed. ESLint reported existing warnings and no errors.
 
 final result: passed
+
+---
+
+# Floating Glass Tint Correction QA
+
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- State: dark-mode Workbench Codemap with desktop chrome revealed
+
+## Evidence
+
+- The previous transparent layer reused `--surface-panel`, so compositing it over the same Panel color produced almost no visible material separation.
+- Floating chrome now uses the shared `--surface-glass` tint: a lighter neutral tint in dark mode and a white tint in light mode.
+- Supported browsers use 30% tint with 28px backdrop blur, 1.8 saturation, 1.08 brightness, inner highlights, and no resting border.
+- Reduced-transparency mode remains intentionally opaque and removes backdrop filtering.
+
+## Verification
+
+- Local 884px preview inspected with the Panel chrome revealed.
+- TypeScript, production build, design-system check, and design-system tests passed.
+
+final result: passed
