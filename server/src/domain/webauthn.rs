@@ -100,9 +100,6 @@ pub async fn allowed_login_factors(
     user_id: &str,
 ) -> Result<Vec<String>, AppError> {
     let mut factors = vec!["totp".into(), "recovery_code".into()];
-    if user_has_email(db, user_id).await? {
-        factors.push("email".into());
-    }
     if webauthn.is_some() && user_has_passkeys(db, user_id).await? {
         factors.push("passkey".into());
     }
@@ -136,58 +133,6 @@ pub fn mask_email(email: &str) -> String {
     };
     let visible = local.chars().next().unwrap_or('*');
     format!("{visible}***@{domain}")
-}
-
-pub const LOGIN_2FA_EMAIL_PURPOSE: &str = "login_2fa";
-
-/// Issue a fresh login-2FA email code for `email`, invalidating prior unused ones.
-pub async fn issue_login_2fa_email_code(db: &PgPool, email: &str) -> Result<String, AppError> {
-    let email = email.trim().to_lowercase();
-    sqlx::query(
-        "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND purpose = $2 AND used = FALSE",
-    )
-    .bind(&email)
-    .bind(LOGIN_2FA_EMAIL_PURPOSE)
-    .execute(db)
-    .await?;
-    let code = crate::infra::crypto::generate_email_code();
-    let expires = Utc::now() + chrono::Duration::minutes(15);
-    sqlx::query(
-        "INSERT INTO email_codes (email, code, purpose, expires_at)
-         VALUES ($1, $2, $3, $4)",
-    )
-    .bind(&email)
-    .bind(&code)
-    .bind(LOGIN_2FA_EMAIL_PURPOSE)
-    .bind(expires)
-    .execute(db)
-    .await?;
-    Ok(code)
-}
-
-/// Consume a login-2FA email code for the account. Returns true when valid.
-pub async fn consume_login_2fa_email_code(
-    db: &PgPool,
-    user_id: &str,
-    code: &str,
-) -> Result<bool, AppError> {
-    let Some(email) = user_email(db, user_id).await? else {
-        return Ok(false);
-    };
-    let email = email.trim().to_lowercase();
-    let code = code.trim().to_uppercase();
-    let result = sqlx::query(
-        "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND code = $2 AND purpose = $3
-           AND used = FALSE AND expires_at > NOW()",
-    )
-    .bind(&email)
-    .bind(&code)
-    .bind(LOGIN_2FA_EMAIL_PURPOSE)
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() == 1)
 }
 
 #[cfg(test)]
@@ -440,8 +385,8 @@ pub async fn start_authentication(
     let result = sqlx::query(
         "UPDATE auth_transactions
          SET challenge_json = $2, updated_at = NOW()
-         WHERE transaction_id = $1 AND kind = 'login'
-           AND status IN ('factor_required', 'verified')
+         WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
+           AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL AND expires_at > NOW()",
     )
     .bind(login_transaction_id)
@@ -465,8 +410,8 @@ pub async fn finish_authentication(
 ) -> Result<(), AppError> {
     let row = sqlx::query(
         "SELECT challenge_json FROM auth_transactions
-         WHERE transaction_id = $1 AND kind = 'login'
-           AND status IN ('factor_required', 'verified')
+         WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
+           AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL AND expires_at > NOW()",
     )
     .bind(login_transaction_id)

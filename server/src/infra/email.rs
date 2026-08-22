@@ -13,7 +13,7 @@ use crate::config::Config;
 const BREVO_ENDPOINT: &str = "https://api.brevo.com/v3/smtp/email";
 /// Keep the "expires in" wording in sync with the 15-minute `expires_at` set by the
 /// callers in `api::auth`.
-const CODE_TTL_TEXT: &str = "It expires in 15 minutes.";
+const CODE_TTL_TEXT: &str = "It expires in 10 minutes.";
 
 /// Deliver a one-time email-verification code for self-service sign-up.
 pub async fn send_registration_code(config: &Config, to_email: &str, code: &str) {

@@ -22,6 +22,29 @@ final result: passed
 
 ---
 
+# Adaptive Floating Panel Controls QA
+
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-adaptive-controls.png`
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- State: local Workbench preview with Scene and item navigation visible during hover
+
+## Evidence
+
+- The Panel and Content client rectangles matched at `1040 x 560` and again after resizing, confirming that Content is full-bleed rather than offset by desktop chrome.
+- At `1040px`, Scene navigation used icon + text. At `574px`, it changed to text and Panel actions changed to icons. At `374px`, Scene navigation changed to icons and item navigation collapsed to a current-item dropdown.
+- The title, navigation, actions, and context islands had opacity `0` at rest and opacity `1` while the pointer was inside the Panel.
+- Scene item tabs are rendered through the Panel context portal, outside the Content surface, while retaining selection and context-menu actions.
+- Panel chrome uses a higher stacking layer than business-content overlays, keeping promoted controls visible and interactive over drawers and canvases.
+
+## Verification
+
+- Vitest: 84 files, 484 tests passed.
+- TypeScript, ESLint, design-system check, and production build passed. ESLint reported existing warnings and no errors.
+
+final result: passed
+
+---
+
 # Floating Panel Full-size Content Design QA
 
 ## Target
@@ -367,5 +390,29 @@ final result: passed
 2. First implementation: full-workspace overlay restored chat width and removed sidebar obstruction.
 3. Interaction refinement: mandatory drop snapping was removed; smart first-open placement remains.
 4. Multi-window refinement: mounted-but-closed panels now rise to front whenever reopened.
+
+final result: passed
+
+---
+
+# Floating Control Glass Material QA
+
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-glass-controls.png`
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- State: local Workbench preview with floating chrome revealed on hover
+
+## Evidence
+
+- Shared title, navigation, action, context, Activity lens, and Activity filter islands use the semantic `floating-control-surface` material.
+- Supported browsers resolve the material to the themed Panel surface at 55% opacity with backdrop blur and saturation; unsupported browsers use a 95% opaque fallback.
+- `prefers-reduced-transparency: reduce` disables backdrop effects and restores the 95% opaque surface.
+- Portal-provided item navigation is content-width and centered instead of spanning the Panel. Direct selectors such as Scope retain the available wide layout.
+- Context island whitespace uses `pointer-events: none`; browser hit testing confirmed that only the promoted controls intercept interaction.
+- Default-hidden and hover/focus reveal behavior remains unchanged.
+
+## Verification
+
+- Vitest: 84 files, 484 tests passed.
+- TypeScript, ESLint, design-system check, and production build passed. ESLint reported existing warnings and no errors.
 
 final result: passed

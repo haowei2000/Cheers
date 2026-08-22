@@ -39,6 +39,11 @@ type PanelNavigationHost = {
 };
 
 const PanelNavigationContext = createContext<PanelNavigationHost | null>(null);
+type PanelContextHost = {
+  target: HTMLElement | null;
+  setPresent: (present: boolean) => void;
+};
+const PanelContextContext = createContext<PanelContextHost | null>(null);
 type PanelActionRegistrar = (ownerId: string, action: FloatingPanelAction | null) => void;
 const PanelActionContext = createContext<PanelActionRegistrar | null>(null);
 
@@ -92,6 +97,22 @@ export function FloatingPanelPrimaryNavigation({
       )}
     </>
   );
+}
+
+/** Promotes content-local navigation or selectors into the secondary chrome island. */
+export function FloatingPanelContextPortal({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const host = useContext(PanelContextContext);
+  const setPresent = host?.setPresent;
+  useEffect(() => {
+    if (!setPresent) return;
+    setPresent(true);
+    return () => setPresent(false);
+  }, [setPresent]);
+  return host?.target ? createPortal(children, host.target) : null;
 }
 
 /** Lets active business content promote a panel-wide action into floating chrome. */
@@ -331,8 +352,10 @@ export function FloatingPanel({
   const [titleElement, setTitleElement] = useState<HTMLDivElement | null>(null);
   const [actionsElement, setActionsElement] = useState<HTMLDivElement | null>(null);
   const [contextElement, setContextElement] = useState<HTMLDivElement | null>(null);
+  const [contextTarget, setContextTarget] = useState<HTMLDivElement | null>(null);
   const [contextHeight, setContextHeight] = useState(0);
   const [portalNavigationPresent, setPortalNavigationPresent] = useState(false);
+  const [portalContextPresent, setPortalContextPresent] = useState(false);
   const [portalActions, setPortalActions] = useState<Record<string, FloatingPanelAction>>({});
   const fullTitleWidth = useRef(0);
   const wideNavigationWidth = useRef(0);
@@ -357,12 +380,13 @@ export function FloatingPanel({
   }, [contextElement]);
 
   const hasNavigation = primaryNavigation != null || portalNavigationPresent;
+  const hasContext = panelContext != null || portalContextPresent;
   const useCompactNavigation = compactNavigation || stackedChrome;
   const chromeTop = hasNavigation && stackedChrome ? "5.5rem" : "3.5rem";
   const panelStyle = {
     ...style,
     "--floating-panel-chrome-top": chromeTop,
-    "--floating-panel-safe-top": panelContext
+    "--floating-panel-safe-top": hasContext
       ? `calc(var(--floating-panel-chrome-top) + ${contextHeight}px + 0.5rem)`
       : chromeTop,
   } as CSSProperties;
@@ -370,6 +394,10 @@ export function FloatingPanel({
     availableWidth: Math.max(132, panelWidth * (stackedChrome ? 0.72 : 0.42)),
     target: navigationTarget,
     setPresent: setPortalNavigationPresent,
+  };
+  const contextHost = {
+    target: contextTarget,
+    setPresent: setPortalContextPresent,
   };
   const registerPortalAction = useCallback<PanelActionRegistrar>((ownerId, action) => {
     setPortalActions((current) => {
@@ -527,13 +555,14 @@ export function FloatingPanel({
         </>
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+          <PanelContextContext.Provider value={contextHost}>
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
             <div
               {...drag.handleProps}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric bg-zinc-950/80 px-2 shadow-lg ring-1 ring-white/10 backdrop-blur-xl active:cursor-grabbing"
+              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
             >
               <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
               {titleLabel}
@@ -544,7 +573,7 @@ export function FloatingPanel({
               className={cn(
                 "pointer-events-auto absolute left-1/2 -translate-x-1/2",
                 stackedChrome ? "top-12 max-w-[calc(100%-1rem)]" : "top-2 max-w-[42%]",
-                hasNavigation && "min-h-9 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl"
+                hasNavigation && "floating-control-surface min-h-9 rounded-concentric p-1"
               )}
             >
               {primaryNavigation && (
@@ -560,7 +589,7 @@ export function FloatingPanel({
             <div
               ref={setActionsElement}
               data-floating-panel-actions=""
-              className="pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl"
+              className="floating-control-surface pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
             >
               {allPanelActions.length > 0 && (
                 <AdaptiveControlGroup
@@ -608,13 +637,19 @@ export function FloatingPanel({
               className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
             />
           </div>
-          {panelContext && (
+          {hasContext && (
             <div
               ref={setContextElement}
               data-floating-panel-context=""
-              className="relative z-20 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl md:pointer-events-auto md:absolute md:left-3 md:right-3 md:top-[var(--floating-panel-chrome-top)] md:mx-0 md:mt-0 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/floating-panel:opacity-100 md:group-focus-within/floating-panel:opacity-100"
+              className={cn(
+                "floating-control-surface pointer-events-none relative z-30 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center rounded-concentric p-1 md:absolute md:top-[var(--floating-panel-chrome-top)] md:mx-0 md:mt-0 md:max-w-[calc(100%-1.5rem)] md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/floating-panel:opacity-100 md:group-focus-within/floating-panel:opacity-100",
+                panelContext
+                  ? "md:left-3 md:right-3"
+                  : "md:left-1/2 md:right-auto md:-translate-x-1/2",
+              )}
             >
-              {panelContext}
+              {panelContext && <div className="pointer-events-auto min-w-0 flex-1">{panelContext}</div>}
+              <div ref={setContextTarget} className={cn("pointer-events-auto min-w-0", panelContext && "flex-1")} />
             </div>
           )}
           <PanelActionContext.Provider value={registerPortalAction}>
@@ -629,6 +664,7 @@ export function FloatingPanel({
             </div>
           </PanelActionContext.Provider>
           {!isMobile && <ResizeGrip resizeProps={drag.resizeProps} />}
+          </PanelContextContext.Provider>
         </PanelNavigationContext.Provider>
       )}
     </div>

@@ -12,6 +12,7 @@ use crate::{
     api::middleware::Claims,
     app_state::AppState,
     domain::{
+        auth_sessions,
         messages::{self, CreateMessageParams},
         two_factor,
     },
@@ -157,6 +158,18 @@ pub(crate) async fn ensure_bot_owner_or_admin(
             "only the bot owner or an admin may do this".into(),
         ))
     }
+}
+
+/// Authorize a bot-management operation that changes credentials, execution
+/// posture, or delegated authority. Ownership is checked first so callers who
+/// cannot manage the bot do not learn whether their session is recent enough.
+pub(crate) async fn ensure_recent_bot_owner_or_admin(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+) -> Result<(), AppError> {
+    ensure_bot_owner_or_admin(state, claims, bot_id).await?;
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await
 }
 
 /// Whether `claims` may see a bot: admin, owner, or a member of a channel the
@@ -781,7 +794,7 @@ pub async fn issue_bot_token(
 ) -> Result<Json<Value>, AppError> {
     // The token grants the connector authority to act as this bot, so only the
     // bot's creator or an admin may issue/rotate it.
-    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    ensure_recent_bot_owner_or_admin(&state, &claims, &bot_id).await?;
 
     let (token, token_prefix) = mint_bot_token(&state, &bot_id).await?;
 

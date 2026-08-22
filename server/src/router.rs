@@ -22,7 +22,10 @@ use tower_http::{
 };
 
 use crate::{
-    api::{self, middleware::jwt_auth},
+    api::{
+        self,
+        middleware::{jwt_auth, optional_jwt_auth},
+    },
     app_state::AppState,
     gateway::ws,
 };
@@ -35,6 +38,7 @@ pub fn build(state: AppState) -> Router {
     // shares a consistent browser/API access policy.
     Router::new()
         .merge(build_public_routes())
+        .merge(build_auth_flow_routes(state.clone()))
         .merge(build_authed_routes(state.clone()))
         .merge(build_ws_routes())
         // Explicit request-body cap (audit H3/M5): replaces the implicit 2MB
@@ -67,6 +71,40 @@ pub fn build(state: AppState) -> Router {
         // CORS headers the browser needs to read them.
         .layer(cors)
         .with_state(state)
+}
+
+fn build_auth_flow_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/auth/flows/start", post(api::auth_flow::start))
+        .route(
+            "/api/v1/auth/flows/:transaction_id/password",
+            post(api::auth_flow::password),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/email/send",
+            post(api::auth_flow::send_email),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/email/verify",
+            post(api::auth_flow::verify_email),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/totp/verify",
+            post(api::auth_flow::verify_totp),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/passkey/options",
+            post(api::auth_flow::passkey_options),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/passkey/verify",
+            post(api::auth_flow::verify_passkey),
+        )
+        .route(
+            "/api/v1/auth/flows/:transaction_id/cancel",
+            post(api::auth_flow::cancel),
+        )
+        .layer(middleware::from_fn_with_state(state, optional_jwt_auth))
 }
 
 fn build_cors(state: &AppState) -> CorsLayer {

@@ -166,7 +166,7 @@ export function TwoFactorCard() {
         leading={<ShieldCheck className="h-4 w-4 text-content-muted" />}
         title="Two-step verification"
         subtitle={enabled
-          ? "Use an authenticator, email code, passkey, or recovery code"
+          ? "Use an authenticator, passkey, or recovery code"
           : "Require another verification step when you sign in"}
         criticalStatus={enabled != null ? (
           <span className={enabled ? "text-success-400" : "text-content-muted"}>
@@ -186,7 +186,7 @@ export function TwoFactorCard() {
           {phase === "idle" && enabled && (
             <div className="space-y-3">
               <p className="text-caption">
-                An extra verification step is required at sign-in. Use any method offered for your account: authenticator app, email code, passkey, or recovery code.
+                An extra verification step is required at sign-in. Use any method offered for your account: authenticator app, passkey, or recovery code.
               </p>
               <ActionButton action="disable" context="security" accessibleLabel="Turn off two-step verification" onClick={() => { setCode(""); setPhase("disable"); }} />
             </div>

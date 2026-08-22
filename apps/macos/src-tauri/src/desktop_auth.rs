@@ -18,7 +18,7 @@ const KEYCHAIN_SERVICE: &str = "com.cheers.macos.auth";
 pub struct AuthOutcome {
     pub status: String,
     pub transaction_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "methods")]
     pub allowed_factors: Vec<String>,
     pub expires_in: Option<i64>,
     #[serde(default)]
@@ -124,6 +124,198 @@ async fn post(server: &str, path: &str, body: Value) -> Result<AuthOutcome, Stri
         .map_err(|_| "The server returned an invalid authentication response".into())
 }
 
+async fn post_value(server: &str, path: &str, body: Value) -> Result<Value, String> {
+    let response = reqwest::Client::new()
+        .post(format!("{server}/api/v1{path}"))
+        .header(ORIGIN, "tauri://localhost")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the Cheers server: {error}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| format!("Authentication failed (HTTP {status})"));
+        return Err(detail);
+    }
+    response
+        .json::<Value>()
+        .await
+        .map_err(|_| "The server returned an invalid authentication response".into())
+}
+
+async fn post_step_up(
+    server: &str,
+    path: &str,
+    access_token: &str,
+    body: Value,
+) -> Result<Value, String> {
+    let response = reqwest::Client::new()
+        .post(format!("{server}/api/v1{path}"))
+        .header(ORIGIN, "tauri://localhost")
+        .header(AUTHORIZATION, format!("Bearer {access_token}"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the Cheers server: {error}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| format!("Identity confirmation failed (HTTP {status})"));
+        return Err(detail);
+    }
+    response
+        .json::<Value>()
+        .await
+        .map_err(|_| "The server returned an invalid identity confirmation response".into())
+}
+
+/// Step-up commands deliberately never call persist_session: they prove the
+/// current Bearer session and must not replace Keychain refresh or CSRF state.
+#[tauri::command]
+pub async fn desktop_start_step_up(
+    server_base: String,
+    access_token: String,
+    action_class: Option<String>,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        "/auth/flows/start",
+        &access_token,
+        json!({
+            "purpose": "step_up",
+            "client": "macos",
+            "device_name": "Mac",
+            "action_class": action_class,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_step_up_password(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+    password: String,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/password"),
+        &access_token,
+        json!({ "password": password }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_step_up_code(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+    method: String,
+    code: String,
+) -> Result<Value, String> {
+    let suffix = match method.as_str() {
+        "email" => "email/verify",
+        "totp" | "recovery_code" => "totp/verify",
+        _ => return Err("Unsupported identity confirmation method".into()),
+    };
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/{suffix}"),
+        &access_token,
+        json!({ "code": code }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_step_up_email_send(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/email/send"),
+        &access_token,
+        json!({}),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_step_up_passkey_options(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/passkey/options"),
+        &access_token,
+        json!({}),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_step_up_passkey_verify(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+    credential: Value,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/passkey/verify"),
+        &access_token,
+        json!({ "credential": credential }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn desktop_cancel_step_up(
+    server_base: String,
+    access_token: String,
+    transaction_id: String,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_step_up(
+        &server,
+        &format!("/auth/flows/{transaction_id}/cancel"),
+        &access_token,
+        json!({}),
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn desktop_password_login(
     server_base: String,
@@ -167,6 +359,77 @@ pub async fn desktop_verify_factor(
     .await?;
     persist_session(&server, &mut outcome)?;
     Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn desktop_login_flow_passkey_verify(
+    server_base: String,
+    transaction_id: String,
+    credential: Value,
+) -> Result<AuthOutcome, String> {
+    let server = origin(&server_base)?;
+    let mut outcome = post(
+        &server,
+        &format!("/auth/flows/{transaction_id}/passkey/verify"),
+        json!({ "credential": credential }),
+    )
+    .await?;
+    persist_session(&server, &mut outcome)?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn desktop_login_flow_password(
+    server_base: String,
+    transaction_id: String,
+    password: String,
+) -> Result<AuthOutcome, String> {
+    let server = origin(&server_base)?;
+    let mut outcome = post(
+        &server,
+        &format!("/auth/flows/{transaction_id}/password"),
+        json!({ "password": password }),
+    )
+    .await?;
+    persist_session(&server, &mut outcome)?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn desktop_login_flow_code(
+    server_base: String,
+    transaction_id: String,
+    method: String,
+    code: String,
+) -> Result<AuthOutcome, String> {
+    let suffix = match method.as_str() {
+        "email" => "email/verify",
+        "totp" | "recovery_code" => "totp/verify",
+        _ => return Err("Unsupported authentication method".into()),
+    };
+    let server = origin(&server_base)?;
+    let mut outcome = post(
+        &server,
+        &format!("/auth/flows/{transaction_id}/{suffix}"),
+        json!({ "code": code }),
+    )
+    .await?;
+    persist_session(&server, &mut outcome)?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn desktop_login_flow_email_send(
+    server_base: String,
+    transaction_id: String,
+) -> Result<Value, String> {
+    let server = origin(&server_base)?;
+    post_value(
+        &server,
+        &format!("/auth/flows/{transaction_id}/email/send"),
+        json!({}),
+    )
+    .await
 }
 
 #[tauri::command]

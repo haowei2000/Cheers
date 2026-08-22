@@ -22,75 +22,77 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>()((set) => ({
-      user: null,
-      token: null,
-      initialized: false,
-      sessionExpired: false,
-      setAuth: (user, token) => set({ user, token, sessionExpired: false }),
-      setToken: (token) => set({ token, sessionExpired: false }),
-      markSessionExpired: () => set({ sessionExpired: true }),
-      logout: () => {
-        clearClientSessionData();
-        queryClient.clear();
-        set({ user: null, token: null, sessionExpired: false });
-      },
-      restoreSession: async () => {
-        try {
-          if (isTauri()) {
-            const serverBase = getServerBase();
-            if (!serverBase) return;
-            const body = await invokeDesktop<{
-              access_token?: string;
-              user_id?: string;
-              username?: string;
-              display_name?: string | null;
-              role?: string;
-            } | null>("desktop_refresh_session", { serverBase }).catch(() => null);
-            if (body?.access_token && body.user_id) {
-              set({
-                user: {
-                  user_id: body.user_id,
-                  username: body.username,
-                  display_name: body.display_name ?? null,
-                  role: body.role,
-                },
-                token: body.access_token,
-                sessionExpired: false,
-              });
-            }
-            return;
-          }
-          const response = await fetch(`${apiBase()}/auth/refresh`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: "{}",
+  user: null,
+  token: null,
+  initialized: false,
+  sessionExpired: false,
+  setAuth: (user, token) =>
+    set({ user, token, sessionExpired: false }),
+  setToken: (token) =>
+    set({ token, sessionExpired: false }),
+  markSessionExpired: () => set({ sessionExpired: true }),
+  logout: () => {
+    clearClientSessionData();
+    queryClient.clear();
+    set({ user: null, token: null, sessionExpired: false });
+  },
+  restoreSession: async () => {
+    try {
+      if (isTauri()) {
+        const serverBase = getServerBase();
+        if (!serverBase) return;
+        const body = await invokeDesktop<{
+          access_token?: string;
+          user_id?: string;
+          username?: string;
+          display_name?: string | null;
+          role?: string;
+        } | null>("desktop_refresh_session", { serverBase }).catch(() => null);
+        if (body?.access_token && body.user_id) {
+          set({
+            user: {
+              user_id: body.user_id,
+              username: body.username,
+              display_name: body.display_name ?? null,
+              role: body.role,
+            },
+            token: body.access_token,
+            sessionExpired: false,
           });
-          if (!response.ok) return;
-          const body = (await response.json()) as {
-            access_token?: string;
-            user_id?: string;
-            username?: string;
-            display_name?: string | null;
-            role?: string;
-          };
-          if (body.access_token && body.user_id) {
-            set({
-              user: {
-                user_id: body.user_id,
-                username: body.username,
-                display_name: body.display_name ?? null,
-                role: body.role,
-              },
-              token: body.access_token,
-              sessionExpired: false,
-            });
-          }
-        } finally {
-          set({ initialized: true });
         }
-      },
-    }));
+        return;
+      }
+      const response = await fetch(`${apiBase()}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!response.ok) return;
+      const body = (await response.json()) as {
+        access_token?: string;
+        user_id?: string;
+        username?: string;
+        display_name?: string | null;
+        role?: string;
+      };
+      if (body.access_token && body.user_id) {
+        set({
+          user: {
+            user_id: body.user_id,
+            username: body.username,
+            display_name: body.display_name ?? null,
+            role: body.role,
+          },
+          token: body.access_token,
+          sessionExpired: false,
+        });
+      }
+    } finally {
+      set({ initialized: true });
+    }
+  },
+}));
 
 // Role lives in the JWT (the server authorizes on the token's `role` claim), so it's the
 // authoritative source — `user.role` may be missing on older persisted sessions. Decode

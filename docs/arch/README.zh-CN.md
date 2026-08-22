@@ -27,6 +27,7 @@
 ## 安全与运行语境
 
 - [安全说明](SECURITY.md)
+- [安全与便利：三个平面](SECURITY_CONVENIENCE.md) — 📝 分析与提案；Web / 个人 Bot-Host / 协作 三面的威胁模型，以及调用者身份交集缺口
 - [Bot 权限模型](BOT_PERMISSION.md)
 - [Bot 配置分层](BOT_CONFIG_LAYERING.md)
 - [文件存储](FILE_STORAGE.md)

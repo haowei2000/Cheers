@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
@@ -38,7 +39,11 @@ import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
-import { FloatingPanelActionPortal, FloatingPanelPrimaryNavigation } from "@/components/ui/floating-panel";
+import {
+  FloatingPanelActionPortal,
+  FloatingPanelContextPortal,
+  FloatingPanelPrimaryNavigation,
+} from "@/components/ui/floating-panel";
 
 const OTHER_SCENE = "__other__";
 
@@ -96,7 +101,7 @@ function SceneTab({
   Icon,
   iconColor,
   selected,
-  compact,
+  presentation,
   onSelect,
   onShowRaw,
   onAddToContext,
@@ -107,7 +112,7 @@ function SceneTab({
   Icon: typeof Code2;
   iconColor: string;
   selected: boolean;
-  compact: boolean;
+  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
   onSelect: () => void;
   onShowRaw: () => void;
   onAddToContext: () => void;
@@ -130,7 +135,39 @@ function SceneTab({
     onClickCapture: contextSurface.onClickCapture,
   };
 
-  return compact ? (
+  if (presentation === "icon") {
+    return (
+      <UiButton
+        ref={surfaceRef}
+        variant="plain"
+        content="icon"
+        role="tab"
+        aria-selected={selected}
+        aria-label={label}
+        title={label}
+        selected={selected}
+        type="button"
+        onClick={onSelect}
+        controlSize={workbenchControlSize.tab}
+        className="flex-shrink-0"
+        {...contextHandlers}
+      >
+        <Icon className={cn("h-4 w-4", selected && iconColor)} />
+      </UiButton>
+    );
+  }
+
+  return presentation === "text" ? (
+    <TabOption
+      ref={surfaceRef}
+      label={label}
+      selected={selected}
+      onClick={onSelect}
+      controlSize={workbenchControlSize.tab}
+      className="flex-shrink-0"
+      {...contextHandlers}
+    />
+  ) : (
     <TabOption
       ref={surfaceRef}
       label={label}
@@ -139,18 +176,6 @@ function SceneTab({
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
       className="flex-shrink-0"
-      {...contextHandlers}
-    />
-  ) : (
-    <MenuOption
-      ref={surfaceRef}
-      role="tab"
-      aria-selected={selected}
-      label={label}
-      leading={<Icon className={cn("h-4 w-4", selected && iconColor)} />}
-      selected={selected}
-      onClick={onSelect}
-      controlSize={workbenchControlSize.navigation}
       {...contextHandlers}
     />
   );
@@ -196,12 +221,14 @@ function fallbackItemTitle(path: string) {
 function ItemTab({
   label,
   selected,
+  presentation,
   contextAdded,
   onSelect,
   onAddToContext,
 }: {
   label: string;
   selected: boolean;
+  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
   contextAdded: boolean;
   onSelect: () => void;
   onAddToContext: () => void;
@@ -224,6 +251,9 @@ function ItemTab({
       variant="plain"
       role="tab"
       aria-selected={selected}
+      aria-label={presentation === "icon" ? label : undefined}
+      title={presentation === "icon" ? label : undefined}
+      content={presentation === "icon" ? "icon" : "text"}
       type="button"
       onClick={onSelect}
       aria-current={selected ? "page" : undefined}
@@ -241,7 +271,7 @@ function ItemTab({
       onPointerLeave={contextSurface.onPointerLeave}
       onClickCapture={contextSurface.onClickCapture}
     >
-      {label}
+      {presentation === "icon" ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : label}
       {selected && <span data-design-system-exempt="progress" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
     </UiButton>
   );
@@ -549,7 +579,7 @@ export function SceneWorkbench({
       ? "Other"
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
-  const sceneTabs = (compact: boolean) => sceneIds.map((id) => {
+  const sceneTabs = () => sceneIds.map((id) => {
     const meta = metaFor(id);
     const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
     const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
@@ -561,7 +591,7 @@ export function SceneWorkbench({
         Icon={meta.Icon}
         iconColor={meta.color}
         selected={activeScene === id}
-        compact={compact}
+        presentation="iconText"
         onSelect={() => setActiveScene(id)}
         onShowRaw={onShowRaw}
         onAddToContext={() => addSceneToContext(id)}
@@ -583,13 +613,13 @@ export function SceneWorkbench({
       icon: meta.Icon,
       selected: activeScene === id,
       onSelect: () => setActiveScene(id),
-      control: (
+      control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
         <SceneTab
           label={label}
           Icon={meta.Icon}
           iconColor={meta.color}
           selected={activeScene === id}
-          compact
+          presentation={presentation}
           onSelect={() => setActiveScene(id)}
           onShowRaw={onShowRaw}
           onAddToContext={() => addSceneToContext(id)}
@@ -620,6 +650,23 @@ export function SceneWorkbench({
       </>
     ),
   }), [available, onAddScene]);
+
+  const itemNavigationItems = activePaths.map((path) => ({
+    id: path,
+    label: itemTitle(activeScene, path, templates),
+    selected: path === selectedPath,
+    onSelect: () => selectPath(path),
+    control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
+      <ItemTab
+        label={itemTitle(activeScene, path, templates)}
+        selected={path === selectedPath}
+        presentation={presentation}
+        onSelect={() => selectPath(path)}
+        onAddToContext={() => addPathToContext(path)}
+        contextAdded={pickedIds.has(workbenchFileContextItem(path).id)}
+      />
+    ),
+  }));
 
   if (loading && entries.length === 0) {
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
@@ -658,34 +705,27 @@ export function SceneWorkbench({
       <FloatingPanelPrimaryNavigation
         ariaLabel="Scenes"
         items={sceneNavigationItems}
-        presentationOrder={["iconText", "collapsed"]}
+        presentationOrder={["iconText", "text", "icon", "collapsed"]}
         mobile={(
           <div role="tablist" aria-label="Scenes" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
-            {sceneTabs(true)}
+            {sceneTabs()}
             <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
           </div>
         )}
       />
       <FloatingPanelActionPortal action={addSceneAction} active={available.length > 0} />
+      {itemNavigationItems.length > 0 && (
+        <FloatingPanelContextPortal>
+          <AdaptiveControlGroup
+            kind="navigation"
+            ariaLabel={`${title} items`}
+            items={itemNavigationItems}
+            presentationOrder={["iconText", "text", "collapsed"]}
+          />
+        </FloatingPanelContextPortal>
+      )}
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
-          {activePaths.length > 0 && (
-            <nav aria-label={`${title} items`} className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2">
-              {activePaths.map((path) => {
-                const selected = path === selectedPath;
-                return (
-                  <ItemTab
-                    key={path}
-                    label={itemTitle(activeScene, path, templates)}
-                    selected={selected}
-                    onSelect={() => selectPath(path)}
-                    onAddToContext={() => addPathToContext(path)}
-                    contextAdded={pickedIds.has(workbenchFileContextItem(path).id)}
-                  />
-                );
-              })}
-            </nav>
-          )}
           <div className="min-h-0 flex-1 overflow-hidden">
             {selectedPath ? (
               <ContextPickSurface

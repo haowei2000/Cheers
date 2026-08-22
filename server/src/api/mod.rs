@@ -2,6 +2,7 @@ pub mod acp_capability;
 pub mod apple_auth;
 pub mod approval;
 pub mod auth;
+pub mod auth_flow;
 pub mod avatars;
 pub mod bot_permission;
 pub mod bots;
