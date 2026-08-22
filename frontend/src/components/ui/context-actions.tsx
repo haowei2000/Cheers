@@ -140,8 +140,13 @@ function ContextActionsOverlay({
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
-    if (!isToolbar) panel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-  }, [isToolbar]);
+    if (isToolbar) return;
+    if (request.source === "keyboard") {
+      panel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      return;
+    }
+    panel.focus({ preventScroll: true });
+  }, [isToolbar, request.source]);
 
   useEffect(() => {
     const closeWithoutFocus = () => onClose(false);
@@ -175,7 +180,9 @@ function ContextActionsOverlay({
     event.preventDefault();
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     const backwards = event.key === "ArrowUp" || event.key === "ArrowLeft";
-    const next = event.key === "Home"
+    const next = current < 0
+      ? (backwards || event.key === "End" ? buttons.length - 1 : 0)
+      : event.key === "Home"
       ? 0
       : event.key === "End"
         ? buttons.length - 1
@@ -216,9 +223,11 @@ function ContextActionsOverlay({
       role={isToolbar ? "toolbar" : "menu"}
       aria-label={isToolbar ? "Selected text actions" : "Context actions"}
       onKeyDown={handleKeyDown}
+      tabIndex={isToolbar ? undefined : -1}
       data-context-actions="true"
+      data-context-actions-source={request.source}
       className={cn(
-        "z-[110] bg-zinc-900 font-utility text-regular shadow-xl shadow-black/40 ring-1 ring-zinc-700/80",
+        "z-[110] bg-zinc-900 font-utility text-regular shadow-xl shadow-black/40 focus:outline-none",
         isToolbar
           ? "flex items-center gap-1 rounded-sm p-1"
           : "w-56 max-w-[calc(100vw-1rem)] rounded-concentric p-1 [--concentric-inset:0.25rem]",
