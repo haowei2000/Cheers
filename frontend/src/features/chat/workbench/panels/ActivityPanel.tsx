@@ -600,7 +600,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 key={l}
                 type="button"
                 onClick={() => setLens(l)}
-                controlSize="regular"
+                controlSize="compact"
                 className="rounded-sm capitalize text-content-primary transition-colors hover:text-content-strong"
               >
                 {l}
@@ -637,13 +637,14 @@ function FilterChip({
   children: ReactNode;
 }) {
   return (
-    <UiButton variant="plain" role="option" aria-selected={active}
+    <UiButton
+      variant="plain"
+      role="option"
+      aria-selected={active}
+      selected={active}
       onClick={onClick}
-      controlSize="regular" className={cn(
- "flex items-center gap-1 rounded-sm  whitespace-nowrap flex-shrink-0 transition-colors",
- active
- ? "border-zinc-600 bg-zinc-800 text-content-primary": "border-transparent bg-zinc-900/60 text-content-primary hover:text-content-strong"
- )}
+      controlSize="regular"
+      className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-sm text-content-primary transition-colors hover:text-content-strong"
     >
       {children}
     </UiButton>
@@ -683,16 +684,16 @@ function MemberFilter({
 
   return (
     <div ref={rootRef} className="relative flex-shrink-0">
-      <UiButton action="search" variant="plain"
+      <UiButton
+        action="search"
+        variant="plain"
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        selected={open || selected.size > 0}
         title="Filter activity by member"
-        controlSize="regular" className={cn(
- "inline-flex items-center gap-2 rounded-sm  transition-colors",
- open || selected.size
- ? "border-indigo-500/50 bg-indigo-600/10 text-accent-200": "border-zinc-700 bg-zinc-800/60 text-content-primary hover:text-content-strong"
- )}
+        controlSize="compact"
+        className="inline-flex items-center gap-2 rounded-sm text-content-primary transition-colors hover:text-content-strong"
       >
         <Filter className="w-3.5 h-3.5" />
         <span>{selected.size ? `${selected.size}` : "Filter"}</span>

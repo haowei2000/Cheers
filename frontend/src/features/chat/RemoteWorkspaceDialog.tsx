@@ -1115,7 +1115,7 @@ export function RemoteWorkspaceDialog({
     if (view === "files") setDiff(null);
   };
   const workspaceContextControls = (
-    <div className="flex w-full flex-wrap items-center gap-2 text-compact">
+    <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-compact">
       <Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />
       <UiSelect
         aria-label="Select a bot"
@@ -1137,7 +1137,7 @@ export function RemoteWorkspaceDialog({
           deepLinked.current = true;
         }}
         controlSize="compact"
-        className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-content-secondary outline-none"
+        className="min-w-0 flex-1 rounded-sm bg-transparent text-content-secondary outline-none"
       >
         <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
         {bots?.map((bot) => (
@@ -1160,7 +1160,7 @@ export function RemoteWorkspaceDialog({
           }
           title="Folder to browse — a session's workdir (scoped to that session) or one of the connector's allowed roots"
           controlSize="compact"
-          className="min-w-0 max-w-[220px] flex-1 rounded-sm bg-zinc-800 text-content-secondary outline-none"
+          className="min-w-0 max-w-[220px] flex-1 rounded-sm bg-transparent text-content-secondary outline-none"
         >
           <option value="">Root: auto</option>
           {rootOptions.some((option) => option.kind === "session") && (

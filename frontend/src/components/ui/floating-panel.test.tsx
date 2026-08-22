@@ -231,22 +231,36 @@ describe("FloatingPanel window chrome", () => {
     expect(markup).toContain("Close panel");
   });
 
-  it("keeps panel context controls outside the full-size content surface", () => {
+  it("keeps primary navigation and panel context in one desktop chrome row", () => {
     const markup = render(
       <FloatingPanel
         title="Remote workspace"
         onClose={() => {}}
         storageKey="t.context"
+        primaryNavigation={{
+          ariaLabel: "Workspace views",
+          items: [
+            { id: "files", label: "Files", selected: true },
+            { id: "changes", label: "Changes" },
+          ],
+        }}
         panelContext={<select aria-label="Select a bot"><option>Bot</option></select>}
       >
         <p>workspace-content</p>
       </FloatingPanel>
     );
 
+    const navigationIndex = markup.indexOf('data-floating-panel-navigation=""');
+    const primaryIndex = markup.indexOf('data-floating-panel-primary-navigation=""');
     const contextIndex = markup.indexOf('data-floating-panel-context=""');
     const contentIndex = markup.indexOf('data-floating-panel-content=""');
-    expect(contextIndex).toBeGreaterThan(-1);
+    expect(navigationIndex).toBeGreaterThan(-1);
+    expect(primaryIndex).toBeGreaterThan(navigationIndex);
+    expect(contextIndex).toBeGreaterThan(primaryIndex);
     expect(contentIndex).toBeGreaterThan(contextIndex);
+    expect(markup).toContain("whitespace-nowrap");
+    expect(markup).toContain("w-0 overflow-hidden");
+    expect(markup).not.toContain("top-12");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
     expect(markup).toContain("workspace-content");

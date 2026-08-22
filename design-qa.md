@@ -20,8 +20,6 @@
 
 final result: passed
 
----
-
 # Adaptive Floating Panel Controls QA
 
 - Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-adaptive-controls.png`
@@ -414,5 +412,29 @@ final result: passed
 
 - Vitest: 84 files, 484 tests passed.
 - TypeScript, ESLint, design-system check, and production build passed. ESLint reported existing warnings and no errors.
+
+final result: passed
+
+---
+
+# Floating Panel Single-row Chrome QA
+
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- Scope: Workbench, ViewBoard Activity, Remote Workspace, Channel Files, and Codemap details
+
+## Evidence
+
+- Desktop primary navigation and panel context now share one fixed `h-9` navigation island. The previous second-row `top-12` layout path has been removed.
+- Workbench scene navigation and active-item navigation remain separate adaptive groups, but render side by side in that one island. Each group can reduce from icon and text to text, icon, or a collapsed selector without wrapping the Panel chrome.
+- Remote Workspace Bot and Root selectors are non-wrapping, transparent context controls. An inactive portal target no longer consumes half of their width.
+- Channel Files content owns its top interaction-safe padding while its scroll surface fills the Panel client rect.
+- ViewBoard Activity lens tabs and Filter use the compact control size and shared selected treatment.
+- Codemap details close was exercised in the local preview; the inspector left the DOM and did not reopen until a node was selected again.
+- Supported browsers now render the shared control material at 35% panel opacity with backdrop blur and saturation. The fallback and reduced-transparency material uses 85% opacity.
+
+## Verification
+
+- Vitest: 84 files, 485 tests passed.
+- TypeScript, production build, design-system check, design-system tests, and ESLint passed. ESLint reported existing warnings and no errors.
 
 final result: passed
