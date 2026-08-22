@@ -362,13 +362,20 @@ pub async fn register_request_code(
     }
 
     let code = crate::infra::crypto::generate_email_code();
-    let expires = chrono::Utc::now() + chrono::Duration::minutes(15);
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &email,
+        "register",
+        &code,
+    );
+    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
     sqlx::query(
-        "INSERT INTO email_codes (email, code, purpose, expires_at)
-         VALUES ($1, $2, 'register', $3)",
+        "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
+         VALUES ($1, NULL, $2, 'register', $3)",
     )
     .bind(&email)
-    .bind(&code)
+    .bind(code_hash)
     .bind(expires)
     .execute(&state.db)
     .await?;
@@ -441,14 +448,21 @@ pub async fn register(
     }
     // Prove ownership of the email: consume a code minted by request-code above.
     let code = body.code.trim().to_uppercase(); // codes use an uppercase alphabet
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &email,
+        "register",
+        &code,
+    );
     let valid = sqlx::query(
         "SELECT 1 AS ok FROM email_codes
-         WHERE email = $1 AND code = $2 AND purpose = 'register'
+         WHERE email = $1 AND code_hash = $2 AND purpose = 'register'
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
     )
     .bind(&email)
-    .bind(&code)
+    .bind(code_hash)
     .fetch_optional(&state.db)
     .await?;
     if valid.is_none() {
@@ -858,13 +872,20 @@ pub async fn forgot_password(
         .await?;
         if found.is_some() {
             let code = crate::infra::crypto::generate_email_code();
-            let expires = chrono::Utc::now() + chrono::Duration::minutes(15);
+            let code_hash = crate::infra::crypto::hash_email_code(
+                state.config.secret_store_key.as_deref(),
+                &state.config.jwt_private_key_pem,
+                &email,
+                "password_reset",
+                &code,
+            );
+            let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
             sqlx::query(
-                "INSERT INTO email_codes (email, code, purpose, expires_at)
-                 VALUES ($1, $2, 'password_reset', $3)",
+                "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
+                 VALUES ($1, NULL, $2, 'password_reset', $3)",
             )
             .bind(&email)
-            .bind(&code)
+            .bind(code_hash)
             .bind(expires)
             .execute(&state.db)
             .await?;
@@ -905,15 +926,22 @@ pub async fn reset_password(
     }
     let email = body.email.trim().to_lowercase();
     let code = body.code.trim().to_uppercase(); // codes use an uppercase alphabet
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &email,
+        "password_reset",
+        &code,
+    );
 
     let valid = sqlx::query(
         "SELECT 1 AS ok FROM email_codes
-         WHERE email = $1 AND code = $2 AND purpose = 'password_reset'
+         WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
     )
     .bind(&email)
-    .bind(&code)
+    .bind(code_hash)
     .fetch_optional(&state.db)
     .await?;
     if valid.is_none() {
@@ -1018,6 +1046,7 @@ pub async fn setup_two_factor(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorSetupResponse>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     let current = two_factor::status(&state.db, &claims.sub).await?;
     if current.enabled {
         return Err(AppError::BadRequest(
@@ -1055,6 +1084,14 @@ pub async fn enable_two_factor(
         &state.config.jwt_private_key_pem,
     );
     let backup_codes = two_factor::enable(&state.db, &claims.sub, &body.code, &master_key).await?;
+    auth_sessions::record_direct_step_up(
+        &state.db,
+        &claims.sub,
+        &claims.sid,
+        "totp",
+        "authenticator_enrollment",
+    )
+    .await?;
     Ok(Json(TwoFactorEnableResponse { backup_codes }))
 }
 
@@ -1069,12 +1106,20 @@ pub async fn disable_two_factor(
         &state.config.jwt_private_key_pem,
     );
     two_factor::verify_and_disable(&state.db, &claims.sub, &body.code, &master_key).await?;
+    auth_sessions::record_direct_step_up(
+        &state.db,
+        &claims.sub,
+        &claims.sid,
+        "totp_or_recovery",
+        "authenticator_disable",
+    )
+    .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
 /// POST /api/v1/auth/2fa/login — complete login when 2FA is enabled.
 /// Consumes the intermediate session returned by `/auth/login` and issues a
-/// normal access token after a TOTP code, backup code, or email OTP is verified.
+/// normal access token after a TOTP code, backup code, or passkey is verified.
 pub async fn verify_two_factor_login(
     State(state): State<AppState>,
     Json(body): Json<TwoFactorVerifyRequest>,
@@ -1091,13 +1136,7 @@ pub async fn verify_two_factor_login(
         &state.config.jwt_private_key_pem,
     );
     let totp_ok = two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?;
-    let email_ok = if totp_ok {
-        false
-    } else {
-        crate::domain::webauthn::consume_login_2fa_email_code(&state.db, &user_id, &body.code)
-            .await?
-    };
-    if !totp_ok && !email_ok {
+    if !totp_ok {
         auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
@@ -1172,13 +1211,9 @@ pub async fn send_two_factor_email(
 
     let (user_id, _client, _device_name) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
-    let email = crate::domain::webauthn::user_email(&state.db, &user_id)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("no email on this account".into()))?;
-    let code = crate::domain::webauthn::issue_login_2fa_email_code(&state.db, &email).await?;
-    crate::infra::email::send_login_2fa_code(&state.config, &email, &code).await;
-    Ok(Json(json!({
-        "ok": true,
-        "email_hint": crate::domain::webauthn::mask_email(&email),
-    })))
+    let _ = user_id;
+    Err(AppError::BadRequest(
+        "email codes cannot replace an enabled second factor; use an authenticator, recovery code, or passkey"
+            .into(),
+    ))
 }

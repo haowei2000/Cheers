@@ -489,9 +489,10 @@ pub async fn revoke_all_sessions(db: &PgPool, user_id: &str) -> Result<(), AppEr
     Ok(())
 }
 
-/// Sensitive account changes require a password/provider authentication no
-/// older than five minutes. A newly-created session is itself a valid step-up;
-/// later explicit step-up flows can refresh `step_up_at` without replacing it.
+/// Security-sensitive identity, credential, and delegated-authority changes
+/// require authentication no older than fifteen minutes. A newly-created session
+/// is itself a valid step-up; later explicit step-up flows can refresh
+/// `step_up_at` without replacing it.
 pub async fn require_recent_auth(
     db: &PgPool,
     user_id: &str,
@@ -502,7 +503,7 @@ pub async fn require_recent_auth(
          WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
            AND absolute_expires_at > NOW()
            AND GREATEST(authenticated_at, COALESCE(step_up_at, authenticated_at))
-               >= NOW() - INTERVAL '5 minutes'",
+               >= NOW() - INTERVAL '15 minutes'",
     )
     .bind(session_id)
     .bind(user_id)
@@ -511,9 +512,112 @@ pub async fn require_recent_auth(
     .is_some();
     if !recent {
         return Err(AppError::PreconditionRequired(
-            "recent authentication required; sign in again before changing account access".into(),
+            json!({
+                "code": "recent_authentication_required",
+                "detail": "Confirm your identity before changing security-sensitive access."
+            })
+            .to_string(),
         ));
     }
+    Ok(())
+}
+
+/// Mark the current active session as freshly verified without rotating its
+/// access/refresh credentials. This is the core difference between step-up and
+/// a new login.
+pub async fn complete_step_up(
+    db: &PgPool,
+    transaction_id: &str,
+    user_id: &str,
+    session_id: &str,
+    factor: &str,
+) -> Result<DateTime<Utc>, AppError> {
+    let mut tx = db.begin().await?;
+    let context: Option<serde_json::Value> = sqlx::query_scalar(
+        "UPDATE auth_transactions
+         SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
+         WHERE transaction_id = $1 AND kind = 'step_up'
+           AND user_id = $2 AND session_id = $3
+           AND status IN ('method_required', 'factor_required', 'verified')
+           AND consumed_at IS NULL AND expires_at > NOW()
+         RETURNING context_json",
+    )
+    .bind(transaction_id)
+    .bind(user_id)
+    .bind(session_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if context.is_none() {
+        return Err(AppError::Unauthorized(
+            "authentication transaction is invalid or already used".into(),
+        ));
+    }
+    let stepped_up_at: DateTime<Utc> = sqlx::query_scalar(
+        "UPDATE auth_sessions
+         SET step_up_at = NOW(), last_seen_at = NOW()
+         WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
+           AND absolute_expires_at > NOW()
+         RETURNING step_up_at",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("session is no longer active".into()))?;
+    sqlx::query(
+        "INSERT INTO auth_security_events
+         (event_id, user_id, session_id, event_type, factor, metadata)
+         VALUES ($1, $2, $3, 'step_up_succeeded', $4, $5)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(user_id)
+    .bind(session_id)
+    .bind(factor)
+    .bind(json!({
+        "action_class": context
+            .and_then(|value| value.get("action_class").cloned())
+    }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(stepped_up_at + Duration::minutes(15))
+}
+
+/// Reuse a strong factor that the sensitive operation itself just verified.
+/// This avoids prompting twice while preserving the same fixed session window.
+pub async fn record_direct_step_up(
+    db: &PgPool,
+    user_id: &str,
+    session_id: &str,
+    factor: &str,
+    action_class: &str,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
+    let updated = sqlx::query(
+        "UPDATE auth_sessions SET step_up_at = NOW(), last_seen_at = NOW()
+         WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
+           AND absolute_expires_at > NOW()",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(AppError::Unauthorized("session is no longer active".into()));
+    }
+    sqlx::query(
+        "INSERT INTO auth_security_events
+         (event_id, user_id, session_id, event_type, factor, metadata)
+         VALUES ($1, $2, $3, 'step_up_succeeded', $4, $5)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(user_id)
+    .bind(session_id)
+    .bind(factor)
+    .bind(json!({ "action_class": action_class, "proof_reused": true }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 

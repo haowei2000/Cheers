@@ -1,4 +1,4 @@
-import { apiJson } from "./client";
+import { apiJson, currentAccessToken } from "./client";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
 
@@ -6,6 +6,7 @@ export interface LoginResponse {
   status?: "authenticated" | "factor_required";
   transaction_id?: string;
   allowed_factors?: string[];
+  methods?: string[];
   expires_in?: number;
   requires_2fa: boolean;
   two_factor_session_id?: string;
@@ -17,6 +18,200 @@ export interface LoginResponse {
   role?: string;
   /** Native/desktop only — persist and re-present to skip 2FA on trusted devices. */
   trusted_device?: string;
+}
+
+export interface AuthFlowStart {
+  transaction_id: string;
+  status: "method_required" | "factor_required" | "verified";
+  methods: string[];
+  expires_in: number;
+}
+
+export type StepUpFlowResponse = AuthFlowStart & {
+  step_up_expires_at?: string;
+};
+
+function desktopStepUpContext(): { serverBase: string; accessToken: string } {
+  const serverBase = getServerBase();
+  const accessToken = currentAccessToken();
+  if (!serverBase || !accessToken) throw new Error("The current desktop session is unavailable");
+  return { serverBase, accessToken };
+}
+
+export function startStepUpFlow(actionClass: string): Promise<StepUpFlowResponse> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_start_step_up", {
+      ...desktopStepUpContext(),
+      actionClass,
+    });
+  }
+  return apiJson("/auth/flows/start", {
+    method: "POST",
+    body: JSON.stringify({ purpose: "step_up", client: "web", action_class: actionClass }),
+  });
+}
+
+export function verifyStepUpPassword(
+  transactionId: string,
+  password: string
+): Promise<StepUpFlowResponse> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_step_up_password", {
+      ...desktopStepUpContext(),
+      transactionId,
+      password,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function verifyStepUpCode(
+  transactionId: string,
+  method: string,
+  code: string
+): Promise<StepUpFlowResponse> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_step_up_code", {
+      ...desktopStepUpContext(),
+      transactionId,
+      method,
+      code,
+    });
+  }
+  const suffix = method === "email" ? "email/verify" : "totp/verify";
+  return apiJson(`/auth/flows/${transactionId}/${suffix}`, {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function sendStepUpEmail(transactionId: string): Promise<Record<string, unknown>> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_step_up_email_send", {
+      ...desktopStepUpContext(),
+      transactionId,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/email/send`, { method: "POST", body: "{}" });
+}
+
+export function stepUpPasskeyOptions(transactionId: string): Promise<Record<string, unknown>> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_step_up_passkey_options", {
+      ...desktopStepUpContext(),
+      transactionId,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/passkey/options`, { method: "POST", body: "{}" });
+}
+
+export function verifyStepUpPasskey(
+  transactionId: string,
+  credential: Record<string, unknown>
+): Promise<StepUpFlowResponse> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_step_up_passkey_verify", {
+      ...desktopStepUpContext(),
+      transactionId,
+      credential,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/passkey/verify`, {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
+}
+
+export function cancelStepUpFlow(transactionId: string): Promise<Record<string, unknown>> {
+  if (isTauri()) {
+    return invokeDesktop("desktop_cancel_step_up", {
+      ...desktopStepUpContext(),
+      transactionId,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/cancel`, { method: "POST", body: "{}" });
+}
+
+export function startLoginFlow(identifier: string): Promise<AuthFlowStart> {
+  return apiJson("/auth/flows/start", {
+    method: "POST",
+    body: JSON.stringify({
+      purpose: "login",
+      identifier,
+      client: isTauri() ? "macos" : "web",
+      device_name: isTauri() ? "Mac" : undefined,
+    }),
+  });
+}
+
+export function loginFlowPasskeyOptions(transactionId: string): Promise<Record<string, unknown>> {
+  return apiJson(`/auth/flows/${transactionId}/passkey/options`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export function verifyLoginFlowPassword(
+  transactionId: string,
+  password: string
+): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    return invokeDesktop("desktop_login_flow_password", { serverBase, transactionId, password });
+  }
+  return apiJson(`/auth/flows/${transactionId}/password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function sendLoginFlowEmail(transactionId: string): Promise<Record<string, unknown>> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    return invokeDesktop("desktop_login_flow_email_send", { serverBase, transactionId });
+  }
+  return apiJson(`/auth/flows/${transactionId}/email/send`, { method: "POST", body: "{}" });
+}
+
+export function verifyLoginFlowCode(
+  transactionId: string,
+  method: "email" | "totp" | "recovery_code",
+  code: string
+): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    return invokeDesktop("desktop_login_flow_code", { serverBase, transactionId, method, code });
+  }
+  const suffix = method === "email" ? "email/verify" : "totp/verify";
+  return apiJson(`/auth/flows/${transactionId}/${suffix}`, {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function verifyLoginFlowPasskey(
+  transactionId: string,
+  credential: Record<string, unknown>
+): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    return invokeDesktop<LoginResponse>("desktop_login_flow_passkey_verify", {
+      serverBase,
+      transactionId,
+      credential,
+    });
+  }
+  return apiJson(`/auth/flows/${transactionId}/passkey/verify`, {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
 }
 
 export async function login(credentials: {
@@ -98,7 +293,7 @@ export async function setupTwoFactor(): Promise<{
   secret: string;
   provisioning_uri: string;
 }> {
-  return apiJson("/auth/2fa/setup", { method: "POST", body: "{}" });
+  return apiJson("/auth/2fa/setup", { method: "POST", body: "{}" }, { recentAuth: "auto", actionClass: "authenticator_enrollment" });
 }
 
 export async function enableTwoFactor(code: string): Promise<{ backup_codes: string[] }> {
@@ -131,7 +326,7 @@ export async function passkeyRegisterOptions(name?: string): Promise<Record<stri
   return apiJson("/auth/passkey/register/options", {
     method: "POST",
     body: JSON.stringify({ name: name || undefined }),
-  });
+  }, { recentAuth: "auto", actionClass: "passkey_enrollment" });
 }
 
 export async function passkeyRegisterFinish(
@@ -151,7 +346,7 @@ export async function listPasskeys(): Promise<PasskeyCredential[]> {
 export async function deletePasskey(credentialPk: string): Promise<{ ok: boolean }> {
   return apiJson(`/auth/passkey/credentials/${encodeURIComponent(credentialPk)}`, {
     method: "DELETE",
-  });
+  }, { recentAuth: "auto", actionClass: "strong_factor_removal" });
 }
 
 export async function passkeyFactorOptions(
@@ -235,7 +430,7 @@ export async function startExternalIdentityOAuthLink(
       client,
       device_name: isTauri() ? "Mac" : undefined,
     }),
-  });
+  }, { recentAuth: "auto", actionClass: "identity_link" });
 }
 
 export async function deleteAccount(input: {

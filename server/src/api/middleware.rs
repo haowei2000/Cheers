@@ -58,6 +58,29 @@ pub async fn jwt_auth(
     Ok(next.run(req).await)
 }
 
+/// Authenticate when a bearer token is present, while still allowing login
+/// flows to start anonymously. Invalid presented tokens never degrade to an
+/// anonymous request.
+pub async fn optional_jwt_auth(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let Some(token) = extract_bearer(req.headers()) else {
+        return Ok(next.run(req).await);
+    };
+    let claims =
+        verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    if is_revoked(&state.db, &claims)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    req.extensions_mut().insert(claims);
+    Ok(next.run(req).await)
+}
+
 /// A user token is valid only while both its account and exact session are active.
 async fn is_revoked(db: &sqlx::PgPool, claims: &Claims) -> Result<bool, sqlx::Error> {
     let row = sqlx::query(

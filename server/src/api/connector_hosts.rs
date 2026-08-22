@@ -12,7 +12,10 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    api::{bots::ensure_bot_owner_or_admin, middleware::Claims},
+    api::{
+        bots::{ensure_bot_owner_or_admin, ensure_recent_bot_owner_or_admin},
+        middleware::Claims,
+    },
     app_state::AppState,
     errors::AppError,
     infra::crypto::{generate_host_credential, hash_host_credential},
@@ -105,7 +108,7 @@ pub async fn activate_host(
     Extension(claims): Extension<Claims>,
     Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    ensure_recent_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
         .bind(&bot_id)
@@ -160,7 +163,7 @@ pub async fn rotate_host_credential(
     Extension(claims): Extension<Claims>,
     Path((bot_id, host_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    ensure_recent_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let credential = generate_host_credential();
     let hash = hash_host_credential(&credential);
     let prefix = credential[..credential.len().min(13)].to_string();

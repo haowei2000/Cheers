@@ -1,12 +1,13 @@
 import { useAuthStore } from "@/stores/authStore";
 import { apiBase, wsBase } from "@/lib/serverConfig";
+import { requestStepUp } from "@/lib/stepUpCoordinator";
 
-function getToken(): string | null {
+export function currentAccessToken(): string | null {
   return useAuthStore.getState().token;
 }
 
 function authHeaders(): Record<string, string> {
-  const token = getToken();
+  const token = currentAccessToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -148,11 +149,23 @@ async function toApiError(res: Response): Promise<ApiError> {
 
 export async function apiJson<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  options?: { recentAuth?: "auto"; actionClass?: string }
 ): Promise<T> {
   const res = await apiFetch(path, init);
   if (!res.ok) {
-    throw await toApiError(res);
+    const error = await toApiError(res);
+    if (
+      options?.recentAuth === "auto" &&
+      error.status === 428 &&
+      error.code === "recent_authentication_required"
+    ) {
+      await requestStepUp(options.actionClass);
+      const retry = await apiFetch(path, init);
+      if (!retry.ok) throw await toApiError(retry);
+      return retry.json() as Promise<T>;
+    }
+    throw error;
   }
   return res.json() as Promise<T>;
 }

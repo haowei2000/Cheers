@@ -61,6 +61,7 @@ pub async fn register_options(
     Json(body): Json<RegisterOptionsRequest>,
 ) -> Result<Json<Value>, AppError> {
     let service = require_webauthn(&state)?;
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     let row = sqlx::query(
         "SELECT username, display_name FROM users
          WHERE user_id = $1 AND is_deleted = FALSE",
@@ -127,7 +128,46 @@ pub async fn delete_credential(
     Path(credential_pk): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let _ = require_webauthn(&state)?;
-    webauthn::delete_credential(&state.db, &claims.sub, &credential_pk).await?;
+    let mut tx = state.db.begin().await?;
+    let active_user =
+        sqlx::query("SELECT 1 FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE")
+            .bind(&claims.sub)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if active_user.is_none() {
+        return Err(AppError::NotFound);
+    }
+    let row = sqlx::query(
+        "SELECT
+           EXISTS(SELECT 1 FROM webauthn_credentials
+                  WHERE credential_pk = $1 AND user_id = $2) AS exists,
+           (SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $2) AS total,
+           (SELECT password_hash IS NOT NULL OR totp_enabled
+              FROM users WHERE user_id = $2) AS has_local_strong_factor,
+           EXISTS(SELECT 1 FROM auth_external_identities
+                  WHERE user_id = $2 AND provider IN ('apple', 'google')) AS has_fresh_oauth",
+    )
+    .bind(&credential_pk)
+    .bind(&claims.sub)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !row.try_get::<bool, _>("exists").unwrap_or(false) {
+        return Err(AppError::NotFound);
+    }
+    let removing_last_strong_factor = row.try_get::<i64, _>("total").unwrap_or(0) <= 1
+        && !row
+            .try_get::<bool, _>("has_local_strong_factor")
+            .unwrap_or(false)
+        && !row.try_get::<bool, _>("has_fresh_oauth").unwrap_or(false);
+    if removing_last_strong_factor {
+        auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    }
+    sqlx::query("DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2")
+        .bind(&credential_pk)
+        .bind(&claims.sub)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
 

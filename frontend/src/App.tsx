@@ -15,6 +15,7 @@ import { initPushBridge } from "@/lib/push";
 import { initDeepLinks } from "@/lib/deepLink";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { ServerPicker } from "@/features/desktop/ServerPicker";
+import { StepUpDialog } from "@/features/auth/StepUpDialog";
 import {
   DesktopPageFrame,
   DesktopWindowFrame,
@@ -59,9 +60,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Tier-L takeover for an expired session (set by the api client / ws hooks on a
-// rejected token). Covers the whole app so the user can't keep operating a dead
-// session; "Sign in again" bounces through /login and back to where they were.
+// Session expiry ends the session. Sensitive operations use StepUpDialog instead
+// and keep the current route, caches, drafts, and refresh token intact.
 function SessionExpiredTakeover() {
   const expired = useAuthStore((s) => s.sessionExpired && s.user !== null);
   const logout = useAuthStore((s) => s.logout);
@@ -223,6 +223,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
         <SessionExpiredTakeover />
+        <StepUpDialog />
       </Suspense>
     </DesktopWindowFrame>
   );

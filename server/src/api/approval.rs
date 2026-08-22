@@ -19,6 +19,7 @@ use crate::{
     app_state::AppState,
     domain::{
         approval::{self, AuditEvent},
+        auth_sessions,
         bot_event_policy::{self, Capability},
     },
     errors::AppError,
@@ -534,6 +535,7 @@ pub async fn grant_approver(
 ) -> Result<Json<Value>, AppError> {
     let uid = user_id(&claims)?;
     require_bot_owner(&state, bot_id, uid, &claims.role).await?;
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     // A non-member can't usefully approve; keep the delegation meaningful.
     ensure_member(&state, body.channel_id, body.user_id, "member").await?;
 

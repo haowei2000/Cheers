@@ -31,6 +31,7 @@ This directory stores architecture, protocol, and gateway design docs.
 ## Security and Operations Context
 
 - [Security Baseline](SECURITY.md)
+- [Security & Convenience: the three planes](SECURITY_CONVENIENCE.md) — 📝 analysis + proposal; per-plane threat models (Web / Personal Bot-Host / collaboration) and the invoker-intersection gap
 - [Bot Permission Model](BOT_PERMISSION.md)
 - [Bot Config Layering](BOT_CONFIG_LAYERING.md)
 - [File Storage](FILE_STORAGE.md)
