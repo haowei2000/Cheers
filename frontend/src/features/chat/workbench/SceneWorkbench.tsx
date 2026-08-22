@@ -38,6 +38,7 @@ import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
+import { FloatingPanelActionPortal, FloatingPanelPrimaryNavigation } from "@/components/ui/floating-panel";
 
 const OTHER_SCENE = "__other__";
 
@@ -548,6 +549,78 @@ export function SceneWorkbench({
       ? "Other"
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
+  const sceneTabs = (compact: boolean) => sceneIds.map((id) => {
+    const meta = metaFor(id);
+    const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+    const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
+      .filter((path) => existing.has(path));
+    return (
+      <SceneTab
+        key={id}
+        label={label}
+        Icon={meta.Icon}
+        iconColor={meta.color}
+        selected={activeScene === id}
+        compact={compact}
+        onSelect={() => setActiveScene(id)}
+        onShowRaw={onShowRaw}
+        onAddToContext={() => addSceneToContext(id)}
+        contextAdded={contextPaths.length > 0
+          && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+        contextAvailable={contextPaths.length > 0}
+      />
+    );
+  });
+
+  const sceneNavigationItems = sceneIds.map((id) => {
+    const meta = metaFor(id);
+    const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+    const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
+      .filter((path) => existing.has(path));
+    return {
+      id,
+      label,
+      icon: meta.Icon,
+      selected: activeScene === id,
+      onSelect: () => setActiveScene(id),
+      control: (
+        <SceneTab
+          label={label}
+          Icon={meta.Icon}
+          iconColor={meta.color}
+          selected={activeScene === id}
+          compact
+          onSelect={() => setActiveScene(id)}
+          onShowRaw={onShowRaw}
+          onAddToContext={() => addSceneToContext(id)}
+          contextAdded={contextPaths.length > 0
+            && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+          contextAvailable={contextPaths.length > 0}
+        />
+      ),
+    };
+  });
+
+  const addSceneAction = useMemo(() => ({
+    id: "add-scene",
+    label: "Add scene",
+    priority: "secondary" as const,
+    icon: FolderPlus,
+    control: <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />,
+    overflow: (
+      <>
+        {available.map((manifest) => (
+          <MenuOption
+            key={manifest.id}
+            label={manifest.title}
+            leading={<FolderPlus className="h-4 w-4" />}
+            onClick={() => void onAddScene(manifest)}
+          />
+        ))}
+      </>
+    ),
+  }), [available, onAddScene]);
+
   if (loading && entries.length === 0) {
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
   }
@@ -582,68 +655,19 @@ export function SceneWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-950/30">
-      <div
-        role="tablist"
-        aria-label="Scenes"
-        className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden"
-      >
-        {sceneIds.map((id) => {
-          const meta = metaFor(id);
-          const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
-          const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
-            .filter((path) => existing.has(path));
-          return (
-            <SceneTab
-              key={id}
-              label={label}
-              Icon={meta.Icon}
-              iconColor={meta.color}
-              selected={activeScene === id}
-              compact
-              onSelect={() => setActiveScene(id)}
-              onShowRaw={onShowRaw}
-              onAddToContext={() => addSceneToContext(id)}
-              contextAdded={contextPaths.length > 0
-                && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
-              contextAvailable={contextPaths.length > 0}
-            />
-          );
-        })}
-        <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-36 flex-shrink-0 flex-col border-r border-zinc-800/80 p-2 md:flex">
-          <div className="px-2 pb-2 pt-1 text-minimal font-medium uppercase tracking-overline text-content-muted">Scenes</div>
-          <div role="tablist" aria-label="Scenes" aria-orientation="vertical" className="space-y-1">
-            {sceneIds.map((id) => {
-              const meta = metaFor(id);
-              const selected = activeScene === id;
-              const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
-              const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
-                .filter((path) => existing.has(path));
-              return (
-                <SceneTab
-                  key={id}
-                  label={label}
-                  Icon={meta.Icon}
-                  iconColor={meta.color}
-                  selected={selected}
-                  compact={false}
-                  onSelect={() => setActiveScene(id)}
-                  onShowRaw={onShowRaw}
-                  onAddToContext={() => addSceneToContext(id)}
-                  contextAdded={contextPaths.length > 0
-                    && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
-                  contextAvailable={contextPaths.length > 0}
-                />
-              );
-            })}
-          </div>
-          <div className="mt-auto pt-2">
+      <FloatingPanelPrimaryNavigation
+        ariaLabel="Scenes"
+        items={sceneNavigationItems}
+        presentationOrder={["iconText", "collapsed"]}
+        mobile={(
+          <div role="tablist" aria-label="Scenes" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
+            {sceneTabs(true)}
             <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
           </div>
-        </aside>
-
+        )}
+      />
+      <FloatingPanelActionPortal action={addSceneAction} active={available.length > 0} />
+      <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
           {activePaths.length > 0 && (
             <nav aria-label={`${title} items`} className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2">

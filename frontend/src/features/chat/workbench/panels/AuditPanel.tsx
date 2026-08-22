@@ -338,7 +338,13 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
   const memberOf: MemberLookup = useCallback((id) => (id ? byId.get(id) : undefined), [byId]);
 
   return (
-    <PanelShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
+    <PanelShell
+      title="Audit"
+      icon={ShieldCheck}
+      loading={loading}
+      onRefresh={load}
+      active={ctx.visible !== false}
+    >
       {events == null ? (
         <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
       ) : events.length === 0 ? (

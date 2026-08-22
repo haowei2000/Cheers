@@ -125,7 +125,7 @@ describe("FloatingPanel collapse", () => {
     expect(markup).not.toContain("glance");
   });
 
-  it("hides headerExtra while collapsed", () => {
+  it("hides panel chrome actions while collapsed", () => {
     const markup = render(
       <FloatingPanel
         title="Workbench"
@@ -133,7 +133,7 @@ describe("FloatingPanel collapse", () => {
         storageKey="t.hx"
         collapsed
         onToggleCollapsed={() => {}}
-        headerExtra={<span>toolbar</span>}
+        panelActions={[{ id: "toolbar", label: "Toolbar", control: <span>toolbar</span> }]}
         collapsedSummary={() => <p>glance</p>}
       >
         <p>body</p>
@@ -170,5 +170,85 @@ describe("FloatingPanel drop target", () => {
 
     expect(rootClasses(inactive)).not.toContain("ring-amber-500/60");
     expect(rootClasses(active)).toContain("ring-amber-500/60");
+  });
+});
+
+describe("FloatingPanel window chrome", () => {
+  it("remains interactive inside the pointer-transparent desktop canvas", () => {
+    const markup = render(
+      <FloatingPanel title="Workbench" onClose={() => {}} storageKey="t.canvas">
+        <p>body</p>
+      </FloatingPanel>
+    );
+
+    expect(rootClasses(markup)).toContain("pointer-events-auto");
+    expect(markup).toContain('data-floating-panel=""');
+    expect(markup).toContain('data-floating-panel-handle=""');
+    expect(markup).toContain("cursor-grab");
+  });
+
+  it("makes desktop content fill the complete panel client rect", () => {
+    const markup = render(
+      <FloatingPanel title="Workbench" onClose={() => {}} storageKey="t.content">
+        <p>full-size-content</p>
+      </FloatingPanel>
+    );
+
+    expect(markup).toContain('data-floating-panel-content=""');
+    expect(markup).toContain("md:absolute");
+    expect(markup).toContain("md:inset-0");
+    expect(markup).toContain("full-size-content");
+  });
+
+  it("renders title, primary navigation, and actions as independent desktop islands", () => {
+    const markup = render(
+      <FloatingPanel
+        title="Remote workspace"
+        onClose={() => {}}
+        storageKey="t.chrome"
+        primaryNavigation={{
+          ariaLabel: "Workspace views",
+          items: [
+            { id: "files", label: "Files", selected: true },
+            { id: "changes", label: "Changes" },
+            { id: "history", label: "History" },
+          ],
+        }}
+        panelActions={[{ id: "refresh", label: "Refresh", control: <span>Refresh</span> }]}
+      >
+        <p>workspace</p>
+      </FloatingPanel>
+    );
+
+    expect(markup).toContain('data-floating-panel-title=""');
+    expect(markup).toContain('data-floating-panel-navigation=""');
+    expect(markup).toContain('data-floating-panel-actions=""');
+    expect(markup).toContain("Files");
+    expect(markup).toContain("Changes");
+    expect(markup).toContain("History");
+    expect(markup).toContain("Refresh");
+    expect(markup).toContain("Minimize panel");
+    expect(markup).toContain("Close panel");
+  });
+
+  it("keeps panel context controls outside the full-size content surface", () => {
+    const markup = render(
+      <FloatingPanel
+        title="Remote workspace"
+        onClose={() => {}}
+        storageKey="t.context"
+        panelContext={<select aria-label="Select a bot"><option>Bot</option></select>}
+      >
+        <p>workspace-content</p>
+      </FloatingPanel>
+    );
+
+    const contextIndex = markup.indexOf('data-floating-panel-context=""');
+    const contentIndex = markup.indexOf('data-floating-panel-content=""');
+    expect(contextIndex).toBeGreaterThan(-1);
+    expect(contentIndex).toBeGreaterThan(contextIndex);
+    expect(markup).toContain("--floating-panel-chrome-top");
+    expect(markup).toContain("--floating-panel-safe-top");
+    expect(markup).toContain("workspace-content");
   });
 });

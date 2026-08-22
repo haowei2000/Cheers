@@ -22,6 +22,79 @@ final result: passed
 
 ---
 
+# Floating Panel Full-size Content Design QA
+
+## Target
+
+- Source reference: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-a8d05af5-9388-4351-aeb6-9df5610646db.png`
+- Wide implementation: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-full-content-after.png`
+- Compact implementation: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-reference-sized-after.png`
+- Mobile sheet: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-mobile-sheet-after.png`
+- Same-size comparison: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-reference-comparison.png`
+- Comparison viewport: 1028 x 984 CSS pixels.
+
+## Geometry And Interaction Evidence
+
+- The wide ViewBoard measured 1061 x 686 px; its Content rect was exactly the same 1061 x 686 px at the same x/y origin.
+- Resizing to 554 px switched primary Board tabs to the current-board dropdown, moved Add to context into More, and kept Minimize and Close visible. Content still matched the complete 554 x 686 px Panel rect; the caller-owned safe zone changed from 3.5rem to 5.5rem.
+- The compact dropdown changed the active Board, and More exposed the structured secondary action. Remote Workspace exposed Refresh through the same overflow mechanism.
+- ViewBoard moved from x=871 to x=1007 through the title island grip. Resize, lane bounds, persisted geometry, z-order raising, and simultaneous Remote Workspace / ViewBoard / Workbench / Channel Files windows remained functional.
+- Remote Workspace, ViewBoard, Workbench, and Channel Files all reported exact Content/Panel rect equality. Workbench and Channel Files correctly rendered no empty navigation surface.
+- At 390 x 844, the ViewBoard rendered as a fixed 390 x 844 full-screen sheet, used its inline mobile header, kept Content relative, and hid desktop floating chrome. Desktop persisted width, height, and position no longer leak into mobile geometry.
+
+## Visual Comparison
+
+- The implementation follows the reference hierarchy: content owns the complete window surface while identity, navigation, and actions sit in independent always-visible translucent islands.
+- The narrow state keeps the title and universal window controls on the first row and moves the current primary view to a centered second-row island, avoiding collisions without shrinking business content.
+- Product-specific colors, typography, and density remain Cheers-native rather than copying the media player's artwork or playback controls.
+- The local WebSocket reconnect banner is an unrelated runtime-state difference visible behind the non-modal Panel.
+
+## Validation
+
+- TypeScript passed.
+- 82 Vitest files and 475 tests passed.
+- ESLint passed with existing repository warnings and no errors.
+- Production build passed.
+- Design-system check and design-system audit tests passed.
+- Authenticated in-app browser regression covered wide, compact, overflow, drag, resize, multi-window, and mobile sheet states.
+
+final result: passed
+
+## Activity Control Follow-up
+
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-activity-controls-after.png`
+- Refresh is registered as a panel-level action and rendered in the persistent top-right action island.
+- The duplicate content-level Activity heading was removed; the remaining Activity label is the primary navigation selection.
+- Flow, Highlights, All, and Filter remain content-owned controls, now rendered as two bottom overlay islands so the content surface extends behind them.
+- Browser geometry confirmed the bottom controls are absolutely overlaid within the panel and Refresh is inside the action island.
+- Production build, full Vitest suite (475 tests), TypeScript, design-system checks, health checks, and browser-console verification passed. ESLint reported 105 existing warnings and no errors.
+
+follow-up result: passed
+
+## Adaptive Control Group Follow-up
+
+- Source reference: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-cbbe20a5-5717-42dc-9638-736576c34fcd.png`
+- Four-mode component evidence: `/Users/haowei/Projects/Cheers/artifacts/design-qa/adaptive-control-group-modes.png`
+- Wide FloatingPanel evidence: `/Users/haowei/Projects/Cheers/artifacts/design-qa/adaptive-floating-panel-wide.png`
+- Compact FloatingPanel evidence: `/Users/haowei/Projects/Cheers/artifacts/design-qa/adaptive-floating-panel-compact.png`
+
+### Responsive Evidence
+
+- The same five-item group rendered icon + text at 440 px, text at 330 px, icons at 200 px, and a current-item selector at 136 px. Each decision used measured intrinsic control widths rather than viewport breakpoints.
+- A production `FloatingPanel` preview resized from 1040 px to 428 px without reload. Navigation changed from the full scene strip to the current-scene selector; panel actions changed from direct controls to primary icon + More. Resizing back to 1040 px restored both full groups.
+- At 428 px the compact scene selector exposed all four scenes and selecting Tasks updated the trigger. At both widths, the Content and Panel client rects were identical.
+- Desktop chrome remained hidden by default, appeared on panel hover, and the narrow navigation moved to row two without colliding with the title or right action island.
+- The authenticated product route was redirected to local login during this pass, so browser interaction used the production `FloatingPanel` and `SceneWorkbench` components through the repository's isolated Workbench preview. The preview produced no browser warnings or errors.
+
+### Validation
+
+- 83 Vitest files and 480 tests passed.
+- TypeScript, production build, design-system check, and ESLint passed. ESLint retained existing repository warnings and introduced no adaptive-control warnings.
+
+adaptive follow-up result: passed
+
+---
+
 # iOS Composer Design QA
 
 - Source visual truth: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-4c4431fc-a7be-44e7-9d9c-8f730233927d.png`
@@ -267,5 +340,32 @@ The full frame keeps all three targets legible at original resolution, so a sepa
 - Runtime limitation: the final capture contains an unrelated reconnect banner; manual retry did not restore the local WebSocket during this audit.
 
 No actionable P0, P1, or P2 visual mismatch remains in the three requested areas.
+
+final result: passed
+
+---
+
+# Floating Panel Design QA
+
+- Source reference: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-9fcb62d0-2c9a-49e0-97d7-1a56a2efc03c.png`
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-after.png`
+- Side-by-side comparison: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-comparison.png`
+- Browser viewport: 1235 x 1243 CSS px at device pixel ratio 2
+- State: authenticated local channel with the shared ViewBoard/Workbench floating-panel host open
+
+## Evidence
+
+- The prior right lane occupied 555 px and compressed the channel content. The floating canvas now spans the complete 939 x 1191 px central workspace without changing chat width.
+- A panel was dragged from x=300 to the right boundary at x=824, then resized from 411 x 444 to 341 x 384. It remained fully inside the canvas.
+- A free drag stopped at the released coordinates instead of snapping to a grid zone.
+- Opening ViewBoard raised it above Workbench; closing and reopening Workbench raised Workbench above ViewBoard.
+- The source and implementation comparison confirms the intended independent-window treatment: strong elevation, rounded window surface, persistent title chrome, visible drag affordance, and a stable resize control.
+
+## QA History
+
+1. Baseline: right-side lane clipped movement and reduced the chat region to a narrow column.
+2. First implementation: full-workspace overlay restored chat width and removed sidebar obstruction.
+3. Interaction refinement: mandatory drop snapping was removed; smart first-open placement remains.
+4. Multi-window refinement: mounted-but-closed panels now rise to front whenever reopened.
 
 final result: passed

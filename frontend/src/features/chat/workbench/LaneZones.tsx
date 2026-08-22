@@ -6,12 +6,12 @@ import {
   zonesFor,
 } from "./laneSnap";
 
-// Drag affordance for the work lane: while a window is being dragged (the snap
-// store is `active`), this paints the partition grid over the lane and lights up
+// Drag affordance for the floating canvas: while a window is being dragged (the snap
+// store is `active`), this paints the partition grid over the canvas and lights up
 // the zone the cursor is over — the spot the window will snap to on drop. Purely
 // visual: `pointer-events-none` so it never intercepts the drag, and it renders
 // nothing when no drag is in progress. Rendered as an `inset-0` child of the
-// `relative` lane so its lane-local coords line up with the floating windows.
+// positioned canvas so its local coords line up with the floating windows.
 export function LaneZones() {
   const snap = useSyncExternalStore(subscribeSnap, getSnapState, getSnapState);
   if (!snap.active || !snap.bounds) return null;

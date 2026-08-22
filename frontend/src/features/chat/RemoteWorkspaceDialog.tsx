@@ -24,8 +24,6 @@ import {
   Download,
   Lock,
   MessageSquarePlus,
-  FileText,
-  Folder,
   FolderPlus,
   GitBranch,
   GitCommit,
@@ -255,6 +253,7 @@ export function RemoteWorkspaceDialog({
   // Session-scoped by default: browse only the active session's root set. Un-checking
   // "Entire allowed roots" drops the session id so the user sees the bot's ENTIRE allowed roots.
   const [scoped, setScoped] = useState(true);
+
   // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
   // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
   const [meta, setMeta] = useState<WorkspaceMeta | null>(null);
@@ -1111,6 +1110,110 @@ export function RemoteWorkspaceDialog({
   const selectedBot = bots?.find((b) => b.bot_id === botId) ?? null;
   // Fail-closed: advertise Save only when the server explicitly says we can write.
   const canWrite = selectedBot?.can_write === true;
+  const selectPrimaryView = (view: "files" | "changes" | "history") => {
+    setLeftView(view);
+    if (view === "files") setDiff(null);
+  };
+  const workspaceContextControls = (
+    <div className="flex w-full flex-wrap items-center gap-2 text-compact">
+      <Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />
+      <UiSelect
+        aria-label="Select a bot"
+        value={botId ?? ""}
+        onChange={(e) => {
+          setBotId(e.target.value || null);
+          setEntries(null);
+          setCwd("");
+          setTreeRoot(null);
+          setFile(null);
+          setEtag(null);
+          setConflict(null);
+          setGit(null);
+          setDiff(null);
+          setLog(null);
+          setLogDone(false);
+          setRoot(null);
+          setRootSessionId(null);
+          deepLinked.current = true;
+        }}
+        controlSize="compact"
+        className="min-w-0 flex-1 rounded-sm bg-zinc-800 text-content-secondary outline-none"
+      >
+        <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
+        {bots?.map((bot) => (
+          <option
+            key={bot.bot_id}
+            value={bot.bot_id}
+            disabled={!bot.online || bot.can_read === false}
+          >
+            {bot.display_name || bot.username}{" "}
+            {!bot.online ? "(offline)" : bot.can_read === false ? "(no access)" : ""}
+          </option>
+        ))}
+      </UiSelect>
+      {rootOptions.length > 1 && (
+        <UiSelect
+          aria-label="Select workspace root"
+          value={root ?? ""}
+          onChange={(e) =>
+            selectRoot(rootOptions.find((option) => option.path === e.target.value) ?? null)
+          }
+          title="Folder to browse — a session's workdir (scoped to that session) or one of the connector's allowed roots"
+          controlSize="compact"
+          className="min-w-0 max-w-[220px] flex-1 rounded-sm bg-zinc-800 text-content-secondary outline-none"
+        >
+          <option value="">Root: auto</option>
+          {rootOptions.some((option) => option.kind === "session") && (
+            <optgroup label="Session workdirs">
+              {rootOptions
+                .filter((option) => option.kind === "session")
+                .map((option) => (
+                  <option key={option.path} value={option.path}>{option.path}</option>
+                ))}
+            </optgroup>
+          )}
+          {rootOptions.some((option) => option.kind === "root") && (
+            <optgroup label="Allowed roots">
+              {rootOptions
+                .filter((option) => option.kind === "root")
+                .map((option) => (
+                  <option key={option.path} value={option.path}>{option.path}</option>
+                ))}
+            </optgroup>
+          )}
+        </UiSelect>
+      )}
+      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted" />}
+      {err && <span className="truncate text-danger-400" title={err}>{err}</span>}
+      {degraded && !err && (
+        <span
+          className="truncate text-warning-400"
+          title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
+        >
+          live updates paused
+        </span>
+      )}
+      {(meta?.git_ops === "off" || sessionId) && <div className="flex-1" />}
+      {meta?.git_ops === "off" && (
+        <span
+          className="text-content-muted"
+          title="This connector's policy disables git inspection (git_ops = off)"
+        >
+          git off
+        </span>
+      )}
+      {sessionId && (
+        <CheckboxField
+          label="Entire allowed roots"
+          className="select-none text-compact text-content-muted"
+          title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
+          checked={!scoped}
+          onChange={toggleScoped}
+          controlSize="compact"
+        />
+      )}
+    </div>
+  );
 
   return (
     <FloatingPanel
@@ -1136,7 +1239,36 @@ export function RemoteWorkspaceDialog({
       defaultPosClassName="top-6 left-6"
       // The panes stack (mobile) or sit side-by-side (desktop) and stretch — the
       // body must be a non-scrolling flex column in both cases.
-      bodyClassName="flex flex-col overflow-hidden"
+      bodyClassName="relative flex flex-col overflow-hidden p-0 space-y-0"
+      panelContext={workspaceContextControls}
+      primaryNavigation={git ? {
+        ariaLabel: "Workspace views",
+        items: [
+          { id: "files", label: "Files", icon: File, selected: leftView === "files", onSelect: () => selectPrimaryView("files") },
+          { id: "changes", label: "Changes", icon: GitCompare, badge: git.entries.length || undefined, selected: leftView === "changes", onSelect: () => selectPrimaryView("changes") },
+          { id: "history", label: "History", icon: History, selected: leftView === "history", onSelect: () => selectPrimaryView("history") },
+        ],
+      } : undefined}
+      panelActions={[{
+        id: "refresh",
+        label: "Refresh workspace",
+        priority: "secondary",
+        icon: RefreshCw,
+        onSelect: () => void refreshAll(),
+        control: (
+          <UiButton
+            variant="plain"
+            content="icon"
+            controlSize="compact"
+            onClick={() => void refreshAll()}
+            title="Refresh workspace"
+            aria-label="Refresh workspace"
+            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </UiButton>
+        ),
+      }]}
       // Minimized glance: which bot, the open file (with unsaved marker), and the
       // git branch + change count — the signals you keep an eye on while parked.
       collapsedSummary={(expand) => (
@@ -1178,107 +1310,10 @@ export function RemoteWorkspaceDialog({
         </>
       )}
     >
-      {/* Bot picker */}
-      <div className="flex items-center gap-2 mb-2 text-compact flex-wrap flex-shrink-0">
-        <span className="text-content-muted">Bot</span>
-        <UiSelect
-          value={botId ?? ""}
-          onChange={(e) => {
-            setBotId(e.target.value || null);
-            setEntries(null);
-            setCwd("");
-            setTreeRoot(null);
-            setFile(null);
-            setEtag(null);
-            setConflict(null);
-            setGit(null);
-            setDiff(null);
-            setLog(null);
-            setLogDone(false);
-            setRoot(null);
-            setRootSessionId(null);
-            deepLinked.current = true; // manual switch: don't re-deep-link
-          }}
-          controlSize="regular" className="bg-zinc-800 text-content-secondary rounded-sm outline-none"
-        >
-          <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
-          {bots?.map((b) => (
-            <option
-              key={b.bot_id}
-              value={b.bot_id}
-              disabled={!b.online || b.can_read === false}
-            >
-              {b.display_name || b.username}{" "}
-              {!b.online ? "(offline)" : b.can_read === false ? "(no access)" : ""}
-            </option>
-          ))}
-        </UiSelect>
-        {/* Root picker — the channel's session workdirs first, then the connector's
-            allowed_roots. Only shown when there's an actual choice (>1 option). */}
-        {rootOptions.length > 1 && (
-          <UiSelect
-            value={root ?? ""}
-            onChange={(e) =>
-              selectRoot(rootOptions.find((o) => o.path === e.target.value) ?? null)
-            }
-            title="Folder to browse — a session's workdir (scoped to that session) or one of the connector's allowed roots"
-            controlSize="regular" className="max-w-[220px] bg-zinc-800 text-content-secondary rounded-sm outline-none"
-          >
-            <option value="">Root: auto</option>
-            {rootOptions.some((o) => o.kind === "session") && (
-              <optgroup label="Session workdirs">
-                {rootOptions
-                  .filter((o) => o.kind === "session")
-                  .map((o) => (
-                    <option key={o.path} value={o.path}>
-                      {o.path}
-                    </option>
-                  ))}
-              </optgroup>
-            )}
-            {rootOptions.some((o) => o.kind === "root") && (
-              <optgroup label="Allowed roots">
-                {rootOptions
-                  .filter((o) => o.kind === "root")
-                  .map((o) => (
-                    <option key={o.path} value={o.path}>
-                      {o.path}
-                    </option>
-                  ))}
-              </optgroup>
-            )}
-          </UiSelect>
-        )}
-        {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-        {err && <span className="text-danger-400 truncate" title={err}>{err}</span>}
-        {degraded && !err && (
-          <span
-            className="text-warning-400 truncate"
-            title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
-          >
-            live updates paused
-          </span>
-        )}
-        <div className="flex-1" />
-        {meta?.git_ops === "off" && (
-          <span
-            className="text-content-muted"
-            title="This connector's policy disables git inspection (git_ops = off)"
-          >
-            git off
-          </span>
-        )}
-        {sessionId && (
-          <CheckboxField
-            label="Entire allowed roots"
-            className="select-none text-compact text-content-muted"
-            title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-            checked={!scoped}
-            onChange={toggleScoped}
-            controlSize="compact"
-          />
-        )}
-      </div>
+      <div
+        data-workspace-content=""
+        className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:absolute md:inset-0 md:pt-[var(--floating-panel-safe-top)]"
+      >
 
       {/* Git branch badge — quiet, only when the current dir resolves to a repo. */}
       {botId && git && (
@@ -1349,7 +1384,7 @@ export function RemoteWorkspaceDialog({
           <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
-              <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800">
+              <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 md:hidden">
                 <UiButton variant="plain" role="tab" aria-selected={leftView === "files"}
                   onClick={() => {
                     setLeftView("files");
@@ -1923,6 +1958,7 @@ export function RemoteWorkspaceDialog({
           </div>
         </div>
       )}
+      </div>
     </FloatingPanel>
   );
 }

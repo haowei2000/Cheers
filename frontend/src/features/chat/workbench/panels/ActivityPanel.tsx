@@ -540,8 +540,14 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
   );
 
   return (
-    <PanelShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
-      <div className="flex flex-col h-full min-h-0">
+    <PanelShell
+      title="Activity"
+      icon={Activity}
+      loading={loading}
+      onRefresh={load}
+      active={ctx.visible !== false}
+    >
+      <div className="relative flex h-full min-h-0 flex-col">
         {participantIds.length > 1 && (
           <ParticipantStrip
             ids={participantIds}
@@ -571,7 +577,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
             />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto py-1">
+          <div className="flex-1 min-h-0 overflow-y-auto pb-16 pt-1">
             {episodes.map((ep) => (
               <FlowEpisode
                 key={ep.id}
@@ -585,9 +591,9 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           </div>
         )}
 
-        {/* Footer: lens tabs (left) + member filter (right). */}
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-2 py-2">
-          <div className="flex items-center gap-1 rounded-sm bg-zinc-900/60 p-1">
+        {/* Content-local controls float over the Board; list padding keeps the final row reachable. */}
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <UiButton variant="plain" role="tab" aria-selected={lens === l}
@@ -605,14 +611,16 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           </div>
           <div className="flex-1" />
           {members.length > 0 && (
-            <MemberFilter
-              members={members}
-              memberOf={memberOf}
-              selected={selected}
-              onToggle={toggleMember}
-              onClear={clearSelection}
-              openUp
-            />
+            <div className="pointer-events-auto rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl">
+              <MemberFilter
+                members={members}
+                memberOf={memberOf}
+                selected={selected}
+                onToggle={toggleMember}
+                onClear={clearSelection}
+                openUp
+              />
+            </div>
           )}
         </div>
       </div>

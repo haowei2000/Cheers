@@ -52,8 +52,6 @@ import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { panelsFor } from "@/features/chat/panels/registry";
 import { useExtensionPanels } from "@/features/chat/panels/useExtensionPanels";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
-import { LaneZones } from "./workbench/LaneZones";
-import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
@@ -527,10 +525,6 @@ export function ChannelView({
     setFilesFocus,
     setLaneEl,
     getLaneBounds,
-    laneWidth,
-    setLaneWidth,
-    commitLaneWidth,
-    openInstrument,
   } = useChannelInstruments();
   useEffect(() => {
     if (!channel || channelSettingsRequestId !== channel.channel_id) return;
@@ -639,11 +633,10 @@ export function ChannelView({
   const openBoard = useCallback(
     (id: string) => {
       setVbMinimal(false);
-      openInstrument("viewboard", "open", true);
       setVbOpen(true);
       setFocusBoard((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
     },
-    [openInstrument, setVbMinimal, setVbOpen]
+    [setVbMinimal, setVbOpen]
   );
   const openSessionsBoard = useCallback(() => openBoard("sessions"), [openBoard]);
 
@@ -651,14 +644,12 @@ export function ChannelView({
   // file to attach from its own panel.
   const browseWorkbench = useCallback(() => {
     setWbTarget(undefined);
-    openInstrument("workbench", "open", true);
     setWbOpen(true);
-  }, [openInstrument, setWbOpen]);
+  }, [setWbOpen]);
   const browseWorkspace = useCallback(() => {
     setWsInit({});
-    openInstrument("workspace", "open", true);
     setWsOpen(true);
-  }, [openInstrument, setWsInit, setWsOpen]);
+  }, [setWsInit, setWsOpen]);
   // A pending context chip → jump to where that resource actually lives: a
   // Workbench file (`fs.read`) opens the Workbench focused on it; a bot's
   // workspace file (`workspace.read`) opens the Remote workspace at that path.
@@ -668,7 +659,6 @@ export function ChannelView({
         const path = item.params.path;
         if (typeof path === "string") {
           setWbTarget(path);
-          openInstrument("workbench", "open", true);
           setWbOpen(true);
         }
       } else if (item.verb === "workspace.read") {
@@ -678,11 +668,10 @@ export function ChannelView({
           botId: typeof botId === "string" ? botId : undefined,
           path: typeof path === "string" ? path : undefined,
         });
-        openInstrument("workspace", "open", true);
         setWsOpen(true);
       }
     },
-    [openInstrument, setWbOpen, setWsInit, setWsOpen]
+    [setWbOpen, setWsInit, setWsOpen]
   );
 
   // Stable handlers for the memoized drawers so a streaming re-render of ChannelView
@@ -786,7 +775,6 @@ export function ChannelView({
         botLabels.get(senderBotId) || senderBotId.slice(0, 8);
       const openInbox = (fileId: string) => {
         setFilesFocus(fileId);
-        openInstrument("files", "open", true);
         setFilesOpen(true);
       };
       // 1) Strongest signal: a file THIS message attached (an inbox deliverable).
@@ -803,7 +791,6 @@ export function ChannelView({
           openInbox(r.file_id);
         } else if (r.store === "desk" && r.path) {
           setWbTarget(r.path);
-          openInstrument("workbench", "open", true);
           setWbOpen(true);
         } else if (r.store === "workspace" && r.bot_id && r.path) {
           // The workspace candidate is unprobed — verify the file actually exists on
@@ -812,7 +799,6 @@ export function ChannelView({
           try {
             await getWorkspaceFile(channel.channel_id, r.bot_id, r.path);
             setWsInit({ botId: r.bot_id, path: r.path });
-            openInstrument("workspace", "open", true);
             setWsOpen(true);
           } catch (e) {
             const offline = String(e).includes("offline");
@@ -836,7 +822,6 @@ export function ChannelView({
     [
       channel,
       botLabels,
-      openInstrument,
       setFilesFocus,
       setFilesOpen,
       setWbOpen,
@@ -860,13 +845,11 @@ export function ChannelView({
       }
       if (loc.kind === "desk") {
         setWbTarget(loc.path);
-        openInstrument("workbench", "open", true);
         setWbOpen(true);
         return;
       }
       if (loc.kind === "inbox") {
         setFilesFocus(loc.fileId);
-        openInstrument("files", "open", true);
         setFilesOpen(true);
         return;
       }
@@ -929,7 +912,6 @@ export function ChannelView({
           path: resolved.path,
           line: resolved.kind === "file" ? loc.line : undefined,
         });
-        openInstrument("workspace", "open", true);
         setWsOpen(true);
       } catch (e) {
         const offline = String(e).includes("offline");
@@ -944,7 +926,6 @@ export function ChannelView({
       channel,
       botLabels,
       openBoard,
-      openInstrument,
       setFilesFocus,
       setFilesOpen,
       setWbOpen,
@@ -1354,30 +1335,18 @@ export function ChannelView({
       onStartDm={(member) => void startDirectMessage(member)}
       onToggleFiles={() => {
         setFilesFocus(undefined);
-        setFilesOpen((open) => {
-          if (!open) openInstrument("files", "open", false);
-          return !open;
-        });
+        setFilesOpen((open) => !open);
       }}
       onToggleWorkspace={() => {
         setWsInit({});
-        setWsOpen((open) => {
-          if (!open) openInstrument("workspace", "open", false);
-          return !open;
-        });
+        setWsOpen((open) => !open);
       }}
       onToggleViewBoard={() =>
-        setVbOpen((open) => {
-          if (!open) openInstrument("viewboard", "open", false);
-          return !open;
-        })
+        setVbOpen((open) => !open)
       }
       onToggleWorkbench={() => {
         setWbTarget(undefined);
-        setWbOpen((open) => {
-          if (!open) openInstrument("workbench", "open", false);
-          return !open;
-        });
+        setWbOpen((open) => !open);
       }}
     />
   );
@@ -1388,10 +1357,8 @@ export function ChannelView({
       currentUserId={user?.user_id}
       onMention={(member) => mentionMember(member.member_id)}
     >
-      {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
-        which reserves real layout space. The chat column is always width-capped:
-        centered while the work area is closed, docked against it when open.
-        Mobile: the panels stay full/near-full-screen overlay sheets. */}
+      {/* Desktop instrument panels float over the central workspace without changing
+        the chat layout. Mobile keeps the full-screen sheet treatment. */}
       <div className="flex flex-col h-full">
         <ChannelChrome
           channelId={channel.channel_id}
@@ -1403,18 +1370,9 @@ export function ChannelView({
           actions={channelToolbar}
         />
 
-        <div className="flex-1 min-h-0 flex">
-          {/* Chat region — fills the width left of the (resizable) lane, down to a
-          24rem floor; the inner column below caps the reading width at 52rem and
-          stays centered in that space (whether or not the lane is open) so it
-          never strands a wide empty gutter on one side. */}
-          <div
-            className={`flex-1 min-w-0 flex flex-col ${
-              // Tighter chat floor on mid-width desktops so the lane can reach a
-              // reading-friendly width; full 24rem once the window is wide enough.
-              anyWorkOpen ? "md:min-w-[20rem] min-[1100px]:min-w-[24rem]" : ""
-            }`}
-          >
+        <div className="relative flex-1 min-h-0 flex">
+          {/* Chat keeps its full reading width while desktop instruments float above it. */}
+          <div className="flex-1 min-w-0 flex flex-col">
             <div
               className={`flex h-full w-full min-w-0 flex-col ${
                 channel.conversation_mode === "discuss"
@@ -1624,34 +1582,21 @@ export function ChannelView({
             </div>
           </div>
 
-          {/* Splitter — drag to resize the lane's width (desktop only, when open). */}
-          {anyWorkOpen && (
-            <LaneResizer onChange={setLaneWidth} onCommit={commitLaneWidth} />
-          )}
-
-          {/* Work area — a dedicated lane on the right: a bounded canvas the instrument
-          windows (ViewBoard, Workbench, Remote workspace, Channel files) float,
-          drag and resize inside. `relative` + `overflow-hidden` make it the
-          positioning context and clip stray windows; dragging a window overlays a
-          grid of snap zones (LaneZones) and drops snap the window into a zone. Its
-          width is user-adjustable via the splitter (explicit `width`, clamped by
-          min/max so neither column collapses). On mobile it's display:contents —
-          the panels stay full-screen overlay sheets there (width ignored).
-          LaneBoundsContext hands each window this box's live rect so
-          drag/resize/snap stay inside it. */}
+          {/* Desktop floating canvas. It covers only the central channel workspace, so
+          app sidebars remain navigation boundaries while panels can move freely across
+          the chat surface. The overlay itself ignores pointer input; each window opts
+          back in, keeping the uncovered chat fully interactive. */}
           <aside
             ref={setLaneEl}
-            style={{ width: laneWidth }}
             className={
               anyWorkOpen
-                ? "max-md:contents md:relative md:shrink-0 md:min-w-[16rem] md:max-w-[calc(100%-20rem)] min-[1100px]:max-w-[calc(100%-24rem)] md:min-h-0 md:overflow-hidden"
+                ? "max-md:contents md:pointer-events-none md:absolute md:inset-0 md:z-30 md:min-h-0 md:overflow-hidden"
                 : "contents"
             }
           >
             <LaneBoundsContext.Provider
               value={anyWorkOpen ? getLaneBounds : null}
             >
-              {anyWorkOpen && <LaneZones />}
               {wsOpen && (
                 <Suspense fallback={null}>
                   <RemoteWorkspaceDialog

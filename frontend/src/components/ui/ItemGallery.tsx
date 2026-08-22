@@ -1,4 +1,5 @@
-import { AlertCircle, AlertTriangle, CircleCheck, DollarSign, Hash, Info, Lock, MessageSquarePlus, Plus, User, X } from "lucide-react";
+import { Activity, AlertCircle, AlertTriangle, CircleCheck, ClipboardList, DollarSign, Hash, Info, LayoutDashboard, Lock, MessageSquarePlus, Plus, User, Users, X } from "lucide-react";
+import { useState } from "react";
 import {
   EditorialIcon,
   editorialIconNames,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/cn";
 import { ControlSizeProvider, type ControlSize } from "@/components/ui/control-size";
 import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { AdaptiveControlGroup } from "@/components/ui/adaptive-control-group";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
@@ -41,6 +43,35 @@ import type { TraceEvent } from "@/types";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
 const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
+
+const adaptivePreviewItems = [
+  { id: "plan", label: "Plan", icon: ClipboardList },
+  { id: "cost", label: "Cost", icon: DollarSign },
+  { id: "activity", label: "Activity", icon: Activity },
+  { id: "roster", label: "Roster", icon: Users },
+  { id: "boards", label: "Boards", icon: LayoutDashboard },
+];
+
+function AdaptiveGroupPreview({ availableWidth }: { availableWidth: number }) {
+  const [selected, setSelected] = useState("plan");
+  return (
+    <div style={{ width: availableWidth + 16 }} className="max-w-full min-w-0 bg-zinc-900/50 p-2">
+      <p className="mb-2 text-section-label">{availableWidth}px local slot</p>
+      <div style={{ width: `min(100%, ${availableWidth}px)` }} className="rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10">
+        <AdaptiveControlGroup
+          kind="navigation"
+          ariaLabel={`Adaptive preview ${availableWidth}`}
+          availableWidth={availableWidth}
+          items={adaptivePreviewItems.map((item) => ({
+            ...item,
+            selected: selected === item.id,
+            onSelect: () => setSelected(item.id),
+          }))}
+        />
+      </div>
+    </div>
+  );
+}
 
 const traceGalleryEvents: TraceEvent[] = [
   {
@@ -104,6 +135,17 @@ export function ItemGallery() {
             <p className="font-utility text-compact text-content-muted">Shared System / Light / Dark tokens</p>
           </div>
           <ThemeSelector className="w-full sm:w-96" showStatus={false} />
+        </div>
+      </section>
+
+      <section aria-labelledby="adaptive-control-register" className="mb-4 border-y border-zinc-700 px-3 py-3">
+        <h2 id="adaptive-control-register" className="font-display text-comfortable font-semibold tracking-display">
+          Adaptive control groups
+        </h2>
+        <div className="mt-3 flex flex-wrap items-start gap-3">
+          {([440, 330, 200, 136] as const).map((availableWidth) => (
+            <AdaptiveGroupPreview key={availableWidth} availableWidth={availableWidth} />
+          ))}
         </div>
       </section>
 

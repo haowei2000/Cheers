@@ -14,7 +14,7 @@ import {
 const DEV = (import.meta as { env?: { DEV?: boolean } }).env?.DEV ?? false;
 
 type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
-export type ControlWidth = "slot" | "fill";
+export type ControlWidth = "slot" | "fill" | "content";
 export type ButtonContent = "icon" | "text" | "iconText";
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "content"> {
@@ -167,7 +167,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           : cn(
               "rounded-sm",
               content === "text" ? "gap-2 px-3" : "gap-0 p-0",
-              controlWidth === "fill" ? "w-full" : content === "iconText" ? "w-32 max-w-full" : "w-24 max-w-full",
+              controlWidth === "fill"
+                ? "w-full"
+                : controlWidth === "content"
+                  ? "w-auto max-w-full"
+                  : content === "iconText"
+                    ? "w-32 max-w-full"
+                    : "w-24 max-w-full",
             ),
       )}
       {...props}

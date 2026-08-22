@@ -1,6 +1,7 @@
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
+import { MenuOption } from "@/components/ui/menu-option";
 import { Tip } from "@/components/ui/tip";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -588,7 +589,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       className="w-[560px] h-[75%]"
       defaultPosClassName="top-2 left-2"
       // Scene tabs / raw tree own their own scrolling; the body is a flush column.
-      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pt-[var(--floating-panel-safe-top)]"
       // Dropping a .cheers-extension anywhere on the panel loads it (after consent).
       dropTarget={{
         active: dragOver || busy,
@@ -599,143 +600,159 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         onDragLeave: () => setDragOver(false),
         onDrop,
       }}
-      headerExtra={
-        <>
-          <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
-            <ControlTrigger
-              type="button"
-              square
-              onClick={() => setRawMode((current) => !current)}
-              aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
-              aria-pressed={rawMode}
-              title={rawMode ? "Show scenes" : "Show raw workspace files"}
-              controlSize={workbenchControlSize.chrome} className={cn(
- "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
- rawMode
- ? "bg-indigo-500/15 text-accent-200": "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
- )}
-            >
-              {rawMode ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : <Folder className="h-4 w-4" aria-hidden="true" />}
-            </ControlTrigger>
-          </Tip>
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <Tip
-              content="Load a temporary template or renderer extension for this session."
-              className="flex min-w-0 flex-1"
-            >
-              <ResponsiveActionButton
-                action="upload"
-                context="toolbar"
-                wideLabel="Load extension"
+      panelActions={[
+        {
+          id: "raw-mode",
+          label: rawMode ? "Show scenes" : "Show raw workspace files",
+          priority: "primary",
+          icon: rawMode ? LayoutGrid : Folder,
+          selected: rawMode,
+          onSelect: () => setRawMode((current) => !current),
+          control: (
+            <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
+              <ControlTrigger
+                type="button"
+                square
+                onClick={() => setRawMode((current) => !current)}
+                aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
+                aria-pressed={rawMode}
+                title={rawMode ? "Show scenes" : "Show raw workspace files"}
                 controlSize={workbenchControlSize.chrome}
-                onClick={() => fileRef.current?.click()}
+                className={cn(
+                  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                  rawMode
+                    ? "bg-indigo-500/15 text-accent-200"
+                    : "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+                )}
+              >
+                {rawMode
+                  ? <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+                  : <Folder className="h-4 w-4" aria-hidden="true" />}
+              </ControlTrigger>
+            </Tip>
+          ),
+        },
+        {
+          id: "load-extension",
+          label: "Load extension",
+          priority: "secondary",
+          icon: Package,
+          disabled: busy,
+          onSelect: () => fileRef.current?.click(),
+          control: (
+            <>
+              <Tip content="Load a temporary template or renderer extension for this session.">
+                <ResponsiveActionButton
+                  action="upload"
+                  context="toolbar"
+                  wideLabel="Load extension"
+                  controlSize={workbenchControlSize.chrome}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={busy}
+                  aria-label="Load template or extension"
+                  title="Load template or extension"
+                  className="text-content-primary hover:text-content-strong disabled:opacity-50"
+                />
+              </Tip>
+              {/* design-system-native: file-input */}
+              <input
+                ref={fileRef}
+                aria-label="Choose a temporary extension package"
+                type="file"
+                accept=".cheers-extension,application/vnd.cheers.extension+zip"
+                onChange={onPickFile}
+                className="hidden"
+              />
+            </>
+          ),
+        },
+        ...(canWatch ? [{
+          id: "watch-extension",
+          label: watching ? "Stop watching extension" : "Watch extension file",
+          priority: "secondary" as const,
+          disabled: busy,
+          onSelect: () => watching ? stopWatch() : void startWatch(),
+          control: watching ? (
+            <Tip content="Stop watching the current extension file.">
+              <ResponsiveActionButton
+                action="stop"
+                context="toolbar"
+                wideLabel="Stop watching"
+                controlSize={workbenchControlSize.chrome}
+                onClick={stopWatch}
+                aria-label={`Stop watching ${watching}`}
+                title="Stop watching extension"
+                className="text-success-400 hover:text-success-300"
+              />
+            </Tip>
+          ) : (
+            <Tip content="Watch an extension file and reload it after every editor save.">
+              <ResponsiveActionButton
+                action="watch"
+                context="toolbar"
+                wideLabel="Watch extension"
+                controlSize={workbenchControlSize.chrome}
+                onClick={() => void startWatch()}
                 disabled={busy}
-                aria-label="Load template or extension"
-                title="Load template or extension"
-                containerClassName="min-w-0 flex-1"
+                aria-label="Watch an extension file on disk"
+                title="Watch extension file"
                 className="text-content-primary hover:text-content-strong disabled:opacity-50"
               />
             </Tip>
-            {canWatch &&
-              (watching ? (
-                <Tip
-                  content="Stop watching the current extension file."
-                  className="flex min-w-0 flex-1"
-                >
-                  <ResponsiveActionButton
-                    action="stop"
+          ),
+        }] : []),
+        ...(pinned.length > 0 ? [{
+          id: "pinned-files",
+          label: `${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`,
+          priority: "secondary" as const,
+          icon: Pin,
+          control: (
+            <div className="relative">
+              <Tip content="Manage files pinned into every prompt.">
+                <div className="relative inline-flex">
+                  <ActionButton
+                    action="pin"
                     context="toolbar"
-                    wideLabel="Stop watching"
                     controlSize={workbenchControlSize.chrome}
-                    onClick={stopWatch}
-                    aria-label={`Stop watching ${watching}`}
-                    title="Stop watching extension"
-                    containerClassName="min-w-0 flex-1"
-                    className="text-success-400 hover:text-success-300"
+                    onClick={() => setPinMenu((open) => !open)}
+                    aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
+                    aria-expanded={pinMenu}
+                    title="Manage pinned files"
+                    className="relative text-warning-400/80 hover:text-warning-300"
                   />
-                </Tip>
-              ) : (
-                <Tip
-                  content="Watch an extension file and reload it after every editor save."
-                  className="flex min-w-0 flex-1"
-                >
-                  <ResponsiveActionButton
-                    action="watch"
-                    context="toolbar"
-                    wideLabel="Watch extension"
-                    controlSize={workbenchControlSize.chrome}
-                    onClick={() => void startWatch()}
-                    disabled={busy}
-                    aria-label="Watch an extension file on disk"
-                    title="Watch extension file"
-                    containerClassName="min-w-0 flex-1"
-                    className="text-content-primary hover:text-content-strong disabled:opacity-50"
-                  />
-                </Tip>
+                  <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light">
+                    {pinned.length > 9 ? "9+" : pinned.length}
+                  </span>
+                </div>
+              </Tip>
+              {pinMenu && (
+                <div className="absolute right-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
+                  <div className="px-2 py-1 text-minimal uppercase tracking-section text-content-muted">Pinned (injected into every prompt)</div>
+                  <ItemList presentationLevel="minimal" controlSize="compact">
+                    {pinned.map((path) => (
+                      <WorkbenchItem
+                        key={path}
+                        title={path}
+                        controlSize="compact"
+                        actions={<ActionButton action="unpin" context="toolbar" aria-label={`Unpin ${path}`} onClick={() => togglePin(path)} title="Unpin" className="flex-shrink-0 text-content-primary hover:text-danger-400" />}
+                        className="border-0"
+                      />
+                    ))}
+                  </ItemList>
+                </div>
+              )}
+            </div>
+          ),
+          overflow: (
+            <>
+              {/* design-system-exempt: menu-option — compound pinned-file action menu. */}
+              {pinned.map((path) => (
+                <MenuOption key={path} label={`Unpin ${path}`} leading={<Pin className="h-4 w-4" />} onClick={() => togglePin(path)} />
               ))}
-            {pinned.length > 0 && (
-              <div className="relative">
-                <Tip content="Manage files pinned into every prompt.">
-                  <div className="relative inline-flex">
-                    <ActionButton
-                      action="pin"
-                      context="toolbar"
-                      controlSize={workbenchControlSize.chrome}
-                      onClick={() => setPinMenu((o) => !o)}
-                      aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
-                      aria-expanded={pinMenu}
-                      title="Manage pinned files"
-                      className="relative text-warning-400/80 hover:text-warning-300"
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light"
-                    >
-                      {pinned.length > 9 ? "9+" : pinned.length}
-                    </span>
-                  </div>
-                </Tip>
-                {pinMenu && (
-                  <div className="absolute left-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
-                    <div className="px-2 py-1 text-minimal uppercase tracking-section text-content-muted">
-                      Pinned (injected into every prompt)
-                    </div>
-                    <ItemList presentationLevel="minimal" controlSize="compact">
-                      {pinned.map((p) => (
-                        <WorkbenchItem
-                          key={p}
-                          title={p}
-                          controlSize="compact"
-                          actions={(
-                            <ActionButton
-                              action="unpin"
-                              context="toolbar"
-                              aria-label={`Unpin ${p}`}
-                              onClick={() => togglePin(p)}
-                              title="Unpin"
-                              className="flex-shrink-0 text-content-primary hover:text-danger-400"
-                            />
-                          )}
-                          className="border-0"
-                        />
-                      ))}
-                    </ItemList>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          {/* design-system-native: file-input */}
-<input
-            ref={fileRef}
-            aria-label="Choose a temporary extension package"
-            type="file"
-            accept=".cheers-extension,application/vnd.cheers.extension+zip"
-            onChange={onPickFile}
-            className="hidden"
-          />
-        </>
-      }
+            </>
+          ),
+        }] : []),
+      ]}
       collapsedSummary={() => (
         <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
             <GlanceRow
