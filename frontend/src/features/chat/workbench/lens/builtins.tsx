@@ -667,7 +667,7 @@ function CodemapKindIcon({ kind }: { kind: string }) {
 
 function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () => void }) {
   return (
-    <aside className="h-full w-full overflow-y-auto bg-zinc-900/95 p-4 text-compact">
+    <aside className="floating-control-surface h-full w-full overflow-y-auto rounded-concentric p-4 text-compact">
       <div className="flex items-start gap-3">
         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
           <CodemapKindIcon kind={node.kind} />
@@ -715,23 +715,12 @@ const DRAG_SLOP_PX = 4;
 
 function CodemapLens({ data, requestContextPick }: LensProps) {
   const document = parseCodemap(data);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [wide, setWide] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const initializedDocRef = useRef<unknown>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ pointer: number; x: number; y: number; ox: number; oy: number } | null>(null);
   const panned = useRef(false);
-
-  useEffect(() => {
-    const element = rootRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => setWide((entry?.contentRect.width ?? 0) >= 760));
-    observer.observe(element);
-    setWide(element.getBoundingClientRect().width >= 760);
-    return () => observer.disconnect();
-  }, [document]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -774,7 +763,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
   const zoom = (factor: number) => setScale((current) => Math.min(2.2, Math.max(0.55, current * factor)));
 
   return (
-    <div ref={rootRef} className="relative flex h-full min-h-0 bg-zinc-950">
+    <div className="relative flex h-full min-h-0">
       <div
         className="relative min-w-0 flex-1 overflow-hidden touch-none"
         onClick={(event) => {
@@ -849,22 +838,24 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
           })}
         </div>
 
-        <div className="absolute bottom-3 left-3 flex items-center gap-3 rounded-sm  border-zinc-800 bg-zinc-900/95 px-3 py-2 text-minimal text-content-muted">
-          <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-success-400" /> Explored</span>
-          <span className="flex items-center gap-1"><CircleDotDashed className="h-3.5 w-3.5 text-warning-400" /> Partial</span>
-          <span className="flex items-center gap-1"><TriangleAlert className="h-3.5 w-3.5 text-stale-400" /> Stale</span>
-        </div>
-        <div className="absolute bottom-3 right-3 flex items-center rounded-sm  border-zinc-800 bg-zinc-900/95 p-1">
-          <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
-          <span className="w-12 text-center text-minimal tabular-nums text-content-muted">{Math.round(scale * 100)}%</span>
-          <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
-          <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex items-end gap-3 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
+          <div className="floating-control-surface pointer-events-auto flex items-center gap-3 rounded-concentric px-3 py-2 text-minimal text-content-muted">
+            <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-success-400" /> Explored</span>
+            <span className="flex items-center gap-1"><CircleDotDashed className="h-3.5 w-3.5 text-warning-400" /> Partial</span>
+            <span className="flex items-center gap-1"><TriangleAlert className="h-3.5 w-3.5 text-stale-400" /> Stale</span>
+          </div>
+          <div className="flex-1" />
+          <div className="floating-control-surface pointer-events-auto flex items-center rounded-concentric p-1">
+            <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
+            <span className="w-12 text-center text-minimal tabular-nums text-content-muted">{Math.round(scale * 100)}%</span>
+            <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
+          </div>
         </div>
       </div>
-      {wide && selected && <div className="w-60 flex-shrink-0 border-l border-zinc-800"><CodemapInspector node={selected} onClose={() => setSelectedId(null)} /></div>}
-      {!wide && selected && (
-        <div className="absolute inset-x-3 bottom-16 z-20 max-h-[70%] overflow-hidden rounded-sm  border-zinc-700 shadow-2xl shadow-black/60">
+      {selected && (
+        <div className="absolute bottom-16 right-3 top-[var(--floating-panel-safe-top)] z-20 w-72 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-concentric max-md:left-3 max-md:w-auto">
           <CodemapInspector node={selected} onClose={() => setSelectedId(null)} />
         </div>
       )}

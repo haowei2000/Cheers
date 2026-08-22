@@ -3,7 +3,6 @@ import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/compon
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
-import { TabOption } from "@/components/ui/tab-option";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
@@ -135,49 +134,28 @@ function SceneTab({
     onClickCapture: contextSurface.onClickCapture,
   };
 
-  if (presentation === "icon") {
-    return (
-      <UiButton
-        ref={surfaceRef}
-        variant="plain"
-        content="icon"
-        role="tab"
-        aria-selected={selected}
-        aria-label={label}
-        title={label}
-        selected={selected}
-        type="button"
-        onClick={onSelect}
-        controlSize={workbenchControlSize.tab}
-        className="flex-shrink-0"
-        {...contextHandlers}
-      >
-        <Icon className={cn("h-4 w-4", selected && iconColor)} />
-      </UiButton>
-    );
-  }
-
-  return presentation === "text" ? (
-    <TabOption
+  const iconOnly = presentation === "icon";
+  return (
+    <UiButton
       ref={surfaceRef}
-      label={label}
-      selected={selected}
+      variant="plain"
+      content={iconOnly ? "icon" : "text"}
+      role="tab"
+      aria-selected={selected}
+      aria-label={iconOnly ? label : undefined}
+      title={iconOnly ? label : undefined}
+      type="button"
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0"
+      className={cn(
+        "flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong",
+        selected && "bg-zinc-700 text-content-strong",
+      )}
       {...contextHandlers}
-    />
-  ) : (
-    <TabOption
-      ref={surfaceRef}
-      label={label}
-      leading={<Icon className={cn("h-4 w-4", selected && iconColor)} />}
-      selected={selected}
-      onClick={onSelect}
-      controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0"
-      {...contextHandlers}
-    />
+    >
+      {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
+      {!iconOnly && <span className="truncate">{label}</span>}
+    </UiButton>
   );
 }
 
@@ -259,8 +237,8 @@ function ItemTab({
       aria-current={selected ? "page" : undefined}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "relative flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
-        selected ? "text-accent-300" : "text-content-primary hover:text-content-strong",
+        "flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+        selected && "bg-zinc-700 text-content-strong",
       )}
       onContextMenu={contextSurface.onContextMenu}
       onKeyDown={contextSurface.onKeyDown}
@@ -272,7 +250,6 @@ function ItemTab({
       onClickCapture={contextSurface.onClickCapture}
     >
       {presentation === "icon" ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : label}
-      {selected && <span data-design-system-exempt="progress" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
     </UiButton>
   );
 }
@@ -701,7 +678,7 @@ export function SceneWorkbench({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-zinc-950/30">
+    <div className="flex h-full min-h-0 flex-col">
       <FloatingPanelPrimaryNavigation
         ariaLabel="Scenes"
         items={sceneNavigationItems}
