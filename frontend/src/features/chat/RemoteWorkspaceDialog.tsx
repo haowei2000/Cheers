@@ -1385,26 +1385,20 @@ export function RemoteWorkspaceDialog({
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
               <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 md:hidden">
-                <UiButton variant="plain" role="tab" aria-selected={leftView === "files"}
+                <UiButton variant="plain" role="tab" aria-selected={leftView === "files"} selected={leftView === "files"}
                   onClick={() => {
                     setLeftView("files");
                     setDiff(null);
                   }}
-                  aria-pressed={leftView === "files"}
-                  controlSize="regular" className={`rounded-sm  transition-colors ${
- leftView === "files"? "bg-zinc-800 text-content-primary"
- : "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
- }`}
+                  controlSize="regular"
+                  className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
                 >
                   Files
                 </UiButton>
-                <UiButton variant="plain" role="tab" aria-selected={leftView === "changes"}
+                <UiButton variant="plain" role="tab" aria-selected={leftView === "changes"} selected={leftView === "changes"}
                   onClick={() => setLeftView("changes")}
-                  aria-pressed={leftView === "changes"}
-                  controlSize="regular" className={`flex items-center gap-1 rounded-sm  transition-colors ${
- leftView === "changes"? "bg-zinc-800 text-content-primary"
- : "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
- }`}
+                  controlSize="regular"
+                  className="flex items-center gap-1 rounded-sm text-content-primary transition-colors hover:text-content-strong"
                 >
                   Changes
                   {git.entries.length > 0 && (
@@ -1413,13 +1407,10 @@ export function RemoteWorkspaceDialog({
                     </span>
                   )}
                 </UiButton>
-                <UiButton content="iconText" variant="plain" role="tab" aria-selected={leftView === "history"}
+                <UiButton content="iconText" variant="plain" role="tab" aria-selected={leftView === "history"} selected={leftView === "history"}
                   onClick={() => setLeftView("history")}
-                  aria-pressed={leftView === "history"}
-                  controlSize="regular" className={`flex items-center gap-1 rounded-sm  transition-colors ${
- leftView === "history"? "bg-zinc-800 text-content-primary"
- : "text-content-primary hover:bg-zinc-800/60 hover:text-content-strong"
- }`}
+                  controlSize="regular"
+                  className="flex items-center gap-1 rounded-sm text-content-primary transition-colors hover:text-content-strong"
                 >
                   <History className="w-3.5 h-3.5" /> History
                 </UiButton>
@@ -1431,23 +1422,19 @@ export function RemoteWorkspaceDialog({
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-content-muted">
                   <UiButton action="diffWorking" content="iconText" variant="plain"
                     onClick={() => openDiff("", false)}
+                    selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
                     title="Diff the whole working tree (unstaged)"
-                    controlSize="regular" className={`flex items-center gap-1 rounded-sm hover:bg-zinc-800 ${
- diff?.kind === "file"&& diff.path === "" && !diff.staged
- ? "bg-zinc-800 text-content-primary"
- : ""
- }`}
+                    controlSize="regular"
+                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
                   >
                     <GitCompare className="w-3.5 h-3.5" />
                   </UiButton>
                   <UiButton action="diffStaged" content="iconText" variant="plain"
                     onClick={() => openDiff("", true)}
+                    selected={diff?.kind === "file" && diff.path === "" && diff.staged}
                     title="Diff everything staged (git diff --staged)"
-                    controlSize="regular" className={`flex items-center gap-1 rounded-sm hover:bg-zinc-800 ${
- diff?.kind === "file"&& diff.path === "" && diff.staged
- ? "bg-zinc-800 text-content-primary"
- : ""
- }`}
+                    controlSize="regular"
+                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
                   >
                     <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
                   <div className="flex-1" />
@@ -1749,18 +1736,15 @@ export function RemoteWorkspaceDialog({
                     fetching (cached) or scrolling through the whole patch. */}
                 {diff.kind === "commit" && diff.files && diff.files.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-auto px-2 py-1 border-b border-zinc-800 text-minimal">
-                    <UiButton variant="plain" role="tab" aria-selected={diff.path === null}
+                    <UiButton variant="plain" role="tab" aria-selected={diff.path === null} selected={diff.path === null}
                       onClick={() =>
                         void openCommit(
                           { hash: diff.hash, subject: diff.subject, author: "", date: "" },
                           null
                         )
                       }
-                      controlSize="regular" className={`rounded-sm ${
- diff.path === null
- ? "bg-zinc-700 text-content-primary"
- : "bg-zinc-800/70 text-content-primary hover:text-content-strong"
- }`}
+                      controlSize="regular"
+                      className="rounded-sm text-content-primary hover:text-content-strong"
                     >
                       All files ({diff.files.length})
                     </UiButton>
@@ -1775,7 +1759,7 @@ export function RemoteWorkspaceDialog({
                               ? "text-info-400"
                               : "text-warning-400";
                       return (
-                        <UiButton variant="plain" role="tab" aria-selected={diff.path === f.path}
+                        <UiButton variant="plain" role="tab" aria-selected={diff.path === f.path} selected={diff.path === f.path}
                           key={f.path}
                           onClick={() =>
                             void openCommit(
@@ -1784,10 +1768,8 @@ export function RemoteWorkspaceDialog({
                             )
                           }
                           title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
-                          controlSize="regular" className={`flex items-center gap-1 rounded-sm font-code ${
- diff.path === f.path
- ? "bg-zinc-700 text-content-primary": "bg-zinc-800/70 text-content-primary hover:text-content-strong"
- }`}
+                          controlSize="regular"
+                          className="flex items-center gap-1 rounded-sm font-code text-content-primary hover:text-content-strong"
                         >
                           <span className={cls}>{letter}</span>
                           <span className="max-w-[180px] truncate">

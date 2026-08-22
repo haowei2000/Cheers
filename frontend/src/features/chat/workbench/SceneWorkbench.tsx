@@ -142,15 +142,13 @@ function SceneTab({
       content={iconOnly ? "icon" : "text"}
       role="tab"
       aria-selected={selected}
+      selected={selected}
       aria-label={iconOnly ? label : undefined}
       title={iconOnly ? label : undefined}
       type="button"
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
-      className={cn(
-        "flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong",
-        selected && "bg-zinc-700 text-content-strong",
-      )}
+      className="flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong"
       {...contextHandlers}
     >
       {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
@@ -229,6 +227,7 @@ function ItemTab({
       variant="plain"
       role="tab"
       aria-selected={selected}
+      selected={selected}
       aria-label={presentation === "icon" ? label : undefined}
       title={presentation === "icon" ? label : undefined}
       content={presentation === "icon" ? "icon" : "text"}
@@ -238,7 +237,6 @@ function ItemTab({
       controlSize={workbenchControlSize.tab}
       className={cn(
         "flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
-        selected && "bg-zinc-700 text-content-strong",
       )}
       onContextMenu={contextSurface.onContextMenu}
       onKeyDown={contextSurface.onKeyDown}

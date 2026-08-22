@@ -43,6 +43,8 @@ describe("AdaptiveControlGroup", () => {
     expect(markup).toContain('data-adaptive-probe="collapsed"');
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain("ViewBoard sections");
+    expect(markup).toContain('data-selected="true"');
+    expect(markup).toContain("bg-control");
   });
 
   it("passes each measured presentation to rich controls", () => {

@@ -12,7 +12,6 @@ import {
   Ban,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { ItemList, ItemRow, ItemSection } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
@@ -123,12 +122,7 @@ function TabBtn({
       onClick={onClick}
       controlSize="regular"
       label={children}
-      className={cn(
- " border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
- active
- ? "border-indigo-500 text-content-primary"
- : "border-transparent text-content-muted hover:text-content-secondary"
- )}
+      className="flex shrink-0 items-center whitespace-nowrap"
     />
   );
 }

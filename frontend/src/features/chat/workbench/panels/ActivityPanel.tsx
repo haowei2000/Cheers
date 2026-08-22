@@ -596,14 +596,12 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
-              <UiButton variant="plain" role="tab" aria-selected={lens === l}
+              <UiButton variant="plain" role="tab" aria-selected={lens === l} selected={lens === l}
                 key={l}
                 type="button"
                 onClick={() => setLens(l)}
-                controlSize="regular" className={cn(
- "rounded-sm  capitalize transition-colors",
- lens === l ? "bg-zinc-800 text-content-primary": "text-content-primary hover:text-content-strong"
- )}
+                controlSize="regular"
+                className="rounded-sm capitalize text-content-primary transition-colors hover:text-content-strong"
               >
                 {l}
               </UiButton>

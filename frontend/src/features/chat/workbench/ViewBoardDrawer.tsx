@@ -299,14 +299,11 @@ function ViewBoardDrawerImpl({
               variant="plain"
               role="tab"
               aria-selected={isActive}
+              selected={isActive}
               key={b.id}
               onClick={() => setActive(b.id)}
               controlSize="regular"
-              className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
-                isActive
-                  ? "border-zinc-200 text-content-primary"
-                  : "border-transparent text-content-primary hover:text-content-strong"
-              }`}
+              className="inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap text-content-primary transition-colors hover:text-content-strong"
             >
               {Icon && <Icon className="w-3.5 h-3.5" />}
               {b.title}

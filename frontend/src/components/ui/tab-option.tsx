@@ -1,45 +1,39 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import {
-  controlMinHeightClasses,
-  controlTextClasses,
-  useControlSize,
-  type ControlSize,
-} from "./control-size";
+import { Button, type ButtonProps } from "./button";
+import type { ControlSize } from "./control-size";
 
 interface TabOptionProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+  extends Omit<ButtonProps, "aria-selected" | "children" | "content" | "controlSize" | "role" | "selected"> {
   label: ReactNode;
   leading?: ReactNode;
   selected: boolean;
   controlSize?: ControlSize;
 }
 
-/** A semantic tab using an editorial underline instead of a bordered pill. */
+/** A semantic tab using the shared selected-control surface. */
 export const TabOption = forwardRef<HTMLButtonElement, TabOptionProps>(
   ({ label, leading, selected, controlSize, className, type = "button", ...props }, ref) => {
-    const size = useControlSize(controlSize);
     return (
-      <button
+      <Button
         ref={ref}
         type={type}
+        variant="plain"
+        content="text"
+        controlWidth="content"
+        controlSize={controlSize}
         role="tab"
         aria-selected={selected}
-        data-control-size={size}
+        selected={selected}
         className={cn(
-          "inline-flex min-w-0 items-center justify-center gap-2 rounded-sm border-b-2 px-2 font-utility transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
-          controlMinHeightClasses[size],
-          controlTextClasses[size],
-          selected
-            ? "border-zinc-100 text-content-primary"
-            : "border-transparent text-content-primary hover:text-content-strong",
+          "gap-2 rounded-sm px-2 text-content-primary transition-colors duration-150 hover:text-content-strong focus-visible:ring-inset",
           className
         )}
         {...props}
       >
         {leading}
         <span className="truncate">{label}</span>
-      </button>
+      </Button>
     );
   }
 );

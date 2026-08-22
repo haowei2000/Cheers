@@ -81,14 +81,13 @@ function AdaptiveItemControl({
       controlSize={controlSize}
       role={kind === "navigation" ? "tab" : undefined}
       aria-selected={kind === "navigation" ? item.selected : undefined}
-      selected={kind === "actions" ? item.selected : undefined}
+      selected={item.selected}
       aria-label={iconOnly ? item.label : undefined}
       title={iconOnly ? item.label : undefined}
       disabled={item.disabled}
       onClick={item.onSelect}
       className={cn(
         "gap-1 rounded-sm px-2 text-content-primary hover:text-content-strong",
-        item.selected && "bg-zinc-700 text-content-strong",
       )}
     >
       {showIcon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
