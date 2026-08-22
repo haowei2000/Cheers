@@ -721,7 +721,6 @@ export function SceneWorkbench({
             ariaLabel={`${title} items`}
             items={itemNavigationItems}
             presentationOrder={["iconText", "text", "collapsed"]}
-            className="w-full"
           />
         </FloatingPanelContextPortal>
       )}

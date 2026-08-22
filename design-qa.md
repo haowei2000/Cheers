@@ -392,3 +392,27 @@ final result: passed
 4. Multi-window refinement: mounted-but-closed panels now rise to front whenever reopened.
 
 final result: passed
+
+---
+
+# Floating Control Glass Material QA
+
+- Implementation screenshot: `/Users/haowei/Projects/Cheers/artifacts/design-qa/floating-panel-glass-controls.png`
+- Preview: `http://127.0.0.1:5173/dev/workbench-preview.html`
+- State: local Workbench preview with floating chrome revealed on hover
+
+## Evidence
+
+- Shared title, navigation, action, context, Activity lens, and Activity filter islands use the semantic `floating-control-surface` material.
+- Supported browsers resolve the material to the themed Panel surface at 55% opacity with backdrop blur and saturation; unsupported browsers use a 95% opaque fallback.
+- `prefers-reduced-transparency: reduce` disables backdrop effects and restores the 95% opaque surface.
+- Portal-provided item navigation is content-width and centered instead of spanning the Panel. Direct selectors such as Scope retain the available wide layout.
+- Context island whitespace uses `pointer-events: none`; browser hit testing confirmed that only the promoted controls intercept interaction.
+- Default-hidden and hover/focus reveal behavior remains unchanged.
+
+## Verification
+
+- Vitest: 84 files, 484 tests passed.
+- TypeScript, ESLint, design-system check, and production build passed. ESLint reported existing warnings and no errors.
+
+final result: passed

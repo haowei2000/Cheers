@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  /* Floating chrome is a translucent material, not a Button variant. Keep an
+     opaque semantic fallback for unsupported or reduced-transparency modes. */
+  .floating-control-surface {
+    @apply bg-panel/95 shadow-xl shadow-black/25 ring-1 ring-content-strong/15;
+  }
+
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .floating-control-surface {
+      @apply bg-panel/55 backdrop-blur-2xl backdrop-saturate-150;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .floating-control-surface {
+      @apply bg-panel/95 backdrop-blur-none backdrop-saturate-100;
+    }
+  }
+}
+
 /* Selection belongs to the content layer: high-contrast enough to remain
    legible in both themes, but neutral so it never reads like an app command. */
 ::selection {

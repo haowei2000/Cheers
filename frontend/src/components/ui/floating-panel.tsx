@@ -562,7 +562,7 @@ export function FloatingPanel({
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric bg-zinc-950/80 px-2 shadow-lg ring-1 ring-white/10 backdrop-blur-xl active:cursor-grabbing"
+              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
             >
               <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
               {titleLabel}
@@ -573,7 +573,7 @@ export function FloatingPanel({
               className={cn(
                 "pointer-events-auto absolute left-1/2 -translate-x-1/2",
                 stackedChrome ? "top-12 max-w-[calc(100%-1rem)]" : "top-2 max-w-[42%]",
-                hasNavigation && "min-h-9 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl"
+                hasNavigation && "floating-control-surface min-h-9 rounded-concentric p-1"
               )}
             >
               {primaryNavigation && (
@@ -589,7 +589,7 @@ export function FloatingPanel({
             <div
               ref={setActionsElement}
               data-floating-panel-actions=""
-              className="pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl"
+              className="floating-control-surface pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
             >
               {allPanelActions.length > 0 && (
                 <AdaptiveControlGroup
@@ -641,10 +641,15 @@ export function FloatingPanel({
             <div
               ref={setContextElement}
               data-floating-panel-context=""
-              className="relative z-30 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10 backdrop-blur-xl md:pointer-events-auto md:absolute md:left-3 md:right-3 md:top-[var(--floating-panel-chrome-top)] md:mx-0 md:mt-0 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/floating-panel:opacity-100 md:group-focus-within/floating-panel:opacity-100"
+              className={cn(
+                "floating-control-surface pointer-events-none relative z-30 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center rounded-concentric p-1 md:absolute md:top-[var(--floating-panel-chrome-top)] md:mx-0 md:mt-0 md:max-w-[calc(100%-1.5rem)] md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/floating-panel:opacity-100 md:group-focus-within/floating-panel:opacity-100",
+                panelContext
+                  ? "md:left-3 md:right-3"
+                  : "md:left-1/2 md:right-auto md:-translate-x-1/2",
+              )}
             >
-              {panelContext}
-              <div ref={setContextTarget} className="min-w-0 flex-1" />
+              {panelContext && <div className="pointer-events-auto min-w-0 flex-1">{panelContext}</div>}
+              <div ref={setContextTarget} className={cn("pointer-events-auto min-w-0", panelContext && "flex-1")} />
             </div>
           )}
           <PanelActionContext.Provider value={registerPortalAction}>
