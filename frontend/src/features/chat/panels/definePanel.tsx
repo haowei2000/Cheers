@@ -7,8 +7,9 @@ import { Button as UiButton } from "@/components/ui/button";
 //
 // Moved here from workbench/viewBoard.tsx unchanged in behavior; see
 // docs/arch/PANEL_MODEL.md for why boards stopped being their own subsystem.
-import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
+import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { registerPanel, type PanelContext, type PanelContribution } from "./registry";
 import { tickKeyFor, usePanelData, type PanelSource } from "./source";
 
@@ -95,39 +96,66 @@ export interface DataPanelDef<T> {
   render: (data: T, ctx: PanelContext, refetch: () => void) => ReactNode;
 }
 
-/** Standard panel chrome (header with icon/title/loading/refresh + scrollable body), so
- *  self-fetching panels match the verb-bound ones. */
-export function PanelShell({
+function PanelRefreshAction({
   title,
-  icon: Icon,
   loading,
   onRefresh,
+  active = true,
+}: {
+  title: string;
+  loading?: boolean;
+  onRefresh: () => void;
+  active?: boolean;
+}) {
+  const action = useMemo(
+    () => ({
+      id: `refresh-${title.toLowerCase().replaceAll(" ", "-")}`,
+      label: `Refresh ${title}`,
+      priority: "primary" as const,
+      icon: RefreshCw,
+      disabled: loading,
+      onSelect: onRefresh,
+      control: (
+        <UiButton
+          action="refresh"
+          content="icon"
+          controlSize="compact"
+          variant="plain"
+          aria-label={`Refresh ${title}`}
+          title="Refresh"
+          disabled={loading}
+          onClick={onRefresh}
+          className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </UiButton>
+      ),
+    }),
+    [loading, onRefresh, title]
+  );
+  return <FloatingPanelActionPortal action={action} active={active} />;
+}
+
+/** Standard body host. Identity and refresh live in FloatingPanel chrome. */
+export function PanelShell({
+  title,
+  loading,
+  onRefresh,
+  active = true,
   children,
 }: {
   title: string;
   icon?: LucideIcon;
   loading?: boolean;
   onRefresh?: () => void;
+  active?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col h-full text-regular">
-      <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
-        {Icon && <Icon className="w-3.5 h-3.5 text-content-muted" />}
-        <span className="text-compact text-content-secondary">{title}</span>
-        <div className="flex-1" />
-        {loading && <span className="text-minimal text-content-muted">Loading…</span>}
-        {onRefresh && (
-          // `action` is a label/identity prop only — it does NOT wire a handler, so the
-          // click has to be bound explicitly or the button is inert (it was, before the
-          // panels refactor: onRefresh was computed and never attached).
-          <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${title}`} title="Refresh" disabled={loading} onClick={onRefresh}>
-            <RefreshCw
-              className={`w-3.5 h-3.5 text-content-muted hover:text-content-secondary ${loading ? "animate-spin" : ""}`}
-            />
-          </UiButton>
-        )}
-      </div>
+      {onRefresh && (
+        <PanelRefreshAction title={title} loading={loading} onRefresh={onRefresh} active={active} />
+      )}
       <div className="flex-1 overflow-auto">{children}</div>
     </div>
   );
@@ -137,7 +165,6 @@ export function defineDataPanel<T>(def: DataPanelDef<T>): PanelContribution {
   function Panel({ ctx }: { ctx: PanelContext }) {
     const { data, loading, error, refetch } = usePanelData<T>(def.source, ctx);
     const onRefresh = useCallback(() => refetch(), [refetch]);
-    const Icon = def.icon;
 
     // Live-push: re-fetch when the signal for THIS SOURCE bumps — its own
     // board_signal for a verb, the shared files tick for a workspace file.
@@ -146,17 +173,12 @@ export function defineDataPanel<T>(def: DataPanelDef<T>): PanelContribution {
 
     return (
       <div className="flex flex-col h-full text-regular">
-        <div className="mx-3 mt-1 flex h-9 flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1">
-          {Icon && <Icon className="w-3.5 h-3.5 text-content-muted" />}
-          <span className="text-compact text-content-secondary">{def.title}</span>
-          <div className="flex-1" />
-          {loading && <span className="text-minimal text-content-muted">Loading…</span>}
-          <UiButton action="refresh" content="icon" variant="plain" aria-label={`Refresh ${def.title}`} title="Refresh" disabled={loading} onClick={onRefresh}>
-            <RefreshCw
-              className={`w-3.5 h-3.5 text-content-muted hover:text-content-secondary ${loading ? "animate-spin" : ""}`}
-            />
-          </UiButton>
-        </div>
+        <PanelRefreshAction
+          title={def.title}
+          loading={loading}
+          onRefresh={onRefresh}
+          active={ctx.visible !== false}
+        />
 
         <div className="flex-1 overflow-auto">
           {error ? (

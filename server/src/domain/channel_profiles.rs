@@ -8,20 +8,34 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CodeRemoteSource {
+    Github {
+        installation_id: String,
+        repository: String,
+        branch: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CodeExecutionTarget {
+    pub bot_id: String,
+    pub host_id: String,
+    /// Opaque checkout identity. The primary Cheers session owns the host-local cwd.
+    pub checkout_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodeProfileConfig {
-    pub integration_id: String,
-    pub installation_id: String,
-    pub repository: String,
-    pub branch: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bot_id: Option<String>,
+    pub remote_source: Option<CodeRemoteSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_target: Option<CodeExecutionTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CodeProfileStatus {
     pub state: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_commit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -31,8 +45,7 @@ pub struct CodeProfileStatus {
 impl Default for CodeProfileStatus {
     fn default() -> Self {
         Self {
-            state: "pending".into(),
-            workspace_path: None,
+            state: "unconfigured".into(),
             head_commit: None,
             last_error: None,
         }
@@ -69,7 +82,14 @@ pub async fn put_code(
     actor_id: &str,
 ) -> Result<ChannelProfile, sqlx::Error> {
     let config = serde_json::to_value(config).expect("code profile config serializes");
-    let status = json!(CodeProfileStatus::default());
+    let status = json!(CodeProfileStatus {
+        state: if config.get("execution_target").is_some() {
+            "pending".into()
+        } else {
+            "unconfigured".into()
+        },
+        ..CodeProfileStatus::default()
+    });
     let row = sqlx::query(
         "INSERT INTO channel_profiles (channel_id, profile, config, status, created_by)
          VALUES ($1, 'code', $2, $3, $4)
@@ -124,8 +144,22 @@ mod tests {
     #[test]
     fn a_new_code_profile_never_claims_a_ready_workspace() {
         let status = CodeProfileStatus::default();
-        assert_eq!(status.state, "pending");
-        assert!(status.workspace_path.is_none());
+        assert_eq!(status.state, "unconfigured");
         assert!(status.head_commit.is_none());
+    }
+
+    #[test]
+    fn remote_source_and_execution_target_are_independent() {
+        let config = CodeProfileConfig {
+            remote_source: Some(CodeRemoteSource::Github {
+                installation_id: "installation".into(),
+                repository: "owner/repo".into(),
+                branch: "main".into(),
+            }),
+            execution_target: None,
+        };
+        let value = serde_json::to_value(config).unwrap();
+        assert_eq!(value["remote_source"]["kind"], "github");
+        assert!(value.get("execution_target").is_none());
     }
 }

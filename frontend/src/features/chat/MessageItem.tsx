@@ -585,9 +585,9 @@ function RegularMessageItem({
   const handleAvatarContextMenu = (
     event: React.MouseEvent<HTMLButtonElement>,
   ) => {
-    if (!canMention) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!canMention) return;
     clearProfileClickTimer();
     setAvatarMenuOpen(true);
   };

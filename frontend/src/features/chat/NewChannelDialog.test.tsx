@@ -22,5 +22,6 @@ describe("NewChannelDialog", () => {
     expect(markup).toContain(">Code<");
     expect(markup).not.toContain("Conversation style");
     expect(markup).not.toContain("Channel purpose");
+    expect(markup).not.toContain("GitHub installation");
   });
 });

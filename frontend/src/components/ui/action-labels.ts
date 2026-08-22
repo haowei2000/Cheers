@@ -95,6 +95,7 @@ export const slotActionLabels = {
 // Apple's and Google's branding terms, and "Upgrade all" has to keep its
 // scope visible because it acts on every agent at once.
 export const fillActionLabels = {
+  addContext: "Add context",
   continueWithApple: "Continue with Apple",
   continueWithGitHub: "Continue with GitHub",
   continueWithGoogle: "Continue with Google",

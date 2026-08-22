@@ -180,6 +180,7 @@ export function useWindowDrag(
   // once the cursor leaves the title bar, so we drive the gesture from `window`.
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const wasOpenRef = useRef(false);
   const geomRef = useRef(geom);
   geomRef.current = geom;
 
@@ -201,6 +202,14 @@ export function useWindowDrag(
       }
     };
   }, [storageKey]);
+
+  // Some panels stay mounted while closed to preserve their internal state. Raise
+  // them again on each closed -> open transition so a newly requested window never
+  // appears underneath an older visible panel.
+  useEffect(() => {
+    if (panelOpen && !wasOpenRef.current) raise(storageKey);
+    wasOpenRef.current = panelOpen;
+  }, [panelOpen, storageKey]);
 
   // Free viewport floats: pin beside the trigger (with auto-flip) when there is
   // no position yet, or when the caller asks to re-anchor on every open.

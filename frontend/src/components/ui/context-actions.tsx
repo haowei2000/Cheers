@@ -192,9 +192,10 @@ function ContextActionsOverlay({
       <div key={action.id} className={cn(divider && !isToolbar && "mt-1 border-t border-zinc-800 pt-1")}>
         <MenuOption
           label={action.label}
-          leading={action.icon}
+          leading={action.icon ?? <span aria-hidden="true" className="h-4 w-4" />}
           trailing={action.shortcut ? <kbd className="text-minimal text-content-muted">{action.shortcut}</kbd> : undefined}
           disabled={action.disabled}
+          controlSize="regular"
           onMouseDown={isToolbar ? (event) => event.preventDefault() : undefined}
           onClick={() => void run(action)}
           className={cn(
@@ -217,9 +218,11 @@ function ContextActionsOverlay({
       onKeyDown={handleKeyDown}
       data-context-actions="true"
       className={cn(
-        "z-[110] bg-zinc-900 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80",
-        isToolbar ? "flex items-center gap-1 rounded-sm p-1" : "w-60 rounded-sm p-1",
-        isSheet && "fixed inset-x-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] w-auto rounded-sm p-2",
+        "z-[110] bg-zinc-900 font-utility text-regular shadow-xl shadow-black/40 ring-1 ring-zinc-700/80",
+        isToolbar
+          ? "flex items-center gap-1 rounded-sm p-1"
+          : "w-56 max-w-[calc(100vw-1rem)] rounded-concentric p-1 [--concentric-inset:0.25rem]",
+        isSheet && "fixed inset-x-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] w-auto rounded-concentric p-2",
       )}
       style={
         isSheet
@@ -356,7 +359,9 @@ export function useContextSurface({
       open({
         actions: next,
         anchor: selection?.rect ?? pointRect(event.clientX, event.clientY),
-        source: selection ? "selection" : "pointer",
+        // A right click is always a context menu. Selection toolbars are reserved
+        // for the immediate left-button selection gesture in `onMouseUp`.
+        source: "pointer",
         restoreFocus: surface,
       });
     },

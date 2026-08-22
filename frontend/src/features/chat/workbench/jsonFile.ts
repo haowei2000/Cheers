@@ -98,7 +98,7 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
     [fs, path, version, load]
   );
 
-  return { data, setData, save, status, version, reload: load };
+  return { data, setData, save, status, version, raw: rawRef.current, reload: load };
 }
 
 // Back-compat alias for imperative panels that hand-roll JSON state.

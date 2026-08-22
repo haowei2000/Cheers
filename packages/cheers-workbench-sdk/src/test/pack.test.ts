@@ -41,6 +41,16 @@ test("official research planner stays byte-identical to the cross-runtime fixtur
   assert.equal(manifest.contributes.automations[0].id, "deadline-check");
 });
 
+test("official code renderers implement the mandatory context conversion", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "cheers-notes-workflow-"));
+  const output = join(temporary, "notes-workflow.cheers-extension");
+  await packExtension(resolve("../../extensions/official/notes-workflow"), output);
+  const files = unzipSync(new Uint8Array(await readFile(output)));
+  const renderer = new TextDecoder().decode(files["renderers/notes.js"]);
+  assert.match(renderer, /toContext/);
+  assert.match(renderer, /context\.pick/);
+});
+
 /** This SDK is the author's pre-flight check, not a third security boundary: the two
  * that matter are the installers, in `frontend/src/features/chat/workbench/extensions/`
  * and `server/src/domain/workbench_extensions.rs`. It deliberately checks less than they

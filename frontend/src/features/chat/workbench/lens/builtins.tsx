@@ -61,7 +61,14 @@ export function updateRowCell(rows: unknown[], i: number, key: string, v: string
   if (!isPlainRow(rows[i])) return null;
   return rows.map((r, j) => (j === i && isPlainRow(r) ? { ...r, [key]: v } : r));
 }
-function TableLens({ data, config, onChange, readOnly }: LensProps) {
+export function tableRowContextLabel(row: unknown, columns: TableConfig["columns"], index: number): string {
+  if (isPlainRow(row)) {
+    const value = columns.map((column) => String(row[column.key] ?? "").trim()).find(Boolean);
+    if (value) return value.slice(0, 120);
+  }
+  return `Row ${index + 1}`;
+}
+function TableLens({ data, config, onChange, readOnly, requestContextPick }: LensProps) {
   const rows = Array.isArray(data) ? (data as unknown[]) : [];
   const configured = (config as TableConfig | undefined)?.columns;
   const columns = configured?.length ? configured : inferColumns(rows);
@@ -86,7 +93,15 @@ function TableLens({ data, config, onChange, readOnly }: LensProps) {
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className="border-t border-zinc-800/60">
+            <tr
+              key={i}
+              data-workbench-context-target="row"
+              className="border-t border-zinc-800/60"
+              onContextMenu={(event) => requestContextPick?.(event, {
+                label: tableRowContextLabel(r, columns, i),
+                sourcePath: [i],
+              })}
+            >
               {columns.map((c) => (
                 <td key={c.key} className="p-1">
                   {!isPlainRow(r) ? (
@@ -148,7 +163,7 @@ function TableLens({ data, config, onChange, readOnly }: LensProps) {
 interface BoardData {
   columns: { name: string; items: string[] }[];
 }
-function KanbanLens({ data, onChange, readOnly }: LensProps) {
+function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps) {
   const cols = (data as BoardData | null)?.columns ?? [];
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setCols = (next: BoardData["columns"]) => onChange({ columns: next });
@@ -184,11 +199,18 @@ function KanbanLens({ data, onChange, readOnly }: LensProps) {
           </div>
           <div className="p-1 space-y-1">
             {c.items.map((it, ii) => (
-              <WorkbenchItem
+              <div
                 key={ii}
-                presentationLevel="minimal"
-                title={it}
-                actions={readOnly ? undefined : <>
+                data-workbench-context-target="card"
+                onContextMenu={(event) => requestContextPick?.(event, {
+                  label: it,
+                  sourcePath: ["columns", ci, "items", ii],
+                })}
+              >
+                <WorkbenchItem
+                  presentationLevel="minimal"
+                  title={it}
+                  actions={readOnly ? undefined : <>
                   <UiButton content="icon" variant="plain" controlSize={workbenchControlSize.rowAction} aria-label="Move left" onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
                 </UiButton>
@@ -203,9 +225,10 @@ function KanbanLens({ data, onChange, readOnly }: LensProps) {
                   onClick={() => delItem(ci, ii)}
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
-                </>}
-                className="border-b-0 bg-zinc-800/70 text-content-secondary"
-              />
+                  </>}
+                  className="border-b-0 bg-zinc-800/70 text-content-secondary"
+                />
+              </div>
             ))}
             {!readOnly && (
             <div className="flex items-center gap-1 pt-1">
@@ -237,16 +260,25 @@ function KanbanLens({ data, onChange, readOnly }: LensProps) {
 
 // ── markdown: a string (prompt templates, notes, drafts). Inert <UiTextarea> edit;
 //    never dangerouslySetInnerHTML. (A sanitized preview can be added later.)
-function MarkdownLens({ data, onChange, readOnly }: LensProps) {
+function MarkdownLens({ data, onChange, readOnly, requestContextPick }: LensProps) {
   const text = typeof data === "string" ? data : "";
   return (
     <UiTextarea
+      data-workbench-context-target="markdown"
       value={text}
       readOnly={readOnly}
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"
       className="h-full resize-none bg-zinc-950 text-content-secondary font-code text-compact outline-none"
+      onContextMenu={(event) => {
+        const target = event.currentTarget;
+        const selected = target.value.slice(target.selectionStart, target.selectionEnd);
+        requestContextPick?.(event, {
+          label: selected ? "Selected text" : "Document",
+          sourceText: selected || text,
+        });
+      }}
     />
   );
 }
@@ -259,6 +291,7 @@ function MarkdownLens({ data, onChange, readOnly }: LensProps) {
 interface ChartPoint {
   x: number;
   y: number;
+  sourceIndex: number;
 }
 interface ChartData {
   xLabel?: string;
@@ -270,15 +303,16 @@ const CW = 640;
 const CH = 300;
 const PAD = { l: 48, r: 88, t: 14, b: 30 };
 
-function parseSeries(d: ChartData | null): { name: string; pts: ChartPoint[] }[] {
+function parseSeries(d: ChartData | null): { name: string; sourceIndex: number; pts: ChartPoint[] }[] {
   if (!d || !Array.isArray(d.series)) return [];
   return d.series
     .map((s, i) => ({
       name: typeof s?.name === "string" && s.name ? s.name : `series ${i + 1}`,
+      sourceIndex: i,
       pts: (Array.isArray(s?.points) ? (s.points as unknown[]) : [])
         // isFinite, not typeof: JSON.parse("1e999") yields Infinity, which would poison
         // the shared y-range and blank every series' scale into NaN
-        .map((p) => (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: p[0] as number, y: p[1] as number } : null))
+        .map((p, sourceIndex) => (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: p[0] as number, y: p[1] as number, sourceIndex } : null))
         .filter((p): p is ChartPoint => p !== null),
     }))
     .filter((s) => s.pts.length > 0);
@@ -320,7 +354,7 @@ function fmtNum(v: number, step?: number): string {
   return String(Number(v.toPrecision(6)));
 }
 
-function ChartLens({ data }: LensProps) {
+function ChartLens({ data, requestContextPick }: LensProps) {
   const d = data as ChartData | null;
   const series = parseSeries(d);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -454,6 +488,20 @@ function ChartLens({ data }: LensProps) {
             />
           )
         )}
+        {series.flatMap((s) => s.pts.map((point) => (
+          <circle
+            key={`pick:${s.sourceIndex}:${point.sourceIndex}`}
+            data-workbench-context-target="chart-point"
+            cx={sx(point.x)}
+            cy={sy(point.y)}
+            r="7"
+            fill="transparent"
+            onContextMenu={(event) => requestContextPick?.(event, {
+              label: `${s.name} at ${fmtNum(point.x)}`,
+              sourcePath: ["series", s.sourceIndex, "points", point.sourceIndex],
+            })}
+          />
+        )))}
         {endLabels.map((l) => (
           <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-secondary))">
             {l.name}
@@ -665,7 +713,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
 // Pointer travel below this is a click, not a pan.
 const DRAG_SLOP_PX = 4;
 
-function CodemapLens({ data }: LensProps) {
+function CodemapLens({ data, requestContextPick }: LensProps) {
   const document = parseCodemap(data);
   const rootRef = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(false);
@@ -780,8 +828,13 @@ function CodemapLens({ data }: LensProps) {
             return (
               <UiButton variant="plain" role="option" aria-selected={selectedNode}
                 key={node.id}
+                data-workbench-context-target="codemap-node"
                 type="button"
                 onClick={() => setSelectedId((cur) => (cur === node.id ? null : node.id))}
+                onContextMenu={(event) => requestContextPick?.(event, {
+                  label: node.label,
+                  sourcePath: ["nodes", node.id],
+                })}
                 controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm bg-zinc-900 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60": focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
@@ -819,8 +872,8 @@ function CodemapLens({ data }: LensProps) {
   );
 }
 
-registerLens({ id: "table", render: (p) => <TableLens {...p} /> });
-registerLens({ id: "kanban", render: (p) => <KanbanLens {...p} /> });
-registerLens({ id: "markdown", render: (p) => <MarkdownLens {...p} /> });
-registerLens({ id: "chart", viewOnly: true, render: (p) => <ChartLens {...p} /> });
-registerLens({ id: "codemap", viewOnly: true, render: (p) => <CodemapLens {...p} /> });
+registerLens({ id: "table", contextPick: "granular", render: (p) => <TableLens {...p} /> });
+registerLens({ id: "kanban", contextPick: "granular", render: (p) => <KanbanLens {...p} /> });
+registerLens({ id: "markdown", contextPick: "granular", render: (p) => <MarkdownLens {...p} /> });
+registerLens({ id: "chart", contextPick: "granular", viewOnly: true, render: (p) => <ChartLens {...p} /> });
+registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (p) => <CodemapLens {...p} /> });

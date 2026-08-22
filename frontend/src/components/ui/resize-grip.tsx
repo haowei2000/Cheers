@@ -1,3 +1,4 @@
+import { MoveDiagonal2 } from "lucide-react";
 import type { WindowDrag } from "@/hooks/useWindowDrag";
 
 // Bottom-right resize grip for the floating windows (spread `resizeProps` from
@@ -7,11 +8,9 @@ export function ResizeGrip({ resizeProps }: { resizeProps: WindowDrag["resizePro
     <div
       {...resizeProps}
       title="Resize"
-      className="absolute bottom-0 right-0 z-10 flex h-4 w-4 cursor-se-resize items-end justify-end p-1 text-content-muted hover:text-content-secondary select-none max-md:hidden"
+      className="absolute bottom-0 right-0 z-10 flex h-7 w-7 cursor-se-resize items-end justify-end p-1 text-content-subtle transition-colors hover:text-content-secondary select-none max-md:hidden"
     >
-      <svg viewBox="0 0 8 8" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="1.2">
-        <path d="M1 7 L7 1 M4.5 7 L7 4.5" />
-      </svg>
+      <MoveDiagonal2 className="h-3.5 w-3.5" aria-hidden="true" />
     </div>
   );
 }

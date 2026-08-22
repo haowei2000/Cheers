@@ -3,10 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * `Button content="iconText"` renders the registered ActionKey label and drops
- * every child after the icon. A call site that passes both therefore ships copy
- * that never appears on screen — that is how a Forward button rendered as
- * "Send" and a back control rendered as "Start".
+ * `Button content="iconText"` renders its registered `action` or `label` copy
+ * and drops every child after the icon. A call site that passes both therefore
+ * ships copy that never appears on screen — that is how a Forward button
+ * rendered as "Send" and a back control rendered as "Start".
  *
  * The Button primitive throws on this in dev, but only when the branch actually
  * renders, so a rarely-visited dialog can carry the mistake for months. This
@@ -74,7 +74,10 @@ describe("iconText button call sites", () => {
         const end = openTagEnd(source, start + match[0].length);
         if (end < 0) continue;
         const tag = source.slice(start, end + 1);
-        if (!tag.includes('content="iconText"') || !tag.includes("action=")) continue;
+        if (
+          !tag.includes('content="iconText"') ||
+          (!tag.includes("action=") && !tag.includes("label="))
+        ) continue;
         if (tag.trimEnd().endsWith("/>")) continue;
         const close = source.indexOf(`</${match[1]}>`, end);
         if (close < 0) continue;

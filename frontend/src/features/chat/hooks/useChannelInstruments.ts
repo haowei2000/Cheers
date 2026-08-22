@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { LANE_TARGET, type SpawnKind } from "../workbench/laneSnap";
+import { useCallback, useEffect, useState } from "react";
 import type { ComposerPrefill } from "../MessageComposer";
 
 export function useChannelInstruments() {
@@ -42,46 +41,6 @@ export function useChannelInstruments() {
     () => laneElement?.getBoundingClientRect() ?? null,
     [laneElement],
   );
-  const [laneWidth, setLaneWidth] = useState(() => {
-    const stored = Number(localStorage.getItem("cheers.lane.width"));
-    return Number.isFinite(stored) && stored > 0 ? stored : 520;
-  });
-  const laneWidthRef = useRef(laneWidth);
-  laneWidthRef.current = laneWidth;
-  const commitLaneWidth = useCallback(() => {
-    try {
-      localStorage.setItem("cheers.lane.width", String(laneWidthRef.current));
-    } catch {
-      // Private mode keeps the current in-memory width.
-    }
-  }, []);
-  const ensureLaneFor = useCallback(
-    (kind: SpawnKind) => {
-      const target = LANE_TARGET[kind];
-      const rowWidth =
-        laneElement?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
-      const minChatWidth = rowWidth < 1100 ? 320 : 384;
-      const maxLaneWidth = Math.max(280, rowWidth - minChatWidth);
-      const next = Math.min(Math.max(target, laneWidthRef.current), maxLaneWidth);
-      if (next <= laneWidthRef.current) return;
-      setLaneWidth(next);
-      laneWidthRef.current = next;
-      try {
-        localStorage.setItem("cheers.lane.width", String(next));
-      } catch {
-        // Private mode keeps the current in-memory width.
-      }
-    },
-    [laneElement],
-  );
-  const openInstrument = useCallback(
-    (kind: SpawnKind, mode: "open" | "toggle", currentlyOpen: boolean) => {
-      const willOpen = mode === "open" || !currentlyOpen;
-      if (willOpen) ensureLaneFor(kind);
-      return willOpen;
-    },
-    [ensureLaneFor],
-  );
 
   useEffect(() => {
     if (!laneElement || typeof ResizeObserver === "undefined") return;
@@ -118,9 +77,5 @@ export function useChannelInstruments() {
     laneEl: laneElement,
     setLaneEl: setLaneElement,
     getLaneBounds,
-    laneWidth,
-    setLaneWidth,
-    commitLaneWidth,
-    openInstrument,
   };
 }

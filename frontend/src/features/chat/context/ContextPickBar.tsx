@@ -23,6 +23,7 @@ import { controlHeightClasses } from "@/components/ui/control-size";
 import { MenuOption } from "@/components/ui/menu-option";
 import { OverflowText } from "@/components/ui/overflow-text";
 import {
+  contextItemLocator,
   useContextPickStore,
   usePendingContext,
   useContextSuggestions,
@@ -31,7 +32,6 @@ import {
   type FileRef,
 } from "./contextPick";
 import {
-  ADD_CONTEXT_MENU,
   ADD_CONTEXT_MENU_TITLE,
   ADDED_TO_CONTEXT_TITLE,
 } from "./contextLabels";
@@ -51,6 +51,20 @@ const KIND_ICON: Record<ContextItem["kind"], LucideIcon> = {
 
 function iconFor(kind: string): LucideIcon {
   return KIND_ICON[kind as ContextItem["kind"]] ?? FileText;
+}
+
+function ContextItemLabel({ item }: { item: ContextItem }) {
+  const locator = contextItemLocator(item);
+  return locator ? (
+    <OverflowText
+      fullText={locator}
+      reveal="always"
+      touchDisclosure={false}
+      className="cursor-help"
+    >
+      {item.label}
+    </OverflowText>
+  ) : <OverflowText fullText={item.label} touchDisclosure={false} />;
 }
 
 /** Read-only chips for a message's attached context (rendered in MessageItem).
@@ -242,7 +256,7 @@ export function ContextPickBar({
         return (
           <ItemChip
             key={it.id}
-            label={<OverflowText fullText={it.label} touchDisclosure={false} />}
+            label={<ContextItemLabel item={it} />}
             leading={<Icon className="h-4 w-4 flex-shrink-0 text-content-muted" />}
             presentationLevel="medium"
             controlSize="regular"
@@ -275,8 +289,12 @@ export function ContextPickBar({
         );
       })}
 
-      <div ref={rootRef} className="relative inline-flex">
-        <UiButton action="add" content="iconText" variant="secondary"
+      <div ref={rootRef} className="relative ml-1 inline-flex w-36 flex-shrink-0 border-l border-zinc-700/80 pl-2">
+        <UiButton
+          action="addContext"
+          content="iconText"
+          variant="secondary"
+          controlWidth="fill"
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
@@ -284,7 +302,6 @@ export function ContextPickBar({
           controlSize="regular"
         >
           <MessageSquarePlus className="h-4 w-4" />
-          {ADD_CONTEXT_MENU}
         </UiButton>
         {open && (
           <PopoverPanel placement="up" align="start" className="w-56 p-1">
