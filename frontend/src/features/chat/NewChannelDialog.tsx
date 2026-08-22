@@ -1,6 +1,6 @@
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useEffect, useState } from "react";
-import { FolderGit2, GitFork, Github, Hash, Link2, Lock, MessagesSquare, Server, Volume2 } from "lucide-react";
+import { FolderGit2, GitFork, Hash, Link2, Lock, MessagesSquare, Server, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { addChannelMember, createChannel, deleteChannel } from "@/api/channels";
 import { putCodeProfile } from "@/api/channelProfiles";
@@ -22,6 +22,7 @@ import { Select } from "@/components/ui/select";
 import { isComposing } from "@/lib/ime";
 import type { ConversationMode } from "./ConversationModePicker";
 import { Button } from "@/components/ui/button";
+import { GitHubMark } from "@/components/ui/provider-marks";
 import { invokeDesktop } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 import { getFleetHosts, type FleetHost } from "@/api/fleet";
@@ -272,7 +273,7 @@ export function NewChannelDialog({
               onChange={setSourceMode}
               options={[
                 { value: "local", label: "Local", leading: <FolderGit2 /> },
-                { value: "github", label: "GitHub", leading: <Github /> },
+                { value: "github", label: "GitHub", leading: <GitHubMark /> },
               ]}
             />
 
