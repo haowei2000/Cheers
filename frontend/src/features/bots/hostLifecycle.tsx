@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Ban, KeyRound, Power, RefreshCw, Trash2 } from "lucide-react";
 
 import {
@@ -11,8 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
+import { ActionButton } from "@/components/ui/action-button";
 import { IconButton } from "@/components/ui/icon-button";
 import { messageOf, notify } from "@/lib/notify";
+import { MenuOption } from "@/components/ui/menu-option";
+import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 
 /** The fields every host surface has in common. `FleetHost`
  *  satisfies this as-is; the per-bot list needs its bot id spread in, since it
@@ -73,22 +76,25 @@ type Pending = "revoke" | "delete" | null;
  * revoke and delete, and a revoked row that could only be cleared from Fleet.
  * They now render this.
  *
- * `presentation="labeled"` spells the actions out (roomy detail panel);
- * `presentation="compact"` is icon-only with accessible names (dense list row).
+ * The one recovery action is shown directly. Credential rotation and destructive
+ * lifecycle operations live in More, so a dense host row has one clear next step.
  */
 export function HostActions({
   item,
-  presentation = "labeled",
+  presentation = "compact",
   onChanged,
 }: {
   item: HostLifecycleItem;
-  presentation?: "labeled" | "compact";
+  presentation?: "compact" | "primary";
   /** Refetch the owning list once an operation lands. */
   onChanged: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
   const [credential, setCredential] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(moreOpen, () => setMoreOpen(false), moreRef);
 
   async function run(operation: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -120,88 +126,68 @@ export function HostActions({
   }
 
   const revoked = Boolean(item.revoked_at);
-  const controls: ReactNode[] = [];
-
-  if (revoked) {
-    // A revoked host cannot connect again; the row is kept so the device
-    // stays visible in history until someone clears it.
-    controls.push(
-      <Action
-        key="delete"
-        presentation={presentation}
-        action="delete"
-        accessibleLabel="Delete host record"
-        icon={<Trash2 className="h-3.5 w-3.5" />}
-        tone="danger"
-        disabled={busy}
-        onClick={() => setPending("delete")}
-      />
-    );
-  } else {
-    if (item.status === "standby") {
-      controls.push(
-        <Action
-          key="activate"
-          presentation={presentation}
-          action="activate"
-          accessibleLabel="Make this the active host"
-          icon={<Power className="h-3.5 w-3.5" />}
-          disabled={busy}
-          onClick={() => void run(
-            () => activateConnectorHost(item.bot_id, item.host_id),
-            `${item.device_name} is now the active host`
-          )}
-        />
-      );
-    }
-    if (item.status === "active") {
-      controls.push(
-        <Action
-          key="reconnect"
-          presentation={presentation}
-          action="restart"
-          accessibleLabel="Reconnect host"
-          icon={<RefreshCw className="h-3.5 w-3.5" />}
-          disabled={busy}
-          onClick={() => void run(
-            () => reconnectConnectorHost(item.bot_id, item.host_id),
-            "Reconnect requested"
-          )}
-        />
-      );
-    }
-    if (item.status !== "pending") {
-      // Distinct from Reconnect on purpose: this mints a new secret and the old
-      // one stops working, which is a different promise than "dial again".
-      controls.push(
-        <Action
-          key="rotate"
-          presentation={presentation}
-          action="rotate"
-          accessibleLabel="Issue a new credential"
-          icon={<KeyRound className="h-3.5 w-3.5" />}
-          disabled={busy}
-          onClick={() => void rotate()}
-        />
-      );
-    }
-    controls.push(
-      <Action
-        key="revoke"
-        presentation={presentation}
-        action="revoke"
-        accessibleLabel={item.status === "pending" ? "Cancel pending pairing" : "Revoke host"}
-        icon={<Ban className="h-3.5 w-3.5" />}
-        tone="danger"
-        disabled={busy}
-        onClick={() => setPending("revoke")}
-      />
-    );
-  }
+  const primary = !revoked && item.status === "standby" ? (
+    <Action
+      presentation={presentation}
+      action="activate"
+      accessibleLabel="Make this the active host"
+      icon={<Power className="h-3.5 w-3.5" />}
+      disabled={busy}
+      onClick={() => void run(
+        () => activateConnectorHost(item.bot_id, item.host_id),
+        `${item.device_name} is now the active host`
+      )}
+    />
+  ) : !revoked && item.status === "active" ? (
+    <Action
+      presentation={presentation}
+      action="restart"
+      accessibleLabel="Reconnect host"
+      icon={<RefreshCw className="h-3.5 w-3.5" />}
+      disabled={busy}
+      onClick={() => void run(
+        () => reconnectConnectorHost(item.bot_id, item.host_id),
+        "Reconnect requested"
+      )}
+    />
+  ) : null;
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">{controls}</div>
+      <div className="flex items-center gap-1">
+        {primary}
+        <div ref={moreRef} className="relative">
+          <ActionButton
+            action="more"
+            context="windowChrome"
+            accessibleLabel={`More actions for ${item.device_name}`}
+            controlSize="compact"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((open) => !open)}
+          />
+          {moreOpen && (
+            <PopoverPanel placement="down" align="end" className="w-52 p-1">
+              <div role="menu" aria-label={`Host actions for ${item.device_name}`}>
+                {!revoked && item.status !== "pending" && (
+                  <MenuOption
+                    label="Rotate credential"
+                    leading={<KeyRound className="h-4 w-4" />}
+                    disabled={busy}
+                    onClick={() => { setMoreOpen(false); void rotate(); }}
+                  />
+                )}
+                <MenuOption
+                  label={revoked ? "Delete host record" : item.status === "pending" ? "Cancel pairing" : "Revoke host"}
+                  leading={revoked ? <Trash2 className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                  disabled={busy}
+                  className="text-danger-400 hover:text-danger-300"
+                  onClick={() => { setMoreOpen(false); setPending(revoked ? "delete" : "revoke"); }}
+                />
+              </div>
+            </PopoverPanel>
+          )}
+        </div>
+      </div>
 
       {pending === "revoke" && (
         <ConfirmDialog
@@ -266,31 +252,28 @@ export function HostActions({
   );
 }
 
-/** One control, drawn to match its surface: spelled out where there is room,
- *  icon-only (with an accessible name) in a dense row. */
+/** One direct recovery control. More actions are deliberately not peers here. */
 function Action({
   presentation,
   action,
   accessibleLabel,
   icon,
-  tone,
   disabled,
   onClick,
 }: {
-  presentation: "labeled" | "compact";
+  presentation: "compact" | "primary";
   /** Registered action identity. It also supplies the visible word in the
    *  labeled variant — the registry owns that wording, not the call site. */
   action: "activate" | "restart" | "rotate" | "revoke" | "delete";
   /** Accessible name for the icon-only variant, which shows no word. */
   accessibleLabel: string;
   icon: ReactNode;
-  tone?: "danger";
   disabled?: boolean;
   onClick: () => void;
 }) {
   if (presentation === "compact") {
     return (
-      <IconButton label={accessibleLabel} tone={tone} disabled={disabled} onClick={onClick}>
+      <IconButton label={accessibleLabel} disabled={disabled} onClick={onClick}>
         {icon}
       </IconButton>
     );
@@ -300,8 +283,8 @@ function Action({
       action={action}
       content="iconText"
       title={accessibleLabel}
-      variant={tone === "danger" ? "danger" : "secondary"}
-      controlSize="compact"
+      variant="secondary"
+      controlSize="regular"
       disabled={disabled}
       onClick={onClick}
     >
