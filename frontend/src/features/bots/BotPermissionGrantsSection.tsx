@@ -260,26 +260,20 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
   return (
     <div className="space-y-3">
-          <p className="font-utility text-compact text-content-muted">
-            Who is authorized for what. No grant → the default: members may message the bot,
-            cancel a running task, and view its activity; agent settings, session controls,
-            remote file write, and answering approvals start owner-only. Precedence: user ▸
-            group ▸ role ▸ ∗; deny wins ties.
-          </p>
+      <div>
+        <p className="text-section-label">Permissions</p>
+        <p className="mt-1 text-compact text-content-muted">Grants refine the bot-wide defaults; deny wins when rules tie.</p>
+      </div>
 
       {/* Effective defaults (read-only): the baseline decision per event × role at
           bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
           the explicit overrides below. */}
       {access.effective && access.effective.length > 0 && (
-        <div className="overflow-hidden rounded-sm ">
-          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-900/40">
-            <p className="text-compact font-medium text-content-secondary">Effective defaults · Bot-wide</p>
-            <span className="text-minimal text-content-muted">
-              <span className="text-accent-400">•</span> = set by a grant · channel / user / group
-              grants can narrow this per scope
-            </span>
-          </div>
-          <table className="w-full text-compact">
+        <details className="rounded-sm bg-zinc-900 px-3 py-2">
+          <summary className="cursor-pointer text-compact text-content-secondary">View bot-wide defaults</summary>
+          <p className="mt-2 text-minimal text-content-muted"><span className="text-accent-400">•</span> marks a grant; channel, user, and group grants can narrow a default.</p>
+          <div className="mt-2 overflow-x-auto">
+          <table className="min-w-[34rem] w-full text-compact">
             <thead>
               <tr className="text-content-muted">
                 <th className="px-3 py-1 text-left font-normal">Event</th>
@@ -379,7 +373,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </details>
       )}
 
       <CollectionManager

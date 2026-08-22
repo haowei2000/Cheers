@@ -5,14 +5,12 @@ import { Bot, RefreshCw, Circle, CircleDot, Ban } from "lucide-react";
 import {
   listBots,
 } from "@/api/bots";
-import { listChannels } from "@/api/channels";
-import { listWorkspaces } from "@/api/workspaces";
 import { ActionButton } from "@/components/ui/action-button";
 import { EntityItem } from "@/components/ui/item";
 import { CreateBotDialog } from "./CreateBotDialog";
 import { CreateHostWizard } from "./CreateHostWizard";
 import { BotDetailPanel } from "./BotDetailPanel";
-import type { BotItem, Channel, Workspace } from "@/types";
+import type { BotItem } from "@/types";
 import { avatarSizeClasses } from "@/components/ui/content-size";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -60,8 +58,6 @@ function BotRow({
 
 export function BotsManager() {
   const [bots, setBots] = useState<BotItem[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
@@ -71,10 +67,8 @@ export function BotsManager() {
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
-      const [b, c, w] = await Promise.all([listBots(), listChannels(), listWorkspaces()]);
+      const b = await listBots();
       setBots(b);
-      setChannels(c);
-      setWorkspaces(w);
       setLoadFailed(false);
     } catch (e) {
       // Background polls stay quiet — a transient blip shouldn't toast.
@@ -163,8 +157,6 @@ export function BotsManager() {
               <BotDetailPanel
                 key={selected.bot_id}
                 bot={selected}
-                channels={channels}
-                workspaces={workspaces}
                 onError={(m) => toast.error(m)}
                 onChanged={refresh}
                 onPoll={pollRefresh}
