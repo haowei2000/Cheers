@@ -32,7 +32,6 @@ import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, SectionHead, MetaRow } from "@/components/ui/field";
@@ -42,8 +41,6 @@ import { IconButton } from "@/components/ui/icon-button";
 import { ItemGroup, ItemList, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
 import { messageOf } from "@/lib/notify";
-import { addChannelMember } from "@/api/channels";
-import { addWorkspaceMember } from "@/api/workspaces";
 import {
   HostActions,
   hostStatusLabel,
@@ -55,7 +52,7 @@ import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
 import { BotActivitySection } from "./BotActivitySection";
 import { BotConnectionHistorySection } from "./BotConnectionHistorySection";
-import type { BotItem, Channel, Workspace } from "@/types";
+import type { BotItem } from "@/types";
 
 export function CopyButton({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -104,8 +101,6 @@ function routeTab(value?: string): Tab {
  */
 export function BotDetailPanel({
   bot,
-  channels,
-  workspaces,
   onError,
   onChanged,
   onPoll,
@@ -113,8 +108,6 @@ export function BotDetailPanel({
   initialTab,
 }: {
   bot: BotItem;
-  channels: Channel[];
-  workspaces: Workspace[];
   onError: (msg: string) => void;
   onChanged: () => void;
   /** Silent background refetch for "live while open" (item 8) — no spinner. */
@@ -246,8 +239,6 @@ export function BotDetailPanel({
         {tab === "overview" && (
           <BotOverview
             bot={bot}
-            channels={channels}
-            workspaces={workspaces}
             onError={onError}
             onChanged={onChanged}
             lifecycleActiveRef={refreshLifecycleActive}
@@ -292,6 +283,7 @@ function BotHostsSection({
   onAddHost: () => void;
 }) {
   const [items, setItems] = useState<ConnectorHost[]>([]);
+  const [expandedHostId, setExpandedHostId] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -330,43 +322,53 @@ function BotHostsSection({
           This bot has no hosts yet. Add one to choose where the bot runs.
         </p>
       )}
-      <ItemList presentationLevel="max" controlSize="regular" className="space-y-2">
+      <ItemList presentationLevel="medium" controlSize="regular">
         {items.map((item) => (
-          <ItemGroup key={item.host_id} className="rounded-sm bg-zinc-950/40">
+          <ItemGroup key={item.host_id}>
             <OperationsItem
               containerRole="presentation"
               title={item.device_name}
               leading={<Laptop className="h-4 w-4 text-content-muted" />}
-              subtitle={`${item.agent_type} · runtime ${item.connector_version ?? "version unknown"} · ${item.credential_prefix}`}
-              metadata={`Last seen ${item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}`}
+              subtitle={`${item.agent_type} · Agent sign-in: ${mcpStateLabel(item.mcp_connection_state)}`}
               status={(
-                <span className={cn("text-compact", item.online ? "text-success-400" : "text-content-muted")}>
+                <span className={cn(
+                  "text-compact",
+                  item.online ? "text-success-400" :
+                    mcpStateTone(item.mcp_connection_state) === "warning" ? "text-warning-400" : "text-content-muted"
+                )}>
                   {hostStatusLabel({ ...item, bot_id: botId })}
                 </span>
               )}
-            />
-            <div className="mx-2 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-minimal text-content-muted">
-              <span className={cn(
-                mcpStateTone(item.mcp_connection_state) === "success" ? "text-success-400" :
-                  mcpStateTone(item.mcp_connection_state) === "warning" ? "text-warning-400" : "text-content-muted"
-              )}>Agent sign-in: {mcpStateLabel(item.mcp_connection_state)}</span>
-              {item.mcp_last_seen_at && <span>Last MCP request {new Date(item.mcp_last_seen_at).toLocaleString()}</span>}
-              {item.agent_profile?.verified_version_range && (
-                <span>Verified: {item.agent_profile.verified_version_range}</span>
+              actions={(
+                <>
+                  <HostActions
+                    item={{ ...item, bot_id: botId }}
+                    presentation="primary"
+                    onChanged={load}
+                  />
+                  <ActionButton
+                    action={expandedHostId === item.host_id ? "collapse" : "expand"}
+                    context="disclosure"
+                    accessibleLabel={`${expandedHostId === item.host_id ? "Hide" : "Show"} details for ${item.device_name}`}
+                    controlSize="compact"
+                    aria-expanded={expandedHostId === item.host_id}
+                    onClick={() => setExpandedHostId((id) => id === item.host_id ? null : item.host_id)}
+                  />
+                </>
               )}
-            </div>
-            {item.mcp_connection_state !== "connected" && item.agent_profile?.login_hint && (
-              <p className="mx-2 mb-2 rounded-sm bg-zinc-950/50 px-2 py-2 text-compact text-content-muted">
-                {item.agent_profile.login_hint}
-              </p>
+            />
+            {expandedHostId === item.host_id && (
+              <div className="ml-8 mb-2 space-y-2 px-2 text-compact text-content-muted">
+                <p>
+                  Runtime {item.connector_version ?? "version unknown"} · {item.credential_prefix} · Last seen {item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "never"}
+                </p>
+                {item.mcp_last_seen_at && <p>Last MCP request {new Date(item.mcp_last_seen_at).toLocaleString()}</p>}
+                {item.agent_profile?.verified_version_range && <p>Verified: {item.agent_profile.verified_version_range}</p>}
+                {item.mcp_connection_state !== "connected" && item.agent_profile?.login_hint && (
+                  <p className="rounded-sm bg-zinc-900 px-3 py-2">{item.agent_profile.login_hint}</p>
+                )}
+              </div>
             )}
-            <div className="px-2 py-2">
-              <HostActions
-                item={{ ...item, bot_id: botId }}
-                presentation="labeled"
-                onChanged={load}
-              />
-            </div>
           </ItemGroup>
         ))}
       </ItemList>
@@ -376,60 +378,17 @@ function BotHostsSection({
 
 function BotOverview({
   bot,
-  channels,
-  workspaces,
   onError,
   onChanged,
   lifecycleActiveRef,
 }: {
   bot: BotItem;
-  channels: Channel[];
-  workspaces: Workspace[];
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
 }) {
-  const [channelId, setChannelId] = useState("");
-  const [workspaceId, setWorkspaceId] = useState("");
-  const [added, setAdded] = useState<"workspace" | "channel" | null>(null);
-  const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [pendingDanger, setPendingDanger] = useState<"disable" | "delete" | null>(null);
-
-  async function add() {
-    if (!channelId || busy) return;
-    setBusy(true);
-    try {
-      await addChannelMember(channelId, { member_id: bot.bot_id, member_type: "bot" });
-      setAdded("channel");
-      toast.success("Bot added to channel and workspace");
-      setTimeout(() => setAdded(null), 1500);
-    } catch (e) {
-      onError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addToWorkspace() {
-    if (!workspaceId || busy) return;
-    setBusy(true);
-    try {
-      const result = await addWorkspaceMember(workspaceId, {
-        member_id: bot.bot_id,
-        member_type: "bot",
-        role: "member",
-      });
-      setAdded("workspace");
-      toast.success(result.status === "exists" ? "Bot is already in this workspace" : "Bot added to workspace");
-      setTimeout(() => setAdded(null), 1500);
-      onChanged();
-    } catch (e) {
-      onError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function remove() {
     setToggling(true);
@@ -480,8 +439,8 @@ function BotOverview({
 
       {bot.can_manage && <div className="border-t border-zinc-800" />}
 
-      {/* Details — stable identity and channel membership. Runtime credentials
-          belong to Hosts and are deliberately managed there. */}
+      {/* Details — stable identity. Membership is managed from the relevant
+          channel or space, alongside the other members. */}
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
@@ -490,67 +449,6 @@ function BotOverview({
           </code>
           <CopyButton value={bot.bot_id} label="" />
         </MetaRow>
-        {bot.can_manage && <MetaRow label="Channels">
-          <Select
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value)}
-            aria-label="Add bot to channel"
-            controlSize="regular" className="min-w-0 flex-1 text-compact"
-          >
-            <option value="">Add to channel…</option>
-            {channels.filter((c) => c.can_manage).map((c) => (
-              <option key={c.channel_id} value={c.channel_id}>
-                #{c.name}
-              </option>
-            ))}
-          </Select>
-          {added === "channel" ? (
-            <IconButton label="Added to channel" tone="success" controlSize="compact" disabled>
-              <Check className="h-3.5 w-3.5" />
-            </IconButton>
-          ) : (
-            <ActionButton
-              action="add"
-              context="toolbar"
-              accessibleLabel="Add bot to channel"
-              controlSize="compact"
-              onClick={add}
-              disabled={!channelId || busy}
-            />
-          )}
-        </MetaRow>}
-        {bot.can_manage && <MetaRow label="Spaces">
-          <Select
-            value={workspaceId}
-            onChange={(e) => setWorkspaceId(e.target.value)}
-            aria-label="Add bot to workspace"
-            controlSize="regular" className="min-w-0 flex-1 text-compact"
-          >
-            <option value="">Add to space…</option>
-            {workspaces.map((workspace) => (
-              <option key={workspace.workspace_id} value={workspace.workspace_id}>
-                {workspace.name}
-              </option>
-            ))}
-          </Select>
-          {added === "workspace" ? (
-            <IconButton label="Added to workspace" tone="success" controlSize="compact" disabled>
-              <Check className="h-3.5 w-3.5" />
-            </IconButton>
-          ) : (
-            <ActionButton
-              action="add"
-              context="toolbar"
-              accessibleLabel="Add bot to workspace"
-              controlSize="compact"
-              onClick={addToWorkspace}
-              disabled={!workspaceId || busy}
-            />
-          )}
-        </MetaRow>}
-        {bot.can_manage && <p className="text-compact text-content-muted">
-          Bots and people use the same membership model. Adding a bot to a channel also adds it to that channel's space.
-        </p>}
       </section>
 
       {/* Danger zone (§2.15). Consequences are stated here rather than in hover
@@ -700,6 +598,7 @@ function BotStatusEditor({
   // the profile itself is still persisted by the card's Save button.
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
+  const [externalDetailsOpen, setExternalDetailsOpen] = useState(false);
 
   // Manual "Update status now" completion lifecycle (item 4). Instead of blind
   // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
@@ -811,15 +710,17 @@ function BotStatusEditor({
   }
 
   return (
-    <div className="space-y-4">
-      <Field label="Status">
-        <div className="flex gap-2">
+    <section className="space-y-4">
+      <SectionHead>Profile</SectionHead>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.8fr)]">
+        <Field label="Status">
+          <div className="flex gap-2">
           <Input
             value={statusEmoji}
             onChange={(e) => setStatusEmoji(e.target.value)}
             placeholder="🤖"
             maxLength={8}
-            className="text-center"
+            className="min-w-0 flex-[0.18] text-center"
             aria-label="Status emoji"
           />
           <Input
@@ -827,42 +728,51 @@ function BotStatusEditor({
             onChange={(e) => setStatusText(e.target.value)}
             placeholder="Short status (e.g. reviewing PRs)"
             maxLength={140}
+            className="min-w-0 flex-1"
             aria-label="Status text"
           />
-        </div>
-      </Field>
+          </div>
+        </Field>
 
-      <Field label="Description">
-        <Textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What this bot does"
-          rows={3}
-          className="resize-y"
-          aria-label="Bot description"
-        />
-      </Field>
+        <Field label="Description">
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What this bot does"
+            rows={3}
+            className="resize-y"
+            aria-label="Bot description"
+          />
+        </Field>
+      </div>
 
-      <div className="rounded-sm bg-zinc-900/35 p-4 space-y-3">
+      <div className="rounded-sm bg-zinc-900 p-3">
         <CheckboxField
           label="Sends channel data to an external AI provider"
           checked={externalProcessor}
-          onChange={(e) => setExternalProcessor(e.target.checked)}
+          onChange={(e) => {
+            setExternalProcessor(e.target.checked);
+            if (e.target.checked) setExternalDetailsOpen(true);
+          }}
           className="text-content-secondary"
         />
         {externalProcessor && (
-          <>
-            <Field label="Provider name"><Input value={processorName} onChange={(e) => setProcessorName(e.target.value)} placeholder="OpenAI, Anthropic, or operator name" /></Field>
-            <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
-            <Field label="Data use shown to members"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
-            <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
-            <p className="text-compact text-content-muted">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
-          </>
+          <details open={externalDetailsOpen} onToggle={(event) => setExternalDetailsOpen(event.currentTarget.open)} className="mt-3">
+            <summary className="cursor-pointer text-compact text-content-secondary">Configure provider disclosure</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Provider name"><Input value={processorName} onChange={(e) => setProcessorName(e.target.value)} placeholder="OpenAI, Anthropic, or operator name" /></Field>
+              <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
+              <Field label="Data use shown to members" className="sm:col-span-2"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
+              <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
+            </div>
+            <p className="mt-3 text-compact text-content-muted">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
+          </details>
         )}
       </div>
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="rounded-sm bg-zinc-900 p-3">
+        <div className="flex flex-wrap items-center gap-2">
         <CheckboxField
           label="Auto-refresh status"
           checked={auto}
@@ -899,15 +809,16 @@ function BotStatusEditor({
             </Tip>
           </div>
         )}
+        </div>
+
+        {promptError && <p className="mt-2 text-compact text-danger-400">{promptError}</p>}
       </div>
 
-      {promptError && <p className="text-compact text-danger-400">{promptError}</p>}
-
-      <div className="flex items-center gap-2">
-        <ActionButton action="save" context="form" accessibleLabel="Save bot profile" controlSize="compact" onClick={() => void save()} disabled={busy} />
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-4">
+        <ActionButton action="save" context="form" accessibleLabel="Save bot profile" controlSize="regular" onClick={() => void save()} disabled={busy} />
         <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
           <Button action="update"
-            controlSize="compact"
+            controlSize="regular"
             variant="secondary"
             onClick={() => void refreshNow()}
             disabled={refreshPhase === "waiting"}
@@ -957,6 +868,6 @@ function BotStatusEditor({
           </div>
         </Dialog>
       )}
-    </div>
+    </section>
   );
 }

@@ -26,14 +26,12 @@ import {
   type FleetApproval, type FleetAuditEvent, type FleetBot, type FleetHost,
 } from "@/api/fleet";
 import { listBots } from "@/api/bots";
-import { listChannels } from "@/api/channels";
-import { listWorkspaces } from "@/api/workspaces";
 import { useFleetLive } from "./useFleetLive";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
 import { CreateHostWizard } from "@/features/bots/CreateHostWizard";
 import { BotDetailPanel } from "@/features/bots/BotDetailPanel";
-import type { BotItem, Channel, Workspace } from "@/types";
+import type { BotItem } from "@/types";
 import { FleetAudit } from "./FleetAudit";
 import { FleetBots } from "./FleetBots";
 import { FleetHosts } from "./FleetHosts";
@@ -91,8 +89,6 @@ export default function FleetPage() {
   const [hosts, setHosts] = useState<FleetHost[]>([]);
   const [audit, setAudit] = useState<FleetAuditEvent[]>([]);
   const [catalog, setCatalog] = useState<BotItem[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
@@ -101,9 +97,8 @@ export default function FleetPage() {
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     try {
-      const [fleet, botCatalog, channelCatalog, workspaceCatalog, hostItems, auditResult] = await Promise.all([
-        getAllFleet(), listBots(), listChannels().catch(() => [] as Channel[]),
-        listWorkspaces().catch(() => [] as Workspace[]), getFleetHosts().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
+      const [fleet, botCatalog, hostItems, auditResult] = await Promise.all([
+        getAllFleet(), listBots(), getFleetHosts().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
       ]);
       setApprovals(fleet.approvals);
       setBots(fleet.bots);
@@ -113,7 +108,7 @@ export default function FleetPage() {
         offline: fleet.bots.filter((bot) => !bot.online).length,
         waiting: fleet.approvals.filter((approval) => approval.actionable).length,
       });
-      setCatalog(botCatalog); setChannels(channelCatalog); setWorkspaces(workspaceCatalog); setHosts(hostItems); setAudit(auditResult.events);
+      setCatalog(botCatalog); setHosts(hostItems); setAudit(auditResult.events);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
     finally { setLoading(false); if (!quiet) setRefreshing(false); }
   }, []);
@@ -227,7 +222,7 @@ export default function FleetPage() {
         </div>
       </main>
     </div>
-    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} channels={channels} workspaces={workspaces} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
+    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
       setCreateBotOpen(false);
       // Seed from the POST response (it carries can_manage) rather than waiting
