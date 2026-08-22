@@ -1,7 +1,20 @@
-import { GitBranch, GitCommitHorizontal, GitFork, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { GitBranch, GitCommitHorizontal, GitFork, RefreshCw, Server } from "lucide-react";
 import toast from "react-hot-toast";
 import { initializeChannelIntegration } from "@/api/integrations";
+import { putCodeProfile } from "@/api/channelProfiles";
+import { addChannelMember } from "@/api/channels";
+import { getFleetHosts, type FleetHost } from "@/api/fleet";
+import { listHostRepositories, type HostRepository } from "@/api/bots";
+import {
+  createChannelBotSession,
+  setPrimaryChannelBotSession,
+} from "@/api/sessionControl";
+import { ActionButton } from "@/components/ui/action-button";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
+import { Select } from "@/components/ui/select";
 import { registerPanel, type PanelContext } from "../registry";
 import { PanelShell } from "../definePanel";
 
@@ -15,9 +28,11 @@ import { PanelShell } from "../definePanel";
 interface CodeFacts {
   repository: string;
   branch: string;
+  hasRemoteSource: boolean;
+  target: string | null;
+  targetOnline: boolean | null;
   state: string;
   head: string | null;
-  workspace: string | null;
   lastError: string | null;
 }
 
@@ -28,12 +43,18 @@ function codeFacts(ctx: PanelContext): CodeFacts | null {
   if (!profile) return null;
   const str = (value: unknown, fallback: string | null) =>
     typeof value === "string" ? value : fallback;
+  const source = profile.config.remote_source ?? null;
+  const target = profile.config.execution_target ?? null;
+  const targetBot = str(profile.status.target_bot_name, str(target?.bot_id, null));
+  const targetDevice = str(profile.status.target_device, null);
   return {
-    repository: str(profile.config.repository, "Repository") as string,
-    branch: str(profile.config.branch, "main") as string,
-    state: str(profile.status.state, "pending") as string,
+    repository: str(source?.repository, "Local repository") as string,
+    branch: str(source?.branch, "local") as string,
+    hasRemoteSource: source?.kind === "github",
+    target: targetBot ? [targetBot, targetDevice].filter(Boolean).join(" · ") : null,
+    targetOnline: typeof profile.status.target_online === "boolean" ? profile.status.target_online : null,
+    state: str(profile.status.state, "unconfigured") as string,
     head: str(profile.status.head_commit, null),
-    workspace: str(profile.status.workspace_path, null),
     lastError: str(profile.status.last_error, null),
   };
 }
@@ -42,6 +63,131 @@ function stateTone(state: string): string {
   if (state === "ready") return "text-success-400";
   if (state === "error") return "text-danger-400";
   return "text-warning-400";
+}
+
+function ExecutionTargetControl({ ctx, compact = false }: { ctx: PanelContext; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [hosts, setHosts] = useState<FleetHost[]>([]);
+  const [hostId, setHostId] = useState("");
+  const [repositories, setRepositories] = useState<HostRepository[]>([]);
+  const [checkoutPath, setCheckoutPath] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    void getFleetHosts()
+      .then((items) => {
+        const available = items.filter(
+          (item) => item.status === "active" && !item.revoked_at && item.online,
+        );
+        setHosts(available);
+        const currentHost = ctx.profile?.config.execution_target?.host_id;
+        setHostId(
+          available.find((item) => item.host_id === currentHost)?.host_id
+            ?? available[0]?.host_id
+            ?? "",
+        );
+      })
+      .catch(() => setHosts([]));
+  }, [ctx.profile?.config.execution_target?.host_id, open]);
+
+  useEffect(() => {
+    const host = hosts.find((item) => item.host_id === hostId);
+    if (!open || !host) {
+      setRepositories([]);
+      setCheckoutPath("");
+      return;
+    }
+    void listHostRepositories(host.bot_id, host.host_id)
+      .then((result) => {
+        setRepositories(result.repositories);
+        setCheckoutPath(
+          result.repositories.find((repo) => repo.path === result.default_cwd)?.path
+            ?? result.repositories[0]?.path
+            ?? "",
+        );
+      })
+      .catch(() => {
+        setRepositories([]);
+        setCheckoutPath("");
+      });
+  }, [hostId, hosts, open]);
+
+  async function save() {
+    const host = hosts.find((item) => item.host_id === hostId);
+    if (!host || saving) return;
+    setSaving(true);
+    try {
+      await addChannelMember(ctx.channelId, {
+        member_id: host.bot_id,
+        member_type: "bot",
+      });
+      const session = await createChannelBotSession(
+        ctx.channelId,
+        host.bot_id,
+        checkoutPath ? { cwd: checkoutPath } : undefined,
+      );
+      await setPrimaryChannelBotSession(ctx.channelId, host.bot_id, session.session_id);
+      await putCodeProfile(ctx.channelId, {
+        remote_source: ctx.profile?.config.remote_source,
+        execution_target: { bot_id: host.bot_id, host_id: host.host_id },
+      });
+      toast.success("Execution target updated");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't update execution target");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      {compact ? (
+        <IconButton controlSize="compact" onClick={() => setOpen(true)} label="Configure execution target">
+          <Server className="h-3.5 w-3.5" />
+        </IconButton>
+      ) : (
+        <Button action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setOpen(true)}>
+          <Server />
+        </Button>
+      )}
+      {open && (
+        <Dialog title="Execution target" onClose={() => setOpen(false)}>
+          <div className="space-y-2">
+            <span className="block text-compact text-content-muted">Bot Host</span>
+            <Select aria-label="Bot Host" controlSize="regular" value={hostId}
+              onChange={(event) => setHostId(event.target.value)}>
+              <option value="">No online Hosts</option>
+              {hosts.map((host) => (
+                <option key={host.host_id} value={host.host_id}>
+                  {host.bot_name} · {host.device_name}
+                </option>
+              ))}
+            </Select>
+            {repositories.length > 0 && (
+              <>
+                <span className="block text-compact text-content-muted">Repository checkout</span>
+                <Select aria-label="Repository checkout" controlSize="regular" value={checkoutPath}
+                  onChange={(event) => setCheckoutPath(event.target.value)}>
+                  {repositories.map((repository) => (
+                    <option key={repository.path} value={repository.path}>
+                      {repository.path}{repository.branch ? ` · ${repository.branch}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <ActionButton action="cancel" context="dialog" onClick={() => setOpen(false)} />
+            <ActionButton action="save" context="form" loading={saving} disabled={!hostId || saving}
+              onClick={() => void save()} />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
 }
 
 /** Header: a compact chip beside the channel title. Hidden below `lg` — the header has
@@ -63,7 +209,7 @@ function CodeHeader(ctx: PanelContext) {
   );
 }
 
-/** Lane: the full board — repository, branch, head commit, workspace path. */
+/** Lane: the full board — source, execution target, branch, and head commit. */
 function CodeBoard(ctx: PanelContext) {
   const facts = codeFacts(ctx);
   if (!facts) return null;
@@ -82,7 +228,13 @@ function CodeBoard(ctx: PanelContext) {
           {facts.head ? <code>{facts.head.slice(0, 12)}</code> : "No workspace commit reported"}
         </div>
         <div className="border-t border-zinc-800 pt-3 text-compact text-content-muted">
-          Workspace: {facts.workspace ?? facts.state}
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">
+              Execution target: {facts.target ?? "Not configured"}
+              {facts.targetOnline === false && <span className="ml-2 text-warning-400">Offline</span>}
+            </span>
+            <ExecutionTargetControl ctx={ctx} />
+          </div>
         </div>
       </div>
     </PanelShell>
@@ -124,7 +276,8 @@ function CodeWorkspaceStrip(ctx: PanelContext) {
           </span>
         )}
         <span className="ml-auto shrink-0 capitalize text-content-secondary">{facts.state}</span>
-        {(facts.state === "error" || facts.state === "pending") && (
+        <ExecutionTargetControl ctx={ctx} compact />
+        {facts.hasRemoteSource && (facts.state === "error" || facts.state === "pending") && (
           <IconButton
             controlSize="compact"
             onClick={() => void retryImport()}

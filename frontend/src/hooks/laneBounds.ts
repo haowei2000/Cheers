@@ -1,8 +1,8 @@
 import { createContext } from "react";
 
-// The work lane publishes its live bounding rect (viewport coords) here so the
+// The channel's floating canvas publishes its live bounding rect (viewport coords) here so the
 // instrument panels floating inside it know the box to drag/resize within.
-// `null` provider = no lane (mobile, or a window that floats over the viewport
+// `null` provider = no canvas (mobile, or a window that floats over the viewport
 // like an anchored inspector).
 //
 // This used to sit beside a `useLaneWindow` hook that wired float/drag/snap for the

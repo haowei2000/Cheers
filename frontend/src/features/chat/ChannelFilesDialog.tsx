@@ -47,6 +47,7 @@ export function ChannelFilesDialog({
       className="w-[640px] h-[70%]"
       spawnKind="files"
       defaultPosClassName="top-2 left-2"
+      bodyClassName="md:pt-[var(--floating-panel-safe-top)]"
       collapsedSummary={(expand) => (
         <GlanceRow
           Icon={Paperclip}

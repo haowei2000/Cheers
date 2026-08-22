@@ -17,6 +17,11 @@ host demotes the old active host to standby and closes the
 Bot's current bridge session. Standby credentials remain device-specific but
 cannot authenticate until the owner activates them.
 
+Code execution targets preserve the `host_id` selected at setup time. Activating a different
+Host makes the old target unavailable; it does not reinterpret the same checkout on a different
+machine. A channel administrator must explicitly bind the new Host and its primary Session
+checkout.
+
 ## Security invariants
 
 - Agent Bridge accepts host credentials only; a Bot token cannot bypass
@@ -38,6 +43,7 @@ cannot authenticate until the owner activates them.
 - `POST /api/v1/bots/{bot_id}/hosts/{host_id}/activate`
 - `POST /api/v1/bots/{bot_id}/hosts/{host_id}/credential`
 - `POST /api/v1/bots/{bot_id}/hosts/{host_id}/reconnect`
+- `GET /api/v1/bots/{bot_id}/hosts/{host_id}/repositories`
 - `DELETE /api/v1/bots/{bot_id}/hosts/{host_id}`
 
 All management endpoints require the Bot owner or a platform administrator.

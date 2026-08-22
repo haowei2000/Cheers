@@ -52,9 +52,13 @@ describe("suggestSpawn", () => {
     }
   });
 
-  it("fills the lane when alone", () => {
+  it("opens alone in the preferred zone instead of covering the workspace", () => {
     const bounds = { width: 600, height: 500 };
-    expect(suggestSpawn("workbench", bounds, [])).toEqual(fillLane(bounds));
+    const zones = zonesFor(bounds);
+    expect(zones[0]).toMatchObject(suggestSpawn("workbench", bounds, []));
+    expect(zones[zones.length - 1]).toMatchObject(
+      suggestSpawn("viewboard", bounds, []),
+    );
   });
 
   it("picks a free zone when another window occupies the lane", () => {

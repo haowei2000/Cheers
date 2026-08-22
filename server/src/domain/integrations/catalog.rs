@@ -159,8 +159,8 @@ static ALL: &[IntegrationDescriptor] = &[IntegrationDescriptor {
          workspace, check out {{default_branch}}, and index the tree so you \
          can answer questions about the code. The clone URL is in this \
          message's context bundle. When the import finishes, call \
-         report_code_workspace with the channel id, workspace path, branch \
-         HEAD commit, and ready status; report error status if setup fails.",
+         report_code_workspace with the channel id, branch HEAD commit, and \
+         ready status; report error status if setup fails.",
     ),
     events: GITHUB_EVENTS,
 }];

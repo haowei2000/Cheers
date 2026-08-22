@@ -38,7 +38,8 @@ pub async fn handle_code_status(
     }
     if profile
         .config
-        .get("bot_id")
+        .get("execution_target")
+        .and_then(|target| target.get("bot_id"))
         .and_then(Value::as_str)
         .is_some_and(|bot_id| bot_id != principal.principal_id.to_string())
     {
@@ -75,7 +76,6 @@ pub async fn handle_code_status(
     };
     let status = crate::domain::channel_profiles::CodeProfileStatus {
         state: state.to_owned(),
-        workspace_path: bounded("workspace_path", 4096)?,
         head_commit: bounded("head_commit", 128)?,
         last_error: bounded("last_error", 2000)?,
     };

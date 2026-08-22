@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   computeSuggestions,
+  contextItemLocator,
   selectionLineRange,
   rangedFileContextItem,
+  workbenchFileContextItem,
   workspaceContextItem,
   toBundle,
   type ContextItem,
@@ -114,6 +116,34 @@ describe("rangedFileContextItem", () => {
     expect(it.params).toEqual({ path: "notes/plan.md", start_line: 12, end_line: 40 });
     expect(it.label).toBe("plan.md:12-40");
     expect(it.kind).toBe("file");
+    expect(contextItemLocator(it)).toBe("cheers:desk/notes/plan.md#L12-L40");
+  });
+});
+
+describe("workbenchFileContextItem", () => {
+  it("builds an fs.read reference for the complete file", () => {
+    expect(workbenchFileContextItem("lab/experiments.yaml")).toEqual({
+      id: "file:lab/experiments.yaml",
+      verb: "fs.read",
+      params: { path: "lab/experiments.yaml" },
+      label: "experiments.yaml",
+      kind: "file",
+    });
+    expect(contextItemLocator(workbenchFileContextItem("lab/experiments.yaml"))).toBe(
+      "cheers:desk/lab/experiments.yaml"
+    );
+  });
+});
+
+describe("contextItemLocator", () => {
+  it("formats channel projections and inbox files", () => {
+    expect(contextItemLocator({ id: "plan", verb: "channel.plan.read", params: {}, label: "Plan", kind: "plan" })).toBe("cheers:plan");
+    expect(contextItemLocator({ id: "file:f1", verb: "channel.files.read", params: { file_id: "f1" }, label: "a.md", kind: "file" })).toBe("cheers:inbox/f1");
+  });
+
+  it("does not claim a lossy locator for root-scoped workspaces or message ranges", () => {
+    expect(contextItemLocator(workspaceContextItem({ botId: "b", path: "a.md", root: "/repo" }))).toBeNull();
+    expect(contextItemLocator({ id: "msg:2", verb: "channel.messages.by-seq", params: { min_seq: 2, max_seq: 2 }, label: "Message #2", kind: "message" })).toBeNull();
   });
 });
 

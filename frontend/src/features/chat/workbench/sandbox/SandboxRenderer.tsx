@@ -1,9 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
+import { pointRect, useContextActions } from "@/components/ui/context-actions";
+import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
+import { Paperclip } from "lucide-react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
 import { formatOf } from "../renderers/registry";
 import type { RendererExtension } from "./rendererExtension";
 import { reportRendererStatus } from "../extensions/runtime";
+import { uniqueSourceTextRange } from "../contextSource";
 import {
   createScheduledMessage,
   deleteScheduledMessage,
@@ -71,6 +76,7 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
       let seq = 0;
       let disposer;
       let renderHandler;
+      let contextAddedHandler;
       const pending = new Map();
       const send = (method, params) => new Promise((resolve, reject) => {
         const id = ++seq; pending.set(id, { resolve, reject });
@@ -84,6 +90,22 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
         channel: { read(resource, params = {}) { return send("channel.read", { resource, params }); } },
         navigation: { open(uri) { return send("navigation.open", { uri }); } },
         composer: { prefill(text) { return send("composer.prefill", { text }); } },
+        context: {
+          pick(event, target) {
+            event.preventDefault?.();
+            const renderer = globalThis.CheersWorkbenchRenderer;
+            Promise.resolve(renderer.toContext(target)).then((mapped) => {
+              parent.postMessage({ jsonrpc: "2.0", method: "context.pick", params: {
+                requestId: ++seq,
+                x: Number(event.clientX) || 0,
+                y: Number(event.clientY) || 0,
+                label: mapped.label,
+                sourceText: mapped.sourceText
+              } }, "*");
+            }).catch((error) => ctx.log("error", String(error)));
+          },
+          onAdded(handler) { contextAddedHandler = handler; }
+        },
         automation: {
           list() { return send("automation.list", {}); },
           create(automationId, input) { return send("automation.create", { automationId, input }); },
@@ -111,10 +133,12 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
           try { await disposer?.(); parent.postMessage({ jsonrpc: "2.0", id: message.id, result: null }, "*"); }
           catch (error) { parent.postMessage({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: String(error) } }, "*"); }
         }
+        if (message.method === "context.added") contextAddedHandler?.(message.params);
       });
       globalThis.__CHEERS_START_RENDERER__ = async () => {
         const renderer = globalThis.CheersWorkbenchRenderer;
         if (!renderer || typeof renderer.activate !== "function") throw new Error("Renderer must call defineRenderer()");
+        if (typeof renderer.toContext !== "function") throw new Error("Renderer must implement toContext(target)");
         disposer = await renderer.activate(ctx);
         parent.postMessage({ jsonrpc: "2.0", method: "renderer.ready" }, "*");
       };
@@ -129,6 +153,7 @@ export function SandboxRenderer({
   rendererId,
   path,
   readChannel,
+  channelId,
   onOpen,
   onCompose,
   onFailure,
@@ -139,6 +164,7 @@ export function SandboxRenderer({
   rendererId: string;
   path: string;
   readChannel: (resource: string, params: Record<string, unknown>) => Promise<unknown>;
+  channelId: string;
   onOpen?: (uri: string) => void;
   onCompose?: (text: string) => void;
   onFailure?: (reason: string) => void;
@@ -146,6 +172,7 @@ export function SandboxRenderer({
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const versionRef = useRef(0);
+  const contentRef = useRef("");
   const requestRef = useRef(0);
   const failedRef = useRef(false);
   const pendingRef = useRef(new Map<number | string, {
@@ -156,6 +183,8 @@ export function SandboxRenderer({
   callbacksRef.current = { readChannel, onOpen, onCompose, onFailure };
   const [status, setStatus] = useState<"ready" | "running" | "failed">("ready");
   const [error, setError] = useState("");
+  const { open } = useContextActions();
+  const addContext = useContextPickStore((state) => state.add);
   const document = useMemo(() => buildRendererDocument(extension, rendererId), [extension, rendererId]);
 
   useLayoutEffect(() => {
@@ -227,6 +256,7 @@ export function SandboxRenderer({
         if (!(reason instanceof ResourceError && reason.code === "NOT_FOUND")) throw reason;
       }
       versionRef.current = version;
+      contentRef.current = content;
       await request("file.render", { path, format: formatOf(path), content, version, rendererId });
       setStatus("running");
       reportRendererStatus(extension.extensionId, "running");
@@ -245,6 +275,38 @@ export function SandboxRenderer({
       if (!("method" in message)) return;
       const params = message.params ?? {};
       if (message.method === "renderer.ready") void sendRender().catch((reason) => void fail(String(reason)));
+      else if (message.method === "context.pick") {
+        const label = String(params.label ?? "").trim().slice(0, 160);
+        const sourceText = String(params.sourceText ?? "");
+        const range = uniqueSourceTextRange(contentRef.current, sourceText);
+        if (!label || !range) {
+          toast.error(!label ? "Renderer returned an empty context label" : "Renderer context source is missing or ambiguous");
+          return;
+        }
+        const frame = iframeRef.current?.getBoundingClientRect();
+        const x = (frame?.left ?? 0) + Number(params.x ?? 0);
+        const y = (frame?.top ?? 0) + Number(params.y ?? 0);
+        open({
+          anchor: pointRect(x, y),
+          source: "pointer",
+          restoreFocus: iframeRef.current,
+          actions: [{
+            id: "add-context",
+            label: `Add ${label} to context`,
+            icon: <Paperclip className="h-4 w-4" />,
+            run: () => {
+              const item = rangedFileContextItem(path, range.start, range.end);
+              addContext(channelId, { ...item, label });
+              toast.success(`Added ${label} (lines ${range.start}-${range.end}) to context`);
+              iframeRef.current?.contentWindow?.postMessage({
+                jsonrpc: "2.0",
+                method: "context.added",
+                params: { requestId: params.requestId, label, startLine: range.start, endLine: range.end },
+              }, "*");
+            },
+          }],
+        });
+      }
       else if (message.method === "file.save") {
         if (!extension.manifest.permissions?.["file.write"]) return respond(message, undefined, "file.write permission denied");
         fs.write(path, String(params.content ?? ""), versionRef.current)
@@ -310,7 +372,7 @@ export function SandboxRenderer({
       window.removeEventListener("message", handler);
       if (!failedRef.current) reportRendererStatus(extension.extensionId, "ready");
     };
-  }, [active, fs, path, rendererId, extension]);
+  }, [active, addContext, channelId, extension, fs, open, path, rendererId]);
 
   if (!active) return null;
   if (status === "failed") return <div className="p-3 text-warning-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;

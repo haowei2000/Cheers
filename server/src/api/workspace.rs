@@ -7,6 +7,7 @@
 //! (see `gateway::workspace_rpc`). The connector enforces the actual filesystem
 //! boundary (`policy.workspace.allowed_roots`).
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use axum::{
@@ -509,6 +510,55 @@ async fn workspace_call(
             _ => AppError::BadRequest(full),
         })
     }
+}
+
+/// Discover configured workspace roots that are Git repositories on the Bot's active Host.
+/// This is owner-facing setup metadata, not a recursive filesystem scan: only the connector's
+/// `default_cwd` and explicit `allowed_roots` are probed through the existing read-only Git op.
+pub async fn discover_bot_repositories(state: &AppState, bot_id: Uuid) -> Result<Value, AppError> {
+    let meta = workspace_call(
+        state,
+        bot_id,
+        "workspace_meta",
+        "",
+        None,
+        Value::Null,
+        None,
+        &[],
+    )
+    .await?;
+    let mut candidates = BTreeSet::new();
+    if let Some(default_cwd) = meta.get("default_cwd").and_then(Value::as_str) {
+        candidates.insert(default_cwd.to_owned());
+    }
+    if let Some(roots) = meta.get("allowed_roots").and_then(Value::as_array) {
+        candidates.extend(roots.iter().filter_map(Value::as_str).map(str::to_owned));
+    }
+    let mut repositories = Vec::new();
+    for path in candidates {
+        if let Ok(status) = workspace_call(
+            state,
+            bot_id,
+            "git_status",
+            "",
+            Some(&path),
+            Value::Null,
+            None,
+            &[],
+        )
+        .await
+        {
+            repositories.push(json!({
+                "path": path,
+                "branch": status.get("branch").cloned().unwrap_or(Value::Null),
+            }));
+        }
+    }
+    Ok(json!({
+        "repositories": repositories,
+        "default_cwd": meta.get("default_cwd").cloned().unwrap_or(Value::Null),
+        "git_ops": meta.get("git_ops").cloned().unwrap_or(Value::Null),
+    }))
 }
 
 /// GET /api/v1/channels/:channel_id/workspace/bots

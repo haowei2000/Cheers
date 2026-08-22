@@ -103,11 +103,22 @@ Two supporting engines run outside that flow:
   permission vocabulary mapped onto the four channel roles, written as ordinary
   `channel_memberships` rows. Nothing in a permission check knows the row came from GitHub.
 
-GitHub Code layers the standard `code` profile onto an ordinary text channel. The
-Gateway retains repository binding and import state; the selected Agent reports clone,
-checkout, workspace, and HEAD state through the scoped `report_code_workspace` MCP tool.
-The header, ViewBoard, and Workbench receive only that profile JSON, never OAuth or App
-installation credentials.
+Code layers the standard `code` profile onto an ordinary text channel. Its two axes are
+independent:
+
+- `remote_source` is optional. GitHub sources reference a Workspace-scoped App installation,
+  repository, and branch; local-only channels omit it.
+- `execution_target` is optional until work begins. It binds one channel Bot, that Bot's
+  concrete active Host, and an opaque `checkout_id`. The checkout id is the primary Cheers
+  Session id; its Session workspace owns the Host-local `cwd`, which remains clamped by the
+  Connector's `allowed_roots` policy.
+
+The Gateway never stores the absolute path in the Code profile and never silently moves a
+target when another Host becomes active. An offline or replaced target is reported as
+unavailable until an administrator explicitly chooses a new one. GitHub project init prompts
+only the target Bot, because checkouts on different Hosts are independent. The selected Agent
+reports import and HEAD state through the scoped `report_code_workspace` MCP tool. The header,
+ViewBoard, and Workbench receive only profile JSON, never OAuth or App installation credentials.
 
 ## Maintaining it
 

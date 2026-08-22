@@ -24,7 +24,14 @@ Workbench packages. Browser and iOS clients never execute extension code. A pers
 extension installed on macOS may contain renderers; the package is stored in
 `~/.cheers/extensions` and runs only after a renderer is selected.
 
-Renderer source exports no HTML document. Call `defineRenderer({ activate(ctx) { ... } })`; `activate` may return a disposer. The packer bundles TypeScript and ordinary dependencies into a single IIFE. Runtime imports between extensions are unsupported.
+Renderer source exports no HTML document. Every renderer must implement
+`toContext(target)`, returning a human label and an exact, contiguous `sourceText`
+fragment from the assigned file. Row, card, and node context-menu handlers call
+`ctx.context.pick(event, target)`; the host rejects missing or ambiguous anchors and
+converts a valid anchor into a line-scoped `fs.read` context reference. Call
+`defineRenderer({ toContext, activate })`; `activate` may return a disposer. The packer
+bundles TypeScript and ordinary dependencies into a single IIFE. Runtime imports between
+extensions are unsupported.
 
 Request `automation.manage` only when the renderer needs `ctx.automation`. The host scopes
 all returned tasks to the calling extension and confirms every create, update, delete,

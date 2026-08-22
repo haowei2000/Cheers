@@ -91,8 +91,9 @@ function preferredZoneIndex(kind: SpawnKind, zoneCount: number): number {
 }
 
 /**
- * First-open placement for a lane window. Alone → fill the lane (best for file
- * reading). With neighbors → the freest preferred zone (least overlap). When the
+ * First-open placement for a canvas window. Alone → use its preferred zone so it
+ * opens as a movable mini-window instead of covering the workspace. With neighbors
+ * → use the freest preferred zone (least overlap). When the
  * lane only has one cell and it's taken, force a vertical split so two panels
  * can coexist on a narrow mid-width desktop.
  */
@@ -102,10 +103,12 @@ export function suggestSpawn(
   occupied: Rect[]
 ): Rect {
   const others = occupied.filter((r) => r.w > 0 && r.h > 0);
-  if (others.length === 0) return fillLane(bounds);
-
   const zones = zonesFor(bounds);
   if (!zones.length) return fillLane(bounds);
+  if (others.length === 0) {
+    const preferred = zones[preferredZoneIndex(kind, zones.length)] ?? zones[0];
+    return { x: preferred.x, y: preferred.y, w: preferred.w, h: preferred.h };
+  }
 
   // Narrow lane with a single cell already taken: invent a top/bottom split so
   // the newcomer isn't buried under the first panel.

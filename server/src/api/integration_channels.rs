@@ -21,7 +21,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
@@ -704,16 +704,45 @@ pub async fn init_project(
         .map_err(|error| AppError::Internal(format!("invalid init prompt: {error}")))?
         .render(&facts);
 
-    // Every bot in the channel. Mentioning by id rather than by name is the
-    // same path `bot_status_scheduler` uses to prompt out of band.
-    let bot_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT member_id FROM channel_memberships
-          WHERE channel_id = $1 AND member_type = 'bot'
-          ORDER BY member_id",
-    )
-    .bind(&channel_id)
-    .fetch_all(&state.db)
-    .await?;
+    // A Code profile targets one concrete Bot/Host checkout. Never fan project init
+    // out to every Bot in the channel: different Hosts carry independent working
+    // trees. Profiles without a target are valid but cannot import yet.
+    let profile = crate::domain::channel_profiles::get(&state.db, &channel_id).await?;
+    let target_bot_id = profile
+        .as_ref()
+        .filter(|profile| profile.profile == "code")
+        .and_then(|profile| profile.config.get("execution_target"))
+        .and_then(|target| target.get("bot_id"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let bot_ids: Vec<String> = match target_bot_id {
+        Some(bot_id) => {
+            sqlx::query_scalar(
+                "SELECT member_id FROM channel_memberships
+              WHERE channel_id = $1 AND member_type = 'bot' AND member_id = $2",
+            )
+            .bind(&channel_id)
+            .bind(bot_id)
+            .fetch_all(&state.db)
+            .await?
+        }
+        None if profile
+            .as_ref()
+            .is_some_and(|profile| profile.profile == "code") =>
+        {
+            Vec::new()
+        }
+        None => {
+            sqlx::query_scalar(
+                "SELECT member_id FROM channel_memberships
+                  WHERE channel_id = $1 AND member_type = 'bot'
+                  ORDER BY member_id",
+            )
+            .bind(&channel_id)
+            .fetch_all(&state.db)
+            .await?
+        }
+    };
     if bot_ids.is_empty() {
         // Not an error: binding a channel before inviting an agent is a normal
         // order to do things in, and the caller can init again afterwards.
@@ -761,7 +790,7 @@ pub async fn init_project(
     )
     .await?;
 
-    if let Some(profile) = crate::domain::channel_profiles::get(&state.db, &channel_id).await? {
+    if let Some(profile) = profile {
         if profile.profile == "code" {
             let mut status: crate::domain::channel_profiles::CodeProfileStatus =
                 serde_json::from_value(profile.status).unwrap_or_default();

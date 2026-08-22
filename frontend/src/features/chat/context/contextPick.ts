@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { create } from "zustand";
+import { formatLocator, parseLocator, type Locator } from "../locator";
 
 // Resource-context pickup (docs/design/RESOURCE_CONTEXT.md, F1). A participant
 // attaches Cheers resources (plan / file / message / activity) to a message as
@@ -20,6 +21,37 @@ export interface ContextItem {
   label: string;
   /** Category — drives the chip icon. */
   kind: "plan" | "file" | "message" | "activity" | "sessions" | "cost";
+}
+
+/** Render the canonical Cheers locator for references that have a lossless URI form. */
+export function contextItemLocator(item: ContextItem): string | null {
+  const validLocator = (locator: Locator) => {
+    const uri = formatLocator(locator);
+    return parseLocator(uri) ? uri : null;
+  };
+  const path = typeof item.params.path === "string" ? item.params.path : null;
+  if (item.verb === "fs.read" && path) {
+    const start = typeof item.params.start_line === "number" ? item.params.start_line : undefined;
+    const end = typeof item.params.end_line === "number" ? item.params.end_line : undefined;
+    return validLocator({ kind: "desk", path, line: start, lineEnd: end });
+  }
+
+  if (item.verb === "workspace.read" && path && typeof item.params.bot_id === "string" && !item.params.root) {
+    return validLocator({ kind: "ws", bot: item.params.bot_id, path });
+  }
+
+  if (item.verb === "channel.files.read" && typeof item.params.file_id === "string") {
+    return validLocator({ kind: "inbox", fileId: item.params.file_id });
+  }
+
+  const projections: Record<string, "plan" | "sessions" | "cost" | "activity"> = {
+    "channel.plan.read": "plan",
+    "channel.sessions.read": "sessions",
+    "channel.usage.read": "cost",
+    "channel.activity.read": "activity",
+  };
+  const projection = projections[item.verb];
+  return projection ? validLocator({ kind: projection }) : null;
 }
 
 /** The wire shape persisted on the message / delivered to the task frame. Every
@@ -136,6 +168,18 @@ export function rangedFileContextItem(
     verb: "fs.read",
     params: { path, start_line: startLine, end_line: endLine },
     label: `${base}:${startLine}-${endLine}`,
+    kind: "file",
+  };
+}
+
+/** A context ref for a complete Workbench file. */
+export function workbenchFileContextItem(path: string): ContextItem {
+  const base = path.split("/").pop() || path;
+  return {
+    id: `file:${path}`,
+    verb: "fs.read",
+    params: { path },
+    label: base,
     kind: "file",
   };
 }

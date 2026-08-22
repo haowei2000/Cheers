@@ -184,6 +184,20 @@ function ViewBoardDrawerImpl({
     ],
   );
 
+  const addActiveBoardToContext = () => {
+    if (!activeBoard) return;
+    const meta = ATTACHABLE_BOARDS[activeBoard.id];
+    if (!meta) return;
+    const scoped = activeBoard.scope === "session" && scope;
+    useContextPickStore.getState().add(channelId, {
+      id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
+      verb: meta.verb,
+      params: scoped ? { session_id: scope } : {},
+      label: activeBoard.title,
+      kind: meta.kind,
+    });
+  };
+
   // Desktop: a draggable/resizable floating window inside the work lane; dragging
   // snaps it to the lane's grid zones. Minimal collapses to a glance card that keeps
   // its dragged spot. Closed keeps it MOUNTED so visited-board state survives. Mobile
@@ -203,31 +217,36 @@ function ViewBoardDrawerImpl({
       defaultPosClassName="top-2 left-2"
       // Tab strip + scope selector + the keep-alive stack are a non-scrolling flex
       // column; each board owns its own scrolling.
-      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
-      headerExtra={
-        activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? (
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pt-[var(--floating-panel-safe-top)]"
+      primaryNavigation={{
+        ariaLabel: "ViewBoard sections",
+        items: boards.map((board) => ({
+          id: board.id,
+          label: board.title,
+          icon: board.icon,
+          selected: activeBoard?.id === board.id,
+          onSelect: () => setActive(board.id),
+        })),
+      }}
+      panelActions={activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? [{
+        id: "add-context",
+        label: "Add board to context",
+        priority: "secondary",
+        icon: Plus,
+        onSelect: addActiveBoardToContext,
+        control: (
           <UiButton
             variant="plain"
             content="icon"
             controlSize="compact"
-            onClick={() => {
-              const meta = ATTACHABLE_BOARDS[activeBoard.id];
-              const scoped = activeBoard.scope === "session" && scope;
-              useContextPickStore.getState().add(channelId, {
-                id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
-                verb: meta.verb,
-                params: scoped ? { session_id: scope } : {},
-                label: activeBoard.title,
-                kind: meta.kind,
-              });
-            }}
+            onClick={addActiveBoardToContext}
             title={addToContextTitle("this board")}
             className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-accent-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
-        ) : null
-      }
+        ),
+      }] : []}
       collapsedSummary={(expand) => (
         // Minimized: a purpose-built glance (not the board shrunk). Clicking a row
         // expands straight to that board.
@@ -241,7 +260,7 @@ function ViewBoardDrawerImpl({
       )}
     >
       <div
-        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1"
+        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1 md:hidden"
         role="tablist"
         aria-label="ViewBoard sections"
       >
