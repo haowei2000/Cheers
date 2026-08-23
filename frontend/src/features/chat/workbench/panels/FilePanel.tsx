@@ -717,7 +717,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
                   <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"}
+                    <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
                       onClick={() => {
                         setFailedRenderers((current) => ({ ...current, [selected]: [] }));
                         setMode("preview");
@@ -728,21 +728,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           ? `Preview with ${previewRenderer.title}`
                           : "No matching renderer — raw only"
                       }
-                      controlSize="regular" className={`disabled:opacity-50 ${
- effMode === "preview"
- ? "bg-zinc-700 text-content-primary"
- : "text-content-primary hover:text-content-strong"
- }`}
+                      controlSize="regular"
+                      className="text-content-primary hover:text-content-strong disabled:opacity-50"
                     >
                       Preview
                     </UiButton>
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"}
+                    <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
                       onClick={() => setMode("raw")}
-                      controlSize="regular" className={`${
- effMode === "raw"
- ? "bg-zinc-700 text-content-primary"
- : "text-content-primary hover:text-content-strong"
- }`}
+                      controlSize="regular"
+                      className="text-content-primary hover:text-content-strong"
                     >
                       Raw
                     </UiButton>

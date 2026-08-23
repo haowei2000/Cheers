@@ -218,15 +218,12 @@ export function BotDetailPanel({
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
-            <UiButton content="iconText" variant="plain" role="tab" aria-selected={active}
+            <UiButton content="iconText" variant="plain" role="tab" aria-selected={active} selected={active}
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              controlSize="regular" className={cn(
- "inline-flex items-center gap-2  font-medium border-b-2 -mb-px transition-colors",
- active
- ? "border-indigo-500 text-content-primary": "border-transparent text-content-primary hover:text-content-strong"
- )}
+              controlSize="regular"
+              className="inline-flex items-center gap-2 font-medium text-content-primary transition-colors hover:text-content-strong"
             >
               <Icon className="w-3.5 h-3.5" />
               {label}

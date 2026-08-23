@@ -9,7 +9,6 @@ import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
-import { cn } from "@/lib/cn";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
@@ -613,17 +612,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               <ControlTrigger
                 type="button"
                 square
+                selected={rawMode}
                 onClick={() => setRawMode((current) => !current)}
                 aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
                 aria-pressed={rawMode}
                 title={rawMode ? "Show scenes" : "Show raw workspace files"}
                 controlSize={workbenchControlSize.chrome}
-                className={cn(
-                  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
-                  rawMode
-                    ? "bg-indigo-500/15 text-accent-200"
-                    : "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-                )}
+                className="rounded-sm text-content-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 {rawMode
                   ? <LayoutGrid className="h-4 w-4" aria-hidden="true" />
