@@ -1,8 +1,10 @@
-import { ActionButton } from "@/components/ui/action-button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tip } from "@/components/ui/tip";
+import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { Paperclip } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Paperclip, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
 import type { ViewDef } from "../manifest";
@@ -25,21 +27,46 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
   // CLEAN preview so the default view of machine-written files (metrics, boards) stays
   // live. In-progress lens edits are never clobbered: dirty = any onChange since the
   // last load/save, and a dirty buffer skips the reload.
-  const dirty = useRef(false);
+  const dirtyRef = useRef(false);
+  const [dirty, setDirty] = useState(false);
   const seenTick = useRef(reloadTick);
   useEffect(() => {
     if (reloadTick === undefined || reloadTick === seenTick.current) return;
     seenTick.current = reloadTick;
-    if (!dirty.current) void reload();
+    if (!dirtyRef.current) void reload();
   }, [reloadTick, reload]);
   const onChange = (next: unknown) => {
-    dirty.current = true;
+    dirtyRef.current = true;
+    setDirty(true);
     setData(next);
   };
-  const onSave = async () => {
+  const onSave = useCallback(async () => {
     await save(data);
-    dirty.current = false;
-  };
+    dirtyRef.current = false;
+    setDirty(false);
+  }, [data, save]);
+  // The Save control belongs in the window's action island, next to minimize
+  // and close. Keeping it out of the body prevents a second bottom toolbar
+  // from competing with the active lens itself.
+  const saveAction = useMemo(() => ({
+    id: `save-lens-${view.file}`,
+    label: `Save ${view.file}`,
+    priority: "primary" as const,
+    trigger: { visibility: "persistent" as const },
+    icon: Save,
+    onSelect: () => void onSave(),
+    control: (
+      <Tip content={`Save ${view.file}`}>
+        <IconButton
+          label={`Save ${view.file}`}
+          controlSize="compact"
+          onClick={() => void onSave()}
+        >
+          <Save className="h-3.5 w-3.5" aria-hidden />
+        </IconButton>
+      </Tip>
+    ),
+  }), [onSave, view.file]);
   const requestContextPick = (event: React.MouseEvent<Element>, target: { label: string; sourcePath?: ReadonlyArray<string | number>; sourceText?: string }) => {
     const range = target.sourceText !== undefined
       ? uniqueSourceTextRange(raw, target.sourceText)
@@ -69,6 +96,7 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
 
   return (
     <div className="flex flex-col h-full text-compact">
+      {!lens?.viewOnly && <FloatingPanelActionPortal action={saveAction} active={dirty} />}
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
           lens.render({ data, config: view.config, onChange, requestContextPick })
@@ -76,20 +104,7 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
           <div className="p-3 text-warning-400">Unknown lens: {view.lens}</div>
         )}
       </div>
-      {(status || !lens?.viewOnly) && (
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
-          <span className="text-compact text-content-muted truncate flex-1">{status}</span>
-          {!lens?.viewOnly && (
-            <ActionButton
-              action="save"
-              context="form"
-              accessibleLabel={`Save ${view.file}`}
-              controlSize="regular"
-              onClick={() => void onSave()}
-            />
-          )}
-        </div>
-      )}
+      {status && <div className="mx-3 mb-2 flex-shrink-0 truncate text-compact text-content-muted">{status}</div>}
     </div>
   );
 }

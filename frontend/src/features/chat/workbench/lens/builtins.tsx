@@ -25,6 +25,7 @@ import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { workbenchControlSize } from "../workbench-control";
+import { FloatingPanelLocalControl, FloatingPanelLocalControls } from "@/components/ui/floating-panel";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -773,7 +774,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
   const zoom = (factor: number) => setScale((current) => Math.min(2.2, Math.max(0.55, current * factor)));
 
   return (
-    <div className="relative flex h-full min-h-0">
+    <FloatingPanelLocalControls className="relative flex h-full min-h-0">
       <div
         className="relative min-w-0 flex-1 overflow-hidden touch-none"
         onClick={(event) => {
@@ -848,7 +849,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
           })}
         </div>
 
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex items-end gap-3 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
+        <FloatingPanelLocalControl className="absolute inset-x-3 bottom-3 z-30 flex items-end gap-3">
           <div className="floating-control-surface pointer-events-auto flex items-center gap-3 rounded-concentric px-3 py-2 text-minimal text-content-muted">
             <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-success-400" /> Explored</span>
             <span className="flex items-center gap-1"><CircleDotDashed className="h-3.5 w-3.5 text-warning-400" /> Partial</span>
@@ -862,7 +863,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
             <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
             <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
           </div>
-        </div>
+        </FloatingPanelLocalControl>
       </div>
       {selected && (
         <div
@@ -873,7 +874,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
           <CodemapInspector node={selected} onClose={() => setSelectedId(null)} />
         </div>
       )}
-    </div>
+    </FloatingPanelLocalControls>
   );
 }
 

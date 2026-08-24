@@ -7,7 +7,7 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   controlSize?: ControlSize;
 }
 
-// Filled textarea with the same accessible inset boundary as Input (DESIGN.md §2.3).
+// Filled textarea with the same borderless resting state as Input.
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ error, controlSize, className, ...props }, ref) => {
     const size = useControlSize(controlSize);
@@ -15,7 +15,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     <textarea
       ref={ref}
       className={cn(
-        "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-content-primary placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
+        "w-full rounded-sm bg-zinc-800 px-3 py-2 text-comfortable md:text-regular text-content-primary placeholder-zinc-400 transition-shadow",
         controlMinHeightClasses[size],
         "focus:outline-none focus:ring-2 focus:ring-indigo-500",
         error && "ring-1 ring-red-500/70",

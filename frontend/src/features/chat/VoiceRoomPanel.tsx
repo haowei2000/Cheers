@@ -1,4 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tip } from "@/components/ui/tip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ConnectionState,
@@ -24,7 +26,6 @@ import {
   joinVoiceChannel,
   setVoiceTranscription,
 } from "@/api/channels";
-import { Button } from "@/components/ui/button";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import type { VoiceInterimSegment, VoiceTranscriptSegment } from "@/types";
 
@@ -354,7 +355,7 @@ export function VoiceRoomPanel({
   const captionText = latestInterim?.text || latestTranscript?.text || null;
 
   return (
-    <section className="mx-4 mb-2 flex-shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
+    <section className="mx-4 mb-2 flex-shrink-0 overflow-hidden rounded-concentric bg-zinc-900/50 ring-1 ring-white/5">
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
       <div className="flex min-h-[64px] items-center gap-3 px-3 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -407,30 +408,34 @@ export function VoiceRoomPanel({
         </div>
 
         {!connected ? (
-          <Button action="join" disabled={joining} onClick={() => void join()} controlSize="comfortable" className="shrink-0">
+          <UiButton
+            action="join"
+            content="iconText"
+            variant="emphasis"
+            disabled={joining}
+            onClick={() => void join()}
+            controlSize="comfortable"
+            className="shrink-0"
+          >
             {joining ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Mic className="h-4 w-4" />
             )}
-            Join voice
-          </Button>
+          </UiButton>
         ) : (
           <div className="flex shrink-0 items-center gap-2">
-            <UiButton action={micEnabled ? "mute" : "unmute"} content="iconText" variant="plain"
-              type="button"
+            <Tip content={
+              canPublish
+                ? micEnabled ? "Mute microphone" : "Unmute microphone"
+                : "Listen-only member"
+            }>
+            <IconButton
+              label={micEnabled ? "Mute microphone" : "Unmute microphone"}
               onClick={() => void toggleMic()}
               disabled={!canPublish}
-              title={
-                canPublish
-                  ? micEnabled
-                    ? "Mute microphone"
-                    : "Unmute microphone"
-                  : "Listen-only member"
-              }
-              aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
               aria-pressed={micEnabled}
-              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm  font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 ${
+              controlSize="comfortable" className={`${
  micEnabled
  ? "bg-zinc-800 text-content-primary hover:bg-zinc-700": "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25"
  }`}
@@ -440,17 +445,18 @@ export function VoiceRoomPanel({
               ) : (
                 <MicOff className="h-3.5 w-3.5" />
               )}
-            </UiButton>
-            <UiButton action="disconnect" variant="plain"
-              type="button"
+            </IconButton>
+            </Tip>
+            <Tip content="Leave voice">
+            <IconButton
+              label="Leave voice meeting"
+              tone="danger"
               onClick={() => void disconnect()}
-              title="Leave voice"
-              aria-label="Leave voice meeting"
               controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40  font-medium text-removed-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Leave</span>
-            </UiButton>
+            </IconButton>
+            </Tip>
           </div>
         )}
       </div>
@@ -483,21 +489,24 @@ export function VoiceRoomPanel({
           )}
         </div>
         {serverCanManage && (
-          <UiButton action={transcriptionStatus === "active" ? "disable" : "enable"} variant="plain"
-            type="button"
+          <Tip content={
+            !connected ? "Join the room first" : transcriptionStatus === "active" ? "Stop live captions" : "Start live captions"
+          }>
+          <IconButton
+            label={transcriptionStatus === "active" ? "Stop live captions" : "Start live captions"}
+            selected={transcriptionStatus === "active"}
             disabled={!connected || changingTranscription}
             onClick={() => void toggleTranscription()}
-            title={!connected ? "Join the room first" : undefined}
             aria-pressed={transcriptionStatus === "active"}
-            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+            controlSize="regular" className="shrink-0"
           >
             {changingTranscription ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Captions className="h-3.5 w-3.5" />
             )}
-            {transcriptionStatus === "active" ? "Stop captions" : "Start captions"}
-          </UiButton>
+          </IconButton>
+          </Tip>
         )}
       </div>
 

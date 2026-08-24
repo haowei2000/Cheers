@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { FloatingPanel } from "./floating-panel";
+import { FloatingPanel, isFloatingPanelControlVisible } from "./floating-panel";
 
 // FloatingPanel became the host for the Workbench and ViewBoard drawers, which used to
 // hand-roll their own shells. Those two need three things the other callers never did,
@@ -197,6 +197,7 @@ describe("FloatingPanel window chrome", () => {
     expect(markup).toContain('data-floating-panel-content=""');
     expect(markup).toContain("md:absolute");
     expect(markup).toContain("md:inset-0");
+    expect(markup).toContain("md:scroll-pt-[var(--floating-panel-safe-top)]");
     expect(markup).toContain("full-size-content");
   });
 
@@ -264,5 +265,44 @@ describe("FloatingPanel window chrome", () => {
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
     expect(markup).toContain("workspace-content");
+  });
+});
+
+describe("FloatingPanel control triggers", () => {
+  const base = {
+    hovered: true,
+    focused: false,
+    elapsedMs: 0,
+    mobile: false,
+    defaultDelayMs: 1000,
+  };
+
+  it("keeps persistent controls visible without a hover delay", () => {
+    expect(isFloatingPanelControlVisible({ visibility: "persistent" }, base)).toBe(true);
+  });
+
+  it("waits for the default and per-control hover delays", () => {
+    expect(isFloatingPanelControlVisible({ visibility: "panelHover" }, base)).toBe(false);
+    expect(isFloatingPanelControlVisible({ visibility: "panelHover" }, { ...base, elapsedMs: 1000 })).toBe(true);
+    expect(isFloatingPanelControlVisible(
+      { visibility: "panelHover", revealAfterMs: 250 },
+      { ...base, elapsedMs: 249 },
+    )).toBe(false);
+    expect(isFloatingPanelControlVisible(
+      { visibility: "panelHover", revealAfterMs: 250 },
+      { ...base, elapsedMs: 250 },
+    )).toBe(true);
+  });
+
+  it("reveals hover controls immediately for keyboard focus and mobile", () => {
+    expect(isFloatingPanelControlVisible({ visibility: "panelHover" }, { ...base, focused: true })).toBe(true);
+    expect(isFloatingPanelControlVisible({ visibility: "panelHover" }, { ...base, mobile: true })).toBe(true);
+  });
+
+  it("hides panel-hover controls as soon as the pointer leaves", () => {
+    expect(isFloatingPanelControlVisible(
+      { visibility: "panelHover", revealAfterMs: 0 },
+      { ...base, hovered: false, elapsedMs: 5000 },
+    )).toBe(false);
   });
 });

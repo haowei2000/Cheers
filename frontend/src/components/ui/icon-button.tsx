@@ -9,6 +9,8 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   label: string;
   tone?: IconButtonTone;
   controlSize?: ControlSize;
+  /** Selected state for compact toggles and selectors. */
+  selected?: boolean;
 }
 
 const toneClasses: Record<IconButtonTone, string> = {
@@ -24,6 +26,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       label,
       tone = "neutral",
       controlSize,
+      selected = false,
       className,
       children,
       type = "button",
@@ -39,6 +42,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={label}
         content="icon"
         controlSize={controlSize}
+        selected={selected}
         variant="plain"
         className={cn(
           "flex-shrink-0",

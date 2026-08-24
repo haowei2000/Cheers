@@ -21,6 +21,7 @@ import {
   Check,
   ChevronDown,
   Filter,
+  MessageSquarePlus,
   Paperclip,
   Pencil,
   ShieldCheck,
@@ -34,6 +35,9 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
+import { useContextSurface } from "@/components/ui/context-actions";
+import { useContextPickStore } from "@/features/chat/context/contextPick";
+import { FloatingPanelLocalControl, FloatingPanelLocalControls } from "@/components/ui/floating-panel";
 import { agentIconFor } from "@/components/ui/agentIcons";
 import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
 import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
@@ -344,15 +348,52 @@ function FlowEpisode({
   expanded,
   onToggle,
   onJump,
+  channelId,
 }: {
   ep: Episode;
   memberOf: MemberLookup;
   expanded: boolean;
   onToggle?: () => void;
   onJump?: (msgId: string) => void;
+  channelId: string;
 }) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const addContext = useContextPickStore((state) => state.add);
+  const activityAdded = useContextPickStore((state) =>
+    (state.byChannel[channelId] ?? []).some((item) => item.id === "activity"),
+  );
+  const contextSurface = useContextSurface({
+    surfaceRef,
+    actions: () => [{
+      id: "add-activity-context",
+      label: activityAdded ? "Activity already added" : "Add channel activity to context",
+      icon: <MessageSquarePlus className="h-4 w-4" />,
+      disabled: activityAdded,
+      run: () => addContext(channelId, {
+        id: "activity",
+        verb: "channel.activity.read",
+        params: {},
+        label: "Recent activity",
+        kind: "activity",
+      }),
+    }],
+  });
+
   return (
-    <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
+    <div
+      ref={surfaceRef}
+      className={cn(expanded && "bg-indigo-600/[0.08]")}
+      tabIndex={-1}
+      onContextMenu={contextSurface.onContextMenu}
+      onMouseUp={contextSurface.onMouseUp}
+      onKeyDown={contextSurface.onKeyDown}
+      onPointerDown={contextSurface.onPointerDown}
+      onPointerMove={contextSurface.onPointerMove}
+      onPointerUp={contextSurface.onPointerUp}
+      onPointerCancel={contextSurface.onPointerCancel}
+      onPointerLeave={contextSurface.onPointerLeave}
+      onClickCapture={contextSurface.onClickCapture}
+    >
       <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded}
         type="button"
         onClick={onToggle}
@@ -547,7 +588,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
       onRefresh={load}
       active={ctx.visible !== false}
     >
-      <div className="relative flex h-full min-h-0 flex-col">
+      <FloatingPanelLocalControls className="relative flex h-full min-h-0 flex-col">
         {participantIds.length > 1 && (
           <ParticipantStrip
             ids={participantIds}
@@ -586,13 +627,14 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 expanded={lens === "all" || effectiveExpanded === ep.id}
                 onToggle={lens === "all" ? undefined : () => toggleEpisode(ep.id)}
                 onJump={ctx.onJumpToMessage}
+                channelId={ctx.channelId}
               />
             ))}
           </div>
         )}
 
         {/* Content-local controls float over the Board; list padding keeps the final row reachable. */}
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
+        <FloatingPanelLocalControl className="absolute inset-x-2 bottom-2 z-10 flex items-center gap-2">
           <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
@@ -620,8 +662,8 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
               />
             </div>
           )}
-        </div>
-      </div>
+        </FloatingPanelLocalControl>
+      </FloatingPanelLocalControls>
     </PanelShell>
   );
 }

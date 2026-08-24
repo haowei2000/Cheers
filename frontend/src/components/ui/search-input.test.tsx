@@ -5,7 +5,7 @@ import { InputWithLeadingIcon } from "./input-with-leading-icon";
 import { SearchInput } from "./search-input";
 
 describe("leading-icon inputs", () => {
-  it("keeps the icon inside the shared Input boundary", () => {
+  it("keeps the icon inside the shared borderless Input surface", () => {
     const markup = renderToStaticMarkup(
       <InputWithLeadingIcon
         leading={<Hash />}
@@ -17,7 +17,7 @@ describe("leading-icon inputs", () => {
     expect(markup).toContain('data-input-composite="leading-icon"');
     expect(markup).toContain('data-input-slot="leading"');
     expect(markup).toContain("pl-9");
-    expect(markup).toContain("ring-inset");
+    expect(markup).not.toContain("ring-inset");
     expect(markup.match(/focus:ring-2/g)).toHaveLength(1);
     expect(markup).not.toContain("focus-within:ring-2");
   });

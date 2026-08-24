@@ -737,7 +737,7 @@ function TraceItem({
             anchorPlacement="left"
             bodyClassName="!p-0"
           >
-            <div className="p-3 md:pt-[var(--floating-panel-safe-top)]">
+            <div className="p-3">
               {pendingApproval ? (
                 <PermissionCard
                   message={pendingApproval}

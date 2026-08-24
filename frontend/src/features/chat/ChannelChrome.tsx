@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, Hash, MessageSquare } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
+import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { WindowChromeActions } from "@/features/desktop/WindowChromeActions";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { ChannelHeaderSlot } from "./extensions/ChannelHeaderSlot";
@@ -44,11 +45,11 @@ export function ChannelChrome({
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </UiButton>
       )}
-      {isDm ? (
-        <MessageSquare className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
-      ) : (
-        <Hash className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
-      )}
+      <EditorialIcon
+        name={isDm ? "correspondence" : "section"}
+        contentSize="regular"
+        className="flex-shrink-0 text-content-muted max-md:hidden"
+      />
       <span className="min-w-0 truncate text-regular font-semibold text-content-primary max-md:pl-1">
         {title}
       </span>

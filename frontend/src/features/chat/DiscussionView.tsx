@@ -190,6 +190,8 @@ export function DiscussionView({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [highlightedRootId, setHighlightedRootId] = useState<string | null>(null);
+  const rootHighlightTimerRef = useRef<number | null>(null);
   const storageKey = `cheers:last-discussion:${channelId}`;
   const onComposerContextChangeRef = useRef(onComposerContextChange);
 
@@ -316,6 +318,20 @@ export function DiscussionView({
       ?.querySelector(`[data-msg-id="${CSS.escape(replyToId)}"]`)
       ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [replyToId]);
+
+  useEffect(() => () => {
+    if (rootHighlightTimerRef.current !== null) window.clearTimeout(rootHighlightTimerRef.current);
+  }, []);
+
+  const highlightReplySource = useCallback((sourceMessageId: string) => {
+    if (sourceMessageId !== detail?.root.msg_id) return;
+    setHighlightedRootId(sourceMessageId);
+    if (rootHighlightTimerRef.current !== null) window.clearTimeout(rootHighlightTimerRef.current);
+    rootHighlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedRootId(null);
+      rootHighlightTimerRef.current = null;
+    }, 1800);
+  }, [detail?.root.msg_id]);
 
   const startDiscussion = () => {
     setCreating(true);
@@ -452,7 +468,10 @@ export function DiscussionView({
         <ErrorState className="flex-1" title="Couldn't open discussion" description={detailError} action={{ label: "Retry", onClick: () => void refreshDetail() }} />
       ) : detail ? (
         <>
-          <header className="z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur">
+          <header className={cn(
+            "z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur transition-colors duration-700",
+            highlightedRootId === detail.root.msg_id && "bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40",
+          )}>
             <div className="mx-auto max-w-[52rem]">
               <div className="flex items-start gap-3">
                 <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />
@@ -484,6 +503,7 @@ export function DiscussionView({
                 replyToId={replyToId}
                 conversationMode="discuss"
                 threadRootId={detail.root.msg_id}
+                onReplyPairHighlight={highlightReplySource}
               />
             )}
           </div>

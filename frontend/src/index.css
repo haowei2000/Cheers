@@ -13,6 +13,21 @@
       inset 0 -1px 0 rgb(0 0 0 / 0.08);
   }
 
+  /* A floating window has a larger visual footprint than a control island.
+     Keep its body translucent too, so Channel files and the other lane panels
+     read as windows over the canvas rather than opaque white cards in light mode. */
+  .floating-panel-surface {
+    background-color: rgb(var(--surface-glass) / 0.78);
+  }
+
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .floating-panel-surface {
+      background-color: rgb(var(--surface-glass) / 0.36);
+      -webkit-backdrop-filter: blur(32px) saturate(1.5) brightness(1.04);
+      backdrop-filter: blur(32px) saturate(1.5) brightness(1.04);
+    }
+  }
+
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .floating-control-surface {
       background-color: rgb(var(--surface-glass) / 0.3);
@@ -28,6 +43,12 @@
   @media (prefers-reduced-transparency: reduce) {
     .floating-control-surface {
       background-color: rgb(var(--surface-panel) / 0.92);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    .floating-panel-surface {
+      background-color: rgb(var(--surface-panel) / 0.96);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }

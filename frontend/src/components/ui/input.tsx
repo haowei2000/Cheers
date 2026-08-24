@@ -14,10 +14,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     <input
       ref={ref}
       className={cn(
-        // Filled field with an inset neutral boundary (DESIGN.md §2.3).
-        // Focus and error replace the neutral ring with semantic state colors.
+        // Filled field with no resting border. Focus and error supply the
+        // semantic boundary so controls stay quiet until they need attention.
         // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-        "w-full rounded-sm px-3 bg-zinc-800 text-content-primary placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
+        "w-full rounded-sm px-3 bg-zinc-800 text-content-primary placeholder-zinc-400 transition-shadow",
         controlHeightClasses[size],
         "text-comfortable md:text-regular",
         "focus:outline-none focus:ring-2 focus:ring-indigo-500",

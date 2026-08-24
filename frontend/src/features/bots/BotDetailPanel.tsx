@@ -1,18 +1,18 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import {
   CircleDot,
   Ban,
-  Power,
   ShieldCheck,
   Activity,
   Copy,
   Check,
   Info,
-  Trash2,
   Pencil,
   Laptop,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import {
   disableBot,
@@ -34,18 +34,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, SectionHead, MetaRow } from "@/components/ui/field";
+import { Field, SectionHead } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
-import { CheckboxField } from "@/components/ui/checkbox-field";
 import { IconButton } from "@/components/ui/icon-button";
-import { ItemGroup, ItemList, OperationsItem } from "@/components/ui/item";
+import { ItemGroup, ItemSection, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
 import { messageOf } from "@/lib/notify";
 import {
   HostActions,
   hostStatusLabel,
   mcpStateLabel,
-  mcpStateTone,
 } from "./hostLifecycle";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
@@ -178,7 +176,7 @@ export function BotDetailPanel({
             contentSize="large"
             className={cn(
               "absolute bottom-0 right-0 ring-zinc-900",
-              bot.is_online ? "bg-emerald-500" : "bg-zinc-600"
+              bot.is_online ? "bg-emerald-500" : "bg-red-500"
             )}
             aria-hidden
           />
@@ -192,6 +190,11 @@ export function BotDetailPanel({
             @{bot.username}
             {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-caption text-content-muted">
+            <span className="shrink-0">Bot ID</span>
+            <code className="min-w-0 truncate rounded-sm bg-zinc-800 px-2 py-1" title={bot.bot_id}>{bot.bot_id}</code>
+            <CopyButton value={bot.bot_id} label="" />
+          </div>
         </div>
         <div className="ml-auto flex flex-shrink-0 items-center gap-3">
           {bot.is_disabled && (
@@ -203,7 +206,7 @@ export function BotDetailPanel({
           <span
             className={cn(
               "inline-flex items-center gap-1 text-compact",
-              bot.is_online ? "text-success-400" : "text-content-muted"
+              bot.is_online ? "text-success-400" : "text-danger-400"
             )}
             title={bot.is_online ? "A host is online" : "No host is online"}
           >
@@ -297,15 +300,9 @@ function BotHostsSection({
   }, [botId]);
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <SectionHead>Hosts</SectionHead>
-          <p className="mt-1 max-w-2xl text-compact text-content-muted">
-            A host is this bot running on a specific device. Each one has its own
-            credential, agent, workspace, and connection state. One host is active at a time.
-          </p>
-        </div>
+    <ItemSection
+      label="Hosts"
+      action={(
         <ActionButton
           action="add"
           context="toolbar"
@@ -313,44 +310,55 @@ function BotHostsSection({
           controlSize="compact"
           onClick={onAddHost}
         />
-      </div>
-      {items.length === 0 && (
-        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted">
-          This bot has no hosts yet. Add one to choose where the bot runs.
-        </p>
       )}
-      <ItemList presentationLevel="medium" controlSize="regular">
-        {items.map((item) => (
+      presentationLevel="medium"
+      controlSize="regular"
+    >
+      {items.length === 0 ? (
+        <OperationsItem
+          containerRole="presentation"
+          title="No hosts yet"
+          subtitle="Add a host"
+          leading={<Laptop className="h-4 w-4 text-content-muted" />}
+          actions={<ActionButton action="add" context="toolbar" accessibleLabel="Add host" controlSize="compact" onClick={onAddHost} />}
+        />
+      ) : items.map((item) => (
           <ItemGroup key={item.host_id}>
             <OperationsItem
               containerRole="presentation"
               title={item.device_name}
               leading={<Laptop className="h-4 w-4 text-content-muted" />}
-              subtitle={`${item.agent_type} · Agent sign-in: ${mcpStateLabel(item.mcp_connection_state)}`}
               status={(
                 <span className={cn(
                   "text-compact",
                   item.online ? "text-success-400" :
-                    mcpStateTone(item.mcp_connection_state) === "warning" ? "text-warning-400" : "text-content-muted"
+                    item.revoked_at || item.status === "active" ? "text-danger-400" :
+                      item.status === "pending" ? "text-warning-400" : "text-content-muted"
                 )}>
                   {hostStatusLabel({ ...item, bot_id: botId })}
                 </span>
               )}
               actions={(
                 <>
+                  <Tip content={`${item.agent_type} · Agent sign-in: ${mcpStateLabel(item.mcp_connection_state)}`}>
+                    <IconButton label={`Host connection details for ${item.device_name}`} controlSize="compact">
+                      <Info className="h-3.5 w-3.5" />
+                    </IconButton>
+                  </Tip>
                   <HostActions
                     item={{ ...item, bot_id: botId }}
-                    presentation="primary"
+                    presentation="compact"
                     onChanged={load}
                   />
-                  <ActionButton
-                    action={expandedHostId === item.host_id ? "collapse" : "expand"}
-                    context="disclosure"
-                    accessibleLabel={`${expandedHostId === item.host_id ? "Hide" : "Show"} details for ${item.device_name}`}
+                  <IconButton
+                    label={`${expandedHostId === item.host_id ? "Hide" : "Show"} details for ${item.device_name}`}
                     controlSize="compact"
                     aria-expanded={expandedHostId === item.host_id}
+                    selected={expandedHostId === item.host_id}
                     onClick={() => setExpandedHostId((id) => id === item.host_id ? null : item.host_id)}
-                  />
+                  >
+                    {expandedHostId === item.host_id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </IconButton>
                 </>
               )}
             />
@@ -368,8 +376,7 @@ function BotHostsSection({
             )}
           </ItemGroup>
         ))}
-      </ItemList>
-    </section>
+    </ItemSection>
   );
 }
 
@@ -431,73 +438,15 @@ function BotOverview({
           onError={onError}
           onChanged={onChanged}
           lifecycleActiveRef={lifecycleActiveRef}
-        />
-      )}
-
-      {bot.can_manage && <div className="border-t border-zinc-800" />}
-
-      {/* Details — stable identity. Membership is managed from the relevant
-          channel or space, alongside the other members. */}
-      <section className="space-y-3">
-        <SectionHead>Details</SectionHead>
-        <MetaRow label="Bot ID">
-          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-content-muted">
-            {bot.bot_id}
-          </code>
-          <CopyButton value={bot.bot_id} label="" />
-        </MetaRow>
-      </section>
-
-      {/* Danger zone (§2.15). Consequences are stated here rather than in hover
-          help — §2.14 forbids hiding anything the reader needs in order to act
-          correctly, and both of these are hard to walk back. */}
-      {bot.can_manage && (
-        <>
+        >
           <div className="border-t border-zinc-800" />
-          <section className="space-y-3">
-            <SectionHead className="mb-0">Danger zone</SectionHead>
-
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-regular font-medium text-content-secondary">
-                  {bot.is_disabled ? "Enable bot" : "Disable bot"}
-                </p>
-                <p className="mt-1 text-compact text-content-muted">
-                  {bot.is_disabled
-                    ? "Lets its active host connect again. Channel membership never changed."
-                    : "Disconnects the active host and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
-                </p>
-              </div>
-              <UiButton action="disable" variant={bot.is_disabled ? "secondary" : "danger"}
-                type="button"
-                onClick={() => (bot.is_disabled ? void setDisabled(false) : setPendingDanger("disable"))}
-                disabled={toggling}
-                controlSize="regular"
-              >
-                {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
-                {bot.is_disabled ? "Enable bot" : "Disable bot"}
-              </UiButton>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-regular font-medium text-content-secondary">Delete bot</p>
-                <p className="mt-1 text-compact text-content-muted">
-                  Removes @{bot.username} from every channel and drops its hosts. The name
-                  becomes available again. This can't be undone.
-                </p>
-              </div>
-              <UiButton action="delete" content="iconText" variant="danger"
-                type="button"
-                onClick={() => setPendingDanger("delete")}
-                disabled={toggling}
-                controlSize="regular"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </UiButton>
-            </div>
-          </section>
-        </>
+          <DangerZone
+            bot={bot}
+            toggling={toggling}
+            onDisable={() => (bot.is_disabled ? void setDisabled(false) : setPendingDanger("disable"))}
+            onDelete={() => setPendingDanger("delete")}
+          />
+        </BotStatusEditor>
       )}
 
       {pendingDanger === "disable" && (
@@ -542,6 +491,58 @@ function BotOverview({
   );
 }
 
+function DangerZone({
+  bot,
+  toggling,
+  onDisable,
+  onDelete,
+}: {
+  bot: BotItem;
+  toggling: boolean;
+  onDisable: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <SectionHead className="mb-0">Danger zone</SectionHead>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-regular font-medium text-content-secondary">
+            {bot.is_disabled ? "Enable bot" : "Disable bot"}
+          </p>
+          <p className="mt-1 text-compact text-content-muted">
+            {bot.is_disabled
+              ? "Lets its active host connect again. Channel membership never changed."
+              : "Disconnects the active host and keeps it offline. Nothing is deleted — channels keep the bot as a member."}
+          </p>
+        </div>
+        <ActionButton
+          action={bot.is_disabled ? "enable" : "disable"}
+          context="security"
+          accessibleLabel={bot.is_disabled ? "Enable bot" : "Disable bot"}
+          disabled={toggling}
+          controlSize="regular"
+          onClick={onDisable}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-regular font-medium text-content-secondary">Delete bot</p>
+          <p className="mt-1 text-compact text-content-muted">Removes @{bot.username} from every channel and drops its hosts. This can't be undone.</p>
+        </div>
+        <ActionButton
+          action="delete"
+          context="confirmation"
+          accessibleLabel={`Delete ${bot.display_name || bot.username}`}
+          disabled={toggling}
+          controlSize="regular"
+          onClick={onDelete}
+        />
+      </div>
+    </section>
+  );
+}
+
 /**
  * Manager editor for a bot's status line, "information" (description), and the
  * scheduled self-update. Three ways the status gets set — manual (this form), the
@@ -554,11 +555,13 @@ function BotStatusEditor({
   onError,
   onChanged,
   lifecycleActiveRef,
+  children,
 }: {
   bot: BotItem;
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
+  children?: ReactNode;
 }) {
   const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
   const [statusText, setStatusText] = useState(bot.status_text ?? "");
@@ -743,17 +746,42 @@ function BotStatusEditor({
         </Field>
       </div>
 
-      <div className="rounded-sm bg-zinc-900 p-3">
-        <CheckboxField
-          label="Sends channel data to an external AI provider"
-          checked={externalProcessor}
-          onChange={(e) => {
-            setExternalProcessor(e.target.checked);
-            if (e.target.checked) setExternalDetailsOpen(true);
-          }}
-          className="text-content-secondary"
-        />
-        {externalProcessor && (
+      <div className="flex flex-wrap items-center gap-2">
+        <Tip content={externalProcessor
+          ? "External AI processing is enabled. Click to turn it off."
+          : "Enable external AI processing. Members must see the disclosure before their first AI-directed message."}>
+          <IconButton
+            label={externalProcessor ? "Disable external AI processing" : "Enable external AI processing"}
+            controlSize="compact"
+            selected={externalProcessor}
+            aria-pressed={externalProcessor}
+            onClick={() => {
+              setExternalProcessor((enabled) => {
+                if (!enabled) setExternalDetailsOpen(true);
+                return !enabled;
+              });
+            }}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+          </IconButton>
+        </Tip>
+        <Tip content={auto
+          ? "Automatic status updates are enabled. Click to turn them off."
+          : "Enable automatic status updates. The bot must be online."}>
+          <IconButton
+            label={auto ? "Disable automatic status updates" : "Enable automatic status updates"}
+            controlSize="compact"
+            selected={auto}
+            aria-pressed={auto}
+            onClick={() => setAuto((enabled) => !enabled)}
+          >
+            <Activity className="h-3.5 w-3.5" />
+          </IconButton>
+        </Tip>
+      </div>
+
+      {externalProcessor && (
+        <div className="border-t border-zinc-800 pt-3">
           <details open={externalDetailsOpen} onToggle={(event) => setExternalDetailsOpen(event.currentTarget.open)} className="mt-3">
             <summary className="cursor-pointer text-compact text-content-secondary">Configure provider disclosure</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -764,20 +792,11 @@ function BotStatusEditor({
             </div>
             <p className="mt-3 text-compact text-content-muted">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
           </details>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
-      <div className="rounded-sm bg-zinc-900 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-        <CheckboxField
-          label="Auto-refresh status"
-          checked={auto}
-          onChange={(e) => setAuto(e.target.checked)}
-        />
-        <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
-        {auto && (
-          <div className="ml-auto flex items-center gap-2">
+      {auto && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
             <span className="text-compact text-content-muted">Every</span>
             <Input
               type="number"
@@ -805,15 +824,15 @@ function BotStatusEditor({
               </IconButton>
             </Tip>
           </div>
-        )}
-        </div>
+      )}
 
-        {promptError && <p className="mt-2 text-compact text-danger-400">{promptError}</p>}
-      </div>
+      {promptError && <p className="text-compact text-danger-400">{promptError}</p>}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-4">
+      {children}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-4">
         <ActionButton action="save" context="form" accessibleLabel="Save bot profile" controlSize="regular" onClick={() => void save()} disabled={busy} />
-        <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
+        <Tip content="Ask the bot to run its saved status prompt once now. This does not save the profile fields above.">
           <Button action="update"
             controlSize="regular"
             variant="secondary"
@@ -824,7 +843,7 @@ function BotStatusEditor({
               ? "Waiting for the agent…"
               : refreshPhase === "done"
                 ? "✓ status updated"
-                : "Update status now"}
+                : undefined}
           </Button>
         </Tip>
       </div>

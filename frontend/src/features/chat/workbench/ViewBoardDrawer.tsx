@@ -1,12 +1,16 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Select as UiSelect } from "@/components/ui/select";
+import { IconButton } from "@/components/ui/icon-button";
+import { MenuOption } from "@/components/ui/menu-option";
+import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
+import { Tip } from "@/components/ui/tip";
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
 // SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
 // floating window inside the channel's work lane; dragging snaps it to the lane's
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
-import { LayoutDashboard, Layers, Plus } from "lucide-react";
+import { Check, LayoutDashboard, Layers, Plus } from "lucide-react";
+import { EditorialIcon } from "@/components/ui/editorial-icons";
 import {
   useContextPickStore,
   type ContextItem,
@@ -68,6 +72,91 @@ interface SessionOpt {
   is_primary: boolean;
   cwd?: string | null;
   created_at?: string | null;
+}
+
+/** A dedicated selector island for session-scoped boards. The visible control
+ * stays icon-only; the menu distinguishes broad scope from a specific session. */
+function ViewBoardScopeBar({
+  scope,
+  sessions,
+  onScopeChange,
+}: {
+  scope: string;
+  sessions: SessionOpt[];
+  onScopeChange: (sessionId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(open, () => setOpen(false), rootRef);
+  const selected = sessions.find((session) => session.session_id === scope);
+  const selectedLabel = selected
+    ? `${selected.bot_name || selected.bot_id.slice(0, 8)} · ${sessionTag({
+        is_primary: selected.is_primary,
+        session_id: selected.session_id,
+        cwd: selected.cwd,
+        when: selected.created_at,
+      })}`
+    : "All sessions";
+  const choose = (sessionId: string) => {
+    onScopeChange(sessionId);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative inline-flex">
+      <Tip content={`Scope: ${selectedLabel}`} align="end">
+        <IconButton
+          label="Select session scope"
+          controlSize="compact"
+          selected={open || Boolean(scope)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          onClick={() => setOpen((current) => !current)}
+        >
+          <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+        </IconButton>
+      </Tip>
+      {open && (
+        <PopoverPanel placement="down" align="end" className="w-60 max-w-[calc(100vw-2rem)] p-1">
+          <div role="menu" aria-label="ViewBoard scope" className="max-h-72 overflow-y-auto">
+            <div className="px-2 py-1 text-minimal uppercase tracking-label text-content-muted">Scope</div>
+            <MenuOption
+              label="All sessions"
+              leading={<Layers className="h-3.5 w-3.5" />}
+              trailing={!scope ? <Check className="h-3.5 w-3.5" /> : undefined}
+              selected={!scope}
+              onClick={() => choose("")}
+            />
+            {sessions.length > 0 && (
+              <>
+                <div className="mt-1 px-2 py-1 text-minimal uppercase tracking-label text-content-muted">Session</div>
+                {sessions.map((session) => {
+                  const label = `${session.bot_name || session.bot_id.slice(0, 8)} · ${sessionTag({
+                    is_primary: session.is_primary,
+                    session_id: session.session_id,
+                    cwd: session.cwd,
+                    when: session.created_at,
+                  })}`;
+                  const isSelected = scope === session.session_id;
+                  return (
+                    <MenuOption
+                      key={session.session_id}
+                      label={label}
+                      title={`bot ${session.bot_id} · session ${session.session_id}`}
+                      leading={<EditorialIcon name="session" contentSize="small" />}
+                      trailing={isSelected ? <Check className="h-3.5 w-3.5" /> : undefined}
+                      selected={isSelected}
+                      onClick={() => choose(session.session_id)}
+                    />
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </PopoverPanel>
+      )}
+    </div>
+  );
 }
 
 function ViewBoardDrawerImpl({
@@ -215,9 +304,14 @@ function ViewBoardDrawerImpl({
       spawnKind="viewboard"
       className="w-[420px] h-[70%]"
       defaultPosClassName="top-2 left-2"
-      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+      bodyClassName="flex flex-col overflow-hidden p-0 space-y-0 md:pr-24"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
+        // Board sections are a visual mode switcher. Keep the icon tab strip
+        // stable after selection; narrow windows scroll the strip instead of
+        // changing the control into a text dropdown.
+        presentationOrder: ["icon"],
+        scrollable: true,
         items: boards.map((board) => ({
           id: board.id,
           label: board.title,
@@ -226,34 +320,8 @@ function ViewBoardDrawerImpl({
           onSelect: () => setActive(board.id),
         })),
       }}
-      panelContext={activeBoard?.scope === "session" ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" />
-          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
-          <UiSelect
-            value={scope}
-            onChange={(event) => setScope(event.target.value)}
-            controlSize="regular"
-            className="min-w-0 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All sessions</option>
-            {sessions.map((session) => (
-              <option
-                key={session.session_id}
-                value={session.session_id}
-                title={`bot ${session.bot_id} · session ${session.session_id}`}
-              >
-                {session.bot_name || session.bot_id.slice(0, 8)} ·{" "}
-                {sessionTag({
-                  is_primary: session.is_primary,
-                  session_id: session.session_id,
-                  cwd: session.cwd,
-                  when: session.created_at,
-                })}
-              </option>
-            ))}
-          </UiSelect>
-        </div>
+      sideControls={activeBoard?.scope === "session" ? (
+        <ViewBoardScopeBar scope={scope} sessions={sessions} onScopeChange={setScope} />
       ) : undefined}
       panelActions={activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? [{
         id: "add-context",

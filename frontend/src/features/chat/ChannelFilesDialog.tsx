@@ -78,7 +78,7 @@ export function ChannelFilesDialog({
           files={files}
           focusFileId={focusFileId}
           channelId={channelId}
-          className="h-full overflow-y-auto px-4 pb-4 pt-[var(--floating-panel-safe-top)]"
+          className="h-full overflow-y-auto px-4 pb-4"
         />
       )}
     </FloatingPanel>

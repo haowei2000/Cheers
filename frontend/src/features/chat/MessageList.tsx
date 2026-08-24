@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import toast from "react-hot-toast";
 import { MessageItem, type MessageActionHandlers } from "./MessageItem";
@@ -49,6 +49,8 @@ interface Props {
   conversationMode?: ConversationMode;
   /** Render only descendants of this message (the topic root stays in the header). */
   threadRootId?: string | null;
+  /** Discussion-only: lets the header flash when a reply points back to the topic root. */
+  onReplyPairHighlight?: (sourceMessageId: string) => void;
 }
 
 export function MessageList({
@@ -66,12 +68,17 @@ export function MessageList({
   replyToId,
   conversationMode = "chat",
   threadRootId = null,
+  onReplyPairHighlight,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   // Transient flash for a jumped-to message (cleared after the highlight fades).
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // A double-click on a Discussion reply briefly paints both ends of its reply
+  // relationship. This is deliberately separate from ViewBoard's one-row jump.
+  const [replyPairIds, setReplyPairIds] = useState<ReadonlySet<string>>(() => new Set());
+  const replyPairTimerRef = useRef<number | null>(null);
 
   // Approvals keyed by the bot-turn msg_id they belong to (pending + resolved).
   const approvalsBySource = useMemo(() => {
@@ -184,6 +191,10 @@ export function MessageList({
     bottomRef.current?.scrollIntoView();
   }, []);
 
+  useEffect(() => () => {
+    if (replyPairTimerRef.current !== null) window.clearTimeout(replyPairTimerRef.current);
+  }, []);
+
   // Scroll inline reply into view when reply target changes.
   useEffect(() => {
     if (!replyToId) return;
@@ -224,9 +235,43 @@ export function MessageList({
   }
 
   function rowHighlightClass(msg: Message) {
-    return msg.msg_id === highlightId
-      ? "rounded-sm bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
+    return msg.msg_id === highlightId || replyPairIds.has(msg.msg_id)
+      ? "rounded-sm bg-indigo-500/25 ring-2 ring-inset ring-indigo-400/90 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.12)] transition-colors duration-700"
       : "transition-colors duration-700";
+  }
+
+  function handleReplyDoubleClick(event: MouseEvent<HTMLDivElement>, msg: Message) {
+    if (conversationMode !== "discuss") return;
+    // Do not steal a double-click from a message action, link, or form control.
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select, [role=menuitem]")) return;
+
+    // The gesture works from either end of the relationship. A reply selects its
+    // parent; a source selects every direct reply so an authored branch remains
+    // legible even when it has more than one child.
+    const directReplies = childrenByParent.get(msg.msg_id) ?? [];
+    const relatedIds = msg.reply_to_msg_id
+      ? [msg.msg_id, msg.reply_to_msg_id]
+      : directReplies.length > 0
+        ? [msg.msg_id, ...directReplies.map((reply) => reply.msg_id)]
+        : [];
+    if (relatedIds.length === 0) return;
+
+    // Double-clicking a text node creates a native selection. The message
+    // surface normally turns that selection into an action menu on mouse-up;
+    // clear it here so the relationship cue stays visible instead of being
+    // immediately obscured by a context popover.
+    event.preventDefault();
+    event.stopPropagation();
+    window.getSelection()?.removeAllRanges();
+    setReplyPairIds(new Set(relatedIds));
+    const rootId = threadRootId && relatedIds.includes(threadRootId) ? threadRootId : null;
+    if (rootId) onReplyPairHighlight?.(rootId);
+    if (replyPairTimerRef.current !== null) window.clearTimeout(replyPairTimerRef.current);
+    replyPairTimerRef.current = window.setTimeout(() => {
+      setReplyPairIds(new Set());
+      replyPairTimerRef.current = null;
+    }, 1800);
   }
 
   function renderChatMessage(msg: Message, previous: Message | null) {
@@ -240,6 +285,7 @@ export function MessageList({
           data-msg-id={msg.msg_id}
           style={ROW_CONTENT_VISIBILITY}
           className={rowHighlightClass(msg)}
+          onDoubleClick={(event) => handleReplyDoubleClick(event, msg)}
         >
           <MessageItem
             message={msg}
@@ -282,6 +328,7 @@ export function MessageList({
           data-msg-id={msg.msg_id}
           style={ROW_CONTENT_VISIBILITY}
           className={rowHighlightClass(msg)}
+          onDoubleClick={(event) => handleReplyDoubleClick(event, msg)}
         >
           <MessageItem
             message={msg}
