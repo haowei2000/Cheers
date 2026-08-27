@@ -211,7 +211,7 @@ The 390 px homepage keeps the masthead readable, retains both primary actions, f
 - Spacing and layout rhythm: the implementation uses compact 4/8 item spacing, generous publication-level section rhythm, restrained 4 px radii, and hairline rules only where they establish a register or document section.
 - Colors and visual tokens: both views use zinc-black surfaces and neutral ink hierarchy. Indigo, amber, red, and emerald remain restricted to product interaction or critical state.
 - Image quality and assets: the homepage reuses the supplied product screenshots at their intended aspect ratios with `object-fit: contain`; no placeholder asset is visible in the checked states.
-- Copy and content: website, policy, and product-specific copy remains unchanged apart from visual hierarchy. The footer continues to state the current MIT license.
+- Copy and content: website, policy, and product-specific copy remains unchanged apart from visual hierarchy. The footer states the current AGPL-3.0-or-later license.
 
 ## Interaction and accessibility checks
 

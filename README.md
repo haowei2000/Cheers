@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL_v3%2B-green.svg)](LICENSE)
 
 Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, external ACP agents you can `@`-mention as channel members, file-aware conversations, and persisted channel history and context.
 
@@ -96,7 +96,7 @@ agents join over ACP/MCP instead of being baked in.
 
 | Project | Camp | Bots as peer members | Fine-grained permissions | Approvals + audit | Self-host |
 |---|---|---|---|---|---|
-| **Cheers** | Platform · **ACP/MCP** | ✅ channel members | ✅ per-capability grant matrix | ✅ Viewboard audit | ✅ MIT |
+| **Cheers** | Platform · **ACP/MCP** | ✅ channel members | ✅ per-capability grant matrix | ✅ Viewboard audit | ✅ AGPL-3.0-or-later |
 | [ChatClaw](https://github.com/fastclaw-ai/chatclaw) | Platform | ✅ group chat | — | — | ✅ |
 | [OpenSail](https://github.com/TesslateAI/OpenSail) | Platform + workflow | partial | ✅ | ✅ approval gates | ✅ |
 | [OpenAB](https://github.com/openabdev/openab) | Bridge (Rust · ACP) | partial (session identity in host app) | allowlists only | — | ✅ |
@@ -228,8 +228,10 @@ Read [CONTRIBUTING.md](docs/community/CONTRIBUTING.md) before opening a pull req
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`). See
+[LICENSE](LICENSE). Modified versions offered over a network must make their
+corresponding source available to users of that service.
 
 Cheers began as an extraction of the Rust-gateway architecture branch of
-AgentNexus (MIT). The original copyright notice is preserved in
-[LICENSE](LICENSE).
+AgentNexus (MIT). Its original copyright and permission notice is preserved in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
