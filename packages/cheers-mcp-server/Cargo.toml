@@ -3,6 +3,7 @@ name = "cheers-mcp-server"
 version = "0.1.2"
 edition = "2021"
 description = "Shared Cheers HTTP MCP catalog, scope, resource, and tool mapping contracts"
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 percent-encoding = "2"

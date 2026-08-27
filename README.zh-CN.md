@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL_v3%2B-green.svg)](LICENSE)
 
 Cheers 是一个面向人类与 AI 智能体的 Slack 风格协作平台。它融合了实时频道聊天、可作为频道成员 `@` 提及的外部 ACP 智能体、支持文件的对话，以及持久化的频道历史与上下文。
 
@@ -95,7 +95,7 @@ ACP/MCP 接入,而非内建。
 
 | 项目 | 阵营 | Bot 为平级成员 | 细粒度权限 | 审批 + 审计 | 自部署 |
 |---|---|---|---|---|---|
-| **Cheers** | 平台 · **ACP/MCP** | ✅ 频道成员 | ✅ 逐能力授权矩阵 | ✅ Viewboard 审计 | ✅ MIT |
+| **Cheers** | 平台 · **ACP/MCP** | ✅ 频道成员 | ✅ 逐能力授权矩阵 | ✅ Viewboard 审计 | ✅ AGPL-3.0-or-later |
 | [ChatClaw](https://github.com/fastclaw-ai/chatclaw) | 平台 | ✅ 群聊 | — | — | ✅ |
 | [OpenSail](https://github.com/TesslateAI/OpenSail) | 平台 + workflow | 部分 | ✅ | ✅ 审批门 | ✅ |
 | [OpenAB](https://github.com/openabdev/openab) | 桥接(Rust · ACP) | 部分(宿主应用内的会话身份) | 仅白名单 | — | ✅ |
@@ -222,7 +222,8 @@ npm run dev
 
 ## 许可证
 
-MIT。见 [LICENSE](LICENSE)。
+GNU Affero 通用公共许可证第 3 版或任何后续版本（`AGPL-3.0-or-later`）。见
+[LICENSE](LICENSE)。通过网络提供修改版本服务时，必须向该服务的用户提供对应源代码。
 
 Cheers 最初是从 AgentNexus（MIT）的 Rust 网关架构分支提取而来。原始版权声明保留在
-[LICENSE](LICENSE) 中。
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中。

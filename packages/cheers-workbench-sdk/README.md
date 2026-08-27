@@ -21,3 +21,8 @@ schedule in Cheers. The scene-renderer example includes a daily notes-review tem
 Personal macOS renderers may request `automation.manage`. The SDK then exposes
 `ctx.automation`; the host confirms every create, update, delete, or immediate-run action
 and only returns tasks owned by the calling extension.
+
+## License
+
+GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`). See
+[`LICENSE`](LICENSE).
