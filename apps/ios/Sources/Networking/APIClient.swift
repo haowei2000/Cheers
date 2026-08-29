@@ -1043,16 +1043,12 @@ struct APIClient: Sendable {
                     "/workbench/extensions/\(extensionValue.id)/scenes/\(contribution.id)",
                     as: WorkbenchResolvedScene.self)
                 let runtimeId = "extension:\(extensionValue.id):\(contribution.id)"
+                // The gateway already speaks this vocabulary, so the items pass straight
+                // through; there is no `lens`/`renderer` pair left to translate between.
                 let manifest = WorkbenchTemplateManifest(
                     id: runtimeId,
                     title: scene.title,
-                    views: scene.items.map { item in
-                        let lens = item.renderer.hasPrefix("builtin:")
-                            ? String(item.renderer.dropFirst("builtin:".count)) : "auto"
-                        return WorkbenchTemplateView(
-                            id: item.id, title: item.title, file: item.file,
-                            lens: lens, renderer: item.renderer, config: item.config)
-                    },
+                    items: scene.items,
                     seed: Dictionary(uniqueKeysWithValues: scene.seed.map {
                         ($0.path, JSONValue.string($0.content))
                     }),

@@ -14,7 +14,7 @@ import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
 import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
-import { seedManifest, type TemplateManifest } from "./manifest";
+import { seedManifest, viewOf, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
@@ -285,23 +285,24 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         }
         const nextBindings = { ...(base.bindings ?? {}) };
         const nextConfigs = { ...(base.configs ?? {}) };
-        for (const v of manifest.views) {
-          const renderer = v.renderer ?? `builtin:${v.lens}`;
-          if (renderer.startsWith("personal:")) {
+        for (const item of manifest.items) {
+          const path = item.source.path;
+          const view = viewOf(item);
+          if (view.startsWith("personal:")) {
             setLocalBindings((current) => {
-              if (current[v.file]) return current;
-              const next = { ...current, [v.file]: renderer };
+              if (current[path]) return current;
+              const next = { ...current, [path]: view };
               localStorage.setItem(localBindingKey, JSON.stringify(next));
               return next;
             });
-          } else if (!nextBindings[v.file] && renderer !== "auto") nextBindings[v.file] = renderer;
-          if (v.config !== undefined && nextConfigs[v.file] === undefined) nextConfigs[v.file] = v.config;
+          } else if (!nextBindings[path] && view !== "auto") nextBindings[path] = view;
+          if (item.config !== undefined && nextConfigs[path] === undefined) nextConfigs[path] = item.config;
         }
         const sceneState: WorkbenchSceneState = {
           version: 1,
           order: [...(base.scene_state?.order ?? []).filter((id) => id !== manifest.id), manifest.id],
           titles: { ...(base.scene_state?.titles ?? {}), [manifest.id]: manifest.title },
-          items: { ...(base.scene_state?.items ?? {}), [manifest.id]: manifest.views.map((view) => view.file) },
+          items: { ...(base.scene_state?.items ?? {}), [manifest.id]: manifest.items.map((item) => item.source.path) },
         };
         const next: WbConfig = {
           ...base,
@@ -312,7 +313,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         };
         if (manifest.pin?.length) next.pinned = [...new Set([...(base.pinned ?? []), ...manifest.pin])];
         await writeCfg(next);
-        setFocus(manifest.views[0]?.file ?? null);
+        setFocus(manifest.items[0]?.source.path ?? null);
         return true;
       } catch (e) {
         setNotice(errMsg(e)); // surface mid-seed failures (permission, size limit, dropped WS)

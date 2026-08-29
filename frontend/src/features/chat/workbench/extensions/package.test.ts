@@ -59,7 +59,7 @@ describe("parseExtensionPackage", () => {
     const path = fileURLToPath(new URL("../../../../../../fixtures/workbench/research-planner.cheers-extension", import.meta.url));
     const parsed = await parseExtensionPackage(new Uint8Array(readFileSync(path)), "global");
     expect(parsed.manifest.id).toBe("research-planner");
-    expect(parsed.scenes[0].views).toHaveLength(3);
+    expect(parsed.scenes[0].items).toHaveLength(3);
     expect(parsed.manifest.contributes.automations?.[0].id).toBe("deadline-check");
     expect(parsed.rendererExtension).toBeNull();
   });
@@ -69,7 +69,7 @@ describe("parseExtensionPackage", () => {
       { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
       {
         "scenes/main.json": JSON.stringify({
-          items: [{ id: "notes", title: "Notes", file: "notes.md", renderer: "builtin:markdown" }],
+          items: [{ id: "notes", title: "Notes", source: { kind: "fs", path: "notes.md" }, view: "builtin:markdown" }],
           seed: [{ path: "notes.md", source: "seed/main/notes.md" }], pin: ["notes.md"],
         }),
         "seed/main/notes.md": "# Notes",
@@ -78,7 +78,7 @@ describe("parseExtensionPackage", () => {
     const parsed = await parseExtensionPackage(bytes, "global");
     expect(parsed.scenes[0].id).toBe("extension:example:main");
     expect(parsed.scenes[0].seed?.["notes.md"]).toBe("# Notes");
-    expect(parsed.scenes[0].views[0].renderer).toBe("builtin:markdown");
+    expect(parsed.scenes[0].items[0].view).toBe("builtin:markdown");
   });
 
   it("rejects renderer code in browser/global scope", async () => {

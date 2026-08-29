@@ -1,5 +1,5 @@
 import { apiJson } from "@/api/client";
-import type { TemplateManifest } from "../manifest";
+import type { PanelDef, TemplateManifest } from "../manifest";
 import {
   type AutomationContribution,
   type ExtensionManifest,
@@ -29,7 +29,7 @@ export interface ExtensionSummary {
 interface ResolvedScene {
   id: string;
   title: string;
-  items: Array<{ id: string; title: string; file: string; renderer: string; config?: unknown }>;
+  items: PanelDef[];
   seed: Array<{ path: string; content: string }>;
   pin: string[];
 }
@@ -49,10 +49,7 @@ export async function listOfficialScenes(): Promise<TemplateManifest[]> {
         return {
           id: `extension:${extension.id}:${scene.id}`,
           title: resolved.title,
-          views: resolved.items.map((item) => ({
-            ...item,
-            lens: item.renderer.startsWith("builtin:") ? item.renderer.slice(8) : "markdown",
-          })),
+          items: resolved.items,
           seed: Object.fromEntries(resolved.seed.map((file) => [file.path, file.content])),
           pin: resolved.pin,
         } satisfies TemplateManifest;

@@ -70,17 +70,32 @@ pub struct Contributions {
 /// A declarative board: where its data lives plus which compiled view renders it.
 /// Carries no code — the view resolves to a built-in, or (personal scope only) to a
 /// renderer the same package contributes.
+///
+/// This is also a scene's item type. A scene item and a panel were the same statement
+/// in two vocabularies (`file`/`renderer` against `source`/`view`), which cost a second
+/// struct, a second validator, and a translation at every boundary that carried both.
+/// A scene narrows the source rather than respelling it — see `validate_panel`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PanelContribution {
     pub id: String,
     pub title: String,
     pub source: PanelSource,
+    /// Omitted = `auto`: let the host pick the best view for the file's content. Only
+    /// an `fs` source may leave it out — a resource payload has no content type to
+    /// match against, so `auto` over one names a choice nothing can make.
+    #[serde(default = "auto_view")]
     pub view: String,
-    /// View config (e.g. table columns), handed to the built-in view untouched. Data,
-    /// exactly like a scene item's config — it selects presentation, never behavior.
+    /// View config (e.g. table columns), handed to the built-in view untouched. Data —
+    /// it selects presentation, never behavior.
     #[serde(default)]
     pub config: Option<Value>,
+}
+
+pub const AUTO_VIEW: &str = "auto";
+
+fn auto_view() -> String {
+    AUTO_VIEW.into()
 }
 
 /// Only the kinds in PANEL_SOURCE_KINDS are variants here, so serde rejects a
@@ -171,27 +186,11 @@ pub enum NetworkPermission {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SceneDefinition {
-    pub items: Vec<SceneItem>,
+    pub items: Vec<PanelContribution>,
     #[serde(default)]
     pub seed: Vec<SeedReference>,
     #[serde(default)]
     pub pin: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SceneItem {
-    pub id: String,
-    pub title: String,
-    pub file: String,
-    #[serde(default = "auto_renderer")]
-    pub renderer: String,
-    #[serde(default)]
-    pub config: Option<Value>,
-}
-
-fn auto_renderer() -> String {
-    "auto".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +212,7 @@ pub struct SeedFile {
 pub struct ResolvedScene {
     pub id: String,
     pub title: String,
-    pub items: Vec<SceneItem>,
+    pub items: Vec<PanelContribution>,
     pub seed: Vec<SeedFile>,
     pub pin: Vec<String>,
 }
@@ -428,15 +427,14 @@ pub fn validate_files(
         }
         let mut item_ids = HashSet::new();
         for item in &definition.items {
-            validate_id("scene item", &item.id)?;
-            if !item_ids.insert(item.id.as_str()) {
-                return Err(format!("duplicate scene item id `{}`", item.id));
-            }
-            if item.title.trim().is_empty() {
-                return Err(format!("scene item `{}` title is required", item.id));
-            }
-            validate_workspace_path(&item.file)?;
-            validate_renderer_reference(&item.renderer, allow_code, &manifest)?;
+            validate_panel(
+                "scene item",
+                item,
+                &mut item_ids,
+                true,
+                allow_code,
+                &manifest,
+            )?;
         }
         for path in &definition.pin {
             validate_workspace_path(path)?;
@@ -578,31 +576,7 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
     }
     let mut panel_ids = HashSet::new();
     for panel in &manifest.contributes.panels {
-        validate_id("panel", &panel.id)?;
-        if panel.title.trim().is_empty() {
-            return Err(format!("panel `{}` title is required", panel.id));
-        }
-        if !panel_ids.insert(panel.id.as_str()) {
-            return Err(format!("duplicate panel id `{}`", panel.id));
-        }
-        match &panel.source {
-            // A panel's verb comes from the SAME fixed list as channel.resources.
-            // Declaring a source must never widen what a package can read.
-            // `pick` needs no validation beyond being a string, which serde already
-            // enforced: any key is legal, and one that is absent at read time yields
-            // an empty view rather than an error.
-            PanelSource::Resource { verb, pick: _ } => {
-                if !CHANNEL_RESOURCES.contains(&verb.as_str()) {
-                    return Err(format!(
-                        "panel `{}` reads `{verb}`, which is not an allowed channel resource",
-                        panel.id
-                    ));
-                }
-            }
-            PanelSource::Fs { path } => validate_workspace_path(path)?,
-        }
-        // A `self:` view is code and follows the renderer scope split.
-        validate_renderer_reference(&panel.view, allow_code, manifest)?;
+        validate_panel("panel", panel, &mut panel_ids, false, allow_code, manifest)?;
     }
     if !allow_code
         && (!manifest.contributes.renderers.is_empty()
@@ -623,6 +597,60 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
         }
     }
     Ok(())
+}
+
+/// One `{id, title, source, view}` contribution, validated once for both places a
+/// package may declare one: `contributes.panels` (a board in the channel's lane) and a
+/// scene's `items` (a file opened inside the Workbench). Where they differ is the
+/// source, not the grammar, so `fs_only` narrows rather than a second validator
+/// respelling the same rules — that duplication is what this replaces.
+fn validate_panel<'a>(
+    kind: &str,
+    panel: &'a PanelContribution,
+    seen: &mut HashSet<&'a str>,
+    fs_only: bool,
+    allow_code: bool,
+    manifest: &ExtensionManifest,
+) -> Result<(), String> {
+    validate_id(kind, &panel.id)?;
+    if panel.title.trim().is_empty() {
+        return Err(format!("{kind} `{}` title is required", panel.id));
+    }
+    if !seen.insert(panel.id.as_str()) {
+        return Err(format!("duplicate {kind} id `{}`", panel.id));
+    }
+    match &panel.source {
+        // A verb comes from the SAME fixed list as channel.resources. Declaring a
+        // source must never widen what a package can read. `pick` needs no validation
+        // beyond being a string, which serde already enforced: any key is legal, and
+        // one absent at read time yields an empty view rather than an error.
+        PanelSource::Resource { verb, pick: _ } => {
+            // `.workbench.json`'s scene_state indexes a scene's items BY FILE PATH, on
+            // every client. An item reading a verb would have no path to be indexed by,
+            // so a scene takes the fs half of the union and nothing else.
+            if fs_only {
+                return Err(format!(
+                    "{kind} `{}` must read a file: a scene indexes its items by path",
+                    panel.id
+                ));
+            }
+            if !CHANNEL_RESOURCES.contains(&verb.as_str()) {
+                return Err(format!(
+                    "{kind} `{}` reads `{verb}`, which is not an allowed channel resource",
+                    panel.id
+                ));
+            }
+            if panel.view == AUTO_VIEW {
+                return Err(format!(
+                    "{kind} `{}` cannot leave its view to `auto`: only a file has content to match one against",
+                    panel.id
+                ));
+            }
+        }
+        PanelSource::Fs { path } => validate_workspace_path(path)?,
+    }
+    // A `self:` view is code and follows the renderer scope split.
+    validate_renderer_reference(&panel.view, allow_code, manifest)
 }
 
 fn validate_id(kind: &str, id: &str) -> Result<(), String> {

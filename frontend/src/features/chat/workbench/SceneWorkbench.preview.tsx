@@ -68,25 +68,25 @@ const entries = Object.entries(files).map(([path, content], index) => ({
 const templates: TemplateManifest[] = [{
   id: "cheers-code-project",
   title: "Code project",
-  views: [
-    { id: "plan", title: "Plan", file: "dev/plan.yaml", lens: "kanban" },
-    { id: "issues", title: "Issues", file: "dev/issues.yaml", lens: "table" },
-    { id: "progress", title: "Progress", file: "dev/progress.yaml", lens: "chart" },
-    { id: "todo", title: "Todo", file: "dev/todo.md", lens: "markdown" },
-    { id: "codemap", title: "Codemap", file: "codemap/map.yaml", lens: "codemap" },
+  items: [
+    { id: "plan", title: "Plan", source: { kind: "fs", path: "dev/plan.yaml" }, view: "builtin:kanban" },
+    { id: "issues", title: "Issues", source: { kind: "fs", path: "dev/issues.yaml" }, view: "builtin:table" },
+    { id: "progress", title: "Progress", source: { kind: "fs", path: "dev/progress.yaml" }, view: "builtin:chart" },
+    { id: "todo", title: "Todo", source: { kind: "fs", path: "dev/todo.md" }, view: "builtin:markdown" },
+    { id: "codemap", title: "Codemap", source: { kind: "fs", path: "codemap/map.yaml" }, view: "builtin:codemap" },
   ],
 }, {
   id: "cheers-research-lab",
   title: "Research lab",
-  views: [],
+  items: [],
 }, {
   id: "cheers-task-board",
   title: "Tasks",
-  views: [],
+  items: [],
 }, {
   id: "cheers-team-ops",
   title: "Operations",
-  views: [],
+  items: [],
 }];
 
 const installedTemplates = templates;
@@ -94,7 +94,7 @@ const sceneState: WorkbenchSceneState = {
   version: 1,
   order: installedTemplates.map((template) => template.id),
   titles: Object.fromEntries(installedTemplates.map((template) => [template.id, template.title])),
-  items: Object.fromEntries(installedTemplates.map((template) => [template.id, template.views.map((view) => view.file)])),
+  items: Object.fromEntries(installedTemplates.map((template) => [template.id, template.items.map((item) => item.source.path)])),
 };
 
 localStorage.setItem("cheers.workbench.preview.scene", "cheers-code-project");

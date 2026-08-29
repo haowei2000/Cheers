@@ -47,7 +47,10 @@
             {
               "id": "notes",
               "title": "Notes",
-              "file": "notes.md"
+              "source": {
+                "kind": "fs",
+                "path": "notes.md"
+              }
             }
           ]
         }
@@ -319,7 +322,10 @@
             {
               "id": "notes",
               "title": "Notes",
-              "file": "notes.md"
+              "source": {
+                "kind": "fs",
+                "path": "notes.md"
+              }
             }
           ]
         },
@@ -355,7 +361,10 @@
             {
               "id": "notes",
               "title": "Notes",
-              "file": "notes.md"
+              "source": {
+                "kind": "fs",
+                "path": "notes.md"
+              }
             }
           ]
         },
@@ -463,8 +472,44 @@
       }
     },
     {
-      "name": "scene-item-renderer-set-to-null",
-      "why": "Same rule on a scene item's renderer.",
+      "name": "scene-item-view-set-to-null",
+      "why": "Same rule on a scene item's view: an explicit null is not an omitted field.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "source": {
+                "kind": "fs",
+                "path": "notes.md"
+              },
+              "view": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-in-the-retired-file-renderer-spelling",
+      "why": "A scene item is an fs panel. The old `file`/`renderer` spelling said the same thing in a second vocabulary and is gone, so a package still using it is rejected rather than silently ignored.",
       "global": "reject",
       "personal": "reject",
       "files": {
@@ -489,10 +534,127 @@
               "id": "notes",
               "title": "Notes",
               "file": "notes.md",
-              "renderer": null
+              "renderer": "builtin:markdown"
             }
           ]
         }
+      }
+    },
+    {
+      "name": "scene-item-over-a-resource-source",
+      "why": "A scene item is indexed by file path in `.workbench.json`'s scene_state, so it must name a file. The source union is shared with panels; a scene narrows it to `fs` rather than inventing its own.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "roster",
+              "title": "Roster",
+              "source": {
+                "kind": "resource",
+                "verb": "channel.members"
+              },
+              "view": "builtin:table"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-trying-to-pick",
+      "why": "A scene item reaches the same source validator a panel does, so an fs source rejects `pick` here for the same reason it does there.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "source": {
+                "kind": "fs",
+                "path": "notes.md",
+                "pick": "rows"
+              },
+              "view": "builtin:table"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-with-a-self-view",
+      "why": "A scene item rendered by the package's own renderer is code, and follows the same scope split a panel's `self:` view does.",
+      "global": "reject",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ],
+            "renderers": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "entry": "renderers/chart.js"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "chart",
+              "title": "Chart",
+              "source": {
+                "kind": "fs",
+                "path": "data.json"
+              },
+              "view": "self:chart"
+            }
+          ]
+        },
+        "renderers/chart.js": "export function render() {}\n"
       }
     },
     {
@@ -713,6 +875,32 @@
                   "verb": "channel.info"
                 },
                 "view": "wat:thing"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "resource-panel-with-an-auto-view",
+      "why": "`auto` asks the host to match a view against the content's shape. A file has one; a resource payload does not, so `auto` over a verb names a choice nothing can make. Omitting `view` means the same thing and is rejected the same way.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "roster",
+                "title": "Roster",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.members"
+                }
               }
             ]
           }

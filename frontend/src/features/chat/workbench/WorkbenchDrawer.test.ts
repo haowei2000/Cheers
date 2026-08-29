@@ -41,9 +41,9 @@ describe("reconcileSceneItems", () => {
       [{
         id: "cheers-code-project",
         title: "Code project",
-        views: [
-          { id: "plan", title: "Plan", file: "dev/plan.yaml", lens: "kanban" },
-          { id: "codemap", title: "Codemap", file: "codemap/map.yaml", lens: "codemap" },
+        items: [
+          { id: "plan", title: "Plan", source: { kind: "fs", path: "dev/plan.yaml" }, view: "builtin:kanban" },
+          { id: "codemap", title: "Codemap", source: { kind: "fs", path: "codemap/map.yaml" }, view: "builtin:codemap" },
         ],
       }],
       null

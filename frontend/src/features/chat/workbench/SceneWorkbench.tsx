@@ -354,7 +354,7 @@ export function reconcileSceneItems(
     if (!template) continue;
     titles[id] ??= template.title;
     const paths = items[id] ?? [];
-    for (const view of template.views) if (!paths.includes(view.file)) paths.push(view.file);
+    for (const item of template.items) if (!paths.includes(item.source.path)) paths.push(item.source.path);
     items[id] = paths;
   }
   return { version: 1, order, titles, items };
@@ -364,7 +364,7 @@ function itemTitle(sceneId: string, path: string, templates: TemplateManifest[])
   return (
     templates
       .find((template) => template.id === sceneId)
-      ?.views.find((view) => view.file === path)?.title ?? fallbackItemTitle(path)
+      ?.items.find((item) => item.source.path === path)?.title ?? fallbackItemTitle(path)
   );
 }
 

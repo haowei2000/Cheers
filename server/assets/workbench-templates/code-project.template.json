@@ -2,32 +2,101 @@
   "id": "cheers-code-project",
   "version": 1,
   "title": "Code project",
-  "views": [
-    { "id": "plan", "title": "Plan", "file": "dev/plan.yaml", "lens": "kanban" },
+  "items": [
+    {
+      "id": "plan",
+      "title": "Plan",
+      "source": {
+        "kind": "fs",
+        "path": "dev/plan.yaml"
+      },
+      "view": "builtin:kanban"
+    },
     {
       "id": "issues",
       "title": "Issues",
-      "file": "dev/issues.yaml",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "dev/issues.yaml"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
-          { "key": "title", "label": "Issue" },
-          { "key": "severity", "label": "Sev", "options": ["P0", "P1", "P2"] },
-          { "key": "status", "label": "Status", "options": ["open", "fixing", "fixed", "wontfix"] },
-          { "key": "ref", "label": "Where" }
+          {
+            "key": "title",
+            "label": "Issue"
+          },
+          {
+            "key": "severity",
+            "label": "Sev",
+            "options": [
+              "P0",
+              "P1",
+              "P2"
+            ]
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "options": [
+              "open",
+              "fixing",
+              "fixed",
+              "wontfix"
+            ]
+          },
+          {
+            "key": "ref",
+            "label": "Where"
+          }
         ]
       }
     },
-    { "id": "progress", "title": "Progress", "file": "dev/progress.yaml", "lens": "chart" },
-    { "id": "todo", "title": "Todo", "file": "dev/todo.md", "lens": "markdown" },
-    { "id": "codemap", "title": "Codemap", "file": "codemap/map.yaml", "lens": "codemap" }
+    {
+      "id": "progress",
+      "title": "Progress",
+      "source": {
+        "kind": "fs",
+        "path": "dev/progress.yaml"
+      },
+      "view": "builtin:chart"
+    },
+    {
+      "id": "todo",
+      "title": "Todo",
+      "source": {
+        "kind": "fs",
+        "path": "dev/todo.md"
+      },
+      "view": "builtin:markdown"
+    },
+    {
+      "id": "codemap",
+      "title": "Codemap",
+      "source": {
+        "kind": "fs",
+        "path": "codemap/map.yaml"
+      },
+      "view": "builtin:codemap"
+    }
   ],
   "seed": {
     "dev/plan.yaml": {
       "columns": [
-        { "name": "Planned", "items": ["Sketch the first milestone"] },
-        { "name": "In progress", "items": [] },
-        { "name": "Shipped", "items": [] }
+        {
+          "name": "Planned",
+          "items": [
+            "Sketch the first milestone"
+          ]
+        },
+        {
+          "name": "In progress",
+          "items": []
+        },
+        {
+          "name": "Shipped",
+          "items": []
+        }
       ]
     },
     "dev/issues.yaml": [
@@ -38,10 +107,24 @@
         "ref": "src/main.rs#L1"
       }
     ],
-    "dev/progress.yaml": { "series": [{ "name": "tests passing", "points": [[1, 0]] }] },
+    "dev/progress.yaml": {
+      "series": [
+        {
+          "name": "tests passing",
+          "points": [
+            [
+              1,
+              0
+            ]
+          ]
+        }
+      ]
+    },
     "dev/todo.md": "# Todo\n\n- [ ] First task\n- [ ] Install the checklist renderer to tick these interactively\n",
     "codemap/map.yaml": "# Codemap — maintained by the agent (see docs/arch/CODEMAP.md).\n# Rendered natively on iOS and by the codemap plugin where installed.\ncodemap: 1\nrepo: \"\"\nupdated: \"\"\nfocus: []\nedges: []\nnodes: {}\n",
     "prompts/code-conventions.md": "# Project conventions\n\n- Track work on `dev/plan.yaml`; found bugs go to `dev/issues.yaml` with a `ref` like `path/file.rs#L120`.\n- Append a `[step, passing]` point to `dev/progress.yaml` after each test run.\n- Keep `codemap/map.yaml` updated as modules change.\n"
   },
-  "pin": ["prompts/code-conventions.md"]
+  "pin": [
+    "prompts/code-conventions.md"
+  ]
 }

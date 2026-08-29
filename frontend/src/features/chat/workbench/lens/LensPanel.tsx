@@ -5,7 +5,6 @@ import { Paperclip } from "lucide-react";
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
-import type { ViewDef } from "../manifest";
 import { isStructuredPath, useFile } from "../jsonFile";
 import { getLens } from "./registry";
 import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
@@ -14,10 +13,10 @@ import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 // demand. Path/pin/mode chrome lives in the file browser's header — this adds only what
 // the lens itself needs: a Save for lenses that edit (viewOnly lenses get none, so a
 // stale snapshot can't be written back over a concurrent agent write).
-export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; view: ViewDef; channelId: string; reloadTick?: number }) {
-  const lens = getLens(view.lens);
-  const fallback: unknown = isStructuredPath(view.file) ? null : "";
-  const { data, setData, save, status, raw, reload } = useFile<unknown>(fs, view.file, fallback);
+export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: { fs: FsClient; path: string; lensId: string; config?: unknown; channelId: string; reloadTick?: number }) {
+  const lens = getLens(lensId);
+  const fallback: unknown = isStructuredPath(path) ? null : "";
+  const { data, setData, save, status, raw, reload } = useFile<unknown>(fs, path, fallback);
   const { open } = useContextActions();
   const addContext = useContextPickStore((state) => state.add);
 
@@ -59,7 +58,7 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
         disabled: !range,
         run: () => {
           if (!range) return;
-          const item = rangedFileContextItem(view.file, range.start, range.end);
+          const item = rangedFileContextItem(path, range.start, range.end);
           addContext(channelId, { ...item, label: target.label });
           toast.success(`Added ${target.label} (lines ${range.start}-${range.end}) to context`);
         },
@@ -71,9 +70,9 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
     <div className="flex flex-col h-full text-compact">
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
-          lens.render({ data, config: view.config, onChange, requestContextPick })
+          lens.render({ data, config, onChange, requestContextPick })
         ) : (
-          <div className="p-3 text-warning-400">Unknown lens: {view.lens}</div>
+          <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
       </div>
       {(status || !lens?.viewOnly) && (
@@ -83,7 +82,7 @@ export function LensPanel({ fs, view, channelId, reloadTick }: { fs: FsClient; v
             <ActionButton
               action="save"
               context="form"
-              accessibleLabel={`Save ${view.file}`}
+              accessibleLabel={`Save ${path}`}
               controlSize="regular"
               onClick={() => void onSave()}
             />

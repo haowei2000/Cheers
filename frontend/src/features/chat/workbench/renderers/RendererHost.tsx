@@ -1,5 +1,4 @@
 import type { WorkbenchContext } from "../context";
-import type { ViewDef } from "../manifest";
 import { LensPanel } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
@@ -62,17 +61,20 @@ export function RendererHost({
       />
     );
   }
-  // built-in lens: a synthetic view feeds the LensPanel host (load → lens → save)
-  const view: ViewDef = {
-    id: `render:${renderer.id}:${path}`,
-    title: renderer.title,
-    file: path,
-    lens: renderer.lensId ?? "markdown",
-    config,
-  };
+  // built-in lens: the LensPanel host (load → lens → save) over this one file.
   // key by renderer+path (like the extension branch) so switching file/renderer remounts
   // the LensPanel — a fresh instance resets its `dirty`/`seenTick` refs and useFile
   // state. Without this, a stale `dirty` carried over from an unsaved edit in another
   // file permanently gates live-push reload on a view-only lens (e.g. the metrics chart).
-  return <LensPanel key={`${renderer.id}:${path}`} fs={ctx.fs} view={view} channelId={ctx.channelId} reloadTick={ctx.filesTick} />;
+  return (
+    <LensPanel
+      key={`${renderer.id}:${path}`}
+      fs={ctx.fs}
+      path={path}
+      lensId={renderer.lensId ?? "markdown"}
+      config={config}
+      channelId={ctx.channelId}
+      reloadTick={ctx.filesTick}
+    />
+  );
 }

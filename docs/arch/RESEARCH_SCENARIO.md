@@ -130,16 +130,16 @@ Data shapes must match each lens (verified in `builtins.tsx`; chart per §6.2):
 Ships at `workbench/examples/research-lab.json` (mirror:
 `docs/arch/examples/research-lab.template.json`). Validated by `validateManifest`;
 unknown lenses are rejected — `chart` is a registered built-in (§6.2), so the
-`metrics` view validates and the template ships with it.
+`metrics` item validates and the template ships with it.
 
 ```json
 {
   "id": "research-lab",
   "title": "Research Lab",
   "pin": ["prompts/lab-conventions.md"],
-  "views": [
+  "items": [
     {
-      "id": "papers", "title": "Literature", "file": "research/papers.json", "lens": "table",
+      "id": "papers", "title": "Literature", "source": { "kind": "fs", "path": "research/papers.json" }, "view": "builtin:table",
       "config": { "columns": [
         { "key": "title", "label": "Title" },
         { "key": "authors", "label": "Authors" },
@@ -150,7 +150,7 @@ unknown lenses are rejected — `chart` is a registered built-in (§6.2), so the
       ] }
     },
     {
-      "id": "runs", "title": "Runs", "file": "experiments/runs.json", "lens": "table",
+      "id": "runs", "title": "Runs", "source": { "kind": "fs", "path": "experiments/runs.json" }, "view": "builtin:table",
       "config": { "columns": [
         { "key": "id", "label": "Run" },
         { "key": "config", "label": "Config" },
@@ -159,10 +159,10 @@ unknown lenses are rejected — `chart` is a registered built-in (§6.2), so the
         { "key": "artifact", "label": "Artifact" }
       ] }
     },
-    { "id": "metrics", "title": "Metrics", "file": "experiments/metrics.json", "lens": "chart" },
-    { "id": "board", "title": "Board", "file": "experiments/board.json", "lens": "kanban" },
+    { "id": "metrics", "title": "Metrics", "source": { "kind": "fs", "path": "experiments/metrics.json" }, "view": "builtin:chart" },
+    { "id": "board", "title": "Board", "source": { "kind": "fs", "path": "experiments/board.json" }, "view": "builtin:kanban" },
     {
-      "id": "findings", "title": "Findings", "file": "research/findings.json", "lens": "table",
+      "id": "findings", "title": "Findings", "source": { "kind": "fs", "path": "research/findings.json" }, "view": "builtin:table",
       "config": { "columns": [
         { "key": "claim", "label": "Claim" },
         { "key": "evidence", "label": "Evidence" },
@@ -170,8 +170,8 @@ unknown lenses are rejected — `chart` is a registered built-in (§6.2), so the
         { "key": "source", "label": "Source" }
       ] }
     },
-    { "id": "ideas", "title": "Ideas", "file": "research/ideas.md", "lens": "markdown" },
-    { "id": "draft", "title": "Draft", "file": "draft/paper.md", "lens": "markdown" }
+    { "id": "ideas", "title": "Ideas", "source": { "kind": "fs", "path": "research/ideas.md" }, "view": "builtin:markdown" },
+    { "id": "draft", "title": "Draft", "source": { "kind": "fs", "path": "draft/paper.md" }, "view": "builtin:markdown" }
   ],
   "seed": {
     "research/papers.json": [

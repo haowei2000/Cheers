@@ -197,7 +197,7 @@ scheme、锁定当前频道后才路由——不增加任何新的数据访问�
 {
   "id": "codemap",
   "title": "Codemap",
-  "views": [],                         // ⚠️ 必须为空：激活会把 views[].lens 写成
+  "items": [],                         // ⚠️ 必须为空：激活会把 items[].view 写成
                                        // bindings（用户绑定=终裁）。声明任何内置 lens
                                        // 都会把 map.yaml 锁死在那个 lens 上，反而压过
                                        // codemap 插件的候选排序。留空 = 只 seed + pin。

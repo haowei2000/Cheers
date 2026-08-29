@@ -353,8 +353,8 @@ struct WorkbenchSheet: View {
 
     private func itemTitle(_ path: String) -> String {
         if activeScene != WorkbenchSceneState.otherId,
-           let view = templates.first(where: { $0.manifest.id == activeScene })?.manifest.views.first(where: { $0.file == path }) {
-            return view.title
+           let item = templates.first(where: { $0.manifest.id == activeScene })?.manifest.items.first(where: { $0.path == path }) {
+            return item.title
         }
         let file = path.split(separator: "/").last.map(String.init) ?? path
         let stem = file.split(separator: ".").dropLast().joined(separator: ".")
@@ -429,7 +429,7 @@ struct WorkbenchSheet: View {
               let manifest = templates.first(where: { $0.manifest.id == environment })?.manifest else { return }
         sceneState.order = [manifest.id]
         sceneState.titles[manifest.id] = manifest.title
-        sceneState.items[manifest.id] = manifest.views.map(\.file)
+        sceneState.items[manifest.id] = manifest.items.map(\.path)
     }
 
     /// System scenes can gain new native items without replacing a channel's shared
@@ -438,8 +438,8 @@ struct WorkbenchSheet: View {
     private func reconcileBuiltInSceneItems() {
         for template in templates where template.origin == "system" && sceneState.order.contains(template.manifest.id) {
             var items = sceneState.items[template.manifest.id] ?? []
-            for view in template.manifest.views where !items.contains(view.file) {
-                items.append(view.file)
+            for item in template.manifest.items where !items.contains(item.path) {
+                items.append(item.path)
             }
             sceneState.items[template.manifest.id] = items
         }
@@ -611,17 +611,17 @@ func workbenchConfiguration(
     var next = original
     var bindings = next["bindings"]?.objectValue ?? [:]
     var configs = next["configs"]?.objectValue ?? [:]
-    for view in manifest.views {
-        if bindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
-            bindings[view.file] = .string(view.renderer)
+    for item in manifest.items {
+        if bindings[item.path] == nil, item.resolvedView.hasPrefix("builtin:") {
+            bindings[item.path] = .string(item.resolvedView)
         }
-        if configs[view.file] == nil, let value = view.config { configs[view.file] = value }
+        if configs[item.path] == nil, let value = item.config { configs[item.path] = value }
     }
     var state = WorkbenchSceneState(next["scene_state"])
     state.order.removeAll { $0 == manifest.id }
     state.order.append(manifest.id)
     state.titles[manifest.id] = manifest.title
-    state.items[manifest.id] = manifest.views.map(\.file)
+    state.items[manifest.id] = manifest.items.map(\.path)
     let pins = Set((next["pinned"]?.arrayValue?.compactMap(\.stringValue) ?? []) + (manifest.pin ?? []))
     next["environment"] = .string(manifest.id)
     next["bindings"] = .object(bindings)
@@ -869,12 +869,12 @@ private struct LegacyWorkbenchSheet: View {
             }
             var bindings = config["bindings"]?.objectValue ?? [:]
             var configs = config["configs"]?.objectValue ?? [:]
-            for view in manifest.views {
-                if bindings[view.file] == nil, view.renderer.hasPrefix("builtin:") {
-                    bindings[view.file] = .string(view.renderer)
+            for item in manifest.items {
+                if bindings[item.path] == nil, item.resolvedView.hasPrefix("builtin:") {
+                    bindings[item.path] = .string(item.resolvedView)
                 }
-                if configs[view.file] == nil, let viewConfig = view.config { configs[view.file] = viewConfig }
-                lensBindings[view.file] = view.lens
+                if configs[item.path] == nil, let itemConfig = item.config { configs[item.path] = itemConfig }
+                lensBindings[item.path] = item.lensId
             }
             let existingPins = config["pinned"]?.arrayValue?.compactMap(\.stringValue) ?? []
             config["environment"] = .string(manifest.id)
@@ -887,9 +887,9 @@ private struct LegacyWorkbenchSheet: View {
                 "content": configText, "if_version": version,
             ])
             await load(showSpinner: false)
-            if let first = manifest.views.first, let node = find(first.file, in: root) {
+            if let first = manifest.items.first, let node = find(first.path, in: root) {
                 var accumulated = ""
-                path = first.file.split(separator: "/").dropLast().map { segment in
+                path = first.path.split(separator: "/").dropLast().map { segment in
                     accumulated = accumulated.isEmpty ? String(segment) : "\(accumulated)/\(segment)"
                     return Route.folder(accumulated)
                 }
