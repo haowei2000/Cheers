@@ -292,6 +292,9 @@ platform check.
 - **Does the Audit board's `rest` source survive?** It exists because Audit has no
   resource verb. Giving it one removes a source kind; the alternative is keeping `rest`
   as a permanent first-party-only escape hatch.
+- **Should a package be able to contribute a shared layout?** `.workbench.json`'s
+  `layout` key is written by people and agents, not by manifests — a preset that placed
+  its own windows is the "declarative preset" question below, seen from the other side.
 - **Does `surface` belong in the package grammar?** A scene item mounts inside the
   Workbench and a panel mounts in the lane, and today that is said by *where* the
   contribution is declared. A `surface` field would say it in the contribution itself and

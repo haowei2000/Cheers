@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
+import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { ActionButton } from "@/components/ui/action-button";
@@ -206,6 +207,7 @@ export function FloatingPanel({
 }) {
   const isMobile = useIsMobile();
   const laneBounds = useContext(LaneBoundsContext);
+  const sharedLayout = useContext(SharedLayoutContext);
   // Bounded to the canvas when one is present (snap on); otherwise floats free over
   // the viewport (snap off — nothing to snap to). `viewport` opts out of the canvas
   // even when context is set (portals to document.body must do this).
@@ -219,6 +221,11 @@ export function FloatingPanel({
       // exactly where the user releases it, like an independent desktop window.
       snap: false,
       spawnKind: !isMobile && getBounds != null ? spawnKind : undefined,
+      // The channel's placement for this window, when it is a lane window and the
+      // channel has one. useWindowDrag adopts it only while this device has no
+      // geometry of its own — see WindowDragOptions.sharedGeom.
+      sharedGeom:
+        !isMobile && getBounds != null && spawnKind ? (sharedLayout?.(spawnKind) ?? null) : null,
       open,
       anchorRef: viewport ? anchorRef : undefined,
       reanchorOnOpen: viewport ? reanchorOnOpen : false,

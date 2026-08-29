@@ -73,6 +73,10 @@ export interface WbConfig {
   /** Shared navigation index for native multi-scene clients. Renderer selection remains
    * file-bound through bindings; this does not resurrect template-owned renderers. */
   scene_state?: WorkbenchSceneState;
+  /** The channel's shared window arrangement. Owned by `useChannelLayout`, not by this
+   *  drawer — carried through the known-keys parse below only so a Workbench write does
+   *  not delete a key it has no opinion about. See workbench/sharedLayout.ts. */
+  layout?: unknown;
 }
 
 // Regenerated into `.workbench.json._doc` on every write, so anyone (human or AI) opening
@@ -85,6 +89,7 @@ const WB_DOC =
   "configs = file path → lens config (e.g. table columns), written by scenario activation; " +
   "pinned = files injected into every bot prompt. " +
   "scene_state = enabled scenario order/titles and their file-path navigation indexes; " +
+  "layout = the channel's shared window arrangement (rects are fractions of the lane, not pixels); " +
   "Files themselves are pure content — how a file renders is decided by this config, never written into the file.";
 
 function sceneBelongsToExtension(sceneId: string, extensionId: string): boolean {
@@ -108,6 +113,7 @@ export function parseCfg(content: string): WbConfig {
       : undefined,
     configs: raw.configs,
     scene_state: raw.scene_state,
+    layout: raw.layout,
   };
   if (raw.views?.length) {
     const b = { ...(cfg.bindings ?? {}) };
