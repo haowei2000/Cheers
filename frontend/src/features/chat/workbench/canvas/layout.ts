@@ -8,9 +8,12 @@ import type { CanvasEdge, CanvasLayoutStrategy, CanvasNode, CanvasRect } from ".
 // numbers nobody can read or comment on. So a `rect` is a PIN — what dragging writes —
 // and everything without one is placed here.
 //
-// Pinned nodes are never moved, and the flow starts below them. Deliberate, and easy to
-// state to a user: what you placed stays where you put it, and new things arrive
-// underneath rather than on top of your arrangement.
+// EVERY node gets a slot in the same deterministic sequence, and a pinned one then
+// overrides its slot with the rect from the file. That is what makes the layout stable
+// under editing: pinning a node does not renumber the sequence, so dragging one node
+// never moves any other. (Laying out only the unpinned nodes looks equivalent and is
+// not — each pin removes a node from the sequence and every node after it shifts up a
+// slot, so one drag makes the rest of the canvas jump.)
 //
 // Pure: no React, no DOM, no measurement. The size below is nominal — the view scales
 // its content to the rect rather than the other way round, so layout never has to wait
@@ -55,14 +58,8 @@ function depthsOf(nodes: readonly CanvasNode[], edges: readonly CanvasEdge[]): M
   return depths;
 }
 
-/** Where the flow starts: clear of everything the user pinned. */
-function flowTop(pinned: readonly CanvasRect[]): number {
-  if (pinned.length === 0) return 0;
-  return Math.max(...pinned.map((rect) => rect.y + rect.h)) + NODE_GAP;
-}
-
-function place(id: string, column: number, row: number, top: number): [string, CanvasRect] {
-  return [id, { x: column * step.x, y: top + row * step.y, ...DEFAULT_NODE_SIZE }];
+function place(column: number, row: number): CanvasRect {
+  return { x: column * step.x, y: row * step.y, ...DEFAULT_NODE_SIZE };
 }
 
 /** Resolve every node to a rect: pinned ones as authored, the rest laid out.
@@ -77,35 +74,28 @@ export function canvasLayout(
   strategy: CanvasLayoutStrategy
 ): Map<string, CanvasRect> {
   const out = new Map<string, CanvasRect>();
-  const loose: CanvasNode[] = [];
-  for (const node of nodes) {
-    if (node.rect) out.set(node.id, node.rect);
-    else loose.push(node);
-  }
-  if (loose.length === 0) return out;
-
-  const top = flowTop([...out.values()]);
+  if (nodes.length === 0) return out;
 
   if (strategy === "dag") {
     const depths = depthsOf(nodes, edges);
     const rows = new Map<number, number>();
     // Ranked by depth, then by document order — so two runs of the same file lay out
     // identically, and a node keeps its place when an unrelated one is added.
-    const ranked = [...loose].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0));
+    const ranked = [...nodes].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0));
     for (const node of ranked) {
       const depth = depths.get(node.id) ?? 0;
       const row = rows.get(depth) ?? 0;
       rows.set(depth, row + 1);
-      const [id, rect] = place(node.id, depth, row, top);
-      out.set(id, rect);
+      out.set(node.id, place(depth, row));
     }
-    return out;
+  } else {
+    const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+    nodes.forEach((node, index) => {
+      out.set(node.id, place(index % columns, Math.floor(index / columns)));
+    });
   }
 
-  const columns = Math.max(1, Math.ceil(Math.sqrt(loose.length)));
-  loose.forEach((node, index) => {
-    const [id, rect] = place(node.id, index % columns, Math.floor(index / columns), top);
-    out.set(id, rect);
-  });
+  // The pin wins over the slot it would otherwise have had.
+  for (const node of nodes) if (node.rect) out.set(node.id, node.rect);
   return out;
 }

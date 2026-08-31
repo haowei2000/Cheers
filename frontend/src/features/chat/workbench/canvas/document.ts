@@ -38,6 +38,11 @@ const STRATEGIES: readonly string[] = ["dag", "grid", "free"];
 
 interface CanvasNodeCommon {
   id: string;
+  /** Where this node sits in the RAW `nodes` array — the index a patch op has to
+   *  address. Not the same as its position in `nodes` below, because parsing drops
+   *  unusable entries: with one bad node in the file, every index after it would be
+   *  off by one and an edit would land on the wrong node. */
+  at: number;
   /** Present = pinned. Absent = the layout engine places it. */
   rect?: CanvasRect;
   z?: number;
@@ -60,6 +65,8 @@ export type CanvasNode =
 
 export interface CanvasEdge {
   id: string;
+  /** Index in the raw `edges` array — see `CanvasNodeCommon.at`. */
+  at: number;
   from: { node: string; side?: CanvasSide };
   to: { node: string; side?: CanvasSide };
   label?: string;
@@ -114,10 +121,10 @@ function parseSource(raw: unknown): PanelSourceContribution | null {
   return null;
 }
 
-function parseNode(raw: unknown): CanvasNode | null {
+function parseNode(raw: unknown, at: number): CanvasNode | null {
   if (!isMapping(raw)) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
-  const common: CanvasNodeCommon = { id: raw.id };
+  const common: CanvasNodeCommon = { id: raw.id, at };
   const rect = parseRect(raw.rect);
   if (rect) common.rect = rect;
   const z = finite(raw.z);
@@ -145,7 +152,7 @@ function parseEndpoint(raw: unknown): { node: string; side?: CanvasSide } | null
   return side ? { node: raw.node, side } : { node: raw.node };
 }
 
-function parseEdge(raw: unknown, nodeIds: ReadonlySet<string>): CanvasEdge | null {
+function parseEdge(raw: unknown, at: number, nodeIds: ReadonlySet<string>): CanvasEdge | null {
   if (!isMapping(raw)) return null;
   if (typeof raw.id !== "string" || !raw.id) return null;
   const from = parseEndpoint(raw.from);
@@ -154,7 +161,7 @@ function parseEdge(raw: unknown, nodeIds: ReadonlySet<string>): CanvasEdge | nul
   // A dangling edge has nothing to draw between. Dropping it is what keeps a node
   // deletion from leaving the document unrenderable.
   if (!nodeIds.has(from.node) || !nodeIds.has(to.node)) return null;
-  return { id: raw.id, from, to, ...(typeof raw.label === "string" && raw.label ? { label: raw.label } : {}) };
+  return { id: raw.id, at, from, to, ...(typeof raw.label === "string" && raw.label ? { label: raw.label } : {}) };
 }
 
 /** Read a canvas document. Returns null only when the value is not a canvas at all —
@@ -163,8 +170,9 @@ export function parseCanvas(raw: unknown): CanvasDocument | null {
   if (!isMapping(raw) || raw.canvas !== 1) return null;
   const nodes: CanvasNode[] = [];
   const seen = new Set<string>();
-  for (const entry of Array.isArray(raw.nodes) ? raw.nodes : []) {
-    const node = parseNode(entry);
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
+  for (let at = 0; at < rawNodes.length; at++) {
+    const node = parseNode(rawNodes[at], at);
     // A duplicate id would make every path and every edge ambiguous; the first wins.
     if (node && !seen.has(node.id)) {
       seen.add(node.id);
@@ -173,8 +181,9 @@ export function parseCanvas(raw: unknown): CanvasDocument | null {
   }
   const edges: CanvasEdge[] = [];
   const edgeIds = new Set<string>();
-  for (const entry of Array.isArray(raw.edges) ? raw.edges : []) {
-    const edge = parseEdge(entry, seen);
+  const rawEdges = Array.isArray(raw.edges) ? raw.edges : [];
+  for (let at = 0; at < rawEdges.length; at++) {
+    const edge = parseEdge(rawEdges[at], at, seen);
     if (edge && !edgeIds.has(edge.id)) {
       edgeIds.add(edge.id);
       edges.push(edge);

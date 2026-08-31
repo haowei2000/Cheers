@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canvasLayout, DEFAULT_NODE_SIZE, NODE_GAP } from "./layout";
+import { canvasLayout, DEFAULT_NODE_SIZE } from "./layout";
 import type { CanvasEdge, CanvasNode } from "./document";
 
-const text = (id: string, rect?: CanvasNode["rect"]): CanvasNode => ({ id, kind: "text", text: id, ...(rect ? { rect } : {}) });
-const edge = (id: string, from: string, to: string): CanvasEdge => ({ id, from: { node: from }, to: { node: to } });
+let seq = 0;
+const text = (id: string, rect?: CanvasNode["rect"]): CanvasNode => ({ id, at: seq++, kind: "text", text: id, ...(rect ? { rect } : {}) });
+const edge = (id: string, from: string, to: string): CanvasEdge => ({ id, at: 0, from: { node: from }, to: { node: to } });
 
 function overlaps(a: { x: number; y: number; w: number; h: number }, b: typeof a): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -31,11 +32,26 @@ describe("canvasLayout", () => {
     }
   });
 
-  it("flows below what the user pinned, so new nodes never land on the arrangement", () => {
-    const pin = { x: 0, y: 0, w: 300, h: 200 };
-    const out = canvasLayout([text("pinned", pin), text("fresh")], [], "grid");
-    expect(out.get("fresh")!.y).toBe(pin.y + pin.h + NODE_GAP);
-    expect(overlaps(out.get("pinned")!, out.get("fresh")!)).toBe(false);
+  it("does not move any other node when one gets pinned", () => {
+    // The property the browser caught the absence of: laying out only the UNPINNED
+    // nodes renumbers the sequence on every pin, so one drag makes the rest of the
+    // canvas jump. Every node keeps its slot; a pin only overrides its own.
+    const before = canvasLayout([text("a"), text("b"), text("c")], [], "grid");
+    const pinned = canvasLayout(
+      [text("a"), text("b", { x: 900, y: 900, w: 260, h: 160 }), text("c")],
+      [],
+      "grid"
+    );
+    expect(pinned.get("a")).toEqual(before.get("a"));
+    expect(pinned.get("c")).toEqual(before.get("c"));
+    expect(pinned.get("b")).toEqual({ x: 900, y: 900, w: 260, h: 160 });
+  });
+
+  it("keeps a dag node's slot when a peer is pinned", () => {
+    const edges = [edge("e1", "a", "b"), edge("e2", "a", "c")];
+    const before = canvasLayout([text("a"), text("b"), text("c")], edges, "dag");
+    const after = canvasLayout([text("a"), text("b", { x: 40, y: 800, w: 260, h: 160 }), text("c")], edges, "dag");
+    expect(after.get("c")).toEqual(before.get("c"));
   });
 
   it("ranks a dag by dependency depth", () => {

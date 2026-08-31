@@ -147,6 +147,21 @@ const BUILTINS: RendererDesc[] = [
     match: { format: ["json", "yaml"], dataHas: ["series"] },
   },
   {
+    // Structural match, like codemap below: a canvas announces itself with `canvas: 1`
+    // and a nodes ARRAY, so a file that merely has a `nodes` key never gets offered it.
+    id: "builtin:canvas",
+    title: "Canvas",
+    format: ["json", "yaml"],
+    source: "builtin",
+    lensId: "canvas",
+    match: { format: ["json", "yaml"], dataHas: ["canvas", "nodes"] },
+    acceptsData: (data) => {
+      if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+      const root = data as Record<string, unknown>;
+      return root.canvas === 1 && Array.isArray(root.nodes);
+    },
+  },
+  {
     id: "builtin:codemap",
     title: "Codemap",
     format: ["json", "yaml"],

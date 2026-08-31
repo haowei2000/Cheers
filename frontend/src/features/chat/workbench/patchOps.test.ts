@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPatchOps, PatchError, type PatchOp } from "./patchOps";
+import { applyPatchOps, invertPatchOps, PatchError, type PatchOp } from "./patchOps";
 
 const doc = () => ({
   canvas: 1,
@@ -92,5 +92,45 @@ describe("applyPatchOps", () => {
       ])
     ).toThrow(PatchError);
     expect(before.nodes[0].text).toBe("alpha");
+  });
+});
+
+describe("invertPatchOps", () => {
+  const roundTrip = (ops: PatchOp[]) => {
+    const before = doc();
+    const after = applyPatchOps(before, ops);
+    return applyPatchOps(after, invertPatchOps(before, ops));
+  };
+
+  it("undoes a set", () => {
+    expect(roundTrip([{ op: "set", path: ["nodes", 0, "text"], value: "changed" }])).toEqual(doc());
+  });
+
+  it("undoes a set that created the key, by removing it", () => {
+    // `set` on an absent key creates it, so its inverse is a removal — restoring
+    // `undefined` would leave a phantom key in the document.
+    const before = doc();
+    const ops: PatchOp[] = [{ op: "set", path: ["layout"], value: "dag" }];
+    const inverse = invertPatchOps(before, ops);
+    expect(inverse).toEqual([{ op: "remove", path: ["layout"] }]);
+    expect(applyPatchOps(applyPatchOps(before, ops), inverse)).toEqual(before);
+  });
+
+  it("undoes insert, remove and move", () => {
+    expect(roundTrip([{ op: "insert", path: ["nodes"], index: 1, value: { id: "new" } }])).toEqual(doc());
+    expect(roundTrip([{ op: "remove", path: ["nodes", 1] }])).toEqual(doc());
+    expect(roundTrip([{ op: "move", path: ["nodes"], from: 0, to: 2 }])).toEqual(doc());
+  });
+
+  it("undoes a whole batch, in reverse", () => {
+    // The gesture that deletes a node emits several ops; undo has to walk them
+    // backwards, each against the state it actually saw.
+    expect(
+      roundTrip([
+        { op: "set", path: ["nodes", 0, "text"], value: "x" },
+        { op: "remove", path: ["nodes", 2] },
+        { op: "insert", path: ["nodes"], index: 0, value: { id: "z" } },
+      ])
+    ).toEqual(doc());
   });
 });

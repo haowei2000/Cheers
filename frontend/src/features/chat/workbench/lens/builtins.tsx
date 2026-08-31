@@ -20,6 +20,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
+import { CanvasLens } from "../canvas/CanvasLens";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
@@ -882,3 +883,7 @@ registerLens({ id: "kanban", contextPick: "granular", render: (p) => <KanbanLens
 registerLens({ id: "markdown", contextPick: "granular", render: (p) => <MarkdownLens {...p} /> });
 registerLens({ id: "chart", contextPick: "granular", viewOnly: true, render: (p) => <ChartLens {...p} /> });
 registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (p) => <CodemapLens {...p} /> });
+// A canvas edits through `onOps`, never through `onChange` — so it is NOT viewOnly
+// (the host must not hide its affordances) but it also never needs the Save button,
+// because a structured op is written the moment the gesture ends. See CanvasLens.
+registerLens({ id: "canvas", contextPick: "granular", render: (p) => <CanvasLens {...p} /> });

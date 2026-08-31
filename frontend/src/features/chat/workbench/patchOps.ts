@@ -113,6 +113,62 @@ function applyOne(root: unknown, op: PatchOp): unknown {
   }
 }
 
+/** The op that puts `root` back the way it was before `op` — the unit an undo stack
+ *  stores. Every op has an exact inverse, which is why undo here is a stack of ops
+ *  rather than a stack of document snapshots: it stays small, and it replays through
+ *  the same path a forward edit does. */
+function inverseOf(root: unknown, op: PatchOp): PatchOp {
+  switch (op.op) {
+    case "set": {
+      if (op.path.length === 0) return { op: "set", path: [], value: structuredClone(root) };
+      const last = op.path[op.path.length - 1];
+      const parent = resolve(root, op.path.slice(0, -1));
+      if (typeof last === "number") {
+        const items = parent as unknown[];
+        return { op: "set", path: op.path, value: structuredClone(items[last]) };
+      }
+      const map = asMapping(parent);
+      // `set` on an absent key CREATES it, so the inverse of that is a removal, not a
+      // restore. Getting this backwards would leave `undefined` values behind in the
+      // document after an undo.
+      if (!map || !(last in map)) return { op: "remove", path: op.path };
+      return { op: "set", path: op.path, value: structuredClone(map[last]) };
+    }
+    case "insert":
+      return { op: "remove", path: [...op.path, op.index] };
+    case "remove": {
+      if (op.path.length === 0) fail("cannot remove the document root");
+      const last = op.path[op.path.length - 1];
+      const parent = resolve(root, op.path.slice(0, -1));
+      if (typeof last === "number") {
+        const items = parent as unknown[];
+        if (last >= items.length) fail("remove index is out of bounds");
+        return { op: "insert", path: op.path.slice(0, -1), index: last, value: structuredClone(items[last]) };
+      }
+      const map = asMapping(parent);
+      if (!map || !(last in map)) fail("remove key does not exist");
+      return { op: "set", path: op.path, value: structuredClone(map[last]) };
+    }
+    case "move":
+      return { op: "move", path: op.path, from: op.to, to: op.from };
+  }
+}
+
+/** Inverses for a whole batch, in the order that undoes it.
+ *
+ *  Each inverse is computed against the state that op actually saw, so the walk applies
+ *  forward as it goes; the result is reversed because undoing a batch runs it
+ *  backwards. */
+export function invertPatchOps(root: unknown, ops: readonly PatchOp[]): PatchOp[] {
+  let state = structuredClone(root);
+  const inverses: PatchOp[] = [];
+  for (const op of ops) {
+    inverses.push(inverseOf(state, op));
+    state = applyOne(state, op);
+  }
+  return inverses.reverse();
+}
+
 /** Apply ops to a COPY of `root` and return it — the caller's data is never mutated,
  *  so a batch that throws part-way leaves the previous state intact rather than a
  *  half-applied one. The gateway is atomic for the same reason. */

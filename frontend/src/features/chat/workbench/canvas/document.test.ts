@@ -14,7 +14,7 @@ describe("parseCanvas", () => {
     });
     expect(doc?.layout).toBe("grid");
     expect(doc?.nodes.map((n) => n.kind)).toEqual(["source", "text"]);
-    expect(doc?.edges[0]).toEqual({ id: "e1", from: { node: "plan", side: "right" }, to: { node: "note" }, label: "blocks" });
+    expect(doc?.edges[0]).toEqual({ id: "e1", at: 0, from: { node: "plan", side: "right" }, to: { node: "note" }, label: "blocks" });
   });
 
   it("is not a canvas unless it says so", () => {
@@ -119,14 +119,29 @@ describe("parseCanvas", () => {
   });
 });
 
+describe("raw indices", () => {
+  it("addresses the raw array, not the parsed one", () => {
+    // A patch op says `["nodes", 3, ...]` against the FILE. With a bad node dropped in
+    // the middle, the parsed position and the file position diverge — and every edit
+    // after it would land on the wrong node.
+    const doc = parseCanvas({
+      canvas: 1,
+      nodes: [{ id: "a", text: "a" }, { text: "dropped" }, { id: "c", text: "c" }],
+      edges: [{ id: "bad", from: "ghost", to: "a" }, { id: "e", from: "a", to: "c" }],
+    });
+    expect(doc?.nodes.map((n) => [n.id, n.at])).toEqual([["a", 0], ["c", 2]]);
+    expect(doc?.edges.map((e) => [e.id, e.at])).toEqual([["e", 1]]);
+  });
+});
+
 describe("nodeTitle", () => {
   it("uses a heading, a filename, or a verb", () => {
-    expect(nodeTitle({ id: "n", kind: "text", text: "# Open questions\nbody" })).toBe("Open questions");
-    expect(nodeTitle({ id: "n", kind: "source", source: { kind: "fs", path: "dev/plan.yaml" } })).toBe("plan.yaml");
-    expect(nodeTitle({ id: "n", kind: "source", source: { kind: "resource", verb: "channel.members" } })).toBe("channel.members");
+    expect(nodeTitle({ id: "n", at: 0, kind: "text", text: "# Open questions\nbody" })).toBe("Open questions");
+    expect(nodeTitle({ id: "n", at: 0, kind: "source", source: { kind: "fs", path: "dev/plan.yaml" } })).toBe("plan.yaml");
+    expect(nodeTitle({ id: "n", at: 0, kind: "source", source: { kind: "resource", verb: "channel.members" } })).toBe("channel.members");
   });
 
   it("falls back to the id when the text has no first line", () => {
-    expect(nodeTitle({ id: "blank", kind: "text", text: "\n\n  \n" })).toBe("blank");
+    expect(nodeTitle({ id: "blank", at: 0, kind: "text", text: "\n\n  \n" })).toBe("blank");
   });
 });
