@@ -107,6 +107,7 @@ const context: WorkbenchContext = {
     ls: async () => ({ path: "", entries }),
     read: async (path) => ({ path, content: files[path] ?? "", version: 1, is_dir: false }),
     write: async (path) => ({ path, version: 2 }),
+    patch: async (path) => ({ path, version: 2 }),
     rm: async () => undefined,
   },
   sendResourceReq: async () => ({}),

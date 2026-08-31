@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
 import { isStructuredPath, useFile } from "../jsonFile";
+import type { PatchOp } from "../patchOps";
 import { getLens } from "./registry";
 import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 
@@ -16,7 +17,7 @@ import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: { fs: FsClient; path: string; lensId: string; config?: unknown; channelId: string; reloadTick?: number }) {
   const lens = getLens(lensId);
   const fallback: unknown = isStructuredPath(path) ? null : "";
-  const { data, setData, save, status, raw, reload } = useFile<unknown>(fs, path, fallback);
+  const { data, setData, save, applyOps, status, raw, reload } = useFile<unknown>(fs, path, fallback);
   const { open } = useContextActions();
   const addContext = useContextPickStore((state) => state.add);
 
@@ -35,6 +36,11 @@ export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: {
     dirty.current = true;
     setData(next);
   };
+  // Structured edits write through immediately rather than waiting for Save: an op is
+  // already a complete, replayable statement of the change, so there is nothing to
+  // batch and nothing a Save button would add. `dirty` therefore stays false, which is
+  // what lets live-push reload keep working while a canvas is being edited.
+  const onOps = (ops: readonly PatchOp[]) => void applyOps(ops);
   const onSave = async () => {
     await save(data);
     dirty.current = false;
@@ -70,7 +76,7 @@ export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: {
     <div className="flex flex-col h-full text-compact">
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
-          lens.render({ data, config, onChange, requestContextPick })
+          lens.render({ data, config, onChange, onOps, requestContextPick })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}

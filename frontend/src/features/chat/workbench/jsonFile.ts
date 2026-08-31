@@ -3,6 +3,7 @@ import { parse as yamlParse } from "yaml";
 import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
 import { applyEdits } from "./yamlDoc";
+import { applyPatchOps, type PatchOp } from "./patchOps";
 
 export function errMsg(e: unknown): string {
   if (e instanceof ResourceError) return `${e.code}: ${e.message}`;
@@ -98,7 +99,46 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
     [fs, path, version, load]
   );
 
-  return { data, setData, save, status, version, raw: rawRef.current, reload: load };
+  // Structured edit, for callers that know WHICH part changed (a canvas node moving,
+  // a row being inserted). Distinct from `save` in two ways that matter:
+  //
+  //   - it preserves YAML comments through an array length change, which the
+  //     whole-document path documents as a loss;
+  //   - a VERSION_CONFLICT is recoverable. The ops are still meaningful against the
+  //     newer document, so they are replayed once after reloading; a stale whole
+  //     document could only be thrown away.
+  //
+  // The local apply is optimistic so the UI moves with the gesture, then the reload
+  // resyncs `raw` (which the patch changed on the server and we cannot see) and lets
+  // any divergence correct itself.
+  const applyOps = useCallback(
+    async (ops: readonly PatchOp[]) => {
+      if (ops.length === 0) return;
+      if (version === null) {
+        setStatus("Cannot patch a file that does not exist yet");
+        return;
+      }
+      setStatus(null);
+      setData((current) => applyPatchOps(current, ops) as T);
+      try {
+        try {
+          await fs.patch(path, ops, version);
+        } catch (e) {
+          if (!(e instanceof ResourceError && e.code === "VERSION_CONFLICT")) throw e;
+          const fresh = await fs.read(path);
+          await fs.patch(path, ops, fresh.version);
+        }
+        setStatus("Saved");
+      } catch (e) {
+        setStatus(errMsg(e));
+      } finally {
+        await load();
+      }
+    },
+    [fs, path, version, load]
+  );
+
+  return { data, setData, save, applyOps, status, version, raw: rawRef.current, reload: load };
 }
 
 // Back-compat alias for imperative panels that hand-roll JSON state.
