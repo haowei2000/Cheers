@@ -1,6 +1,9 @@
 # Canvas
 
-> Status: **proposal** — 2026-08-31. Argues that a canvas is a *file rendered by a lens*,
+> Status: **partly implemented** — 2026-08-31. Steps 1, 3, 4 and 6 of the migration
+> order have landed: structured edits reach the client, the document format and its
+> layout exist, and `builtin:canvas` renders and edits one. Steps 2, 5, 7 and 8 have not.
+> Argues that a canvas is a *file rendered by a lens*,
 > and that this one decision satisfies all four goals below without a new security
 > boundary, a new write path, or a new navigation concept. Related:
 > [PANEL_MODEL.md](PANEL_MODEL.md) (the `{source, view}` vocabulary a canvas node reuses),
@@ -109,9 +112,11 @@ fourth spelling here would undo that refactor within a release of landing it.
 [`fs.patch`](../../server/src/resource/fs.rs:626) already exists on the gateway: `set` /
 `insert` / `move` / `remove` ops over a path array (`["nodes", 3, "rect", "x"]`), 1–100 per
 call, applied atomically under `SELECT … FOR UPDATE`, preserving YAML formatting. The web
-client has never used it — [`jsonFile.ts`](../../frontend/src/features/chat/workbench/jsonFile.ts:83)
-writes whole documents, and [`fsClient`](../../frontend/src/features/chat/workbench/fsClient.ts)
-has no `patch` wrapper at all.
+client had never used it: it wrapped four of the gateway's eight file verbs, so `fs.patch`,
+`fs.edit`, `fs.append` and `fs.mv` were reachable by agents and by nothing the UI did.
+[`fsClient.patch`](../../frontend/src/features/chat/workbench/fsClient.ts) and
+[`useFile.applyOps`](../../frontend/src/features/chat/workbench/jsonFile.ts) close that for
+`patch`; the other three are still unwrapped.
 
 The difference decides goal 2:
 
@@ -124,7 +129,7 @@ The difference decides goal 2:
 Both take `if_version`, so neither is conflict-*free*. What changes is that an op is
 replayable and a document is not.
 
-This needs one addition to the lens contract in
+This needed two additions to the lens contract in
 [`lens/registry.ts`](../../frontend/src/features/chat/workbench/lens/registry.ts):
 
 ```ts
@@ -132,7 +137,15 @@ interface LensProps {
   onChange: (next: unknown) => void;        // whole document — unchanged
   onOps?: (ops: PatchOp[]) => void;         // structured edits
 }
+
+interface Lens {
+  savesItself?: boolean;                    // writes as it goes; the host offers no Save
+}
 ```
+
+`savesItself` is not cosmetic. A lens that writes through `onOps` has no unsaved buffer,
+and a Save button over one would perform exactly the whole-document write the ops path
+exists to avoid. It is distinct from `viewOnly`, which claims the lens never edits at all.
 
 `table` and `kanban` benefit immediately: editing one cell stops rewriting the file.
 
@@ -362,21 +375,37 @@ ship. Do not smuggle one in as an implementation detail.
 
 Risk-ascending, and the addressing work comes early because it pays off without a canvas.
 
-1. **`onOps` + `fsClient.patch`.** The foundation everything else writes through.
+1. ~~**`onOps` + `fsClient.patch`.**~~ **Done.** `patchOps.ts` mirrors the gateway's
+   `apply_value_op`; `useFile.applyOps` replays its ops after a conflict rather than
+   discarding a stale document.
 2. **`sourcePathAtLine`, `focusPath`, and carry `#L<n>` into the Workbench.** Gaps 1–3.
-   Every existing lens becomes addressable.
-3. **Fix the canvas format** in this document: `nodes` + `edges`, no `rect`, `#^id` anchors.
-4. **A read-only `builtin:canvas` lens with auto-layout.** *This is the point where the
-   design can be judged*: an agent writes a canvas, a human reads it, and a human can
-   already edit it through the raw view. Goals 2, 3 and 4 are live; goal 1 has its text
-   half. No pointer arbitration yet.
-5. **`view: html` Tier 0.** Inert, all platforms, no consent. This is the cheapest step
-   that delivers "an agent made this look like anything", and it can land before any
-   interactive editing exists.
-6. **Interactive editing** — drag (which writes a `rect` pin), connect, undo.
-7. **`source` nodes (recursive rendering).** Last, for the reasons below.
+   Every existing lens becomes addressable. **Not started** — and still the step with the
+   widest payoff outside the canvas.
+3. ~~**Fix the canvas format.**~~ **Done**, in `canvas/document.ts`. One addition this
+   document did not anticipate: a parsed node carries `at`, its index in the RAW array,
+   because dropping a malformed node makes the parsed position and the file position
+   diverge and every patch op addresses the file. `#^id` anchors are still unbuilt (they
+   belong with step 2).
+4. ~~**A `builtin:canvas` lens with auto-layout.**~~ **Done**, and not read-only — see 6.
+5. **`view: html` Tier 0.** Inert, all platforms, no consent. **Not started.** Research
+   into how Cursor and Codex ship a "canvas" put this in perspective: both are
+   generate-then-reprompt documents, so this step is where we match them rather than
+   where we differ.
+6. ~~**Interactive editing** — drag (which writes a `rect` pin), connect, undo.~~ **Done**,
+   folded into step 4 because the pointer arbitration is structural to the component
+   rather than a layer on top of it. This is the differentiator: nothing else lets you
+   drag a document an agent is also writing.
+7. **`source` nodes (recursive rendering).** Last, for the reasons below. **Not started** —
+   a source node currently renders as a card naming what it points at.
 8. **`view: html` Tier 1**, desktop first, once there is a reason to want behaviour rather
-   than only appearance.
+   than only appearance. **Not started.**
+
+Two properties the implementation had to discover, both invisible to every static gate
+and both caught by driving the thing in a browser. Laying out only the *unpinned* nodes
+renumbers the sequence on each pin, so dragging one node moved three others; every node
+now holds a slot and a pin overrides only its own. And `setPointerCapture` retargets
+subsequent pointer events to the capturing element, so a drop's `event.target` is always
+the viewport — connections hit-test with `elementFromPoint` instead.
 
 ## Open questions
 
