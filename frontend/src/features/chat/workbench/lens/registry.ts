@@ -35,6 +35,12 @@ export interface Lens {
   // never calls onChange (machine-written data, humans only view) — hosts hide Save,
   // so a stale snapshot can't be written back over a concurrent agent write
   viewOnly?: boolean;
+  /** This lens writes each edit as it happens, through `onOps`. The host must not offer
+   *  a Save: there is no unsaved buffer to flush, and a whole-document write would undo
+   *  exactly what the ops path protects — the comments an array length change loses, and
+   *  the concurrent agent edit a stale document would clobber. Distinct from `viewOnly`,
+   *  which says the lens never edits at all. */
+  savesItself?: boolean;
   render: (props: LensProps) => ReactNode;
 }
 

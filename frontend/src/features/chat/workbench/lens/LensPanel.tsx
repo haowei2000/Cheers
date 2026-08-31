@@ -81,10 +81,10 @@ export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: {
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
       </div>
-      {(status || !lens?.viewOnly) && (
+      {(status || !(lens?.viewOnly || lens?.savesItself)) && (
         <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
           <span className="text-compact text-content-muted truncate flex-1">{status}</span>
-          {!lens?.viewOnly && (
+          {!lens?.viewOnly && !lens?.savesItself && (
             <ActionButton
               action="save"
               context="form"

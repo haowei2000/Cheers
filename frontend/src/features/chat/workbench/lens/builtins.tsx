@@ -886,4 +886,4 @@ registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (
 // A canvas edits through `onOps`, never through `onChange` — so it is NOT viewOnly
 // (the host must not hide its affordances) but it also never needs the Save button,
 // because a structured op is written the moment the gesture ends. See CanvasLens.
-registerLens({ id: "canvas", contextPick: "granular", render: (p) => <CanvasLens {...p} /> });
+registerLens({ id: "canvas", contextPick: "granular", savesItself: true, render: (p) => <CanvasLens {...p} /> });

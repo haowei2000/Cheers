@@ -12,6 +12,7 @@ import {
   FileQuestion,
   Folder,
   FolderPlus,
+  Frame,
   LayoutGrid,
   Paperclip,
   Server,
@@ -45,6 +46,18 @@ import {
 } from "@/components/ui/floating-panel";
 
 const OTHER_SCENE = "__other__";
+
+// A canvas is the successor to a scene: a named collection of channel content, but one
+// that lives in its own file instead of in `scene_state` (docs/arch/CANVAS.md). So it
+// takes a slot in the SAME primary navigation, as a scene whose only item is that file
+// — which is why the canvas itself becomes the navigation and the item tabs go quiet.
+//
+// Flat coexistence rather than a mode switch: while both concepts exist, a channel
+// should be able to migrate one scene at a time and always see both.
+const CANVAS_SCENE = "canvas:";
+const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
+const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
+const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
 
 const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: string }> = {
   "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
@@ -480,9 +493,13 @@ export function SceneWorkbench({
     () => Object.keys(renderers).filter((path) => !claimed.has(path)).sort((a, b) => a.localeCompare(b)),
     [renderers, claimed]
   );
+  const canvasPaths = useMemo(
+    () => [...existing].filter(isCanvasPath).sort((a, b) => a.localeCompare(b)),
+    [existing]
+  );
   const sceneIds = useMemo(
-    () => [...reconciled.order, ...(otherPaths.length ? [OTHER_SCENE] : [])],
-    [reconciled.order, otherPaths.length]
+    () => [...reconciled.order, ...canvasPaths.map(canvasSceneId), ...(otherPaths.length ? [OTHER_SCENE] : [])],
+    [reconciled.order, canvasPaths, otherPaths.length]
   );
 
   useEffect(() => {
@@ -498,6 +515,8 @@ export function SceneWorkbench({
   }, [activeScene, storagePrefix]);
 
   const activePaths = useMemo(() => {
+    const canvas = canvasScenePath(activeScene);
+    if (canvas) return existing.has(canvas) ? [canvas] : [];
     const paths = activeScene === OTHER_SCENE ? otherPaths : reconciled.items[activeScene] ?? [];
     return paths.filter((path) => existing.has(path) && (activeScene !== OTHER_SCENE || renderers[path]));
   }, [activeScene, otherPaths, reconciled.items, existing, renderers]);
@@ -578,8 +597,15 @@ export function SceneWorkbench({
   });
 
   const sceneNavigationItems = sceneIds.map((id) => {
-    const meta = metaFor(id);
-    const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+    const canvasPath = canvasScenePath(id);
+    const meta = canvasPath
+      ? { subtitle: "Canvas", Icon: Frame, color: "text-accent-300" }
+      : metaFor(id);
+    const label = canvasPath
+      ? (canvasPath.split("/").pop() ?? canvasPath).replace(/\.canvas\.(ya?ml|json)$/i, "")
+      : id === OTHER_SCENE
+        ? "Other"
+        : reconciled.titles[id] ?? id;
     const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
       .filter((path) => existing.has(path));
     return {
@@ -626,7 +652,9 @@ export function SceneWorkbench({
     ),
   }), [available, onAddScene]);
 
-  const itemNavigationItems = activePaths.map((path) => ({
+  // A canvas navigates itself — you click a node, not a tab — so the item strip that a
+  // scene fills stays empty here. This is the same shape the ViewBoard already has.
+  const itemNavigationItems = (canvasScenePath(activeScene) ? [] : activePaths).map((path) => ({
     id: path,
     label: itemTitle(activeScene, path, templates),
     selected: path === selectedPath,

@@ -14,6 +14,17 @@ const files: Record<string, string> = {
   "dev/issues.yaml": "- title: Raw files visible by default\n  severity: P1\n  status: fixed\n",
   "dev/progress.yaml": "series:\n  - name: tests passing\n    points: [[1, 88], [2, 104], [3, 121]]\n",
   "dev/todo.md": "# Todo\n\n- [x] Scene navigation\n- [x] Native Codemap\n- [ ] Visual QA\n",
+  "canvases/architecture.canvas.yaml": `canvas: 1
+layout: dag
+nodes:
+  - id: brief
+    text: "# Brief\\nWhat the channel is shipping."
+  - id: plan
+    source: { kind: fs, path: dev/plan.yaml }
+    view: builtin:kanban
+edges:
+  - { id: brief-plan, from: { node: brief, side: right }, to: { node: plan, side: left }, label: drives }
+`,
   "codemap/map.yaml": `codemap: 1
 repo: haowei2000/Cheers
 updated: 2026-08-04T11:45:00Z
