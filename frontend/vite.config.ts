@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
-import { copyFileSync, cpSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -17,7 +17,14 @@ function publicWebsite() {
     closeBundle() {
       const outputDir = path.resolve(FRONTEND_DIR, "dist");
       mkdirSync(outputDir, { recursive: true });
-      copyFileSync(path.join(outputDir, "index.html"), path.join(outputDir, "app.html"));
+      // Rollup calls closeBundle even when the build FAILED, and a failed build wrote no
+      // index.html. Copying it unconditionally threw ENOENT from this hook, which then
+      // replaced the real error in the output — a worker-format failure was reported for
+      // days as a missing file. Nothing to copy means the build already lost; return and
+      // let its own error be the one that surfaces.
+      const appEntry = path.join(outputDir, "index.html");
+      if (!existsSync(appEntry)) return;
+      copyFileSync(appEntry, path.join(outputDir, "app.html"));
       for (const entry of readdirSync(WEBSITE_DIR)) {
         if (entry === "README.md") continue;
         cpSync(path.join(WEBSITE_DIR, entry), path.join(outputDir, entry), {
@@ -102,6 +109,11 @@ export default defineConfig({
     },
   },
   base: process.env.VITE_PUBLIC_BASE_PATH || "/",
+  // The extension parser worker is constructed as `{ type: "module" }` (see
+  // extensions/parseOffThread.ts) and its dependency graph code-splits, which Vite's
+  // "iife" default cannot emit — the production build fails outright on it. Matching the
+  // format to the call site is the fix; dev never hit it because it serves ESM already.
+  worker: { format: "es" },
   build: {
     chunkSizeWarningLimit: 1400,
     rollupOptions: {
