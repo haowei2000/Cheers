@@ -36,6 +36,9 @@ import {
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
+import { useAnnotations } from "./annotations";
+import { AnnotationComposer, AnnotationList, type PendingAnnotation } from "./AnnotationBar";
+import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
 import { IconButton } from "@/components/ui/icon-button";
 import { RendererHost } from "./renderers/RendererHost";
@@ -538,6 +541,16 @@ export function SceneWorkbench({
   // ONE session for the selected item, shared by this scene's two views: Raw edits
   // `text`, Preview renders `data` parsed from it. See FileSession.
   const session = useFileSession(ctx.fs, selectedPath ?? "");
+  // Notes anchored into this item — a separate file, so annotating never touches the
+  // document being annotated. Same store the file browser reads.
+  const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
+  const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
+  const onAnnotate = useCallback(
+    (target: LensContextTarget) => selectedPath && setPendingNote({ target, path: selectedPath }),
+    [selectedPath]
+  );
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const [revealLine, setRevealLine] = useState<number | undefined>();
   // Paths the user has forced to Raw; everything else follows the content.
   const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
   const showRaw = useCallback((path: string, raw: boolean) => {
@@ -557,6 +570,8 @@ export function SceneWorkbench({
     const text = session.parsedText;
     setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
   }, [selectedPath, session.path, session.version, session.parsedText]);
+
+  useEffect(() => setPendingNote(null), [selectedPath]);
 
   const selectPath = (path: string) => {
     setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
@@ -801,6 +816,25 @@ export function SceneWorkbench({
                         <Save className="h-3.5 w-3.5" />
                       </IconButton>
                     </div>
+                    {pendingNote && (
+                      <AnnotationComposer
+                        pending={pendingNote}
+                        onCancel={() => setPendingNote(null)}
+                        onSubmit={(entry) => {
+                          void annotations.add(entry);
+                          setPendingNote(null);
+                        }}
+                      />
+                    )}
+                    <AnnotationList
+                      notes={annotations.notes}
+                      text={session.parsedText}
+                      onRemove={onRemoveNote}
+                      onReveal={(range) => {
+                        showRaw(selectedPath, true);
+                        setRevealLine(range.start);
+                      }}
+                    />
                     <div className="min-h-0 flex-1">
                       <ContextPickSurface
                         channelId={ctx.channelId}
@@ -815,6 +849,7 @@ export function SceneWorkbench({
                             renderer={renderer}
                             config={ctx.configs[selectedPath]}
                             session={session}
+                            annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                             onFailure={(rendererId, reason) => {
                               setFailedRenderers((current) => ({
                                 ...current,
@@ -829,6 +864,7 @@ export function SceneWorkbench({
                               value={session.text}
                               onChange={session.editText}
                               path={selectedPath}
+                              scrollToLine={revealLine}
                               className="h-full min-h-0 overflow-hidden"
                             />
                           </Suspense>
@@ -846,7 +882,11 @@ export function SceneWorkbench({
               </div>
             )}
           </div>
-          {status && <div className="border-t border-zinc-800 px-3 py-2 text-compact text-warning-300">{status}</div>}
+          {(status || session.status || annotations.status) && (
+            <div className="border-t border-zinc-800 px-3 py-2 text-compact text-warning-300">
+              {status || session.status || annotations.status}
+            </div>
+          )}
         </section>
       </div>
     </div>

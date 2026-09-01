@@ -205,7 +205,15 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
         setStatus("Fix the syntax error in Raw before editing the preview");
         return;
       }
-      write(editData(path, bufferRef.current, next));
+      try {
+        write(editData(path, bufferRef.current, next));
+      } catch (e) {
+        // Serializing can fail against the text it has to patch — a YAML document whose
+        // root is a scalar cannot take a key, for instance. Reported, not thrown: this
+        // runs inside a lens's event handler, where an exception becomes a rejected
+        // promise nobody is awaiting and the user sees nothing happen at all.
+        setStatus(errMsg(e));
+      }
     },
     [path, write]
   );
@@ -249,8 +257,12 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
         return;
       }
       setStatus(null);
-      write(patchData(bufferRef.current, ops)); // optimistic, so the gesture moves now
       try {
+        // Optimistic, so the gesture moves now. Inside the try because a batch can be
+        // invalid against THIS document (an index out of range, a key op on a document
+        // with no root object) — that has to surface as a status, not escape as a
+        // rejected promise no caller is awaiting.
+        write(patchData(bufferRef.current, ops));
         try {
           await fs.patch(path, ops, version);
         } catch (e) {

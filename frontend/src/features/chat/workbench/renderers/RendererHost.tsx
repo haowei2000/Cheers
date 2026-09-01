@@ -1,5 +1,7 @@
 import type { WorkbenchContext } from "../context";
 import type { FileSession } from "../jsonFile";
+import type { AnnotationDoc } from "../annotations";
+import type { LensContextTarget } from "../lens/registry";
 import { LensPanel, LensView } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
@@ -26,6 +28,7 @@ export function RendererHost({
   renderer,
   config,
   session,
+  annotations,
   onFailure,
 }: {
   ctx: WorkbenchContext;
@@ -36,6 +39,14 @@ export function RendererHost({
    *  Both views must share one buffer/version/dirty flag. Absent => this is the file's
    *  only view and the lens host opens its own session. */
   session?: FileSession;
+  /** Notes on this file plus the host's compose/remove hooks, forwarded to the lens's
+   *  right-click menu. Only meaningful alongside `session` — the host that owns one owns
+   *  the other. */
+  annotations?: {
+    doc: AnnotationDoc;
+    onAnnotate: (target: LensContextTarget) => void;
+    onRemove: (id: string) => void;
+  };
   onFailure?: (rendererId: string, reason: string) => void;
 }) {
   if (renderer.source === "extension") {
@@ -72,7 +83,7 @@ export function RendererHost({
   // selection, a scroll offset, an expanded row) does not carry across.
   const lensId = renderer.lensId ?? "markdown";
   if (session) {
-    return <LensView key={`${renderer.id}:${path}`} session={session} lensId={lensId} config={config} channelId={ctx.channelId} />;
+    return <LensView key={`${renderer.id}:${path}`} session={session} lensId={lensId} config={config} channelId={ctx.channelId} annotations={annotations} />;
   }
   return (
     <LensPanel

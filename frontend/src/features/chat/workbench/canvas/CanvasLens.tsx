@@ -323,7 +323,12 @@ export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
         role="application"
         aria-label="Canvas"
         tabIndex={0}
-        className="relative min-w-0 flex-1 overflow-hidden outline-none touch-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+        // `select-none`: on this surface a left drag MOVES a node, so it can never also be
+        // a text selection — and without this the browser painted one anyway, which then
+        // popped the selection toolbar on top of the node you just dragged. Picking and
+        // annotating a node go through the right-click menu, which addresses the whole
+        // node (`sourcePath: ["nodes", at]`) rather than whatever text a drag swept over.
+        className="relative min-w-0 flex-1 select-none overflow-hidden outline-none touch-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={finishGesture}

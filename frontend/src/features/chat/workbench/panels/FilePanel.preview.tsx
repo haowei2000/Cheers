@@ -1,4 +1,5 @@
 import { ContextActionsProvider } from "@/components/ui/context-actions";
+import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
 import { ThemeProvider } from "@/components/ui/theme";
 import { createRoot, type Root } from "react-dom/client";
 import { FilePanel } from "./FilePanel";
@@ -61,12 +62,11 @@ edges:
 const files = new Map(Object.entries(initial));
 const versions = new Map([...files.keys()].map((path) => [path, 1]));
 
-class Conflict extends Error {
-  code = "VERSION_CONFLICT";
-  constructor() {
-    super("version conflict");
-  }
-}
+// Real ResourceErrors, not look-alikes: the session branches on `instanceof
+// ResourceError`, so a harness that throws a plain Error would never exercise the
+// NOT_FOUND create path or the conflict replay — the two paths most worth seeing.
+const conflict = () => new ResourceError("VERSION_CONFLICT", "version conflict");
+const notFound = () => new ResourceError("NOT_FOUND", "not found");
 
 const context: WorkbenchContext = {
   active: true,
@@ -81,15 +81,17 @@ const context: WorkbenchContext = {
         size_bytes: content.length,
       })),
     }),
-    read: async (path) => ({
-      path,
-      content: files.get(path) ?? "",
-      version: versions.get(path) ?? 1,
-      is_dir: false,
-    }),
+    read: async (path) => {
+      // A missing file is NOT_FOUND, as the gateway answers — the session distinguishes
+      // "does not exist yet" (write with if_version 0 creates it) from "exists and is
+      // empty", and a harness that always answers with a version hides the difference.
+      const content = files.get(path);
+      if (content === undefined) throw notFound();
+      return { path, content, version: versions.get(path) ?? 1, is_dir: false };
+    },
     write: async (path, content, ifVersion) => {
       const current = versions.get(path) ?? 0;
-      if (ifVersion !== undefined && ifVersion !== current) throw new Conflict();
+      if (ifVersion !== undefined && ifVersion !== current) throw conflict();
       files.set(path, content);
       versions.set(path, current + 1);
       return { path, version: current + 1 };
@@ -98,7 +100,7 @@ const context: WorkbenchContext = {
     // end. (Comment preservation is the gateway's job — this re-serializes.)
     patch: async (path: string, ops: readonly PatchOp[], ifVersion: number) => {
       const current = versions.get(path) ?? 0;
-      if (ifVersion !== current) throw new Conflict();
+      if (ifVersion !== current) throw conflict();
       const next = applyPatchOps(yamlParse(files.get(path) ?? ""), ops);
       files.set(path, yamlStringify(next));
       versions.set(path, current + 1);

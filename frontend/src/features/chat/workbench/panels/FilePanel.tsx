@@ -29,6 +29,9 @@ import {
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileSession } from "../jsonFile";
+import { useAnnotations } from "../annotations";
+import { AnnotationComposer, AnnotationList, type PendingAnnotation } from "../AnnotationBar";
+import type { LensContextTarget } from "../lens/registry";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import { addToContextTitle } from "@/features/chat/context/contextLabels";
@@ -209,6 +212,30 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // See FileSession — Raw and Preview each owning a session is what used to make an
   // unsaved edit vanish on a mode switch.
   const session = useFileSession(fs, selected ?? "");
+  // Notes anchored into this file. A separate session because they live in a separate
+  // file — the document belongs to whoever edits it, and a note is someone else's remark
+  // ABOUT it, so writing one must never touch the thing it is about.
+  const annotations = useAnnotations(fs, selected ?? "");
+  const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
+  const onAnnotate = useCallback(
+    (target: LensContextTarget) => selected && setPendingNote({ target, path: selected }),
+    [selected]
+  );
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  // Revealing a note means showing the lines it points at, which only Raw can do — so it
+  // switches modes rather than pretending the preview can highlight a line range.
+  const [revealLine, setRevealLine] = useState<number | undefined>();
+  const onRevealNote = useCallback(
+    (range: { start: number; end: number }) => {
+      if (!selected) return;
+      showRaw(selected, true);
+      setRevealLine(range.start);
+    },
+    [selected, showRaw]
+  );
+  // A pending note belongs to the file it was started on; changing files abandons it
+  // rather than silently re-aiming it at a row in a different document.
+  useEffect(() => setPendingNote(null), [selected]);
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -856,6 +883,22 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <Save className="w-3.5 h-3.5" />
                   </IconButton>
                 </div>
+                {pendingNote && (
+                  <AnnotationComposer
+                    pending={pendingNote}
+                    onCancel={() => setPendingNote(null)}
+                    onSubmit={(entry) => {
+                      void annotations.add(entry);
+                      setPendingNote(null);
+                    }}
+                  />
+                )}
+                <AnnotationList
+                  notes={annotations.notes}
+                  text={session.parsedText}
+                  onRemove={onRemoveNote}
+                  onReveal={onRevealNote}
+                />
                 {effMode === "preview" && previewRenderer ? (
                   // the chosen renderer owns load/edit/save for this one file
                   <div className="flex-1 min-h-0 overflow-hidden">
@@ -865,6 +908,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       renderer={previewRenderer}
                       config={configs[selected]}
                       session={session}
+                      annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
@@ -884,6 +928,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       value={session.text}
                       onChange={session.editText}
                       path={selected}
+                      scrollToLine={revealLine}
                       className="flex-1 min-h-0 overflow-hidden"
                     />
                   </Suspense>
@@ -892,12 +937,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             );
           })()
         )}
-        {(session.status || status) && (
+        {(session.status || annotations.status || status) && (
           <div
             aria-live="polite"
             className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-content-muted"
           >
-            {session.status || status}
+            {session.status || annotations.status || status}
           </div>
         )}
       </div>
