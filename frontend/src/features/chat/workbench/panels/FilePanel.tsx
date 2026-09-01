@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
-import { errMsg, useFileEditor } from "../jsonFile";
+import { errMsg, useFileSession } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import { addToContextTitle } from "@/features/chat/context/contextLabels";
@@ -130,9 +130,24 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  // "auto" = preview when a renderer matches, raw otherwise; user toggle overrides
-  // for the currently selected file (resets on selection change).
-  const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
+  // Paths the user has forced to Raw. Everything else follows the content: Preview when
+  // a renderer matches it, Raw when none does. Two states, not three — the old
+  // "auto" | "preview" | "raw" computed the same effective mode for two of its values.
+  //
+  // Per PATH, because the mode belongs to the file you are reading, not to the panel:
+  // this used to reset on every selection change, so setting a file to Raw and clicking
+  // away silently put you back in Preview. Kept in component state rather than
+  // .workbench.json — that file is shared by the whole channel, and which view *I* read
+  // a file in is not a channel-wide decision.
+  const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const showRaw = useCallback((path: string, raw: boolean) => {
+    setRawPaths((current) => {
+      if (current.has(path) === raw) return current;
+      const next = new Set(current);
+      if (raw) next.add(path); else next.delete(path);
+      return next;
+    });
+  }, []);
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const addContext = useContextPickStore((s) => s.add);
@@ -189,9 +204,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const tree = useMemo(() => buildTree(entries), [entries]);
 
-  // The selected file's content/edit/save (optimistic lock + conflict reload) is the shared
-  // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
-  const editor = useFileEditor(fs, selected ?? "");
+  // ONE session for the selected file, shared by both of this panel's views: Raw edits
+  // `text`, Preview renders `data` parsed from it, and they agree on version and dirty.
+  // See FileSession — Raw and Preview each owning a session is what used to make an
+  // unsaved edit vanish on a mode switch.
+  const session = useFileSession(fs, selected ?? "");
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -202,13 +219,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           id: "preview",
           label: "Open preview",
           icon: <Eye className="h-4 w-4" />,
-          run: () => setMode("preview"),
+          run: () => showRaw(selected, false),
         },
         {
           id: "download",
           label: "Download",
           icon: <Download className="h-4 w-4" />,
-          run: () => downloadText(selected, editor.content),
+          run: () => downloadText(selected, session.text),
         },
         {
           id: "add-context",
@@ -242,7 +259,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     },
     selectionActions: (selection) => {
       if (!selected) return [];
-      const range = selectionLineRange(editor.content, selection.text);
+      const range = selectionLineRange(session.text, selection.text);
       return [
         {
           id: selection.isCode ? "copy-code" : "copy-selection",
@@ -266,7 +283,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   });
 
   useEffect(() => {
-    setMode("auto");
     if (!selected) return;
     setFailedRenderers((current) => {
       if (!current[selected]) return current;
@@ -293,17 +309,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // Re-pull the tree and reload a clean open file in place, but NEVER clobber unsaved
   // edits — a dirty buffer only gets a non-destructive "changed on server" hint.
   const filesTick = ctx.filesTick ?? 0;
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
+  // One reload now covers BOTH views, because they are one session.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const seenFilesTick = useRef(filesTick);
   useEffect(() => {
     if (filesTick === seenFilesTick.current) return;
     seenFilesTick.current = filesTick;
     void refresh();
     if (!selected) return;
-    const ed = editorRef.current;
-    if (ed.dirty) ed.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
-    else void ed.reload();
+    const open = sessionRef.current;
+    if (open.dirty) open.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
+    else void open.reload(true);
   }, [filesTick, refresh, selected]);
 
   const expandAncestors = useCallback((path: string) => {
@@ -337,9 +354,9 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     });
 
   const onSave = useCallback(async () => {
-    await editor.save();
+    await session.save();
     void refresh(); // size/quota may have changed; keep the list fresh
-  }, [editor, refresh]);
+  }, [session, refresh]);
 
   const setTreeOpenUser = useCallback(
     (open: boolean) => {
@@ -629,9 +646,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           (() => {
             // content-aware: only renderers that ACCEPT this file's content are offered.
             // The user's explicit binding (if resolvable) leads; otherwise best match.
+            //
+            // Matched against `parsedText` — the text the lens's `data` was parsed from —
+            // so the renderer chosen for a file is the one that will actually be handed
+            // its data. Matching on a buffer the preview did not render is how an unsaved
+            // Raw edit used to offer a renderer the file could not feed, and how clearing
+            // the buffer used to disable Preview for a file that renders fine.
             const options = previewOptions(
               selected,
-              editor.content,
+              session.parsedText,
               rendererExtensions,
               bindings[selected],
               failedRenderers[selected]
@@ -640,14 +663,14 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             const previewRenderer = options[0];
             // no matching renderer => raw, whatever the toggle says — header (Save,
             // dirty dot) and body must agree on which mode is actually showing
-            const effMode = mode !== "raw" && previewRenderer ? "preview" : "raw";
+            const effMode = rawPaths.has(selected) || !previewRenderer ? "raw" : "preview";
             const pathLabel = compact ? basename(selected) : selected;
 
             const secondaryActions = (
               <>
                 <UiButton variant="plain"
                   onClick={() => {
-                    downloadText(selected, editor.content);
+                    downloadText(selected, session.text);
                     setMoreOpen(false);
                   }}
                   title="Download this file (export)"
@@ -681,7 +704,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   }
                   onClick={() => {
                     const sel = window.getSelection()?.toString() ?? "";
-                    const range = selectionLineRange(editor.content, sel);
+                    const range = selectionLineRange(session.text, sel);
                     if (!range) {
                       setStatus("Select some text in the file first, then attach.");
                       return;
@@ -711,8 +734,16 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <span className="text-compact text-content-secondary truncate min-w-0" title={selected}>
                     {pathLabel}
                   </span>
-                  {effMode === "raw" && editor.dirty && (
-                    <span className="text-minimal text-warning-400 flex-shrink-0">●</span>
+                  {session.dirty && (
+                    <span className="text-minimal text-warning-400 flex-shrink-0" title="Unsaved changes">●</span>
+                  )}
+                  {session.parseError && (
+                    <span
+                      className="truncate text-minimal text-warning-400 flex-shrink-0"
+                      title={`${session.parseError} — the preview is showing the last version that parsed`}
+                    >
+                      syntax error
+                    </span>
                   )}
                   <div className="flex-1 min-w-2" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
@@ -720,7 +751,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
                       onClick={() => {
                         setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        setMode("preview");
+                        showRaw(selected, false);
                       }}
                       disabled={!previewRenderer}
                       title={
@@ -734,7 +765,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       Preview
                     </UiButton>
                     <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
-                      onClick={() => setMode("raw")}
+                      onClick={() => showRaw(selected, true)}
                       controlSize="regular"
                       className="text-content-primary hover:text-content-strong"
                     >
@@ -815,15 +846,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   ) : (
                     secondaryActions
                   )}
-                  {effMode === "raw" && (
-                    <IconButton label={`Save ${selected}`}
-                      onClick={() => void onSave()}
-                      disabled={!editor.dirty}
-                      controlSize="compact"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                    </IconButton>
-                  )}
+                  {/* One Save for one buffer — Preview edits are unsaved text exactly as
+                      Raw edits are, so the button cannot belong to only one of the two. */}
+                  <IconButton label={`Save ${selected}`}
+                    onClick={() => void onSave()}
+                    disabled={!session.dirty}
+                    controlSize="compact"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                  </IconButton>
                 </div>
                 {effMode === "preview" && previewRenderer ? (
                   // the chosen renderer owns load/edit/save for this one file
@@ -833,6 +864,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       path={selected}
                       renderer={previewRenderer}
                       config={configs[selected]}
+                      session={session}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
@@ -849,8 +881,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     fallback={<div className="flex-1 min-h-0 bg-zinc-950" aria-busy="true" />}
                   >
                     <CodeEditor
-                      value={editor.content}
-                      onChange={editor.edit}
+                      value={session.text}
+                      onChange={session.editText}
                       path={selected}
                       className="flex-1 min-h-0 overflow-hidden"
                     />
@@ -860,12 +892,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             );
           })()
         )}
-        {(editor.status || status) && (
+        {(session.status || status) && (
           <div
             aria-live="polite"
             className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-content-muted"
           >
-            {editor.status || status}
+            {session.status || status}
           </div>
         )}
       </div>

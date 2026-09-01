@@ -1,5 +1,6 @@
 import type { WorkbenchContext } from "../context";
-import { LensPanel } from "../lens/LensPanel";
+import type { FileSession } from "../jsonFile";
+import { LensPanel, LensView } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
 import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
@@ -24,12 +25,17 @@ export function RendererHost({
   path,
   renderer,
   config,
+  session,
   onFailure,
 }: {
   ctx: WorkbenchContext;
   path: string;
   renderer: RendererDesc;
   config?: unknown; // built-in lens config (e.g. table columns), from .workbench.json configs
+  /** The host's file session, when the host ALSO shows this file another way (Raw).
+   *  Both views must share one buffer/version/dirty flag. Absent => this is the file's
+   *  only view and the lens host opens its own session. */
+  session?: FileSession;
   onFailure?: (rendererId: string, reason: string) => void;
 }) {
   if (renderer.source === "extension") {
@@ -61,17 +67,19 @@ export function RendererHost({
       />
     );
   }
-  // built-in lens: the LensPanel host (load → lens → save) over this one file.
-  // key by renderer+path (like the extension branch) so switching file/renderer remounts
-  // the LensPanel — a fresh instance resets its `dirty`/`seenTick` refs and useFile
-  // state. Without this, a stale `dirty` carried over from an unsaved edit in another
-  // file permanently gates live-push reload on a view-only lens (e.g. the metrics chart).
+  // built-in lens over this one file. Keyed by renderer+path (like the extension
+  // branch) so switching file/renderer remounts it and lens-internal UI state (a
+  // selection, a scroll offset, an expanded row) does not carry across.
+  const lensId = renderer.lensId ?? "markdown";
+  if (session) {
+    return <LensView key={`${renderer.id}:${path}`} session={session} lensId={lensId} config={config} channelId={ctx.channelId} />;
+  }
   return (
     <LensPanel
       key={`${renderer.id}:${path}`}
       fs={ctx.fs}
       path={path}
-      lensId={renderer.lensId ?? "markdown"}
+      lensId={lensId}
       config={config}
       channelId={ctx.channelId}
       reloadTick={ctx.filesTick}

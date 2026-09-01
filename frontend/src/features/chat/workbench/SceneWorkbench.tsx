@@ -3,7 +3,7 @@ import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/compon
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
@@ -15,6 +15,7 @@ import {
   Frame,
   LayoutGrid,
   Paperclip,
+  Save,
   Server,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -34,7 +35,9 @@ import {
 } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
+import { useFileSession } from "./jsonFile";
 import type { TemplateManifest } from "./manifest";
+import { IconButton } from "@/components/ui/icon-button";
 import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
@@ -44,6 +47,8 @@ import {
   FloatingPanelContextPortal,
   FloatingPanelPrimaryNavigation,
 } from "@/components/ui/floating-panel";
+
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 const OTHER_SCENE = "__other__";
 
@@ -530,14 +535,28 @@ export function SceneWorkbench({
         ? storedSelection
         : activePaths[0]) ?? null;
 
+  // ONE session for the selected item, shared by this scene's two views: Raw edits
+  // `text`, Preview renders `data` parsed from it. See FileSession.
+  const session = useFileSession(ctx.fs, selectedPath ?? "");
+  // Paths the user has forced to Raw; everything else follows the content.
+  const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const showRaw = useCallback((path: string, raw: boolean) => {
+    setRawPaths((current) => {
+      if (current.has(path) === raw) return current;
+      const next = new Set(current);
+      if (raw) next.add(path); else next.delete(path);
+      return next;
+    });
+  }, []);
+
+  // The session has already read the selected file, so feed the discovery map from it
+  // rather than issuing a second read for the same bytes — and so an edit does not leave
+  // the map (which decides what counts as a scene item at all) describing an old file.
   useEffect(() => {
-    if (!selectedPath || contents[selectedPath] !== undefined) return;
-    let alive = true;
-    void ctx.fs.read(selectedPath).then((file) => {
-      if (alive) setContents((current) => ({ ...current, [selectedPath]: file.content }));
-    }).catch(() => undefined);
-    return () => { alive = false; };
-  }, [selectedPath, contents, ctx.fs]);
+    if (!selectedPath || session.path !== selectedPath || session.version === null) return;
+    const text = session.parsedText;
+    setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
+  }, [selectedPath, session.path, session.version, session.parsedText]);
 
   const selectPath = (path: string) => {
     setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
@@ -731,37 +750,94 @@ export function SceneWorkbench({
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">
             {selectedPath ? (
-              <ContextPickSurface
-                channelId={ctx.channelId}
-                path={selectedPath}
-                content={contents[selectedPath] ?? ""}
-                onAdded={(label) => setStatus(`Added ${label} to context`)}
-              >
-                {renderers[selectedPath] ? (
-                  <RendererHost
-                    ctx={ctx}
-                    path={selectedPath}
-                    renderer={renderers[selectedPath]}
-                    config={ctx.configs[selectedPath]}
-                    onFailure={(rendererId, reason) => {
-                      setFailedRenderers((current) => ({
-                        ...current,
-                        [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
-                      }));
-                      if (contents[selectedPath] === undefined) {
-                        void ctx.fs.read(selectedPath).then((file) =>
-                          setContents((current) => ({ ...current, [selectedPath]: file.content }))
-                        ).catch(() => undefined);
-                      }
-                      setStatus(`${renderers[selectedPath].title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
-                    }}
-                  />
-                ) : (
-                  <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
-                    {contents[selectedPath] ?? "Loading Raw content…"}
-                  </pre>
-                )}
-              </ContextPickSurface>
+              (() => {
+                const renderer = renderers[selectedPath];
+                // Same rule as the file browser: a path the user forced to Raw, or one no
+                // renderer accepts, shows its text. Everything else previews.
+                const effMode = rawPaths.has(selectedPath) || !renderer ? "raw" : "preview";
+                return (
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3">
+                      <span className="min-w-0 truncate text-compact text-content-secondary" title={selectedPath}>
+                        {selectedPath}
+                      </span>
+                      {session.dirty && (
+                        <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>
+                      )}
+                      {session.parseError && (
+                        <span
+                          className="flex-shrink-0 truncate text-minimal text-warning-400"
+                          title={`${session.parseError} — the preview is showing the last version that parsed`}
+                        >
+                          syntax error
+                        </span>
+                      )}
+                      <div className="min-w-2 flex-1" />
+                      <div className="flex flex-shrink-0 overflow-hidden rounded-sm bg-zinc-800 text-compact">
+                        <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
+                          onClick={() => showRaw(selectedPath, false)}
+                          disabled={!renderer}
+                          title={renderer ? `Preview with ${renderer.title}` : "No matching renderer — raw only"}
+                          controlSize="regular"
+                          className="text-content-primary hover:text-content-strong disabled:opacity-50"
+                        >
+                          Preview
+                        </UiButton>
+                        <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
+                          onClick={() => showRaw(selectedPath, true)}
+                          controlSize="regular"
+                          className="text-content-primary hover:text-content-strong"
+                        >
+                          Raw
+                        </UiButton>
+                      </div>
+                      {/* One Save for one buffer — a Preview edit is unsaved text exactly
+                          as a Raw edit is, so it cannot belong to only one of the two. */}
+                      <IconButton label={`Save ${selectedPath}`}
+                        onClick={() => void session.save()}
+                        disabled={!session.dirty}
+                        controlSize="compact"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                      </IconButton>
+                    </div>
+                    <div className="min-h-0 flex-1">
+                      <ContextPickSurface
+                        channelId={ctx.channelId}
+                        path={selectedPath}
+                        content={session.text}
+                        onAdded={(label) => setStatus(`Added ${label} to context`)}
+                      >
+                        {effMode === "preview" && renderer ? (
+                          <RendererHost
+                            ctx={ctx}
+                            path={selectedPath}
+                            renderer={renderer}
+                            config={ctx.configs[selectedPath]}
+                            session={session}
+                            onFailure={(rendererId, reason) => {
+                              setFailedRenderers((current) => ({
+                                ...current,
+                                [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                              }));
+                              setStatus(`${renderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
+                            }}
+                          />
+                        ) : (
+                          <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
+                            <CodeEditor
+                              value={session.text}
+                              onChange={session.editText}
+                              path={selectedPath}
+                              className="h-full min-h-0 overflow-hidden"
+                            />
+                          </Suspense>
+                        )}
+                      </ContextPickSurface>
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
                 <FileQuestion className="h-5 w-5 text-content-muted" />

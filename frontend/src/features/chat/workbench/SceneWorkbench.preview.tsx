@@ -1,4 +1,5 @@
 import { ContextActionsProvider } from "@/components/ui/context-actions";
+import { ThemeProvider } from "@/components/ui/theme";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { createRoot, type Root } from "react-dom/client";
 import { Folder, LayoutGrid } from "lucide-react";
@@ -138,7 +139,8 @@ const context: WorkbenchContext = {
 
 function Preview() {
   return (
-    <ContextActionsProvider>
+    <ThemeProvider>
+      <ContextActionsProvider>
       <main className="relative h-full overflow-hidden bg-zinc-950 text-content-primary">
         <FloatingPanel
           title="Workbench"
@@ -165,7 +167,8 @@ function Preview() {
           />
         </FloatingPanel>
       </main>
-    </ContextActionsProvider>
+      </ContextActionsProvider>
+    </ThemeProvider>
   );
 }
 

@@ -5,51 +5,49 @@ import { Paperclip } from "lucide-react";
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
-import { isStructuredPath, useFile } from "../jsonFile";
-import type { PatchOp } from "../patchOps";
+import { canEditData, canPatch, useFileSession, type FileSession } from "../jsonFile";
 import { getLens } from "./registry";
 import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 
-// Host for one built-in lens over one file: load (parsed by format) -> lens -> save on
-// demand. Path/pin/mode chrome lives in the file browser's header — this adds only what
-// the lens itself needs: a Save for lenses that edit (viewOnly lenses get none, so a
-// stale snapshot can't be written back over a concurrent agent write).
-export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: { fs: FsClient; path: string; lensId: string; config?: unknown; channelId: string; reloadTick?: number }) {
+// One built-in lens over one file SESSION. The session is owned by the host, because the
+// host is what shows the file's other view: Raw and Preview must be the same buffer, the
+// same version and the same dirty flag, or a mode switch silently shows two answers for
+// one file. `LensPanel` below is the standalone case — a host with no second view.
+export function LensView({
+  session,
+  lensId,
+  config,
+  channelId,
+  standalone,
+}: {
+  session: FileSession;
+  lensId: string;
+  config?: unknown;
+  channelId: string;
+  /** This lens is the file's whole UI, so it renders the session's own chrome (Save,
+   *  status). False when the host has a Raw view over the same session and its own
+   *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
+  standalone?: boolean;
+}) {
   const lens = getLens(lensId);
-  const fallback: unknown = isStructuredPath(path) ? null : "";
-  const { data, setData, save, applyOps, status, raw, reload } = useFile<unknown>(fs, path, fallback);
   const { open } = useContextActions();
   const addContext = useContextPickStore((state) => state.add);
+  const { path, data, parsedText } = session;
 
-  // Live-push: the Desk changed on the server (a bot finished writing) — re-pull a
-  // CLEAN preview so the default view of machine-written files (metrics, boards) stays
-  // live. In-progress lens edits are never clobbered: dirty = any onChange since the
-  // last load/save, and a dirty buffer skips the reload.
-  const dirty = useRef(false);
-  const seenTick = useRef(reloadTick);
-  useEffect(() => {
-    if (reloadTick === undefined || reloadTick === seenTick.current) return;
-    seenTick.current = reloadTick;
-    if (!dirty.current) void reload();
-  }, [reloadTick, reload]);
-  const onChange = (next: unknown) => {
-    dirty.current = true;
-    setData(next);
-  };
-  // Structured edits write through immediately rather than waiting for Save: an op is
-  // already a complete, replayable statement of the change, so there is nothing to
-  // batch and nothing a Save button would add. `dirty` therefore stays false, which is
-  // what lets live-push reload keep working while a canvas is being edited.
-  const onOps = (ops: readonly PatchOp[]) => void applyOps(ops);
-  const onSave = async () => {
-    await save(data);
-    dirty.current = false;
-  };
+  // The session refuses these anyway (canEditData / canPatch); withdrawing the
+  // affordance is the other half — an edit control that always bounces is a promise the
+  // host does not keep. See LensProps.readOnly.
+  const writable = canEditData(session);
+  const patchable = canPatch(session);
+  const onOps = patchable ? (ops: Parameters<FileSession["applyOps"]>[0]) => void session.applyOps(ops) : undefined;
+
   const requestContextPick = (event: React.MouseEvent<Element>, target: { label: string; sourcePath?: ReadonlyArray<string | number>; sourceText?: string }) => {
+    // Resolved against `parsedText`, not `text`: the lens is pointing into the document
+    // its data came from, and lines from any other revision would anchor elsewhere.
     const range = target.sourceText !== undefined
-      ? uniqueSourceTextRange(raw, target.sourceText)
+      ? uniqueSourceTextRange(parsedText, target.sourceText)
       : target.sourcePath
-        ? sourcePathLineRange(raw, target.sourcePath)
+        ? sourcePathLineRange(parsedText, target.sourcePath)
         : null;
     event.preventDefault();
     event.stopPropagation();
@@ -72,29 +70,50 @@ export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: {
     });
   };
 
+  const saveable = standalone && !lens?.viewOnly && !lens?.savesItself;
   return (
     <div className="flex flex-col h-full text-compact">
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
-          lens.render({ data, config, onChange, onOps, requestContextPick })
+          lens.render({ data, config, onChange: session.setData, onOps, readOnly: !writable, requestContextPick })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
       </div>
-      {(status || !(lens?.viewOnly || lens?.savesItself)) && (
+      {standalone && (session.status || saveable) && (
         <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
-          <span className="text-compact text-content-muted truncate flex-1">{status}</span>
-          {!lens?.viewOnly && !lens?.savesItself && (
+          <span className="text-compact text-content-muted truncate flex-1">{session.status}</span>
+          {saveable && (
             <ActionButton
               action="save"
               context="form"
               accessibleLabel={`Save ${path}`}
               controlSize="regular"
-              onClick={() => void onSave()}
+              disabled={!session.dirty}
+              onClick={() => void session.save()}
             />
           )}
         </div>
       )}
     </div>
   );
+}
+
+// Standalone host: owns the session because nothing above it does. Used where a file has
+// only this one view (scene items); a host with a Raw view passes its own session to
+// `LensView` instead.
+export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: { fs: FsClient; path: string; lensId: string; config?: unknown; channelId: string; reloadTick?: number }) {
+  const session = useFileSession(fs, path);
+  // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
+  // default view of machine-written files (metrics, boards) stays live. An unsaved buffer
+  // is never clobbered; `reload(true)` keeps it.
+  const seenTick = useRef(reloadTick);
+  const reload = session.reload;
+  useEffect(() => {
+    if (reloadTick === undefined || reloadTick === seenTick.current) return;
+    seenTick.current = reloadTick;
+    void reload(true);
+  }, [reloadTick, reload]);
+
+  return <LensView session={session} lensId={lensId} config={config} channelId={channelId} standalone />;
 }
