@@ -23,6 +23,7 @@ import {
   TextQuote,
   Copy,
   Eye,
+  EyeOff,
   Paperclip,
   Link as LinkIcon,
 } from "lucide-react";
@@ -42,6 +43,7 @@ import {
 } from "@/features/chat/context/contextPick";
 import { formatLocator } from "@/features/chat/locator";
 import { previewOptions } from "../renderers/registry";
+import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
@@ -773,32 +775,29 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     </span>
                   )}
                   <div className="flex-1 min-w-2" />
-                  {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
-                  <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
-                      onClick={() => {
+                  {/* One control, not two tabs: Preview and Raw are the same question
+                      asked once — is the rendered view on? And it lives in the panel's
+                      top-right CORNER with the rest of the chrome, because a button in
+                      this row is drawn underneath the floating islands and stops being
+                      clickable the moment they fade in. */}
+                  <FloatingPanelActionPortal
+                    action={{
+                      id: "view-mode",
+                      label: !previewRenderer
+                        ? "No matching renderer — raw only"
+                        : effMode === "preview"
+                          ? `Showing the ${previewRenderer.title} preview — switch to raw`
+                          : "Showing raw text — switch to the preview",
+                      priority: "primary",
+                      icon: effMode === "preview" ? Eye : EyeOff,
+                      selected: effMode === "preview",
+                      disabled: !previewRenderer,
+                      onSelect: () => {
                         setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        showRaw(selected, false);
-                      }}
-                      disabled={!previewRenderer}
-                      title={
-                        previewRenderer
-                          ? `Preview with ${previewRenderer.title}`
-                          : "No matching renderer — raw only"
-                      }
-                      controlSize="regular"
-                      className="text-content-primary hover:text-content-strong disabled:opacity-50"
-                    >
-                      Preview
-                    </UiButton>
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
-                      onClick={() => showRaw(selected, true)}
-                      controlSize="regular"
-                      className="text-content-primary hover:text-content-strong"
-                    >
-                      Raw
-                    </UiButton>
-                  </div>
+                        showRaw(selected, effMode === "preview");
+                      },
+                    }}
+                  />
                   {/* renderer picker: Auto = clear the binding, follow the best content
                       match. Shown whenever there is a binding to clear OR a real choice —
                       so a stale/wrong binding always has a UI way out. */}
@@ -874,14 +873,19 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     secondaryActions
                   )}
                   {/* One Save for one buffer — Preview edits are unsaved text exactly as
-                      Raw edits are, so the button cannot belong to only one of the two. */}
-                  <IconButton label={`Save ${selected}`}
-                    onClick={() => void onSave()}
-                    disabled={!session.dirty}
-                    controlSize="compact"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                  </IconButton>
+                      Raw edits are, so it cannot belong to only one of the two. In the
+                      corner for the same reason as the eye. */}
+                  <FloatingPanelActionPortal
+                    action={{
+                      id: "save-file",
+                      label: `Save ${selected}`,
+                      priority: "primary",
+                      icon: Save,
+                      disabled: !session.dirty,
+                      onSelect: () => void onSave(),
+                    }}
+                    active={session.dirty || Boolean(session.parseError)}
+                  />
                 </div>
                 {pendingNote && (
                   <AnnotationComposer

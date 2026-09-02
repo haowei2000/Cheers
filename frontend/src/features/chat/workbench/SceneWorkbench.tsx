@@ -9,6 +9,8 @@ import {
   Boxes,
   CheckSquare2,
   Code2,
+  Eye,
+  EyeOff,
   FileQuestion,
   Folder,
   FolderPlus,
@@ -772,50 +774,40 @@ export function SceneWorkbench({
                 const effMode = rawPaths.has(selectedPath) || !renderer ? "raw" : "preview";
                 return (
                   <div className="flex h-full min-h-0 flex-col">
-                    <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3">
-                      <span className="min-w-0 truncate text-compact text-content-secondary" title={selectedPath}>
-                        {selectedPath}
-                      </span>
-                      {session.dirty && (
-                        <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>
-                      )}
-                      {session.parseError && (
-                        <span
-                          className="flex-shrink-0 truncate text-minimal text-warning-400"
-                          title={`${session.parseError} — the preview is showing the last version that parsed`}
-                        >
-                          syntax error
-                        </span>
-                      )}
-                      <div className="min-w-2 flex-1" />
-                      <div className="flex flex-shrink-0 overflow-hidden rounded-sm bg-zinc-800 text-compact">
-                        <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
-                          onClick={() => showRaw(selectedPath, false)}
-                          disabled={!renderer}
-                          title={renderer ? `Preview with ${renderer.title}` : "No matching renderer — raw only"}
-                          controlSize="regular"
-                          className="text-content-primary hover:text-content-strong disabled:opacity-50"
-                        >
-                          Preview
-                        </UiButton>
-                        <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
-                          onClick={() => showRaw(selectedPath, true)}
-                          controlSize="regular"
-                          className="text-content-primary hover:text-content-strong"
-                        >
-                          Raw
-                        </UiButton>
-                      </div>
-                      {/* One Save for one buffer — a Preview edit is unsaved text exactly
-                          as a Raw edit is, so it cannot belong to only one of the two. */}
-                      <IconButton label={`Save ${selectedPath}`}
-                        onClick={() => void session.save()}
-                        disabled={!session.dirty}
-                        controlSize="compact"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                      </IconButton>
-                    </div>
+                    {/* The file's controls are CHROME, so they live in the panel's
+                        top-right corner with the rest of it — not in a body row beneath
+                        it. A row here is drawn under the floating islands and its buttons
+                        stop being clickable the moment the chrome fades in, which is
+                        exactly when the pointer is over the panel. What is left in the
+                        body is content; what names and acts on the file is in a corner. */}
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "view-mode",
+                        label: !renderer
+                          ? "No matching renderer — raw only"
+                          : effMode === "preview"
+                            ? `Showing the ${renderer.title} preview — switch to raw`
+                            : "Showing raw text — switch to the preview",
+                        priority: "primary",
+                        icon: effMode === "preview" ? Eye : EyeOff,
+                        selected: effMode === "preview",
+                        disabled: !renderer,
+                        onSelect: () => showRaw(selectedPath, effMode === "preview"),
+                      }}
+                    />
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "save-file",
+                        label: session.parseError
+                          ? `Save ${selectedPath} — the text does not parse`
+                          : `Save ${selectedPath}`,
+                        priority: "primary",
+                        icon: Save,
+                        disabled: !session.dirty,
+                        onSelect: () => void session.save(),
+                      }}
+                      active={session.dirty || Boolean(session.parseError)}
+                    />
                     {pendingNote && (
                       <AnnotationComposer
                         pending={pendingNote}
@@ -882,9 +874,25 @@ export function SceneWorkbench({
               </div>
             )}
           </div>
-          {(status || session.status || annotations.status) && (
-            <div className="border-t border-zinc-800 px-3 py-2 text-compact text-warning-300">
-              {status || session.status || annotations.status}
+          {/* Bottom strip: the one place nothing floats over. Carries what the file is
+              and what state it is in, so neither has to sit under the chrome. */}
+          {(selectedPath || status || session.status || annotations.status) && (
+            <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 text-compact">
+              {selectedPath && (
+                <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
+              )}
+              {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+              {session.parseError && (
+                <span
+                  className="flex-shrink-0 text-minimal text-warning-400"
+                  title={`${session.parseError} — the preview is showing the last version that parsed`}
+                >
+                  syntax error
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate text-right text-warning-300">
+                {status || session.status || annotations.status}
+              </span>
             </div>
           )}
         </section>

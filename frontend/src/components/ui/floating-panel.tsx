@@ -290,6 +290,8 @@ export function FloatingPanel({
       : drag.style;
   const [condensedTitle, setCondensedTitle] = useState(false);
   const [panelWidth, setPanelWidth] = useState(0);
+  // Width of the top-RIGHT island, so the top-LEFT one knows where to stop.
+  const [actionsWidth, setActionsWidth] = useState(0);
   const [navigationSlotWidth, setNavigationSlotWidth] = useState(0);
 
   // Title label. While collapsed the whole label is the expand target (a much
@@ -393,23 +395,26 @@ export function FloatingPanel({
       const width = panelElement.getBoundingClientRect().width;
       setPanelWidth(width);
       const titleWidth = Math.max(titleElement.getBoundingClientRect().width, titleElement.scrollWidth);
-      const actionsWidth = Math.max(
+      const measuredActions = Math.max(
         actionsElement.getBoundingClientRect().width,
         actionsElement.scrollWidth
       );
+      setActionsWidth(measuredActions);
 
       if (!condensedTitle) fullTitleWidth.current = Math.max(fullTitleWidth.current, titleWidth);
       const titleBudget = fullTitleWidth.current || titleWidth;
       const islandGap = 12;
       const panelInset = 16;
-      const sideBudget = Math.max(titleBudget, actionsWidth);
-      const available = Math.max(96, width - 2 * (sideBudget + islandGap) - panelInset);
-      setNavigationSlotWidth(Math.min(width * 0.58, available));
 
-      // Panel chrome is always one line. When the side islands leave too little room,
-      // preserve the identity icon and let the title copy collapse.
-      const shouldCondenseTitle = hasNavigation && available < 132;
-      setCondensedTitle(shouldCondenseTitle);
+      // Navigation now shares the TOP-LEFT island with the title, so its budget is what
+      // that island has left after the title — one subtraction, not the two it needed
+      // while it was centred between the title and the actions.
+      const leftIsland = width - measuredActions - 2 * islandGap - panelInset;
+      setNavigationSlotWidth(Math.max(96, leftIsland - titleBudget - islandGap));
+
+      // One line, always. When the title and the tabs cannot both fit beside the actions,
+      // keep the identity icon and let the title copy collapse.
+      setCondensedTitle(hasNavigation && leftIsland - titleBudget < 132);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -500,13 +505,30 @@ export function FloatingPanel({
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+          {/* Floating chrome lives in the CORNERS and nowhere else — never a centered
+              island. A centre cluster has no width it can call its own: the title claims
+              the left, the actions claim the right, and whatever sits between them is
+              squeezed until it slides underneath one of them. That is what the panel
+              header looked like at any realistic width.
+              Corners cannot collide, because each one grows away from the others.
+              Navigation joins the TOP-LEFT corner rather than taking a corner of its own:
+              the bottom edge belongs to the content (a codemap puts its legend and zoom
+              controls there), so chrome that moved down there would only trade a
+              chrome-on-chrome overlap for a chrome-on-content one. */}
+          <div className="pointer-events-none absolute inset-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+            <div
+              className="pointer-events-none absolute left-2 top-2 flex h-9 items-center gap-2"
+              // Stops where the actions corner begins, so the two top corners share the
+              // edge instead of stacking. Measured, not guessed: the actions island grows
+              // with whatever a panel contributes to it.
+              style={{ maxWidth: `calc(100% - ${Math.round(actionsWidth) + 24}px)` }}
+            >
             <div
               {...drag.handleProps}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
+              className="floating-control-surface pointer-events-auto flex h-9 max-w-full flex-shrink-0 cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
             >
               <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
               {titleLabel}
@@ -515,10 +537,9 @@ export function FloatingPanel({
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
               className={cn(
-                "pointer-events-auto absolute left-1/2 top-2 flex h-9 -translate-x-1/2 items-center gap-1 overflow-hidden whitespace-nowrap",
+                "pointer-events-auto flex h-9 min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap",
                 hasNavigation && "floating-control-surface rounded-concentric p-1"
               )}
-              style={{ width: navigationSlotWidth || undefined, maxWidth: "58%" }}
             >
               {primaryNavigation && (
                 <div data-floating-panel-primary-navigation="" className="min-w-0 flex-[3]">
@@ -546,6 +567,7 @@ export function FloatingPanel({
                   />
                 </div>
               )}
+            </div>
             </div>
             <div
               ref={setActionsElement}
