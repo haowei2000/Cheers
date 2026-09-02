@@ -177,6 +177,12 @@ function releaseReadyWaiters(error?: Error): void {
 function whenSocketReady(): Promise<void> {
   if (socketReady()) return Promise.resolve();
   if (authFailed) return Promise.reject(new ResourceError("DISCONNECTED", "not authenticated"));
+  // Waiting is only worth anything if something is coming. A socket that closed while
+  // the tab was in the background leaves nothing running to reopen it until the channel
+  // effect happens to re-fire, so a caller would sit out its whole budget and time out.
+  // Asking for a resource IS a reason to have a socket: nudge one up. `ensureSocket` is
+  // a no-op when one is already open or mid-connect.
+  if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) ensureSocket(wsToken);
   return new Promise<void>((resolve, reject) => readyWaiters.push({ resolve, reject }));
 }
 const pendingReqs = new Map<string, PendingReq>();
