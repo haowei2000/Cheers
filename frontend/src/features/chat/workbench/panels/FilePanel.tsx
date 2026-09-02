@@ -1,8 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { ActionButton } from "@/components/ui/action-button";
 import { Input as UiInput } from "@/components/ui/input";
-import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -12,7 +10,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -24,7 +21,9 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Layers,
   MessageSquare,
+  Pin,
   Paperclip,
   Link as LinkIcon,
 } from "lucide-react";
@@ -44,6 +43,7 @@ import {
 } from "@/features/chat/context/contextPick";
 import { formatLocator } from "@/features/chat/locator";
 import { previewOptions } from "../renderers/registry";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
@@ -60,7 +60,6 @@ const CodeEditor = lazy(() => import("../CodeEditor").then((m) => ({ default: m.
 // Below COMPACT the tree yields the column to the editor (overlay when reopened);
 // below TIGHT the toolbar collapses secondary actions into a "…" menu.
 const COMPACT_W = 520;
-const TIGHT_W = 380;
 
 // Export bridge: a context file is TEXT, so "download" = save its content as a blob
 // client-side (filename = the path's basename). No backend round-trip needed.
@@ -171,8 +170,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // mid-width lane adapts even on a large display.
   const rootRef = useRef<HTMLDivElement>(null);
   const [panelW, setPanelW] = useState(0);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
   // Remember whether the user manually reopened the tree in compact mode so we
   // don't immediately auto-collapse it again on the next resize tick.
   const userTreeOverride = useRef(false);
@@ -190,7 +187,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   }, []);
 
   const compact = panelW > 0 && panelW < COMPACT_W;
-  const tight = panelW > 0 && panelW < TIGHT_W;
 
   // Entering compact: auto-hide the tree so the editor/preview owns the column.
   // Leaving compact: clear the override flag; leave treeOpen as the user left it.
@@ -198,15 +194,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     if (compact && !userTreeOverride.current) setTreeOpen(false);
     if (!compact) userTreeOverride.current = false;
   }, [compact]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [moreOpen]);
 
   const tree = useMemo(() => buildTree(entries), [entries]);
 
@@ -695,188 +682,146 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             // no matching renderer => raw, whatever the toggle says — header (Save,
             // dirty dot) and body must agree on which mode is actually showing
             const effMode = rawPaths.has(selected) || !previewRenderer ? "raw" : "preview";
-            const pathLabel = compact ? basename(selected) : selected;
 
-            const secondaryActions = (
-              <>
-                <UiButton variant="plain"
-                  onClick={() => {
-                    downloadText(selected, session.text);
-                    setMoreOpen(false);
-                  }}
-                  title="Download this file (export)"
-                  content="icon" controlSize="compact"
-                  className="text-content-primary hover:text-content-strong"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </UiButton>
-                <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
-                <AttachContextButton
-                  channelId={ctx.channelId}
-                  disabled={pinned.includes(selected)}
-                  disabledTitle="Already pinned — sent in every prompt"
-                  title={addToContextTitle("this file")}
-                  item={{
-                    id: `file:${selected}`,
-                    verb: "fs.read",
-                    params: { path: selected },
-                    label: basename(selected),
-                    kind: "file",
-                  }}
-                />
-                <UiButton variant="plain"
-                  type="button"
-                  content="icon" controlSize="compact"
-                  disabled={pinned.includes(selected)}
-                  title={
-                    pinned.includes(selected)
-                      ? "Already pinned — sent in every prompt"
-                      : `${addToContextTitle("the selected lines")} (select text first)`
-                  }
-                  onClick={() => {
-                    const sel = window.getSelection()?.toString() ?? "";
-                    const range = selectionLineRange(session.text, sel);
-                    if (!range) {
-                      setStatus("Select some text in the file first, then attach.");
-                      return;
-                    }
-                    addContext(
-                      ctx.channelId,
-                      rangedFileContextItem(selected, range.start, range.end)
-                    );
-                    setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
-                    setMoreOpen(false);
-                  }}
-                  className="rounded-sm text-content-primary hover:text-accent-300 disabled:opacity-50 disabled:hover:text-content-primary"
-                >
-                  <TextQuote className="w-3.5 h-3.5" />
-                </UiButton>
-              </>
-            );
+            const rendererLabel = bound?.title ?? "Auto";
 
             return (
               <>
-                <div
-                  className={cn(
-                    "mx-1 mt-1 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3",
-                    tight ? "min-h-9 flex-wrap py-1" : "h-9"
-                  )}
-                >
-                  <span className="text-compact text-content-secondary truncate min-w-0" title={selected}>
-                    {pathLabel}
-                  </span>
-                  {session.dirty && (
-                    <span className="text-minimal text-warning-400 flex-shrink-0" title="Unsaved changes">●</span>
-                  )}
-                  {session.parseError && (
-                    <span
-                      className="truncate text-minimal text-warning-400 flex-shrink-0"
-                      title={`${session.parseError} — the preview is showing the last version that parsed`}
-                    >
-                      syntax error
-                    </span>
-                  )}
-                  <div className="flex-1 min-w-2" />
-                  {/* One control, not two tabs: Preview and Raw are the same question
-                      asked once — is the rendered view on? And it lives in the panel's
-                      top-right CORNER with the rest of the chrome, because a button in
-                      this row is drawn underneath the floating islands and stops being
-                      clickable the moment they fade in. */}
-                  <FloatingPanelActionPortal
-                    action={{
-                      id: "view-mode",
-                      label: !previewRenderer
-                        ? "No matching renderer — raw only"
-                        : effMode === "preview"
-                          ? `Showing the ${previewRenderer.title} preview — switch to raw`
-                          : "Showing raw text — switch to the preview",
-                      priority: "primary",
-                      icon: effMode === "preview" ? Eye : EyeOff,
-                      selected: effMode === "preview",
-                      disabled: !previewRenderer,
-                      onSelect: () => {
-                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        showRaw(selected, effMode === "preview");
-                      },
-                    }}
-                  />
-                  {/* renderer picker: Auto = clear the binding, follow the best content
-                      match. Shown whenever there is a binding to clear OR a real choice —
-                      so a stale/wrong binding always has a UI way out. */}
-                  {effMode === "preview" && (bound || options.length > 1) && !tight && (
-                    <UiSelect
-                      value={bound?.id ?? ""}
-                      onChange={(e) => {
-                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        setBinding(selected, e.target.value || null);
-                      }}
-                      title="Renderer for Preview (Auto = best content match)"
-                      controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
-                    >
-                      <option value="">Auto</option>
-                      {options.map((r) => {
-                        const p =
-                          r.source === "extension"
-                            ? rendererExtensions.find((pl) => pl.extensionId === r.extensionId)
-                            : undefined;
-                        const mark = p?.transient
-                          ? "⏱ "
-                          : p?.origin === "personal"
-                            ? "💻 "
-                            : "";
-                        return (
-                          <option key={r.id} value={r.id}>
-                            {mark}
-                            {r.title}
-                            {r.source === "extension" ? ` · ${r.extensionId}` : ""}
-                          </option>
-                        );
-                      })}
-                    </UiSelect>
-                  )}
-                  {tight ? (
-                    <div className="relative flex-shrink-0" ref={moreRef}>
-                      <UiButton variant="plain"
-                        type="button"
-                        content="icon" controlSize="compact"
-                        onClick={() => setMoreOpen((o) => !o)}
-                        aria-expanded={moreOpen}
-                        aria-label="More file actions"
-                        title="More"
-                        className="rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                      >
-                        <MoreHorizontal className="w-3.5 h-3.5" />
-                      </UiButton>
-                      {moreOpen && (
-                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-sm bg-zinc-900 p-2 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
-                          {effMode === "preview" && (bound || options.length > 1) && (
-                            <UiSelect
-                              value={bound?.id ?? ""}
-                              onChange={(e) => {
-                                setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                                setBinding(selected, e.target.value || null);
-                              }}
-                              title="Renderer for Preview (Auto = best content match)"
-                              controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
-                            >
-                              <option value="">Auto</option>
-                              {options.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.title}
-                                </option>
-                              ))}
-                            </UiSelect>
-                          )}
-                          {secondaryActions}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    secondaryActions
-                  )}
-                  {/* One Save for one buffer — Preview edits are unsaved text exactly as
-                      Raw edits are, so it cannot belong to only one of the two. In the
-                      corner for the same reason as the eye. */}
+                {/* Every control this file has is CHROME now, in the panel's action
+                    corner. They used to be a row at the top of the body, which the
+                    floating islands are drawn over — so they stopped being clickable at
+                    the moment the pointer entered the panel and the chrome faded in. The
+                    corner also collapses them for free: AdaptiveControlGroup drops to
+                    icons and then to an overflow menu, which is what the hand-rolled
+                    `tight` / "More" popover in this file used to do by itself. */}
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "view-mode",
+                    label: !previewRenderer
+                      ? "No matching renderer — raw only"
+                      : effMode === "preview"
+                        ? `Showing the ${previewRenderer.title} preview — switch to raw`
+                        : "Showing raw text — switch to the preview",
+                    priority: "primary",
+                    icon: effMode === "preview" ? Eye : EyeOff,
+                    selected: effMode === "preview",
+                    disabled: !previewRenderer,
+                    onSelect: () => {
+                      setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                      showRaw(selected, effMode === "preview");
+                    },
+                  }}
+                />
+                {/* Renderer picker: Auto clears the binding and follows the best content
+                    match, so a stale or wrong binding always has a way out. A
+                    DropdownSelect, not a native one — a native select sizes itself to its
+                    longest option, and an extension's title carries its extension id. */}
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "renderer",
+                    label: `Renderer: ${rendererLabel}`,
+                    priority: "secondary",
+                    icon: Layers,
+                    control: (
+                      <DropdownSelect
+                        ariaLabel="Renderer for Preview (Auto = best content match)"
+                        leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                        label={rendererLabel}
+                        value={bound?.id ?? ""}
+                        options={[
+                          { value: "", label: "Auto" },
+                          ...options.map((renderer) => {
+                            const extension = renderer.source === "extension"
+                              ? rendererExtensions.find((candidate) => candidate.extensionId === renderer.extensionId)
+                              : undefined;
+                            const mark = extension?.transient ? "⏱ " : extension?.origin === "personal" ? "💻 " : "";
+                            return {
+                              value: renderer.id,
+                              label: `${mark}${renderer.title}${renderer.source === "extension" ? ` · ${renderer.extensionId}` : ""}`,
+                            };
+                          }),
+                        ]}
+                        onSelect={(value: string) => {
+                          setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                          setBinding(selected, value || null);
+                        }}
+                        controlSize="compact"
+                        controlWidth="fill"
+                        className="min-w-0"
+                        menuClassName="max-w-72"
+                      />
+                    ),
+                  }}
+                  active={effMode === "preview" && Boolean(bound || options.length > 1)}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "download",
+                    label: `Download ${basename(selected)}`,
+                    priority: "secondary",
+                    icon: Download,
+                    onSelect: () => downloadText(selected, session.text),
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "pin",
+                    label: pinned.includes(selected)
+                      ? "Pinned — injected into every prompt; click to unpin"
+                      : "Pin: inject this file into every bot prompt",
+                    priority: "secondary",
+                    icon: Pin,
+                    selected: pinned.includes(selected),
+                    control: <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />,
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "attach-file",
+                    label: pinned.includes(selected)
+                      ? "Already pinned — sent in every prompt"
+                      : addToContextTitle("this file"),
+                    priority: "secondary",
+                    icon: Paperclip,
+                    disabled: pinned.includes(selected),
+                    control: (
+                      <AttachContextButton
+                        channelId={ctx.channelId}
+                        disabled={pinned.includes(selected)}
+                        disabledTitle="Already pinned — sent in every prompt"
+                        title={addToContextTitle("this file")}
+                        item={{
+                          id: `file:${selected}`,
+                          verb: "fs.read",
+                          params: { path: selected },
+                          label: basename(selected),
+                          kind: "file",
+                        }}
+                      />
+                    ),
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "attach-lines",
+                    label: pinned.includes(selected)
+                      ? "Already pinned — sent in every prompt"
+                      : `${addToContextTitle("the selected lines")} (select text first)`,
+                    priority: "secondary",
+                    icon: TextQuote,
+                    disabled: pinned.includes(selected),
+                    onSelect: () => {
+                      const selection = window.getSelection()?.toString() ?? "";
+                      const range = selectionLineRange(session.text, selection);
+                      if (!range) {
+                        setStatus("Select some text in the file first, then attach.");
+                        return;
+                      }
+                      addContext(ctx.channelId, rangedFileContextItem(selected, range.start, range.end));
+                      setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
+                    },
+                  }}
+                />
                   <FloatingPanelActionPortal
                     action={{
                       id: "annotations",
@@ -905,7 +850,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     }}
                     active={session.dirty || Boolean(session.parseError)}
                   />
-                </div>
                 {pendingNote && (
                   <AnnotationComposer
                     pending={pendingNote}
@@ -954,12 +898,30 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             );
           })()
         )}
-        {(session.status || annotations.status || status) && (
+        {/* Bottom strip: the one place nothing floats over. Carries what the file IS and
+            what state it is in, now that every control it has is up in the corner. */}
+        {(selected || session.status || annotations.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-content-muted"
+            className="mx-1 mb-1 flex items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact"
           >
-            {session.status || annotations.status || status}
+            {selected && (
+              <span className="min-w-0 truncate text-content-muted" title={selected}>
+                {compact ? basename(selected) : selected}
+              </span>
+            )}
+            {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+            {session.parseError && (
+              <span
+                className="flex-shrink-0 text-minimal text-warning-400"
+                title={`${session.parseError} — the preview is showing the last version that parsed`}
+              >
+                syntax error
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-right text-content-muted">
+              {session.status || annotations.status || status}
+            </span>
           </div>
         )}
       </div>
