@@ -1,6 +1,8 @@
 import { ContextActionsProvider } from "@/components/ui/context-actions";
 import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
 import { ThemeProvider } from "@/components/ui/theme";
+import { FloatingPanel } from "@/components/ui/floating-panel";
+import { FolderTree } from "lucide-react";
 import { createRoot, type Root } from "react-dom/client";
 import { FilePanel } from "./FilePanel";
 import type { WorkbenchContext } from "../context";
@@ -126,10 +128,21 @@ function Preview() {
   return (
     <ThemeProvider>
       <ContextActionsProvider>
-        <main className="h-screen w-screen bg-canvas p-4 text-content-primary">
-          <section className="h-full w-full overflow-hidden rounded-sm ring-1 ring-line-subtle">
+        {/* Inside a FloatingPanel, because that is where FilePanel actually runs — and
+            its eye, Save and notes buttons now live in the panel's action corner, so a
+            harness without one would show none of them. */}
+        <main className="relative h-screen w-screen overflow-hidden bg-canvas text-content-primary">
+          <FloatingPanel
+            title="Files"
+            icon={FolderTree}
+            onClose={() => undefined}
+            storageKey="cheers.preview.file-panel"
+            className="h-[min(760px,calc(100%-4rem))] w-[min(1100px,calc(100%-4rem))]"
+            defaultPosClassName="left-1/2 top-8 -translate-x-1/2"
+            bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+          >
             <FilePanel ctx={context} />
-          </section>
+          </FloatingPanel>
         </main>
       </ContextActionsProvider>
     </ThemeProvider>

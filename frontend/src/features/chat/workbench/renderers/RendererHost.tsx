@@ -44,7 +44,7 @@ export function RendererHost({
    *  the other. */
   annotations?: {
     doc: AnnotationDoc;
-    onAnnotate: (target: LensContextTarget) => void;
+    onAnnotate: (target: LensContextTarget, at: { x: number; y: number }) => void;
     onRemove: (id: string) => void;
   };
   onFailure?: (rendererId: string, reason: string) => void;

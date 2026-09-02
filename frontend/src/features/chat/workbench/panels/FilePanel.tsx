@@ -24,6 +24,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  MessageSquare,
   Paperclip,
   Link as LinkIcon,
 } from "lucide-react";
@@ -31,7 +32,7 @@ import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileSession } from "../jsonFile";
 import { useAnnotations } from "../annotations";
-import { AnnotationComposer, AnnotationList, type PendingAnnotation } from "../AnnotationBar";
+import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "../AnnotationBar";
 import type { LensContextTarget } from "../lens/registry";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
@@ -220,7 +221,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const annotations = useAnnotations(fs, selected ?? "");
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
-    (target: LensContextTarget) => selected && setPendingNote({ target, path: selected }),
+    (target: LensContextTarget, at: { x: number; y: number }) =>
+      selected && setPendingNote({ target, path: selected, at }),
     [selected]
   );
   const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
@@ -877,6 +879,23 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       corner for the same reason as the eye. */}
                   <FloatingPanelActionPortal
                     action={{
+                      id: "annotations",
+                      label: `Notes on ${selected}`,
+                      priority: "secondary",
+                      icon: MessageSquare,
+                      control: (
+                        <AnnotationsButton
+                          notes={annotations.notes}
+                          text={session.parsedText}
+                          onRemove={onRemoveNote}
+                          onReveal={onRevealNote}
+                        />
+                      ),
+                    }}
+                    active={annotations.notes.length > 0}
+                  />
+                  <FloatingPanelActionPortal
+                    action={{
                       id: "save-file",
                       label: `Save ${selected}`,
                       priority: "primary",
@@ -897,12 +916,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     }}
                   />
                 )}
-                <AnnotationList
-                  notes={annotations.notes}
-                  text={session.parsedText}
-                  onRemove={onRemoveNote}
-                  onReveal={onRevealNote}
-                />
                 {effMode === "preview" && previewRenderer ? (
                   // the chosen renderer owns load/edit/save for this one file
                   <div className="flex-1 min-h-0 overflow-hidden">

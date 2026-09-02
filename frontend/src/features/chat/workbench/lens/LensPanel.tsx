@@ -31,7 +31,7 @@ export function LensView({
    *  the host has nowhere to compose one — the menu then offers only the pick. */
   annotations?: {
     doc: AnnotationDoc;
-    onAnnotate: (target: LensContextTarget) => void;
+    onAnnotate: (target: LensContextTarget, at: { x: number; y: number }) => void;
     onRemove: (id: string) => void;
   };
   /** This lens is the file's whole UI, so it renders the session's own chrome (Save,
@@ -87,7 +87,9 @@ export function LensView({
           id: "annotate",
           label: `Annotate ${target.label}`,
           icon: <MessageSquarePlus className="h-4 w-4" />,
-          run: () => annotations.onAnnotate(target),
+          // The click point travels with the target: the composer opens on the row you
+          // right-clicked, not in a chrome slot somewhere else in the panel.
+          run: () => annotations.onAnnotate(target, { x: event.clientX, y: event.clientY }),
         }] : []),
         // The notes already on THIS target, listed where they were made — the only place
         // you would think to look for them.

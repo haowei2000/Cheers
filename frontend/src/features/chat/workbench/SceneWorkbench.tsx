@@ -11,6 +11,7 @@ import {
   Code2,
   Eye,
   EyeOff,
+  MessageSquare,
   FileQuestion,
   Folder,
   FolderPlus,
@@ -39,7 +40,7 @@ import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
 import { useAnnotations } from "./annotations";
-import { AnnotationComposer, AnnotationList, type PendingAnnotation } from "./AnnotationBar";
+import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
 import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
 import { IconButton } from "@/components/ui/icon-button";
@@ -548,7 +549,8 @@ export function SceneWorkbench({
   const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
-    (target: LensContextTarget) => selectedPath && setPendingNote({ target, path: selectedPath }),
+    (target: LensContextTarget, at: { x: number; y: number }) =>
+      selectedPath && setPendingNote({ target, path: selectedPath, at }),
     [selectedPath]
   );
   const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
@@ -801,6 +803,26 @@ export function SceneWorkbench({
                     />
                     <FloatingPanelActionPortal
                       action={{
+                        id: "annotations",
+                        label: `Notes on ${selectedPath}`,
+                        priority: "secondary",
+                        icon: MessageSquare,
+                        control: (
+                          <AnnotationsButton
+                            notes={annotations.notes}
+                            text={session.parsedText}
+                            onRemove={onRemoveNote}
+                            onReveal={(range) => {
+                              showRaw(selectedPath, true);
+                              setRevealLine(range.start);
+                            }}
+                          />
+                        ),
+                      }}
+                      active={annotations.notes.length > 0}
+                    />
+                    <FloatingPanelActionPortal
+                      action={{
                         id: "save-file",
                         label: session.parseError
                           ? `Save ${selectedPath} — the text does not parse`
@@ -822,15 +844,6 @@ export function SceneWorkbench({
                         }}
                       />
                     )}
-                    <AnnotationList
-                      notes={annotations.notes}
-                      text={session.parsedText}
-                      onRemove={onRemoveNote}
-                      onReveal={(range) => {
-                        showRaw(selectedPath, true);
-                        setRevealLine(range.start);
-                      }}
-                    />
                     <div className="min-h-0 flex-1">
                       <ContextPickSurface
                         channelId={ctx.channelId}
