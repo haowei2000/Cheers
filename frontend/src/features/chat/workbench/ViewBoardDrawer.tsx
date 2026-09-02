@@ -218,6 +218,9 @@ function ViewBoardDrawerImpl({
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
+        // A dropdown, not a tab row — same reason as the Workbench: a menubar's width
+        // scales with how many boards exist, in a 420px-wide panel.
+        presentationOrder: ["collapsed"],
         items: boards.map((board) => ({
           id: board.id,
           label: board.title,
@@ -227,14 +230,18 @@ function ViewBoardDrawerImpl({
         })),
       }}
       panelContext={activeBoard?.scope === "session" ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" />
-          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
+        // No "SCOPE" caption: the layers icon says which control this is and the selected
+        // value says the rest, while an uppercase caption is pure width in a corner that
+        // is capped. `min-w-24` is the floor — without one the select shrank past its own
+        // border and rendered as a clipped sliver.
+        <div className="flex min-w-0 flex-1 items-center gap-1 px-1" title="Scope">
+          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />
           <UiSelect
             value={scope}
             onChange={(event) => setScope(event.target.value)}
+            aria-label="Scope"
             controlSize="regular"
-            className="min-w-0 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="min-w-24 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">All sessions</option>
             {sessions.map((session) => (

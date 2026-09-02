@@ -406,7 +406,10 @@ export function FloatingPanel({
       // Capped at 45% so the island stays a CORNER: past that it stretches across the
       // top and reads as the centered toolbar the corner rule replaced. The tabs inside
       // collapse to icons and then to an overflow menu, which is what they are for.
-      const leftIsland = Math.min(width * 0.45, width - measuredActions - 2 * islandGap - panelInset);
+      const leftIsland = Math.min(
+        Math.max(width * 0.45, 240),
+        width - measuredActions - 2 * islandGap - panelInset
+      );
       // The grip and mark are a fixed-width prefix inside the same island; the rest is
       // the tabs'. No title copy to budget for any more.
       setNavigationSlotWidth(Math.max(96, leftIsland - titleWidth - islandGap));
@@ -523,7 +526,11 @@ export function FloatingPanel({
               // Stops where the actions corner begins, so the two top corners share the
               // edge instead of stacking. Measured, not guessed: the actions island grows
               // with whatever a panel contributes to it.
-              style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), 45%)` }}
+              // Never past 45% of a wide panel — that is the corner rule. But a fraction
+              // alone starves a NARROW one: at 420px it left less than the controls need
+              // and they were clipped mid-border rather than collapsing. A floor of 15rem
+              // wins there, where there is no meaningful "middle" to protect anyway.
+              style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), max(45%, 15rem))` }}
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
                 separate pill beside it. Two surfaces read as two groups and cost the gap
@@ -537,11 +544,15 @@ export function FloatingPanel({
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center gap-1 rounded-sm px-1 text-content-subtle active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-subtle active:cursor-grabbing"
               aria-label={`${title} — drag to move`}
             >
+              {/* The grip alone. The panel's mark went the way its name did: a panel whose
+                  content is a file tree or a plan already says what it is, and in a corner
+                  that is capped, an icon you never click is width taken from the tabs. The
+                  mark stays where it earns its place — the collapsed pill and the mobile
+                  header, where there is no content to say it for you. */}
               <GripHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-              {Icon && <Icon className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />}
             </div>
             <div
               ref={setNavigationTarget}
