@@ -288,25 +288,21 @@ export function FloatingPanel({
     : collapsed
       ? drag.posStyle
       : drag.style;
-  const [condensedTitle, setCondensedTitle] = useState(false);
   const [panelWidth, setPanelWidth] = useState(0);
   // Width of the top-RIGHT island, so the top-LEFT one knows where to stop.
   const [actionsWidth, setActionsWidth] = useState(0);
   const [navigationSlotWidth, setNavigationSlotWidth] = useState(0);
 
-  // Title label. While collapsed the whole label is the expand target (a much
-  // bigger hit area than the 14px restore icon); the button wrapper also opts
-  // the label out of the drag handle (useWindowDrag ignores pointerdowns on
-  // buttons), so a click reliably expands instead of half-starting a drag.
+  // Title label — for the two places the name is the ONLY identity: the collapsed pill
+  // and the mobile header. The expanded desktop chrome shows the mark and the lit tab
+  // instead. While collapsed the whole label is the expand target (a much bigger hit
+  // area than the 14px restore icon); the button wrapper also opts the label out of the
+  // drag handle (useWindowDrag ignores pointerdowns on buttons), so a click reliably
+  // expands instead of half-starting a drag.
   const titleLabel = (
     <>
       {Icon && <Icon className="w-4 h-4 text-content-muted flex-shrink-0" />}
-      <span
-        className={cn(
-          "text-compact font-semibold uppercase tracking-section text-content-muted truncate",
-          condensedTitle && "md:hidden"
-        )}
-      >
+      <span className="text-compact font-semibold uppercase tracking-section text-content-muted truncate">
         {title}
       </span>
     </>
@@ -401,8 +397,6 @@ export function FloatingPanel({
       );
       setActionsWidth(measuredActions);
 
-      if (!condensedTitle) fullTitleWidth.current = Math.max(fullTitleWidth.current, titleWidth);
-      const titleBudget = fullTitleWidth.current || titleWidth;
       const islandGap = 12;
       const panelInset = 16;
 
@@ -413,11 +407,9 @@ export function FloatingPanel({
       // top and reads as the centered toolbar the corner rule replaced. The tabs inside
       // collapse to icons and then to an overflow menu, which is what they are for.
       const leftIsland = Math.min(width * 0.45, width - measuredActions - 2 * islandGap - panelInset);
-      setNavigationSlotWidth(Math.max(96, leftIsland - titleBudget - islandGap));
-
-      // One line, always. When the title and the tabs cannot both fit beside the actions,
-      // keep the identity icon and let the title copy collapse.
-      setCondensedTitle(hasNavigation && leftIsland - titleBudget < 132);
+      // The grip and mark are a fixed-width prefix inside the same island; the rest is
+      // the tabs'. No title copy to budget for any more.
+      setNavigationSlotWidth(Math.max(96, leftIsland - titleWidth - islandGap));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -432,7 +424,7 @@ export function FloatingPanel({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [actionsElement, condensedTitle, hasNavigation, navigationTarget, panelElement, titleElement]);
+  }, [actionsElement, navigationTarget, panelElement, titleElement]);
 
   return (
     // The root is a window surface, not a control: dragging it moves the window and
@@ -527,29 +519,34 @@ export function FloatingPanel({
               stretching back across the top. */}
           <div className="pointer-events-none absolute inset-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
             <div
-              className="pointer-events-none absolute left-2 top-2 flex h-9 items-center gap-2"
+              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
               // Stops where the actions corner begins, so the two top corners share the
               // edge instead of stacking. Measured, not guessed: the actions island grows
               // with whatever a panel contributes to it.
               style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), 45%)` }}
             >
+            {/* The grip and the panel's mark ARE the first item of this island, not a
+                separate pill beside it. Two surfaces read as two groups and cost the gap
+                between them; one reads as "where you are" and spends that width on tabs.
+                No name here: the panel is identified by its mark and by the tab that is
+                lit, and a word set in uppercase tracking was the widest thing in the
+                corner while being the one thing you never click. It stays where it is the
+                only identity there is — the collapsed pill and the mobile header. */}
             <div
               {...drag.handleProps}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="floating-control-surface pointer-events-auto flex h-9 max-w-full flex-shrink-0 cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center gap-1 rounded-sm px-1 text-content-subtle active:cursor-grabbing"
+              aria-label={`${title} — drag to move`}
             >
-              <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
-              {titleLabel}
+              <GripHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+              {Icon && <Icon className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />}
             </div>
             <div
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
-              className={cn(
-                "pointer-events-auto flex h-9 min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap",
-                hasNavigation && "floating-control-surface rounded-concentric p-1"
-              )}
+              className="pointer-events-auto flex h-9 min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap"
             >
               {primaryNavigation && (
                 <div data-floating-panel-primary-navigation="" className="min-w-0 flex-[3]">

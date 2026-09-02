@@ -744,7 +744,11 @@ export function SceneWorkbench({
       <FloatingPanelPrimaryNavigation
         ariaLabel="Scenes"
         items={sceneNavigationItems}
-        presentationOrder={["iconText", "text", "icon", "collapsed"]}
+        // A dropdown, not a tab row. A menubar costs width proportional to how many
+        // scenes exist, in the one corner that also has to hold the item switcher — and
+        // it spends that width showing you the choices you did NOT make. A dropdown
+        // shows the one you did, in constant width.
+        presentationOrder={["collapsed"]}
         mobile={(
           <div role="tablist" aria-label="Scenes" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
             {sceneTabs()}
@@ -759,7 +763,7 @@ export function SceneWorkbench({
             kind="navigation"
             ariaLabel={`${title} items`}
             items={itemNavigationItems}
-            presentationOrder={["iconText", "text", "collapsed"]}
+            presentationOrder={["collapsed"]}
           />
         </FloatingPanelContextPortal>
       )}

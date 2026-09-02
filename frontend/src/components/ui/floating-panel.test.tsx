@@ -311,5 +311,23 @@ describe("FloatingPanel window chrome", () => {
     // The body starts below the chrome band rather than underneath it.
     expect(content).toContain("md:top-12");
     expect(content).not.toContain("md:inset-0");
+
+    // Just the top-LEFT island: from where it opens to where the actions island starts.
+    const actionsIndex = markup.indexOf('data-floating-panel-actions=""');
+    const leftIsland = markup.slice(markup.indexOf("floating-control-surface"), actionsIndex);
+
+    // The grip and the tabs are ONE island, not two pills with a gap between them — so
+    // the surface class appears once across the whole of it.
+    expect(leftIsland.match(/floating-control-surface/g)).toHaveLength(1);
+
+    // No panel NAME in the expanded desktop chrome: the mark and the lit tab identify it,
+    // and an uppercase tracked word was the widest thing in that corner while being the
+    // one thing you never click. It stays where it IS the only identity — the collapsed
+    // pill and the mobile header, which is why this looks at the island and not the
+    // whole markup.
+    expect(leftIsland).not.toContain("tracking-section");
+    // Gone from the DISPLAY, not from the accessibility tree: the grip still announces
+    // which panel it moves.
+    expect(leftIsland).toContain('aria-label="Workbench — drag to move"');
   });
 });
