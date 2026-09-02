@@ -409,7 +409,10 @@ export function FloatingPanel({
       // Navigation now shares the TOP-LEFT island with the title, so its budget is what
       // that island has left after the title — one subtraction, not the two it needed
       // while it was centred between the title and the actions.
-      const leftIsland = width - measuredActions - 2 * islandGap - panelInset;
+      // Capped at 45% so the island stays a CORNER: past that it stretches across the
+      // top and reads as the centered toolbar the corner rule replaced. The tabs inside
+      // collapse to icons and then to an overflow menu, which is what they are for.
+      const leftIsland = Math.min(width * 0.45, width - measuredActions - 2 * islandGap - panelInset);
       setNavigationSlotWidth(Math.max(96, leftIsland - titleBudget - islandGap));
 
       // One line, always. When the title and the tabs cannot both fit beside the actions,
@@ -505,23 +508,30 @@ export function FloatingPanel({
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
-          {/* Floating chrome lives in the CORNERS and nowhere else — never a centered
-              island. A centre cluster has no width it can call its own: the title claims
-              the left, the actions claim the right, and whatever sits between them is
-              squeezed until it slides underneath one of them. That is what the panel
-              header looked like at any realistic width.
-              Corners cannot collide, because each one grows away from the others.
-              Navigation joins the TOP-LEFT corner rather than taking a corner of its own:
-              the bottom edge belongs to the content (a codemap puts its legend and zoom
-              controls there), so chrome that moved down there would only trade a
-              chrome-on-chrome overlap for a chrome-on-content one. */}
+          {/* Floating chrome lives in the CORNERS, and each corner has one job.
+              
+                TOP-LEFT — WHERE YOU ARE. Identity, plus every control that changes what
+                  the panel is showing: scene and item tabs (`primaryNavigation`) and the
+                  panel's own state selectors (`panelContext` — session, host, bot).
+                  Reading it tells you what you are looking at.
+                TOP-RIGHT — WHAT YOU CAN DO. Actions on that thing (`panelActions`), then
+                  minimize and close. Pressing one changes something.
+                BOTTOM — the CONTENT's, not ours. A codemap puts its legend and zoom
+                  controls there.
+
+              Never a centered island: a centre cluster has no width it can call its own,
+              because the two sides claim theirs first and whatever is between them is
+              squeezed until it slides underneath one of them. That is what this header
+              looked like at any realistic width. Corners cannot collide — each grows away
+              from the others — and the left one is capped so it stays a corner instead of
+              stretching back across the top. */}
           <div className="pointer-events-none absolute inset-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
             <div
               className="pointer-events-none absolute left-2 top-2 flex h-9 items-center gap-2"
               // Stops where the actions corner begins, so the two top corners share the
               // edge instead of stacking. Measured, not guessed: the actions island grows
               // with whatever a panel contributes to it.
-              style={{ maxWidth: `calc(100% - ${Math.round(actionsWidth) + 24}px)` }}
+              style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), 45%)` }}
             >
             <div
               {...drag.handleProps}
@@ -639,7 +649,14 @@ export function FloatingPanel({
             <div
               data-floating-panel-content=""
               className={cn(
-                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-0",
+                // `top-12` (48px) not `inset-0`: clears the chrome band (top-2 + h-9 = 44px): the chrome band (top-2 + h-9) is reserved, so
+                // no panel's first row is drawn underneath the floating islands. Every
+                // panel used to lose its top row to them — a table lost its column
+                // headers, a file browser its path and controls — and hover-revealing the
+                // chrome is exactly the moment the pointer is over the panel, so the
+                // covered row was covered precisely when you reached for it.
+                // Positional, not padding: consumers pass `p-0` in bodyClassName.
+                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-12",
                 bodyClassName
               )}
             >
