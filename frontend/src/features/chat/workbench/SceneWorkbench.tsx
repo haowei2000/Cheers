@@ -43,7 +43,6 @@ import { useAnnotations } from "./annotations";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
 import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
-import { IconButton } from "@/components/ui/icon-button";
 import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
@@ -501,7 +500,7 @@ export function SceneWorkbench({
     [reconciled]
   );
   const otherPaths = useMemo(
-    () => Object.keys(renderers).filter((path) => !claimed.has(path)).sort((a, b) => a.localeCompare(b)),
+    () => Object.keys(renderers).filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b)),
     [renderers, claimed]
   );
   const canvasPaths = useMemo(

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { ResourceError } from "../hooks/useChatRealtime";
+import type { FsClient } from "./fsClient";
+import type { PatchOp } from "./patchOps";
 import {
   adoptText,
   formatFor,
@@ -8,6 +11,7 @@ import {
   editText,
   emptyBuffer,
   patchData,
+  patchWithReplay,
   type FileBuffer,
 } from "./jsonFile";
 
@@ -136,5 +140,61 @@ describe("renderer matching", () => {
     expect(cleared.parseError).toBeNull();
     expect(cleared.parsedText).toBe("");
     paired(cleared);
+  });
+});
+
+describe("structured edit conflict recovery", () => {
+  it("re-reads and replays the same ops when fs.patch conflicts", async () => {
+    const patchCalls: { path: string; ops: readonly PatchOp[]; ifVersion: number }[] = [];
+    let readCount = 0;
+
+    const mockFs: FsClient = {
+      ls: async () => ({ path: "", entries: [] }),
+      rm: async () => undefined,
+      write: async () => ({ path: "canvas.yaml", version: 1 }),
+      read: async (p: string) => {
+        readCount++;
+        return {
+          path: p,
+          content: "canvas: 1\nnodes:\n  - id: a\n",
+          version: 2,
+          is_dir: false,
+        };
+      },
+      patch: async (p: string, ops: readonly PatchOp[], ifVersion: number) => {
+        patchCalls.push({ path: p, ops, ifVersion });
+        if (ifVersion === 1) {
+          throw new ResourceError("VERSION_CONFLICT", "version conflict");
+        }
+        return { path: p, version: ifVersion + 1 };
+      },
+    };
+
+    const ops: PatchOp[] = [{ op: "set", path: ["nodes", 0, "id"], value: "b" }];
+    const result = await patchWithReplay(mockFs, "canvas.yaml", ops, 1);
+
+    // The first attempt with version 1 failed with VERSION_CONFLICT;
+    // patchWithReplay re-read the file (getting version 2) and replayed the exact same batch.
+    expect(patchCalls).toHaveLength(2);
+    expect(patchCalls[0].ifVersion).toBe(1);
+    expect(patchCalls[1].ifVersion).toBe(2);
+    expect(patchCalls[1].ops).toEqual(ops);
+    expect(readCount).toBe(1);
+    expect(result).toEqual({ path: "canvas.yaml", version: 3 });
+  });
+
+  it("rethrows non-conflict errors without retrying", async () => {
+    const mockFs: FsClient = {
+      ls: async () => ({ path: "", entries: [] }),
+      rm: async () => undefined,
+      write: async () => ({ path: "canvas.yaml", version: 1 }),
+      read: async () => ({ path: "canvas.yaml", content: "", version: 1, is_dir: false }),
+      patch: async () => {
+        throw new ResourceError("PERMISSION_DENIED", "permission denied");
+      },
+    };
+
+    const ops: PatchOp[] = [{ op: "set", path: ["nodes", 0, "id"], value: "b" }];
+    await expect(patchWithReplay(mockFs, "canvas.yaml", ops, 1)).rejects.toThrow("permission denied");
   });
 });

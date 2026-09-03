@@ -144,6 +144,24 @@ export interface FileSession extends FileBuffer {
   reload: (skipIfDirty?: boolean) => Promise<void>;
 }
 
+/** Structured edit execution with automatic conflict recovery.
+ *  When `fs.patch` rejects with VERSION_CONFLICT, re-fetches the latest document version
+ *  via `fs.read` and replays the same ops against `fresh.version`. */
+export async function patchWithReplay(
+  fs: FsClient,
+  path: string,
+  ops: readonly PatchOp[],
+  version: number
+): Promise<{ path: string; version: number }> {
+  try {
+    return await fs.patch(path, ops, version);
+  } catch (e) {
+    if (!(e instanceof ResourceError && e.code === "VERSION_CONFLICT")) throw e;
+    const fresh = await fs.read(path);
+    return await fs.patch(path, ops, fresh.version);
+  }
+}
+
 export function useFileSession(fs: FsClient, path: string): FileSession {
   const [buffer, setBuffer] = useState<FileBuffer>(() => emptyBuffer(path));
   const [version, setVersion] = useState<number | null>(null);
@@ -263,13 +281,7 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
         // with no root object) — that has to surface as a status, not escape as a
         // rejected promise no caller is awaiting.
         write(patchData(bufferRef.current, ops));
-        try {
-          await fs.patch(path, ops, version);
-        } catch (e) {
-          if (!(e instanceof ResourceError && e.code === "VERSION_CONFLICT")) throw e;
-          const fresh = await fs.read(path);
-          await fs.patch(path, ops, fresh.version);
-        }
+        await patchWithReplay(fs, path, ops, version);
         setStatus("Saved");
       } catch (e) {
         setStatus(errMsg(e));

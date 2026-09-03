@@ -22,6 +22,7 @@ export function LensView({
   channelId,
   standalone,
   annotations,
+  openLocator,
 }: {
   session: FileSession;
   lensId: string;
@@ -38,6 +39,7 @@ export function LensView({
    *  status). False when the host has a Raw view over the same session and its own
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
   standalone?: boolean;
+  openLocator?: (uri: string) => void;
 }) {
   const lens = getLens(lensId);
   const { open } = useContextActions();
@@ -109,7 +111,7 @@ export function LensView({
     <div className="flex flex-col h-full text-compact">
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
-          lens.render({ data, config, onChange: session.setData, onOps, readOnly: !writable, requestContextPick })
+          lens.render({ data, config, onChange: session.setData, onOps, readOnly: !writable, requestContextPick, openLocator })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
@@ -136,7 +138,23 @@ export function LensView({
 // Standalone host: owns the session because nothing above it does. Used where a file has
 // only this one view (scene items); a host with a Raw view passes its own session to
 // `LensView` instead.
-export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: { fs: FsClient; path: string; lensId: string; config?: unknown; channelId: string; reloadTick?: number }) {
+export function LensPanel({
+  fs,
+  path,
+  lensId,
+  config,
+  channelId,
+  reloadTick,
+  openLocator,
+}: {
+  fs: FsClient;
+  path: string;
+  lensId: string;
+  config?: unknown;
+  channelId: string;
+  reloadTick?: number;
+  openLocator?: (uri: string) => void;
+}) {
   const session = useFileSession(fs, path);
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
   // default view of machine-written files (metrics, boards) stays live. An unsaved buffer
@@ -149,5 +167,5 @@ export function LensPanel({ fs, path, lensId, config, channelId, reloadTick }: {
     void reload(true);
   }, [reloadTick, reload]);
 
-  return <LensView session={session} lensId={lensId} config={config} channelId={channelId} standalone />;
+  return <LensView session={session} lensId={lensId} config={config} channelId={channelId} standalone openLocator={openLocator} />;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Boxes, Database, FileText, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
+import { Boxes, Database, ExternalLink, FileText, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { LensProps } from "../lens/registry";
@@ -77,7 +77,7 @@ function offsetFor(side: CanvasSide, reach: number): { x: number; y: number } {
   }
 }
 
-function NodeBody({ node }: { node: CanvasNode }) {
+function NodeBody({ node, onOpen }: { node: CanvasNode; onOpen?: () => void }) {
   if (node.kind === "text") {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-compact text-content-secondary">
@@ -95,14 +95,28 @@ function NodeBody({ node }: { node: CanvasNode }) {
         {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-compact text-content-secondary">{detail}</span>
+        <span className="block truncate text-compact text-content-secondary" title={detail}>{detail}</span>
         {node.view && <span className="mt-1 block truncate text-minimal text-content-muted">{node.view}</span>}
       </span>
+      {onOpen && (
+        <UiButton
+          variant="plain"
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${detail} in Workbench`}
+          title={`Open ${detail} in Workbench`}
+          content="icon"
+          controlSize="compact"
+          className="flex-shrink-0 rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </UiButton>
+      )}
     </div>
   );
 }
 
-export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
+export function CanvasLens({ data, onOps, requestContextPick, openLocator }: LensProps) {
   const document_ = useMemo(() => parseCanvas(data), [data]);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 24, y: 24 });
@@ -277,11 +291,31 @@ export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
 
   const zoom = (factor: number) => setScale((current) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, current * factor)));
 
+  const openSource = useCallback(
+    (node: CanvasNode) => {
+      if (!openLocator || node.kind !== "source") return;
+      const uri =
+        node.source.kind === "fs"
+          ? `cheers:desk/${node.source.path}`
+          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`;
+      openLocator(uri);
+    },
+    [openLocator]
+  );
+
   const removeSelected = useCallback(() => {
     if (!selectedId || !document_) return;
     emit(removeNodeOps(document_, selectedId));
     setSelectedId(null);
   }, [document_, emit, selectedId]);
+
+  const onDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-canvas-node]");
+    const id = card?.dataset.canvasNode ?? nodeAtPoint(event.clientX, event.clientY);
+    if (!id || !document_) return;
+    const node = document_.nodes.find((candidate) => candidate.id === id);
+    if (node) openSource(node);
+  };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -338,6 +372,7 @@ export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
           setDragging(null);
           setWire(null);
         }}
+        onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
       >
         <div
@@ -396,19 +431,23 @@ export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
                 key={node.id}
                 data-canvas-node={node.id}
                 data-workbench-context-target="canvas-node"
-                className={`absolute flex flex-col overflow-hidden rounded-sm bg-zinc-900 shadow-lg shadow-black/20 ring-1 ${
+                className={`absolute flex flex-col rounded-sm bg-zinc-900 shadow-lg shadow-black/20 ring-1 ${
                   selected ? "ring-indigo-500" : "ring-zinc-700 hover:ring-zinc-500"
                 }`}
                 style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: node.z ?? 0 }}
                 onContextMenu={(event) =>
                   requestContextPick?.(event, { label: nodeTitle(node), sourcePath: ["nodes", node.at] })
                 }
+                onDoubleClick={() => openSource(node)}
               >
                 <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
                   {node.rect && <span className="flex-shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
-                <NodeBody node={node} />
+                <NodeBody
+                  node={node}
+                  onOpen={node.kind === "source" && openLocator ? () => openSource(node) : undefined}
+                />
                 {selected && !readOnly &&
                   SIDES.map((side) => (
                     <span
@@ -416,7 +455,7 @@ export function CanvasLens({ data, onOps, requestContextPick }: LensProps) {
                       data-canvas-port={node.id}
                       data-canvas-side={side}
                       aria-hidden="true"
-                      className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair rounded-sm bg-indigo-400 ring-1 ring-zinc-900"
+                      className="absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair rounded-sm bg-indigo-400 ring-1 ring-zinc-900"
                       style={{
                         left: side === "left" ? 0 : side === "right" ? rect.w : rect.w / 2,
                         top: side === "top" ? 0 : side === "bottom" ? rect.h : rect.h / 2,

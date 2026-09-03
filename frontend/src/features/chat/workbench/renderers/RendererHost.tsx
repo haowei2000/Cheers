@@ -83,7 +83,17 @@ export function RendererHost({
   // selection, a scroll offset, an expanded row) does not carry across.
   const lensId = renderer.lensId ?? "markdown";
   if (session) {
-    return <LensView key={`${renderer.id}:${path}`} session={session} lensId={lensId} config={config} channelId={ctx.channelId} annotations={annotations} />;
+    return (
+      <LensView
+        key={`${renderer.id}:${path}`}
+        session={session}
+        lensId={lensId}
+        config={config}
+        channelId={ctx.channelId}
+        annotations={annotations}
+        openLocator={ctx.openLocator}
+      />
+    );
   }
   return (
     <LensPanel
@@ -94,6 +104,7 @@ export function RendererHost({
       config={config}
       channelId={ctx.channelId}
       reloadTick={ctx.filesTick}
+      openLocator={ctx.openLocator}
     />
   );
 }

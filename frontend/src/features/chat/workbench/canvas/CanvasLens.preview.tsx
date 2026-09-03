@@ -50,7 +50,13 @@ function Preview() {
           </span>
         </div>
         <section className="relative h-[calc(100%-7rem)] w-full overflow-hidden rounded-sm ring-1 ring-line-subtle">
-          <CanvasLens data={doc} config={undefined} onChange={() => undefined} onOps={onOps} />
+          <CanvasLens
+            data={doc}
+            config={undefined}
+            onChange={() => undefined}
+            onOps={onOps}
+            openLocator={(uri) => setLog((entries) => [`openLocator ${uri}`, ...entries].slice(0, 8))}
+          />
         </section>
         <div className="mt-2 h-20 overflow-y-auto font-code text-minimal text-content-muted">
           {log.length === 0 ? <div>no ops yet</div> : log.map((entry, index) => <div key={index}>{entry}</div>)}

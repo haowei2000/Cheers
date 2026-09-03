@@ -27,6 +27,8 @@ export interface LensProps {
    *  `Lens.viewOnly`, which is a lens saying it never edits ANY data. */
   readOnly?: boolean;
   requestContextPick?: (event: MouseEvent<Element>, target: LensContextTarget) => void;
+  /** Navigate the user's view to a `cheers:` locator (e.g. opening a referenced file in the Workbench). */
+  openLocator?: (uri: string) => void;
 }
 
 export interface Lens {
