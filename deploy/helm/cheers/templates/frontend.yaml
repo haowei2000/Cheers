@@ -14,8 +14,24 @@ server {
   # location sets any, so each such location includes the same file.
   include /etc/nginx/security-headers.conf;
 
+  # SPA deep links. Without this every app route — /login, /chat/<id>, /settings —
+  # falls through to `location /` and is answered with the MARKETING page, so the only
+  # way into the app is typing /app.html. Kept in step with frontend/nginx.conf, which
+  # this config overrides (see the ConfigMap comment below).
+  location ~ ^/(login|auth/callback|mcp-authorize|register|forgot|reset|invite|chat|settings|friends|fleet|activity)(/.*)?$ {
+    try_files $uri $uri/ /app.html;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
+  }
+
+  # The app shell, like /index.html below: never cached, or a redeploy keeps serving an
+  # old shell pointing at hashed chunks that no longer exist.
+  location = /app.html {
+    try_files /app.html =404;
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    include /etc/nginx/security-headers.conf;
   }
 
   # Vite content-hashed chunks: serve real files or 404 — never the SPA shell.
