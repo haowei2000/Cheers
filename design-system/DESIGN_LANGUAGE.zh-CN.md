@@ -260,4 +260,4 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 - Members、Claims、Links 等完整迁移到同一 CollectionManager 的 Search/Add/Edit/Delete 结构。
 - Personal workspace、Channel 等换用统一 Cheers 系统图标；图标保持简单且语义可区分。
 - 消息 details/tracing 默认降噪，悬浮操作遵循三档尺寸与触控下限。
-- 本轮设计变更不修改 MIT 开源许可。
+- 本轮设计变更不修改项目当时采用的开源许可；项目当前采用 AGPL-3.0-or-later。
