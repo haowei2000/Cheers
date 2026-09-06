@@ -1,17 +1,48 @@
 {
   "id": "code-project",
   "title": "Code project",
-  "views": [
-    { "id": "board", "title": "Sprint board", "file": "dev/board.json", "lens": "kanban" },
-    { "id": "prompt", "title": "Code review prompt", "file": "prompts/code-review.md", "lens": "markdown" }
+  "items": [
+    {
+      "id": "board",
+      "title": "Sprint board",
+      "source": {
+        "kind": "fs",
+        "path": "dev/board.json"
+      },
+      "view": "builtin:kanban"
+    },
+    {
+      "id": "prompt",
+      "title": "Code review prompt",
+      "source": {
+        "kind": "fs",
+        "path": "prompts/code-review.md"
+      },
+      "view": "builtin:markdown"
+    }
   ],
   "seed": {
     "dev/board.json": {
       "columns": [
-        { "name": "Backlog", "items": ["Set up CI", "Write the API design doc"] },
-        { "name": "In progress", "items": [] },
-        { "name": "In review", "items": [] },
-        { "name": "Done", "items": [] }
+        {
+          "name": "Backlog",
+          "items": [
+            "Set up CI",
+            "Write the API design doc"
+          ]
+        },
+        {
+          "name": "In progress",
+          "items": []
+        },
+        {
+          "name": "In review",
+          "items": []
+        },
+        {
+          "name": "Done",
+          "items": []
+        }
       ]
     },
     "dev/review-findings.md": "# Review findings\n\nOne `##` section per file; one `- [ ] [P0|P1|P2]` line per finding.\nInstall the code-review plugin and pick \"Review findings\" as the renderer to get badges and a progress bar.\n\n## src/api/auth.rs\n\n- [ ] [P0] Token expiry is never checked on the refresh path\n- [ ] [P2] `validate_scope` duplicates the check in middleware\n\n## src/db/pool.rs\n\n- [x] [P1] Pool size is hard-coded; read it from config\n",

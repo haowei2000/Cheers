@@ -142,7 +142,7 @@ describe("read-only lenses hide their edit affordances", () => {
 
 describe("official built-in lens context contract", () => {
   it("requires granular context conversion from every registered lens", () => {
-    expect(lensIds().sort()).toEqual(["chart", "codemap", "kanban", "markdown", "table"]);
+    expect(lensIds().sort()).toEqual(["canvas", "chart", "codemap", "kanban", "markdown", "table"]);
     for (const id of lensIds()) expect(getLens(id)?.contextPick).toBe("granular");
   });
 

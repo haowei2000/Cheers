@@ -1,8 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { ActionButton } from "@/components/ui/action-button";
 import { Input as UiInput } from "@/components/ui/input";
-import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -12,7 +10,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -23,12 +20,19 @@ import {
   TextQuote,
   Copy,
   Eye,
+  EyeOff,
+  Layers,
+  MessageSquare,
+  Pin,
   Paperclip,
   Link as LinkIcon,
 } from "lucide-react";
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
-import { errMsg, useFileEditor } from "../jsonFile";
+import { errMsg, useFileSession } from "../jsonFile";
+import { useAnnotations } from "../annotations";
+import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "../AnnotationBar";
+import type { LensContextTarget } from "../lens/registry";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import { addToContextTitle } from "@/features/chat/context/contextLabels";
@@ -39,6 +43,8 @@ import {
 } from "@/features/chat/context/contextPick";
 import { formatLocator } from "@/features/chat/locator";
 import { previewOptions } from "../renderers/registry";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
@@ -54,7 +60,6 @@ const CodeEditor = lazy(() => import("../CodeEditor").then((m) => ({ default: m.
 // Below COMPACT the tree yields the column to the editor (overlay when reopened);
 // below TIGHT the toolbar collapses secondary actions into a "…" menu.
 const COMPACT_W = 520;
-const TIGHT_W = 380;
 
 // Export bridge: a context file is TEXT, so "download" = save its content as a blob
 // client-side (filename = the path's basename). No backend round-trip needed.
@@ -130,9 +135,24 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  // "auto" = preview when a renderer matches, raw otherwise; user toggle overrides
-  // for the currently selected file (resets on selection change).
-  const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
+  // Paths the user has forced to Raw. Everything else follows the content: Preview when
+  // a renderer matches it, Raw when none does. Two states, not three — the old
+  // "auto" | "preview" | "raw" computed the same effective mode for two of its values.
+  //
+  // Per PATH, because the mode belongs to the file you are reading, not to the panel:
+  // this used to reset on every selection change, so setting a file to Raw and clicking
+  // away silently put you back in Preview. Kept in component state rather than
+  // .workbench.json — that file is shared by the whole channel, and which view *I* read
+  // a file in is not a channel-wide decision.
+  const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const showRaw = useCallback((path: string, raw: boolean) => {
+    setRawPaths((current) => {
+      if (current.has(path) === raw) return current;
+      const next = new Set(current);
+      if (raw) next.add(path); else next.delete(path);
+      return next;
+    });
+  }, []);
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const addContext = useContextPickStore((s) => s.add);
@@ -150,8 +170,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // mid-width lane adapts even on a large display.
   const rootRef = useRef<HTMLDivElement>(null);
   const [panelW, setPanelW] = useState(0);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
   // Remember whether the user manually reopened the tree in compact mode so we
   // don't immediately auto-collapse it again on the next resize tick.
   const userTreeOverride = useRef(false);
@@ -169,7 +187,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   }, []);
 
   const compact = panelW > 0 && panelW < COMPACT_W;
-  const tight = panelW > 0 && panelW < TIGHT_W;
 
   // Entering compact: auto-hide the tree so the editor/preview owns the column.
   // Leaving compact: clear the override flag; leave treeOpen as the user left it.
@@ -178,20 +195,38 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     if (!compact) userTreeOverride.current = false;
   }, [compact]);
 
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [moreOpen]);
-
   const tree = useMemo(() => buildTree(entries), [entries]);
 
-  // The selected file's content/edit/save (optimistic lock + conflict reload) is the shared
-  // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
-  const editor = useFileEditor(fs, selected ?? "");
+  // ONE session for the selected file, shared by both of this panel's views: Raw edits
+  // `text`, Preview renders `data` parsed from it, and they agree on version and dirty.
+  // See FileSession — Raw and Preview each owning a session is what used to make an
+  // unsaved edit vanish on a mode switch.
+  const session = useFileSession(fs, selected ?? "");
+  // Notes anchored into this file. A separate session because they live in a separate
+  // file — the document belongs to whoever edits it, and a note is someone else's remark
+  // ABOUT it, so writing one must never touch the thing it is about.
+  const annotations = useAnnotations(fs, selected ?? "");
+  const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
+  const onAnnotate = useCallback(
+    (target: LensContextTarget, at: { x: number; y: number }) =>
+      selected && setPendingNote({ target, path: selected, at }),
+    [selected]
+  );
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  // Revealing a note means showing the lines it points at, which only Raw can do — so it
+  // switches modes rather than pretending the preview can highlight a line range.
+  const [revealLine, setRevealLine] = useState<number | undefined>();
+  const onRevealNote = useCallback(
+    (range: { start: number; end: number }) => {
+      if (!selected) return;
+      showRaw(selected, true);
+      setRevealLine(range.start);
+    },
+    [selected, showRaw]
+  );
+  // A pending note belongs to the file it was started on; changing files abandons it
+  // rather than silently re-aiming it at a row in a different document.
+  useEffect(() => setPendingNote(null), [selected]);
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -202,13 +237,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           id: "preview",
           label: "Open preview",
           icon: <Eye className="h-4 w-4" />,
-          run: () => setMode("preview"),
+          run: () => showRaw(selected, false),
         },
         {
           id: "download",
           label: "Download",
           icon: <Download className="h-4 w-4" />,
-          run: () => downloadText(selected, editor.content),
+          run: () => downloadText(selected, session.text),
         },
         {
           id: "add-context",
@@ -242,7 +277,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     },
     selectionActions: (selection) => {
       if (!selected) return [];
-      const range = selectionLineRange(editor.content, selection.text);
+      const range = selectionLineRange(session.text, selection.text);
       return [
         {
           id: selection.isCode ? "copy-code" : "copy-selection",
@@ -266,7 +301,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   });
 
   useEffect(() => {
-    setMode("auto");
     if (!selected) return;
     setFailedRenderers((current) => {
       if (!current[selected]) return current;
@@ -293,17 +327,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // Re-pull the tree and reload a clean open file in place, but NEVER clobber unsaved
   // edits — a dirty buffer only gets a non-destructive "changed on server" hint.
   const filesTick = ctx.filesTick ?? 0;
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
+  // One reload now covers BOTH views, because they are one session.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const seenFilesTick = useRef(filesTick);
   useEffect(() => {
     if (filesTick === seenFilesTick.current) return;
     seenFilesTick.current = filesTick;
     void refresh();
     if (!selected) return;
-    const ed = editorRef.current;
-    if (ed.dirty) ed.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
-    else void ed.reload();
+    const open = sessionRef.current;
+    if (open.dirty) open.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
+    else void open.reload(true);
   }, [filesTick, refresh, selected]);
 
   const expandAncestors = useCallback((path: string) => {
@@ -337,9 +372,9 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     });
 
   const onSave = useCallback(async () => {
-    await editor.save();
+    await session.save();
     void refresh(); // size/quota may have changed; keep the list fresh
-  }, [editor, refresh]);
+  }, [session, refresh]);
 
   const setTreeOpenUser = useCallback(
     (open: boolean) => {
@@ -629,9 +664,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           (() => {
             // content-aware: only renderers that ACCEPT this file's content are offered.
             // The user's explicit binding (if resolvable) leads; otherwise best match.
+            //
+            // Matched against `parsedText` — the text the lens's `data` was parsed from —
+            // so the renderer chosen for a file is the one that will actually be handed
+            // its data. Matching on a buffer the preview did not render is how an unsaved
+            // Raw edit used to offer a renderer the file could not feed, and how clearing
+            // the buffer used to disable Preview for a file that renders fine.
             const options = previewOptions(
               selected,
-              editor.content,
+              session.parsedText,
               rendererExtensions,
               bindings[selected],
               failedRenderers[selected]
@@ -640,191 +681,185 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             const previewRenderer = options[0];
             // no matching renderer => raw, whatever the toggle says — header (Save,
             // dirty dot) and body must agree on which mode is actually showing
-            const effMode = mode !== "raw" && previewRenderer ? "preview" : "raw";
-            const pathLabel = compact ? basename(selected) : selected;
+            const effMode = rawPaths.has(selected) || !previewRenderer ? "raw" : "preview";
 
-            const secondaryActions = (
-              <>
-                <UiButton variant="plain"
-                  onClick={() => {
-                    downloadText(selected, editor.content);
-                    setMoreOpen(false);
-                  }}
-                  title="Download this file (export)"
-                  content="icon" controlSize="compact"
-                  className="text-content-primary hover:text-content-strong"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </UiButton>
-                <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
-                <AttachContextButton
-                  channelId={ctx.channelId}
-                  disabled={pinned.includes(selected)}
-                  disabledTitle="Already pinned — sent in every prompt"
-                  title={addToContextTitle("this file")}
-                  item={{
-                    id: `file:${selected}`,
-                    verb: "fs.read",
-                    params: { path: selected },
-                    label: basename(selected),
-                    kind: "file",
-                  }}
-                />
-                <UiButton variant="plain"
-                  type="button"
-                  content="icon" controlSize="compact"
-                  disabled={pinned.includes(selected)}
-                  title={
-                    pinned.includes(selected)
-                      ? "Already pinned — sent in every prompt"
-                      : `${addToContextTitle("the selected lines")} (select text first)`
-                  }
-                  onClick={() => {
-                    const sel = window.getSelection()?.toString() ?? "";
-                    const range = selectionLineRange(editor.content, sel);
-                    if (!range) {
-                      setStatus("Select some text in the file first, then attach.");
-                      return;
-                    }
-                    addContext(
-                      ctx.channelId,
-                      rangedFileContextItem(selected, range.start, range.end)
-                    );
-                    setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
-                    setMoreOpen(false);
-                  }}
-                  className="rounded-sm text-content-primary hover:text-accent-300 disabled:opacity-50 disabled:hover:text-content-primary"
-                >
-                  <TextQuote className="w-3.5 h-3.5" />
-                </UiButton>
-              </>
-            );
+            const rendererLabel = bound?.title ?? "Auto";
 
             return (
               <>
-                <div
-                  className={cn(
-                    "mx-1 mt-1 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3",
-                    tight ? "min-h-9 flex-wrap py-1" : "h-9"
-                  )}
-                >
-                  <span className="text-compact text-content-secondary truncate min-w-0" title={selected}>
-                    {pathLabel}
-                  </span>
-                  {effMode === "raw" && editor.dirty && (
-                    <span className="text-minimal text-warning-400 flex-shrink-0">●</span>
-                  )}
-                  <div className="flex-1 min-w-2" />
-                  {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
-                  <div className="flex rounded-sm overflow-hidden bg-zinc-800 text-compact flex-shrink-0">
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "preview"} selected={effMode === "preview"}
-                      onClick={() => {
-                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        setMode("preview");
-                      }}
-                      disabled={!previewRenderer}
-                      title={
-                        previewRenderer
-                          ? `Preview with ${previewRenderer.title}`
-                          : "No matching renderer — raw only"
+                {/* Every control this file has is CHROME now, in the panel's action
+                    corner. They used to be a row at the top of the body, which the
+                    floating islands are drawn over — so they stopped being clickable at
+                    the moment the pointer entered the panel and the chrome faded in. The
+                    corner also collapses them for free: AdaptiveControlGroup drops to
+                    icons and then to an overflow menu, which is what the hand-rolled
+                    `tight` / "More" popover in this file used to do by itself. */}
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "view-mode",
+                    label: !previewRenderer
+                      ? "No matching renderer — raw only"
+                      : effMode === "preview"
+                        ? `Showing the ${previewRenderer.title} preview — switch to raw`
+                        : "Showing raw text — switch to the preview",
+                    priority: "primary",
+                    icon: effMode === "preview" ? Eye : EyeOff,
+                    selected: effMode === "preview",
+                    disabled: !previewRenderer,
+                    onSelect: () => {
+                      setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                      showRaw(selected, effMode === "preview");
+                    },
+                  }}
+                />
+                {/* Renderer picker: Auto clears the binding and follows the best content
+                    match, so a stale or wrong binding always has a way out. A
+                    DropdownSelect, not a native one — a native select sizes itself to its
+                    longest option, and an extension's title carries its extension id. */}
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "renderer",
+                    label: `Renderer: ${rendererLabel}`,
+                    priority: "secondary",
+                    icon: Layers,
+                    control: (
+                      <DropdownSelect
+                        ariaLabel="Renderer for Preview (Auto = best content match)"
+                        leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                        label={rendererLabel}
+                        value={bound?.id ?? ""}
+                        options={[
+                          { value: "", label: "Auto" },
+                          ...options.map((renderer) => {
+                            const extension = renderer.source === "extension"
+                              ? rendererExtensions.find((candidate) => candidate.extensionId === renderer.extensionId)
+                              : undefined;
+                            const mark = extension?.transient ? "⏱ " : extension?.origin === "personal" ? "💻 " : "";
+                            return {
+                              value: renderer.id,
+                              label: `${mark}${renderer.title}${renderer.source === "extension" ? ` · ${renderer.extensionId}` : ""}`,
+                            };
+                          }),
+                        ]}
+                        onSelect={(value: string) => {
+                          setFailedRenderers((current) => ({ ...current, [selected]: [] }));
+                          setBinding(selected, value || null);
+                        }}
+                        controlSize="compact"
+                        controlWidth="fill"
+                        className="min-w-0"
+                        menuClassName="max-w-72"
+                      />
+                    ),
+                  }}
+                  active={effMode === "preview" && Boolean(bound || options.length > 1)}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "download",
+                    label: `Download ${basename(selected)}`,
+                    priority: "secondary",
+                    icon: Download,
+                    onSelect: () => downloadText(selected, session.text),
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "pin",
+                    label: pinned.includes(selected)
+                      ? "Pinned — injected into every prompt; click to unpin"
+                      : "Pin: inject this file into every bot prompt",
+                    priority: "secondary",
+                    icon: Pin,
+                    selected: pinned.includes(selected),
+                    control: <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />,
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "attach-file",
+                    label: pinned.includes(selected)
+                      ? "Already pinned — sent in every prompt"
+                      : addToContextTitle("this file"),
+                    priority: "secondary",
+                    icon: Paperclip,
+                    disabled: pinned.includes(selected),
+                    control: (
+                      <AttachContextButton
+                        channelId={ctx.channelId}
+                        disabled={pinned.includes(selected)}
+                        disabledTitle="Already pinned — sent in every prompt"
+                        title={addToContextTitle("this file")}
+                        item={{
+                          id: `file:${selected}`,
+                          verb: "fs.read",
+                          params: { path: selected },
+                          label: basename(selected),
+                          kind: "file",
+                        }}
+                      />
+                    ),
+                  }}
+                />
+                <FloatingPanelActionPortal
+                  action={{
+                    id: "attach-lines",
+                    label: pinned.includes(selected)
+                      ? "Already pinned — sent in every prompt"
+                      : `${addToContextTitle("the selected lines")} (select text first)`,
+                    priority: "secondary",
+                    icon: TextQuote,
+                    disabled: pinned.includes(selected),
+                    onSelect: () => {
+                      const selection = window.getSelection()?.toString() ?? "";
+                      const range = selectionLineRange(session.text, selection);
+                      if (!range) {
+                        setStatus("Select some text in the file first, then attach.");
+                        return;
                       }
-                      controlSize="regular"
-                      className="text-content-primary hover:text-content-strong disabled:opacity-50"
-                    >
-                      Preview
-                    </UiButton>
-                    <UiButton variant="plain" role="tab" aria-selected={effMode === "raw"} selected={effMode === "raw"}
-                      onClick={() => setMode("raw")}
-                      controlSize="regular"
-                      className="text-content-primary hover:text-content-strong"
-                    >
-                      Raw
-                    </UiButton>
-                  </div>
-                  {/* renderer picker: Auto = clear the binding, follow the best content
-                      match. Shown whenever there is a binding to clear OR a real choice —
-                      so a stale/wrong binding always has a UI way out. */}
-                  {effMode === "preview" && (bound || options.length > 1) && !tight && (
-                    <UiSelect
-                      value={bound?.id ?? ""}
-                      onChange={(e) => {
-                        setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                        setBinding(selected, e.target.value || null);
-                      }}
-                      title="Renderer for Preview (Auto = best content match)"
-                      controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
-                    >
-                      <option value="">Auto</option>
-                      {options.map((r) => {
-                        const p =
-                          r.source === "extension"
-                            ? rendererExtensions.find((pl) => pl.extensionId === r.extensionId)
-                            : undefined;
-                        const mark = p?.transient
-                          ? "⏱ "
-                          : p?.origin === "personal"
-                            ? "💻 "
-                            : "";
-                        return (
-                          <option key={r.id} value={r.id}>
-                            {mark}
-                            {r.title}
-                            {r.source === "extension" ? ` · ${r.extensionId}` : ""}
-                          </option>
-                        );
-                      })}
-                    </UiSelect>
-                  )}
-                  {tight ? (
-                    <div className="relative flex-shrink-0" ref={moreRef}>
-                      <UiButton variant="plain"
-                        type="button"
-                        content="icon" controlSize="compact"
-                        onClick={() => setMoreOpen((o) => !o)}
-                        aria-expanded={moreOpen}
-                        aria-label="More file actions"
-                        title="More"
-                        className="rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                      >
-                        <MoreHorizontal className="w-3.5 h-3.5" />
-                      </UiButton>
-                      {moreOpen && (
-                        <div className="absolute right-0 top-6 z-20 flex items-center gap-1 rounded-sm bg-zinc-900 p-2 shadow-xl shadow-black/40 ring-1 ring-zinc-700/80">
-                          {effMode === "preview" && (bound || options.length > 1) && (
-                            <UiSelect
-                              value={bound?.id ?? ""}
-                              onChange={(e) => {
-                                setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                                setBinding(selected, e.target.value || null);
-                              }}
-                              title="Renderer for Preview (Auto = best content match)"
-                              controlSize="regular" className="bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none max-w-[110px]"
-                            >
-                              <option value="">Auto</option>
-                              {options.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.title}
-                                </option>
-                              ))}
-                            </UiSelect>
-                          )}
-                          {secondaryActions}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    secondaryActions
-                  )}
-                  {effMode === "raw" && (
-                    <IconButton label={`Save ${selected}`}
-                      onClick={() => void onSave()}
-                      disabled={!editor.dirty}
-                      controlSize="compact"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                    </IconButton>
-                  )}
-                </div>
+                      addContext(ctx.channelId, rangedFileContextItem(selected, range.start, range.end));
+                      setStatus(`Added ${basename(selected)}:${range.start}-${range.end} to context`);
+                    },
+                  }}
+                />
+                  <FloatingPanelActionPortal
+                    action={{
+                      id: "annotations",
+                      label: `Notes on ${selected}`,
+                      priority: "secondary",
+                      icon: MessageSquare,
+                      control: (
+                        <AnnotationsButton
+                          notes={annotations.notes}
+                          text={session.parsedText}
+                          onRemove={onRemoveNote}
+                          onReveal={onRevealNote}
+                        />
+                      ),
+                    }}
+                    active={annotations.notes.length > 0}
+                  />
+                  <FloatingPanelActionPortal
+                    action={{
+                      id: "save-file",
+                      label: `Save ${selected}`,
+                      priority: "primary",
+                      icon: Save,
+                      disabled: !session.dirty,
+                      onSelect: () => void onSave(),
+                    }}
+                    active={session.dirty || Boolean(session.parseError)}
+                  />
+                {pendingNote && (
+                  <AnnotationComposer
+                    pending={pendingNote}
+                    onCancel={() => setPendingNote(null)}
+                    onSubmit={(entry) => {
+                      void annotations.add(entry);
+                      setPendingNote(null);
+                    }}
+                  />
+                )}
                 {effMode === "preview" && previewRenderer ? (
                   // the chosen renderer owns load/edit/save for this one file
                   <div className="flex-1 min-h-0 overflow-hidden">
@@ -833,6 +868,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       path={selected}
                       renderer={previewRenderer}
                       config={configs[selected]}
+                      session={session}
+                      annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
@@ -849,9 +886,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     fallback={<div className="flex-1 min-h-0 bg-zinc-950" aria-busy="true" />}
                   >
                     <CodeEditor
-                      value={editor.content}
-                      onChange={editor.edit}
+                      value={session.text}
+                      onChange={session.editText}
                       path={selected}
+                      scrollToLine={revealLine}
                       className="flex-1 min-h-0 overflow-hidden"
                     />
                   </Suspense>
@@ -860,12 +898,30 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             );
           })()
         )}
-        {(editor.status || status) && (
+        {/* Bottom strip: the one place nothing floats over. Carries what the file IS and
+            what state it is in, now that every control it has is up in the corner. */}
+        {(selected || session.status || annotations.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact text-content-muted"
+            className="mx-1 mb-1 flex items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact"
           >
-            {editor.status || status}
+            {selected && (
+              <span className="min-w-0 truncate text-content-muted" title={selected}>
+                {compact ? basename(selected) : selected}
+              </span>
+            )}
+            {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+            {session.parseError && (
+              <span
+                className="flex-shrink-0 text-minimal text-warning-400"
+                title={`${session.parseError} — the preview is showing the last version that parsed`}
+              >
+                syntax error
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-right text-content-muted">
+              {session.status || annotations.status || status}
+            </span>
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
+import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { ActionButton } from "@/components/ui/action-button";
@@ -206,6 +207,7 @@ export function FloatingPanel({
 }) {
   const isMobile = useIsMobile();
   const laneBounds = useContext(LaneBoundsContext);
+  const sharedLayout = useContext(SharedLayoutContext);
   // Bounded to the canvas when one is present (snap on); otherwise floats free over
   // the viewport (snap off — nothing to snap to). `viewport` opts out of the canvas
   // even when context is set (portals to document.body must do this).
@@ -219,6 +221,11 @@ export function FloatingPanel({
       // exactly where the user releases it, like an independent desktop window.
       snap: false,
       spawnKind: !isMobile && getBounds != null ? spawnKind : undefined,
+      // The channel's placement for this window, when it is a lane window and the
+      // channel has one. useWindowDrag adopts it only while this device has no
+      // geometry of its own — see WindowDragOptions.sharedGeom.
+      sharedGeom:
+        !isMobile && getBounds != null && spawnKind ? (sharedLayout?.(spawnKind) ?? null) : null,
       open,
       anchorRef: viewport ? anchorRef : undefined,
       reanchorOnOpen: viewport ? reanchorOnOpen : false,
@@ -281,23 +288,21 @@ export function FloatingPanel({
     : collapsed
       ? drag.posStyle
       : drag.style;
-  const [condensedTitle, setCondensedTitle] = useState(false);
   const [panelWidth, setPanelWidth] = useState(0);
+  // Width of the top-RIGHT island, so the top-LEFT one knows where to stop.
+  const [actionsWidth, setActionsWidth] = useState(0);
   const [navigationSlotWidth, setNavigationSlotWidth] = useState(0);
 
-  // Title label. While collapsed the whole label is the expand target (a much
-  // bigger hit area than the 14px restore icon); the button wrapper also opts
-  // the label out of the drag handle (useWindowDrag ignores pointerdowns on
-  // buttons), so a click reliably expands instead of half-starting a drag.
+  // Title label — for the two places the name is the ONLY identity: the collapsed pill
+  // and the mobile header. The expanded desktop chrome shows the mark and the lit tab
+  // instead. While collapsed the whole label is the expand target (a much bigger hit
+  // area than the 14px restore icon); the button wrapper also opts the label out of the
+  // drag handle (useWindowDrag ignores pointerdowns on buttons), so a click reliably
+  // expands instead of half-starting a drag.
   const titleLabel = (
     <>
       {Icon && <Icon className="w-4 h-4 text-content-muted flex-shrink-0" />}
-      <span
-        className={cn(
-          "text-compact font-semibold uppercase tracking-section text-content-muted truncate",
-          condensedTitle && "md:hidden"
-        )}
-      >
+      <span className="text-compact font-semibold uppercase tracking-section text-content-muted truncate">
         {title}
       </span>
     </>
@@ -386,23 +391,28 @@ export function FloatingPanel({
       const width = panelElement.getBoundingClientRect().width;
       setPanelWidth(width);
       const titleWidth = Math.max(titleElement.getBoundingClientRect().width, titleElement.scrollWidth);
-      const actionsWidth = Math.max(
+      const measuredActions = Math.max(
         actionsElement.getBoundingClientRect().width,
         actionsElement.scrollWidth
       );
+      setActionsWidth(measuredActions);
 
-      if (!condensedTitle) fullTitleWidth.current = Math.max(fullTitleWidth.current, titleWidth);
-      const titleBudget = fullTitleWidth.current || titleWidth;
       const islandGap = 12;
       const panelInset = 16;
-      const sideBudget = Math.max(titleBudget, actionsWidth);
-      const available = Math.max(96, width - 2 * (sideBudget + islandGap) - panelInset);
-      setNavigationSlotWidth(Math.min(width * 0.58, available));
 
-      // Panel chrome is always one line. When the side islands leave too little room,
-      // preserve the identity icon and let the title copy collapse.
-      const shouldCondenseTitle = hasNavigation && available < 132;
-      setCondensedTitle(shouldCondenseTitle);
+      // Navigation now shares the TOP-LEFT island with the title, so its budget is what
+      // that island has left after the title — one subtraction, not the two it needed
+      // while it was centred between the title and the actions.
+      // Capped at 45% so the island stays a CORNER: past that it stretches across the
+      // top and reads as the centered toolbar the corner rule replaced. The tabs inside
+      // collapse to icons and then to an overflow menu, which is what they are for.
+      const leftIsland = Math.min(
+        Math.max(width * 0.45, 240),
+        width - measuredActions - 2 * islandGap - panelInset
+      );
+      // The grip and mark are a fixed-width prefix inside the same island; the rest is
+      // the tabs'. No title copy to budget for any more.
+      setNavigationSlotWidth(Math.max(96, leftIsland - titleWidth - islandGap));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -417,7 +427,7 @@ export function FloatingPanel({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [actionsElement, condensedTitle, hasNavigation, navigationTarget, panelElement, titleElement]);
+  }, [actionsElement, navigationTarget, panelElement, titleElement]);
 
   return (
     // The root is a window surface, not a control: dragging it moves the window and
@@ -493,25 +503,61 @@ export function FloatingPanel({
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+          {/* Floating chrome lives in the CORNERS, and each corner has one job.
+              
+                TOP-LEFT — WHERE YOU ARE. Identity, plus every control that changes what
+                  the panel is showing: scene and item tabs (`primaryNavigation`) and the
+                  panel's own state selectors (`panelContext` — session, host, bot).
+                  Reading it tells you what you are looking at.
+                TOP-RIGHT — WHAT YOU CAN DO. Actions on that thing (`panelActions`), then
+                  minimize and close. Pressing one changes something.
+                BOTTOM — the CONTENT's, not ours. A codemap puts its legend and zoom
+                  controls there.
+
+              Never a centered island: a centre cluster has no width it can call its own,
+              because the two sides claim theirs first and whatever is between them is
+              squeezed until it slides underneath one of them. That is what this header
+              looked like at any realistic width. Corners cannot collide — each grows away
+              from the others — and the left one is capped so it stays a corner instead of
+              stretching back across the top. */}
+          <div className="pointer-events-none absolute inset-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+            <div
+              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
+              // Stops where the actions corner begins, so the two top corners share the
+              // edge instead of stacking. Measured, not guessed: the actions island grows
+              // with whatever a panel contributes to it.
+              // Never past 45% of a wide panel — that is the corner rule. But a fraction
+              // alone starves a NARROW one: at 420px it left less than the controls need
+              // and they were clipped mid-border rather than collapsing. A floor of 15rem
+              // wins there, where there is no meaningful "middle" to protect anyway.
+              style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), max(45%, 15rem))` }}
+            >
+            {/* The grip and the panel's mark ARE the first item of this island, not a
+                separate pill beside it. Two surfaces read as two groups and cost the gap
+                between them; one reads as "where you are" and spends that width on tabs.
+                No name here: the panel is identified by its mark and by the tab that is
+                lit, and a word set in uppercase tracking was the widest thing in the
+                corner while being the one thing you never click. It stays where it is the
+                only identity there is — the collapsed pill and the mobile header. */}
             <div
               {...drag.handleProps}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-subtle active:cursor-grabbing"
+              aria-label={`${title} — drag to move`}
             >
-              <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
-              {titleLabel}
+              {/* The grip alone. The panel's mark went the way its name did: a panel whose
+                  content is a file tree or a plan already says what it is, and in a corner
+                  that is capped, an icon you never click is width taken from the tabs. The
+                  mark stays where it earns its place — the collapsed pill and the mobile
+                  header, where there is no content to say it for you. */}
+              <GripHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
             </div>
             <div
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
-              className={cn(
-                "pointer-events-auto absolute left-1/2 top-2 flex h-9 -translate-x-1/2 items-center gap-1 overflow-hidden whitespace-nowrap",
-                hasNavigation && "floating-control-surface rounded-concentric p-1"
-              )}
-              style={{ width: navigationSlotWidth || undefined, maxWidth: "58%" }}
+              className="pointer-events-auto flex h-9 min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap"
             >
               {primaryNavigation && (
                 <div data-floating-panel-primary-navigation="" className="min-w-0 flex-[3]">
@@ -539,6 +585,7 @@ export function FloatingPanel({
                   />
                 </div>
               )}
+            </div>
             </div>
             <div
               ref={setActionsElement}
@@ -610,7 +657,14 @@ export function FloatingPanel({
             <div
               data-floating-panel-content=""
               className={cn(
-                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-0",
+                // `top-12` (48px) not `inset-0`: clears the chrome band (top-2 + h-9 = 44px): the chrome band (top-2 + h-9) is reserved, so
+                // no panel's first row is drawn underneath the floating islands. Every
+                // panel used to lose its top row to them — a table lost its column
+                // headers, a file browser its path and controls — and hover-revealing the
+                // chrome is exactly the moment the pointer is over the panel, so the
+                // covered row was covered precisely when you reached for it.
+                // Positional, not padding: consumers pass `p-0` in bodyClassName.
+                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-12",
                 bodyClassName
               )}
             >

@@ -1,5 +1,5 @@
 {
-  "items": [{ "id": "notes", "title": "Notes", "file": "notes/readme.md", "renderer": "self:notes" }],
+  "items": [{ "id": "notes", "title": "Notes", "source": { "kind": "fs", "path": "notes/readme.md" }, "view": "self:notes" }],
   "seed": [{ "path": "notes/readme.md", "source": "seed/notes/notes/readme.md" }],
   "pin": []
 }

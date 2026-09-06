@@ -49,6 +49,9 @@ import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
+import { SharedLayoutContext } from "@/hooks/sharedLayout";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 import { panelsFor } from "@/features/chat/panels/registry";
 import { useExtensionPanels } from "@/features/chat/panels/useExtensionPanels";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -98,6 +101,7 @@ import { ChannelPreview } from "./ChannelPreview";
 import { ChannelToolbar } from "./ChannelToolbar";
 import { useChannelRoster } from "./hooks/useChannelRoster";
 import { useChannelInstruments } from "./hooks/useChannelInstruments";
+import { useChannelLayout } from "./hooks/useChannelLayout";
 import { useChannelMessages } from "./hooks/useChannelMessages";
 import { createDm } from "@/api/channels";
 import type { MemberItem } from "@/types";
@@ -526,6 +530,40 @@ export function ChannelView({
     setLaneEl,
     getLaneBounds,
   } = useChannelInstruments();
+  // The channel's shared window arrangement, from `.workbench.json`. Mobile renders
+  // windows as full-screen sheets, so there is no geometry to share there.
+  const isMobile = useIsMobile();
+  const layoutChannelId = channel?.channel_id ?? "";
+  const channelLayout = useChannelLayout({
+    channelId: layoutChannelId,
+    sendResourceReq,
+    getLaneBounds,
+    enabled: !isMobile && !!layoutChannelId && !isPreview,
+    filesTick: boardTick.files,
+  });
+  const setWindowOpen: Record<SpawnKind, (open: boolean) => void> = useMemo(
+    () => ({
+      files: setFilesOpen,
+      workspace: setWsOpen,
+      viewboard: setVbOpen,
+      workbench: setWbOpen,
+    }),
+    [setFilesOpen, setWsOpen, setVbOpen, setWbOpen]
+  );
+  // Adopt the channel's open windows once per channel. Only ONCE: re-applying would
+  // reopen a window the viewer had just closed every time the file changed, which is
+  // the "moves under your cursor" failure the override rule exists to avoid.
+  const adoptedLayoutRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isMobile || !layoutChannelId || adoptedLayoutRef.current === layoutChannelId) return;
+    const declared = Object.entries(channelLayout.sharedOpen);
+    if (declared.length === 0) return;
+    adoptedLayoutRef.current = layoutChannelId;
+    for (const [kind, open] of declared) setWindowOpen[kind as SpawnKind](open);
+  }, [layoutChannelId, isMobile, channelLayout.sharedOpen, setWindowOpen]);
+  useEffect(() => {
+    adoptedLayoutRef.current = null;
+  }, [layoutChannelId]);
   useEffect(() => {
     if (!channel || channelSettingsRequestId !== channel.channel_id) return;
     setSettingsOpen(true);
@@ -1329,6 +1367,17 @@ export function ChannelView({
       workbenchOpen={wbOpen}
       boards={laneBoards}
       onOpenBoard={openBoard}
+      layoutOverridden={channelLayout.overridden}
+      layoutSaving={channelLayout.saving}
+      onSaveLayout={() =>
+        void channelLayout.saveLayout({
+          files: filesOpen,
+          workspace: wsOpen,
+          viewboard: vbOpen,
+          workbench: wbOpen,
+        })
+      }
+      onResetLayout={channelLayout.resetLayout}
       onManage={() => setSettingsOpen(true)}
       currentUserId={user?.user_id}
       onMentionMember={(member) => mentionMember(member.member_id)}
@@ -1597,6 +1646,7 @@ export function ChannelView({
             <LaneBoundsContext.Provider
               value={anyWorkOpen ? getLaneBounds : null}
             >
+              <SharedLayoutContext.Provider value={isMobile ? null : channelLayout.geomFor}>
               {wsOpen && (
                 <Suspense fallback={null}>
                   <RemoteWorkspaceDialog
@@ -1664,6 +1714,7 @@ export function ChannelView({
                   />
                 </Suspense>
               )}
+              </SharedLayoutContext.Provider>
             </LaneBoundsContext.Provider>
           </aside>
         </div>

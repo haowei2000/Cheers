@@ -235,6 +235,17 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.
 
+   **Followed by the half this step left undone.** Adding `panels` beside `scenes` left
+   the grammar saying one thing two ways: a scene item was `{file, renderer}` and a panel
+   `{source, view}`, while an official template spelled the same item `{file, lens}` — so
+   the catalog converted `lens` → `renderer` and every client converted it back. A scene
+   item is now the same `PanelContribution`, checked by one function per side
+   (`validate_panel`, `validatePanelContribution`), narrowed by one rule: **a scene item's
+   source must be `fs`**, because `scene_state` indexes a scene's items by file path.
+   `view` defaults to `auto`, which only an `fs` source may leave unset. The mount point
+   is now the only difference, and it is expressed by where the contribution is declared
+   rather than by a second vocabulary.
+
 5. **One picker.** Done. The four toolbar toggles are one Panels control listing
    **Windows** (Channel files, Remote workspace, ViewBoard, Workbench) and **Boards**
    (Plan, Cost, Sessions, Audit, Activity, plus anything a package contributes). Choosing
@@ -281,6 +292,14 @@ platform check.
 - **Does the Audit board's `rest` source survive?** It exists because Audit has no
   resource verb. Giving it one removes a source kind; the alternative is keeping `rest`
   as a permanent first-party-only escape hatch.
+- **Should a package be able to contribute a shared layout?** `.workbench.json`'s
+  `layout` key is written by people and agents, not by manifests — a preset that placed
+  its own windows is the "declarative preset" question below, seen from the other side.
+- **Does `surface` belong in the package grammar?** A scene item mounts inside the
+  Workbench and a panel mounts in the lane, and today that is said by *where* the
+  contribution is declared. A `surface` field would say it in the contribution itself and
+  collapse the two declaration sites into one list — but it would also let a package
+  choose its own mount point, which nothing has asked for yet.
 - **Does a preset need to be a first-class object?** Steps 1–4 work with presets as
   hardcoded default panel sets. Making them declarative — and therefore installable —
   is a fifth contribution kind, and should not be decided until Tier A has real users.

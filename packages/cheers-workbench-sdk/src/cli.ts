@@ -26,7 +26,8 @@ interface Manifest {
       id: string;
       title: string;
       source: { kind: "resource"; verb: string; pick?: string } | { kind: "fs"; path: string };
-      view: string;
+      /** Omitted = `auto`; only an fs source may leave it out. */
+      view?: string;
       config?: unknown;
     }>;
   };

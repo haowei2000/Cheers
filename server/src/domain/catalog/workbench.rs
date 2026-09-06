@@ -35,18 +35,11 @@ fn build(source: &str) -> OfficialExtension {
             .expect("official Workbench source has version")
     );
     let scene_id = "default";
-    let items: Vec<Value> = source["views"]
-        .as_array()
-        .expect("official Workbench source has views")
-        .iter()
-        .map(|view| {
-            json!({
-                "id": view["id"], "title": view["title"], "file": view["file"],
-                "renderer": format!("builtin:{}", view["lens"].as_str().unwrap_or("markdown")),
-                "config": view.get("config").cloned(),
-            })
-        })
-        .collect();
+    // A scene's items and a template's panels are the same contribution, so they are
+    // built and checked by the same function; a scene narrows the source to `fs`
+    // because `.workbench.json` indexes scene items by file path.
+    let items = build_panels(&source, id, "items", true);
+    assert!(!items.is_empty(), "{id}: a scene needs at least one item");
     let seed: Vec<Value> = source["seed"]
         .as_object()
         .expect("official Workbench source has seed")
@@ -60,7 +53,7 @@ fn build(source: &str) -> OfficialExtension {
         })
         .collect();
     let scene = json!({"id": scene_id, "title": title, "items": items, "seed": seed, "pin": source.get("pin").cloned().unwrap_or_else(|| json!([]))});
-    let panels = build_panels(&source, id);
+    let panels = build_panels(&source, id, "panels", false);
     let sha256 = format!("{:x}", Sha256::digest(source.to_string().as_bytes()));
     OfficialExtension {
         summary: json!({
@@ -83,13 +76,13 @@ fn build(source: &str) -> OfficialExtension {
 /// (`workbench_extensions`): the catalog is a second way to declare a panel, not a
 /// second grammar, and a source kind or verb that would be rejected in a package must
 /// be rejected here too.
-fn build_panels(source: &Value, extension_id: &str) -> Vec<Value> {
-    let Some(declared) = source.get("panels") else {
+fn build_panels(source: &Value, extension_id: &str, key: &str, fs_only: bool) -> Vec<Value> {
+    let Some(declared) = source.get(key) else {
         return Vec::new();
     };
     let declared = declared
         .as_array()
-        .unwrap_or_else(|| panic!("{extension_id}: panels must be an array"));
+        .unwrap_or_else(|| panic!("{extension_id}: {key} must be an array"));
     declared
         .iter()
         .map(|panel| {
@@ -105,6 +98,10 @@ fn build_panels(source: &Value, extension_id: &str) -> Vec<Value> {
             assert!(
                 PANEL_SOURCE_KINDS.contains(&kind),
                 "{extension_id}/{panel_id}: panel source kind `{kind}` is not one of {PANEL_SOURCE_KINDS:?}"
+            );
+            assert!(
+                !(fs_only && kind == "resource"),
+                "{extension_id}/{panel_id}: a scene item must read a file — a scene indexes its items by path"
             );
             if kind == "resource" {
                 let verb = panel["source"]["verb"].as_str().unwrap_or_else(|| {
@@ -135,14 +132,18 @@ fn build_panels(source: &Value, extension_id: &str) -> Vec<Value> {
                     "{extension_id}/{panel_id}: unsafe workspace path `{path}`"
                 );
             }
-            let view = panel["view"]
-                .as_str()
-                .unwrap_or_else(|| panic!("{extension_id}/{panel_id}: panel has no view"));
+            // Omitted = `auto`, matching the package grammar. Only a file has content
+            // for the host to match a view against, so a resource source must name one.
+            let view = panel["view"].as_str().unwrap_or("auto");
             // Catalog panels are data-only: a `self:` view needs renderer code, which a
             // release-managed extension never carries.
             assert!(
                 view == "auto" || view.starts_with("builtin:"),
                 "{extension_id}/{panel_id}: panel view `{view}` must be auto or builtin:*"
+            );
+            assert!(
+                !(kind == "resource" && view == "auto"),
+                "{extension_id}/{panel_id}: a resource panel cannot leave its view to `auto`"
             );
             let mut built =
                 json!({"id": panel_id, "title": title, "source": panel["source"], "view": view});
@@ -207,7 +208,7 @@ mod tests {
         let built = build(
             &json!({
                 "id": "demo", "version": 1, "title": "Demo",
-                "views": [{"id": "notes", "title": "Notes", "file": "notes.md", "lens": "markdown"}],
+                "items": [{"id": "notes", "title": "Notes", "source": {"kind": "fs", "path": "notes.md"}, "view": "builtin:markdown"}],
                 "seed": {"notes.md": "hi"},
                 "panels": [{
                     "id": "roster", "title": "Roster",
@@ -229,7 +230,7 @@ mod tests {
         let built = build(
             &json!({
                 "id": "plain", "version": 1, "title": "Plain",
-                "views": [{"id": "notes", "title": "Notes", "file": "notes.md", "lens": "markdown"}],
+                "items": [{"id": "notes", "title": "Notes", "source": {"kind": "fs", "path": "notes.md"}, "view": "builtin:markdown"}],
                 "seed": {"notes.md": "hi"}
             })
             .to_string(),
@@ -262,12 +263,47 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "indexes its items by path")]
+    fn a_scene_item_cannot_read_a_resource_verb() {
+        // Items and panels are ONE contribution now, so the difference has to be stated
+        // rather than implied by two structs: `.workbench.json` indexes a scene's items
+        // by file path, and a verb has no path to be indexed by.
+        build(
+            &json!({
+                "id": "bad", "version": 1, "title": "Bad",
+                "items": [{"id": "r", "title": "R",
+                    "source": {"kind": "resource", "verb": "channel.members"},
+                    "view": "builtin:table"}],
+                "seed": {}
+            })
+            .to_string(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot leave its view to `auto`")]
+    fn a_resource_panel_cannot_defer_its_view() {
+        // `auto` asks the host to match a view against the content's shape. A file has
+        // one; a resource payload does not, so `auto` there names a choice nothing makes.
+        build(
+            &json!({
+                "id": "bad", "version": 1, "title": "Bad",
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}}],
+                "seed": {"n.md": "x"},
+                "panels": [{"id": "r", "title": "R",
+                    "source": {"kind": "resource", "verb": "channel.members"}}]
+            })
+            .to_string(),
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "pick must be a key name")]
     fn a_template_cannot_pick_with_a_non_key() {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "r", "title": "R",
                     "source": {"kind": "resource", "verb": "channel.members", "pick": 3},
@@ -285,7 +321,7 @@ mod tests {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "r", "title": "R",
                     "source": {"kind": "fs", "path": "ops/servers.yaml", "pick": "rows"},
@@ -301,7 +337,7 @@ mod tests {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "repo", "title": "Repo",
                     "source": {"kind": "workspace", "botId": "b1", "path": "src"},
@@ -317,7 +353,7 @@ mod tests {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "s", "title": "S",
                     "source": {"kind": "resource", "verb": "channel.secrets"},
@@ -335,7 +371,7 @@ mod tests {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "c", "title": "C",
                     "source": {"kind": "resource", "verb": "channel.info"},
@@ -351,7 +387,7 @@ mod tests {
         build(
             &json!({
                 "id": "bad", "version": 1, "title": "Bad",
-                "views": [{"id": "n", "title": "N", "file": "n.md", "lens": "markdown"}],
+                "items": [{"id": "n", "title": "N", "source": {"kind": "fs", "path": "n.md"}, "view": "builtin:markdown"}],
                 "seed": {"n.md": "x"},
                 "panels": [{"id": "e", "title": "E",
                     "source": {"kind": "fs", "path": "../../etc/passwd"},

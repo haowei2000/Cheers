@@ -1,5 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { Select as UiSelect } from "@/components/ui/select";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { workbenchControlSize } from "./workbench-control";
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
 // SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
 // floating window inside the channel's work lane; dragging snaps it to the lane's
@@ -201,6 +202,15 @@ function ViewBoardDrawerImpl({
   // Desktop: a draggable/resizable floating window inside the work lane; dragging
   // snaps it to the lane's grid zones. Minimal collapses to a glance card that keeps
   // its dragged spot. Closed keeps it MOUNTED so visited-board state survives. Mobile
+  // What the scope TRIGGER says: the bot, or "All sessions". The session tag stays in
+  // the menu — a trigger has to fit a corner, an option only has to fit a menu.
+  const scopeLabel = (() => {
+    if (!scope) return "All sessions";
+    const session = sessions.find((candidate) => candidate.session_id === scope);
+    if (!session) return "All sessions";
+    return session.bot_name || session.bot_id.slice(0, 8);
+  })();
+
   // is a full-screen sheet. All of that is FloatingPanel's job — see its `open` and
   // `collapsed` props; `minimal` is controlled because useChannelInstruments owns it.
   return (
@@ -218,6 +228,9 @@ function ViewBoardDrawerImpl({
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
+        // A dropdown, not a tab row — same reason as the Workbench: a menubar's width
+        // scales with how many boards exist, in a 420px-wide panel.
+        presentationOrder: ["collapsed"],
         items: boards.map((board) => ({
           id: board.id,
           label: board.title,
@@ -227,32 +240,36 @@ function ViewBoardDrawerImpl({
         })),
       }}
       panelContext={activeBoard?.scope === "session" ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" />
-          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
-          <UiSelect
+        // A DropdownSelect, not a native <select>. A native one sizes itself to its
+        // LONGEST option, and these options are "bot name · session tag" — so in a 420px
+        // panel it either blew the corner open or, once constrained, shrank past its own
+        // border and drew as a clipped sliver. Here the trigger label and the option
+        // labels are separate values: the trigger says which bot in a few characters,
+        // and the menu keeps the detail you actually choose by.
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <DropdownSelect
+            ariaLabel="Scope"
+            leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            label={scopeLabel}
             value={scope}
-            onChange={(event) => setScope(event.target.value)}
-            controlSize="regular"
-            className="min-w-0 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All sessions</option>
-            {sessions.map((session) => (
-              <option
-                key={session.session_id}
-                value={session.session_id}
-                title={`bot ${session.bot_id} · session ${session.session_id}`}
-              >
-                {session.bot_name || session.bot_id.slice(0, 8)} ·{" "}
-                {sessionTag({
+            options={[
+              { value: "", label: "All sessions" },
+              ...sessions.map((session) => ({
+                value: session.session_id,
+                label: `${session.bot_name || session.bot_id.slice(0, 8)} · ${sessionTag({
                   is_primary: session.is_primary,
                   session_id: session.session_id,
                   cwd: session.cwd,
                   when: session.created_at,
-                })}
-              </option>
-            ))}
-          </UiSelect>
+                })}`,
+              })),
+            ]}
+            onSelect={setScope}
+            controlSize={workbenchControlSize.tab}
+            controlWidth="fill"
+            className="min-w-0 flex-1"
+            menuClassName="max-w-80"
+          />
         </div>
       ) : undefined}
       panelActions={activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? [{

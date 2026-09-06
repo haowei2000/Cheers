@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
@@ -1114,14 +1115,35 @@ export function RemoteWorkspaceDialog({
     setLeftView(view);
     if (view === "files") setDiff(null);
   };
+  // What the bot TRIGGER says: the name alone. Availability stays in the menu — a
+  // trigger has to fit a corner, an option only has to fit a menu.
+  const botLabel = (() => {
+    if (bots === null) return "Loading…";
+    const bot = bots.find((candidate) => candidate.bot_id === botId);
+    return bot ? bot.display_name || bot.username : "Select a bot";
+  })();
+
   const workspaceContextControls = (
     <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-compact">
-      <Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />
-      <UiSelect
-        aria-label="Select a bot"
+      {/* A DropdownSelect, not a native <select>. A native one sizes itself to its
+          LONGEST option — here a display name plus "(no access)" — so in the panel's
+          capped corner it either blew the island open or, constrained, shrank past its
+          own border. The trigger label and the option labels are separate values: the
+          trigger names the bot, the menu keeps why one is unavailable. */}
+      <DropdownSelect
+        ariaLabel="Select a bot"
+        leading={<Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+        label={botLabel}
         value={botId ?? ""}
-        onChange={(e) => {
-          setBotId(e.target.value || null);
+        options={(bots ?? []).map((bot) => ({
+          value: bot.bot_id,
+          label: `${bot.display_name || bot.username}${
+            !bot.online ? " (offline)" : bot.can_read === false ? " (no access)" : ""
+          }`,
+          disabled: !bot.online || bot.can_read === false,
+        }))}
+        onSelect={(value) => {
+          setBotId(value || null);
           setEntries(null);
           setCwd("");
           setTreeRoot(null);
@@ -1137,20 +1159,10 @@ export function RemoteWorkspaceDialog({
           deepLinked.current = true;
         }}
         controlSize="compact"
-        className="min-w-0 flex-1 rounded-sm bg-transparent text-content-secondary outline-none"
-      >
-        <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
-        {bots?.map((bot) => (
-          <option
-            key={bot.bot_id}
-            value={bot.bot_id}
-            disabled={!bot.online || bot.can_read === false}
-          >
-            {bot.display_name || bot.username}{" "}
-            {!bot.online ? "(offline)" : bot.can_read === false ? "(no access)" : ""}
-          </option>
-        ))}
-      </UiSelect>
+        controlWidth="fill"
+        className="min-w-0 flex-1"
+        menuClassName="max-w-72"
+      />
       {rootOptions.length > 1 && (
         <UiSelect
           aria-label="Select workspace root"

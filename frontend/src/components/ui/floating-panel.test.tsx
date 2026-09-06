@@ -260,9 +260,74 @@ describe("FloatingPanel window chrome", () => {
     expect(contentIndex).toBeGreaterThan(contextIndex);
     expect(markup).toContain("whitespace-nowrap");
     expect(markup).toContain("w-0 overflow-hidden");
-    expect(markup).not.toContain("top-12");
+    // `top-12` in the CHROME would mean a second stacked row. On the content element it
+    // means the opposite — the body clearing the chrome band — so the assertion has to
+    // name where it looks, not just whether the string is present anywhere.
+    expect(markup.slice(0, contentIndex)).not.toContain("top-12");
+    expect(markup.slice(contentIndex)).toContain("md:top-12");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
     expect(markup).toContain("workspace-content");
+  });
+
+  it("keeps floating chrome in the corners and off the content", () => {
+    // Two rules, one cause. The chrome used to put three islands on one edge with the
+    // navigation CENTERED between the title and the actions, over a body that started at
+    // y=0. So the middle island was squeezed until it slid under a neighbour, and every
+    // panel lost its first row to the islands — a table its column headers, a file
+    // browser its path and controls — at exactly the moment the pointer was over the
+    // panel and the chrome faded in.
+    const markup = renderToStaticMarkup(
+      <FloatingPanel
+        title="Workbench"
+        open
+        onClose={() => {}}
+        storageKey="t.corners"
+        primaryNavigation={{
+          ariaLabel: "Scenes",
+          items: [{ id: "a", label: "Alpha", selected: true }, { id: "b", label: "Beta" }],
+        }}
+      >
+        <p>panel-content</p>
+      </FloatingPanel>
+    );
+
+    const contentIndex = markup.indexOf('data-floating-panel-content=""');
+    // Just the islands: `left-1/2` also appears on the panel ROOT, which is where the
+    // window sits on screen and has nothing to do with where its chrome sits inside it.
+    const chrome = markup.slice(markup.indexOf('data-floating-panel-title=""'), contentIndex);
+    const content = markup.slice(contentIndex);
+
+    // No island is centred: a centre cluster has no width of its own, because the two
+    // sides claim theirs first.
+    expect(chrome).not.toContain("left-1/2");
+    expect(chrome).not.toContain("-translate-x-1/2");
+    // The left island is a CORNER, capped so it cannot stretch across the top and become
+    // the centered toolbar again.
+    expect(markup.slice(0, contentIndex)).toContain("45%");
+    // Both top islands anchor to their own corner.
+    expect(markup.slice(0, contentIndex)).toContain("left-2 top-2");
+    expect(chrome).toContain("right-2 top-2");
+    // The body starts below the chrome band rather than underneath it.
+    expect(content).toContain("md:top-12");
+    expect(content).not.toContain("md:inset-0");
+
+    // Just the top-LEFT island: from where it opens to where the actions island starts.
+    const actionsIndex = markup.indexOf('data-floating-panel-actions=""');
+    const leftIsland = markup.slice(markup.indexOf("floating-control-surface"), actionsIndex);
+
+    // The grip and the tabs are ONE island, not two pills with a gap between them — so
+    // the surface class appears once across the whole of it.
+    expect(leftIsland.match(/floating-control-surface/g)).toHaveLength(1);
+
+    // No panel NAME in the expanded desktop chrome: the mark and the lit tab identify it,
+    // and an uppercase tracked word was the widest thing in that corner while being the
+    // one thing you never click. It stays where it IS the only identity — the collapsed
+    // pill and the mobile header, which is why this looks at the island and not the
+    // whole markup.
+    expect(leftIsland).not.toContain("tracking-section");
+    // Gone from the DISPLAY, not from the accessibility tree: the grip still announces
+    // which panel it moves.
+    expect(leftIsland).toContain('aria-label="Workbench — drag to move"');
   });
 });

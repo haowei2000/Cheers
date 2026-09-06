@@ -1,57 +1,162 @@
 {
   "id": "research-lab",
   "title": "Research Lab",
-  "pin": ["prompts/lab-conventions.md"],
-  "views": [
+  "items": [
     {
       "id": "papers",
       "title": "Literature",
-      "file": "research/papers.json",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "research/papers.json"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
-          { "key": "title", "label": "Title" },
-          { "key": "authors", "label": "Authors" },
-          { "key": "venue", "label": "Venue" },
-          { "key": "year", "label": "Year" },
-          { "key": "status", "label": "Status", "options": ["To read", "Reading", "Read", "Cited"] },
-          { "key": "relevance", "label": "Relevance" }
+          {
+            "key": "title",
+            "label": "Title"
+          },
+          {
+            "key": "authors",
+            "label": "Authors"
+          },
+          {
+            "key": "venue",
+            "label": "Venue"
+          },
+          {
+            "key": "year",
+            "label": "Year"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "options": [
+              "To read",
+              "Reading",
+              "Read",
+              "Cited"
+            ]
+          },
+          {
+            "key": "relevance",
+            "label": "Relevance"
+          }
         ]
       }
     },
     {
       "id": "runs",
       "title": "Runs",
-      "file": "experiments/runs.json",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "experiments/runs.json"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
-          { "key": "id", "label": "Run" },
-          { "key": "config", "label": "Config" },
-          { "key": "status", "label": "Status", "options": ["Queued", "Running", "Done", "Failed"] },
-          { "key": "metric", "label": "Key metric" },
-          { "key": "artifact", "label": "Artifact" }
+          {
+            "key": "id",
+            "label": "Run"
+          },
+          {
+            "key": "config",
+            "label": "Config"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "options": [
+              "Queued",
+              "Running",
+              "Done",
+              "Failed"
+            ]
+          },
+          {
+            "key": "metric",
+            "label": "Key metric"
+          },
+          {
+            "key": "artifact",
+            "label": "Artifact"
+          }
         ]
       }
     },
-    { "id": "metrics", "title": "Metrics", "file": "experiments/metrics.json", "lens": "chart" },
-    { "id": "board", "title": "Board", "file": "experiments/board.json", "lens": "kanban" },
+    {
+      "id": "metrics",
+      "title": "Metrics",
+      "source": {
+        "kind": "fs",
+        "path": "experiments/metrics.json"
+      },
+      "view": "builtin:chart"
+    },
+    {
+      "id": "board",
+      "title": "Board",
+      "source": {
+        "kind": "fs",
+        "path": "experiments/board.json"
+      },
+      "view": "builtin:kanban"
+    },
     {
       "id": "findings",
       "title": "Findings",
-      "file": "research/findings.json",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "research/findings.json"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
-          { "key": "claim", "label": "Claim" },
-          { "key": "evidence", "label": "Evidence" },
-          { "key": "confidence", "label": "Confidence", "options": ["Low", "Medium", "High"] },
-          { "key": "source", "label": "Source" }
+          {
+            "key": "claim",
+            "label": "Claim"
+          },
+          {
+            "key": "evidence",
+            "label": "Evidence"
+          },
+          {
+            "key": "confidence",
+            "label": "Confidence",
+            "options": [
+              "Low",
+              "Medium",
+              "High"
+            ]
+          },
+          {
+            "key": "source",
+            "label": "Source"
+          }
         ]
       }
     },
-    { "id": "ideas", "title": "Ideas", "file": "research/ideas.md", "lens": "markdown" },
-    { "id": "draft", "title": "Draft", "file": "draft/paper.md", "lens": "markdown" }
+    {
+      "id": "ideas",
+      "title": "Ideas",
+      "source": {
+        "kind": "fs",
+        "path": "research/ideas.md"
+      },
+      "view": "builtin:markdown"
+    },
+    {
+      "id": "draft",
+      "title": "Draft",
+      "source": {
+        "kind": "fs",
+        "path": "draft/paper.md"
+      },
+      "view": "builtin:markdown"
+    }
+  ],
+  "pin": [
+    "prompts/lab-conventions.md"
   ],
   "seed": {
     "research/papers.json": [
@@ -72,10 +177,24 @@
     },
     "experiments/board.json": {
       "columns": [
-        { "name": "Backlog", "items": ["Reproduce baseline"] },
-        { "name": "Running", "items": [] },
-        { "name": "Analyzed", "items": [] },
-        { "name": "Done", "items": [] }
+        {
+          "name": "Backlog",
+          "items": [
+            "Reproduce baseline"
+          ]
+        },
+        {
+          "name": "Running",
+          "items": []
+        },
+        {
+          "name": "Analyzed",
+          "items": []
+        },
+        {
+          "name": "Done",
+          "items": []
+        }
       ]
     },
     "research/findings.json": [],

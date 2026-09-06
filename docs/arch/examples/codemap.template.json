@@ -1,7 +1,7 @@
 {
   "id": "codemap",
   "title": "Codemap",
-  "views": [],
+  "items": [],
   "pin": [
     "codemap/conventions.md"
   ],

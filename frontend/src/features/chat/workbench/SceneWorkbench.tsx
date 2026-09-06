@@ -3,17 +3,22 @@ import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/compon
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
   CheckSquare2,
   Code2,
+  Eye,
+  EyeOff,
+  MessageSquare,
   FileQuestion,
   Folder,
   FolderPlus,
+  Frame,
   LayoutGrid,
   Paperclip,
+  Save,
   Server,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -33,6 +38,10 @@ import {
 } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
+import { useFileSession } from "./jsonFile";
+import { useAnnotations } from "./annotations";
+import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
+import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
 import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
@@ -44,7 +53,21 @@ import {
   FloatingPanelPrimaryNavigation,
 } from "@/components/ui/floating-panel";
 
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
+
 const OTHER_SCENE = "__other__";
+
+// A canvas is the successor to a scene: a named collection of channel content, but one
+// that lives in its own file instead of in `scene_state` (docs/arch/CANVAS.md). So it
+// takes a slot in the SAME primary navigation, as a scene whose only item is that file
+// — which is why the canvas itself becomes the navigation and the item tabs go quiet.
+//
+// Flat coexistence rather than a mode switch: while both concepts exist, a channel
+// should be able to migrate one scene at a time and always see both.
+const CANVAS_SCENE = "canvas:";
+const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
+const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
+const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
 
 const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: string }> = {
   "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
@@ -354,7 +377,7 @@ export function reconcileSceneItems(
     if (!template) continue;
     titles[id] ??= template.title;
     const paths = items[id] ?? [];
-    for (const view of template.views) if (!paths.includes(view.file)) paths.push(view.file);
+    for (const item of template.items) if (!paths.includes(item.source.path)) paths.push(item.source.path);
     items[id] = paths;
   }
   return { version: 1, order, titles, items };
@@ -364,7 +387,7 @@ function itemTitle(sceneId: string, path: string, templates: TemplateManifest[])
   return (
     templates
       .find((template) => template.id === sceneId)
-      ?.views.find((view) => view.file === path)?.title ?? fallbackItemTitle(path)
+      ?.items.find((item) => item.source.path === path)?.title ?? fallbackItemTitle(path)
   );
 }
 
@@ -477,12 +500,16 @@ export function SceneWorkbench({
     [reconciled]
   );
   const otherPaths = useMemo(
-    () => Object.keys(renderers).filter((path) => !claimed.has(path)).sort((a, b) => a.localeCompare(b)),
+    () => Object.keys(renderers).filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b)),
     [renderers, claimed]
   );
+  const canvasPaths = useMemo(
+    () => [...existing].filter(isCanvasPath).sort((a, b) => a.localeCompare(b)),
+    [existing]
+  );
   const sceneIds = useMemo(
-    () => [...reconciled.order, ...(otherPaths.length ? [OTHER_SCENE] : [])],
-    [reconciled.order, otherPaths.length]
+    () => [...reconciled.order, ...canvasPaths.map(canvasSceneId), ...(otherPaths.length ? [OTHER_SCENE] : [])],
+    [reconciled.order, canvasPaths, otherPaths.length]
   );
 
   useEffect(() => {
@@ -498,6 +525,8 @@ export function SceneWorkbench({
   }, [activeScene, storagePrefix]);
 
   const activePaths = useMemo(() => {
+    const canvas = canvasScenePath(activeScene);
+    if (canvas) return existing.has(canvas) ? [canvas] : [];
     const paths = activeScene === OTHER_SCENE ? otherPaths : reconciled.items[activeScene] ?? [];
     return paths.filter((path) => existing.has(path) && (activeScene !== OTHER_SCENE || renderers[path]));
   }, [activeScene, otherPaths, reconciled.items, existing, renderers]);
@@ -511,14 +540,41 @@ export function SceneWorkbench({
         ? storedSelection
         : activePaths[0]) ?? null;
 
+  // ONE session for the selected item, shared by this scene's two views: Raw edits
+  // `text`, Preview renders `data` parsed from it. See FileSession.
+  const session = useFileSession(ctx.fs, selectedPath ?? "");
+  // Notes anchored into this item — a separate file, so annotating never touches the
+  // document being annotated. Same store the file browser reads.
+  const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
+  const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
+  const onAnnotate = useCallback(
+    (target: LensContextTarget, at: { x: number; y: number }) =>
+      selectedPath && setPendingNote({ target, path: selectedPath, at }),
+    [selectedPath]
+  );
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const [revealLine, setRevealLine] = useState<number | undefined>();
+  // Paths the user has forced to Raw; everything else follows the content.
+  const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const showRaw = useCallback((path: string, raw: boolean) => {
+    setRawPaths((current) => {
+      if (current.has(path) === raw) return current;
+      const next = new Set(current);
+      if (raw) next.add(path); else next.delete(path);
+      return next;
+    });
+  }, []);
+
+  // The session has already read the selected file, so feed the discovery map from it
+  // rather than issuing a second read for the same bytes — and so an edit does not leave
+  // the map (which decides what counts as a scene item at all) describing an old file.
   useEffect(() => {
-    if (!selectedPath || contents[selectedPath] !== undefined) return;
-    let alive = true;
-    void ctx.fs.read(selectedPath).then((file) => {
-      if (alive) setContents((current) => ({ ...current, [selectedPath]: file.content }));
-    }).catch(() => undefined);
-    return () => { alive = false; };
-  }, [selectedPath, contents, ctx.fs]);
+    if (!selectedPath || session.path !== selectedPath || session.version === null) return;
+    const text = session.parsedText;
+    setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
+  }, [selectedPath, session.path, session.version, session.parsedText]);
+
+  useEffect(() => setPendingNote(null), [selectedPath]);
 
   const selectPath = (path: string) => {
     setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
@@ -578,8 +634,15 @@ export function SceneWorkbench({
   });
 
   const sceneNavigationItems = sceneIds.map((id) => {
-    const meta = metaFor(id);
-    const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
+    const canvasPath = canvasScenePath(id);
+    const meta = canvasPath
+      ? { subtitle: "Canvas", Icon: Frame, color: "text-accent-300" }
+      : metaFor(id);
+    const label = canvasPath
+      ? (canvasPath.split("/").pop() ?? canvasPath).replace(/\.canvas\.(ya?ml|json)$/i, "")
+      : id === OTHER_SCENE
+        ? "Other"
+        : reconciled.titles[id] ?? id;
     const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
       .filter((path) => existing.has(path));
     return {
@@ -626,7 +689,9 @@ export function SceneWorkbench({
     ),
   }), [available, onAddScene]);
 
-  const itemNavigationItems = activePaths.map((path) => ({
+  // A canvas navigates itself — you click a node, not a tab — so the item strip that a
+  // scene fills stays empty here. This is the same shape the ViewBoard already has.
+  const itemNavigationItems = (canvasScenePath(activeScene) ? [] : activePaths).map((path) => ({
     id: path,
     label: itemTitle(activeScene, path, templates),
     selected: path === selectedPath,
@@ -680,7 +745,11 @@ export function SceneWorkbench({
       <FloatingPanelPrimaryNavigation
         ariaLabel="Scenes"
         items={sceneNavigationItems}
-        presentationOrder={["iconText", "text", "icon", "collapsed"]}
+        // A dropdown, not a tab row. A menubar costs width proportional to how many
+        // scenes exist, in the one corner that also has to hold the item switcher — and
+        // it spends that width showing you the choices you did NOT make. A dropdown
+        // shows the one you did, in constant width.
+        presentationOrder={["collapsed"]}
         mobile={(
           <div role="tablist" aria-label="Scenes" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
             {sceneTabs()}
@@ -695,7 +764,7 @@ export function SceneWorkbench({
             kind="navigation"
             ariaLabel={`${title} items`}
             items={itemNavigationItems}
-            presentationOrder={["iconText", "text", "collapsed"]}
+            presentationOrder={["collapsed"]}
           />
         </FloatingPanelContextPortal>
       )}
@@ -703,37 +772,116 @@ export function SceneWorkbench({
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">
             {selectedPath ? (
-              <ContextPickSurface
-                channelId={ctx.channelId}
-                path={selectedPath}
-                content={contents[selectedPath] ?? ""}
-                onAdded={(label) => setStatus(`Added ${label} to context`)}
-              >
-                {renderers[selectedPath] ? (
-                  <RendererHost
-                    ctx={ctx}
-                    path={selectedPath}
-                    renderer={renderers[selectedPath]}
-                    config={ctx.configs[selectedPath]}
-                    onFailure={(rendererId, reason) => {
-                      setFailedRenderers((current) => ({
-                        ...current,
-                        [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
-                      }));
-                      if (contents[selectedPath] === undefined) {
-                        void ctx.fs.read(selectedPath).then((file) =>
-                          setContents((current) => ({ ...current, [selectedPath]: file.content }))
-                        ).catch(() => undefined);
-                      }
-                      setStatus(`${renderers[selectedPath].title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
-                    }}
-                  />
-                ) : (
-                  <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-canvas p-4 text-compact text-content-secondary">
-                    {contents[selectedPath] ?? "Loading Raw content…"}
-                  </pre>
-                )}
-              </ContextPickSurface>
+              (() => {
+                const renderer = renderers[selectedPath];
+                // Same rule as the file browser: a path the user forced to Raw, or one no
+                // renderer accepts, shows its text. Everything else previews.
+                const effMode = rawPaths.has(selectedPath) || !renderer ? "raw" : "preview";
+                return (
+                  <div className="flex h-full min-h-0 flex-col">
+                    {/* The file's controls are CHROME, so they live in the panel's
+                        top-right corner with the rest of it — not in a body row beneath
+                        it. A row here is drawn under the floating islands and its buttons
+                        stop being clickable the moment the chrome fades in, which is
+                        exactly when the pointer is over the panel. What is left in the
+                        body is content; what names and acts on the file is in a corner. */}
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "view-mode",
+                        label: !renderer
+                          ? "No matching renderer — raw only"
+                          : effMode === "preview"
+                            ? `Showing the ${renderer.title} preview — switch to raw`
+                            : "Showing raw text — switch to the preview",
+                        priority: "primary",
+                        icon: effMode === "preview" ? Eye : EyeOff,
+                        selected: effMode === "preview",
+                        disabled: !renderer,
+                        onSelect: () => showRaw(selectedPath, effMode === "preview"),
+                      }}
+                    />
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "annotations",
+                        label: `Notes on ${selectedPath}`,
+                        priority: "secondary",
+                        icon: MessageSquare,
+                        control: (
+                          <AnnotationsButton
+                            notes={annotations.notes}
+                            text={session.parsedText}
+                            onRemove={onRemoveNote}
+                            onReveal={(range) => {
+                              showRaw(selectedPath, true);
+                              setRevealLine(range.start);
+                            }}
+                          />
+                        ),
+                      }}
+                      active={annotations.notes.length > 0}
+                    />
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "save-file",
+                        label: session.parseError
+                          ? `Save ${selectedPath} — the text does not parse`
+                          : `Save ${selectedPath}`,
+                        priority: "primary",
+                        icon: Save,
+                        disabled: !session.dirty,
+                        onSelect: () => void session.save(),
+                      }}
+                      active={session.dirty || Boolean(session.parseError)}
+                    />
+                    {pendingNote && (
+                      <AnnotationComposer
+                        pending={pendingNote}
+                        onCancel={() => setPendingNote(null)}
+                        onSubmit={(entry) => {
+                          void annotations.add(entry);
+                          setPendingNote(null);
+                        }}
+                      />
+                    )}
+                    <div className="min-h-0 flex-1">
+                      <ContextPickSurface
+                        channelId={ctx.channelId}
+                        path={selectedPath}
+                        content={session.text}
+                        onAdded={(label) => setStatus(`Added ${label} to context`)}
+                      >
+                        {effMode === "preview" && renderer ? (
+                          <RendererHost
+                            ctx={ctx}
+                            path={selectedPath}
+                            renderer={renderer}
+                            config={ctx.configs[selectedPath]}
+                            session={session}
+                            annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                            onFailure={(rendererId, reason) => {
+                              setFailedRenderers((current) => ({
+                                ...current,
+                                [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                              }));
+                              setStatus(`${renderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
+                            }}
+                          />
+                        ) : (
+                          <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
+                            <CodeEditor
+                              value={session.text}
+                              onChange={session.editText}
+                              path={selectedPath}
+                              scrollToLine={revealLine}
+                              className="h-full min-h-0 overflow-hidden"
+                            />
+                          </Suspense>
+                        )}
+                      </ContextPickSurface>
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
                 <FileQuestion className="h-5 w-5 text-content-muted" />
@@ -742,7 +890,27 @@ export function SceneWorkbench({
               </div>
             )}
           </div>
-          {status && <div className="border-t border-zinc-800 px-3 py-2 text-compact text-warning-300">{status}</div>}
+          {/* Bottom strip: the one place nothing floats over. Carries what the file is
+              and what state it is in, so neither has to sit under the chrome. */}
+          {(selectedPath || status || session.status || annotations.status) && (
+            <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 text-compact">
+              {selectedPath && (
+                <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
+              )}
+              {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+              {session.parseError && (
+                <span
+                  className="flex-shrink-0 text-minimal text-warning-400"
+                  title={`${session.parseError} — the preview is showing the last version that parsed`}
+                >
+                  syntax error
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate text-right text-warning-300">
+                {status || session.status || annotations.status}
+              </span>
+            </div>
+          )}
         </section>
       </div>
     </div>

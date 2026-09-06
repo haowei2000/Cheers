@@ -3,8 +3,11 @@
     {
       "id": "open-questions",
       "title": "Open questions",
-      "file": "notes/open-questions.md",
-      "renderer": "self:notes"
+      "source": {
+        "kind": "fs",
+        "path": "notes/open-questions.md"
+      },
+      "view": "self:notes"
     }
   ],
   "seed": [
@@ -13,5 +16,7 @@
       "source": "seed/notes/notes/open-questions.md"
     }
   ],
-  "pin": ["notes/open-questions.md"]
+  "pin": [
+    "notes/open-questions.md"
+  ]
 }

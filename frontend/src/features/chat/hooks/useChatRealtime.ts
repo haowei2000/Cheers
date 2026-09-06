@@ -148,6 +148,43 @@ let active: ActiveSub | null = null;
 // The server rejected our token (auth_err): reconnecting with the same token
 // would just loop, so stop; the session-expired takeover is the exit.
 let authFailed = false;
+
+// Callers waiting for the socket to be usable — OPEN *and* authenticated. A resource
+// request that arrived while the socket was still coming up used to reject on the spot
+// with DISCONNECTED, and "still coming up" is the normal state right after a page load,
+// a reconnect, or waking from background — exactly when the Workbench mounts and asks
+// for its file tree. The request already carries a 15s budget; spending the first
+// moments of it on a socket that is actively connecting is what that budget is for.
+//
+// Waiters are NOT released on a close: a close schedules a reconnect, so the right
+// answer for a pending caller is to keep waiting and let its own timeout bound the wait.
+// Only a dead token (`auth_err`) is a wait that can never end.
+let readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+
+function socketReady(): boolean {
+  return Boolean(ws && ws.readyState === WebSocket.OPEN && authed);
+}
+
+function releaseReadyWaiters(error?: Error): void {
+  const waiting = readyWaiters;
+  readyWaiters = [];
+  for (const waiter of waiting) {
+    if (error) waiter.reject(error);
+    else waiter.resolve();
+  }
+}
+
+function whenSocketReady(): Promise<void> {
+  if (socketReady()) return Promise.resolve();
+  if (authFailed) return Promise.reject(new ResourceError("DISCONNECTED", "not authenticated"));
+  // Waiting is only worth anything if something is coming. A socket that closed while
+  // the tab was in the background leaves nothing running to reopen it until the channel
+  // effect happens to re-fire, so a caller would sit out its whole budget and time out.
+  // Asking for a resource IS a reason to have a socket: nudge one up. `ensureSocket` is
+  // a no-op when one is already open or mid-connect.
+  if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) ensureSocket(wsToken);
+  return new Promise<void>((resolve, reject) => readyWaiters.push({ resolve, reject }));
+}
 const pendingReqs = new Map<string, PendingReq>();
 
 function rejectAllPending(err: ResourceError) {
@@ -225,12 +262,14 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     authed = true;
     retryCount = 0;
     subscribeActive();
+    releaseReadyWaiters();
     return;
   }
   if (type === "auth_err") {
     // Dead token → tier L: flip the global session-expired takeover and stop
     // the reconnect loop (retrying with the same token can never succeed).
     authFailed = true;
+    releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
     useAuthStore.getState().markSessionExpired();
     ws?.close();
     return;
@@ -490,17 +529,31 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const sendResourceReq = useCallback(
     (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
       return new Promise<ResourceData>((resolve, reject) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-          reject(new ResourceError("DISCONNECTED", "socket not connected"));
-          return;
-        }
         const reqId = crypto.randomUUID();
+        // The budget is armed FIRST, so waiting for a socket that never arrives fails as
+        // a TIMEOUT rather than hanging forever.
         const timer = setTimeout(() => {
           pendingReqs.delete(reqId);
           reject(new ResourceError("TIMEOUT", "resource request timed out"));
         }, RESOURCE_REQ_TIMEOUT);
         pendingReqs.set(reqId, { resolve, reject, timer });
-        sendFrame({ type: "resource_req", req_id: reqId, resource, params });
+
+        void whenSocketReady().then(
+          () => {
+            // The budget may have run out while we waited, in which case the request has
+            // already been rejected and must not also be sent.
+            if (!pendingReqs.has(reqId)) return;
+            if (sendFrame({ type: "resource_req", req_id: reqId, resource, params })) return;
+            clearTimeout(timer);
+            pendingReqs.delete(reqId);
+            reject(new ResourceError("DISCONNECTED", "socket not connected"));
+          },
+          (error: Error) => {
+            clearTimeout(timer);
+            pendingReqs.delete(reqId);
+            reject(error);
+          }
+        );
       });
     },
     []

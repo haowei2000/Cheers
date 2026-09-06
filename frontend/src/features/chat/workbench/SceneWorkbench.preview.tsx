@@ -1,4 +1,5 @@
 import { ContextActionsProvider } from "@/components/ui/context-actions";
+import { ThemeProvider } from "@/components/ui/theme";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { createRoot, type Root } from "react-dom/client";
 import { Folder, LayoutGrid } from "lucide-react";
@@ -14,6 +15,17 @@ const files: Record<string, string> = {
   "dev/issues.yaml": "- title: Raw files visible by default\n  severity: P1\n  status: fixed\n",
   "dev/progress.yaml": "series:\n  - name: tests passing\n    points: [[1, 88], [2, 104], [3, 121]]\n",
   "dev/todo.md": "# Todo\n\n- [x] Scene navigation\n- [x] Native Codemap\n- [ ] Visual QA\n",
+  "canvases/architecture.canvas.yaml": `canvas: 1
+layout: dag
+nodes:
+  - id: brief
+    text: "# Brief\\nWhat the channel is shipping."
+  - id: plan
+    source: { kind: fs, path: dev/plan.yaml }
+    view: builtin:kanban
+edges:
+  - { id: brief-plan, from: { node: brief, side: right }, to: { node: plan, side: left }, label: drives }
+`,
   "codemap/map.yaml": `codemap: 1
 repo: haowei2000/Cheers
 updated: 2026-08-04T11:45:00Z
@@ -68,25 +80,25 @@ const entries = Object.entries(files).map(([path, content], index) => ({
 const templates: TemplateManifest[] = [{
   id: "cheers-code-project",
   title: "Code project",
-  views: [
-    { id: "plan", title: "Plan", file: "dev/plan.yaml", lens: "kanban" },
-    { id: "issues", title: "Issues", file: "dev/issues.yaml", lens: "table" },
-    { id: "progress", title: "Progress", file: "dev/progress.yaml", lens: "chart" },
-    { id: "todo", title: "Todo", file: "dev/todo.md", lens: "markdown" },
-    { id: "codemap", title: "Codemap", file: "codemap/map.yaml", lens: "codemap" },
+  items: [
+    { id: "plan", title: "Plan", source: { kind: "fs", path: "dev/plan.yaml" }, view: "builtin:kanban" },
+    { id: "issues", title: "Issues", source: { kind: "fs", path: "dev/issues.yaml" }, view: "builtin:table" },
+    { id: "progress", title: "Progress", source: { kind: "fs", path: "dev/progress.yaml" }, view: "builtin:chart" },
+    { id: "todo", title: "Todo", source: { kind: "fs", path: "dev/todo.md" }, view: "builtin:markdown" },
+    { id: "codemap", title: "Codemap", source: { kind: "fs", path: "codemap/map.yaml" }, view: "builtin:codemap" },
   ],
 }, {
   id: "cheers-research-lab",
   title: "Research lab",
-  views: [],
+  items: [],
 }, {
   id: "cheers-task-board",
   title: "Tasks",
-  views: [],
+  items: [],
 }, {
   id: "cheers-team-ops",
   title: "Operations",
-  views: [],
+  items: [],
 }];
 
 const installedTemplates = templates;
@@ -94,7 +106,7 @@ const sceneState: WorkbenchSceneState = {
   version: 1,
   order: installedTemplates.map((template) => template.id),
   titles: Object.fromEntries(installedTemplates.map((template) => [template.id, template.title])),
-  items: Object.fromEntries(installedTemplates.map((template) => [template.id, template.views.map((view) => view.file)])),
+  items: Object.fromEntries(installedTemplates.map((template) => [template.id, template.items.map((item) => item.source.path)])),
 };
 
 localStorage.setItem("cheers.workbench.preview.scene", "cheers-code-project");
@@ -107,6 +119,7 @@ const context: WorkbenchContext = {
     ls: async () => ({ path: "", entries }),
     read: async (path) => ({ path, content: files[path] ?? "", version: 1, is_dir: false }),
     write: async (path) => ({ path, version: 2 }),
+    patch: async (path) => ({ path, version: 2 }),
     rm: async () => undefined,
   },
   sendResourceReq: async () => ({}),
@@ -126,7 +139,8 @@ const context: WorkbenchContext = {
 
 function Preview() {
   return (
-    <ContextActionsProvider>
+    <ThemeProvider>
+      <ContextActionsProvider>
       <main className="relative h-full overflow-hidden bg-zinc-950 text-content-primary">
         <FloatingPanel
           title="Workbench"
@@ -153,7 +167,8 @@ function Preview() {
           />
         </FloatingPanel>
       </main>
-    </ContextActionsProvider>
+      </ContextActionsProvider>
+    </ThemeProvider>
   );
 }
 

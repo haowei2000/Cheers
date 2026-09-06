@@ -52,6 +52,7 @@ Working engineering plans — actively maintained, but not the source of truth f
 
 - 📝 [Research Scenario ("research-lab")](RESEARCH_SCENARIO.md) — not yet implemented; scenario proposal
 - 📝 [Panel Model](PANEL_MODEL.md) — merging Workbench / ViewBoard / Remote workspace into one plugin-able Panel concept; not decided
+- 📝 [Canvas](CANVAS.md) — a canvas as a file rendered by a lens: bidirectional editing, agent-writable, multiple per channel, round-trippable addressing; not decided
 
 ## Back to Hub
 
