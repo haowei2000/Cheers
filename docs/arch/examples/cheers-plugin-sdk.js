@@ -1,5 +1,5 @@
-/* cheers-plugin-sdk v2 — protocol 1. (v2 adds open/compose/log + uncaught-error
- * forwarding and the one-save-in-flight guard; the wire protocol is unchanged.)
+/* cheers-plugin-sdk v3 — protocol 1. (v3 adds the host-managed preview-node
+ * context menu; protocol 1 remains backward-compatible by ignoring unknown messages.)
  *
  * Copy-paste this function INLINE into your plugin's <script> — plugins are single
  * self-contained .html files, there is no external script loading in the sandbox.
@@ -23,6 +23,8 @@
  *   host.resource(name, params) // -> Promise<data> for the read-only channel.*
  *                               //    whitelist (channel.info / members / messages …)
  *   host.unsupported(reason)    // -> final verdict: this content can't be rendered
+ *   host.contextMenu(event, label, sourceText)
+ *                               // -> host menu; host uniquely maps sourceText to lines
  *   host.log(msg, level)        // -> a line in the host's dev protocol inspector
  *
  * cheers:ready is posted for you, after the listener is wired.
@@ -51,6 +53,8 @@ function cheersPlugin(opts) {
       if (!r) return;
       delete pendingRes[m.reqId];
       (m.ok ? r.resolve(m.data) : r.reject(new Error(m.error || "resource error")));
+    } else if (m.type === "cheers:context-added") {
+      if (opts.onContextAdded) opts.onContextAdded(m);
     }
   });
   var api = {
@@ -81,6 +85,22 @@ function cheersPlugin(opts) {
       // Navigate the USER's view to a `cheers:` locator (workspace file at a line,
       // desk file, attachment). Fire-and-forget; hosts without support ignore it.
       parent.postMessage({ type: "cheers:open", uri: uri }, "*");
+    },
+    contextMenu: function (event, label, sourceText) {
+      // Call from a node's `contextmenu` handler. The host searches only the assigned
+      // file, calculates the inclusive range, and owns the visible menu + feedback.
+      if (event && event.preventDefault) event.preventDefault();
+      parent.postMessage(
+        {
+          type: "cheers:contextmenu",
+          reqId: ++reqId,
+          label: label,
+          sourceText: sourceText,
+          clientX: event && event.clientX,
+          clientY: event && event.clientY,
+        },
+        "*"
+      );
     },
     log: function (message, level) {
       // Dev-loop only: a line in the host's protocol inspector. Fire-and-forget.

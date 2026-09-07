@@ -198,6 +198,8 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | Resource read result. |
 | plugin → host | `cheers:open` | `{ uri }` | Ask the host to navigate the **user's view** to a `cheers:` locator — `cheers:ws/<bot>/<path>#L<n>[-L<n>]` opens the workspace browser at that file/line (after an existence probe), `cheers:desk/<path>` focuses the workbench file browser, `cheers:inbox/<file_id>` opens channel files. Fire-and-forget (no reply). Pure UI routing: the host parses strictly, every read behind the jump passes the normal authz, and an unresolvable locator shows the user an error. Hosts that don't support it ignore the message (the protocol-1 growth rule) — safe to send unconditionally. |
 | plugin → host | `cheers:compose` | `{ text }` | **PREFILL** the channel composer with a suggested message — **never sends**. An empty draft is filled; a typed draft gets the text appended on a new line (user text is never lost); `@label` tokens matching channel members register as routable mentions. The human reviews, edits, and presses send — that keystroke is what turns a plugin suggestion into a channel action, keeping side effects human-in-the-loop and audit-visible. Shape-gated by the host (≤4000 chars, control chars stripped). Fire-and-forget; unsupported hosts ignore it. |
+| plugin → host | `cheers:contextmenu` | `{ reqId?, label, sourceText, clientX?, clientY? }` | Ask the host to open its context menu for the selected preview node. `sourceText` is the node's exact contiguous text in the currently assigned file; the plugin does **not** calculate line numbers. The host requires one unique match, calculates the inclusive line range, pins the current `path`, and offers **Add to context**. Coordinates are iframe-client coordinates and are clamped to its bounds; omit them to center the menu. |
+| host → plugin | `cheers:context-added` | `{ reqId?, ok, added?, label?, startLine?, endLine?, error? }` | Result of a context-menu request. `ok:true` means the action completed; `added:false` means the same range was already pending. On success the host also shows “Added … (lines n–m) to context”. `ok:false` reports a missing/ambiguous anchor or unavailable capability. |
 | plugin → host | `cheers:log` | `{ level, message }` | **Dev diagnostics** — a line in the host's protocol inspector (§9). The sandbox's opaque origin means your `console.log` and your uncaught exceptions never reach the host page; this is the way out. Surfaced only for session-loaded (⏱) plugins; installed plugins are silent. Fire-and-forget; unsupported hosts ignore it. |
 
 ### 5.2 Lifecycle
@@ -239,6 +241,34 @@ the §5.4 resource whitelist covers channel data only, not file content.
   concatenate into `innerHTML`**.
 - **Missing file.** A not-yet-existing path renders as `content: ""`, `version: 0`;
   your first save creates it.
+
+#### Preview-node context menu
+
+A plugin can make any selected node attachable without calculating source line numbers.
+Keep the exact contiguous source fragment used to build the node, then forward it when
+the node receives a context-menu event:
+
+```js
+node.addEventListener("contextmenu", function (event) {
+  event.preventDefault();
+  parent.postMessage({
+    type: "cheers:contextmenu",
+    reqId: ++requestId,
+    label: nodeTitle,
+    sourceText: exactSourceFragment,
+    clientX: event.clientX,
+    clientY: event.clientY
+  }, "*");
+});
+```
+
+The host searches only the currently assigned file. It opens the menu only when
+`sourceText` has exactly one match, then derives an inclusive multi-line range and adds
+an `fs.read {path, start_line, end_line}` reference after the user chooses the action.
+Do not send rendered/normalized text if it differs from the source. If identical source
+fragments can repeat, include enough contiguous surrounding source to make the anchor
+unique. Listen for `cheers:context-added` to mirror the confirmed state inside the
+plugin; never show success before that host response.
 
 ### 5.4 Host API: read-only channel resources
 
@@ -311,9 +341,15 @@ var host = cheersPlugin({
     // { path, format, content, version, rendererId } — sent on your ready and
     // re-sent after a conflicted save (the only triggers, §5.2): always re-draw here.
   },
+  onContextAdded: function (result) {
+    // Host-confirmed result; result.startLine/endLine are inclusive.
+  },
 });
 host.save(next).then(function (r) { /* r.version */ }).catch(function (e) { /* show e */ });
 host.resource("channel.info", {}).then(function (data) { /* … */ });
+node.oncontextmenu = function (event) {
+  host.contextMenu(event, nodeTitle, exactSourceFragment);
+};
 host.unsupported("no task lines found");
 ```
 

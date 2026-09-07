@@ -266,6 +266,7 @@ export function FileTreeItem({
   onClick,
   expanded,
   controlSize,
+  onContextMenu,
 }: {
   depth: number;
   title: ReactNode;
@@ -276,6 +277,7 @@ export function FileTreeItem({
   onClick?: ButtonHTMLAttributes<HTMLButtonElement>["onClick"];
   expanded?: boolean;
   controlSize?: ControlSize;
+  onContextMenu?: HTMLAttributes<HTMLDivElement>["onContextMenu"];
 }) {
   const size = useControlSize(controlSize);
   const content = <>{disclosure}{leading}<span className="min-w-0 flex-1 truncate">{title}</span></>;
@@ -284,6 +286,7 @@ export function FileTreeItem({
       role="treeitem"
       data-control-size={size}
       aria-selected={selected || undefined}
+      onContextMenu={onContextMenu}
       className={cn(
         "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-200",
         controlMinHeightClasses[size],

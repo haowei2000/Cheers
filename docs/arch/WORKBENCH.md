@@ -125,7 +125,7 @@ Workbench 是频道右侧的工作台:一个频道一个,浏览/编辑 bot 工�
    → host 指派一个文件渲染（render/save 协议），插件只能动那一个文件 + 读白名单 channel.* verb
 ```
 
-**postMessage 协议(render/save)**:`cheers:ready` → host `cheers:render{path,content,version}` → 插件 `cheers:save{content}` → host `cheers:saved`。可拒绝:`cheers:unsupported`。host API:`cheers:resource{resource,params}`(白名单只读 channel.*)。细节见 RENDERER_PLUGIN.md §3。
+**postMessage 协议(render/save)**:`cheers:ready` → host `cheers:render{path,content,version}` → 插件 `cheers:save{content}` → host `cheers:saved`。可拒绝:`cheers:unsupported`。host API:`cheers:resource{resource,params}`(白名单只读 channel.*)；Preview 节点可发 `cheers:contextmenu{label,sourceText,…}`，由宿主在当前文件唯一匹配并计算行范围，用户确认后回 `cheers:context-added`。细节见 RENDERER_PLUGIN.md §3。
 
 **安全三道**:① iframe 不透明源(偷不到密钥)· ② **单文件能力**(只渲染/存回被指派的那一个文件,host 钉死 + 服务端 channel-role 鉴权)· ③ host API 只放行只读 channel.* 白名单、强制当前 `channel_id`。
 

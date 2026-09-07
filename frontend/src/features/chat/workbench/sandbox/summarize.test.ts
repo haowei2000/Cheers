@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarize } from "./SandboxRenderer";
+import { summarize, uniqueSourceTextRange } from "./SandboxRenderer";
 
 // The dev protocol inspector logs plugin-controlled messages. summarize() must survive
 // anything a plugin posts — the panel exists to diagnose broken plugins, so it cannot
@@ -38,5 +38,33 @@ describe("summarize", () => {
 
   it("returns an empty string for a payload-free message", () => {
     expect(summarize({ type: "cheers:ready" })).toBe("");
+  });
+});
+
+describe("uniqueSourceTextRange", () => {
+  it("maps a unique multi-line source anchor to an inclusive line range", () => {
+    expect(
+      uniqueSourceTextRange(
+        "title\n- id: login\n  status: active\nfooter",
+        "- id: login\n  status: active"
+      )
+    ).toEqual({ startLine: 2, endLine: 3 });
+  });
+
+  it("normalizes CRLF before matching and counting lines", () => {
+    expect(uniqueSourceTextRange("a\r\nb\r\nc", "b\r\nc")).toEqual({
+      startLine: 2,
+      endLine: 3,
+    });
+  });
+
+  it("refuses an ambiguous or missing source anchor", () => {
+    expect(uniqueSourceTextRange("same\nsame", "same")).toBeNull();
+    expect(uniqueSourceTextRange("abc", "missing")).toBeNull();
+    expect(uniqueSourceTextRange("abc", "  ")).toBeNull();
+  });
+
+  it("detects overlapping duplicate matches", () => {
+    expect(uniqueSourceTextRange("aaa", "aa")).toBeNull();
   });
 });

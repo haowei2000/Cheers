@@ -9,11 +9,15 @@ import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
   useContextPickStore,
   workspaceContextItem,
+  type ContextItem,
 } from "@/features/chat/context/contextPick";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import {
+  ADD_TO_CONTEXT,
+  ADDED_TO_CONTEXT,
   addToContextTitle,
 } from "@/features/chat/context/contextLabels";
+import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
@@ -242,6 +246,14 @@ export function RemoteWorkspaceDialog({
   const [edit, setEdit] = useState("");
   const [dirty, setDirty] = useState(false);
   const addContext = useContextPickStore((s) => s.add);
+  const contextMenu = useContextMenu<ContextItem>();
+  const contextMenuAdded = useContextPickStore((state) =>
+    contextMenu.state
+      ? (state.byChannel[channelId] ?? []).some(
+          (item) => item.id === contextMenu.state?.target.id
+        )
+      : false
+  );
   const [attached, setAttached] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1111,6 +1123,20 @@ export function RemoteWorkspaceDialog({
   const selectedBot = bots?.find((b) => b.bot_id === botId) ?? null;
   // Fail-closed: advertise Save only when the server explicitly says we can write.
   const canWrite = selectedBot?.can_write === true;
+  const contextItemForPath = (path: string): ContextItem | null =>
+    botId
+      ? workspaceContextItem({
+          botId,
+          botName:
+            selectedBot?.display_name ||
+            selectedBot?.username ||
+            (memberNames && memberNames.get(botId)) ||
+            undefined,
+          path,
+          sessionId: effectiveSessionId || undefined,
+          root: treeRoot ?? undefined,
+        })
+      : null;
 
   return (
     <FloatingPanel
@@ -1584,7 +1610,15 @@ export function RemoteWorkspaceDialog({
                   {entries?.map((ent) => {
                     const mk = ent.is_dir ? null : (markMap.get(ent.path) ?? null);
                     return (
-                      <div key={ent.path} className="group/row relative">
+                      <div
+                        key={ent.path}
+                        className="group/row relative"
+                        onContextMenu={(event) => {
+                          if (ent.is_dir) return;
+                          const item = contextItemForPath(ent.path);
+                          if (item) contextMenu.open(event, item);
+                        }}
+                      >
                         <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
                           onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
                           controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-zinc-800 ${
@@ -1644,17 +1678,7 @@ export function RemoteWorkspaceDialog({
                           <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center">
                             <AttachContextButton
                               channelId={channelId}
-                              item={workspaceContextItem({
-                                botId,
-                                botName:
-                                  selectedBot?.display_name ||
-                                  selectedBot?.username ||
-                                  (memberNames && memberNames.get(botId)) ||
-                                  undefined,
-                                path: ent.path,
-                                sessionId: effectiveSessionId || undefined,
-                                root: treeRoot ?? undefined,
-                              })}
+                              item={contextItemForPath(ent.path)!}
                               title={addToContextTitle(`${ent.name} (live reference)`)}
                               className="flex items-center p-1 rounded-sm bg-zinc-800 text-zinc-400 hover:text-indigo-300 disabled:opacity-40"
                             />
@@ -1925,6 +1949,17 @@ export function RemoteWorkspaceDialog({
           </div>
         </div>
       )}
+      <ContextMenu
+        state={contextMenu.state}
+        onClose={contextMenu.close}
+        ariaLabel="Remote workspace file actions"
+        actions={contextMenu.state ? [{
+          label: contextMenuAdded ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT,
+          leading: <MessageSquarePlus className="h-4 w-4" />,
+          disabled: contextMenuAdded,
+          onSelect: () => addContext(channelId, contextMenu.state!.target),
+        }] : []}
+      />
     </FloatingPanel>
   );
 }

@@ -13,6 +13,7 @@ import {
   Folder,
   FolderOpen,
   MoreHorizontal,
+  MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -27,7 +28,11 @@ import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
-import { addToContextTitle } from "@/features/chat/context/contextLabels";
+import {
+  ADD_TO_CONTEXT,
+  ADDED_TO_CONTEXT,
+  addToContextTitle,
+} from "@/features/chat/context/contextLabels";
 import {
   useContextPickStore,
   selectionLineRange,
@@ -38,6 +43,7 @@ import { RendererHost } from "../renderers/RendererHost";
 import { isComposing } from "@/lib/ime";
 import { cn } from "@/lib/cn";
 import { FileTreeItem } from "@/components/ui/item";
+import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 
 // Click-gated: the CodeMirror editor (its own chunk, incl. md/json language packs) only
 // downloads when a user actually opens Raw mode — keeps it off the chat critical path, like
@@ -61,6 +67,16 @@ function downloadText(path: string, content: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function deskFileContextItem(path: string) {
+  return {
+    id: `file:${path}`,
+    verb: "fs.read",
+    params: { path },
+    label: path.split("/").pop() || path,
+    kind: "file" as const,
+  };
 }
 
 // The workspace (context_files) is a flat list of full paths; the backend has no real
@@ -129,6 +145,14 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
   const [status, setStatus] = useState<string | null>(null);
   const addContext = useContextPickStore((s) => s.add);
+  const contextMenu = useContextMenu<string>();
+  const contextMenuAdded = useContextPickStore((state) =>
+    contextMenu.state
+      ? (state.byChannel[ctx.channelId] ?? []).some(
+          (item) => item.id === deskFileContextItem(contextMenu.state!.target).id
+        )
+      : false
+  );
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
   // (default is expanded). `creatingIn` = the folder prefix a new file is being typed
   // into ("" = root, null = not creating). `confirmDel` = the path armed for delete.
@@ -434,6 +458,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />}
           actions={deleteControl(node.path, false)}
           onClick={() => pickFile(node.path)}
+          onContextMenu={(event) => contextMenu.open(event, node.path)}
         />
       );
     });
@@ -555,13 +580,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   disabled={pinned.includes(selected)}
                   disabledTitle="Already pinned — sent in every prompt"
                   title={addToContextTitle("this file")}
-                  item={{
-                    id: `file:${selected}`,
-                    verb: "fs.read",
-                    params: { path: selected },
-                    label: basename(selected),
-                    kind: "file",
-                  }}
+                  item={deskFileContextItem(selected)}
                 />
                 <UiButton variant="plain"
                   type="button"
@@ -752,6 +771,20 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           </div>
         )}
       </div>
+      <ContextMenu
+        state={contextMenu.state}
+        onClose={contextMenu.close}
+        ariaLabel="Workbench file actions"
+        actions={contextMenu.state ? [{
+          label: contextMenuAdded ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT,
+          leading: <MessageSquarePlus className="h-4 w-4" />,
+          disabled: contextMenuAdded || pinned.includes(contextMenu.state.target),
+          onSelect: () => {
+            addContext(ctx.channelId, deskFileContextItem(contextMenu.state!.target));
+            setStatus(`Added ${basename(contextMenu.state!.target)} to context`);
+          },
+        }] : []}
+      />
     </div>
   );
 }

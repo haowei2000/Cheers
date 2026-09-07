@@ -25,6 +25,8 @@ export interface Host {
   unsupported(reason: string): void;
   /** Navigate the USER's view to a `cheers:` locator. Fire-and-forget. */
   open(uri: string): void;
+  /** Open the host's Add-to-context menu for a node backed by exact source text. */
+  contextMenu(event: MouseEvent, label: string, sourceText: string): void;
   /** PREFILL the channel composer — never sends. Fire-and-forget. */
   compose(text: string): void;
   /** A line in the host's dev protocol inspector (session-loaded plugins). */
@@ -40,7 +42,20 @@ interface Pending<T> {
  *  our `cheers:ready` and again after a conflicted save — the only two triggers. An edit
  *  made by someone else (a bot, another member) does NOT push a new render, and there is
  *  no way to re-read the assigned file: always redraw fully from what you are given. */
-export function connect(onRender: (file: Assignment) => void): Host {
+export interface ContextAddedResult {
+  reqId?: number;
+  ok: boolean;
+  added?: boolean;
+  label?: string;
+  startLine?: number;
+  endLine?: number;
+  error?: string;
+}
+
+export function connect(
+  onRender: (file: Assignment) => void,
+  onContextAdded?: (result: ContextAddedResult) => void
+): Host {
   let reqId = 0;
   const pendingRes = new Map<number, Pending<unknown>>();
   let pendingSave: Pending<{ version: number }> | null = null;
@@ -63,6 +78,8 @@ export function connect(onRender: (file: Assignment) => void): Host {
       pendingRes.delete(id);
       if (m.ok) p.resolve(m.data);
       else p.reject(new Error(String(m.error ?? "resource error")));
+    } else if (m.type === "cheers:context-added") {
+      onContextAdded?.(m as unknown as ContextAddedResult);
     }
   });
 
@@ -88,6 +105,17 @@ export function connect(onRender: (file: Assignment) => void): Host {
     },
     unsupported: (reason) => post({ type: "cheers:unsupported", reason }),
     open: (uri) => post({ type: "cheers:open", uri }),
+    contextMenu: (event, label, sourceText) => {
+      event.preventDefault();
+      post({
+        type: "cheers:contextmenu",
+        reqId: ++reqId,
+        label,
+        sourceText,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    },
     compose: (text) => post({ type: "cheers:compose", text }),
     log: (message, level = "info") =>
       post({ type: "cheers:log", level, message: String(message).slice(0, 2000) }),

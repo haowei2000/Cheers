@@ -5,13 +5,19 @@ import { Select as UiSelect } from "@/components/ui/select";
 // floating window inside the channel's work lane; dragging snaps it to the lane's
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
-import { LayoutDashboard, X, Minimize2, Maximize2, Layers, Plus } from "lucide-react";
+import { LayoutDashboard, X, Minimize2, Maximize2, Layers, MessageSquarePlus } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   useContextPickStore,
   type ContextItem,
 } from "@/features/chat/context/contextPick";
-import { addToContextTitle } from "@/features/chat/context/contextLabels";
+import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
+import {
+  ADD_TO_CONTEXT,
+  ADDED_TO_CONTEXT,
+  addToContextTitle,
+} from "@/features/chat/context/contextLabels";
+import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
@@ -89,6 +95,7 @@ function ViewBoardDrawerImpl({
     () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
   );
   const activeBoard = boards.find((b) => b.id === active) ?? boards[0];
+  const contextMenu = useContextMenu<ContextItem>();
   useEffect(() => {
     if (active) localStorage.setItem(ACTIVE_BOARD_KEY, active);
   }, [active]);
@@ -227,10 +234,34 @@ function ViewBoardDrawerImpl({
   // Minimal keeps its dragged spot but sheds the resized size (content-height).
   const shellStyle = float ? (minimal ? drag.posStyle : drag.style) : undefined;
 
+  const activeContextItem = useMemo<ContextItem | null>(() => {
+    if (!activeBoard) return null;
+    const meta = ATTACHABLE_BOARDS[activeBoard.id];
+    if (!meta) return null;
+    const scoped = Boolean(activeBoard.sessionScoped && scope);
+    return {
+      id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
+      verb: meta.verb,
+      params: scoped ? { session_id: scope } : {},
+      label: activeBoard.title,
+      kind: meta.kind,
+    };
+  }, [activeBoard, scope]);
+  const contextMenuAdded = useContextPickStore((state) =>
+    contextMenu.state
+      ? (state.byChannel[channelId] ?? []).some(
+          (item) => item.id === contextMenu.state?.target.id
+        )
+      : false
+  );
+
   return (
     <aside
       ref={float ? drag.ref : undefined}
       onPointerDownCapture={float ? drag.toFront : undefined}
+      onContextMenu={(event) => {
+        if (!minimal && activeContextItem) contextMenu.open(event, activeContextItem);
+      }}
       style={shellStyle}
       className={shellClass}
     >
@@ -243,25 +274,13 @@ function ViewBoardDrawerImpl({
           ViewBoard
         </span>
         <div className="flex-1" />
-        {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
-          <UiButton variant="plain"
-            content="icon" controlSize="compact"
-            onClick={() => {
-              const meta = ATTACHABLE_BOARDS[activeBoard.id];
-              const scoped = activeBoard.sessionScoped && scope;
-              useContextPickStore.getState().add(channelId, {
-                id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
-                verb: meta.verb,
-                params: scoped ? { session_id: scope } : {},
-                label: activeBoard.title,
-                kind: meta.kind,
-              });
-            }}
+        {!minimal && activeContextItem && (
+          <AttachContextButton
+            channelId={channelId}
+            item={activeContextItem}
             title={addToContextTitle("this board")}
             className="rounded-sm text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </UiButton>
+          />
         )}
         {onToggleMinimal && (
           <UiButton variant="plain"
@@ -366,6 +385,18 @@ function ViewBoardDrawerImpl({
         </>
       )}
       {float && !minimal && <ResizeGrip resizeProps={drag.resizeProps} />}
+      <ContextMenu
+        state={contextMenu.state}
+        onClose={contextMenu.close}
+        ariaLabel="ViewBoard actions"
+        actions={contextMenu.state ? [{
+          label: contextMenuAdded ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT,
+          leading: <MessageSquarePlus className="h-4 w-4" />,
+          disabled: contextMenuAdded,
+          onSelect: () =>
+            useContextPickStore.getState().add(channelId, contextMenu.state!.target),
+        }] : []}
+      />
     </aside>
   );
 }

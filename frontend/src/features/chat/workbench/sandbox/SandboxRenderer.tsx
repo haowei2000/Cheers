@@ -1,6 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { ContextMenu, useContextMenu } from "@/components/ui/context-menu";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MessageSquarePlus } from "lucide-react";
 import { ResourceError } from "../../hooks/useChatRealtime";
+import type { ContextItem } from "@/features/chat/context/contextPick";
 import type { FsClient } from "../fsClient";
 import { fetchBundle, type PluginMeta } from "./api";
 import { formatOf } from "../renderers/registry";
@@ -14,6 +17,29 @@ import { formatOf } from "../renderers/registry";
 //   plugin → host : cheers:ready                 (loaded — send me the file)
 //   plugin → host : cheers:save   { content }    (write this one file back)
 //   host → plugin : cheers:saved  { ok, version, error? }
+//   plugin → host : cheers:contextmenu { label, sourceText, clientX, clientY, reqId? }
+//   host → plugin : cheers:context-added { ok, label, startLine, endLine, error? }
+
+export interface SourceTextRange {
+  startLine: number;
+  endLine: number;
+}
+
+/** Locate a plugin-provided source anchor only when it has one unambiguous match. */
+export function uniqueSourceTextRange(content: string, sourceText: string): SourceTextRange | null {
+  const haystack = content.replace(/\r\n?/g, "\n");
+  const needle = sourceText.replace(/\r\n?/g, "\n");
+  if (!needle.trim()) return null;
+  const first = haystack.indexOf(needle);
+  if (first < 0 || haystack.indexOf(needle, first + 1) >= 0) return null;
+  const startLine = haystack.slice(0, first).split("\n").length;
+  return { startLine, endLine: startLine + needle.split("\n").length - 1 };
+}
+
+interface PluginContextTarget extends SourceTextRange {
+  reqId?: number;
+  label: string;
+}
 
 /** One line in the dev protocol inspector (session-loaded plugins only). */
 interface DevEvent {
@@ -60,6 +86,7 @@ export function SandboxRenderer({
   readChannel,
   onOpen,
   onCompose,
+  onAddContext,
 }: {
   fs: FsClient;
   plugin: PluginMeta;
@@ -74,12 +101,18 @@ export function SandboxRenderer({
   /** host API: PREFILL the channel composer (cheers:compose). Never sends — the human
    *  reviews and presses send, which is what turns the suggestion into an action. */
   onCompose?: (text: string) => void;
+  /** Add a host-validated range of the assigned file to the next message's context. */
+  onAddContext?: (item: ContextItem) => boolean;
 }) {
   const [bundle, setBundle] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const versionRef = useRef<number>(0); // last-known version for optimistic writes
+  const contentRef = useRef(""); // exact assigned source used for host-side line mapping
+  const contextMenu = useContextMenu<PluginContextTarget>();
+  const openContextMenuAt = contextMenu.openAt;
+  const [contextStatus, setContextStatus] = useState<string | null>(null);
 
   // Dev protocol inspector — ON for session-loaded plugins only (the ⏱ dev loop). The
   // sandbox has an opaque origin, so a plugin's uncaught errors and console output never
@@ -96,6 +129,19 @@ export function SandboxRenderer({
       return next.length > DEV_MAX_EVENTS ? next.slice(next.length - DEV_MAX_EVENTS) : next;
     });
   }, []);
+
+  const post = useCallback((msg: Record<string, unknown>) => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    if (dev) pushDev("out", String(msg.type ?? "?"), summarize(msg));
+    win.postMessage(msg, "*");
+  }, [dev, pushDev]);
+
+  useEffect(() => {
+    if (!contextStatus) return;
+    const timer = window.setTimeout(() => setContextStatus(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [contextStatus]);
 
   useEffect(() => {
     let alive = true;
@@ -120,14 +166,9 @@ export function SandboxRenderer({
   useEffect(() => {
     // Every host → plugin message goes through here so the inspector sees the same
     // traffic the plugin does.
-    const post = (win: Window, msg: Record<string, unknown>) => {
-      if (dev) pushDev("out", String(msg.type ?? "?"), summarize(msg));
-      win.postMessage(msg, "*");
-    };
-
     // Read the assigned file and tell the plugin to render it. A missing file renders
     // empty (version 0); the plugin's first save then creates it (if_version=0).
-    async function sendRender(win: Window) {
+    async function sendRender() {
       let content = "";
       let version = 0;
       try {
@@ -138,7 +179,8 @@ export function SandboxRenderer({
         if (!(e instanceof ResourceError && e.code === "NOT_FOUND")) throw e;
       }
       versionRef.current = version;
-      post(win, { type: "cheers:render", path, format: formatOf(path), content, version, rendererId });
+      contentRef.current = content;
+      post({ type: "cheers:render", path, format: formatOf(path), content, version, rendererId });
     }
 
     const handler = (e: MessageEvent) => {
@@ -153,6 +195,10 @@ export function SandboxRenderer({
         params?: Record<string, unknown>;
         uri?: string;
         text?: string;
+        label?: string;
+        sourceText?: string;
+        clientX?: number;
+        clientY?: number;
         level?: string;
         message?: string;
       };
@@ -167,19 +213,47 @@ export function SandboxRenderer({
       }
       if (m.type === "cheers:ready") {
         setUnsupported(null);
-        void sendRender(win);
+        void sendRender();
       } else if (m.type === "cheers:resource") {
         // host API: whitelisted channel.* read, scoped to THIS channel (forced by readChannel)
         readChannel(m.resource ?? "", m.params ?? {})
-          .then((data) => post(win, { type: "cheers:resource:result", reqId: m.reqId, ok: true, data }))
+          .then((data) => post({ type: "cheers:resource:result", reqId: m.reqId, ok: true, data }))
           .catch((rerr) =>
-            post(win, {
+            post({
               type: "cheers:resource:result",
               reqId: m.reqId,
               ok: false,
               error: rerr instanceof Error ? rerr.message : "error",
             })
           );
+      } else if (m.type === "cheers:contextmenu") {
+        const label = typeof m.label === "string" ? m.label.trim().slice(0, 160) : "";
+        const sourceText =
+          typeof m.sourceText === "string" && m.sourceText.length <= 65_536
+            ? m.sourceText
+            : "";
+        const range = uniqueSourceTextRange(contentRef.current, sourceText);
+        const rect = iframeRef.current?.getBoundingClientRect();
+        if (!onAddContext || !label || !range || !rect) {
+          const error = !range
+            ? "The selected node does not uniquely match the assigned file."
+            : "Add to context is unavailable.";
+          setContextStatus(`Couldn't add ${label || "this node"}: ${error}`);
+          post({
+            type: "cheers:context-added",
+            reqId: m.reqId,
+            ok: false,
+            error,
+          });
+          return;
+        }
+        const localX = Number.isFinite(m.clientX) ? Number(m.clientX) : rect.width / 2;
+        const localY = Number.isFinite(m.clientY) ? Number(m.clientY) : rect.height / 2;
+        openContextMenuAt(
+          rect.left + Math.max(0, Math.min(localX, rect.width)),
+          rect.top + Math.max(0, Math.min(localY, rect.height)),
+          { ...range, label, reqId: m.reqId }
+        );
       } else if (m.type === "cheers:open") {
         // host API: navigate the user's view to a cheers: locator. Shape-gated here
         // (string, scheme prefix, sane length); the handler parses strictly and shows
@@ -204,18 +278,19 @@ export function SandboxRenderer({
         fs.write(path, String(m.content ?? ""), versionRef.current)
           .then((r) => {
             versionRef.current = r.version;
-            post(win, { type: "cheers:saved", ok: true, version: r.version });
+            contentRef.current = String(m.content ?? "");
+            post({ type: "cheers:saved", ok: true, version: r.version });
           })
           .catch((werr) => {
-            post(win, { type: "cheers:saved", ok: false, error: werr instanceof Error ? werr.message : "error" });
+            post({ type: "cheers:saved", ok: false, error: werr instanceof Error ? werr.message : "error" });
             // On a version conflict, re-render the latest so the plugin re-syncs.
-            if (werr instanceof ResourceError && werr.code === "VERSION_CONFLICT") void sendRender(win);
+            if (werr instanceof ResourceError && werr.code === "VERSION_CONFLICT") void sendRender();
           });
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen, onCompose, dev, pushDev]);
+  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen, onCompose, onAddContext, openContextMenuAt, dev, pushDev, post]);
 
   if (err) return <div className="p-3 text-amber-400 text-compact">Failed to load renderer: {err}</div>;
   if (bundle === null) return <div className="p-3 text-zinc-400 text-compact">Loading renderer…</div>;
@@ -231,6 +306,52 @@ export function SandboxRenderer({
         className="w-full h-full border-0 bg-white"
         style={unsupported !== null ? { display: "none" } : undefined}
       />
+      <ContextMenu
+        state={contextMenu.state}
+        onClose={contextMenu.close}
+        ariaLabel="Plugin preview actions"
+        actions={contextMenu.state ? [{
+          label: "Add to context",
+          leading: <MessageSquarePlus className="h-4 w-4" />,
+          onSelect: () => {
+            const target = contextMenu.state!.target;
+            const base = path.split("/").pop() || path;
+            const item: ContextItem = {
+              id: `file:${path}:${target.startLine}-${target.endLine}`,
+              verb: "fs.read",
+              params: {
+                path,
+                start_line: target.startLine,
+                end_line: target.endLine,
+              },
+              label: `${target.label} · ${base}:${target.startLine}-${target.endLine}`,
+              kind: "file",
+            };
+            const added = onAddContext?.(item) ?? false;
+            const message = added
+              ? `Added ${target.label} (lines ${target.startLine}–${target.endLine}) to context`
+              : `${target.label} is already in context`;
+            setContextStatus(message);
+            post({
+              type: "cheers:context-added",
+              reqId: target.reqId,
+              ok: true,
+              added,
+              label: target.label,
+              startLine: target.startLine,
+              endLine: target.endLine,
+            });
+          },
+        }] : []}
+      />
+      {contextStatus && (
+        <div
+          aria-live="polite"
+          className="pointer-events-none absolute bottom-3 left-1/2 z-20 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-sm bg-zinc-900/95 px-3 py-2 text-compact text-zinc-100 shadow-xl ring-1 ring-zinc-700"
+        >
+          {contextStatus}
+        </div>
+      )}
       {unsupported !== null && (
         <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-compact text-amber-400 bg-zinc-950">
           This renderer can't render this file{unsupported ? `: ${unsupported}` : ""}. Pick another

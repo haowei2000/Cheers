@@ -3,6 +3,8 @@ import type { ViewDef } from "../manifest";
 import { LensPanel } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
+import { useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
+import { useCallback } from "react";
 
 // The channel.* read verbs a renderer plugin may call (host API). READ-ONLY and low/medium
 // sensitivity. NOTE: a sandboxed iframe is isolated for tokens/DOM but NOT for network — a
@@ -31,6 +33,15 @@ export function RendererHost({
   renderer: RendererDesc;
   config?: unknown; // built-in lens config (e.g. table columns), from .workbench.json configs
 }) {
+  const addPluginContext = useCallback((item: ContextItem) => {
+    const store = useContextPickStore.getState();
+    const existing = (store.byChannel[ctx.channelId] ?? []).some(
+      (candidate) => candidate.id === item.id
+    );
+    if (!existing) store.add(ctx.channelId, item);
+    return !existing;
+  }, [ctx.channelId]);
+
   if (renderer.source === "plugin") {
     const plugin = ctx.plugins.find((p) => p.plugin_id === renderer.pluginId);
     if (!plugin) {
@@ -54,6 +65,7 @@ export function RendererHost({
         readChannel={readChannel}
         onOpen={ctx.openLocator}
         onCompose={ctx.composeMessage}
+        onAddContext={addPluginContext}
       />
     );
   }
