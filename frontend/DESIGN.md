@@ -417,10 +417,22 @@ primitives with local width or height classes. ContentSize is visual content
 scale only; its containing control still uses ControlSize for the hit target.
 
 Chat, Discussion, and Reply identity columns use the same regular avatar
-inside a regular control that retains a 44px hit target on touch viewports,
-plus the registered regular 96px identity rail. They show only the avatar and
-sender name; visible timestamps and BOT labels are omitted. The rail follows
-the ContentSize 64/96/128px scale and never uses a feature-local width. Message-record affordances use the
+inside a regular control that retains a 44px hit target on touch viewports.
+Visible timestamps and BOT labels are omitted everywhere. The name has two
+registered treatments and no third:
+
+- **Chat** keeps the registered regular 96px identity rail with the sender name
+  under the avatar. The rail follows the ContentSize 64/96/128px scale and never
+  uses a feature-local width.
+- **Discussion** (including threaded replies) renders the avatar alone, as a
+  leading slot rather than a rail — a thread is one continuous document read at a
+  narrower measure, and repeating the name under every reply spent a rail's width
+  restating the avatar. The name moves to the avatar's `title` and `aria-label`,
+  so hover and screen readers keep full attribution. A consecutive row indents to
+  the avatar's own square, not to 96px.
+
+`MessageItem` takes `identityLayout="rail" | "avatar"`; `MessageList` passes
+`"avatar"` on its Discussion render path only. Message-record affordances use the
 record icon; raw attachment/trace counts belong in the accessible label and
 tooltip, not as unexplained zero-padded folio numbers in the timeline.
 

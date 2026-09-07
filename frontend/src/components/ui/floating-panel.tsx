@@ -17,6 +17,9 @@ export interface FloatingPanelNavigation {
   items: AdaptiveControlItem[];
   ariaLabel: string;
   presentationOrder?: AdaptiveControlPresentation[];
+  /** Collapsed-dropdown trigger form; "icon" suits a panel whose body already
+   *  names the selected section. */
+  collapsedContent?: "text" | "icon";
 }
 
 export interface FloatingPanelAction {
@@ -567,6 +570,7 @@ export function FloatingPanel({
                     items={primaryNavigation.items}
                     availableWidth={Math.max(96, navigationSlotWidth * (hasContext ? 0.58 : 1))}
                     presentationOrder={primaryNavigation.presentationOrder}
+                    collapsedContent={primaryNavigation.collapsedContent}
                   />
                 </div>
               )}

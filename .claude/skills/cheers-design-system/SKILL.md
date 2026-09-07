@@ -63,9 +63,10 @@ or a justified specialized tree/diff/table/canvas/editor structure. Use an
   arbitrary shadows.
 - Use display serif for major publishing headings, reading serif for message/long-form
   copy, and utility sans for entity names, navigation, controls, warnings, and trace.
-- Render Chat, Discussion, and Reply with the same regular message identity:
-  28px Avatar, 96px identity rail, sender name only, with no visible timestamp
-  or BOT label.
+- Render Chat, Discussion, and Reply with the same regular 28px Avatar and no
+  visible timestamp or BOT label. Chat shows the name under the avatar in the 96px
+  identity rail; Discussion and its threaded replies show the avatar alone as a
+  leading slot, with the name in tooltip and accessible name.
 - Use only four typography sizes everywhere: minimal 10px, compact 12px,
   regular 14px, and comfortable 16px. Dense panels, code, Diff, charts,
   mastheads, and empty states receive no exception.

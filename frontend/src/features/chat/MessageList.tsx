@@ -288,6 +288,9 @@ export function MessageList({
             isConsecutive={!!isConsecutive}
             nested={depth > 0}
             alignOwnMessages={false}
+            // renderNode is the Discussion path only (thread replies and discuss
+            // roots); renderChatMessage keeps the 96px name rail.
+            identityLayout="avatar"
             hideReplyQuote={parentInView}
             currentUserId={currentUserId}
             channelId={channelId}
