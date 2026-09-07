@@ -1,3 +1,5 @@
+import type { SharedWorkspaceLayout } from "./workbench/sharedLayout";
+import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
 import {
   useState,
@@ -503,6 +505,7 @@ export function ChannelView({
     void loadCommands();
   }, [loadCommands]);
   const {
+    panelRequest,
     wbOpen,
     setWbOpen,
     vbOpen,
@@ -534,6 +537,7 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<{ layout: SharedWorkspaceLayout; overridden: boolean } | null>(null);
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
     sendResourceReq,
@@ -1367,7 +1371,7 @@ export function ChannelView({
       workbenchOpen={wbOpen}
       boards={laneBoards}
       onOpenBoard={openBoard}
-      layoutOverridden={channelLayout.overridden}
+      layoutOverridden={channelLayout.overridden || workspaceSnapshot?.overridden === true}
       layoutSaving={channelLayout.saving}
       onSaveLayout={() =>
         void channelLayout.saveLayout({
@@ -1375,7 +1379,7 @@ export function ChannelView({
           workspace: wsOpen,
           viewboard: vbOpen,
           workbench: wbOpen,
-        })
+        }, workspaceSnapshot?.layout)
       }
       onResetLayout={channelLayout.resetLayout}
       onManage={() => setSettingsOpen(true)}
@@ -1406,8 +1410,7 @@ export function ChannelView({
       currentUserId={user?.user_id}
       onMention={(member) => mentionMember(member.member_id)}
     >
-      {/* Desktop instrument panels float over the central workspace without changing
-        the chat layout. Mobile keeps the full-screen sheet treatment. */}
+      {/* Instruments share a responsive workspace with the conversation. */}
       <div className="flex flex-col h-full">
         <ChannelChrome
           channelId={channel.channel_id}
@@ -1419,8 +1422,94 @@ export function ChannelView({
           actions={channelToolbar}
         />
 
-        <div className="relative flex-1 min-h-0 flex">
-          {/* Chat keeps its full reading width while desktop instruments float above it. */}
+        <PanelWorkspace
+          channelId={channel.channel_id}
+          openPanels={[
+            ...(vbOpen ? [{ id: "viewboard" as const, label: "Viewboard" }] : []),
+            ...(wbOpen ? [{ id: "workbench" as const, label: "Workbench" }] : []),
+            ...(wsOpen ? [{ id: "workspace" as const, label: "Workspace" }] : []),
+            ...(filesOpen ? [{ id: "files" as const, label: "Files" }] : []),
+          ]}
+          onLaneElement={setLaneEl}
+          revealMessageKey={focusMsg}
+          activationRequest={panelRequest}
+          sharedLayout={channelLayout.workspace}
+          onLayoutChange={setWorkspaceSnapshot}
+          panels={(
+            <LaneBoundsContext.Provider
+              value={anyWorkOpen ? getLaneBounds : null}
+            >
+              <SharedLayoutContext.Provider value={isMobile ? null : channelLayout.geomFor}>
+              {wsOpen && (
+                <Suspense fallback={null}>
+                  <RemoteWorkspaceDialog
+                    channelId={channel.channel_id}
+                    onClose={() => setWsOpen(false)}
+                    initialBotId={wsInit.botId}
+                    initialPath={wsInit.path}
+                    initialLine={wsInit.line}
+                    // Default the browse to the composer's active session ("" = Auto → no
+                    // session scope → the dialog shows the bot's full allowed roots).
+                    sessionId={selectedSessionId || undefined}
+                    // "workspace" board tick (an agent finished a turn; carries the emitting
+                    // bot) → the dialog refetches its current dir + a clean open file, but
+                    // only when the tick's bot is the one being browsed.
+                    workspaceTick={workspaceTick}
+                    // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
+                    // dialog registers a watch while open and refetches when a signal for ITS bot
+                    // arrives. See onWorkspaceSignal → workspaceSignal above.
+                    workspaceSignal={workspaceSignal}
+                    // Workspace presence: broadcast our own focus + render who ELSE is viewing this
+                    // bot's workspace. `focus` is the parsed presence list; names resolve via the
+                    // channel member map; currentUserId filters ourselves out of the chips.
+                    sendPresenceFocus={sendPresenceFocus}
+                    workspaceFocus={workspaceFocus}
+                    currentUserId={user?.user_id}
+                    memberNames={memberNames}
+                  />
+                </Suspense>
+              )}
+
+              <ViewBoardDrawer
+                open={vbOpen}
+                onClose={closeViewBoard}
+                channelId={channel.channel_id}
+                sendResourceReq={sendResourceReq}
+                selectedSessionId={selectedSessionId}
+                boardTick={boardTick}
+                minimal={vbMinimal}
+                onToggleMinimal={toggleViewBoardMinimal}
+                onJumpToMessage={jumpToMessage}
+                pendingApprovals={pendingPermissionMessages}
+                currentUserId={user?.user_id}
+                focusBoard={focusBoard ?? undefined}
+              />
+
+              <WorkbenchDrawer
+                open={wbOpen}
+                onClose={closeWorkbench}
+                channelId={channel.channel_id}
+                sendResourceReq={sendResourceReq}
+                openFilePath={wbTarget}
+                filesTick={boardTick.files}
+                onOpenLocator={openLocator}
+                onCompose={composeMessage}
+              />
+
+              {/* Files shares the same docking and tab lifecycle as other panels. */}
+              {filesOpen && (
+                <Suspense fallback={null}>
+                  <ChannelFilesDialog
+                    channelId={channel.channel_id}
+                    onClose={() => setFilesOpen(false)}
+                    focusFileId={filesFocus}
+                  />
+                </Suspense>
+              )}
+              </SharedLayoutContext.Provider>
+            </LaneBoundsContext.Provider>
+          )}
+        >
           <div className="flex-1 min-w-0 flex flex-col">
             <div
               className={`flex h-full w-full min-w-0 flex-col ${
@@ -1631,93 +1720,7 @@ export function ChannelView({
             </div>
           </div>
 
-          {/* Desktop floating canvas. It covers only the central channel workspace, so
-          app sidebars remain navigation boundaries while panels can move freely across
-          the chat surface. The overlay itself ignores pointer input; each window opts
-          back in, keeping the uncovered chat fully interactive. */}
-          <aside
-            ref={setLaneEl}
-            className={
-              anyWorkOpen
-                ? "max-md:contents md:pointer-events-none md:absolute md:inset-0 md:z-30 md:min-h-0 md:overflow-hidden"
-                : "contents"
-            }
-          >
-            <LaneBoundsContext.Provider
-              value={anyWorkOpen ? getLaneBounds : null}
-            >
-              <SharedLayoutContext.Provider value={isMobile ? null : channelLayout.geomFor}>
-              {wsOpen && (
-                <Suspense fallback={null}>
-                  <RemoteWorkspaceDialog
-                    channelId={channel.channel_id}
-                    onClose={() => setWsOpen(false)}
-                    initialBotId={wsInit.botId}
-                    initialPath={wsInit.path}
-                    initialLine={wsInit.line}
-                    // Default the browse to the composer's active session ("" = Auto → no
-                    // session scope → the dialog shows the bot's full allowed roots).
-                    sessionId={selectedSessionId || undefined}
-                    // "workspace" board tick (an agent finished a turn; carries the emitting
-                    // bot) → the dialog refetches its current dir + a clean open file, but
-                    // only when the tick's bot is the one being browsed.
-                    workspaceTick={workspaceTick}
-                    // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
-                    // dialog registers a watch while open and refetches when a signal for ITS bot
-                    // arrives. See onWorkspaceSignal → workspaceSignal above.
-                    workspaceSignal={workspaceSignal}
-                    // Workspace presence: broadcast our own focus + render who ELSE is viewing this
-                    // bot's workspace. `focus` is the parsed presence list; names resolve via the
-                    // channel member map; currentUserId filters ourselves out of the chips.
-                    sendPresenceFocus={sendPresenceFocus}
-                    workspaceFocus={workspaceFocus}
-                    currentUserId={user?.user_id}
-                    memberNames={memberNames}
-                  />
-                </Suspense>
-              )}
-
-              <ViewBoardDrawer
-                open={vbOpen}
-                onClose={closeViewBoard}
-                channelId={channel.channel_id}
-                sendResourceReq={sendResourceReq}
-                selectedSessionId={selectedSessionId}
-                boardTick={boardTick}
-                minimal={vbMinimal}
-                onToggleMinimal={toggleViewBoardMinimal}
-                onJumpToMessage={jumpToMessage}
-                pendingApprovals={pendingPermissionMessages}
-                currentUserId={user?.user_id}
-                focusBoard={focusBoard ?? undefined}
-              />
-
-              <WorkbenchDrawer
-                open={wbOpen}
-                onClose={closeWorkbench}
-                channelId={channel.channel_id}
-                sendResourceReq={sendResourceReq}
-                openFilePath={wbTarget}
-                filesTick={boardTick.files}
-                onOpenLocator={openLocator}
-                onCompose={composeMessage}
-              />
-
-              {/* Channel files lives in the lane too, so it floats/drags/resizes like the
-            other instrument panels instead of over the whole viewport. */}
-              {filesOpen && (
-                <Suspense fallback={null}>
-                  <ChannelFilesDialog
-                    channelId={channel.channel_id}
-                    onClose={() => setFilesOpen(false)}
-                    focusFileId={filesFocus}
-                  />
-                </Suspense>
-              )}
-              </SharedLayoutContext.Provider>
-            </LaneBoundsContext.Provider>
-          </aside>
-        </div>
+        </PanelWorkspace>
         {settingsOpen && (
           <Suspense fallback={null}>
             <ChannelSettingsDialog

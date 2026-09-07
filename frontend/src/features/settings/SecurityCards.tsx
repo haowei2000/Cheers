@@ -1,3 +1,4 @@
+import { ButtonGroup } from "@/components/ui/button-group";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, Fingerprint, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
@@ -396,8 +397,9 @@ export function PasskeyCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <div className="mb-4 flex items-start justify-between gap-4">
+      <div className="mb-4">
         <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
           <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
             <Fingerprint className="h-4 w-4 text-accent-400" /> Passkeys
             {!loading && available && (
@@ -406,6 +408,8 @@ export function PasskeyCard() {
               </span>
             )}
           </p>
+          {available && <ButtonGroup label="Passkey actions"><ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} /></ButtonGroup>}
+          </div>
           <p className="mt-1 text-compact text-content-muted">
             {loading
               ? "Loading passkeys…"
@@ -415,9 +419,7 @@ export function PasskeyCard() {
             {rpId && <span className="ml-2 font-code">{rpId}</span>}
           </p>
         </div>
-        {available && (
-          <ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} />
-        )}
+
       </div>
 
       {loading ? (

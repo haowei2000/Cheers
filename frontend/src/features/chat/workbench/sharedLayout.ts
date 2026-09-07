@@ -37,7 +37,16 @@ export interface SharedPanelLayout {
   open?: boolean;
 }
 
+export interface SharedWorkspaceLayout {
+  /** Right column as a fraction of the available channel width. */
+  width: number;
+  split: boolean;
+  ratio: number;
+  active?: SpawnKind;
+}
+
 export interface SharedLayout {
+  workspace?: SharedWorkspaceLayout;
   version: 1;
   panels: Partial<Record<SpawnKind, SharedPanelLayout>>;
 }
@@ -91,7 +100,13 @@ export function parseLayout(raw: unknown): SharedLayout | undefined {
       if (entry.rect || entry.open !== undefined) panels[key as SpawnKind] = entry;
     }
   }
-  return { version: 1, panels };
+  const rawWorkspace = source.workspace as Record<string, unknown> | undefined;
+  const width = rawWorkspace && fraction(rawWorkspace.width);
+  const ratio = rawWorkspace && fraction(rawWorkspace.ratio);
+  const workspace: SharedWorkspaceLayout | undefined = width && ratio && typeof rawWorkspace?.split === "boolean"
+    ? { width, ratio, split: rawWorkspace.split, ...(typeof rawWorkspace.active === "string" && KINDS.has(rawWorkspace.active) ? { active: rawWorkspace.active as SpawnKind } : {}) }
+    : undefined;
+  return { version: 1, panels, ...(workspace ? { workspace } : {}) };
 }
 
 /** Resolve a shared fraction against this viewer's lane box. */
@@ -123,7 +138,7 @@ export function toFraction(rect: Rect, bounds: { width: number; height: number }
  * both keep their change, and only a genuine same-window race resolves to one of them.
  * Whole-file replacement would silently drop the other person's save. */
 export function mergeLayout(base: SharedLayout | undefined, ours: SharedLayout): SharedLayout {
-  return { version: 1, panels: { ...(base?.panels ?? {}), ...ours.panels } };
+  return { version: 1, panels: { ...(base?.panels ?? {}), ...ours.panels }, ...((ours.workspace ?? base?.workspace) ? { workspace: ours.workspace ?? base?.workspace } : {}) };
 }
 
 /** Where a lane window keeps its device-local geometry. One convention, because the

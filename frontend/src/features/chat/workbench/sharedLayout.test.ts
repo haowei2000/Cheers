@@ -107,3 +107,19 @@ describe("local overrides", () => {
     expect(hasLocalOverride()).toBe(false);
   });
 });
+
+describe("workspace layout sharing", () => {
+  it("round-trips dock preferences alongside window visibility", () => {
+    const workspace = { width: .4, split: true, ratio: .6, active: "files" as const };
+    expect(parseLayout({ version: 1, panels: { files: { open: true } }, workspace })?.workspace).toEqual(workspace);
+  });
+  it("drops malformed preferences without losing panel declarations", () => {
+    const parsed = parseLayout({ version: 1, panels: { files: { open: true } }, workspace: { width: "wide", ratio: .5, split: true } });
+    expect(parsed?.workspace).toBeUndefined();
+    expect(parsed?.panels.files?.open).toBe(true);
+  });
+  it("preserves workspace preferences when an older writer only updates panels", () => {
+    const workspace = { width: .4, split: false, ratio: .5 };
+    expect(mergeLayout({ version: 1, panels: {}, workspace }, { version: 1, panels: { files: { open: true } } }).workspace).toEqual(workspace);
+  });
+});

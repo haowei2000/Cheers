@@ -1,3 +1,4 @@
+import { ButtonGroup } from "@/components/ui/button-group";
 import { useRef, useState, type ReactNode } from "react";
 import { Ban, KeyRound, Power, RefreshCw, Trash2 } from "lucide-react";
 
@@ -154,7 +155,7 @@ export function HostActions({
 
   return (
     <>
-      <div className="flex items-center gap-1">
+      <ButtonGroup label={`Actions for ${item.device_name}`}>
         {primary}
         <div ref={moreRef} className="relative">
           <ActionButton
@@ -187,7 +188,7 @@ export function HostActions({
             </PopoverPanel>
           )}
         </div>
-      </div>
+      </ButtonGroup>
 
       {pending === "revoke" && (
         <ConfirmDialog

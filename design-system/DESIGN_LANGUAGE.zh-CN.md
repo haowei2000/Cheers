@@ -204,8 +204,14 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 ## 8. 消息、Discussion 与 Details
 
 - 消息正文使用 reading 正文字号，作者、trace、状态和操作使用 utility。
-- Chat、Discussion 与 Reply 使用同一套 regular 身份区：28px Avatar、96px identity rail，
-  只显示头像和名称，不显示时间或 BOT 标识。
+- Chat、Discussion 与 Reply 使用同一枚 regular 28px Avatar，都不显示时间或 BOT 标识；
+  名称的呈现按会话形态分两种，不允许出现第三种：
+  - Chat 使用 96px identity rail，头像下方显示名称。
+  - Discussion（含 threaded reply）只显示头像，不占 identity rail：线程是一份连续文档，
+    在更窄的行宽里逐条重复名称，等于用一整条 rail 说头像已经说过的话。名称不是被删除，
+    而是移入 tooltip 与 accessible name，归属信息对悬停和读屏仍然完整。
+  - 因此 Discussion 的头像属于 leading slot，不套用 64/96/128px identity rail 宽度；
+    连续消息的占位缩进对齐头像自身的方形宽度。iOS 与 Android 的 Discussion 同样遵循此条。
 - Message、Discussion、Reply 的悬浮动作必须使用 ControlSize；桌面可 compact，触屏命中区域仍
   不小于 44px，不能出现难以点击的任意小按钮。
 - 消息下方 details/tracing 默认降噪：优先摘要、折叠或按需展开，使用 utility/monospace，视觉

@@ -1,3 +1,5 @@
+import { useNearbyContentActions } from "./content-action-scope";
+import { ButtonGroup } from "./button-group";
 import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "./button";
@@ -51,19 +53,23 @@ export function CollectionManager({
   children: ReactNode;
   className?: string;
 }) {
+  const nearbyActions = useNearbyContentActions();
+  const addControl = showAdd ? <ActionButton action="add" context="toolbar" type="button" accessibleLabel={addLabel} controlSize={controlSize} disabled={addDisabled} onClick={onAdd} className="shrink-0" /> : null;
   return (
     <section className={cn("min-w-0", className)}>
       <header
         className={cn(
           "flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted",
           controlMinHeightClasses[controlSize],
+          nearbyActions && "flex-wrap",
         )}
       >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {headerAction}
+        <span className={cn("min-w-0 truncate", !nearbyActions && "flex-1")}>{label}</span>
+        {!nearbyActions && headerAction}
         {typeof count === "number" && (
           <span className="font-normal tabular-nums text-content-muted">{count}</span>
         )}
+        {nearbyActions && (headerAction || addControl) && <ButtonGroup label="Collection actions" controlSize={controlSize}>{addControl}{headerAction}</ButtonGroup>}
       </header>
 
       <div className="flex min-w-0 items-center gap-2 px-1 pb-2">
@@ -75,18 +81,7 @@ export function CollectionManager({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={searchPlaceholder}
         />
-        {showAdd && (
-          <ActionButton
-            action="add"
-            context="toolbar"
-            type="button"
-            accessibleLabel={addLabel}
-            controlSize={controlSize}
-            disabled={addDisabled}
-            onClick={onAdd}
-            className="shrink-0"
-          />
-        )}
+        {!nearbyActions && addControl}
       </div>
 
       <ItemList presentationLevel={presentationLevel} controlSize={controlSize}>{children}</ItemList>

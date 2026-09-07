@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import type { SpawnKind } from "../workbench/laneSnap";
+import { useCallback, useEffect, useState, type SetStateAction } from "react";
 import type { ComposerPrefill } from "../MessageComposer";
 
 export function useChannelInstruments() {
@@ -13,7 +14,10 @@ export function useChannelInstruments() {
     localStorage.setItem("cheers.viewboard.open", viewBoardOpen ? "1" : "0");
   }, [viewBoardOpen]);
   useEffect(() => {
-    localStorage.setItem("cheers.viewboard.minimal", viewBoardMinimal ? "1" : "0");
+    localStorage.setItem(
+      "cheers.viewboard.minimal",
+      viewBoardMinimal ? "1" : "0",
+    );
   }, [viewBoardMinimal]);
 
   const [boardTick, setBoardTick] = useState<Record<string, number>>({});
@@ -34,7 +38,9 @@ export function useChannelInstruments() {
     path?: string;
     line?: number;
   }>({});
-  const [composePrefill, setComposePrefill] = useState<ComposerPrefill | null>(null);
+  const [composePrefill, setComposePrefill] = useState<ComposerPrefill | null>(
+    null,
+  );
   const [filesFocus, setFilesFocus] = useState<string>();
   const [laneElement, setLaneElement] = useState<HTMLElement | null>(null);
   const getLaneBounds = useCallback(
@@ -44,16 +50,61 @@ export function useChannelInstruments() {
 
   useEffect(() => {
     if (!laneElement || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => window.dispatchEvent(new Event("resize")));
+    const observer = new ResizeObserver(() =>
+      window.dispatchEvent(new Event("resize")),
+    );
     observer.observe(laneElement);
     return () => observer.disconnect();
   }, [laneElement]);
 
+  // Explicit open requests also activate an already-mounted background tab.
+  const [panelRequest, setPanelRequest] = useState<{
+    id: SpawnKind;
+    nonce: number;
+  } | null>(null);
+  const activate = useCallback(
+    (id: SpawnKind) =>
+      setPanelRequest((previous) => ({
+        id,
+        nonce: (previous?.nonce ?? 0) + 1,
+      })),
+    [],
+  );
+  const openWorkbench = useCallback(
+    (next: SetStateAction<boolean>) => {
+      setWorkbenchOpen(next);
+      if (next === true) activate("workbench");
+    },
+    [activate],
+  );
+  const openViewBoard = useCallback(
+    (next: SetStateAction<boolean>) => {
+      setViewBoardOpen(next);
+      if (next === true) activate("viewboard");
+    },
+    [activate],
+  );
+  const openWorkspace = useCallback(
+    (next: SetStateAction<boolean>) => {
+      setWorkspaceOpen(next);
+      if (next === true) activate("workspace");
+    },
+    [activate],
+  );
+  const openFiles = useCallback(
+    (next: SetStateAction<boolean>) => {
+      setFilesOpen(next);
+      if (next === true) activate("files");
+    },
+    [activate],
+  );
+
   return {
+    panelRequest,
     wbOpen: workbenchOpen,
-    setWbOpen: setWorkbenchOpen,
+    setWbOpen: openWorkbench,
     vbOpen: viewBoardOpen,
-    setVbOpen: setViewBoardOpen,
+    setVbOpen: openViewBoard,
     vbMinimal: viewBoardMinimal,
     setVbMinimal: setViewBoardMinimal,
     boardTick,
@@ -63,11 +114,11 @@ export function useChannelInstruments() {
     workspaceSignal,
     setWorkspaceSignal,
     filesOpen,
-    setFilesOpen,
+    setFilesOpen: openFiles,
     settingsOpen,
     setSettingsOpen,
     wsOpen: workspaceOpen,
-    setWsOpen: setWorkspaceOpen,
+    setWsOpen: openWorkspace,
     wsInit: workspaceInitial,
     setWsInit: setWorkspaceInitial,
     composePrefill,
