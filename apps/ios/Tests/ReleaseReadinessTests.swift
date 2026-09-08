@@ -17,6 +17,24 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(inferNativeLens(path: "notes.md", data: nil), "markdown")
     }
 
+    func testWorkbenchSceneItemsDecodePublishedAndNormalizedWireShapes() throws {
+        let legacy = try JSONDecoder().decode(
+            WorkbenchPanelDef.self,
+            from: Data("""
+            {"id":"notes","title":"Notes","file":"notes.md","renderer":"builtin:markdown"}
+            """.utf8))
+        let normalized = try JSONDecoder().decode(
+            WorkbenchPanelDef.self,
+            from: Data("""
+            {"id":"notes","title":"Notes","source":{"kind":"fs","path":"notes.md"},"view":"builtin:markdown"}
+            """.utf8))
+
+        XCTAssertEqual(legacy.path, "notes.md")
+        XCTAssertEqual(legacy.lensId, "markdown")
+        XCTAssertEqual(normalized.path, legacy.path)
+        XCTAssertEqual(normalized.lensId, legacy.lensId)
+    }
+
     func testWorkbenchSceneStateDecodesSharedNavigationIndex() {
         let value = JSONValue.object([
             "version": .number(1),
@@ -33,16 +51,20 @@ final class ReleaseReadinessTests: XCTestCase {
     }
 
     func testGlobalSceneActivationKeepsOnlyNativeRendererBindings() {
+        // A scene's items are panels: one `source` and one `view`, where the old shape
+        // carried a `file` plus a `lens`/`renderer` pair that could disagree with itself.
         let manifest = WorkbenchTemplateManifest(
             id: "extension:example:main",
             title: "Research",
-            views: [
-                WorkbenchTemplateView(
-                    id: "notes", title: "Notes", file: "notes.md",
-                    lens: "markdown", renderer: "builtin:markdown", config: nil),
-                WorkbenchTemplateView(
-                    id: "web", title: "Web", file: "custom.data",
-                    lens: "auto", renderer: "self:web", config: nil),
+            items: [
+                WorkbenchPanelDef(
+                    id: "notes", title: "Notes",
+                    source: WorkbenchPanelSource(kind: "fs", path: "notes.md"),
+                    view: "builtin:markdown", config: nil),
+                WorkbenchPanelDef(
+                    id: "web", title: "Web",
+                    source: WorkbenchPanelSource(kind: "fs", path: "custom.data"),
+                    view: "personal:web", config: nil),
             ],
             seed: nil,
             pin: ["notes.md"])

@@ -1,5 +1,5 @@
 import { inflateSync } from "fflate";
-import type { TemplateManifest, ViewDef } from "../manifest";
+import { AUTO_VIEW, type PanelDef, type TemplateManifest } from "../manifest";
 import type { RendererExtension } from "../sandbox/rendererExtension";
 
 export const EXTENSION_MEDIA_TYPE = "application/vnd.cheers.extension+zip";
@@ -59,14 +59,20 @@ export type PanelSourceContribution =
   /** No `pick`: a file source hands back content, not a wrapper. */
   | { kind: "fs"; path: string };
 
-/** A declarative board: where its data lives plus which compiled view renders it. */
+/** A declarative board: where its data lives plus which compiled view renders it.
+ *
+ * Scene definitions keep the published schema-v1 `file`/`renderer` wire shape. They are
+ * normalized to this internal shape only after validation; changing the v1 package
+ * grammar in place would make old packages and old hosts reject one another. */
 export interface PanelContribution {
   id: string;
   title: string;
   source: PanelSourceContribution;
-  view: string;
-  /** View config (e.g. table columns), passed to the built-in view untouched — the same
-   *  data-only field a scene item carries. */
+  /** Omitted = `auto`. Only an fs source may leave it out: a resource payload has no
+   *  content type for the host to match a view against. */
+  view?: string;
+  /** View config (e.g. table columns), passed to the built-in view untouched. Data —
+   *  it selects presentation, never behavior. */
   config?: unknown;
 }
 
@@ -293,6 +299,82 @@ function requireId(kind: string, value: unknown): asserts value is string {
   if (typeof value !== "string" || !ID.test(value)) throw new Error(`Invalid ${kind} id`);
 }
 
+/** One `{id, title, source, view}` contribution, checked once for both places a package
+ *  may declare one: `contributes.panels` (a board in the channel's lane) and a scene's
+ *  `items` (a file opened inside the Workbench). Where they differ is the source, not
+ *  the grammar, so `fsOnly` narrows rather than a second validator respelling the rules.
+ *
+ *  Mirrors `validate_panel` in server/src/domain/workbench_extensions.rs — the grammar
+ *  is implemented twice because a personal package is never uploaded, and
+ *  fixtures/workbench/corpus.json is what holds the two in agreement. */
+function validatePanelContribution(kind: string, panel: unknown, seen: Set<string>, fsOnly: boolean): void {
+  requireObject(panel, `${kind.toLowerCase()} contribution`);
+  requireKnownKeys(panel, ["id", "title", "source", "view", "config"], `${kind.toLowerCase()} contribution`);
+  requireId(kind.toLowerCase(), panel.id);
+  const id = panel.id as string;
+  if (typeof panel.title !== "string" || !panel.title.trim()) throw new Error(`${kind} title is required: ${id}`);
+  if (seen.has(id)) throw new Error(`Duplicate ${kind.toLowerCase()} id: ${id}`);
+  seen.add(id);
+  const source: unknown = panel.source;
+  requireObject(source, `${kind.toLowerCase()} source: ${id}`);
+  // `workspace` and `rest` are absent from the vocabulary on purpose: one names paths
+  // on a bot's own machine under an authorization model channel-role does not cover,
+  // the other is an arbitrary endpoint rather than a vocabulary.
+  if (typeof source.kind !== "string" || !(PANEL_SOURCE_KINDS as readonly string[]).includes(source.kind)) {
+    throw new Error(`Unsupported ${kind.toLowerCase()} source kind: ${String(source.kind)}`);
+  }
+  if (source.kind === "resource") {
+    // `.workbench.json`'s scene_state indexes a scene's items BY FILE PATH, on every
+    // client. An item reading a verb would have no path to be indexed by, so a scene
+    // takes the fs half of the union and nothing else.
+    if (fsOnly) throw new Error(`${kind} must read a file: a scene indexes its items by path: ${id}`);
+    requireKnownKeys(source, ["kind", "verb", "pick"], `${kind.toLowerCase()} source: ${id}`);
+    if (source.pick !== undefined && (typeof source.pick !== "string" || !source.pick)) {
+      throw new Error(`${kind} pick must be a key name: ${id}`);
+    }
+    // A verb comes from the SAME fixed list as channel.resources. Declaring a source
+    // must never widen what a package can read.
+    if (typeof source.verb !== "string" || !EXTENSION_CHANNEL_RESOURCES.includes(source.verb as never)) {
+      throw new Error(`${kind} reads a resource that is not allowed: ${String(source.verb)}`);
+    }
+    // `auto` asks the host to match a view against content shape. A file has one; a
+    // resource payload does not, so `auto` there names a choice nothing can make.
+    if ((panel.view ?? AUTO_VIEW) === AUTO_VIEW) {
+      throw new Error(`${kind} cannot leave its view to auto: ${id}`);
+    }
+  } else {
+    requireKnownKeys(source, ["kind", "path"], `${kind.toLowerCase()} source: ${id}`);
+    validateWorkspacePath(source.path, `${kind.toLowerCase()} source: ${id}`);
+  }
+  if (panel.view !== undefined && (typeof panel.view !== "string" || !panel.view.trim())) {
+    throw new Error(`${kind} view must be a renderer reference: ${id}`);
+  }
+}
+
+/** Validate the immutable schema-v1 scene-item boundary and normalize it for the app.
+ * `contributes.panels` intentionally uses the newer source/view vocabulary; only scene
+ * definitions were already published with file/renderer. */
+function normalizeSceneItemV1(item: unknown, seen: Set<string>): PanelDef {
+  requireObject(item, "scene item");
+  requireKnownKeys(item, ["id", "title", "file", "renderer", "config"], "scene item");
+  requireId("scene item", item.id);
+  const id = item.id as string;
+  if (typeof item.title !== "string" || !item.title.trim()) throw new Error(`Scene item title is required: ${id}`);
+  if (seen.has(id)) throw new Error(`Duplicate scene item id: ${id}`);
+  seen.add(id);
+  validateWorkspacePath(item.file, `scene item: ${id}`);
+  if (item.renderer !== undefined && (typeof item.renderer !== "string" || !item.renderer.trim())) {
+    throw new Error(`Scene item renderer must be a view reference: ${id}`);
+  }
+  return {
+    id,
+    title: item.title,
+    source: { kind: "fs", path: item.file },
+    view: item.renderer ?? AUTO_VIEW,
+    config: item.config,
+  };
+}
+
 function parseManifest(bytes: Uint8Array): ExtensionManifest {
   const manifest = JSON.parse(text(bytes, "manifest.json")) as ExtensionManifest;
   requireObject(manifest, "manifest");
@@ -378,35 +460,7 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
   }
   const panelIds = new Set<string>();
   for (const panel of manifest.contributes.panels ?? []) {
-    requireObject(panel, "panel contribution");
-    requireKnownKeys(panel, ["id", "title", "source", "view", "config"], "panel contribution");
-    requireId("panel", panel.id);
-    if (typeof panel.title !== "string" || !panel.title.trim()) throw new Error(`Panel title is required: ${panel.id}`);
-    if (panelIds.has(panel.id)) throw new Error(`Duplicate panel id: ${panel.id}`);
-    panelIds.add(panel.id);
-    const source: unknown = panel.source;
-    requireObject(source, `panel source: ${panel.id}`);
-    // `workspace` and `rest` are absent from the vocabulary on purpose: one names paths
-    // on a bot's own machine under an authorization model channel-role does not cover,
-    // the other is an arbitrary endpoint rather than a vocabulary.
-    if (typeof source.kind !== "string" || !(PANEL_SOURCE_KINDS as readonly string[]).includes(source.kind)) {
-      throw new Error(`Unsupported panel source kind: ${String(source.kind)}`);
-    }
-    if (source.kind === "resource") {
-      requireKnownKeys(source, ["kind", "verb", "pick"], `panel source: ${panel.id}`);
-      if (source.pick !== undefined && (typeof source.pick !== "string" || !source.pick)) {
-        throw new Error(`Panel pick must be a key name: ${panel.id}`);
-      }
-      // A panel's verb comes from the SAME fixed list as channel.resources. Declaring
-      // a source must never widen what a package can read.
-      if (typeof source.verb !== "string" || !EXTENSION_CHANNEL_RESOURCES.includes(source.verb as never)) {
-        throw new Error(`Panel reads a resource that is not allowed: ${String(source.verb)}`);
-      }
-    } else {
-      requireKnownKeys(source, ["kind", "path"], `panel source: ${panel.id}`);
-      validateWorkspacePath(source.path, `panel source: ${panel.id}`);
-    }
-    if (typeof panel.view !== "string" || !panel.view.trim()) throw new Error(`Panel view is required: ${panel.id}`);
+    validatePanelContribution("Panel", panel, panelIds, false);
   }
   const allowedResources = new Set<string>(EXTENSION_CHANNEL_RESOURCES);
   if (manifest.permissions !== undefined) requireObject(manifest.permissions, "manifest permissions");
@@ -479,19 +533,18 @@ export async function parseExtensionPackage(
 
   // A `self:` view is code and follows the same scope split as a renderer contribution:
   // resolvable only in a personal/temporary package that also carries that renderer.
-  for (const panel of manifest.contributes.panels ?? []) {
-    const view = panel.view;
-    const selfId = view.startsWith("self:") ? view.slice(5) : null;
-    if (
-      !(
-        view === "auto" ||
-        view.startsWith("builtin:") ||
-        (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId))
-      )
-    ) {
-      throw new Error(`Unsupported panel view: ${view}`);
+  // Returns the view as the host will see it — a `self:` reference resolves to the
+  // globally unique `personal:<extension>:<renderer>` the renderer registry keys on.
+  const resolveView = (view: string | undefined): string => {
+    const reference = view ?? AUTO_VIEW;
+    if (reference === AUTO_VIEW || reference.startsWith("builtin:")) return reference;
+    const selfId = reference.startsWith("self:") ? reference.slice("self:".length) : null;
+    if (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId)) {
+      return `personal:${manifest.id}:${selfId}`;
     }
-  }
+    throw new Error(`Unsupported view: ${reference}`);
+  };
+  for (const panel of manifest.contributes.panels ?? []) resolveView(panel.view);
 
   const scenes: TemplateManifest[] = [];
   for (const contribution of manifest.contributes.scenes ?? []) {
@@ -502,28 +555,9 @@ export async function parseExtensionPackage(
     requireKnownKeys(definition, ["items", "seed", "pin"], `scene ${contribution.id}`);
     if (!Array.isArray(definition.items)) throw new Error(`Scene ${contribution.id} items must be an array`);
     const itemIds = new Set<string>();
-    const views: ViewDef[] = definition.items.map((item) => {
-      requireObject(item, `scene item in ${contribution.id}`);
-      requireKnownKeys(item, ["id", "title", "file", "renderer", "config"], `scene item in ${contribution.id}`);
-      requireId("scene item", item.id);
-      if (itemIds.has(item.id)) throw new Error(`Duplicate scene item id: ${item.id}`);
-      itemIds.add(item.id);
-      if (typeof item.title !== "string" || !item.title.trim()) throw new Error(`Scene item title is required: ${item.id}`);
-      validateWorkspacePath(item.file, `${contribution.id}/${item.id}`);
-      optionalText(item.renderer, `scene item renderer: ${item.id}`);
-      const renderer = item.renderer ?? "auto";
-      const selfId = renderer.startsWith("self:") ? renderer.slice(5) : null;
-      if (!(renderer === "auto" || renderer.startsWith("builtin:") || (scope !== "global" && selfId && manifest.contributes.renderers?.some((candidate) => candidate.id === selfId)))) {
-        throw new Error(`Unsupported renderer reference: ${renderer}`);
-      }
-      return {
-        id: item.id,
-        title: item.title,
-        file: item.file,
-        lens: renderer.startsWith("builtin:") ? renderer.slice(8) : "markdown",
-        renderer: renderer.startsWith("self:") ? `personal:${manifest.id}:${renderer.slice(5)}` : renderer,
-        config: item.config,
-      };
+    const items: PanelDef[] = definition.items.map((raw) => {
+      const item = normalizeSceneItemV1(raw, itemIds);
+      return { ...item, view: resolveView(item.view) };
     });
     const seed: Record<string, string> = {};
     const seedPaths = new Set<string>();
@@ -545,7 +579,7 @@ export async function parseExtensionPackage(
     scenes.push({
       id: `${scope === "global" ? "extension" : "personal"}:${manifest.id}:${contribution.id}`,
       title: contribution.title,
-      views,
+      items,
       seed,
       pin: definition.pin ?? [],
     });

@@ -26,8 +26,11 @@ export interface Zone extends Rect {
 // Breathing room between snapped windows and the lane edges.
 export const SNAP_GAP = 8;
 
-/** Instrument identity used to bias first-open placement. */
-export type SpawnKind = "workbench" | "viewboard" | "files" | "workspace";
+/** Instrument identity used to bias first-open placement. Declared as a list because
+ *  the shared layout has to validate a key an agent hand-wrote into `.workbench.json`,
+ *  and a second copy of these four names is how the two drift apart. */
+export const SPAWN_KINDS = ["workbench", "viewboard", "files", "workspace"] as const;
+export type SpawnKind = (typeof SPAWN_KINDS)[number];
 
 // Partition the lane into a clean cols×rows grid (no overlap → every drop
 // resolves to exactly one cell). Column/row counts adapt to the lane size so a
@@ -283,6 +286,13 @@ export function getOccupants(exceptKey?: string): Rect[] {
     out.push(r);
   }
   return out;
+}
+
+/** One window's live rect, or null when it is closed. Saving the channel's layout reads
+ *  the windows through this rather than through localStorage, so it captures where a
+ *  window actually IS — including one still sitting on its spawn placement. */
+export function getOccupant(key: string): Rect | null {
+  return occupants.get(key) ?? null;
 }
 
 /** True when `rect` claims most of the lane (a prior alone-fill spawn). */

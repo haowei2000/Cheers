@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { FloatingPanel } from "./floating-panel";
+import { FloatingPanel, floatingPanelNavigationBudget } from "./floating-panel";
 
 // FloatingPanel became the host for the Workbench and ViewBoard drawers, which used to
 // hand-roll their own shells. Those two need three things the other callers never did,
@@ -174,6 +174,11 @@ describe("FloatingPanel drop target", () => {
 });
 
 describe("FloatingPanel window chrome", () => {
+  it("budgets navigation against the row it occupies after sibling groups wrap", () => {
+    expect(floatingPanelNavigationBudget(420, 60)).toBe(320);
+    expect(floatingPanelNavigationBudget(60, 40)).toBe(28);
+  });
+
   it("remains interactive inside the pointer-transparent desktop canvas", () => {
     const markup = render(
       <FloatingPanel title="Workbench" onClose={() => {}} storageKey="t.canvas">
@@ -231,24 +236,116 @@ describe("FloatingPanel window chrome", () => {
     expect(markup).toContain("Close panel");
   });
 
-  it("keeps panel context controls outside the full-size content surface", () => {
+  it("keeps primary navigation and panel context in one desktop chrome row", () => {
     const markup = render(
       <FloatingPanel
         title="Remote workspace"
         onClose={() => {}}
         storageKey="t.context"
+        primaryNavigation={{
+          ariaLabel: "Workspace views",
+          items: [
+            { id: "files", label: "Files", selected: true },
+            { id: "changes", label: "Changes" },
+          ],
+        }}
         panelContext={<select aria-label="Select a bot"><option>Bot</option></select>}
       >
         <p>workspace-content</p>
       </FloatingPanel>
     );
 
+    const navigationIndex = markup.indexOf('data-floating-panel-navigation=""');
+    const primaryIndex = markup.indexOf('data-floating-panel-primary-navigation=""');
     const contextIndex = markup.indexOf('data-floating-panel-context=""');
     const contentIndex = markup.indexOf('data-floating-panel-content=""');
-    expect(contextIndex).toBeGreaterThan(-1);
+    expect(navigationIndex).toBeGreaterThan(-1);
+    expect(primaryIndex).toBeGreaterThan(navigationIndex);
+    expect(contextIndex).toBeGreaterThan(primaryIndex);
     expect(contentIndex).toBeGreaterThan(contextIndex);
+    expect(markup).toContain("whitespace-nowrap");
+    // The context group used to be handed a zero-width slot and clipped. Chrome now
+    // WRAPS rather than clips, so no group in the row can hide its own controls
+    // (frontend/DESIGN.md, "Panel button groups").
+    expect(markup).not.toContain("w-0 overflow-hidden");
+    expect(markup.slice(0, contentIndex)).toContain("flex-wrap");
+    // A fixed offset in the CHROME would mean a second stacked row. On the content
+    // element the offset means the opposite — the body clearing the chrome band — so the
+    // assertion has to name where it looks, not just whether the string is present.
+    // The band is now MEASURED rather than a fixed 3rem, because a wrapping chrome row
+    // has no constant height (frontend/DESIGN.md, "Panel button groups").
+    expect(markup.slice(0, contentIndex)).not.toContain("top-12");
+    expect(markup.slice(contentIndex)).toContain("md:top-[var(--floating-panel-chrome-top)]");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
+    expect(markup).toContain("--floating-panel-safe-top:3.5rem");
     expect(markup).toContain("workspace-content");
+  });
+
+  it("keeps floating chrome in the corners and off the content", () => {
+    // Two rules, one cause. The chrome used to put three islands on one edge with the
+    // navigation CENTERED between the title and the actions, over a body that started at
+    // y=0. So the middle island was squeezed until it slid under a neighbour, and every
+    // panel lost its first row to the islands — a table its column headers, a file
+    // browser its path and controls — at exactly the moment the pointer was over the
+    // panel and the chrome faded in.
+    const markup = renderToStaticMarkup(
+      <FloatingPanel
+        title="Workbench"
+        open
+        onClose={() => {}}
+        storageKey="t.corners"
+        primaryNavigation={{
+          ariaLabel: "Scenes",
+          items: [{ id: "a", label: "Alpha", selected: true }, { id: "b", label: "Beta" }],
+        }}
+      >
+        <p>panel-content</p>
+      </FloatingPanel>
+    );
+
+    const contentIndex = markup.indexOf('data-floating-panel-content=""');
+    // Just the islands: `left-1/2` also appears on the panel ROOT, which is where the
+    // window sits on screen and has nothing to do with where its chrome sits inside it.
+    const chrome = markup.slice(markup.indexOf('data-floating-panel-title=""'), contentIndex);
+    const content = markup.slice(contentIndex);
+
+    // No island is centred: a centre cluster has no width of its own, because the two
+    // sides claim theirs first.
+    expect(chrome).not.toContain("left-1/2");
+    expect(chrome).not.toContain("-translate-x-1/2");
+    // The left island no longer needs a percentage cap to stay a corner. The chrome row
+    // spans both edges and justifies its groups apart, so the actions group claims its
+    // own width and the navigation cannot stretch underneath it. Fixed percentage slots
+    // are now forbidden outright (frontend/DESIGN.md, "Panel button groups").
+    expect(markup.slice(0, contentIndex)).not.toContain("45%");
+    expect(markup.slice(0, contentIndex)).toContain("justify-between");
+    // Both top islands anchor to their own corner.
+    // The chrome is now ONE row spanning both edges instead of two separately anchored
+    // islands, and its groups are pushed apart — which is what keeps the navigation out
+    // from under the actions now that no percentage cap does it.
+    expect(markup.slice(0, contentIndex)).toContain("left-2 right-2 top-2");
+    expect(chrome).toContain("ml-auto");
+    // The body starts below the chrome band rather than underneath it.
+    expect(content).toContain("md:top-[var(--floating-panel-chrome-top)]");
+    expect(content).not.toContain("md:inset-0");
+
+    // Just the top-LEFT island: from where it opens to where the actions island starts.
+    const actionsIndex = markup.indexOf('data-floating-panel-actions=""');
+    const leftIsland = markup.slice(markup.indexOf("floating-control-surface"), actionsIndex);
+
+    // The grip and the tabs are ONE island, not two pills with a gap between them — so
+    // the surface class appears once across the whole of it.
+    expect(leftIsland.match(/floating-control-surface/g)).toHaveLength(1);
+
+    // No panel NAME in the expanded desktop chrome: the mark and the lit tab identify it,
+    // and an uppercase tracked word was the widest thing in that corner while being the
+    // one thing you never click. It stays where it IS the only identity — the collapsed
+    // pill and the mobile header, which is why this looks at the island and not the
+    // whole markup.
+    expect(leftIsland).not.toContain("tracking-section");
+    // Gone from the DISPLAY, not from the accessibility tree: the grip still announces
+    // which panel it moves.
+    expect(leftIsland).toContain('aria-label="Workbench — drag to move"');
   });
 });

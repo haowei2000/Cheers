@@ -1,3 +1,4 @@
+import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { Button as UiButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useNavigate, useParams } from "react-router-dom";
@@ -121,7 +122,7 @@ export default function SettingsPage() {
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
     <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
-        <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
+        <div className="mx-auto w-full max-w-5xl px-6 max-md:px-4 py-5 flex items-center gap-4">
           <UiButton variant="plain"
             type="button"
             content="icon"
@@ -162,6 +163,7 @@ export default function SettingsPage() {
 
         {/* Active section */}
         <div className="flex-1 min-w-0">
+          <ContentActionScope>
           {section === "profile" && (
             <section>
               <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
@@ -261,6 +263,7 @@ export default function SettingsPage() {
               <LegalLinks />
             </section>
           )}
+          </ContentActionScope>
         </div>
       </div>
     </div>

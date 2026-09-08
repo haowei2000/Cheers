@@ -2,12 +2,15 @@
   "id": "cheers-team-ops",
   "version": 1,
   "title": "Team ops",
-  "views": [
+  "items": [
     {
       "id": "servers",
       "title": "Servers",
-      "file": "ops/servers.yaml",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "ops/servers.yaml"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
           {
@@ -47,8 +50,11 @@
     {
       "id": "assets",
       "title": "Assets",
-      "file": "ops/assets.yaml",
-      "lens": "table",
+      "source": {
+        "kind": "fs",
+        "path": "ops/assets.yaml"
+      },
+      "view": "builtin:table",
       "config": {
         "columns": [
           {
@@ -80,8 +86,11 @@
     {
       "id": "oncall",
       "title": "On-call",
-      "file": "ops/oncall.yaml",
-      "lens": "kanban"
+      "source": {
+        "kind": "fs",
+        "path": "ops/oncall.yaml"
+      },
+      "view": "builtin:kanban"
     }
   ],
   "seed": {

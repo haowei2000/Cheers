@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button";
 import { ControlTrigger } from "./control-trigger";
+import { TabOption } from "./tab-option";
 
 describe("shared control selection state", () => {
   it("gives toggle buttons shared styling and pressed semantics", () => {
@@ -27,6 +28,15 @@ describe("shared control selection state", () => {
     expect(markup).toContain('aria-selected="true"');
     expect(markup).not.toContain("aria-pressed");
     expect(markup).toContain('data-selected="true"');
+  });
+
+  it("keeps legacy tab callers on the shared selected surface", () => {
+    const markup = renderToStaticMarkup(<TabOption label="Active" selected />);
+
+    expect(markup).toContain('aria-selected="true"');
+    expect(markup).toContain('data-selected="true"');
+    expect(markup).toContain("bg-control");
+    expect(markup).not.toContain("border-b-2");
   });
 
   it("uses expanded semantics instead of pressed semantics for disclosures", () => {

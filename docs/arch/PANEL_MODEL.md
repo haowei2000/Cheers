@@ -235,6 +235,13 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.
 
+   **Compatibility boundary.** Adding `panels` beside `scenes` introduced
+   `{source, view}` for panels, while the already-published schema-v1 scene item remains
+   `{file, renderer}`. Both installers validate that legacy wire shape and normalize it
+   to `PanelContribution`; they must not change schema v1 in place. A scene item is then
+   narrowed by one rule: **its source must be `fs`**, because `scene_state` indexes scene
+   items by file path. `renderer` defaults to `auto`; a resource panel must name `view`.
+
 5. **One picker.** Done. The four toolbar toggles are one Panels control listing
    **Windows** (Channel files, Remote workspace, ViewBoard, Workbench) and **Boards**
    (Plan, Cost, Sessions, Audit, Activity, plus anything a package contributes). Choosing
@@ -281,6 +288,14 @@ platform check.
 - **Does the Audit board's `rest` source survive?** It exists because Audit has no
   resource verb. Giving it one removes a source kind; the alternative is keeping `rest`
   as a permanent first-party-only escape hatch.
+- **Should a package be able to contribute a shared layout?** `.workbench.json`'s
+  `layout` key is written by people and agents, not by manifests — a preset that placed
+  its own windows is the "declarative preset" question below, seen from the other side.
+- **Does `surface` belong in the package grammar?** A scene item mounts inside the
+  Workbench and a panel mounts in the lane, and today that is said by *where* the
+  contribution is declared. A `surface` field would say it in the contribution itself and
+  collapse the two declaration sites into one list — but it would also let a package
+  choose its own mount point, which nothing has asked for yet.
 - **Does a preset need to be a first-class object?** Steps 1–4 work with presets as
   hardcoded default panel sets. Making them declarative — and therefore installable —
   is a fifth contribution kind, and should not be decided until Tier A has real users.

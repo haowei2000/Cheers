@@ -3,21 +3,33 @@
 @tailwind utilities;
 
 @layer components {
-  /* Floating chrome is a translucent material, not a Button variant. Keep an
-     opaque semantic fallback for unsupported or reduced-transparency modes. */
+  /* Floating chrome is a translucent material, not a Button variant. The
+     fallback remains legible when backdrop filtering is unavailable. */
   .floating-control-surface {
-    @apply bg-panel/95 shadow-xl shadow-black/25 ring-1 ring-content-strong/15;
+    background-color: rgb(var(--surface-glass) / 0.72);
+    box-shadow:
+      0 14px 32px rgb(0 0 0 / 0.18),
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      inset 0 -1px 0 rgb(0 0 0 / 0.08);
   }
 
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .floating-control-surface {
-      @apply bg-panel/55 backdrop-blur-2xl backdrop-saturate-150;
+      background-color: rgb(var(--surface-glass) / 0.3);
+      -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
+      backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
+      box-shadow:
+        0 16px 36px rgb(0 0 0 / 0.2),
+        inset 0 1px 0 rgb(255 255 255 / 0.16),
+        inset 0 -1px 0 rgb(0 0 0 / 0.1);
     }
   }
 
   @media (prefers-reduced-transparency: reduce) {
     .floating-control-surface {
-      @apply bg-panel/95 backdrop-blur-none backdrop-saturate-100;
+      background-color: rgb(var(--surface-panel) / 0.92);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
     }
   }
 }
@@ -348,6 +360,7 @@ textarea::selection,
   --surface-control: 48 48 53;
   --surface-control-hover: 74 74 82;
   --surface-control-active: 133 133 143;
+  --surface-glass: 88 88 96;
   --surface-rail: 15 15 17;
   --surface-sidebar: 24 24 27;
   --surface-emphasis: 74 74 82;
@@ -398,6 +411,7 @@ textarea::selection,
   --surface-control: 228 228 231;
   --surface-control-hover: 212 212 216;
   --surface-control-active: 161 161 170;
+  --surface-glass: 255 255 255;
   --surface-rail: 228 228 231;
   --surface-sidebar: 255 255 255;
   --surface-emphasis: 39 39 42;

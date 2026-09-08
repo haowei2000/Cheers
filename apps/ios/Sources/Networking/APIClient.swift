@@ -1043,16 +1043,12 @@ struct APIClient: Sendable {
                     "/workbench/extensions/\(extensionValue.id)/scenes/\(contribution.id)",
                     as: WorkbenchResolvedScene.self)
                 let runtimeId = "extension:\(extensionValue.id):\(contribution.id)"
+                // The DTO normalizes both the published v1 file/renderer response and
+                // the current source/view response before this boundary.
                 let manifest = WorkbenchTemplateManifest(
                     id: runtimeId,
                     title: scene.title,
-                    views: scene.items.map { item in
-                        let lens = item.renderer.hasPrefix("builtin:")
-                            ? String(item.renderer.dropFirst("builtin:".count)) : "auto"
-                        return WorkbenchTemplateView(
-                            id: item.id, title: item.title, file: item.file,
-                            lens: lens, renderer: item.renderer, config: item.config)
-                    },
+                    items: scene.items,
                     seed: Dictionary(uniqueKeysWithValues: scene.seed.map {
                         ($0.path, JSONValue.string($0.content))
                     }),

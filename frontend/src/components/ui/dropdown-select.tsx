@@ -16,6 +16,8 @@ export interface DropdownSelectOption {
 export function DropdownSelect({
   label,
   leading,
+  content = "text",
+  active = false,
   value,
   options,
   onSelect,
@@ -30,6 +32,17 @@ export function DropdownSelect({
 }: {
   label: ReactNode;
   leading?: ReactNode;
+  /** "icon" collapses the trigger to its leading glyph in a square ControlSize box.
+   *  The label and chevron move out of the trigger: the value lives in `ariaLabel`
+   *  (accessible name + tooltip) and in the menu, which still carries full text.
+   *  For a picker whose options are names rather than glyphs, this is the only
+   *  icon form available — N sessions cannot map to N distinguishable marks. */
+  content?: "text" | "icon";
+  /** Non-default selection, drawn as the shared neutral fill. An icon trigger has
+   *  no visible label, so without this "All sessions" and "scoped to one bot" look
+   *  identical; the fill is the shape backup the contract requires for a state a
+   *  color alone would carry. */
+  active?: boolean;
   value?: string | null;
   options: DropdownSelectOption[];
   onSelect: (value: string) => void;
@@ -83,15 +96,27 @@ export function DropdownSelect({
     items[next]?.focus();
   };
 
+  const iconOnly = content === "icon";
+
   return (
-    <div ref={rootRef} className={cn("relative inline-flex min-w-0", controlWidth === "fill" && "w-full")}>
+    <div
+      ref={rootRef}
+      className={cn(
+        "relative inline-flex min-w-0",
+        // A square trigger must keep its registered ControlSize box; without this the
+        // flex row shrinks it into an unregistered in-between width.
+        iconOnly ? "flex-shrink-0" : controlWidth === "fill" && "w-full",
+      )}
+    >
       <ControlTrigger
         ref={triggerRef}
         controlSize={controlSize}
-        controlWidth={controlWidth}
-        selected={open}
+        controlWidth={iconOnly ? "slot" : controlWidth}
+        square={iconOnly}
+        selected={open || active}
         disabled={disabled || options.length === 0}
         aria-label={ariaLabel}
+        title={iconOnly ? ariaLabel : undefined}
         aria-haspopup="listbox"
         aria-controls={open ? listboxId : undefined}
         aria-expanded={open}
@@ -101,11 +126,20 @@ export function DropdownSelect({
           event.preventDefault();
           setOpen(true);
         }}
-        className={cn("justify-start bg-zinc-900 text-content-primary hover:bg-zinc-800", className)}
+        className={cn(
+          "text-content-primary",
+          !(open || active) && "bg-zinc-900 hover:bg-zinc-800",
+          iconOnly ? "justify-center" : "justify-start",
+          className,
+        )}
       >
         {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
-        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-        <ChevronDown className={cn("h-4 w-4 flex-shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+        {!iconOnly && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+            <ChevronDown className={cn("h-4 w-4 flex-shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+          </>
+        )}
       </ControlTrigger>
       {open && (
         <PopoverPanel placement={placement} align={align} className={cn("w-56 p-1", menuClassName)}>

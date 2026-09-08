@@ -59,7 +59,7 @@ describe("parseExtensionPackage", () => {
     const path = fileURLToPath(new URL("../../../../../../fixtures/workbench/research-planner.cheers-extension", import.meta.url));
     const parsed = await parseExtensionPackage(new Uint8Array(readFileSync(path)), "global");
     expect(parsed.manifest.id).toBe("research-planner");
-    expect(parsed.scenes[0].views).toHaveLength(3);
+    expect(parsed.scenes[0].items).toHaveLength(3);
     expect(parsed.manifest.contributes.automations?.[0].id).toBe("deadline-check");
     expect(parsed.rendererExtension).toBeNull();
   });
@@ -78,7 +78,15 @@ describe("parseExtensionPackage", () => {
     const parsed = await parseExtensionPackage(bytes, "global");
     expect(parsed.scenes[0].id).toBe("extension:example:main");
     expect(parsed.scenes[0].seed?.["notes.md"]).toBe("# Notes");
-    expect(parsed.scenes[0].views[0].renderer).toBe("builtin:markdown");
+    expect(parsed.scenes[0].items[0].view).toBe("builtin:markdown");
+  });
+
+  it("keeps schema-v1 scene items on the published file/renderer wire shape", async () => {
+    const bytes = archive(
+      { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
+      { "scenes/main.json": JSON.stringify({ items: [{ id: "notes", title: "Notes", source: { kind: "fs", path: "notes.md" }, view: "builtin:markdown" }] }) }
+    );
+    await expect(parseExtensionPackage(bytes, "global")).rejects.toThrow(/unknown field: source/);
   });
 
   it("rejects renderer code in browser/global scope", async () => {

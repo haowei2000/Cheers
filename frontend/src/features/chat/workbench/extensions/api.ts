@@ -1,8 +1,7 @@
 import { apiJson } from "@/api/client";
-import type { TemplateManifest } from "../manifest";
+import type { PanelDef, TemplateManifest } from "../manifest";
 import {
   type AutomationContribution,
-  type ExtensionManifest,
   type ExtensionPermissions,
   type PanelContribution,
   type RendererContribution,
@@ -26,12 +25,38 @@ export interface ExtensionSummary {
   updatedAt: string;
 }
 
+export interface ResolvedSceneItem {
+  id: string;
+  title: string;
+  /** Published v1 fields, retained by the gateway for released clients. */
+  file?: string;
+  renderer?: string;
+  /** Normalized fields emitted for current clients. */
+  source?: { kind: "fs"; path: string };
+  view?: string;
+  config?: unknown;
+}
+
 interface ResolvedScene {
   id: string;
   title: string;
-  items: Array<{ id: string; title: string; file: string; renderer: string; config?: unknown }>;
+  items: ResolvedSceneItem[];
   seed: Array<{ path: string; content: string }>;
   pin: string[];
+}
+
+/** Accept both sides of the rolling-deploy window. New gateways emit both; older
+ * gateways emit only file/renderer. */
+export function normalizeResolvedSceneItem(item: ResolvedSceneItem): PanelDef {
+  const path = item.source?.kind === "fs" ? item.source.path : item.file;
+  if (!path) throw new Error(`Scene item ${item.id} has no file path`);
+  return {
+    id: item.id,
+    title: item.title,
+    source: { kind: "fs", path },
+    view: item.view ?? item.renderer ?? "auto",
+    config: item.config,
+  };
 }
 
 export function listExtensions(): Promise<ExtensionSummary[]> {
@@ -49,10 +74,7 @@ export async function listOfficialScenes(): Promise<TemplateManifest[]> {
         return {
           id: `extension:${extension.id}:${scene.id}`,
           title: resolved.title,
-          views: resolved.items.map((item) => ({
-            ...item,
-            lens: item.renderer.startsWith("builtin:") ? item.renderer.slice(8) : "markdown",
-          })),
+          items: resolved.items.map(normalizeResolvedSceneItem),
           seed: Object.fromEntries(resolved.seed.map((file) => [file.path, file.content])),
           pin: resolved.pin,
         } satisfies TemplateManifest;

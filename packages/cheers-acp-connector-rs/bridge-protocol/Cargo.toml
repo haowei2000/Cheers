@@ -4,6 +4,7 @@ name = "cheers-bridge-protocol"
 # separate BRIDGE_PROTOCOL_VERSION constant.
 version = "0.1.40"
 edition = "2021"
+license = "AGPL-3.0-or-later"
 
 # Frame types shared verbatim by the gateway (server/) and the connector —
 # drift between the two ends is a compile error instead of a runtime mystery.

@@ -1,12 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
+import { useManagedPanel } from "./managed-panel";
+import { IconButton } from "./icon-button";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { GripHorizontal, type LucideIcon } from "lucide-react";
+import { GripHorizontal, PanelRightOpen, PanelRightClose, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
+import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import type { AnchorPlacement } from "@/components/ui/floating-layer";
@@ -16,6 +20,9 @@ export interface FloatingPanelNavigation {
   items: AdaptiveControlItem[];
   ariaLabel: string;
   presentationOrder?: AdaptiveControlPresentation[];
+  /** Collapsed-dropdown trigger form; "icon" suits a panel whose body already
+   *  names the selected section. */
+  collapsedContent?: "text" | "icon";
 }
 
 export interface FloatingPanelAction {
@@ -32,10 +39,16 @@ export interface FloatingPanelAction {
   overflow?: ReactNode;
 }
 
+export function floatingPanelNavigationBudget(
+  panelWidth: number,
+  titleWidth: number,
+): number {
+  return Math.max(28, panelWidth - titleWidth - 40);
+}
+
 type PanelNavigationHost = {
   availableWidth: number;
   target: HTMLElement | null;
-  setPresent: (present: boolean) => void;
 };
 
 const PanelNavigationContext = createContext<PanelNavigationHost | null>(null);
@@ -47,27 +60,6 @@ const PanelContextContext = createContext<PanelContextHost | null>(null);
 type PanelActionRegistrar = (ownerId: string, action: FloatingPanelAction | null) => void;
 const PanelActionContext = createContext<PanelActionRegistrar | null>(null);
 
-function intrinsicInlineWidth(host: HTMLElement): number {
-  const row = host.firstElementChild;
-  if (!(row instanceof HTMLElement)) return host.scrollWidth;
-  const rowStyle = getComputedStyle(row);
-  if (rowStyle.display !== "flex" && rowStyle.display !== "inline-flex") {
-    return Math.max(host.scrollWidth, row.scrollWidth);
-  }
-  const children = Array.from(row.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement && !child.hasAttribute("data-adaptive-measurements")
-  );
-  const gap = Number.parseFloat(rowStyle.columnGap || rowStyle.gap) || 0;
-  const padding =
-    (Number.parseFloat(rowStyle.paddingLeft) || 0) +
-    (Number.parseFloat(rowStyle.paddingRight) || 0);
-  const childWidths = children.reduce(
-    (total, child) => total + Math.max(child.getBoundingClientRect().width, child.scrollWidth),
-    0
-  );
-  return Math.max(host.scrollWidth, childWidths + Math.max(0, children.length - 1) * gap + padding);
-}
-
 /** Lets a nested view (Workbench scenes) move only its primary navigation into chrome. */
 export function FloatingPanelPrimaryNavigation({
   items,
@@ -76,23 +68,19 @@ export function FloatingPanelPrimaryNavigation({
   mobile,
 }: FloatingPanelNavigation & { mobile?: ReactNode }) {
   const host = useContext(PanelNavigationContext);
-  const setPresent = host?.setPresent;
-  useEffect(() => {
-    if (!setPresent) return;
-    setPresent(true);
-    return () => setPresent(false);
-  }, [setPresent]);
   return (
     <>
       {mobile && <div className="md:hidden">{mobile}</div>}
       {host?.target && createPortal(
-        <AdaptiveControlGroup
-          kind="navigation"
-          ariaLabel={ariaLabel}
-          items={items}
-          availableWidth={host.availableWidth}
-          presentationOrder={presentationOrder}
-        />,
+        <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink-0">
+          <AdaptiveControlGroup
+            kind="navigation"
+            ariaLabel={ariaLabel}
+            items={items}
+            availableWidth={host.availableWidth}
+            presentationOrder={presentationOrder}
+          />
+        </div>,
         host.target,
       )}
     </>
@@ -185,7 +173,7 @@ export function FloatingPanel({
   bodyClassName?: string;
   /** Panel-level primary navigation rendered in its own floating island. */
   primaryNavigation?: FloatingPanelNavigation;
-  /** Panel-wide source/scope controls rendered in a separate chrome island. */
+  /** Panel-wide source/scope controls rendered in the single-line navigation island. */
   panelContext?: ReactNode;
   /** Structured panel actions; secondary actions collapse into More when narrow. */
   panelActions?: FloatingPanelAction[];
@@ -224,20 +212,28 @@ export function FloatingPanel({
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
+  const managed = useManagedPanel(spawnKind, viewport);
+  const managedVisible = managed?.visible;
   const laneBounds = useContext(LaneBoundsContext);
+  const sharedLayout = useContext(SharedLayoutContext);
   // Bounded to the canvas when one is present (snap on); otherwise floats free over
   // the viewport (snap off — nothing to snap to). `viewport` opts out of the canvas
   // even when context is set (portals to document.body must do this).
   const getBounds = viewport ? undefined : (laneBounds ?? undefined);
   const drag = useWindowDrag(
     storageKey,
-    !isMobile,
+    !isMobile && !managed,
     getBounds,
     {
       // First-open placement still uses spawnKind, but a normal drag should stop
       // exactly where the user releases it, like an independent desktop window.
       snap: false,
       spawnKind: !isMobile && getBounds != null ? spawnKind : undefined,
+      // The channel's placement for this window, when it is a lane window and the
+      // channel has one. useWindowDrag adopts it only while this device has no
+      // geometry of its own — see WindowDragOptions.sharedGeom.
+      sharedGeom:
+        !isMobile && getBounds != null && spawnKind ? (sharedLayout?.(spawnKind) ?? null) : null,
       open,
       anchorRef: viewport ? anchorRef : undefined,
       reanchorOnOpen: viewport ? reanchorOnOpen : false,
@@ -258,7 +254,7 @@ export function FloatingPanel({
     }
   });
   const controlled = collapsedProp !== undefined;
-  const collapsed = controlled ? collapsedProp : ownCollapsed;
+  const collapsed = !managed && (controlled ? collapsedProp : ownCollapsed);
   const toggleCollapsed = () => {
     if (controlled) {
       onToggleCollapsed?.();
@@ -279,7 +275,7 @@ export function FloatingPanel({
   // window is non-modal (chat stays usable behind it) and keeps close-button
   // only. Skip defaultPrevented so a nested popover/menu still claims its own Esc.
   useEffect(() => {
-    if (!isMobile || !open) return;
+    if (!isMobile || !open || managedVisible === false) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         // Claim this Escape so, with several sheets/menus mounted, only the first
@@ -290,7 +286,7 @@ export function FloatingPanel({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isMobile, open, onClose]);
+  }, [isMobile, managedVisible, onClose, open]);
 
   // Collapsed keeps the dragged position but sheds the resized width/height. Mobile
   // keeps only stacking order: persisted desktop x/y/w/h must not override the
@@ -300,24 +296,20 @@ export function FloatingPanel({
     : collapsed
       ? drag.posStyle
       : drag.style;
-  const [stackedChrome, setStackedChrome] = useState(false);
-  const [compactNavigation, setCompactNavigation] = useState(false);
-  const [condensedTitle, setCondensedTitle] = useState(false);
   const [panelWidth, setPanelWidth] = useState(0);
+  // Width of the top-RIGHT island, so the top-LEFT one knows where to stop.
+  const [navigationSlotWidth, setNavigationSlotWidth] = useState(0);
 
-  // Title label. While collapsed the whole label is the expand target (a much
-  // bigger hit area than the 14px restore icon); the button wrapper also opts
-  // the label out of the drag handle (useWindowDrag ignores pointerdowns on
-  // buttons), so a click reliably expands instead of half-starting a drag.
+  // Title label — for the two places the name is the ONLY identity: the collapsed pill
+  // and the mobile header. The expanded desktop chrome shows the mark and the lit tab
+  // instead. While collapsed the whole label is the expand target (a much bigger hit
+  // area than the 14px restore icon); the button wrapper also opts the label out of the
+  // drag handle (useWindowDrag ignores pointerdowns on buttons), so a click reliably
+  // expands instead of half-starting a drag.
   const titleLabel = (
     <>
       {Icon && <Icon className="w-4 h-4 text-content-muted flex-shrink-0" />}
-      <span
-        className={cn(
-          "text-compact font-semibold uppercase tracking-section text-content-muted truncate",
-          condensedTitle && "md:hidden"
-        )}
-      >
+      <span className="text-compact font-semibold uppercase tracking-section text-content-muted truncate">
         {title}
       </span>
     </>
@@ -350,17 +342,12 @@ export function FloatingPanel({
   const [panelElement, setPanelElement] = useState<HTMLElement | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<HTMLDivElement | null>(null);
   const [titleElement, setTitleElement] = useState<HTMLDivElement | null>(null);
-  const [actionsElement, setActionsElement] = useState<HTMLDivElement | null>(null);
-  const [contextElement, setContextElement] = useState<HTMLDivElement | null>(null);
-  const [contextTarget, setContextTarget] = useState<HTMLDivElement | null>(null);
-  const [contextHeight, setContextHeight] = useState(0);
-  const [portalNavigationPresent, setPortalNavigationPresent] = useState(false);
+  const [desktopContextTarget, setDesktopContextTarget] = useState<HTMLDivElement | null>(null);
+  const [mobileContextTarget, setMobileContextTarget] = useState<HTMLDivElement | null>(null);
   const [portalContextPresent, setPortalContextPresent] = useState(false);
   const [portalActions, setPortalActions] = useState<Record<string, FloatingPanelAction>>({});
-  const fullTitleWidth = useRef(0);
-  const wideNavigationWidth = useRef(0);
-  const compactNavigationWidth = useRef(0);
-  const wideActionsWidth = useRef(0);
+  const [chromeElement, setChromeElement] = useState<HTMLDivElement | null>(null);
+  const [chromeHeight, setChromeHeight] = useState(36);
   const dragRef = drag.ref;
   const panelRef = useCallback(
     (element: HTMLDivElement | null) => {
@@ -370,33 +357,23 @@ export function FloatingPanel({
     [dragRef]
   );
 
-  useEffect(() => {
-    if (!contextElement || typeof ResizeObserver === "undefined") return;
-    const measure = () => setContextHeight(contextElement.getBoundingClientRect().height);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(contextElement);
-    return () => observer.disconnect();
-  }, [contextElement]);
-
-  const hasNavigation = primaryNavigation != null || portalNavigationPresent;
   const hasContext = panelContext != null || portalContextPresent;
-  const useCompactNavigation = compactNavigation || stackedChrome;
-  const chromeTop = hasNavigation && stackedChrome ? "5.5rem" : "3.5rem";
+  const chromeTop = `${chromeHeight + 16}px`;
   const panelStyle = {
     ...style,
+    ...(managed ? { ...managed.style, maxWidth: "none", maxHeight: "none", transform: "none", display: open && managed.visible ? "flex" : "none", ...(managed.floating ? {} : { borderRadius: 0, boxShadow: "none" }) } : {}),
     "--floating-panel-chrome-top": chromeTop,
-    "--floating-panel-safe-top": hasContext
-      ? `calc(var(--floating-panel-chrome-top) + ${contextHeight}px + 0.5rem)`
-      : chromeTop,
+    // Content that consumes this variable also renders below the separate mobile
+    // header. The desktop chrome is measured, but that hidden desktop element has no
+    // box below md, so keep the mobile-safe band explicit instead of collapsing it.
+    "--floating-panel-safe-top": "3.5rem",
   } as CSSProperties;
   const navigationHost = {
-    availableWidth: Math.max(132, panelWidth * (stackedChrome ? 0.72 : 0.42)),
+    availableWidth: navigationSlotWidth,
     target: navigationTarget,
-    setPresent: setPortalNavigationPresent,
   };
   const contextHost = {
-    target: contextTarget,
+    target: isMobile ? mobileContextTarget : desktopContextTarget,
     setPresent: setPortalContextPresent,
   };
   const registerPortalAction = useCallback<PanelActionRegistrar>((ownerId, action) => {
@@ -416,71 +393,37 @@ export function FloatingPanel({
   // This matters when a localized title, a longer tab set, or extension actions change
   // the space budget without changing the window width.
   useLayoutEffect(() => {
-    if (!panelElement || !titleElement || !navigationTarget || !actionsElement) return;
+    if (!panelElement || !titleElement || !navigationTarget) return;
     const measure = () => {
       const width = panelElement.getBoundingClientRect().width;
       setPanelWidth(width);
       const titleWidth = Math.max(titleElement.getBoundingClientRect().width, titleElement.scrollWidth);
-      // max-width constrains the island box, but its tab strip can still overflow.
-      // Collision decisions need the controls' intrinsic width, not the clipped box.
-      const navigationWidth = Math.max(
-        navigationTarget.getBoundingClientRect().width,
-        intrinsicInlineWidth(navigationTarget)
-      );
-      const actionsWidth = Math.max(
-        actionsElement.getBoundingClientRect().width,
-        actionsElement.scrollWidth
-      );
-
-      if (!condensedTitle) fullTitleWidth.current = Math.max(fullTitleWidth.current, titleWidth);
-      if (useCompactNavigation) {
-        compactNavigationWidth.current = Math.max(compactNavigationWidth.current, navigationWidth);
-      } else {
-        wideNavigationWidth.current = Math.max(wideNavigationWidth.current, navigationWidth);
-      }
-      if (!stackedChrome) {
-        wideActionsWidth.current = Math.max(wideActionsWidth.current, actionsWidth);
-      }
-
-      const actionsBudget = wideActionsWidth.current || actionsWidth;
-      const titleBudget = fullTitleWidth.current || titleWidth;
-      const islandGap = 12;
-      const panelInset = 16;
-      const navigationBudget = wideNavigationWidth.current || navigationWidth;
-      const wideMinimum = Math.max(
-        2 * (titleBudget + islandGap) + navigationBudget + panelInset,
-        2 * (actionsBudget + islandGap) + navigationBudget + panelInset
-      );
-      const shouldCompact = hasNavigation && width < wideMinimum;
-      setCompactNavigation(shouldCompact);
-
-      const compactBudget = compactNavigationWidth.current || navigationWidth;
-      const compactMinimum = Math.max(
-        2 * (titleBudget + islandGap) + compactBudget + panelInset,
-        2 * (actionsBudget + islandGap) + compactBudget + panelInset
-      );
-      const shouldStack = shouldCompact && useCompactNavigation && width < compactMinimum;
-      setStackedChrome(shouldStack);
-
-      // Once navigation occupies row two, row one may still become too tight. Keep
-      // the panel identity icon and drag affordance, but let the title text collapse.
-      const shouldCondenseTitle = shouldStack && width < titleBudget + actionsWidth + 72;
-      setCondensedTitle(shouldCondenseTitle);
+      // Sibling groups wrap as whole units. Subtracting their width here made the
+      // navigation collapse even after those siblings had moved to another row, where
+      // the navigation actually owns the full panel width.
+      setNavigationSlotWidth(floatingPanelNavigationBudget(width, titleWidth));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(panelElement);
     observer.observe(titleElement);
     observer.observe(navigationTarget);
-    observer.observe(actionsElement);
     const mutations = new MutationObserver(measure);
     mutations.observe(navigationTarget, { childList: true, subtree: true, characterData: true });
-    mutations.observe(actionsElement, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [actionsElement, condensedTitle, hasNavigation, navigationTarget, panelElement, stackedChrome, titleElement, useCompactNavigation]);
+  }, [navigationTarget, panelElement, titleElement]);
+
+  useLayoutEffect(() => {
+    if (!chromeElement) return;
+    const measure = () => setChromeHeight(chromeElement.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(chromeElement);
+    return () => observer.disconnect();
+  }, [chromeElement]);
 
   return (
     // The root is a window surface, not a control: dragging it moves the window and
@@ -492,7 +435,7 @@ export function FloatingPanel({
       ref={panelRef}
       data-floating-panel=""
       data-floating-panel-bounded={drag.bounded ? "true" : "false"}
-      onPointerDownCapture={drag.toFront}
+      onPointerDownCapture={managed?.toFront ?? drag.toFront}
       onDrop={dropTarget?.onDrop}
       onDragOver={dropTarget?.onDragOver}
       onDragLeave={dropTarget?.onDragLeave}
@@ -526,10 +469,10 @@ export function FloatingPanel({
     >
       {collapsed && !isMobile ? (
         <>
-          <div
+          <ButtonGroup label="Panel window controls"
             {...drag.handleProps}
             data-floating-panel-handle=""
-            className="flex h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
+            className="flex min-h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
           >
             <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
             {titleEl}
@@ -550,46 +493,81 @@ export function FloatingPanel({
               controlSize="compact"
               className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
             />
-          </div>
+          </ButtonGroup>
           {summaryEl}
         </>
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
+          {/* Each corner is a button group. Groups wrap without clipping their
+              controls, and the content inset follows the measured chrome height. */}
+          <div ref={setChromeElement} className={cn("pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-start justify-between gap-2 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:flex", managed && !managed.floating ? "opacity-100" : "opacity-0")}>
+            <ButtonGroup
+              label="Panel navigation and options"
+              floating
+              className="pointer-events-auto min-w-0"
+            >
+            {/* The grip and the panel's mark ARE the first item of this island, not a
+                separate pill beside it. Two surfaces read as two groups and cost the gap
+                between them; one reads as "where you are" and spends that width on tabs.
+                No name here: the panel is identified by its mark and by the tab that is
+                lit, and a word set in uppercase tracking was the widest thing in the
+                corner while being the one thing you never click. It stays where it is the
+                only identity there is — the collapsed pill and the mobile header. */}
             <div
-              {...drag.handleProps}
+              {...(managed?.dragProps ?? drag.handleProps)}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 max-w-[34%] cursor-grab select-none items-center gap-2 rounded-concentric px-2 active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-subtle active:cursor-grabbing"
+              aria-label={`${title} — drag to move`}
             >
-              <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
-              {titleLabel}
+              {/* The grip alone. The panel's mark went the way its name did: a panel whose
+                  content is a file tree or a plan already says what it is, and in a corner
+                  that is capped, an icon you never click is width taken from the tabs. The
+                  mark stays where it earns its place — the collapsed pill and the mobile
+                  header, where there is no content to say it for you. */}
+              <GripHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
             </div>
             <div
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
-              className={cn(
-                "pointer-events-auto absolute left-1/2 -translate-x-1/2",
-                stackedChrome ? "top-12 max-w-[calc(100%-1rem)]" : "top-2 max-w-[42%]",
-                hasNavigation && "floating-control-surface min-h-9 rounded-concentric p-1"
-              )}
+              className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-1"
             >
               {primaryNavigation && (
-                <AdaptiveControlGroup
-                  kind="navigation"
-                  ariaLabel={primaryNavigation.ariaLabel}
-                  items={primaryNavigation.items}
-                  availableWidth={Math.max(132, panelWidth * (stackedChrome ? 0.72 : 0.42))}
-                  presentationOrder={primaryNavigation.presentationOrder}
-                />
+                <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink-0">
+                  <AdaptiveControlGroup
+                    kind="navigation"
+                    ariaLabel={primaryNavigation.ariaLabel}
+                    items={primaryNavigation.items}
+                    availableWidth={navigationSlotWidth}
+                    presentationOrder={primaryNavigation.presentationOrder}
+                    collapsedContent={primaryNavigation.collapsedContent}
+                  />
+                </div>
+              )}
+              {hasContext && (
+                <div
+                  data-floating-panel-context=""
+                  className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1"
+                >
+                  {panelContext && <div className="min-w-0 max-w-full">{panelContext}</div>}
+                  <div
+                    ref={setDesktopContextTarget}
+                    className={cn(
+                      "min-w-0",
+                      portalContextPresent ? "max-w-full" : "hidden"
+                    )}
+                  />
+                </div>
               )}
             </div>
-            <div
-              ref={setActionsElement}
+            </ButtonGroup>
+            <ButtonGroup
+              label="Panel actions"
+              floating
               data-floating-panel-actions=""
-              className="floating-control-surface pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
+              className="pointer-events-auto ml-auto"
             >
               {allPanelActions.length > 0 && (
                 <AdaptiveControlGroup
@@ -600,14 +578,15 @@ export function FloatingPanel({
                   presentationOrder={["iconText", "icon", "collapsed"]}
                 />
               )}
-              <ActionButton
+              {managed?.canFloat && <IconButton label={managed.floating ? "Dock panel" : "Float panel"} onClick={managed.toggleFloating}>{managed.floating ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}</IconButton>}
+              {!managed && <ActionButton
                 action="collapse"
                 context="disclosure"
                 onClick={toggleCollapsed}
                 accessibleLabel="Minimize panel"
                 controlSize="compact"
                 className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-              />
+              />}
               <ActionButton
                 action="close"
                 context="windowChrome"
@@ -616,18 +595,19 @@ export function FloatingPanel({
                 controlSize="compact"
                 className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
               />
-            </div>
+            </ButtonGroup>
           </div>
 
           <div
-            {...drag.handleProps}
+            {...(managed?.dragProps ?? drag.handleProps)}
             data-floating-panel-handle=""
-            className="flex h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/35 px-3 active:cursor-grabbing md:hidden"
+            className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/35 px-3 active:cursor-grabbing md:hidden"
           >
             <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
             {titleLabel}
             <div className="flex-1" />
-            {allPanelActions.map((action) => <div key={action.id}>{action.control}</div>)}
+            <ButtonGroup label="Panel actions" controlSize="compact" className="ml-auto">
+            <AdaptiveControlGroup kind="actions" ariaLabel="Panel actions" items={allPanelActions} presentationOrder={["icon", "collapsed"]} />
             <ActionButton
               action="close"
               context="windowChrome"
@@ -636,34 +616,36 @@ export function FloatingPanel({
               controlSize="compact"
               className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
             />
+            </ButtonGroup>
           </div>
           {hasContext && (
-            <div
-              ref={setContextElement}
+            <ButtonGroup label="Panel options" floating
               data-floating-panel-context=""
-              className={cn(
-                "floating-control-surface pointer-events-none relative z-30 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center rounded-concentric p-1 md:absolute md:top-[var(--floating-panel-chrome-top)] md:mx-0 md:mt-0 md:max-w-[calc(100%-1.5rem)] md:opacity-0 md:transition-opacity md:duration-150 md:group-hover/floating-panel:opacity-100 md:group-focus-within/floating-panel:opacity-100",
-                panelContext
-                  ? "md:left-3 md:right-3"
-                  : "md:left-1/2 md:right-auto md:-translate-x-1/2",
-              )}
+              className="pointer-events-auto relative z-30 mx-3 mt-2 md:hidden"
             >
               {panelContext && <div className="pointer-events-auto min-w-0 flex-1">{panelContext}</div>}
-              <div ref={setContextTarget} className={cn("pointer-events-auto min-w-0", panelContext && "flex-1")} />
-            </div>
+              <div
+                ref={setMobileContextTarget}
+                className={cn(
+                  "pointer-events-auto min-w-0",
+                  portalContextPresent ? "max-w-full" : "hidden"
+                )}
+              />
+            </ButtonGroup>
           )}
           <PanelActionContext.Provider value={registerPortalAction}>
             <div
               data-floating-panel-content=""
               className={cn(
-                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-0",
+                // Reserve the measured height when button groups wrap.
+                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-[var(--floating-panel-chrome-top)]",
                 bodyClassName
               )}
             >
               {children}
             </div>
           </PanelActionContext.Provider>
-          {!isMobile && <ResizeGrip resizeProps={drag.resizeProps} />}
+          {!isMobile && (!managed || managed.floating) && <ResizeGrip resizeProps={managed?.resizeProps ?? drag.resizeProps} />}
           </PanelContextContext.Provider>
         </PanelNavigationContext.Provider>
       )}

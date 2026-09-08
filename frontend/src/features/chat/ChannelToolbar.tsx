@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, LayoutGrid, Settings, Users } from "lucide-react";
+import { Check, LayoutGrid, RotateCcw, Save, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { PresenceDot } from "@/components/ui/presence-dot";
@@ -34,6 +34,13 @@ type Props = {
   boards: PanelContribution[];
   /** Open the ViewBoard focused on a board. */
   onOpenBoard: (id: string) => void;
+  /** This device has dragged at least one window, so it is no longer following the
+   *  channel's shared arrangement. Only then does resetting mean anything. */
+  layoutOverridden: boolean;
+  layoutSaving: boolean;
+  /** Publish this arrangement as the channel's — see workbench/sharedLayout.ts. */
+  onSaveLayout: () => void;
+  onResetLayout: () => void;
 };
 
 export function ChannelToolbar(props: Props) {
@@ -198,6 +205,32 @@ export function ChannelToolbar(props: Props) {
                   }}
                 />
               ))}
+              <div className="mt-1 px-2 pb-1 pt-1 text-minimal uppercase tracking-label text-content-muted">
+                Layout
+              </div>
+              {/* The channel's arrangement is shared, but a viewer's own drag is a local
+                  override — so these are two distinct jobs: publish mine, or go back to
+                  following the channel. See features/chat/workbench/sharedLayout.ts. */}
+              <MenuOption
+                controlSize="regular"
+                label={props.layoutSaving ? "Saving layout…" : "Save layout for channel"}
+                disabled={props.layoutSaving}
+                leading={<Save className="h-3.5 w-3.5" aria-hidden="true" />}
+                onClick={() => {
+                  props.onSaveLayout();
+                  closePanels();
+                }}
+              />
+              <MenuOption
+                controlSize="regular"
+                label="Reset to channel layout"
+                disabled={!props.layoutOverridden}
+                leading={<RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />}
+                onClick={() => {
+                  props.onResetLayout();
+                  closePanels();
+                }}
+              />
               {props.boards.length > 0 && (
                 <>
                   <div className="mt-1 px-2 pb-1 pt-1 text-minimal uppercase tracking-label text-content-muted">

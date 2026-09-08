@@ -1,12 +1,14 @@
+import { useManagedPanel } from "@/components/ui/managed-panel";
 import { Button as UiButton } from "@/components/ui/button";
-import { Select as UiSelect } from "@/components/ui/select";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { workbenchControlSize } from "./workbench-control";
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
 // SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
 // floating window inside the channel's work lane; dragging snaps it to the lane's
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
-import { LayoutDashboard, Layers, Plus } from "lucide-react";
+import { LayoutDashboard, ListFilter, Plus } from "lucide-react";
 import {
   useContextPickStore,
   type ContextItem,
@@ -76,13 +78,15 @@ function ViewBoardDrawerImpl({
   channelId,
   sendResourceReq,
   boardTick,
-  minimal,
+  minimal: requestedMinimal,
   onToggleMinimal,
   onJumpToMessage,
   pendingApprovals,
   currentUserId,
   focusBoard,
 }: Props) {
+  const managed = useManagedPanel("viewboard");
+  const minimal = !managed && requestedMinimal;
   const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
   // Contributed panels are loaded by ChannelView (useExtensionPanels) so the toolbar's
   // picker can list them before this drawer has ever been opened.
@@ -201,6 +205,15 @@ function ViewBoardDrawerImpl({
   // Desktop: a draggable/resizable floating window inside the work lane; dragging
   // snaps it to the lane's grid zones. Minimal collapses to a glance card that keeps
   // its dragged spot. Closed keeps it MOUNTED so visited-board state survives. Mobile
+  // What the scope TRIGGER says: the bot, or "All sessions". The session tag stays in
+  // the menu — a trigger has to fit a corner, an option only has to fit a menu.
+  const scopeLabel = (() => {
+    if (!scope) return "All sessions";
+    const session = sessions.find((candidate) => candidate.session_id === scope);
+    if (!session) return "All sessions";
+    return session.bot_name || session.bot_id.slice(0, 8);
+  })();
+
   // is a full-screen sheet. All of that is FloatingPanel's job — see its `open` and
   // `collapsed` props; `minimal` is controlled because useChannelInstruments owns it.
   return (
@@ -218,6 +231,16 @@ function ViewBoardDrawerImpl({
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
+        // Icons first, dropdown as the fallback. The original objection to a tab row
+        // — its width scales with how many boards exist, inside a 420px panel — is
+        // what AdaptiveControlGroup already measures for: five 28px icon triggers fit,
+        // and if boards are added or the panel is dragged narrower it collapses back to
+        // the dropdown on its own. Each board owns a distinct glyph, and the selected
+        // one keeps the shared neutral fill, so the state is not carried by color alone.
+        presentationOrder: ["icon", "collapsed"],
+        // The board's own content fills the panel directly below this control, so the
+        // fallback dropdown does not need to spell the name out either.
+        collapsedContent: "icon",
         items: boards.map((board) => ({
           id: board.id,
           label: board.title,
@@ -227,32 +250,42 @@ function ViewBoardDrawerImpl({
         })),
       }}
       panelContext={activeBoard?.scope === "session" ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-          <Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" />
-          <span className="text-minimal uppercase tracking-label text-content-muted">Scope</span>
-          <UiSelect
+        // A DropdownSelect, not a native <select>. A native one sizes itself to its
+        // LONGEST option, and these options are "bot name · session tag" — so in a 420px
+        // panel it either blew the corner open or, once constrained, shrank past its own
+        // border and drew as a clipped sliver. Constraining the trigger instead just
+        // moved the damage into the label, which is how "All sessions" came to render as
+        // "Al…". The trigger is now a glyph and carries no text at all; the menu keeps
+        // the full "bot · session" detail you actually choose by.
+        <div className="flex min-w-0 items-center gap-1">
+          <DropdownSelect
+            content="icon"
+            // ListFilter, not the Layers mark the Sessions board uses: once both are
+            // icon-only they sit inches apart on the same toolbar, and this one scopes
+            // the current board rather than navigating to sessions.
+            leading={<ListFilter className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            // The trigger has no visible label now, so the value rides the accessible
+            // name and the tooltip instead of being clipped to "Al…".
+            ariaLabel={`Scope: ${scopeLabel}`}
+            active={Boolean(scope)}
+            label={scopeLabel}
             value={scope}
-            onChange={(event) => setScope(event.target.value)}
-            controlSize="regular"
-            className="min-w-0 flex-1 rounded-sm bg-transparent text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All sessions</option>
-            {sessions.map((session) => (
-              <option
-                key={session.session_id}
-                value={session.session_id}
-                title={`bot ${session.bot_id} · session ${session.session_id}`}
-              >
-                {session.bot_name || session.bot_id.slice(0, 8)} ·{" "}
-                {sessionTag({
+            options={[
+              { value: "", label: "All sessions" },
+              ...sessions.map((session) => ({
+                value: session.session_id,
+                label: `${session.bot_name || session.bot_id.slice(0, 8)} · ${sessionTag({
                   is_primary: session.is_primary,
                   session_id: session.session_id,
                   cwd: session.cwd,
                   when: session.created_at,
-                })}
-              </option>
-            ))}
-          </UiSelect>
+                })}`,
+              })),
+            ]}
+            onSelect={setScope}
+            controlSize={workbenchControlSize.tab}
+            menuClassName="max-w-80"
+          />
         </div>
       ) : undefined}
       panelActions={activeBoard && ATTACHABLE_BOARDS[activeBoard.id] ? [{
@@ -299,14 +332,11 @@ function ViewBoardDrawerImpl({
               variant="plain"
               role="tab"
               aria-selected={isActive}
+              selected={isActive}
               key={b.id}
               onClick={() => setActive(b.id)}
               controlSize="regular"
-              className={`inline-flex flex-shrink-0 items-center gap-2 rounded-none border-b whitespace-nowrap transition-colors ${
-                isActive
-                  ? "border-zinc-200 text-content-primary"
-                  : "border-transparent text-content-primary hover:text-content-strong"
-              }`}
+              className="inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap text-content-primary transition-colors hover:text-content-strong"
             >
               {Icon && <Icon className="w-3.5 h-3.5" />}
               {b.title}

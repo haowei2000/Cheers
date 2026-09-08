@@ -11,20 +11,44 @@ import "./lens/builtins";
 // A template = a declarative MANIFEST (pure data). Because it's data — not code —
 // a manifest can be loaded at runtime (compiled-in OR dropped into the workspace),
 // and it can only reference built-in lenses, which is the safety boundary.
-export interface ViewDef {
+/** One item of a scene: where its data lives plus which compiled view renders it.
+ *
+ * The SAME shape a lane panel has, deliberately — see docs/arch/WORKBENCH.md. It used
+ * to be spelled `{file, lens, renderer}` here, `{file, renderer}` in a package, and
+ * `{file, lens}` in an official template: three vocabularies for one statement, with a
+ * translation at every boundary and a type that carried both `lens` and `renderer`
+ * because the round trip could not decide which was canonical. */
+export interface PanelDef {
   id: string;
   title: string;
-  file: string; // path in the channel workspace (context_files)
-  lens: string; // a registered lens id ("table" | "kanban" | "markdown" | ...)
-  /** Stable renderer binding from an extension scene. */
-  renderer?: string;
-  config?: unknown; // lens-specific config (e.g. table columns)
+  /** A scene's items always read the channel workspace: `.workbench.json` indexes them
+   *  by path on every client, so an item that named a resource verb would have no path
+   *  to be indexed by. The source union is shared with lane panels; a scene takes the
+   *  fs half of it rather than respelling one. */
+  source: { kind: "fs"; path: string };
+  /** A renderer reference: "auto" (host picks by content), "builtin:<lens>", or a
+   *  resolved "personal:<extension>:<renderer>". Omitted = "auto", matching the
+   *  package grammar's default — read it through `viewOf`. */
+  view?: string;
+  config?: unknown; // view config (e.g. table columns)
+}
+
+export const AUTO_VIEW = "auto";
+
+/** An item's view, with the grammar's default applied. */
+export function viewOf(item: PanelDef): string {
+  return item.view ?? AUTO_VIEW;
+}
+
+/** The lens id a `builtin:` view names, or null for `auto` and personal renderers. */
+export function builtinLensId(view: string): string | null {
+  return view.startsWith("builtin:") ? view.slice("builtin:".length) : null;
 }
 
 export interface TemplateManifest {
   id: string;
   title: string;
-  views: ViewDef[];
+  items: PanelDef[];
   seed?: Record<string, unknown>; // path -> initial value (object => JSON, string => text)
   // Paths pinned into `.workbench.json.pinned` on activation — their bodies are injected
   // into every bot prompt (the semantic layer). This is how a scenario's convention file
@@ -38,18 +62,22 @@ export interface TemplateManifest {
 export function validateManifest(m: unknown): m is TemplateManifest {
   if (!m || typeof m !== "object") return false;
   const o = m as Record<string, unknown>;
-  if (typeof o.id !== "string" || typeof o.title !== "string" || !Array.isArray(o.views)) return false;
+  if (typeof o.id !== "string" || typeof o.title !== "string" || !Array.isArray(o.items)) return false;
   if (o.pin !== undefined && !(Array.isArray(o.pin) && (o.pin as unknown[]).every((p) => typeof p === "string"))) return false;
-  return (o.views as unknown[]).every((v) => {
+  return (o.items as unknown[]).every((v) => {
     if (!v || typeof v !== "object") return false;
-    const vv = v as Record<string, unknown>;
-    return (
-      typeof vv.id === "string" &&
-      typeof vv.title === "string" &&
-      typeof vv.file === "string" &&
-      typeof vv.lens === "string" &&
-      !!getLens(vv.lens)
-    );
+    const item = v as Record<string, unknown>;
+    if (typeof item.id !== "string" || typeof item.title !== "string") return false;
+    const source = item.source as Record<string, unknown> | undefined;
+    if (!source || source.kind !== "fs" || typeof source.path !== "string" || !source.path) return false;
+    // Omitted = "auto": the host picks by content. A named view must resolve to compiled
+    // UI, so a manifest can never reference a lens that does not exist. A `personal:`
+    // view reaches a sandboxed renderer and is resolved by the renderer registry, not here.
+    if (item.view === undefined) return true;
+    if (typeof item.view !== "string") return false;
+    if (item.view === AUTO_VIEW || item.view.startsWith("personal:")) return true;
+    const lens = builtinLensId(item.view);
+    return !!lens && !!getLens(lens);
   });
 }
 

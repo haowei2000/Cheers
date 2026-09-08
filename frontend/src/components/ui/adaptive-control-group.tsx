@@ -7,6 +7,7 @@ import {
 } from "react";
 import { Ellipsis, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { ButtonGroup } from "./button-group";
 import { Button } from "./button";
 import type { ControlSize } from "./control-size";
 import { DropdownSelect } from "./dropdown-select";
@@ -81,14 +82,13 @@ function AdaptiveItemControl({
       controlSize={controlSize}
       role={kind === "navigation" ? "tab" : undefined}
       aria-selected={kind === "navigation" ? item.selected : undefined}
-      selected={kind === "actions" ? item.selected : undefined}
+      selected={item.selected}
       aria-label={iconOnly ? item.label : undefined}
       title={iconOnly ? item.label : undefined}
       disabled={item.disabled}
       onClick={item.onSelect}
       className={cn(
         "gap-1 rounded-sm px-2 text-content-primary hover:text-content-strong",
-        item.selected && "bg-zinc-700 text-content-strong",
       )}
     >
       {showIcon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -158,18 +158,25 @@ function PresentationContent({
   kind,
   ariaLabel,
   controlSize,
+  collapsedContent,
 }: {
   items: AdaptiveControlItem[];
   presentation: AdaptiveControlPresentation;
   kind: "navigation" | "actions";
   ariaLabel: string;
   controlSize: ControlSize;
+  collapsedContent: "text" | "icon";
 }) {
   if (presentation === "collapsed" && kind === "navigation") {
     const selected = items.find((item) => item.selected) ?? items[0];
     if (!selected) return null;
+    // "icon" is for a panel that shows the selected section's content directly
+    // underneath, so the glyph plus the body is already an unambiguous answer to
+    // "where am I" — and a 36px trigger fits a corner island the labelled one blows.
+    const iconTrigger = collapsedContent === "icon" && selected.icon != null;
     return (
       <DropdownSelect
+        content={iconTrigger ? "icon" : "text"}
         label={selected.label}
         leading={selected.icon ? <selected.icon className="h-3.5 w-3.5" /> : undefined}
         value={selected.id}
@@ -180,9 +187,9 @@ function PresentationContent({
           disabled: item.disabled,
         }))}
         onSelect={(id) => items.find((item) => item.id === id)?.onSelect?.()}
-        ariaLabel={ariaLabel}
+        ariaLabel={iconTrigger ? `${ariaLabel}: ${selected.label}` : ariaLabel}
         controlSize={controlSize}
-        className="min-w-32 bg-transparent hover:bg-zinc-800"
+        className={iconTrigger ? "bg-transparent hover:bg-zinc-800" : "min-w-32 bg-transparent hover:bg-zinc-800"}
       />
     );
   }
@@ -218,6 +225,7 @@ export function AdaptiveControlGroup({
   controlSize = "compact",
   availableWidth,
   presentationOrder,
+  collapsedContent = "text",
   className,
 }: {
   items: AdaptiveControlItem[];
@@ -227,6 +235,9 @@ export function AdaptiveControlGroup({
   /** A parent with independent chrome can pass its measured slot. */
   availableWidth?: number;
   presentationOrder?: AdaptiveControlPresentation[];
+  /** Trigger form for the collapsed NAVIGATION dropdown. Default "text" keeps the
+   *  selected section's name; "icon" reduces it to the glyph. */
+  collapsedContent?: "text" | "icon";
   className?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -263,7 +274,9 @@ export function AdaptiveControlGroup({
   }, [availableWidth, items, kind, order]);
 
   return (
-    <div
+    <ButtonGroup
+      label={ariaLabel}
+      controlSize={controlSize}
       ref={rootRef}
       role={kind === "navigation" ? "tablist" : "toolbar"}
       aria-label={ariaLabel}
@@ -277,6 +290,7 @@ export function AdaptiveControlGroup({
         kind={kind}
         ariaLabel={ariaLabel}
         controlSize={controlSize}
+        collapsedContent={collapsedContent}
       />
       <div data-adaptive-measurements="" className="pointer-events-none fixed -left-[10000px] top-0 invisible flex w-max items-center gap-1" aria-hidden="true">
         {/* design-system-exempt: menu-option — hidden intrinsic-width probes, not visible item rows. */}
@@ -293,10 +307,11 @@ export function AdaptiveControlGroup({
               kind={kind}
               ariaLabel={`${ariaLabel} measurement`}
               controlSize={controlSize}
+              collapsedContent={collapsedContent}
             />
           </div>
         ))}
       </div>
-    </div>
+    </ButtonGroup>
   );
 }

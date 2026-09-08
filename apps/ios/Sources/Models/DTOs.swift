@@ -2133,17 +2133,82 @@ struct WorkbenchExtensionRendererContribution: Decodable, Identifiable {
 struct WorkbenchResolvedScene: Decodable {
     let id: String
     let title: String
-    let items: [WorkbenchExtensionSceneItem]
+    let items: [WorkbenchPanelDef]
     let seed: [WorkbenchExtensionSeedFile]
     let pin: [String]
 }
 
-struct WorkbenchExtensionSceneItem: Decodable, Identifiable {
+/// Where an item's data lives, plus which compiled view renders it.
+///
+/// One type for what used to be three: a gateway scene item (`file`/`renderer`), a lane
+/// panel (`source`/`view`) and this client's own template view (`file`/`lens`/`renderer`),
+/// which forced a translation in `listWorkbenchTemplates` and back again on write.
+struct WorkbenchPanelDef: Codable, Identifiable {
     let id: String
     let title: String
-    let file: String
-    let renderer: String
+    /// A scene's items always read the channel workspace — `.workbench.json` indexes
+    /// them by path, so an item naming a resource verb would have no path to index by.
+    let source: WorkbenchPanelSource
+    /// Omitted = `auto`; read it through `resolvedView`.
+    let view: String?
     let config: JSONValue?
+
+    var path: String { source.path }
+    var resolvedView: String { view ?? "auto" }
+    /// The lens a `builtin:` view names; `auto` when the host should pick by content.
+    /// A `personal:` renderer is web-only and lands here as `auto`, which is what iOS
+    /// wants — it infers a native lens or falls back to Raw.
+    var lensId: String {
+        resolvedView.hasPrefix("builtin:")
+            ? String(resolvedView.dropFirst("builtin:".count)) : "auto"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, source, view, config
+        // Published scene-v1 fields. New gateways retain these during rollout so an
+        // installed iOS build can decode the same response as the current client.
+        case file, renderer
+    }
+
+    init(
+        id: String, title: String, source: WorkbenchPanelSource,
+        view: String?, config: JSONValue?
+    ) {
+        self.id = id
+        self.title = title
+        self.source = source
+        self.view = view
+        self.config = config
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        if let normalized = try values.decodeIfPresent(WorkbenchPanelSource.self, forKey: .source) {
+            source = normalized
+        } else {
+            source = WorkbenchPanelSource(
+                kind: "fs", path: try values.decode(String.self, forKey: .file))
+        }
+        view = try values.decodeIfPresent(String.self, forKey: .view)
+            ?? values.decodeIfPresent(String.self, forKey: .renderer)
+        config = try values.decodeIfPresent(JSONValue.self, forKey: .config)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(source, forKey: .source)
+        try values.encodeIfPresent(view, forKey: .view)
+        try values.encodeIfPresent(config, forKey: .config)
+    }
+}
+
+struct WorkbenchPanelSource: Codable {
+    let kind: String
+    let path: String
 }
 
 struct WorkbenchExtensionSeedFile: Decodable {
@@ -2163,18 +2228,9 @@ struct WorkbenchTemplateRow: Identifiable {
 struct WorkbenchTemplateManifest: Codable, Identifiable {
     let id: String
     let title: String
-    let views: [WorkbenchTemplateView]
+    let items: [WorkbenchPanelDef]
     let seed: [String: JSONValue]?
     let pin: [String]?
-}
-
-struct WorkbenchTemplateView: Codable, Identifiable {
-    let id: String
-    let title: String
-    let file: String
-    let lens: String
-    let renderer: String
-    let config: JSONValue?
 }
 
 // MARK: - Remote workspace

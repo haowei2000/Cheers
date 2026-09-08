@@ -20,8 +20,10 @@ import {
   getOccupants,
   subscribeOccupants,
   isNearlyFill,
+  type Rect,
   type SpawnKind,
 } from "@/features/chat/workbench/laneSnap";
+import { notifyLayoutOverride, subscribeLayoutReset } from "@/features/chat/workbench/sharedLayout";
 
 // ── z-order: bottom→top list of window keys; raise() moves a key to the top ──
 // Base 40 keeps every floating window below true modals (Dialog & co. sit at
@@ -130,6 +132,16 @@ export interface WindowDragOptions {
   reanchorOnOpen?: boolean;
   /** Preferred side of the anchor for a viewport float. */
   anchorPlacement?: AnchorPlacement;
+  /** The channel's shared placement for this window, already resolved to LANE PIXELS,
+   *  or null when the channel has none.
+   *
+   *  Adopted only while this device has no geometry of its own: a drag writes to
+   *  localStorage and from then on wins, so a shared change — a teammate's save, or an
+   *  agent arranging the board — never moves a window under its reader's cursor. It is
+   *  deliberately NOT persisted on adoption, so a viewer who has not dragged keeps
+   *  following the channel. `reset` drops the override and rejoins.
+   *  See features/chat/workbench/sharedLayout.ts. */
+  sharedGeom?: Rect | null;
 }
 
 // `getBounds` (optional) turns on BOUNDED mode: the window floats inside that
@@ -155,12 +167,20 @@ export function useWindowDrag(
   const anchorRef = opts.anchorRef;
   const reanchorOnOpen = opts.reanchorOnOpen ?? false;
   const anchorPlacement = opts.anchorPlacement ?? "down";
+  const sharedGeom = opts.sharedGeom ?? null;
+  const sharedGeomRef = useRef(sharedGeom);
+  sharedGeomRef.current = sharedGeom;
+  // Whether THIS DEVICE has geometry of its own. It is the whole override rule: true
+  // means the viewer has dragged or been spawn-placed here and the channel's shared
+  // layout must not move them.
+  const hasLocalGeomRef = useRef(false);
   const [geom, setGeom] = useState<Geom>(() => {
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) return {};
       const g = JSON.parse(raw) as Geom;
       if (typeof g !== "object" || g === null) return {};
+      hasLocalGeomRef.current = true;
       // Re-anchored inspectors keep size, not a stale corner from last open.
       if (reanchorOnOpen) {
         const next: Geom = {};
@@ -241,6 +261,9 @@ export function useWindowDrag(
   const toFront = useCallback(() => raise(storageKey), [storageKey]);
 
   const persist = useCallback(() => {
+    const first = !hasLocalGeomRef.current;
+    hasLocalGeomRef.current = true;
+    if (first) notifyLayoutOverride();
     try {
       localStorage.setItem(storageKey, JSON.stringify(geomRef.current));
     } catch {
@@ -484,13 +507,32 @@ export function useWindowDrag(
     return () => window.removeEventListener("resize", reclamp);
   }, [enabled, getBounds]);
 
-  // First open with no persisted geometry: place into a free lane zone (or fill
-  // the lane when alone) instead of every panel defaulting to the same CSS
-  // top-left. Re-runs when the panel re-opens after a reset; skipped once the
+  // Adopt the channel's shared placement, and re-adopt whenever it changes — a
+  // teammate saved a layout, or an agent arranged the board. Skipped entirely once
+  // this device has geometry of its own, which is what makes a local drag an override
+  // rather than a race. Not persisted: persisting would silently convert an adopted
+  // layout into an override and stop the viewer following the channel.
+  const sharedKey = sharedGeom ? `${sharedGeom.x},${sharedGeom.y},${sharedGeom.w},${sharedGeom.h}` : null;
+  useEffect(() => {
+    if (!enabled || !sharedGeom || hasLocalGeomRef.current) return;
+    setGeom((g) =>
+      g.x === sharedGeom.x && g.y === sharedGeom.y && g.w === sharedGeom.w && g.h === sharedGeom.h
+        ? g
+        : { x: sharedGeom.x, y: sharedGeom.y, w: sharedGeom.w, h: sharedGeom.h }
+    );
+    // `sharedKey` is the value identity of `sharedGeom`; the caller rebuilds the object
+    // on every lane resize, and depending on the object would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, sharedKey]);
+
+  // First open with no persisted geometry and no shared placement: pick a free lane
+  // zone (or fill the lane when alone) instead of every panel defaulting to the same
+  // CSS top-left. Re-runs when the panel re-opens after a reset; skipped once the
   // user has a saved geom.
   useEffect(() => {
     if (!enabled || !panelOpen || !spawnKind || !getBounds) return;
     if (geomRef.current.x != null && geomRef.current.y != null) return;
+    if (sharedGeom) return;
     const b = getBounds();
     if (!b || b.width <= 0 || b.height <= 0) return;
     const placed = suggestSpawn(spawnKind, b, getOccupants(storageKey));
@@ -501,12 +543,14 @@ export function useWindowDrag(
       h: Math.round(placed.h),
     };
     setGeom(next);
+    hasLocalGeomRef.current = true;
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {
       /* private mode — geometry just won't persist */
     }
-  }, [enabled, panelOpen, spawnKind, getBounds, storageKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, panelOpen, spawnKind, getBounds, storageKey, sharedKey]);
 
   // A prior alone-fill spawn must yield when a sibling opens, otherwise the new
   // panel lands under a full-lane window. Shrink to our preferred free zone.
@@ -559,12 +603,48 @@ export function useWindowDrag(
   const reset = useCallback(() => {
     setGeom({});
     setOccupant(storageKey, null);
+    hasLocalGeomRef.current = false;
     try {
       localStorage.removeItem(storageKey);
     } catch {
       /* ignore */
     }
   }, [storageKey]);
+
+  // "Reset to channel layout" drops this window's override and re-places it here and
+  // now. Only lane windows take part — a viewport float has no channel layout to rejoin.
+  //
+  // Clearing to `{}` is NOT enough, and looks fine until you try it: a window with no
+  // position renders at zero size. Neither effect above would re-place it either — the
+  // adopt effect keys on the shared VALUE, which a reset does not change, and the spawn
+  // effect keys on the open transition, which a window being reset never makes. So this
+  // does the placement itself.
+  useEffect(() => {
+    if (!enabled || !spawnKind || !getBounds) return;
+    return subscribeLayoutReset(() => {
+      hasLocalGeomRef.current = false;
+      const shared = sharedGeomRef.current;
+      if (shared) {
+        setGeom({ x: shared.x, y: shared.y, w: shared.w, h: shared.h });
+        return;
+      }
+      // No channel placement to rejoin: fall back to the spawn placement this window
+      // would have been given on a first open.
+      const b = getBounds();
+      if (!b || b.width <= 0 || b.height <= 0) {
+        setGeom({});
+        setOccupant(storageKey, null);
+        return;
+      }
+      const placed = suggestSpawn(spawnKind, b, getOccupants(storageKey));
+      setGeom({
+        x: Math.round(placed.x),
+        y: Math.round(placed.y),
+        w: Math.round(placed.w),
+        h: Math.round(placed.h),
+      });
+    });
+  }, [enabled, spawnKind, getBounds, storageKey]);
 
   const ref = useCallback((el: HTMLElement | null) => {
     elRef.current = el;

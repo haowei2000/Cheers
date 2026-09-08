@@ -43,6 +43,8 @@ describe("AdaptiveControlGroup", () => {
     expect(markup).toContain('data-adaptive-probe="collapsed"');
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain("ViewBoard sections");
+    expect(markup).toContain('data-selected="true"');
+    expect(markup).toContain("bg-control");
   });
 
   it("passes each measured presentation to rich controls", () => {
@@ -64,5 +66,19 @@ describe("AdaptiveControlGroup", () => {
     expect(markup).toContain('data-rich-presentation="iconText"');
     expect(markup).toContain('data-rich-presentation="text"');
     expect(markup).toContain('data-rich-presentation="icon"');
+  });
+});
+
+describe("chooseAdaptiveControlPresentation — ViewBoard slot", () => {
+  // Measured in the running ViewBoard (six boards, compact triggers): the icon row
+  // intrinsically wants 188px and the collapsed dropdown 128px.
+  const widths = { iconText: 514, text: 382, icon: 188, collapsed: 128 };
+
+  it("draws the icon row once the slot can hold it", () => {
+    expect(chooseAdaptiveControlPresentation(200, widths, ["icon", "collapsed"])).toBe("icon");
+  });
+
+  it("falls back to the dropdown in the 420px panel's 98px nav slot", () => {
+    expect(chooseAdaptiveControlPresentation(98, widths, ["icon", "collapsed"])).toBe("collapsed");
   });
 });

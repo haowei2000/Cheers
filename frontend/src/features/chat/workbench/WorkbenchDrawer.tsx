@@ -1,3 +1,4 @@
+import { useManagedPanel } from "@/components/ui/managed-panel";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -9,13 +10,12 @@ import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
-import { cn } from "@/lib/cn";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
 import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
-import { seedManifest, type TemplateManifest } from "./manifest";
+import { seedManifest, viewOf, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { workbenchControlSize } from "./workbench-control";
@@ -74,6 +74,10 @@ export interface WbConfig {
   /** Shared navigation index for native multi-scene clients. Renderer selection remains
    * file-bound through bindings; this does not resurrect template-owned renderers. */
   scene_state?: WorkbenchSceneState;
+  /** The channel's shared window arrangement. Owned by `useChannelLayout`, not by this
+   *  drawer — carried through the known-keys parse below only so a Workbench write does
+   *  not delete a key it has no opinion about. See workbench/sharedLayout.ts. */
+  layout?: unknown;
 }
 
 // Regenerated into `.workbench.json._doc` on every write, so anyone (human or AI) opening
@@ -86,6 +90,7 @@ const WB_DOC =
   "configs = file path → lens config (e.g. table columns), written by scenario activation; " +
   "pinned = files injected into every bot prompt. " +
   "scene_state = enabled scenario order/titles and their file-path navigation indexes; " +
+  "layout = the channel's shared window arrangement (rects are fractions of the lane, not pixels); " +
   "Files themselves are pure content — how a file renders is decided by this config, never written into the file.";
 
 function sceneBelongsToExtension(sceneId: string, extensionId: string): boolean {
@@ -109,6 +114,7 @@ export function parseCfg(content: string): WbConfig {
       : undefined,
     configs: raw.configs,
     scene_state: raw.scene_state,
+    layout: raw.layout,
   };
   if (raw.views?.length) {
     const b = { ...(cfg.bindings ?? {}) };
@@ -286,23 +292,24 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         }
         const nextBindings = { ...(base.bindings ?? {}) };
         const nextConfigs = { ...(base.configs ?? {}) };
-        for (const v of manifest.views) {
-          const renderer = v.renderer ?? `builtin:${v.lens}`;
-          if (renderer.startsWith("personal:")) {
+        for (const item of manifest.items) {
+          const path = item.source.path;
+          const view = viewOf(item);
+          if (view.startsWith("personal:")) {
             setLocalBindings((current) => {
-              if (current[v.file]) return current;
-              const next = { ...current, [v.file]: renderer };
+              if (current[path]) return current;
+              const next = { ...current, [path]: view };
               localStorage.setItem(localBindingKey, JSON.stringify(next));
               return next;
             });
-          } else if (!nextBindings[v.file] && renderer !== "auto") nextBindings[v.file] = renderer;
-          if (v.config !== undefined && nextConfigs[v.file] === undefined) nextConfigs[v.file] = v.config;
+          } else if (!nextBindings[path] && view !== "auto") nextBindings[path] = view;
+          if (item.config !== undefined && nextConfigs[path] === undefined) nextConfigs[path] = item.config;
         }
         const sceneState: WorkbenchSceneState = {
           version: 1,
           order: [...(base.scene_state?.order ?? []).filter((id) => id !== manifest.id), manifest.id],
           titles: { ...(base.scene_state?.titles ?? {}), [manifest.id]: manifest.title },
-          items: { ...(base.scene_state?.items ?? {}), [manifest.id]: manifest.views.map((view) => view.file) },
+          items: { ...(base.scene_state?.items ?? {}), [manifest.id]: manifest.items.map((item) => item.source.path) },
         };
         const next: WbConfig = {
           ...base,
@@ -313,7 +320,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         };
         if (manifest.pin?.length) next.pinned = [...new Set([...(base.pinned ?? []), ...manifest.pin])];
         await writeCfg(next);
-        setFocus(manifest.views[0]?.file ?? null);
+        setFocus(manifest.items[0]?.source.path ?? null);
         return true;
       } catch (e) {
         setNotice(errMsg(e)); // surface mid-seed failures (permission, size limit, dropped WS)
@@ -530,7 +537,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       return !c;
     });
   };
-  const minimized = collapsed && !isMobile;
+  const managed = useManagedPanel("workbench");
+  const minimized = collapsed && !isMobile && !managed;
 
   const ctx: WorkbenchContext = useMemo(
     () => ({
@@ -613,17 +621,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               <ControlTrigger
                 type="button"
                 square
+                selected={rawMode}
                 onClick={() => setRawMode((current) => !current)}
                 aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
                 aria-pressed={rawMode}
                 title={rawMode ? "Show scenes" : "Show raw workspace files"}
                 controlSize={workbenchControlSize.chrome}
-                className={cn(
-                  "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
-                  rawMode
-                    ? "bg-indigo-500/15 text-accent-200"
-                    : "bg-zinc-800/70 text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-                )}
+                className="rounded-sm text-content-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 {rawMode
                   ? <LayoutGrid className="h-4 w-4" aria-hidden="true" />

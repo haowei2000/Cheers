@@ -1,13 +1,14 @@
-/** @file Modal inspector for the durable metadata attached to a chat message. */
+/** @file Floating inspector for the durable metadata attached to a chat message. */
 
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ListTree, X } from "lucide-react";
+import { AlertCircle, GripHorizontal, ListTree, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { IconButton } from "@/components/ui/icon-button";
 import { DragHandle } from "@/components/ui/drag-handle";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useWindowDrag } from "@/hooks/useWindowDrag";
 import type { Message } from "@/types";
 import { BotTracePanel } from "./BotTracePanel";
 import { MessageContextChips } from "./context/ContextPickBar";
@@ -25,7 +26,7 @@ interface MessageRecordInspectorProps {
 }
 
 /**
- * A message's secondary record: docked inspector on desktop, bottom sheet on
+ * A message's secondary record: anchored floating window on desktop, bottom sheet on
  * compact screens. Keeping this out of the timeline prevents completed trace
  * history from changing message rhythm while preserving one audited surface.
  */
@@ -40,15 +41,21 @@ export function MessageRecordInspector({
   triggerRef,
   onClose,
 }: MessageRecordInspectorProps) {
-  const panelRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
   const isMobile = useIsMobile();
   const titleId = useId();
+  const drag = useWindowDrag(`cheers.message-record.${message.msg_id}`, !isMobile, undefined, {
+    anchorRef: triggerRef,
+    reanchorOnOpen: true,
+    anchorPlacement: "down",
+  });
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
+    const returnFocusTo = triggerRef.current;
     const focusables = () =>
       Array.from(
         panel.querySelectorAll<HTMLElement>(
@@ -58,13 +65,14 @@ export function MessageRecordInspector({
     (focusables()[0] ?? panel).focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
         onCloseRef.current();
         return;
       }
-      // The compact sheet is modal. The desktop inspector is a docked lane, so
+      // The compact sheet is modal. The desktop window is non-modal, so
       // keyboard users may continue into the timeline without closing it.
       if (event.key !== "Tab" || !isMobile) return;
       const items = focusables();
@@ -86,7 +94,7 @@ export function MessageRecordInspector({
     panel.addEventListener("keydown", onKeyDown);
     return () => {
       panel.removeEventListener("keydown", onKeyDown);
-      if (triggerRef.current?.isConnected) triggerRef.current.focus();
+      if (returnFocusTo?.isConnected) returnFocusTo.focus();
     };
   }, [isMobile, triggerRef]);
 
@@ -94,26 +102,38 @@ export function MessageRecordInspector({
   const count = meta.contextCount + meta.traceCount;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] pointer-events-none">
+    // Message records sit above non-modal instrument windows (z 40–43) but below
+    // popovers and true dialogs (z 60+ / 100), so a floated panel cannot cover the
+    // compact modal sheet and a confirmation opened from the record still wins.
+    <div className="fixed inset-0 z-50 pointer-events-none">
       <div
         aria-hidden="true"
         onClick={onClose}
         className="pointer-events-auto absolute inset-0 bg-black/55 md:hidden"
       />
       <aside
-        ref={panelRef}
+        ref={(element) => {
+          panelRef.current = element;
+          drag.ref(element);
+        }}
         role="dialog"
         aria-modal={isMobile}
         aria-labelledby={titleId}
         tabIndex={-1}
+        onPointerDownCapture={drag.toFront}
+        style={isMobile ? undefined : {
+          ...drag.posStyle,
+          maxHeight: `min(40rem, calc(100dvh - ${(drag.pos?.y ?? 8) + 8}px))`,
+        }}
         className={cn(
           "pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[82dvh] overflow-y-auto overscroll-contain bg-zinc-950 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 outline-none",
           "rounded-t-sm shadow-2xl shadow-black/50",
-          "md:bottom-0 md:left-auto md:top-0 md:w-[23rem] md:max-h-none md:rounded-none md:border-l md:border-zinc-800/80 md:px-6 md:pb-6 md:pt-5",
+          "md:bottom-auto md:right-auto md:left-2 md:top-2 md:w-[32rem] md:max-w-[calc(100vw-16px)] md:rounded-sm md:px-6 md:pb-6 md:pt-5",
         )}
       >
         <DragHandle className="mx-auto mb-3 md:hidden" />
-        <header className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
+        <header {...drag.handleProps} className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
+          <GripHorizontal className="mt-1 hidden h-4 w-4 shrink-0 text-content-muted md:block" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="text-minimal font-semibold uppercase tracking-overline text-content-muted">
               Message record · {String(count).padStart(2, "0")}

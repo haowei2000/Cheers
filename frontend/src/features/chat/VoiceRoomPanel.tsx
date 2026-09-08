@@ -12,10 +12,6 @@ import {
   Captions,
   Loader2,
   Mic,
-  MicOff,
-  PhoneOff,
-  Radio,
-  Users,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -24,8 +20,7 @@ import {
   joinVoiceChannel,
   setVoiceTranscription,
 } from "@/api/channels";
-import { Button } from "@/components/ui/button";
-import { PresenceDot } from "@/components/ui/presence-dot";
+import { VoiceRoomToolbar } from "./VoiceRoomToolbar";
 import type { VoiceInterimSegment, VoiceTranscriptSegment } from "@/types";
 
 interface Props {
@@ -52,6 +47,16 @@ export function VoiceRoomPanel({
 }: Props) {
   const roomRef = useRef<Room | null>(null);
   const audioRootRef = useRef<HTMLDivElement>(null);
+  const playbackMutedRef = useRef(false);
+  const [playbackMuted, setPlaybackMuted] = useState(false);
+  const togglePlayback = useCallback(() => {
+    const muted = !playbackMutedRef.current;
+    playbackMutedRef.current = muted;
+    setPlaybackMuted(muted);
+    audioRootRef.current?.querySelectorAll("audio").forEach((audio) => {
+      audio.muted = muted;
+    });
+  }, []);
   // Retained across reconnects so consent upgrade can re-connect to the same
   // SFU URL with a freshly-minted publishable token.
   const roomUrlRef = useRef<string | null>(null);
@@ -174,6 +179,7 @@ export function VoiceRoomPanel({
         if (track.kind !== Track.Kind.Audio || !audioRootRef.current) return;
         const element = track.attach();
         element.autoplay = true;
+        element.muted = playbackMutedRef.current;
         audioRootRef.current.appendChild(element);
       });
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
@@ -356,150 +362,40 @@ export function VoiceRoomPanel({
   return (
     <section className="mx-4 mb-2 flex-shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
-      <div className="flex min-h-[64px] items-center gap-3 px-3 py-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-2 text-compact font-medium text-content-secondary">
-            <PresenceDot
-              contentSize="regular"
-              className={connected ? "bg-emerald-400" : "bg-zinc-600"}
-            />
-            <span className="hidden sm:inline">
-              {connected ? "LIVE" : "VOICE"}
-            </span>
-          </div>
-          <div className="min-w-0 border-l border-zinc-800 pl-3">
-            <p className="truncate text-regular font-medium text-content-primary">
-              {connected ? "Meeting in progress" : "Voice meeting ready"}
-            </p>
-            <p className="truncate text-compact text-content-muted">
-              {reconnecting
-                ? "Reconnecting…"
-                : connected
-                  ? `${participantCount} participant${participantCount === 1 ? "" : "s"} in this channel`
-                  : "Join the channel meeting to talk with members"}
-            </p>
-          </div>
+      <VoiceRoomToolbar
+        connected={connected}
+        joining={joining}
+        reconnecting={reconnecting}
+        micEnabled={micEnabled}
+        canPublish={canPublish}
+        playbackMuted={playbackMuted}
+        participantNames={participantNames}
+        participantCount={participantCount}
+        transcriptionStatus={transcriptionStatus}
+        canManage={serverCanManage}
+        changingTranscription={changingTranscription}
+        onJoin={() => void join()}
+        onLeave={() => void disconnect()}
+        onToggleMic={() => void toggleMic()}
+        onTogglePlayback={togglePlayback}
+        onToggleTranscription={() => void toggleTranscription()}
+      />
 
-          {connected && participantNames.length > 0 && (
-            <div className="hidden min-w-0 items-center gap-2 lg:flex">
-              {participantNames.slice(0, 4).map((name) => {
-                const speaking = name === speakingName;
-                return (
-                  <div
-                    key={name}
-                    className={`flex max-w-32 items-center gap-2 rounded-sm  px-2 py-1 text-compact transition-colors ${
-                      speaking
-                        ? "border-indigo-500/60 bg-indigo-500/10 text-accent-200"
-                        : "border-transparent bg-zinc-800/70 text-content-muted"
-                    }`}
-                  >
-                    {speaking ? (
-                      <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse" />
-                    ) : (
-                      <Users className="h-3.5 w-3.5 shrink-0 text-content-muted" />
-                    )}
-                    <span className="truncate">{name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {(transcriptionStatus !== "off" || captionText) && (
+        <div className="flex min-h-7 items-center gap-2 px-3 pb-2 text-compact text-content-muted" role="status">
+          <Captions className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 truncate">
+            {captionText ? (
+              <>
+                {speakingName && <span className="font-medium">{speakingName} · </span>}
+                <span className={latestInterim ? "italic" : undefined}>{captionText}</span>
+              </>
+            ) : transcriptionStatus === "active" ? "Live captions on"
+              : transcriptionStatus === "starting" ? "Starting captions…"
+              : "Live captions unavailable"}
+          </p>
         </div>
-
-        {!connected ? (
-          <Button action="join" disabled={joining} onClick={() => void join()} controlSize="comfortable" className="shrink-0">
-            {joining ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Mic className="h-4 w-4" />
-            )}
-            Join voice
-          </Button>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <UiButton action={micEnabled ? "mute" : "unmute"} content="iconText" variant="plain"
-              type="button"
-              onClick={() => void toggleMic()}
-              disabled={!canPublish}
-              title={
-                canPublish
-                  ? micEnabled
-                    ? "Mute microphone"
-                    : "Unmute microphone"
-                  : "Listen-only member"
-              }
-              aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
-              aria-pressed={micEnabled}
-              controlSize="comfortable" className={`flex min-w-11 items-center justify-center gap-2 rounded-sm  font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 ${
- micEnabled
- ? "bg-zinc-800 text-content-primary hover:bg-zinc-700": "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25"
- }`}
-            >
-              {micEnabled ? (
-                <Mic className="h-3.5 w-3.5" />
-              ) : (
-                <MicOff className="h-3.5 w-3.5" />
-              )}
-            </UiButton>
-            <UiButton action="disconnect" variant="plain"
-              type="button"
-              onClick={() => void disconnect()}
-              title="Leave voice"
-              aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-2 rounded-sm border-rose-500/40  font-medium text-removed-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-            >
-              <PhoneOff className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Leave</span>
-            </UiButton>
-          </div>
-        )}
-      </div>
-
-      <div className="flex min-h-7 items-center gap-2 border-t border-zinc-800/80 px-3 py-2 text-compact">
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-content-muted">
-          <Captions
-            className={`h-3.5 w-3.5 shrink-0 ${
-              transcriptionStatus === "active" ? "text-accent-300" : ""
-            }`}
-          />
-          {speakingName && captionText ? (
-            <p className="truncate" aria-live="polite">
-              <span className="font-medium text-accent-300">{speakingName}</span>
-              <span className="mx-1 text-content-muted">·</span>
-              <span className={latestInterim ? "italic text-content-muted" : "text-content-muted"}>
-                {captionText}
-              </span>
-            </p>
-          ) : (
-            <p className="truncate">
-              {transcriptionStatus === "active"
-                ? "Live captions are on"
-                : transcriptionStatus === "starting"
-                  ? "Starting live captions…"
-                  : transcriptionStatus === "failed"
-                    ? "Live captions are unavailable"
-                    : "Live captions are off"}
-            </p>
-          )}
-        </div>
-        {serverCanManage && (
-          <UiButton action={transcriptionStatus === "active" ? "disable" : "enable"} variant="plain"
-            type="button"
-            disabled={!connected || changingTranscription}
-            onClick={() => void toggleTranscription()}
-            title={!connected ? "Join the room first" : undefined}
-            aria-pressed={transcriptionStatus === "active"}
-            controlSize="regular" className="flex shrink-0 items-center gap-1 rounded-sm text-content-primary transition-colors hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {changingTranscription ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Captions className="h-3.5 w-3.5" />
-            )}
-            {transcriptionStatus === "active" ? "Stop captions" : "Start captions"}
-          </UiButton>
-        )}
-      </div>
+      )}
 
       {consentRequired && connected && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-compact">

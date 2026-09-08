@@ -463,8 +463,8 @@
       }
     },
     {
-      "name": "scene-item-renderer-set-to-null",
-      "why": "Same rule on a scene item's renderer.",
+      "name": "scene-item-view-set-to-null",
+      "why": "Same rule on a scene item's view: an explicit null is not an omitted field.",
       "global": "reject",
       "personal": "reject",
       "files": {
@@ -493,6 +493,153 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "scene-item-in-the-published-v1-file-renderer-spelling",
+      "why": "Schema version 1 published scene items as `file`/`renderer`; both old and current hosts must continue to accept that contract.",
+      "global": "accept",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "file": "notes.md",
+              "renderer": "builtin:markdown"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-over-a-resource-source",
+      "why": "Schema-v1 scenes accept only file/renderer, so a panel-style resource source is rejected rather than silently widening access.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "roster",
+              "title": "Roster",
+              "source": {
+                "kind": "resource",
+                "verb": "channel.members"
+              },
+              "view": "builtin:table"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-trying-to-pick",
+      "why": "Schema-v1 scenes accept only file/renderer, so a panel-style source carrying pick is rejected as an unknown contract.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "notes",
+              "title": "Notes",
+              "source": {
+                "kind": "fs",
+                "path": "notes.md",
+                "pick": "rows"
+              },
+              "view": "builtin:table"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scene-item-with-a-self-view",
+      "why": "A scene item rendered by the package's own renderer is code, and follows the same scope split a panel's `self:` view does.",
+      "global": "reject",
+      "personal": "accept",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "scenes": [
+              {
+                "id": "main",
+                "title": "Main",
+                "definition": "scenes/main.json"
+              }
+            ],
+            "renderers": [
+              {
+                "id": "chart",
+                "title": "Chart",
+                "entry": "renderers/chart.js"
+              }
+            ]
+          }
+        },
+        "scenes/main.json": {
+          "items": [
+            {
+              "id": "chart",
+              "title": "Chart",
+              "file": "data.json",
+              "renderer": "self:chart"
+            }
+          ]
+        },
+        "renderers/chart.js": "export function render() {}\n"
       }
     },
     {
@@ -713,6 +860,32 @@
                   "verb": "channel.info"
                 },
                 "view": "wat:thing"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "resource-panel-with-an-auto-view",
+      "why": "`auto` asks the host to match a view against the content's shape. A file has one; a resource payload does not, so `auto` over a verb names a choice nothing can make. Omitting `view` means the same thing and is rejected the same way.",
+      "global": "reject",
+      "personal": "reject",
+      "files": {
+        "manifest.json": {
+          "schemaVersion": 1,
+          "id": "example",
+          "version": "1.0.0",
+          "title": "Example",
+          "contributes": {
+            "panels": [
+              {
+                "id": "roster",
+                "title": "Roster",
+                "source": {
+                  "kind": "resource",
+                  "verb": "channel.members"
+                }
               }
             ]
           }

@@ -2,6 +2,7 @@
   "name": "cheers-macos",
   "private": true,
   "version": "0.1.29",
+  "license": "AGPL-3.0-or-later",
   "description": "Cheers desktop shell for macOS (Tauri): hosts the web frontend and manages local connector daemons.",
   "scripts": {
     "tauri": "tauri",

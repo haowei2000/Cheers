@@ -47,7 +47,7 @@ export function ChannelFilesDialog({
       className="w-[640px] h-[70%]"
       spawnKind="files"
       defaultPosClassName="top-2 left-2"
-      bodyClassName="md:pt-[var(--floating-panel-safe-top)]"
+      bodyClassName="overflow-hidden p-0 space-y-0"
       collapsedSummary={(expand) => (
         <GlanceRow
           Icon={Paperclip}
@@ -74,7 +74,12 @@ export function ChannelFilesDialog({
           hint="Upload with the paperclip in the composer."
         />
       ) : (
-        <FileGrid files={files} focusFileId={focusFileId} channelId={channelId} />
+        <FileGrid
+          files={files}
+          focusFileId={focusFileId}
+          channelId={channelId}
+          className="h-full overflow-y-auto px-4 pb-4 pt-[var(--floating-panel-safe-top)]"
+        />
       )}
     </FloatingPanel>
   );

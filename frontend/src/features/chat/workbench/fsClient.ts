@@ -3,6 +3,8 @@
 // is no separate "memory" store; the workspace is just files (context_files),
 // reached on demand (pull), authz'd by channel-role on the server.
 
+import type { PatchOp } from "./patchOps";
+
 export type SendResourceReq = (
   resource: string,
   params: Record<string, unknown>
@@ -40,6 +42,16 @@ export function makeFsClient(send: SendResourceReq, channelId: string) {
         content,
         ...(ifVersion !== undefined ? { if_version: ifVersion } : {}),
       }) as Promise<{ path: string; version: number }>,
+    // Structured edits, applied atomically under the same optimistic lock. Preferred
+    // over `write` for machine-edited documents: it preserves YAML comments that a
+    // whole-document rewrite loses whenever an array's LENGTH changes, and a rejected
+    // op batch can be replayed against the newer version — a stale document cannot.
+    // See patchOps.ts.
+    patch: (path: string, ops: readonly PatchOp[], ifVersion: number) =>
+      send("fs.patch", { ...ch(), path, ops, if_version: ifVersion }) as Promise<{
+        path: string;
+        version: number;
+      }>,
     // Destructive: server gates rm to owner/admin on the user path (PERMISSION_DENIED).
     rm: (path: string, recursive = false) =>
       send("fs.rm", { ...ch(), path, recursive }) as Promise<unknown>,

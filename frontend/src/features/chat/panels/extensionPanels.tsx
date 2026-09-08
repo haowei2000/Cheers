@@ -1,4 +1,5 @@
 import { LayoutGrid } from "lucide-react";
+import { AUTO_VIEW, builtinLensId } from "@/features/chat/workbench/manifest";
 import { getLens } from "@/features/chat/workbench/lens/registry";
 import "@/features/chat/workbench/lens/builtins"; // side effect: register builtin lenses
 import type { ExtensionSummary } from "@/features/chat/workbench/extensions/api";
@@ -25,16 +26,11 @@ function sourceOf(panel: ManifestPanel): PanelSource {
     : { kind: "fs", path: panel.source.path };
 }
 
-/** The compiled view a `builtin:<id>` reference names, or null if it does not resolve.
- *  `self:` views are personal-scope renderer code and are not handled here. */
-function lensIdOf(view: string): string | null {
-  return view.startsWith("builtin:") ? view.slice(8) : null;
-}
-
 export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
   for (const extension of extensions) {
     for (const panel of extension.panels ?? []) {
-      const lensId = lensIdOf(panel.view);
+      // `self:` views are personal-scope renderer code and do not resolve here.
+      const lensId = builtinLensId(panel.view ?? AUTO_VIEW);
       const lens = lensId ? getLens(lensId) : undefined;
       if (!lens) continue; // an unresolvable view renders nothing rather than throwing
       const source = sourceOf(panel);

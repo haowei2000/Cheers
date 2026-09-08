@@ -158,6 +158,19 @@ providers need both shapes and neither expresses the other: `skip_when` for GitH
 that is sometimes absent. An event type with no mapping is stored, marked processed, and
 never posted — that is the intended handling for the dozens of types nobody wants echoed.
 
+### Declaring a panel or a scene item
+
+The two declarations normalize to the same internal panel model, but their published wire
+grammars differ and schema v1 is immutable:
+
+- A scene item is `{id, title, file, renderer?, config?}`. `renderer` defaults to `auto`.
+- A `contributes.panels` item is `{id, title, source, view?, config?}` and may use either
+  an `fs` source or an allowed resource verb.
+
+Both installers validate the scene-v1 boundary before normalizing it to `source`/`view`.
+Do not respell a scene item in place: older hosts and existing packages depend on
+`file`/`renderer`.
+
 ### Adding a workbench extension
 
 Build with `cheers-workbench pack` from
@@ -229,6 +242,8 @@ without changing its test deliberately.
 | Both package parsers read the same archive | `workbench_extensions::tests::rejects_a_package_whose_declared_entry_size_is_a_lie`, `package.test.ts` "understates"/"overstates" |
 | Consent is required for exactly what the server refuses to store | `package.test.ts` "flags exactly the packages declarative scope refuses" |
 | Both installers give one package one verdict | `workbench_extensions::tests::shared_contract::gives_every_corpus_package_the_verdict_it_declares`, `corpus.test.ts` "at %s scope" |
+| Scene v1 stays `file`/`renderer`; panel contributions stay `source`/`view` | corpus `scene-item-in-the-published-v1-file-renderer-spelling`, `…-over-a-resource-source`, `…-trying-to-pick`, `…-with-a-self-view` |
+| A view left to `auto` names something the host can actually pick | corpus `resource-panel-with-an-auto-view`, `catalog::workbench::tests::a_resource_panel_cannot_defer_its_view` |
 | The declared limits are the enforced limits | `…::shared_contract::declares_the_limits_this_validator_enforces`, `corpus.test.ts` "declares the limits this validator enforces" |
 | The SDK never blocks a package the installers accept | `pack.test.ts` "never rejects a manifest the installers accept" |
 | A permission never names a resource the gateway stopped dispatching | `extensionInstall.test.ts` "names only resources the gateway still dispatches" |

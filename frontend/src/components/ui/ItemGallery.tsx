@@ -22,6 +22,7 @@ import { cn } from "@/lib/cn";
 import { ControlSizeProvider, type ControlSize } from "@/components/ui/control-size";
 import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { AdaptiveControlGroup } from "@/components/ui/adaptive-control-group";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,7 @@ function AdaptiveGroupPreview({ availableWidth }: { availableWidth: number }) {
   return (
     <div style={{ width: availableWidth + 16 }} className="max-w-full min-w-0 bg-zinc-900/50 p-2">
       <p className="mb-2 text-section-label">{availableWidth}px local slot</p>
-      <div style={{ width: `min(100%, ${availableWidth}px)` }} className="rounded-concentric bg-zinc-950/80 p-1 shadow-lg ring-1 ring-white/10">
+      <ButtonGroup label={`Panel group ${availableWidth}`} floating style={{ width: `min(100%, ${availableWidth}px)` }}>
         <AdaptiveControlGroup
           kind="navigation"
           ariaLabel={`Adaptive preview ${availableWidth}`}
@@ -68,7 +69,7 @@ function AdaptiveGroupPreview({ availableWidth }: { availableWidth: number }) {
             onSelect: () => setSelected(item.id),
           }))}
         />
-      </div>
+      </ButtonGroup>
     </div>
   );
 }

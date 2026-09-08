@@ -2,6 +2,7 @@
 name = "cheers-voice-transcriber"
 version = "0.1.0"
 description = "LiveKit microphone-track transcription worker for Cheers"
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.11"
 dependencies = [
   "aiohttp>=3.10,<4",

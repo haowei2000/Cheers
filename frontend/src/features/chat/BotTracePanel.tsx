@@ -319,14 +319,12 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
             const stats = diffStats(diff);
             const active = diff.path === selected.path;
             return (
-              <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={active}
+              <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={active} selected={active}
                 key={diff.path}
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
-                controlSize="regular" className={cn(
- "flex items-center gap-2 rounded-sm text-left transition-colors hover:bg-zinc-800",
- active ? "bg-indigo-600/15 text-accent-200": "text-content-primary hover:text-content-strong",
- )}
+                controlSize="regular"
+                className="flex items-center gap-2 rounded-sm text-left text-content-primary transition-colors hover:text-content-strong"
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-compact">

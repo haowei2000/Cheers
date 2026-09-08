@@ -62,6 +62,8 @@ export interface MentionCandidate {
   type: "user" | "bot" | "group";
   label: string;
   sublabel?: string;
+  /** Profile or bot avatar. Group tokens use their shared group glyph. */
+  avatarUrl?: string | null;
   /** Bots: live connector presence; users have no comparable state. */
   isOnline?: boolean | null;
   /** Bots: whether the agent accepts audio prompts (unknown → false, fail-safe). */

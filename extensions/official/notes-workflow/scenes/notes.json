@@ -13,5 +13,7 @@
       "source": "seed/notes/notes/open-questions.md"
     }
   ],
-  "pin": ["notes/open-questions.md"]
+  "pin": [
+    "notes/open-questions.md"
+  ]
 }
