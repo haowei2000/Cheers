@@ -118,6 +118,13 @@ describe("workspace layout sharing", () => {
     expect(parsed?.workspace).toBeUndefined();
     expect(parsed?.panels.files?.open).toBe(true);
   });
+  it("keeps zero fractions instead of mistaking them for absent values", () => {
+    expect(parseLayout({
+      version: 1,
+      panels: {},
+      workspace: { width: 0, ratio: 0, split: true },
+    })?.workspace).toEqual({ width: 0, ratio: 0, split: true });
+  });
   it("preserves workspace preferences when an older writer only updates panels", () => {
     const workspace = { width: .4, split: false, ratio: .5 };
     expect(mergeLayout({ version: 1, panels: {}, workspace }, { version: 1, panels: { files: { open: true } } }).workspace).toEqual(workspace);

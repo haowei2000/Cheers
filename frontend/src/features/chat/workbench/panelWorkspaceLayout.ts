@@ -25,6 +25,10 @@ export interface LocalWorkspacePreference {
   active?: SpawnKind;
 }
 
+export interface RestoredWorkspacePreference extends LocalWorkspacePreference {
+  overridden: boolean;
+}
+
 export function parseLocalWorkspacePreference(
   value: unknown,
 ): LocalWorkspacePreference | null {
@@ -42,4 +46,30 @@ export function parseLocalWorkspacePreference(
     ratio: Math.max(0.25, Math.min(0.75, source.ratio as number)),
     ...(active ? { active } : {}),
   };
+}
+
+export function restoreLocalWorkspacePreference(
+  raw: string | null,
+  fallbackActive: SpawnKind,
+): RestoredWorkspacePreference {
+  let saved: LocalWorkspacePreference | null = null;
+  try {
+    saved = parseLocalWorkspacePreference(JSON.parse(raw ?? "null"));
+  } catch {
+    // A hand-edited or stale local value must reset every channel-scoped field.
+  }
+  return {
+    width: saved?.width ?? 400,
+    split: saved?.split ?? false,
+    ratio: saved?.ratio ?? 0.5,
+    active: saved?.active ?? fallbackActive,
+    overridden: saved !== null,
+  };
+}
+
+export function canSplitWorkspace(
+  stageHeight: number,
+  panelCount: number,
+): boolean {
+  return panelCount > 1 && stageHeight >= 488;
 }

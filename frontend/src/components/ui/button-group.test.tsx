@@ -5,6 +5,7 @@ import { ButtonGroup } from "./button-group";
 import { ActionButton } from "./action-button";
 import { ChoiceGroup } from "./choice-button";
 import { Button } from "./button";
+import { ControlSizeProvider } from "./control-size";
 
 describe("ButtonGroup", () => {
   it("preserves mixed control semantics and supplies the shared size", () => {
@@ -22,5 +23,17 @@ describe("ButtonGroup", () => {
     expect(html.match(/data-control-size="compact"/g)).toHaveLength(3);
     expect(html).not.toContain("overflow-hidden rounded-concentric");
     expect(html).toContain("flex-wrap");
+  });
+
+  it("inherits the ambient control size when the group does not override it", () => {
+    const html = renderToStaticMarkup(
+      <ControlSizeProvider size="comfortable">
+        <ButtonGroup label="Inherited controls">
+          <ActionButton action="add" context="toolbar" />
+        </ButtonGroup>
+      </ControlSizeProvider>,
+    );
+    expect(html).toContain('data-control-size="comfortable"');
+    expect(html).not.toContain('data-control-size="compact"');
   });
 });

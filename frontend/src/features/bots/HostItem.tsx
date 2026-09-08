@@ -171,7 +171,7 @@ export function HostDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [item.bot_id, item.host_id, revision, item]);
+  }, [item.bot_id, item.host_id, revision]);
   const host = { ...item, ...details };
   const status = hostIndicator(host);
   const refresh = async () => {

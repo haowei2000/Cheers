@@ -397,9 +397,8 @@ export function PasskeyCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <div className="mb-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
+      <div className="mb-4 min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
             <Fingerprint className="h-4 w-4 text-accent-400" /> Passkeys
             {!loading && available && (
@@ -408,18 +407,25 @@ export function PasskeyCard() {
               </span>
             )}
           </p>
-          {available && <ButtonGroup label="Passkey actions"><ActionButton action="add" context="security" accessibleLabel="Add passkey" onClick={() => setAddOpen(true)} /></ButtonGroup>}
-          </div>
-          <p className="mt-1 text-compact text-content-muted">
-            {loading
-              ? "Loading passkeys…"
-              : available
-                ? "Use Face ID, Touch ID, or your device lock for verification."
-                : "Passkeys are not configured on this server."}
-            {rpId && <span className="ml-2 font-code">{rpId}</span>}
-          </p>
+          {available && (
+            <ButtonGroup label="Passkey actions">
+              <ActionButton
+                action="add"
+                context="security"
+                accessibleLabel="Add passkey"
+                onClick={() => setAddOpen(true)}
+              />
+            </ButtonGroup>
+          )}
         </div>
-
+        <p className="mt-1 text-compact text-content-muted">
+          {loading
+            ? "Loading passkeys…"
+            : available
+              ? "Use Face ID, Touch ID, or your device lock for verification."
+              : "Passkeys are not configured on this server."}
+          {rpId && <span className="ml-2 font-code">{rpId}</span>}
+        </p>
       </div>
 
       {loading ? (

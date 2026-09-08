@@ -1,4 +1,4 @@
-import { useManagedPanel } from "./PanelWorkspace";
+import { useManagedPanel } from "@/components/ui/managed-panel";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";

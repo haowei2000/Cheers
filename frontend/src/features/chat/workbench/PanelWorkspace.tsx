@@ -3,51 +3,31 @@ import {
   type SharedWorkspaceLayout,
 } from "./sharedLayout";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { ArrowLeft, Columns2, Rows2 } from "lucide-react";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { IconButton } from "@/components/ui/icon-button";
+import {
+  ManagedPanelProvider,
+  type ManagedPanel,
+} from "@/components/ui/managed-panel";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import type { SpawnKind } from "./laneSnap";
 import {
-  parseLocalWorkspacePreference,
+  canSplitWorkspace,
+  restoreLocalWorkspacePreference,
   resolveWorkspaceLayout,
 } from "./panelWorkspaceLayout";
 
 type Geometry = { x: number; y: number; w: number; h: number };
-interface ManagedPanel {
-  floating: boolean;
-  canFloat: boolean;
-  toFront: () => void;
-  visible: boolean;
-  style: CSSProperties;
-  toggleFloating: () => void;
-  dragProps: {
-    onPointerDown: (event: ReactPointerEvent) => void;
-    style: CSSProperties;
-  };
-  resizeProps: {
-    onPointerDown: (event: ReactPointerEvent) => void;
-    style: CSSProperties;
-  };
-}
-const WorkspaceContext = createContext<
-  ((kind: SpawnKind) => ManagedPanel) | null
->(null);
-export function useManagedPanel(kind?: SpawnKind, viewport?: boolean) {
-  const get = useContext(WorkspaceContext);
-  return kind && !viewport && get ? get(kind) : null;
-}
 
 export function PanelWorkspace({
   channelId,
@@ -84,7 +64,6 @@ export function PanelWorkspace({
   );
   const [stack, setStack] = useState<SpawnKind[]>([]);
   const [width, setWidth] = useState(0);
-  const [height, setHeight] = useState(0);
   const [stageHeight, setStageHeight] = useState(0);
   const [requestedWidth, setRequestedWidth] = useState(400);
   const [overridden, setOverridden] = useState(false);
@@ -100,9 +79,14 @@ export function PanelWorkspace({
   const [dragging, setDragging] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
   const previousOpen = useRef<SpawnKind[]>([]);
+  const openPanelsRef = useRef(openPanels);
+  openPanelsRef.current = openPanels;
   const messageFocus = useRef<HTMLElement | null>(null);
   const layout = resolveWorkspaceLayout(width, requestedWidth);
-  const docked = openPanels.filter((p) => !floats[p.id] || !layout.sideBySide);
+  const docked = useMemo(
+    () => openPanels.filter((panel) => !floats[panel.id] || !layout.sideBySide),
+    [floats, layout.sideBySide, openPanels],
+  );
   const hasDock = docked.length > 0;
   const effectiveActive = docked.some((p) => p.id === active)
     ? active
@@ -111,20 +95,22 @@ export function PanelWorkspace({
     244 / Math.max(488, stageHeight),
     Math.min(1 - 244 / Math.max(488, stageHeight), ratio),
   );
-  const splitIds =
-    split && stageHeight >= 488
-      ? [
-          effectiveActive,
-          docked.find((p) => p.id !== effectiveActive)?.id,
-        ].filter(Boolean)
-      : [effectiveActive];
+  const splitIds = useMemo(
+    () =>
+      split && stageHeight >= 488
+        ? [
+            effectiveActive,
+            docked.find((panel) => panel.id !== effectiveActive)?.id,
+          ].filter(Boolean)
+        : [effectiveActive],
+    [docked, effectiveActive, split, stageHeight],
+  );
 
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     const measure = () => {
       setWidth(root.clientWidth);
-      setHeight(root.clientHeight);
     };
     measure();
     const observer = new ResizeObserver(() => {
@@ -137,21 +123,31 @@ export function PanelWorkspace({
   }, []);
   useEffect(() => () => cleanupRef.current?.(), []);
   useEffect(() => {
+    const channelPanels = openPanelsRef.current;
+    const fallbackActive = channelPanels[0]?.id ?? "viewboard";
+    cleanupRef.current?.();
+    cleanupRef.current = null;
     try {
-      const saved = parseLocalWorkspacePreference(JSON.parse(
-        localStorage.getItem(`cheers.panel-workspace.${channelId}`) ?? "null",
-      ));
-      setRequestedWidth(saved?.width ?? 400);
-      setSplit(saved?.split ?? false);
-      setRatio(saved?.ratio ?? 0.5);
-      if (saved?.active) setActive(saved.active);
-      setOverridden(saved != null);
+      const restored = restoreLocalWorkspacePreference(
+        localStorage.getItem(`cheers.panel-workspace.${channelId}`),
+        fallbackActive,
+      );
+      setRequestedWidth(restored.width);
+      setSplit(restored.split);
+      setRatio(restored.ratio);
+      setActive(restored.active ?? fallbackActive);
+      setOverridden(restored.overridden);
     } catch {
       setRequestedWidth(400);
       setSplit(false);
+      setRatio(0.5);
+      setActive(fallbackActive);
       setOverridden(false);
     }
+    setShowWork(channelPanels.length > 0);
+    setStack([]);
     setFloats({});
+    setDragging(false);
     previousOpen.current = [];
   }, [channelId]);
   useEffect(() => {
@@ -245,7 +241,7 @@ export function PanelWorkspace({
     floats,
     onLayoutChange,
   ]);
-  const remember = (
+  const remember = useCallback((
     nextWidth: number,
     nextSplit: boolean,
     nextRatio = ratio,
@@ -265,8 +261,8 @@ export function PanelWorkspace({
     } catch {
       /* optional local preference */
     }
-  };
-  const trackPointer = (
+  }, [active, channelId, ratio]);
+  const trackPointer = useCallback((
     event: ReactPointerEvent,
     move: (event: PointerEvent) => void,
     end?: (event: PointerEvent) => void,
@@ -294,8 +290,8 @@ export function PanelWorkspace({
     window.addEventListener("pointerup", onEnd);
     window.addEventListener("pointercancel", onCancel);
     cleanupRef.current = cleanup;
-  };
-  const dock = (id: SpawnKind) => {
+  }, []);
+  const dock = useCallback((id: SpawnKind) => {
     setFloats((current) => {
       const next = { ...current };
       delete next[id];
@@ -303,8 +299,8 @@ export function PanelWorkspace({
     });
     setActive(id);
     setShowWork(true);
-  };
-  const initialGeometry = (): Geometry => {
+  }, []);
+  const initialGeometry = useCallback((): Geometry => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
     return {
@@ -313,10 +309,11 @@ export function PanelWorkspace({
       w: Math.min(420, window.innerWidth - 16),
       h: Math.min(600, window.innerHeight - 96),
     };
-  };
-  const getPanel = (id: SpawnKind): ManagedPanel => {
-    const floating = Boolean(floats[id]) && layout.sideBySide;
-    const geometry = floats[id] ?? initialGeometry();
+  }, []);
+  const getPanel = useCallback((rawId: string): ManagedPanel => {
+    const id = rawId as SpawnKind;
+    const geometry = floats[id];
+    const floating = Boolean(geometry) && layout.sideBySide;
     const slot = splitIds.indexOf(id);
     return {
       floating,
@@ -329,7 +326,7 @@ export function PanelWorkspace({
         ),
       visible:
         floating || (hasDock && (layout.sideBySide || showWork) && slot >= 0),
-      style: floating
+      style: floating && geometry
         ? {
             position: "fixed",
             left: Math.max(
@@ -387,7 +384,7 @@ export function PanelWorkspace({
             .closest("[data-floating-panel]")
             ?.getBoundingClientRect();
           const origin = floating
-            ? geometry
+            ? geometry!
             : panelRect
               ? {
                   x: panelRect.left,
@@ -434,24 +431,36 @@ export function PanelWorkspace({
       resizeProps: {
         style: { touchAction: "none" },
         onPointerDown: (event) => {
+          const origin = geometry ?? initialGeometry();
           const x = event.clientX;
           const y = event.clientY;
           trackPointer(event, (next) =>
             setFloats((current) => ({
               ...current,
               [id]: {
-                ...geometry,
-                w: Math.max(320, geometry.w + next.clientX - x),
-                h: Math.max(240, geometry.h + next.clientY - y),
+                ...origin,
+                w: Math.max(320, origin.w + next.clientX - x),
+                h: Math.max(240, origin.h + next.clientY - y),
               },
             })),
           );
         },
       },
     };
-  };
+  }, [
+    dock,
+    floats,
+    hasDock,
+    initialGeometry,
+    layout.sideBySide,
+    showWork,
+    splitIds,
+    splitRatio,
+    stack,
+    trackPointer,
+  ]);
   return (
-    <WorkspaceContext.Provider value={getPanel}>
+    <ManagedPanelProvider resolve={getPanel}>
       <div
         ref={rootRef}
         data-panel-workspace=""
@@ -572,7 +581,7 @@ export function PanelWorkspace({
                     {panel.label}
                   </ControlTrigger>
                 ))}
-                {docked.length > 1 && height >= 520 && (
+                {canSplitWorkspace(stageHeight, docked.length) && (
                   <IconButton
                     label={split ? "Use panel tabs" : "Split panels vertically"}
                     aria-pressed={split}
@@ -644,6 +653,6 @@ export function PanelWorkspace({
           </div>
         )}
       </div>
-    </WorkspaceContext.Provider>
+    </ManagedPanelProvider>
   );
 }
