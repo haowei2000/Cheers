@@ -28,6 +28,8 @@ describe("ChoiceGroup", () => {
     expect(markup.match(/tabindex="-1"/g)).toHaveLength(1);
     expect(markup.match(/data-button-slot="icon"/g)).toHaveLength(2);
     expect(markup.match(/data-button-slot="label"/g)).toHaveLength(2);
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("ring-selected-indicator/70");
   });
 
   it("removes disabled groups from the keyboard order", () => {

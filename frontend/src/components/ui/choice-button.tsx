@@ -71,7 +71,7 @@ export const ChoiceButton = forwardRef<HTMLButtonElement, ChoiceButtonProps>(
         className={cn(
           "text-content-muted",
           selected
-            ? "bg-zinc-700 text-content-primary hover:bg-zinc-600"
+            ? "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover active:bg-selected-active"
             : "hover:bg-zinc-700/60 hover:text-content-secondary",
           className,
         )}

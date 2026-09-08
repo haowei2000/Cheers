@@ -112,6 +112,14 @@ switch globally; product components must not add parallel `dark:` class lists.
 Shared controls and custom renderers consume the same tokens. Brand artwork and
 isolated sandbox documents may retain their authored colors.
 
+Selection is its own semantic layer: `bg-selected`, `hover:bg-selected-hover`,
+`active:bg-selected-active`, and `ring-selected-indicator`. A selected control
+combines the neutral fill with a persistent rail, underline, checkmark, or
+selected-state inset ring; focus retains the separate two-pixel focus ring.
+Feature code must not recreate selection with `bg-zinc-*` or translucent
+`bg-indigo-*/15` recipes. `prefers-contrast: more` strengthens these shared
+tokens without adding another appearance option.
+
 ### Four-level neutral foreground hierarchy (non-negotiable)
 
 Every meaningful foreground clears WCAG AA 4.5:1. Web neutral foregrounds use
@@ -156,7 +164,7 @@ color.
 
 | Role | Token | Notes |
 |---|---|---|
-| Accent / interactive | `indigo` | Buttons `indigo-600`, focus rings `indigo-500`, links `indigo-400`, selected tints `indigo-600/15` |
+| Accent / interactive | `indigo` | Buttons `indigo-600`, focus rings `indigo-500`, links `indigo-400`; persistent selection uses the separate neutral `selected` layer |
 | Danger / error | `red` | Text `red-400`, soft fills `red-950/40` — **never `rose`** for errors |
 | Attention / mention | `rose-600` | Mention badges only — the one legitimate rose |
 | Success / online | `emerald` | Dots `emerald-500`, text `emerald-400` |
@@ -277,6 +285,9 @@ Toggle and panel-launch controls pass `selected` to `<Button>` or
 `<ControlTrigger>`. The primitive owns the selected fill and exposes
 `aria-pressed` for toggles; disclosure triggers retain `aria-expanded` instead.
 Business call sites must not recreate selected styling with `className`.
+Selected text remains at least 4.5:1 through resting, hover, and active states;
+the persistent marker remains at least 3:1 against the selected fill in both
+appearances.
 
 Business call sites must not add any local `p-*` to shared controls. Icon actions
 use `square` plus a registered `ControlSize`; text actions use the primitive's
@@ -384,7 +395,7 @@ ancestor, portal to `document.body` instead (ProfileHovercard precedent,
 
 Borderless soft pills: `rounded-lg bg-zinc-800/60 px-2 py-1 text-compact`.
 Interactive chips add `hover:bg-zinc-800 hover:text-content-secondary`; an active/open
-chip switches to `bg-indigo-600/15 text-accent-200`.
+chip passes `selected` to the shared Button or ControlTrigger primitive.
 
 **Composer toolbar controls** (session target, model — the composer card's
 controls row) use `<ComposerToolbarButton>`. Both consume the same regular
@@ -392,7 +403,7 @@ controls row) use `<ComposerToolbarButton>`. Both consume the same regular
 truncates inside the slot, so content length never changes the button size.
 Use a leading semantic icon and a trailing `ChevronDown` that rotates 180°
 while open. Three states: resting (soft zinc),
-open/targeted (`bg-indigo-600/15 text-accent-200`, icon `text-accent-400`),
+open/targeted (shared selected surface and marker),
 mobile touch target via the regular ControlSize mapping. Focus comes from the
 shared Button primitive. The composer card itself
 is the canonical borderless field with the shared 10px Web radius and

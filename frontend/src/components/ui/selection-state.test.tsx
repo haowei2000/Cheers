@@ -14,7 +14,8 @@ describe("shared control selection state", () => {
 
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('data-selected="true"');
-    expect(markup).toContain("bg-control");
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("ring-selected-indicator/70");
   });
 
   it("uses selected tab semantics without mixing in toggle semantics", () => {
@@ -35,7 +36,7 @@ describe("shared control selection state", () => {
 
     expect(markup).toContain('aria-selected="true"');
     expect(markup).toContain('data-selected="true"');
-    expect(markup).toContain("bg-control");
+    expect(markup).toContain("bg-selected");
     expect(markup).not.toContain("border-b-2");
   });
 
@@ -49,5 +50,15 @@ describe("shared control selection state", () => {
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).not.toContain("aria-pressed");
     expect(markup).toContain('data-selected="true"');
+  });
+
+  it("does not mix pressed semantics into an expanded Button trigger", () => {
+    const markup = renderToStaticMarkup(
+      <Button selected aria-expanded="true">Model</Button>,
+    );
+
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).not.toContain("aria-pressed");
+    expect(markup).toContain("bg-selected");
   });
 });

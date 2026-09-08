@@ -22,5 +22,5 @@
   root.style.colorScheme = resolved;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", resolved === "dark" ? "#09090b" : "#f8f8fa");
+    ?.setAttribute("content", resolved === "dark" ? "#121214" : "#eeeef1");
 })();

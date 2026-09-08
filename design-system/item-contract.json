@@ -8,7 +8,9 @@
   "appearance": {
     "default": "system",
     "options": ["system", "light", "dark"],
-    "rule": "Shared semantic color tokens switch every product surface; feature components do not maintain parallel theme classes."
+    "rule": "Shared semantic color tokens switch every product surface; feature components do not maintain parallel theme classes.",
+    "selection": "Selected controls combine the shared selected surface with a rail, underline, checkmark, or selected-state ring. Text remains at least 4.5:1 in resting, hover, and active states; the marker remains at least 3:1 against the selected surface.",
+    "increasedContrast": "prefers-contrast: more strengthens shared boundaries and state markers without creating a fourth appearance."
   },
   "neutralForegroundLevels": {
     "primary": ["content-strong", "content-primary"],
@@ -111,7 +113,8 @@
     "Leading input icons and search semantics belong to shared field primitives; business call sites cannot add a second field boundary, focus ring, icon position, or leading padding.",
     "Presentation level and control size inherit and override independently.",
     "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior.",
-    "Mutually exclusive form choices use a semantic selection control with a visible non-color-only selected state and platform-standard keyboard or assistive interaction."
+    "Mutually exclusive form choices use a semantic selection control with a visible non-color-only selected state and platform-standard keyboard or assistive interaction.",
+    "Selected, focused, hovered, and active are independent states; no one state indicator substitutes for another."
   ],
   "semanticActions": {
     "create": "plus",

@@ -62,8 +62,9 @@ describe("DropdownSelect", () => {
     // neutral fill is the shape backup rather than a color-only cue.
     expect(scoped).toContain("data-selected");
     const classes = scoped.match(/<button[^>]*class="([^"]*)"/)?.[1].split(/\s+/);
-    expect(classes).toContain("bg-control");
-    expect(classes).toContain("hover:bg-control-hover");
+    expect(classes).toContain("bg-selected");
+    expect(classes).toContain("hover:bg-selected-hover");
+    expect(classes).toContain("ring-selected-indicator/70");
     expect(classes).not.toContain("bg-zinc-900");
     expect(classes).not.toContain("hover:bg-zinc-800");
   });

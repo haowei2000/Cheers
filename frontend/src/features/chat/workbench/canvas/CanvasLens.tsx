@@ -510,8 +510,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 aria-selected={selected}
                 aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
                 tabIndex={activeTabId === node.id ? 0 : -1}
-                className={`absolute flex flex-col rounded-sm bg-zinc-900 shadow-lg shadow-black/20 ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                  selected ? "ring-indigo-500" : "ring-zinc-700 hover:ring-zinc-500"
+                className={`absolute flex flex-col rounded-sm shadow-lg shadow-black/20 ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                  selected ? "bg-selected ring-selected-indicator" : "bg-zinc-900 ring-zinc-700 hover:ring-zinc-500"
                 }`}
                 style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: node.z ?? 0 }}
                 onContextMenu={(event) =>
