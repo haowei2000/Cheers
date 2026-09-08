@@ -2162,6 +2162,48 @@ struct WorkbenchPanelDef: Codable, Identifiable {
         resolvedView.hasPrefix("builtin:")
             ? String(resolvedView.dropFirst("builtin:".count)) : "auto"
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, source, view, config
+        // Published scene-v1 fields. New gateways retain these during rollout so an
+        // installed iOS build can decode the same response as the current client.
+        case file, renderer
+    }
+
+    init(
+        id: String, title: String, source: WorkbenchPanelSource,
+        view: String?, config: JSONValue?
+    ) {
+        self.id = id
+        self.title = title
+        self.source = source
+        self.view = view
+        self.config = config
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        if let normalized = try values.decodeIfPresent(WorkbenchPanelSource.self, forKey: .source) {
+            source = normalized
+        } else {
+            source = WorkbenchPanelSource(
+                kind: "fs", path: try values.decode(String.self, forKey: .file))
+        }
+        view = try values.decodeIfPresent(String.self, forKey: .view)
+            ?? values.decodeIfPresent(String.self, forKey: .renderer)
+        config = try values.decodeIfPresent(JSONValue.self, forKey: .config)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(source, forKey: .source)
+        try values.encodeIfPresent(view, forKey: .view)
+        try values.encodeIfPresent(config, forKey: .config)
+    }
 }
 
 struct WorkbenchPanelSource: Codable {

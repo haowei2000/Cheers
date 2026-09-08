@@ -38,6 +38,10 @@ export function connectOps(
   from: { node: string; side?: CanvasSide },
   to: { node: string; side?: CanvasSide }
 ): PatchOp[] {
+  // A collaborator can remove an endpoint while a pointer connection is in flight.
+  // Validate here, below every interaction path, so no caller can write a dangling edge.
+  const nodeIds = new Set(doc.nodes.map((node) => node.id));
+  if (!nodeIds.has(from.node) || !nodeIds.has(to.node)) return [];
   // A self-loop and a duplicate both render as nothing a reader can use, so the gesture
   // is dropped rather than writing an edge the view will ignore.
   if (from.node === to.node) return [];

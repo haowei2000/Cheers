@@ -10,16 +10,13 @@ IDs match `^[a-z0-9][a-z0-9._-]{0,63}$`; versions are SemVer. Scene definitions 
 `items`, `seed`, and `pin`.
 
 A **panel** contribution is a declarative board: `{ id, title, source, view }`, at most 32
-per package. **A scene item is the same contribution**, declared in a scene's `items`
-instead of `contributes.panels`; the two differ in where the host mounts the result, not
-in what they say. They used to differ in vocabulary as well — an item was
-`{ file, renderer }` and a panel `{ source, view }` — which cost a second type, a second
-validator, and a translation at every boundary, including a `lens` → `renderer` → `lens`
-round trip between the catalog and the clients. One rule separates them now: **a scene
-item's source must be `fs`**, because `.workbench.json`'s `scene_state` indexes a scene's
-items by file path on every client, and a verb has no path to be indexed by.
+per package. A schema-v1 **scene item** keeps its published
+`{ id, title, file, renderer }` grammar under a scene's `items`. Hosts validate that
+boundary and then normalize it to the same internal panel model. The distinct spelling is
+intentional compatibility, not a new capability: a scene always reads an `fs` path,
+because `.workbench.json`'s `scene_state` indexes scene items by file path on every client.
 
-`view` may be omitted, meaning `auto`. Only an `fs` source may omit it: `auto` asks the
+`view` (or a scene item's `renderer`) may be omitted, meaning `auto`. Only an `fs` source may omit it: `auto` asks the
 host to match a view against the content's shape, and a resource payload has none, so a
 resource source must name its view. `source` is `{ kind: "resource", verb }` or `{ kind: "fs", path }` and nothing
 else — `workspace` names paths on a bot's own machine under an authorization model

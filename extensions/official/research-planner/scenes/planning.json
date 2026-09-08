@@ -3,11 +3,8 @@
     {
       "id": "papers",
       "title": "Papers",
-      "source": {
-        "kind": "fs",
-        "path": "research/papers.yaml"
-      },
-      "view": "builtin:table",
+      "file": "research/papers.yaml",
+      "renderer": "builtin:table",
       "config": {
         "columns": [
           {
@@ -39,11 +36,8 @@
     {
       "id": "deadlines",
       "title": "Submission dates",
-      "source": {
-        "kind": "fs",
-        "path": "research/deadlines.yaml"
-      },
-      "view": "builtin:table",
+      "file": "research/deadlines.yaml",
+      "renderer": "builtin:table",
       "config": {
         "columns": [
           {
@@ -72,11 +66,8 @@
     {
       "id": "risks",
       "title": "Planning risks",
-      "source": {
-        "kind": "fs",
-        "path": "research/risks.yaml"
-      },
-      "view": "builtin:table",
+      "file": "research/risks.yaml",
+      "renderer": "builtin:table",
       "config": {
         "columns": [
           {

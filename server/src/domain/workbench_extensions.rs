@@ -71,10 +71,9 @@ pub struct Contributions {
 /// Carries no code — the view resolves to a built-in, or (personal scope only) to a
 /// renderer the same package contributes.
 ///
-/// This is also a scene's item type. A scene item and a panel were the same statement
-/// in two vocabularies (`file`/`renderer` against `source`/`view`), which cost a second
-/// struct, a second validator, and a translation at every boundary that carried both.
-/// A scene narrows the source rather than respelling it — see `validate_panel`.
+/// Scene definitions keep their published schema-v1 `file`/`renderer` wire shape and
+/// normalize into this type after deserialization. Panels were introduced with the
+/// source/view vocabulary, so changing scene v1 in place would break existing packages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PanelContribution {
@@ -186,11 +185,36 @@ pub enum NetworkPermission {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SceneDefinition {
-    pub items: Vec<PanelContribution>,
+    pub items: Vec<SceneItemV1>,
     #[serde(default)]
     pub seed: Vec<SeedReference>,
     #[serde(default)]
     pub pin: Vec<String>,
+}
+
+/// The immutable scene-item shape published by extension schema version 1.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SceneItemV1 {
+    pub id: String,
+    pub title: String,
+    pub file: String,
+    #[serde(default = "auto_view")]
+    pub renderer: String,
+    #[serde(default)]
+    pub config: Option<Value>,
+}
+
+impl From<SceneItemV1> for PanelContribution {
+    fn from(item: SceneItemV1) -> Self {
+        Self {
+            id: item.id,
+            title: item.title,
+            source: PanelSource::Fs { path: item.file },
+            view: item.renderer,
+            config: item.config,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,9 +236,43 @@ pub struct SeedFile {
 pub struct ResolvedScene {
     pub id: String,
     pub title: String,
-    pub items: Vec<PanelContribution>,
+    pub items: Vec<ResolvedSceneItem>,
     pub seed: Vec<SeedFile>,
     pub pin: Vec<String>,
+}
+
+/// Gateway scene responses carry both the published v1 fields and the normalized fields
+/// during the client rollout. Serde decoders ignore the half they do not understand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedSceneItem {
+    pub id: String,
+    pub title: String,
+    pub file: String,
+    pub renderer: String,
+    pub source: PanelSource,
+    pub view: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<Value>,
+}
+
+impl TryFrom<PanelContribution> for ResolvedSceneItem {
+    type Error = String;
+
+    fn try_from(item: PanelContribution) -> Result<Self, Self::Error> {
+        let PanelSource::Fs { path } = &item.source else {
+            return Err(format!("scene item `{}` must read a file", item.id));
+        };
+        Ok(Self {
+            id: item.id,
+            title: item.title,
+            file: path.clone(),
+            renderer: item.view.clone(),
+            source: item.source,
+            view: item.view,
+            config: item.config,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -425,8 +483,9 @@ pub fn validate_files(
                     .map_err(|_| format!("seed source `{}` must be UTF-8", reference.source))?,
             });
         }
+        let items: Vec<PanelContribution> = definition.items.into_iter().map(Into::into).collect();
         let mut item_ids = HashSet::new();
-        for item in &definition.items {
+        for item in &items {
             validate_panel(
                 "scene item",
                 item,
@@ -439,12 +498,16 @@ pub fn validate_files(
         for path in &definition.pin {
             validate_workspace_path(path)?;
         }
+        let items = items
+            .into_iter()
+            .map(ResolvedSceneItem::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
         scenes.insert(
             contribution.id.clone(),
             ResolvedScene {
                 id: contribution.id.clone(),
                 title: contribution.title.clone(),
-                items: definition.items,
+                items,
                 seed,
                 pin: definition.pin,
             },
