@@ -242,8 +242,9 @@ pub struct Config {
     /// or `POST /users`); set `OPEN_REGISTRATION=true` to open sign-up.
     pub open_registration: bool,
 
-    /// Whether users must enable TOTP 2FA before creating or starting remote
-    /// agents. This is an instance policy controlled only by
+    /// Whether users must have a second factor armed before creating or starting
+    /// remote agents. Any factor satisfies it — passkey, authenticator app, or
+    /// email code. This is an instance policy controlled only by
     /// `REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS` and defaults to true.
     pub require_2fa_for_remote_agent_access: bool,
 

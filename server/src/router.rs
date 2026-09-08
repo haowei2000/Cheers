@@ -180,6 +180,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::auth::disable_two_factor),
         )
         .route(
+            "/api/v1/auth/2fa/methods/email",
+            post(api::auth::set_email_two_factor),
+        )
+        .route(
+            "/api/v1/auth/2fa/recovery-codes",
+            post(api::auth::regenerate_recovery_codes),
+        )
+        .route(
             "/api/v1/auth/passkey/register/options",
             post(api::passkey::register_options),
         )

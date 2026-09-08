@@ -12,6 +12,9 @@ struct PasskeySettingsView: View {
     @State private var isBusy = false
     @State private var errorText: String?
     @State private var passkeyController = PasskeyController()
+    /// Recovery codes minted because this passkey armed two-step verification.
+    /// Returned once, so they have to be shown before the sheet moves on.
+    @State private var newRecoveryCodes: [String] = []
 
     var body: some View {
         NavigationStack {
@@ -30,6 +33,24 @@ struct PasskeySettingsView: View {
                     }
                 } footer: {
                     Text("Passkeys use Face ID or Touch ID and sync through iCloud Keychain when enabled.")
+                }
+
+                if !newRecoveryCodes.isEmpty {
+                    Section {
+                        ForEach(newRecoveryCodes, id: \.self) { item in
+                            Text(item)
+                                .font(.subheadline.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        Button("Copy all codes") {
+                            UIPasteboard.general.string = newRecoveryCodes.joined(separator: "\n")
+                        }
+                        Button("Done") { newRecoveryCodes = [] }
+                    } header: {
+                        Text("Save your recovery codes")
+                    } footer: {
+                        Text("This passkey turned on two-step verification. Each code works once if you lose access to your passkey.")
+                    }
                 }
 
                 Section("Your passkeys") {
@@ -134,10 +155,11 @@ struct PasskeySettingsView: View {
                 displayName: options.publicKey.user.displayName ?? options.publicKey.user.name
             )
             let credential = PasskeyCodec.registrationCredentialJSON(registration)
-            _ = try await api.passkeyRegisterFinish(
+            let response = try await api.passkeyRegisterFinish(
                 transactionId: options.transactionId,
                 credential: credential
             )
+            newRecoveryCodes = response.backupCodes
             await reload()
         } catch PasskeyError.cancelled {
             // User dismissed the sheet — keep quiet.

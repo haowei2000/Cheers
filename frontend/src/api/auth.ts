@@ -283,10 +283,51 @@ export async function getAuthCapabilities(): Promise<AuthCapabilities> {
   return apiJson<AuthCapabilities>(`/auth/capabilities?client=${client}`);
 }
 
-// ─── TOTP 2FA management ───────────────────────────────────────────────────
+// ─── Two-step verification management ─────────────────────────────────────
 
-export async function twoFactorStatus(): Promise<{ enabled: boolean }> {
+/** Second factors an account can arm. 2FA is on when any one of them is. */
+export interface TwoFactorMethods {
+  /** Authenticator app (TOTP). */
+  totp: boolean;
+  /** At least one passkey is registered; armed automatically. */
+  passkey: boolean;
+  /** Emailed one-time codes, opted into explicitly. */
+  email: boolean;
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  methods: TwoFactorMethods;
+  recovery_codes_remaining: number;
+  /** Whether email codes could be armed (address on file + another first step). */
+  email_available: boolean;
+}
+
+export async function twoFactorStatus(): Promise<TwoFactorStatus> {
   return apiJson("/auth/2fa/status");
+}
+
+export async function setEmailTwoFactor(enabled: boolean): Promise<{
+  enabled: boolean;
+  methods: TwoFactorMethods;
+  backup_codes: string[];
+}> {
+  return apiJson(
+    "/auth/2fa/methods/email",
+    { method: "POST", body: JSON.stringify({ enabled }) },
+    {
+      recentAuth: "auto",
+      actionClass: enabled ? "email_factor_enrollment" : "email_factor_removal",
+    }
+  );
+}
+
+export async function regenerateRecoveryCodes(): Promise<{ backup_codes: string[] }> {
+  return apiJson(
+    "/auth/2fa/recovery-codes",
+    { method: "POST", body: "{}" },
+    { recentAuth: "auto", actionClass: "recovery_code_regeneration" }
+  );
 }
 
 export async function setupTwoFactor(): Promise<{
@@ -332,7 +373,9 @@ export async function passkeyRegisterOptions(name?: string): Promise<Record<stri
 export async function passkeyRegisterFinish(
   transactionId: string,
   credential: Record<string, unknown>
-): Promise<PasskeyCredential> {
+): Promise<PasskeyCredential & { backup_codes: string[] }> {
+  // A passkey arms two-step verification on its own; when it is the first
+  // factor the server mints recovery codes and returns them here, once.
   return apiJson("/auth/passkey/register/finish", {
     method: "POST",
     body: JSON.stringify({ transaction_id: transactionId, credential }),

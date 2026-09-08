@@ -13,7 +13,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
-use crate::{config::Config, errors::AppError};
+use crate::{config::Config, domain::two_factor, errors::AppError};
 
 const REGISTER_KIND: &str = "passkey_register";
 const REGISTER_TTL_MINUTES: i64 = 10;
@@ -93,15 +93,30 @@ pub async fn user_has_passkeys(db: &PgPool, user_id: &str) -> Result<bool, AppEr
     Ok(count > 0)
 }
 
-/// Factors offered when password/OAuth login needs a second step.
+/// Factors offered when login needs a second step.
+///
+/// Only the factors the account actually armed are advertised — offering `totp`
+/// to a passkey-only user is the dead end this replaces. `primary_factor` is the
+/// method that already satisfied step one; email cannot serve as both steps, so
+/// it drops out when the first step was an emailed code.
 pub async fn allowed_login_factors(
     db: &PgPool,
     webauthn: Option<&WebauthnService>,
     user_id: &str,
+    primary_factor: Option<&str>,
 ) -> Result<Vec<String>, AppError> {
-    let mut factors = vec!["totp".into(), "recovery_code".into()];
-    if webauthn.is_some() && user_has_passkeys(db, user_id).await? {
-        factors.push("passkey".into());
+    let armed = two_factor::methods(db, user_id).await?;
+    let mut factors: Vec<String> = armed
+        .login_factors()
+        .into_iter()
+        .filter(|factor| match factor.as_str() {
+            "passkey" => webauthn.is_some(),
+            "email" => primary_factor != Some("email"),
+            _ => true,
+        })
+        .collect();
+    if two_factor::recovery_codes_remaining(db, user_id).await? > 0 {
+        factors.push("recovery_code".into());
     }
     Ok(factors)
 }

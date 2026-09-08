@@ -181,8 +181,60 @@ struct TwoFactorEmailSendRequest: Encodable {
     }
 }
 
+/// Second factors an account can arm. 2FA is on when any one of them is —
+/// an authenticator app is one option, not the only one.
+struct TwoFactorMethods: Decodable {
+    let totp: Bool
+    let passkey: Bool
+    let email: Bool
+}
+
 struct TwoFactorStatusResponse: Decodable {
     let enabled: Bool
+    let methods: TwoFactorMethods
+    let recoveryCodesRemaining: Int
+    /// Whether email codes could be armed: an address is on file and another
+    /// method can carry the first sign-in step.
+    let emailAvailable: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case methods
+        case recoveryCodesRemaining = "recovery_codes_remaining"
+        case emailAvailable = "email_available"
+    }
+}
+
+/// A registered passkey arms two-step verification on its own, so finishing
+/// registration can mint recovery codes — returned here once.
+struct PasskeyRegisterFinishResponse: Decodable {
+    let credentialPk: String
+    let name: String
+    let backupCodes: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case credentialPk = "credential_pk"
+        case name
+        case backupCodes = "backup_codes"
+    }
+}
+
+struct TwoFactorEmailMethodRequest: Encodable {
+    let enabled: Bool
+}
+
+struct TwoFactorMethodResponse: Decodable {
+    let enabled: Bool
+    let methods: TwoFactorMethods
+    /// Recovery codes minted by this call — shown once, empty when the account
+    /// already had codes backing another method.
+    let backupCodes: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case methods
+        case backupCodes = "backup_codes"
+    }
 }
 
 struct TwoFactorSetupResponse: Decodable {
