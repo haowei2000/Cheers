@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveWorkspaceLayout } from "./panelWorkspaceLayout";
+import {
+  parseLocalWorkspacePreference,
+  resolveWorkspaceLayout,
+} from "./panelWorkspaceLayout";
 
 describe("workspace allocation", () => {
   it("uses available channel width instead of viewport breakpoints", () => {
@@ -25,5 +28,25 @@ describe("workspace allocation", () => {
       sideBySide: false,
       panelWidth: 390,
     });
+  });
+});
+
+describe("local workspace preference", () => {
+  it("restores the active panel and clamps the split ratio", () => {
+    expect(parseLocalWorkspacePreference({
+      width: 420,
+      split: true,
+      ratio: 0.9,
+      active: "files",
+    })).toEqual({ width: 420, split: true, ratio: 0.75, active: "files" });
+  });
+
+  it("ignores an unknown active panel", () => {
+    expect(parseLocalWorkspacePreference({
+      width: 420,
+      split: false,
+      ratio: 0.5,
+      active: "unknown",
+    })).toEqual({ width: 420, split: false, ratio: 0.5 });
   });
 });
