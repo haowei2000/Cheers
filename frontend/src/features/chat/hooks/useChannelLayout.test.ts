@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FsClient, FileContent } from "@/features/chat/workbench/fsClient";
 import type { SharedLayout } from "@/features/chat/workbench/sharedLayout";
-import { commitSharedLayout, layoutForChannel } from "./useChannelLayout";
+import {
+  buildLayoutUpdate,
+  commitSharedLayout,
+  layoutForChannel,
+} from "./useChannelLayout";
 
 const EMPTY: SharedLayout = { version: 1, panels: {} };
 
@@ -45,5 +49,16 @@ describe("channel-scoped shared layout", () => {
     expect(writeA).toHaveBeenCalledOnce();
     expect(writeB).not.toHaveBeenCalled();
     expect(currentClient).toBe(clientB);
+  });
+
+  it("preserves closed panel geometry and only docks a known-open panel", () => {
+    const update = buildLayoutUpdate(
+      { files: false, workspace: true, viewboard: false, workbench: false },
+      undefined,
+      {},
+      { width: 1000, height: 800 },
+    );
+    expect(update.panels.files).toEqual({ open: false });
+    expect(update.panels.workspace).toEqual({ open: true, rect: null });
   });
 });

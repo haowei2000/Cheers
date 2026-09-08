@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { buildWsUrl } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
+import { ReadinessWaiters, type ReadinessWait } from "./readinessWaiters";
 import type { Message, TraceEvent, VoiceTranscriptSegment, WsEvent } from "@/types";
 import { normalizeTraceEvent } from "../traceEvent";
 
@@ -115,6 +116,7 @@ interface PendingReq {
   resolve: (data: ResourceData) => void;
   reject: (err: ResourceError) => void;
   timer: ReturnType<typeof setTimeout>;
+  cancelReady: () => void;
 }
 
 // Backend browser WS protocol:
@@ -156,30 +158,19 @@ let authFailed = false;
 // for its file tree. The request already carries a 15s budget; spending the first
 // moments of it on a socket that is actively connecting is what that budget is for.
 //
-// Waiters are NOT released on a transient network close: that close schedules a
-// reconnect, so pending callers keep waiting within their own timeout. An explicit
-// close (logout/idle teardown) and a dead token release them immediately.
-interface ReadyWaiter {
-  resolve: () => void;
-  reject: (error: Error) => void;
-}
-
-let readyWaiters: ReadyWaiter[] = [];
+// A request owns a cancel handle for its waiter. Timeout and every socket-close path
+// remove it, while auth success/error releases the complete current set.
+const readyWaiters = new ReadinessWaiters();
 
 function socketReady(): boolean {
   return Boolean(ws && ws.readyState === WebSocket.OPEN && authed);
 }
 
 function releaseReadyWaiters(error?: Error): void {
-  const waiting = readyWaiters;
-  readyWaiters = [];
-  for (const waiter of waiting) {
-    if (error) waiter.reject(error);
-    else waiter.resolve();
-  }
+  readyWaiters.release(error);
 }
 
-function whenSocketReady(): { promise: Promise<void>; cancel: () => void } {
+function whenSocketReady(): ReadinessWait {
   if (socketReady()) return { promise: Promise.resolve(), cancel: () => {} };
   if (authFailed)
     return {
@@ -192,23 +183,14 @@ function whenSocketReady(): { promise: Promise<void>; cancel: () => void } {
   // Asking for a resource IS a reason to have a socket: nudge one up. `ensureSocket` is
   // a no-op when one is already open or mid-connect.
   if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) ensureSocket(wsToken);
-  let waiter: ReadyWaiter;
-  const promise = new Promise<void>((resolve, reject) => {
-    waiter = { resolve, reject };
-    readyWaiters.push(waiter);
-  });
-  return {
-    promise,
-    cancel: () => {
-      readyWaiters = readyWaiters.filter((candidate) => candidate !== waiter);
-    },
-  };
+  return readyWaiters.wait();
 }
 const pendingReqs = new Map<string, PendingReq>();
 
 function rejectAllPending(err: ResourceError) {
   for (const p of pendingReqs.values()) {
     clearTimeout(p.timer);
+    p.cancelReady();
     p.reject(err);
   }
   pendingReqs.clear();
@@ -559,7 +541,12 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
           readiness.cancel();
           reject(new ResourceError("TIMEOUT", "resource request timed out"));
         }, RESOURCE_REQ_TIMEOUT);
-        pendingReqs.set(reqId, { resolve, reject, timer });
+        pendingReqs.set(reqId, {
+          resolve,
+          reject,
+          timer,
+          cancelReady: readiness.cancel,
+        });
 
         void readiness.promise.then(
           () => {

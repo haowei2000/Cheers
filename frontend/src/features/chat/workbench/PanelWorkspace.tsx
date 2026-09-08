@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type SetStateAction,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -27,6 +28,7 @@ import {
   resolveWorkspaceLayout,
   toLaneRelativeRect,
   toViewportRect,
+  workspacePreferenceKey,
 } from "./panelWorkspaceLayout";
 
 type Geometry = Rect;
@@ -84,8 +86,17 @@ export function PanelWorkspace({
     openPanels[0]?.id ?? "viewboard",
   );
   const [showWork, setShowWork] = useState(openPanels.length > 0);
-  const [floats, setFloats] = useState<Partial<Record<SpawnKind, Geometry>>>(
+  const [floats, setFloatsState] = useState<Partial<Record<SpawnKind, Geometry>>>(
     {},
+  );
+  const floatsRef = useRef<Partial<Record<SpawnKind, Geometry>>>({});
+  const setFloats = useCallback(
+    (update: SetStateAction<Partial<Record<SpawnKind, Geometry>>>) => {
+      const next = typeof update === "function" ? update(floatsRef.current) : update;
+      floatsRef.current = next;
+      setFloatsState(next);
+    },
+    [],
   );
   const [dragging, setDragging] = useState(false);
   const [restoredChannel, setRestoredChannel] = useState<string | null>(null);
@@ -142,7 +153,7 @@ export function PanelWorkspace({
     cleanupRef.current = null;
     try {
       const restored = restoreLocalWorkspacePreference(
-        localStorage.getItem(`cheers.panel-workspace.${channelId}`),
+        localStorage.getItem(workspacePreferenceKey(channelId)),
         fallbackActive,
       );
       setRequestedWidth(restored.width);
@@ -150,20 +161,31 @@ export function PanelWorkspace({
       setRatio(restored.ratio);
       setActive(restored.active ?? fallbackActive);
       setOverridden(restored.overridden);
+      const lane = rootRef.current?.getBoundingClientRect();
+      setFloats(
+        lane
+          ? Object.fromEntries(
+              Object.entries(restored.floats).map(([id, rect]) => [
+                id,
+                toViewportRect(rect!, lane),
+              ]),
+            )
+          : {},
+      );
     } catch {
       setRequestedWidth(400);
       setSplit(false);
       setRatio(0.5);
       setActive(fallbackActive);
       setOverridden(false);
+      setFloats({});
     }
     setShowWork(channelPanels.length > 0);
     setStack([]);
-    setFloats({});
     setDragging(false);
     previousOpen.current = [];
     setRestoredChannel(channelId);
-  }, [channelId]);
+  }, [channelId, setFloats]);
   useEffect(() => {
     const added = openPanels.filter(
       (p) => !previousOpen.current.includes(p.id),
@@ -204,7 +226,7 @@ export function PanelWorkspace({
     () =>
       subscribeLayoutReset(() => {
         try {
-          localStorage.removeItem(`cheers.panel-workspace.${channelId}`);
+          localStorage.removeItem(workspacePreferenceKey(channelId));
         } catch {
           /* optional storage */
         }
@@ -215,12 +237,12 @@ export function PanelWorkspace({
         setRatio(sharedLayout?.ratio ?? 0.5);
         if (sharedLayout?.active) setActive(sharedLayout.active);
       }),
-    [channelId, sharedLayout, width],
+    [channelId, setFloats, sharedLayout, width],
   );
   useEffect(() => {
     if (overridden || !sharedLayout || width <= 0) return;
     try {
-      if (localStorage.getItem(`cheers.panel-workspace.${channelId}`)) return;
+      if (localStorage.getItem(workspacePreferenceKey(channelId))) return;
     } catch {
       /* optional storage */
     }
@@ -263,6 +285,7 @@ export function PanelWorkspace({
     openPanelKey,
     overridden,
     restoredChannel,
+    setFloats,
     sharedGeometryFor,
     stageHeight,
     width,
@@ -306,16 +329,25 @@ export function PanelWorkspace({
     nextSplit: boolean,
     nextRatio = ratio,
     nextActive = active,
+    nextFloats = floatsRef.current,
   ) => {
     setOverridden(true);
+    const lane = rootRef.current?.getBoundingClientRect();
+    const storedFloats: Partial<Record<SpawnKind, Rect>> = {};
+    if (lane) {
+      for (const [id, rect] of Object.entries(nextFloats)) {
+        if (rect) storedFloats[id as SpawnKind] = toLaneRelativeRect(rect, lane);
+      }
+    }
     try {
       localStorage.setItem(
-        `cheers.panel-workspace.${channelId}`,
+        workspacePreferenceKey(channelId),
         JSON.stringify({
           width: nextWidth,
           split: nextSplit,
           ratio: nextRatio,
           active: nextActive,
+          floats: storedFloats,
         }),
       );
     } catch {
@@ -352,15 +384,15 @@ export function PanelWorkspace({
     cleanupRef.current = cleanup;
   }, []);
   const dock = useCallback((id: SpawnKind) => {
-    setOverridden(true);
     setFloats((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
+    remember(requestedWidth, split);
     setActive(id);
     setShowWork(true);
-  }, []);
+  }, [remember, requestedWidth, setFloats, split]);
   const initialGeometry = useCallback((): Geometry => {
     const rect = rootRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
@@ -430,8 +462,8 @@ export function PanelWorkspace({
           dock(id);
           return;
         }
-        setOverridden(true);
         setFloats((current) => ({ ...current, [id]: initialGeometry() }));
+        remember(requestedWidth, split);
       },
       dragProps: {
         style: { touchAction: "none", cursor: "grab" },
@@ -490,6 +522,8 @@ export function PanelWorkspace({
                 next.clientY <= root.bottom
               )
                 dock(id);
+              else
+                remember(requestedWidth, split);
             },
           );
         },
@@ -497,19 +531,21 @@ export function PanelWorkspace({
       resizeProps: {
         style: { touchAction: "none" },
         onPointerDown: (event) => {
-          setOverridden(true);
           const origin = geometry ?? initialGeometry();
           const x = event.clientX;
           const y = event.clientY;
-          trackPointer(event, (next) =>
-            setFloats((current) => ({
-              ...current,
-              [id]: {
-                ...origin,
-                w: Math.max(320, origin.w + next.clientX - x),
-                h: Math.max(240, origin.h + next.clientY - y),
-              },
-            })),
+          trackPointer(
+            event,
+            (next) =>
+              setFloats((current) => ({
+                ...current,
+                [id]: {
+                  ...origin,
+                  w: Math.max(320, origin.w + next.clientX - x),
+                  h: Math.max(240, origin.h + next.clientY - y),
+                },
+              })),
+            () => remember(requestedWidth, split),
           );
         },
       },
@@ -525,6 +561,10 @@ export function PanelWorkspace({
     splitRatio,
     stack,
     trackPointer,
+    remember,
+    requestedWidth,
+    setFloats,
+    split,
   ]);
   return (
     <ManagedPanelProvider resolve={getPanel}>

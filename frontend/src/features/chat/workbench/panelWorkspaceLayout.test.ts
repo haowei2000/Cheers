@@ -6,6 +6,7 @@ import {
   resolveWorkspaceLayout,
   toLaneRelativeRect,
   toViewportRect,
+  workspacePreferenceKey,
 } from "./panelWorkspaceLayout";
 
 describe("workspace allocation", () => {
@@ -50,7 +51,7 @@ describe("local workspace preference", () => {
       split: true,
       ratio: 0.9,
       active: "files",
-    })).toEqual({ width: 420, split: true, ratio: 0.75, active: "files" });
+    })).toEqual({ width: 420, split: true, ratio: 0.75, active: "files", floats: {} });
   });
 
   it("ignores an unknown active panel", () => {
@@ -59,7 +60,7 @@ describe("local workspace preference", () => {
       split: false,
       ratio: 0.5,
       active: "unknown",
-    })).toEqual({ width: 420, split: false, ratio: 0.5 });
+    })).toEqual({ width: 420, split: false, ratio: 0.5, floats: {} });
   });
 
   it("resets every channel-scoped field when stored JSON is malformed", () => {
@@ -68,8 +69,35 @@ describe("local workspace preference", () => {
       split: false,
       ratio: 0.5,
       active: "files",
+      floats: {},
       overridden: false,
     });
+  });
+
+  it("restores only valid per-channel floating panel geometry", () => {
+    expect(parseLocalWorkspacePreference({
+      width: 420,
+      split: false,
+      ratio: 0.5,
+      floats: {
+        files: { x: 10, y: 20, w: 360, h: 280 },
+        workbench: { x: 0, y: 0, w: 0, h: 200 },
+        unknown: { x: 0, y: 0, w: 10, h: 10 },
+      },
+    })?.floats).toEqual({ files: { x: 10, y: 20, w: 360, h: 280 } });
+  });
+
+  it("round-trips floating overrides on a channel-specific storage key", () => {
+    const saved = JSON.stringify({
+      width: 420,
+      split: false,
+      ratio: 0.5,
+      floats: { files: { x: 10, y: 20, w: 360, h: 280 } },
+    });
+    expect(restoreLocalWorkspacePreference(saved, "viewboard").floats).toEqual({
+      files: { x: 10, y: 20, w: 360, h: 280 },
+    });
+    expect(workspacePreferenceKey("A")).not.toBe(workspacePreferenceKey("B"));
   });
 
   it("offers split only when the measured panel stage can render it", () => {

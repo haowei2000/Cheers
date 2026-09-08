@@ -91,6 +91,33 @@ export async function commitSharedLayout(
   }
 }
 
+export function buildLayoutUpdate(
+  open: Record<SpawnKind, boolean>,
+  workspace: SharedWorkspaceLayout | undefined,
+  floatingPanels: Partial<Record<SpawnKind, Rect>>,
+  bounds: { width: number; height: number } | null,
+): SharedLayout {
+  const ours: SharedLayout = {
+    version: 1,
+    panels: {},
+    ...(workspace ? { workspace } : {}),
+  };
+  for (const kind of SPAWN_KINDS) {
+    if (!bounds || !open[kind]) {
+      // A closed panel has not been instantiated, so absence from `floatingPanels`
+      // says nothing about whether its saved placement is docked or floating.
+      ours.panels[kind] = { open: open[kind] };
+      continue;
+    }
+    const rect = floatingPanels[kind];
+    ours.panels[kind] = {
+      rect: rect ? toFraction(rect, bounds) : null,
+      open: true,
+    };
+  }
+  return ours;
+}
+
 export function useChannelLayout({
   channelId,
   sendResourceReq,
@@ -182,17 +209,9 @@ export function useChannelLayout({
       const transactionChannel = channelId;
       const transactionFs = fs;
       setSaveStatus({ channelId: transactionChannel, saving: true, error: null });
-      const ours: SharedLayout = { version: 1, panels: {}, ...(workspace ? { workspace } : {}) };
-      for (const kind of SPAWN_KINDS) {
-        const rect = floatingPanels[kind];
-        const fraction = rect && bounds ? toFraction(rect, bounds) : null;
-        // `null` explicitly removes a formerly-floating shared placement when this
-        // viewer saves the panel docked. `mergeLayout` consumes the tombstone and
-        // never writes it to the shared document.
-        ours.panels[kind] = bounds
-          ? { rect: fraction, open: open[kind] }
-          : { open: open[kind] };
-      }
+      // `null` explicitly removes a formerly-floating shared placement when a known
+      // open panel is docked. Closed panels update visibility only.
+      const ours = buildLayoutUpdate(open, workspace, floatingPanels, bounds);
 
       try {
         // One merge-and-retry is enough because a drag never writes here: the only
