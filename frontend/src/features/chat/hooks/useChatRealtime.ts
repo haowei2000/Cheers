@@ -156,10 +156,15 @@ let authFailed = false;
 // for its file tree. The request already carries a 15s budget; spending the first
 // moments of it on a socket that is actively connecting is what that budget is for.
 //
-// Waiters are NOT released on a close: a close schedules a reconnect, so the right
-// answer for a pending caller is to keep waiting and let its own timeout bound the wait.
-// Only a dead token (`auth_err`) is a wait that can never end.
-let readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+// Waiters are NOT released on a transient network close: that close schedules a
+// reconnect, so pending callers keep waiting within their own timeout. An explicit
+// close (logout/idle teardown) and a dead token release them immediately.
+interface ReadyWaiter {
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
+let readyWaiters: ReadyWaiter[] = [];
 
 function socketReady(): boolean {
   return Boolean(ws && ws.readyState === WebSocket.OPEN && authed);
@@ -174,16 +179,30 @@ function releaseReadyWaiters(error?: Error): void {
   }
 }
 
-function whenSocketReady(): Promise<void> {
-  if (socketReady()) return Promise.resolve();
-  if (authFailed) return Promise.reject(new ResourceError("DISCONNECTED", "not authenticated"));
+function whenSocketReady(): { promise: Promise<void>; cancel: () => void } {
+  if (socketReady()) return { promise: Promise.resolve(), cancel: () => {} };
+  if (authFailed)
+    return {
+      promise: Promise.reject(new ResourceError("DISCONNECTED", "not authenticated")),
+      cancel: () => {},
+    };
   // Waiting is only worth anything if something is coming. A socket that closed while
   // the tab was in the background leaves nothing running to reopen it until the channel
   // effect happens to re-fire, so a caller would sit out its whole budget and time out.
   // Asking for a resource IS a reason to have a socket: nudge one up. `ensureSocket` is
   // a no-op when one is already open or mid-connect.
   if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) ensureSocket(wsToken);
-  return new Promise<void>((resolve, reject) => readyWaiters.push({ resolve, reject }));
+  let waiter: ReadyWaiter;
+  const promise = new Promise<void>((resolve, reject) => {
+    waiter = { resolve, reject };
+    readyWaiters.push(waiter);
+  });
+  return {
+    promise,
+    cancel: () => {
+      readyWaiters = readyWaiters.filter((candidate) => candidate !== waiter);
+    },
+  };
 }
 const pendingReqs = new Map<string, PendingReq>();
 
@@ -223,7 +242,9 @@ function closeSocket() {
       /* already closed */
     }
   }
-  rejectAllPending(new ResourceError("DISCONNECTED", "socket closed"));
+  const error = new ResourceError("DISCONNECTED", "socket closed");
+  rejectAllPending(error);
+  releaseReadyWaiters(error);
 }
 
 function sendFrame(frame: Record<string, unknown>): boolean {
@@ -530,15 +551,17 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
       return new Promise<ResourceData>((resolve, reject) => {
         const reqId = crypto.randomUUID();
-        // The budget is armed FIRST, so waiting for a socket that never arrives fails as
-        // a TIMEOUT rather than hanging forever.
+        const readiness = whenSocketReady();
+        // The request budget also removes its readiness waiter, so a long offline
+        // session cannot retain one closure per timed-out resource request.
         const timer = setTimeout(() => {
           pendingReqs.delete(reqId);
+          readiness.cancel();
           reject(new ResourceError("TIMEOUT", "resource request timed out"));
         }, RESOURCE_REQ_TIMEOUT);
         pendingReqs.set(reqId, { resolve, reject, timer });
 
-        void whenSocketReady().then(
+        void readiness.promise.then(
           () => {
             // The budget may have run out while we waited, in which case the request has
             // already been rejected and must not also be sent.

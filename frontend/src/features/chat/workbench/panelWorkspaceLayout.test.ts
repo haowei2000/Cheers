@@ -4,6 +4,8 @@ import {
   parseLocalWorkspacePreference,
   restoreLocalWorkspacePreference,
   resolveWorkspaceLayout,
+  toLaneRelativeRect,
+  toViewportRect,
 } from "./panelWorkspaceLayout";
 
 describe("workspace allocation", () => {
@@ -30,6 +32,14 @@ describe("workspace allocation", () => {
       sideBySide: false,
       panelWidth: 390,
     });
+  });
+});
+
+describe("managed floating geometry", () => {
+  it("round-trips shared lane geometry through viewport-fixed panel coordinates", () => {
+    const lane = { left: 240, top: 96 };
+    const shared = { x: 20, y: 30, w: 420, h: 300 };
+    expect(toLaneRelativeRect(toViewportRect(shared, lane), lane)).toEqual(shared);
   });
 });
 

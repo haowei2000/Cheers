@@ -1,8 +1,20 @@
-import { SPAWN_KINDS, type SpawnKind } from "./laneSnap";
+import { SPAWN_KINDS, type Rect, type SpawnKind } from "./laneSnap";
 
 export const MESSAGE_MIN_WIDTH = 480;
 export const PANEL_MIN_WIDTH = 320;
 export const WORKSPACE_GAP = 8;
+
+type LaneBox = { left: number; top: number };
+
+/** Managed panels use viewport-fixed CSS while shared layout uses lane-relative pixels. */
+export function toViewportRect(rect: Rect, lane: LaneBox): Rect {
+  return { ...rect, x: lane.left + rect.x, y: lane.top + rect.y };
+}
+
+/** Convert managed viewport geometry back to the lane coordinate system before saving. */
+export function toLaneRelativeRect(rect: Rect, lane: LaneBox): Rect {
+  return { ...rect, x: rect.x - lane.left, y: rect.y - lane.top };
+}
 
 export function resolveWorkspaceLayout(width: number, requested: number) {
   const sideBySide =

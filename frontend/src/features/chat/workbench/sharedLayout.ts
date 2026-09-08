@@ -31,7 +31,9 @@ export interface LayoutFraction {
 }
 
 export interface SharedPanelLayout {
-  rect?: LayoutFraction;
+  /** `null` is an in-memory save tombstone meaning "dock this panel". Parsers never
+   * return it and mergeLayout removes it before the document is serialized. */
+  rect?: LayoutFraction | null;
   /** Whether the channel's layout includes this window. Opening one is inert UI over
    *  data channel-role already governs, so an agent naming it grants no new reach. */
   open?: boolean;
@@ -152,8 +154,14 @@ export function mergeLayout(base: SharedLayout | undefined, ours: SharedLayout):
   const panels = { ...(base?.panels ?? {}) };
   for (const kind of SPAWN_KINDS) {
     const update = ours.panels[kind];
-    if (update)
-      panels[kind] = update.rect ? update : { ...panels[kind], ...update };
+    if (update) {
+      if (update.rect === null) {
+        const { rect: _removed, ...withoutRect } = update;
+        panels[kind] = withoutRect;
+      } else {
+        panels[kind] = update.rect ? update : { ...panels[kind], ...update };
+      }
+    }
   }
   const workspace = ours.workspace ?? base?.workspace;
   return { version: 1, panels, ...(workspace ? { workspace } : {}) };

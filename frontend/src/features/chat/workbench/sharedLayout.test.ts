@@ -137,4 +137,14 @@ describe("workspace layout sharing", () => {
     );
     expect(merged.panels.files).toEqual({ rect, open: true });
   });
+  it("removes shared geometry when a managed panel is saved docked", () => {
+    const merged = mergeLayout(
+      {
+        version: 1,
+        panels: { files: { rect: { x: .1, y: .2, w: .4, h: .5 }, open: true } },
+      },
+      { version: 1, panels: { files: { rect: null, open: true } } },
+    );
+    expect(merged.panels.files).toEqual({ open: true });
+  });
 });

@@ -20,14 +20,16 @@ import {
   type ManagedPanel,
 } from "@/components/ui/managed-panel";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import type { SpawnKind } from "./laneSnap";
+import type { Rect, SpawnKind } from "./laneSnap";
 import {
   canSplitWorkspace,
   restoreLocalWorkspacePreference,
   resolveWorkspaceLayout,
+  toLaneRelativeRect,
+  toViewportRect,
 } from "./panelWorkspaceLayout";
 
-type Geometry = { x: number; y: number; w: number; h: number };
+type Geometry = Rect;
 
 export function PanelWorkspace({
   channelId,
@@ -38,12 +40,15 @@ export function PanelWorkspace({
   revealMessageKey,
   activationRequest,
   sharedLayout,
+  sharedGeometryFor,
   onLayoutChange,
 }: {
   sharedLayout?: SharedWorkspaceLayout;
+  sharedGeometryFor?: (kind: SpawnKind) => Rect | null;
   onLayoutChange?: (state: {
     layout: SharedWorkspaceLayout;
     overridden: boolean;
+    floatingPanels: Partial<Record<SpawnKind, Rect>>;
   }) => void;
   channelId: string;
   openPanels: { id: SpawnKind; label: string }[];
@@ -53,14 +58,20 @@ export function PanelWorkspace({
   revealMessageKey?: unknown;
   activationRequest?: { id: SpawnKind; nonce: number } | null;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const setStage = useCallback(
+  const setRoot = useCallback(
     (element: HTMLDivElement | null) => {
-      stageRef.current = element;
+      rootRef.current = element;
       onLaneElement(element);
     },
     [onLaneElement],
+  );
+  const setStage = useCallback(
+    (element: HTMLDivElement | null) => {
+      stageRef.current = element;
+    },
+    [],
   );
   const [stack, setStack] = useState<SpawnKind[]>([]);
   const [width, setWidth] = useState(0);
@@ -77,10 +88,12 @@ export function PanelWorkspace({
     {},
   );
   const [dragging, setDragging] = useState(false);
+  const [restoredChannel, setRestoredChannel] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const previousOpen = useRef<SpawnKind[]>([]);
   const openPanelsRef = useRef(openPanels);
   openPanelsRef.current = openPanels;
+  const openPanelKey = openPanels.map((panel) => panel.id).join(",");
   const messageFocus = useRef<HTMLElement | null>(null);
   const layout = resolveWorkspaceLayout(width, requestedWidth);
   const docked = useMemo(
@@ -149,6 +162,7 @@ export function PanelWorkspace({
     setFloats({});
     setDragging(false);
     previousOpen.current = [];
+    setRestoredChannel(channelId);
   }, [channelId]);
   useEffect(() => {
     const added = openPanels.filter(
@@ -216,7 +230,52 @@ export function PanelWorkspace({
     if (sharedLayout.active) setActive(sharedLayout.active);
   }, [sharedLayout, overridden, width, channelId]);
   useEffect(() => {
+    if (
+      restoredChannel !== channelId ||
+      overridden ||
+      !layout.sideBySide ||
+      !sharedGeometryFor
+    )
+      return;
+    const lane = rootRef.current?.getBoundingClientRect();
+    if (!lane || lane.width <= 0 || lane.height <= 0) return;
+    const next: Partial<Record<SpawnKind, Geometry>> = {};
+    for (const panel of openPanelsRef.current) {
+      const rect = sharedGeometryFor(panel.id);
+      if (rect) next[panel.id] = toViewportRect(rect, lane);
+    }
+    setFloats((current) => {
+      const ids = Object.keys(next) as SpawnKind[];
+      if (
+        ids.length === Object.keys(current).length &&
+        ids.every((id) => {
+          const a = current[id];
+          const b = next[id];
+          return a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+        })
+      )
+        return current;
+      return next;
+    });
+  }, [
+    channelId,
+    layout.sideBySide,
+    openPanelKey,
+    overridden,
+    restoredChannel,
+    sharedGeometryFor,
+    stageHeight,
+    width,
+  ]);
+  useEffect(() => {
     if (width <= 0) return;
+    const lane = rootRef.current?.getBoundingClientRect();
+    const floatingPanels: Partial<Record<SpawnKind, Rect>> = {};
+    if (lane) {
+      for (const [id, rect] of Object.entries(floats)) {
+        if (rect) floatingPanels[id as SpawnKind] = toLaneRelativeRect(rect, lane);
+      }
+    }
     onLayoutChange?.({
       layout: {
         width: Math.min(
@@ -227,7 +286,8 @@ export function PanelWorkspace({
         ratio,
         active,
       },
-      overridden: overridden || Object.keys(floats).length > 0,
+      overridden,
+      floatingPanels,
     });
   }, [
     width,
@@ -292,6 +352,7 @@ export function PanelWorkspace({
     cleanupRef.current = cleanup;
   }, []);
   const dock = useCallback((id: SpawnKind) => {
+    setOverridden(true);
     setFloats((current) => {
       const next = { ...current };
       delete next[id];
@@ -301,7 +362,7 @@ export function PanelWorkspace({
     setShowWork(true);
   }, []);
   const initialGeometry = useCallback((): Geometry => {
-    const rect = stageRef.current?.getBoundingClientRect();
+    const rect = rootRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
     return {
       x: Math.max(8, Math.min(rect?.left ?? 80, window.innerWidth - 428)),
@@ -364,10 +425,14 @@ export function PanelWorkspace({
             height: "auto",
             zIndex: 1,
           },
-      toggleFloating: () =>
-        floating
-          ? dock(id)
-          : setFloats((current) => ({ ...current, [id]: initialGeometry() })),
+      toggleFloating: () => {
+        if (floating) {
+          dock(id);
+          return;
+        }
+        setOverridden(true);
+        setFloats((current) => ({ ...current, [id]: initialGeometry() }));
+      },
       dragProps: {
         style: { touchAction: "none", cursor: "grab" },
         onPointerDown: (event) => {
@@ -403,6 +468,7 @@ export function PanelWorkspace({
               )
                 return;
               moved = true;
+              setOverridden(true);
               setDragging(true);
               setFloats((current) => ({
                 ...current,
@@ -431,6 +497,7 @@ export function PanelWorkspace({
       resizeProps: {
         style: { touchAction: "none" },
         onPointerDown: (event) => {
+          setOverridden(true);
           const origin = geometry ?? initialGeometry();
           const x = event.clientX;
           const y = event.clientY;
@@ -462,7 +529,7 @@ export function PanelWorkspace({
   return (
     <ManagedPanelProvider resolve={getPanel}>
       <div
-        ref={rootRef}
+        ref={setRoot}
         data-panel-workspace=""
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
       >
