@@ -101,11 +101,22 @@ export function parseLayout(raw: unknown): SharedLayout | undefined {
     }
   }
   const rawWorkspace = source.workspace as Record<string, unknown> | undefined;
-  const width = rawWorkspace && fraction(rawWorkspace.width);
-  const ratio = rawWorkspace && fraction(rawWorkspace.ratio);
-  const workspace: SharedWorkspaceLayout | undefined = width && ratio && typeof rawWorkspace?.split === "boolean"
-    ? { width, ratio, split: rawWorkspace.split, ...(typeof rawWorkspace.active === "string" && KINDS.has(rawWorkspace.active) ? { active: rawWorkspace.active as SpawnKind } : {}) }
-    : undefined;
+  const width = rawWorkspace ? fraction(rawWorkspace.width) : null;
+  const ratio = rawWorkspace ? fraction(rawWorkspace.ratio) : null;
+  const workspace: SharedWorkspaceLayout | undefined =
+    width !== null &&
+    ratio !== null &&
+    typeof rawWorkspace?.split === "boolean"
+      ? {
+          width,
+          ratio,
+          split: rawWorkspace.split,
+          ...(typeof rawWorkspace.active === "string" &&
+          KINDS.has(rawWorkspace.active)
+            ? { active: rawWorkspace.active as SpawnKind }
+            : {}),
+        }
+      : undefined;
   return { version: 1, panels, ...(workspace ? { workspace } : {}) };
 }
 
@@ -144,7 +155,8 @@ export function mergeLayout(base: SharedLayout | undefined, ours: SharedLayout):
     if (update)
       panels[kind] = update.rect ? update : { ...panels[kind], ...update };
   }
-  return { version: 1, panels, ...((ours.workspace ?? base?.workspace) ? { workspace: ours.workspace ?? base?.workspace } : {}) };
+  const workspace = ours.workspace ?? base?.workspace;
+  return { version: 1, panels, ...(workspace ? { workspace } : {}) };
 }
 
 /** Where a lane window keeps its device-local geometry. One convention, because the

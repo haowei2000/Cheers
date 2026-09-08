@@ -1,4 +1,4 @@
-import { useManagedPanel } from "./PanelWorkspace";
+import { useManagedPanel } from "@/components/ui/managed-panel";
 import { Button as UiButton } from "@/components/ui/button";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { workbenchControlSize } from "./workbench-control";

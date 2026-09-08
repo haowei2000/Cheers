@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { FloatingPanel } from "./floating-panel";
+import { FloatingPanel, floatingPanelNavigationBudget } from "./floating-panel";
 
 // FloatingPanel became the host for the Workbench and ViewBoard drawers, which used to
 // hand-roll their own shells. Those two need three things the other callers never did,
@@ -174,6 +174,11 @@ describe("FloatingPanel drop target", () => {
 });
 
 describe("FloatingPanel window chrome", () => {
+  it("budgets navigation against the row it occupies after sibling groups wrap", () => {
+    expect(floatingPanelNavigationBudget(420, 60)).toBe(320);
+    expect(floatingPanelNavigationBudget(60, 40)).toBe(28);
+  });
+
   it("remains interactive inside the pointer-transparent desktop canvas", () => {
     const markup = render(
       <FloatingPanel title="Workbench" onClose={() => {}} storageKey="t.canvas">
@@ -273,6 +278,7 @@ describe("FloatingPanel window chrome", () => {
     expect(markup.slice(contentIndex)).toContain("md:top-[var(--floating-panel-chrome-top)]");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
+    expect(markup).toContain("--floating-panel-safe-top:3.5rem");
     expect(markup).toContain("workspace-content");
   });
 

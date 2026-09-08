@@ -1,6 +1,19 @@
 import type { SpawnKind } from "../workbench/laneSnap";
-import { useCallback, useEffect, useState, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
 import type { ComposerPrefill } from "../MessageComposer";
+
+export function resolveBooleanUpdate(
+  current: boolean,
+  next: SetStateAction<boolean>,
+): boolean {
+  return typeof next === "function" ? next(current) : next;
+}
 
 export function useChannelInstruments() {
   const [workbenchOpen, setWorkbenchOpen] = useState(false);
@@ -70,31 +83,47 @@ export function useChannelInstruments() {
       })),
     [],
   );
+  const workbenchOpenRef = useRef(workbenchOpen);
+  const viewBoardOpenRef = useRef(viewBoardOpen);
+  const workspaceOpenRef = useRef(workspaceOpen);
+  const filesOpenRef = useRef(filesOpen);
+  workbenchOpenRef.current = workbenchOpen;
+  viewBoardOpenRef.current = viewBoardOpen;
+  workspaceOpenRef.current = workspaceOpen;
+  filesOpenRef.current = filesOpen;
   const openWorkbench = useCallback(
     (next: SetStateAction<boolean>) => {
-      setWorkbenchOpen(next);
-      if (next === true) activate("workbench");
+      const resolved = resolveBooleanUpdate(workbenchOpenRef.current, next);
+      workbenchOpenRef.current = resolved;
+      setWorkbenchOpen(resolved);
+      if (resolved) activate("workbench");
     },
     [activate],
   );
   const openViewBoard = useCallback(
     (next: SetStateAction<boolean>) => {
-      setViewBoardOpen(next);
-      if (next === true) activate("viewboard");
+      const resolved = resolveBooleanUpdate(viewBoardOpenRef.current, next);
+      viewBoardOpenRef.current = resolved;
+      setViewBoardOpen(resolved);
+      if (resolved) activate("viewboard");
     },
     [activate],
   );
   const openWorkspace = useCallback(
     (next: SetStateAction<boolean>) => {
-      setWorkspaceOpen(next);
-      if (next === true) activate("workspace");
+      const resolved = resolveBooleanUpdate(workspaceOpenRef.current, next);
+      workspaceOpenRef.current = resolved;
+      setWorkspaceOpen(resolved);
+      if (resolved) activate("workspace");
     },
     [activate],
   );
   const openFiles = useCallback(
     (next: SetStateAction<boolean>) => {
-      setFilesOpen(next);
-      if (next === true) activate("files");
+      const resolved = resolveBooleanUpdate(filesOpenRef.current, next);
+      filesOpenRef.current = resolved;
+      setFilesOpen(resolved);
+      if (resolved) activate("files");
     },
     [activate],
   );

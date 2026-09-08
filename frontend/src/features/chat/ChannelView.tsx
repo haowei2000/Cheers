@@ -1333,6 +1333,15 @@ export function ChannelView({
   // run every render, which is why this sits above the guards rather than inside them.
   const laneChannelProfile = useChannelProfile(channelIdForPush ?? "", !!channelIdForPush);
   const laneBoards = panelsFor("lane", laneChannelProfile?.profile);
+  const workspacePanels = useMemo(
+    () => [
+      ...(vbOpen ? [{ id: "viewboard" as const, label: "Viewboard" }] : []),
+      ...(wbOpen ? [{ id: "workbench" as const, label: "Workbench" }] : []),
+      ...(wsOpen ? [{ id: "workspace" as const, label: "Workspace" }] : []),
+      ...(filesOpen ? [{ id: "files" as const, label: "Files" }] : []),
+    ],
+    [filesOpen, vbOpen, wbOpen, wsOpen],
+  );
 
   if (!channel) {
     return (
@@ -1403,7 +1412,6 @@ export function ChannelView({
       }}
     />
   );
-
   return (
     <ProfileCardProvider
       members={memberById}
@@ -1424,12 +1432,7 @@ export function ChannelView({
 
         <PanelWorkspace
           channelId={channel.channel_id}
-          openPanels={[
-            ...(vbOpen ? [{ id: "viewboard" as const, label: "Viewboard" }] : []),
-            ...(wbOpen ? [{ id: "workbench" as const, label: "Workbench" }] : []),
-            ...(wsOpen ? [{ id: "workspace" as const, label: "Workspace" }] : []),
-            ...(filesOpen ? [{ id: "files" as const, label: "Files" }] : []),
-          ]}
+          openPanels={workspacePanels}
           onLaneElement={setLaneEl}
           revealMessageKey={focusMsg}
           activationRequest={panelRequest}

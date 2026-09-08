@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  canSplitWorkspace,
   parseLocalWorkspacePreference,
+  restoreLocalWorkspacePreference,
   resolveWorkspaceLayout,
 } from "./panelWorkspaceLayout";
 
@@ -48,5 +50,21 @@ describe("local workspace preference", () => {
       ratio: 0.5,
       active: "unknown",
     })).toEqual({ width: 420, split: false, ratio: 0.5 });
+  });
+
+  it("resets every channel-scoped field when stored JSON is malformed", () => {
+    expect(restoreLocalWorkspacePreference("{", "files")).toEqual({
+      width: 400,
+      split: false,
+      ratio: 0.5,
+      active: "files",
+      overridden: false,
+    });
+  });
+
+  it("offers split only when the measured panel stage can render it", () => {
+    expect(canSplitWorkspace(487, 2)).toBe(false);
+    expect(canSplitWorkspace(488, 1)).toBe(false);
+    expect(canSplitWorkspace(488, 2)).toBe(true);
   });
 });

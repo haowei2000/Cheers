@@ -1,4 +1,4 @@
-import { useManagedPanel } from "@/features/chat/workbench/PanelWorkspace";
+import { useManagedPanel } from "./managed-panel";
 import { IconButton } from "./icon-button";
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -39,10 +39,16 @@ export interface FloatingPanelAction {
   overflow?: ReactNode;
 }
 
+export function floatingPanelNavigationBudget(
+  panelWidth: number,
+  titleWidth: number,
+): number {
+  return Math.max(28, panelWidth - titleWidth - 40);
+}
+
 type PanelNavigationHost = {
   availableWidth: number;
   target: HTMLElement | null;
-  setPresent: (present: boolean) => void;
 };
 
 const PanelNavigationContext = createContext<PanelNavigationHost | null>(null);
@@ -62,12 +68,6 @@ export function FloatingPanelPrimaryNavigation({
   mobile,
 }: FloatingPanelNavigation & { mobile?: ReactNode }) {
   const host = useContext(PanelNavigationContext);
-  const setPresent = host?.setPresent;
-  useEffect(() => {
-    if (!setPresent) return;
-    setPresent(true);
-    return () => setPresent(false);
-  }, [setPresent]);
   return (
     <>
       {mobile && <div className="md:hidden">{mobile}</div>}
@@ -213,6 +213,7 @@ export function FloatingPanel({
 }) {
   const isMobile = useIsMobile();
   const managed = useManagedPanel(spawnKind, viewport);
+  const managedVisible = managed?.visible;
   const laneBounds = useContext(LaneBoundsContext);
   const sharedLayout = useContext(SharedLayoutContext);
   // Bounded to the canvas when one is present (snap on); otherwise floats free over
@@ -274,7 +275,7 @@ export function FloatingPanel({
   // window is non-modal (chat stays usable behind it) and keeps close-button
   // only. Skip defaultPrevented so a nested popover/menu still claims its own Esc.
   useEffect(() => {
-    if (!isMobile || !open || (managed && !managed.visible)) return;
+    if (!isMobile || !open || managedVisible === false) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         // Claim this Escape so, with several sheets/menus mounted, only the first
@@ -285,7 +286,7 @@ export function FloatingPanel({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isMobile, open, onClose, managed?.visible]);
+  }, [isMobile, managedVisible, onClose, open]);
 
   // Collapsed keeps the dragged position but sheds the resized width/height. Mobile
   // keeps only stacking order: persisted desktop x/y/w/h must not override the
@@ -341,10 +342,8 @@ export function FloatingPanel({
   const [panelElement, setPanelElement] = useState<HTMLElement | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<HTMLDivElement | null>(null);
   const [titleElement, setTitleElement] = useState<HTMLDivElement | null>(null);
-  const [actionsElement, setActionsElement] = useState<HTMLDivElement | null>(null);
   const [desktopContextTarget, setDesktopContextTarget] = useState<HTMLDivElement | null>(null);
   const [mobileContextTarget, setMobileContextTarget] = useState<HTMLDivElement | null>(null);
-  const [portalNavigationPresent, setPortalNavigationPresent] = useState(false);
   const [portalContextPresent, setPortalContextPresent] = useState(false);
   const [portalActions, setPortalActions] = useState<Record<string, FloatingPanelAction>>({});
   const [chromeElement, setChromeElement] = useState<HTMLDivElement | null>(null);
@@ -359,19 +358,19 @@ export function FloatingPanel({
   );
 
   const hasContext = panelContext != null || portalContextPresent;
-  const hasPrimaryNavigation = primaryNavigation != null || portalNavigationPresent;
-  const hasNavigation = hasPrimaryNavigation || hasContext;
   const chromeTop = `${chromeHeight + 16}px`;
   const panelStyle = {
     ...style,
     ...(managed ? { ...managed.style, maxWidth: "none", maxHeight: "none", transform: "none", display: open && managed.visible ? "flex" : "none", ...(managed.floating ? {} : { borderRadius: 0, boxShadow: "none" }) } : {}),
     "--floating-panel-chrome-top": chromeTop,
-    "--floating-panel-safe-top": chromeTop,
+    // Content that consumes this variable also renders below the separate mobile
+    // header. The desktop chrome is measured, but that hidden desktop element has no
+    // box below md, so keep the mobile-safe band explicit instead of collapsing it.
+    "--floating-panel-safe-top": "3.5rem",
   } as CSSProperties;
   const navigationHost = {
     availableWidth: navigationSlotWidth,
     target: navigationTarget,
-    setPresent: setPortalNavigationPresent,
   };
   const contextHost = {
     target: isMobile ? mobileContextTarget : desktopContextTarget,
@@ -394,37 +393,28 @@ export function FloatingPanel({
   // This matters when a localized title, a longer tab set, or extension actions change
   // the space budget without changing the window width.
   useLayoutEffect(() => {
-    if (!panelElement || !titleElement || !navigationTarget || !actionsElement) return;
+    if (!panelElement || !titleElement || !navigationTarget) return;
     const measure = () => {
       const width = panelElement.getBoundingClientRect().width;
       setPanelWidth(width);
       const titleWidth = Math.max(titleElement.getBoundingClientRect().width, titleElement.scrollWidth);
-      const measuredActions = Math.max(
-        actionsElement.getBoundingClientRect().width,
-        actionsElement.scrollWidth
-      );
-
-      // Reserve actual space for sibling groups instead of splitting selectors
-      // into fixed 3:2 slots. A group wraps as a whole when the row is too narrow.
-      const context = navigationTarget.querySelector<HTMLElement>("[data-floating-panel-context]");
-      const contextWidth = context ? Math.max(context.scrollWidth, context.getBoundingClientRect().width) : 0;
-      const budget = width - measuredActions - titleWidth - contextWidth - 40;
-      setNavigationSlotWidth(Math.max(28, budget));
+      // Sibling groups wrap as whole units. Subtracting their width here made the
+      // navigation collapse even after those siblings had moved to another row, where
+      // the navigation actually owns the full panel width.
+      setNavigationSlotWidth(floatingPanelNavigationBudget(width, titleWidth));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(panelElement);
     observer.observe(titleElement);
     observer.observe(navigationTarget);
-    observer.observe(actionsElement);
     const mutations = new MutationObserver(measure);
     mutations.observe(navigationTarget, { childList: true, subtree: true, characterData: true });
-    mutations.observe(actionsElement, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [actionsElement, navigationTarget, panelElement, titleElement]);
+  }, [navigationTarget, panelElement, titleElement]);
 
   useLayoutEffect(() => {
     if (!chromeElement) return;
@@ -576,7 +566,6 @@ export function FloatingPanel({
             <ButtonGroup
               label="Panel actions"
               floating
-              ref={setActionsElement}
               data-floating-panel-actions=""
               className="pointer-events-auto ml-auto"
             >

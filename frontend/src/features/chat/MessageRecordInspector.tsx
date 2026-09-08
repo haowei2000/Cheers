@@ -55,6 +55,7 @@ export function MessageRecordInspector({
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
+    const returnFocusTo = triggerRef.current;
     const focusables = () =>
       Array.from(
         panel.querySelectorAll<HTMLElement>(
@@ -93,7 +94,7 @@ export function MessageRecordInspector({
     panel.addEventListener("keydown", onKeyDown);
     return () => {
       panel.removeEventListener("keydown", onKeyDown);
-      if (triggerRef.current?.isConnected) triggerRef.current.focus();
+      if (returnFocusTo?.isConnected) returnFocusTo.focus();
     };
   }, [isMobile, triggerRef]);
 
@@ -101,7 +102,10 @@ export function MessageRecordInspector({
   const count = meta.contextCount + meta.traceCount;
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: drag.z }}>
+    // Message records sit above non-modal instrument windows (z 40–43) but below
+    // popovers and true dialogs (z 60+ / 100), so a floated panel cannot cover the
+    // compact modal sheet and a confirmation opened from the record still wins.
+    <div className="fixed inset-0 z-50 pointer-events-none">
       <div
         aria-hidden="true"
         onClick={onClose}
