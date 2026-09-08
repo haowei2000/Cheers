@@ -6,6 +6,26 @@ import type { MentionCandidate } from "../MessageComposer";
 import type { ProfileData } from "../ProfileHovercard";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "../channelFeatures";
 
+export function mentionCandidatesFromMembers(
+  members: MemberItem[],
+): MentionCandidate[] {
+  return members
+    .filter(
+      (member) =>
+        member.member_type === "user" || member.member_type === "bot",
+    )
+    .map((member) => ({
+      id: member.member_id,
+      type: member.member_type === "bot" ? "bot" : "user",
+      label:
+        member.display_name || member.username || member.member_id.slice(0, 8),
+      sublabel: member.username,
+      avatarUrl: member.avatar_url,
+      canReceiveAudio: member.can_receive_audio ?? false,
+      isOnline: member.is_online,
+    }));
+}
+
 export function useChannelRoster({
   channel,
   preview,
@@ -17,30 +37,16 @@ export function useChannelRoster({
 }) {
   const channelId = channel?.channel_id;
   const voiceEnabled = channel ? hasChannelFeature(channel, CHANNEL_FEATURE_VOICE) : false;
-  const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [voiceTranscripts, setVoiceTranscripts] = useState<VoiceTranscriptSegment[]>([]);
 
   useEffect(() => {
     if (!channelId || preview) {
-      setMentionables([]);
       setMembers([]);
       return;
     }
     const apply = (rows: MemberItem[]) => {
       setMembers(rows);
-      setMentionables(
-        rows
-          .filter((member) => member.member_type === "user" || member.member_type === "bot")
-          .map((member) => ({
-            id: member.member_id,
-            type: member.member_type === "bot" ? ("bot" as const) : ("user" as const),
-            label: member.display_name || member.username || member.member_id.slice(0, 8),
-            sublabel: member.username,
-            canReceiveAudio: member.can_receive_audio ?? false,
-            isOnline: member.is_online,
-          })),
-      );
     };
     const cached = getChannelCache(channelId)?.members;
     if (cached) apply(cached);
@@ -53,10 +59,14 @@ export function useChannelRoster({
       .catch(() => {
         if (activeChannelRef.current === channelId && !cached) {
           setMembers([]);
-          setMentionables([]);
         }
       });
   }, [activeChannelRef, channelId, preview]);
+
+  const mentionables = useMemo(
+    () => mentionCandidatesFromMembers(members),
+    [members],
+  );
 
   const memberById = useMemo<Map<string, ProfileData>>(
     () => new Map(members.map((member) => [member.member_id, member])),
@@ -92,7 +102,6 @@ export function useChannelRoster({
 
   return {
     mentionables,
-    setMentionables,
     members,
     setMembers,
     memberById,

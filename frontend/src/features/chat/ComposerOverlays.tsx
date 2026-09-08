@@ -1,5 +1,6 @@
-import { AudioLines, Bot, FileText, Loader2, SendHorizontal, User, X } from "lucide-react";
+import { AudioLines, FileText, Loader2, SendHorizontal, Users, X } from "lucide-react";
 import type { FileInfo } from "@/types";
+import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { IconButton } from "@/components/ui/icon-button";
@@ -29,10 +30,25 @@ export function ComposerMentionPicker({
           }}
           title={candidate.label}
           status={candidate.sublabel ? <span className="truncate text-compact text-content-muted">@{candidate.sublabel}</span> : undefined}
-          leading={candidate.type === "bot" ? (
-            <Bot className={cn("w-4 h-4 flex-shrink-0", candidate.isOnline === false ? "text-content-muted" : "text-accent-400")} />
+          leading={candidate.type === "group" ? (
+            <span
+              data-design-system-exempt="identity"
+              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-700 text-content-muted"
+            >
+              <Users className="h-3.5 w-3.5" />
+            </span>
           ) : (
-            <User className="w-4 h-4 text-content-muted flex-shrink-0" />
+            <Avatar
+              name={candidate.label}
+              src={candidate.avatarUrl}
+              id={candidate.id}
+              size="regular"
+              online={
+                candidate.type === "bot" && candidate.isOnline != null
+                  ? candidate.isOnline
+                  : undefined
+              }
+            />
           )}
           criticalStatus={candidate.type === "bot" ? <span className="text-minimal text-accent-300">{candidate.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
           selected={index === activeIndex}
