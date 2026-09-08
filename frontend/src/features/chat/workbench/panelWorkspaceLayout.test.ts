@@ -100,6 +100,19 @@ describe("local workspace preference", () => {
     expect(workspacePreferenceKey("A")).not.toBe(workspacePreferenceKey("B"));
   });
 
+  it("restores the panel that a multi-panel workspace activated while docking", () => {
+    const savedAfterDock = JSON.stringify({
+      width: 420,
+      split: true,
+      ratio: 0.5,
+      active: "files",
+      floats: { workbench: { x: 20, y: 20, w: 360, h: 280 } },
+    });
+    expect(
+      restoreLocalWorkspacePreference(savedAfterDock, "workbench").active,
+    ).toBe("files");
+  });
+
   it("offers split only when the measured panel stage can render it", () => {
     expect(canSplitWorkspace(487, 2)).toBe(false);
     expect(canSplitWorkspace(488, 1)).toBe(false);

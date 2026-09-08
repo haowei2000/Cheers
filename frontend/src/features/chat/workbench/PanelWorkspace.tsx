@@ -389,10 +389,10 @@ export function PanelWorkspace({
       delete next[id];
       return next;
     });
-    remember(requestedWidth, split);
+    remember(requestedWidth, split, ratio, id);
     setActive(id);
     setShowWork(true);
-  }, [remember, requestedWidth, setFloats, split]);
+  }, [ratio, remember, requestedWidth, setFloats, split]);
   const initialGeometry = useCallback((): Geometry => {
     const rect = rootRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
