@@ -99,7 +99,7 @@ export function PublicPageShell({
               <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
                 {eyebrow}
               </p>
-              <h1 className="font-masthead mt-2 text-comfortable font-normal leading-masthead tracking-masthead text-content-strong">
+              <h1 className="font-masthead mt-2 text-comfortable leading-masthead tracking-masthead text-content-strong">
                 {title}
               </h1>
               {description && (

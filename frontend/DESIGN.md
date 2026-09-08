@@ -212,7 +212,7 @@ meaningful states; raw palette foregrounds such as `text-zinc-*` and
 `text-red-*` are not production typography APIs.
 
 The Web client has four semantic roles: Source Serif 4 plus Source Han Serif
-CN `display`, the same pair at text optical sizes for `reading`, Source Sans 3
+CN `display`, the same pair at text optical sizes and Medium (500) default weight for `reading`, Source Sans 3
 `utility`, and the registered system monospace stack as `code`. The default UI face is utility; entity names, navigation,
 buttons, status, warnings, and trace labels must not inherit the reading serif.
 Commands, paths, identifiers, logs, and diffs use `font-code`; generic
@@ -697,11 +697,21 @@ Reject in review:
 
 Panel chrome uses `ButtonGroup` as its layout and surface boundary. Place action
 buttons, choice groups, selectors, and switches inside it; each child retains its
-own role and state. The group owns shared ControlSize, spacing, and wrapping.
-Adaptive controls choose their presentation from the measured space left after
-sibling groups. Do not split groups into fixed percentage slots or clip controls
-with `overflow-hidden`. When groups wrap, reserve the measured chrome height so
-content remains below the controls.
+own role and state. Floating panel chrome is one non-wrapping row with two islands:
+navigation at the left and actions at the right. The right island is measured first;
+navigation receives the exact remaining width and adapts within it. Dock/Float and
+Close stay fixed; state actions stay visible while secondary actions, including
+Minimize, enter More. Do not split groups into percentage slots, wrap action groups,
+or let chrome overlap the body. Reserve the measured chrome height above content.
+
+Workbench navigation is `Workbench → Collection → Tab`. Its left island contains the
+drag handle, Collection selector/add control, and Tab selector/open control. At the
+first measured overflow, add controls move into their corresponding selector menus;
+at the next, selectors become icon controls with accessible names and tooltips. Raw
+workspace files is a special Collection navigation destination. The right island is
+reserved for actions on the current content plus More, Dock/Float, and Close. Product
+copy says Collection/Tab; persisted `scene_state` and extension `scenes` remain protocol
+names and must not be migrated for this presentation change.
 
 ### Conversation panel workspace
 

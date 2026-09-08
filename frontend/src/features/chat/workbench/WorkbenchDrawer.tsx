@@ -1,7 +1,6 @@
 import { useManagedPanel } from "@/components/ui/managed-panel";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { ControlTrigger } from "@/components/ui/control-trigger";
 import { MenuOption } from "@/components/ui/menu-option";
 import { Tip } from "@/components/ui/tip";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -62,6 +61,23 @@ export interface WorkbenchSceneState {
   items: Record<string, string[]>;
 }
 
+/** Append a tab without disturbing collections or tabs written by another client. */
+export function appendCollectionTab(
+  state: WorkbenchSceneState | undefined,
+  collectionId: string,
+  path: string,
+): WorkbenchSceneState {
+  const current: WorkbenchSceneState = state ?? { version: 1, order: [], titles: {}, items: {} };
+  const paths = current.items[collectionId] ?? [];
+  if (paths.includes(path)) return current;
+  return {
+    ...current,
+    order: current.order.includes(collectionId) ? [...current.order] : [...current.order, collectionId],
+    titles: { ...current.titles },
+    items: { ...current.items, [collectionId]: [...paths, path] },
+  };
+}
+
 export interface WbConfig {
   /** Self-documenting field (regenerated on every write) — for humans/AI reading the file. */
   _doc?: string;
@@ -85,11 +101,11 @@ export interface WbConfig {
 // rewrites this file, so only fields (like this one) survive; see docs/arch/WORKBENCH.md.
 const WB_DOC =
   "Workbench config (per-channel, maintained by the workbench UI, hand-editable). " +
-  "The workbench is content-first: scene_state indexes scene tabs while Raw exposes the complete file tree. " +
+  "The workbench is content-first: scene_state indexes Collection and Tab navigation while Raw workspace files exposes the complete file tree. " +
   "bindings = file path → renderer id Preview uses (unbound: best content match, else raw); " +
   "configs = file path → lens config (e.g. table columns), written by scenario activation; " +
   "pinned = files injected into every bot prompt. " +
-  "scene_state = enabled scenario order/titles and their file-path navigation indexes; " +
+  "scene_state = enabled Collection order/titles and their file-path Tab indexes (the key name is retained for compatibility); " +
   "layout = the channel's shared window arrangement (rects are fractions of the lane, not pixels); " +
   "Files themselves are pure content — how a file renders is decided by this config, never written into the file.";
 
@@ -331,6 +347,29 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     },
     [fs, cfg, writeCfg, localBindingKey]
   );
+
+  const addTab = useCallback(async (collectionId: string, path: string): Promise<boolean> => {
+    setBusy(true);
+    try {
+      // A tab is a shared navigation edit. Merge it into the latest persisted config so
+      // a simultaneous pin, renderer binding, or Collection load is never overwritten.
+      let base = cfg;
+      try {
+        base = parseCfg((await fs.read(WORKBENCH_CONFIG_PATH)).content);
+      } catch {
+        /* no config file yet — keep the in-memory snapshot */
+      }
+      const nextState = appendCollectionTab(base.scene_state, collectionId, path);
+      if (nextState !== base.scene_state) await writeCfg({ ...base, scene_state: nextState });
+      setFocus(path);
+      return true;
+    } catch (error) {
+      setNotice(errMsg(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [cfg, fs, writeCfg]);
 
   // Temporary upload: validate a manifest, keep it in THIS session only (never persisted,
   // never shared), and activate it. Activating still seeds the scenario's data files into
@@ -596,8 +635,17 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       spawnKind="workbench"
       className="w-[560px] h-[75%]"
       defaultPosClassName="top-2 left-2"
-      // Scene tabs / raw tree own their own scrolling; the body is a flush column.
+      // Collection/Tab navigation and the raw tree own their scrolling; the body is flush.
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
+      primaryNavigation={rawMode ? {
+        ariaLabel: "Workbench Collections",
+        presentationOrder: ["collapsed"],
+        collapsedContent: "icon",
+        items: [
+          { id: "collections", label: "Back to Collections", icon: LayoutGrid, onSelect: () => setRawMode(false) },
+          { id: "raw-workspace-files", label: "Raw workspace files", icon: Folder, selected: true, onSelect: () => undefined },
+        ],
+      } : undefined}
       // Dropping a .cheers-extension anywhere on the panel loads it (after consent).
       dropTarget={{
         active: dragOver || busy,
@@ -609,67 +657,6 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         onDrop,
       }}
       panelActions={[
-        {
-          id: "raw-mode",
-          label: rawMode ? "Show scenes" : "Show raw workspace files",
-          priority: "primary",
-          icon: rawMode ? LayoutGrid : Folder,
-          selected: rawMode,
-          onSelect: () => setRawMode((current) => !current),
-          control: (
-            <Tip content={rawMode ? "Return to scene tabs" : "Browse every workspace file"}>
-              <ControlTrigger
-                type="button"
-                square
-                selected={rawMode}
-                onClick={() => setRawMode((current) => !current)}
-                aria-label={rawMode ? "Show scenes" : "Show raw workspace files"}
-                aria-pressed={rawMode}
-                title={rawMode ? "Show scenes" : "Show raw workspace files"}
-                controlSize={workbenchControlSize.chrome}
-                className="rounded-sm text-content-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-              >
-                {rawMode
-                  ? <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-                  : <Folder className="h-4 w-4" aria-hidden="true" />}
-              </ControlTrigger>
-            </Tip>
-          ),
-        },
-        {
-          id: "load-extension",
-          label: "Load extension",
-          priority: "secondary",
-          icon: Package,
-          disabled: busy,
-          onSelect: () => fileRef.current?.click(),
-          control: (
-            <>
-              <Tip content="Load a temporary template or renderer extension for this session.">
-                <ResponsiveActionButton
-                  action="upload"
-                  context="toolbar"
-                  wideLabel="Load extension"
-                  controlSize={workbenchControlSize.chrome}
-                  onClick={() => fileRef.current?.click()}
-                  disabled={busy}
-                  aria-label="Load template or extension"
-                  title="Load template or extension"
-                  className="text-content-primary hover:text-content-strong disabled:opacity-50"
-                />
-              </Tip>
-              {/* design-system-native: file-input */}
-              <input
-                ref={fileRef}
-                aria-label="Choose a temporary extension package"
-                type="file"
-                accept=".cheers-extension,application/vnd.cheers.extension+zip"
-                onChange={onPickFile}
-                className="hidden"
-              />
-            </>
-          ),
-        },
         ...(canWatch ? [{
           id: "watch-extension",
           label: watching ? "Stop watching extension" : "Watch extension file",
@@ -761,7 +748,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
             <GlanceRow
               Icon={Package}
-              label="Scenario"
+              label="Collection"
               value={allEnvs.find((e) => e.id === selectedId)?.title ?? "General"}
               onClick={toggleCollapsed}
               title="Open workbench"
@@ -800,7 +787,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-content-muted">
             <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
             <span className="flex-1">
-              No scenes yet. Load a .cheers-extension package or install one in Settings.
+              No collections yet. Load a .cheers-extension package or install one in Settings.
             </span>
             <ActionButton
               action="open"
@@ -811,11 +798,20 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             />
           </div>
         )}
-        {/* Content-first by default: scene → item tabs → renderer. Raw is an explicit
+        {/* Content-first by default: Collection → Tab → renderer. Raw is an explicit
             mode that mounts the complete file tree and editor. */}
         <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
           {open && profilePanels.map((panel) => <Fragment key={panel.id}>{panel.render(panelCtx)}</Fragment>)}
           <div className="min-h-0 flex-1 overflow-hidden">
+            {/* design-system-native: file-input */}
+            <input
+              ref={fileRef}
+              aria-label="Choose a temporary extension package"
+              type="file"
+              accept=".cheers-extension,application/vnd.cheers.extension+zip"
+              onChange={onPickFile}
+              className="hidden"
+            />
             {open && (rawMode ? (
               <FilePanel ctx={ctx} />
             ) : (
@@ -825,6 +821,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 legacyEnvironment={cfg.environment}
                 templates={allEnvs}
                 onAddScene={activate}
+                onAddTab={addTab}
+                onLoadCollection={() => fileRef.current?.click()}
                 onShowRaw={() => setRawMode(true)}
               />
             ))}

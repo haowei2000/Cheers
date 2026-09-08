@@ -87,6 +87,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 60;
+  font-weight: var(--weight-semibold);
 }
 
 /* Mastheads need a broader, sturdier cut than ordinary display headings. This
@@ -95,6 +96,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 32;
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-masthead);
 }
 
@@ -102,6 +104,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 14;
+  font-weight: var(--weight-medium);
 }
 
 .font-utility {
@@ -130,7 +133,7 @@ textarea::selection,
   font-variation-settings: "opsz" 14;
   font-size: var(--type-regular-size);
   line-height: 1.6;
-  font-weight: 400;
+  font-weight: var(--weight-medium);
   letter-spacing: normal;
   color: rgb(var(--text-secondary));
 }
@@ -141,7 +144,7 @@ textarea::selection,
   font-variation-settings: "opsz" 14;
   font-size: var(--type-regular-size);
   line-height: 1.6;
-  font-weight: 400;
+  font-weight: var(--weight-medium);
   font-style: italic;
   letter-spacing: normal;
   color: rgb(var(--tone-danger-400));

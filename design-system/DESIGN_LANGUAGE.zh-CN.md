@@ -47,10 +47,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 | 角色 | 多语言字体 | 使用位置 | 禁止位置 |
 |---|---|---|---|
 | `display` | Source Serif 4 Display；中文 Source Han Serif CN Semibold；日/韩使用本地化系统衬线 | 网站介绍、Hero、masthead、页面大标题 | Button、状态、trace、列表名称 |
-| `reading` | Source Serif 4 Text；中文 Source Han Serif CN Regular/Semibold；日/韩使用本地化系统衬线 | 消息正文、政策、帮助、长预览 | User/Bot/Channel/Workspace 名称、高频控件 |
+| `reading` | Source Serif 4 Text；中文 Source Han Serif CN Medium/Semibold；日/韩使用本地化系统衬线 | 消息正文、政策、帮助、长预览 | User/Bot/Channel/Workspace 名称、高频控件 |
 | `utility` | Web Source Sans 3；iOS/Android 系统无衬线；完整多语言 sans fallback | 身份名称、导航、Button、Input、warning、trace、时间、状态 | 长篇消息正文 |
 
-- 消息正文使用 reading，但字号与行高必须像正文而非标题：Web 基准 `14px / 1.55`，iOS
+- 消息正文使用 reading，中文默认使用 Medium（500）、强调使用 Semibold（600），但字号与行高必须像正文而非标题：Web 基准 `14px / 1.55`，iOS
   `16pt`，Android `15sp`，再遵循平台动态字体。
 - Bot name、Channel name、User name、Workspace name 等快速扫描文字必须使用 utility。
 - 中文衬线使用随应用分发的 Source Han Serif CN，按完整文字 run 选择字体，避免逐字 fallback
@@ -138,6 +138,15 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 - FileTree、Diff 行使用 ControlSize；缩进、gutter、Canvas 节点和 Workbench 面板几何使用专用布局 token。
 - 拖拽柄使用共享视觉 token；其可交互命中区域由所属面板保证。
 - Editor/Composer textarea、隐藏 file input 与响应式浮层宽度不是内容尺寸，不强套 ContentSize。
+
+### 4.4 Workbench 顶栏层级
+
+Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放拖拽柄、Collection
+选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Dock/Float、Close。两侧为单行、
+不可换行的按钮岛，先实测右侧固定岛，再把剩余宽度交给左侧。空间不足时，先把新增入口收进
+对应选择器菜单，再把选择器收为具有 tooltip 与 accessible name 的图标。Raw workspace files
+是 Collection 菜单中的特殊导航项。产品文案使用 Collection/Tab；持久化 `scene_state` 与扩展
+协议 `scenes` 保持不变。
 
 ## 5. Item 与 ItemList
 

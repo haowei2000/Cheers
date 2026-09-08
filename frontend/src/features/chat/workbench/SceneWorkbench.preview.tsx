@@ -163,6 +163,8 @@ function Preview() {
             sceneState={sceneState}
             templates={templates}
             onAddScene={async () => true}
+            onAddTab={async () => true}
+            onLoadCollection={() => undefined}
             onShowRaw={() => undefined}
           />
         </FloatingPanel>
