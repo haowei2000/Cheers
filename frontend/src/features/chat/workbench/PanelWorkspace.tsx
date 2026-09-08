@@ -19,7 +19,10 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { IconButton } from "@/components/ui/icon-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import type { SpawnKind } from "./laneSnap";
-import { resolveWorkspaceLayout } from "./panelWorkspaceLayout";
+import {
+  parseLocalWorkspacePreference,
+  resolveWorkspaceLayout,
+} from "./panelWorkspaceLayout";
 
 type Geometry = { x: number; y: number; w: number; h: number };
 interface ManagedPanel {
@@ -135,16 +138,13 @@ export function PanelWorkspace({
   useEffect(() => () => cleanupRef.current?.(), []);
   useEffect(() => {
     try {
-      const saved = JSON.parse(
+      const saved = parseLocalWorkspacePreference(JSON.parse(
         localStorage.getItem(`cheers.panel-workspace.${channelId}`) ?? "null",
-      );
-      setRequestedWidth(Number.isFinite(saved?.width) ? saved.width : 400);
-      setSplit(saved?.split === true);
-      setRatio(
-        Number.isFinite(saved?.ratio)
-          ? Math.max(0.25, Math.min(0.75, saved.ratio))
-          : 0.5,
-      );
+      ));
+      setRequestedWidth(saved?.width ?? 400);
+      setSplit(saved?.split ?? false);
+      setRatio(saved?.ratio ?? 0.5);
+      if (saved?.active) setActive(saved.active);
       setOverridden(saved != null);
     } catch {
       setRequestedWidth(400);
@@ -159,7 +159,11 @@ export function PanelWorkspace({
       (p) => !previousOpen.current.includes(p.id),
     );
     if (added.length) {
-      setActive(added.at(-1)!.id);
+      setActive((current) =>
+        added.some((panel) => panel.id === current)
+          ? current
+          : added.at(-1)!.id,
+      );
       setShowWork(true);
     }
     if (previousOpen.current.length && !openPanels.length)
@@ -245,6 +249,7 @@ export function PanelWorkspace({
     nextWidth: number,
     nextSplit: boolean,
     nextRatio = ratio,
+    nextActive = active,
   ) => {
     setOverridden(true);
     try {
@@ -254,6 +259,7 @@ export function PanelWorkspace({
           width: nextWidth,
           split: nextSplit,
           ratio: nextRatio,
+          active: nextActive,
         }),
       );
     } catch {
@@ -560,7 +566,7 @@ export function PanelWorkspace({
                     selected={effectiveActive === panel.id}
                     onClick={() => {
                       setActive(panel.id);
-                      remember(requestedWidth, split);
+                      remember(requestedWidth, split, ratio, panel.id);
                     }}
                   >
                     {panel.label}

@@ -122,4 +122,12 @@ describe("workspace layout sharing", () => {
     const workspace = { width: .4, split: false, ratio: .5 };
     expect(mergeLayout({ version: 1, panels: {}, workspace }, { version: 1, panels: { files: { open: true } } }).workspace).toEqual(workspace);
   });
+  it("preserves shared geometry when a managed panel only updates visibility", () => {
+    const rect = { x: .1, y: .2, w: .4, h: .5 };
+    const merged = mergeLayout(
+      { version: 1, panels: { files: { rect, open: false } } },
+      { version: 1, panels: { files: { open: true } } },
+    );
+    expect(merged.panels.files).toEqual({ rect, open: true });
+  });
 });

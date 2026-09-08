@@ -138,7 +138,13 @@ export function toFraction(rect: Rect, bounds: { width: number; height: number }
  * both keep their change, and only a genuine same-window race resolves to one of them.
  * Whole-file replacement would silently drop the other person's save. */
 export function mergeLayout(base: SharedLayout | undefined, ours: SharedLayout): SharedLayout {
-  return { version: 1, panels: { ...(base?.panels ?? {}), ...ours.panels }, ...((ours.workspace ?? base?.workspace) ? { workspace: ours.workspace ?? base?.workspace } : {}) };
+  const panels = { ...(base?.panels ?? {}) };
+  for (const kind of SPAWN_KINDS) {
+    const update = ours.panels[kind];
+    if (update)
+      panels[kind] = update.rect ? update : { ...panels[kind], ...update };
+  }
+  return { version: 1, panels, ...((ours.workspace ?? base?.workspace) ? { workspace: ours.workspace ?? base?.workspace } : {}) };
 }
 
 /** Where a lane window keeps its device-local geometry. One convention, because the
