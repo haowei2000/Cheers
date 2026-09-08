@@ -1,12 +1,16 @@
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 
-/// Settings sheet for enabling or disabling TOTP 2FA.
+/// Settings sheet for two-step verification.
+///
+/// Any armed factor turns it on — a passkey (armed by registering one under
+/// Passkeys), an authenticator app, or an emailed code — so this screen manages
+/// methods individually rather than one global switch.
 struct TwoFactorSettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
 
-    @State private var enabled: Bool?
+    @State private var status: TwoFactorStatusResponse?
     @State private var setup: TwoFactorSetupResponse?
     @State private var backupCodes: [String] = []
     @State private var code = ""
@@ -57,25 +61,39 @@ struct TwoFactorSettingsView: View {
 
     @ViewBuilder
     private var idleSections: some View {
+        let enabled = status?.enabled == true
+        let methods = status?.methods
+
         Section {
             LabeledContent("Status") {
-                Text(enabled == true ? "On" : "Off")
-                    .foregroundStyle(enabled == true ? Theme.online : Theme.textMuted)
+                Text(enabled ? "On" : "Off")
+                    .foregroundStyle(enabled ? Theme.online : Theme.textMuted)
             }
         } footer: {
-            Text("Authenticator apps and backup codes protect your account when signing in.")
+            Text(enabled
+                 ? "A second step is required when you sign in. Any method below can complete it."
+                 : "Turn on any one method below. You do not need an authenticator app.")
         }
 
-        if enabled == true {
-            Section {
-                Button("Turn off 2FA", role: .destructive) {
+        Section {
+            LabeledContent("Passkey") {
+                Text(methods?.passkey == true ? "On" : "Off")
+                    .foregroundStyle(methods?.passkey == true ? Theme.online : Theme.textMuted)
+            }
+        } footer: {
+            Text(methods?.passkey == true
+                 ? "Armed by the passkeys on this account."
+                 : "Add a passkey under Settings › Passkeys to turn this on.")
+        }
+
+        Section {
+            if methods?.totp == true {
+                Button("Remove authenticator", role: .destructive) {
                     code = ""
                     errorText = nil
                     phase = .disable
                 }
-            }
-        } else {
-            Section {
+            } else {
                 Button {
                     Task { await beginSetup() }
                 } label: {
@@ -86,6 +104,37 @@ struct TwoFactorSettingsView: View {
                     }
                 }
                 .disabled(isBusy)
+            }
+        } header: {
+            Text("Authenticator app")
+        } footer: {
+            Text("Six-digit codes from an app on your phone.")
+        }
+
+        Section {
+            Toggle("Email codes", isOn: Binding(
+                get: { methods?.email == true },
+                set: { newValue in Task { await toggleEmail(to: newValue) } }
+            ))
+            .disabled(isBusy || (methods?.email != true && status?.emailAvailable != true))
+        } header: {
+            Text("Email code")
+        } footer: {
+            Text(methods?.email == true || status?.emailAvailable == true
+                 ? "A one-time code sent to your address."
+                 : "Add an email address and a password or passkey first.")
+        }
+
+        if enabled {
+            Section {
+                Button("Generate new recovery codes") {
+                    Task { await newRecoveryCodes() }
+                }
+                .disabled(isBusy)
+            } header: {
+                Text("Recovery codes")
+            } footer: {
+                Text("\(status?.recoveryCodesRemaining ?? 0) unused. They work once each when every other method is unavailable.")
             }
         }
     }
@@ -146,9 +195,9 @@ struct TwoFactorSettingsView: View {
                 UIPasteboard.general.string = backupCodes.joined(separator: "\n")
             }
         } header: {
-            Text("Backup codes")
+            Text("Recovery codes")
         } footer: {
-            Text("Store these somewhere safe. Each code works once if you lose your authenticator.")
+            Text("Store these somewhere safe. Each code works once when every other verification method is unavailable.")
         }
     }
 
@@ -178,7 +227,7 @@ struct TwoFactorSettingsView: View {
         errorText = nil
         do {
             guard let api = app.api else { throw APIError.unauthorized }
-            enabled = try await api.twoFactorStatus().enabled
+            status = try await api.twoFactorStatus()
             phase = .idle
         } catch let error as APIError {
             if case .unauthorized = error { app.clearSession(); return }
@@ -216,11 +265,9 @@ struct TwoFactorSettingsView: View {
         do {
             guard let api = app.api else { throw APIError.unauthorized }
             let response = try await api.enableTwoFactor(code: code.trimmingCharacters(in: .whitespacesAndNewlines))
-            backupCodes = response.backupCodes
-            enabled = true
             setup = nil
             code = ""
-            phase = .backupCodes
+            await afterArming(response.backupCodes)
         } catch let error as APIError {
             if case .unauthorized = error {
                 // Invalid TOTP often surfaces as 401 — keep the sheet open.
@@ -241,14 +288,59 @@ struct TwoFactorSettingsView: View {
         do {
             guard let api = app.api else { throw APIError.unauthorized }
             try await api.disableTwoFactor(code: code.trimmingCharacters(in: .whitespacesAndNewlines))
-            enabled = false
             code = ""
-            phase = .idle
+            await reload()
         } catch let error as APIError {
             if case .unauthorized = error {
                 errorText = error.errorDescription ?? "Invalid verification code."
                 return
             }
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Freshly minted recovery codes come back once, so show them before
+    /// returning to the method list.
+    private func afterArming(_ codes: [String]) async {
+        if codes.isEmpty {
+            await reload()
+        } else {
+            backupCodes = codes
+            phase = .backupCodes
+            status = try? await app.api?.twoFactorStatus()
+        }
+    }
+
+    private func toggleEmail(to enabled: Bool) async {
+        guard !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        defer { isBusy = false }
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            let response = try await api.setEmailTwoFactor(enabled: enabled)
+            await afterArming(response.backupCodes)
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func newRecoveryCodes() async {
+        guard !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        defer { isBusy = false }
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            let response = try await api.regenerateRecoveryCodes()
+            await afterArming(response.backupCodes)
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription

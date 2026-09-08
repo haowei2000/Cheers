@@ -1165,6 +1165,7 @@ pub async fn handoff(
             &state.db,
             state.webauthn.as_deref(),
             &user_id,
+            Some("oauth"),
         )
         .await?;
         tracing::info!(

@@ -13,7 +13,7 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 use crate::{
     api::{auth, middleware::Claims},
     app_state::AppState,
-    domain::{auth as auth_domain, auth_sessions, webauthn},
+    domain::{auth as auth_domain, auth_sessions, two_factor, webauthn},
     errors::AppError,
 };
 
@@ -92,14 +92,28 @@ pub async fn register_options(
     Ok(Json(payload))
 }
 
+#[derive(serde::Serialize)]
+pub struct RegisterFinishResponse {
+    #[serde(flatten)]
+    pub credential: webauthn::StoredCredential,
+    /// Recovery codes minted because this passkey armed two-step verification
+    /// for the first time. Shown once; empty when codes already existed.
+    pub backup_codes: Vec<String>,
+}
+
 /// POST /api/v1/auth/passkey/register/finish
+///
+/// A registered passkey counts as a second factor on its own, so finishing here
+/// can turn two-step verification on. When it does, the account gets recovery
+/// codes in the same response — losing the only passkey must not mean losing
+/// the account.
 pub async fn register_finish(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<RegisterFinishRequest>,
-) -> Result<Json<webauthn::StoredCredential>, AppError> {
+) -> Result<Json<RegisterFinishResponse>, AppError> {
     let service = require_webauthn(&state)?;
-    let stored = webauthn::finish_registration(
+    let credential = webauthn::finish_registration(
         &state.db,
         service,
         &claims.sub,
@@ -107,7 +121,11 @@ pub async fn register_finish(
         body.credential,
     )
     .await?;
-    Ok(Json(stored))
+    let backup_codes = two_factor::ensure_recovery_codes(&state.db, &claims.sub).await?;
+    Ok(Json(RegisterFinishResponse {
+        credential,
+        backup_codes,
+    }))
 }
 
 /// GET /api/v1/auth/passkey/credentials
@@ -144,6 +162,8 @@ pub async fn delete_credential(
            (SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $2) AS total,
            (SELECT password_hash IS NOT NULL OR totp_enabled
               FROM users WHERE user_id = $2) AS has_local_strong_factor,
+           (SELECT totp_enabled OR email_2fa_enabled
+              FROM users WHERE user_id = $2) AS has_other_second_factor,
            EXISTS(SELECT 1 FROM auth_external_identities
                   WHERE user_id = $2 AND provider IN ('apple', 'google')) AS has_fresh_oauth",
     )
@@ -154,12 +174,19 @@ pub async fn delete_credential(
     if !row.try_get::<bool, _>("exists").unwrap_or(false) {
         return Err(AppError::NotFound);
     }
-    let removing_last_strong_factor = row.try_get::<i64, _>("total").unwrap_or(0) <= 1
+    let last_passkey = row.try_get::<i64, _>("total").unwrap_or(0) <= 1;
+    let removing_last_strong_factor = last_passkey
         && !row
             .try_get::<bool, _>("has_local_strong_factor")
             .unwrap_or(false)
         && !row.try_get::<bool, _>("has_fresh_oauth").unwrap_or(false);
-    if removing_last_strong_factor {
+    // Passkeys arm two-step verification on their own, so dropping the last one
+    // can silently turn 2FA off. That is authority growth: make it step up.
+    let removing_last_second_factor = last_passkey
+        && !row
+            .try_get::<bool, _>("has_other_second_factor")
+            .unwrap_or(false);
+    if removing_last_strong_factor || removing_last_second_factor {
         auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     }
     sqlx::query("DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2")
@@ -168,6 +195,7 @@ pub async fn delete_credential(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    two_factor::clear_recovery_codes_if_unprotected(&state.db, &claims.sub).await?;
     Ok(Json(json!({ "ok": true })))
 }
 

@@ -163,6 +163,7 @@ pub async fn login(
             &state.db,
             state.webauthn.as_deref(),
             &user.id,
+            Some("password"),
         )
         .await?;
         return Ok(Json(LoginResponse {
@@ -581,6 +582,7 @@ pub async fn change_password(
     );
     two_factor::ensure_valid_code_if_enabled(
         &state.db,
+        &state.config,
         &claims.sub,
         body.two_factor_code.as_deref(),
         &master_key,
@@ -1026,16 +1028,35 @@ pub struct TwoFactorDisableRequest {
 #[derive(Serialize)]
 pub struct TwoFactorStatusResponse {
     pub enabled: bool,
+    pub methods: two_factor::TwoFactorMethods,
+    pub recovery_codes_remaining: usize,
+    /// Whether email codes *could* be armed — an address is on file and another
+    /// method can carry step one.
+    pub email_available: bool,
 }
 
-/// GET /api/v1/auth/2fa/status — whether TOTP 2FA is currently enabled for the caller.
+/// GET /api/v1/auth/2fa/status — which second factors the caller has armed.
 pub async fn two_factor_status(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorStatusResponse>, AppError> {
     let status = two_factor::status(&state.db, &claims.sub).await?;
+    let email_available: bool = sqlx::query_scalar(
+        "SELECT u.email IS NOT NULL AND btrim(u.email) <> ''
+                AND ((u.password_hash IS NOT NULL)
+                     OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id))
+         FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
     Ok(Json(TwoFactorStatusResponse {
         enabled: status.enabled,
+        methods: status.methods,
+        recovery_codes_remaining: two_factor::recovery_codes_remaining(&state.db, &claims.sub)
+            .await?,
+        email_available,
     }))
 }
 
@@ -1047,10 +1068,11 @@ pub async fn setup_two_factor(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorSetupResponse>, AppError> {
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
-    let current = two_factor::status(&state.db, &claims.sub).await?;
-    if current.enabled {
+    // Only the authenticator factor blocks a fresh setup: a passkey or email
+    // user is adding a method, not replacing one.
+    if two_factor::methods(&state.db, &claims.sub).await?.totp {
         return Err(AppError::BadRequest(
-            "2FA is already enabled; disable it before starting a new setup".into(),
+            "an authenticator app is already set up; remove it before adding a new one".into(),
         ));
     }
     let master_key = two_factor::master_key(
@@ -1135,8 +1157,13 @@ pub async fn verify_two_factor_login(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
     );
-    let totp_ok = two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?;
-    if !totp_ok {
+    let mut verified =
+        two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?;
+    if !verified && two_factor::methods(&state.db, &user_id).await?.email {
+        verified =
+            two_factor::verify_email_code(&state.db, &state.config, &user_id, &body.code).await?;
+    }
+    if !verified {
         auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
@@ -1191,7 +1218,8 @@ pub struct TwoFactorEmailSendRequest {
 }
 
 /// POST /api/v1/auth/2fa/email/send — mail a one-time code for the pending login
-/// factor challenge. Requires a valid `factor_required` transaction.
+/// factor challenge. Requires a valid `factor_required` transaction and an
+/// account that armed email codes as a second factor.
 pub async fn send_two_factor_email(
     State(state): State<AppState>,
     connect_info: Option<ConnectInfo<SocketAddr>>,
@@ -1211,9 +1239,76 @@ pub async fn send_two_factor_email(
 
     let (user_id, _client, _device_name) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
-    let _ = user_id;
-    Err(AppError::BadRequest(
-        "email codes cannot replace an enabled second factor; use an authenticator, recovery code, or passkey"
-            .into(),
-    ))
+    if !two_factor::methods(&state.db, &user_id).await?.email {
+        return Err(AppError::BadRequest(
+            "email codes are not enabled for this account; use a passkey, authenticator, or recovery code"
+                .into(),
+        ));
+    }
+    let issue = two_factor::issue_email_code(&state.db, &state.config, &user_id).await?;
+    Ok(Json(json!({
+        "ok": true,
+        "expires_in": 600,
+        "email_hint": issue.as_ref().map(|value| value.hint.as_str()),
+        "retry_after": issue.as_ref().filter(|value| !value.sent).map(|_| 60),
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorEmailMethodRequest {
+    pub enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct TwoFactorMethodResponse {
+    pub enabled: bool,
+    pub methods: two_factor::TwoFactorMethods,
+    /// Recovery codes minted by this call — shown once, empty when the account
+    /// already had codes backing another method.
+    pub backup_codes: Vec<String>,
+}
+
+/// POST /api/v1/auth/2fa/methods/email — arm or disarm emailed one-time codes
+/// as a second factor. Step-up guarded: it changes how the account is protected.
+pub async fn set_email_two_factor(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<TwoFactorEmailMethodRequest>,
+) -> Result<Json<TwoFactorMethodResponse>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    let backup_codes = two_factor::set_email_factor(&state.db, &claims.sub, body.enabled).await?;
+    auth_sessions::record_direct_step_up(
+        &state.db,
+        &claims.sub,
+        &claims.sid,
+        "email",
+        if body.enabled {
+            "email_factor_enrollment"
+        } else {
+            "email_factor_removal"
+        },
+    )
+    .await?;
+    let methods = two_factor::methods(&state.db, &claims.sub).await?;
+    Ok(Json(TwoFactorMethodResponse {
+        enabled: methods.any(),
+        methods,
+        backup_codes,
+    }))
+}
+
+/// POST /api/v1/auth/2fa/recovery-codes — replace the account's recovery codes.
+/// Every armed factor is backed by the same set, so this is method-independent.
+pub async fn regenerate_recovery_codes(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<TwoFactorEnableResponse>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    if !two_factor::methods(&state.db, &claims.sub).await?.any() {
+        return Err(AppError::BadRequest(
+            "turn on two-step verification before generating recovery codes".into(),
+        ));
+    }
+    let backup_codes = two_factor::regenerate_recovery_codes(&state.db, &claims.sub).await?;
+    Ok(Json(TwoFactorEnableResponse { backup_codes }))
 }

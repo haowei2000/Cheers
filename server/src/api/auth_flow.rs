@@ -25,7 +25,6 @@ use crate::{
 
 const FLOW_TTL_MINUTES: i64 = 10;
 const MAX_ATTEMPTS: i16 = 5;
-const EMAIL_PURPOSE: &str = "auth_flow";
 
 #[derive(Deserialize)]
 pub struct StartRequest {
@@ -237,52 +236,20 @@ pub async fn send_email(
     limiter.record_failure(&source_key);
     limiter.record_failure(&identifier_key);
     if let Some(user_id) = flow.user_id.as_deref() {
-        if let Some(email) = webauthn::user_email(&state.db, user_id).await? {
-            let normalized_email = email.trim().to_lowercase();
-            let cooling_down: bool = sqlx::query_scalar(
-                "SELECT EXISTS(
-                    SELECT 1 FROM email_codes
-                    WHERE email = $1 AND purpose = $2 AND used = FALSE
-                      AND created_at > NOW() - INTERVAL '60 seconds'
-                      AND expires_at > NOW()
-                 )",
-            )
-            .bind(&normalized_email)
-            .bind(EMAIL_PURPOSE)
-            .fetch_one(&state.db)
-            .await?;
-            if cooling_down {
-                return Ok(Json(
-                    json!({ "ok": true, "expires_in": 600, "retry_after": 60 }),
-                ));
+        // At the second-factor step the mailbox is only usable if the account
+        // armed it; at the primary step any address on file may receive a code.
+        let usable = flow.status != "factor_required"
+            || two_factor::methods(&state.db, user_id).await?.email;
+        if usable {
+            if let Some(issue) =
+                two_factor::issue_email_code(&state.db, &state.config, user_id).await?
+            {
+                if !issue.sent {
+                    return Ok(Json(
+                        json!({ "ok": true, "expires_in": 600, "retry_after": 60 }),
+                    ));
+                }
             }
-            sqlx::query(
-                "UPDATE email_codes SET used = TRUE
-                 WHERE email = $1 AND purpose = $2 AND used = FALSE",
-            )
-            .bind(&normalized_email)
-            .bind(EMAIL_PURPOSE)
-            .execute(&state.db)
-            .await?;
-            let code = crypto::generate_email_code();
-            let hash = crypto::hash_email_code(
-                state.config.secret_store_key.as_deref(),
-                &state.config.jwt_private_key_pem,
-                &email,
-                EMAIL_PURPOSE,
-                &code,
-            );
-            sqlx::query(
-                "INSERT INTO email_codes
-                 (email, code, code_hash, purpose, expires_at)
-                 VALUES ($1, NULL, $2, $3, NOW() + INTERVAL '10 minutes')",
-            )
-            .bind(&normalized_email)
-            .bind(hash)
-            .bind(EMAIL_PURPOSE)
-            .execute(&state.db)
-            .await?;
-            crate::infra::email::send_login_2fa_code(&state.config, &email, &code).await;
         }
     }
     // Deliberately identical for missing users and missing email addresses.
@@ -300,32 +267,19 @@ pub async fn verify_email(
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     };
-    let email = webauthn::user_email(&state.db, user_id)
-        .await?
-        .ok_or_else(|| invalid_factor("email code"))?;
-    let hash = crypto::hash_email_code(
-        state.config.secret_store_key.as_deref(),
-        &state.config.jwt_private_key_pem,
-        &email,
-        EMAIL_PURPOSE,
-        &body.code,
-    );
-    let consumed = sqlx::query(
-        "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND purpose = $2 AND code_hash = $3
-           AND used = FALSE AND expires_at > NOW()",
-    )
-    .bind(email.trim().to_lowercase())
-    .bind(EMAIL_PURPOSE)
-    .bind(hash)
-    .execute(&state.db)
-    .await?;
-    if consumed.rows_affected() != 1 {
+    // Completing the *second* step by email is only allowed when the account
+    // armed email codes, and never when the same mailbox carried step one.
+    let second_step = flow.status == "factor_required";
+    if second_step && !two_factor::methods(&state.db, user_id).await?.email {
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     }
-    if two_factor::status(&state.db, user_id).await?.enabled {
-        return require_second_factor(&state, &flow).await;
+    if !two_factor::verify_email_code(&state.db, &state.config, user_id, &body.code).await? {
+        fail_attempt(&state, &flow, "email").await?;
+        return Err(invalid_factor("email code"));
+    }
+    if second_step {
+        return complete_verified(&state, flow, "email").await;
     }
     complete_primary(&state, flow, "email").await
 }
@@ -501,13 +455,13 @@ async fn available_methods(
     };
     let row = sqlx::query(
         "SELECT password_hash IS NOT NULL AS has_password,
-                email IS NOT NULL AND email <> '' AS has_email,
-                totp_enabled
+                email IS NOT NULL AND btrim(email) <> '' AS has_email
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
     )
     .bind(user_id)
     .fetch_one(&state.db)
     .await?;
+    let armed = two_factor::methods(&state.db, user_id).await?;
     let mut methods = Vec::new();
     if state.webauthn.is_some() && webauthn::user_has_passkeys(&state.db, user_id).await? {
         methods.push("passkey".into());
@@ -515,12 +469,22 @@ async fn available_methods(
     if row.try_get::<bool, _>("has_password").unwrap_or(false) {
         methods.push("password".into());
     }
-    if row.try_get::<bool, _>("has_email").unwrap_or(false) {
+    // An emailed code cannot carry both sign-in steps. When the mailbox is the
+    // account's only second factor, offering it as a primary method would strand
+    // the login at a challenge it just satisfied.
+    let email_is_only_second_factor = armed.email && !armed.totp && !armed.passkey;
+    if row.try_get::<bool, _>("has_email").unwrap_or(false)
+        && !(login && email_is_only_second_factor)
+    {
         methods.push("email".into());
     }
-    if !login && row.try_get::<bool, _>("totp_enabled").unwrap_or(false) {
-        methods.push("totp".into());
-        methods.push("recovery_code".into());
+    if !login {
+        if armed.totp {
+            methods.push("totp".into());
+        }
+        if two_factor::recovery_codes_remaining(&state.db, user_id).await? > 0 {
+            methods.push("recovery_code".into());
+        }
     }
     Ok(methods)
 }
@@ -535,14 +499,40 @@ async fn complete_primary(
             .user_id
             .as_deref()
             .ok_or_else(|| invalid_factor(factor))?;
-        if two_factor::status(&state.db, user_id).await?.enabled && factor != "passkey" {
-            return require_second_factor(state, &flow).await;
+        // A passkey assertion is already a possession factor; anything else has
+        // to be followed by one of the factors this account armed.
+        if factor != "passkey" && two_factor::methods(&state.db, user_id).await?.any() {
+            return require_second_factor(state, &flow, factor).await;
         }
     }
     complete_verified(state, flow, factor).await
 }
 
-async fn require_second_factor(state: &AppState, flow: &Flow) -> Result<Response, AppError> {
+async fn require_second_factor(
+    state: &AppState,
+    flow: &Flow,
+    primary_factor: &str,
+) -> Result<Response, AppError> {
+    let user_id = flow
+        .user_id
+        .as_deref()
+        .ok_or_else(|| invalid_factor(primary_factor))?;
+    let methods = webauthn::allowed_login_factors(
+        &state.db,
+        state.webauthn.as_deref(),
+        user_id,
+        Some(primary_factor),
+    )
+    .await?;
+    if methods.is_empty() {
+        // Nothing left to challenge with (for example the only armed factor was
+        // the mailbox that just carried step one). Fail closed rather than
+        // waving the login through.
+        return Err(AppError::Unauthorized(
+            "no second factor is available for this account; use a recovery code or contact an administrator"
+                .into(),
+        ));
+    }
     sqlx::query(
         "UPDATE auth_transactions SET status = 'factor_required', updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL",
@@ -550,12 +540,6 @@ async fn require_second_factor(state: &AppState, flow: &Flow) -> Result<Response
     .bind(&flow.transaction_id)
     .execute(&state.db)
     .await?;
-    let mut methods = vec!["totp", "recovery_code"];
-    if let Some(user_id) = flow.user_id.as_deref() {
-        if state.webauthn.is_some() && webauthn::user_has_passkeys(&state.db, user_id).await? {
-            methods.insert(0, "passkey");
-        }
-    }
     Ok(Json(json!({
         "transaction_id": flow.transaction_id,
         "status": "factor_required",
