@@ -62,6 +62,12 @@ describe("connectOps", () => {
     expect(connectOps(doc, { node: "a" }, { node: "b" })).toEqual([]);
   });
 
+  it("refuses endpoints removed while a connection gesture is in flight", () => {
+    const doc = parsed({ canvas: 1, nodes: [{ id: "b", text: "beta" }], edges: [] });
+    expect(connectOps(doc, { node: "a" }, { node: "b" })).toEqual([]);
+    expect(connectOps(doc, { node: "b" }, { node: "missing" })).toEqual([]);
+  });
+
   it("names an edge after what it connects, and disambiguates", () => {
     const doc = parsed();
     expect(edgeId(doc, "a", "c")).toBe("a-c");

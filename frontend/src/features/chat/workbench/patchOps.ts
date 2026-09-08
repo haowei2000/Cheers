@@ -7,8 +7,9 @@
 // deleting a canvas node does. Concurrency: a whole-document write holds everything as
 // it looked when the file was opened, so an agent touching any other part of the file
 // makes the save conflict, and the conflict is unrecoverable — you cannot replay a
-// stale document. An op replays: "set nodes[3].rect.x to 420" is still true against a
-// newer version.
+// stale document. An op remains small and version-checked, but an array-indexed path is
+// never replayed after a conflict: a concurrent edit may have moved another object into
+// `nodes[3]`, turning a seemingly valid retry into silent corruption.
 //
 // The op vocabulary and the failure modes below MIRROR `apply_value_op` in
 // server/src/resource/fs.rs. They have to agree exactly: this module applies the ops

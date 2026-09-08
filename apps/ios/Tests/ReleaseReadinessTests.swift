@@ -17,6 +17,24 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(inferNativeLens(path: "notes.md", data: nil), "markdown")
     }
 
+    func testWorkbenchSceneItemsDecodePublishedAndNormalizedWireShapes() throws {
+        let legacy = try JSONDecoder().decode(
+            WorkbenchPanelDef.self,
+            from: Data("""
+            {"id":"notes","title":"Notes","file":"notes.md","renderer":"builtin:markdown"}
+            """.utf8))
+        let normalized = try JSONDecoder().decode(
+            WorkbenchPanelDef.self,
+            from: Data("""
+            {"id":"notes","title":"Notes","source":{"kind":"fs","path":"notes.md"},"view":"builtin:markdown"}
+            """.utf8))
+
+        XCTAssertEqual(legacy.path, "notes.md")
+        XCTAssertEqual(legacy.lensId, "markdown")
+        XCTAssertEqual(normalized.path, legacy.path)
+        XCTAssertEqual(normalized.lensId, legacy.lensId)
+    }
+
     func testWorkbenchSceneStateDecodesSharedNavigationIndex() {
         let value = JSONValue.object([
             "version": .number(1),

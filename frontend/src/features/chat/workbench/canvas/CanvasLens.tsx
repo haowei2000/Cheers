@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Boxes, Database, ExternalLink, FileText, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
+import { Boxes, Database, ExternalLink, FileText, Link2, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { LensProps } from "../lens/registry";
@@ -8,6 +8,14 @@ import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
 import { nodeTitle, parseCanvas, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import {
+  activateCanvasNode,
+  canvasNodeKeyAction,
+  fitCanvasTransform,
+  moveCanvasRectWithKeyboard,
+  nextCanvasNodeId,
+  removeCanvasNodeState,
+} from "./viewTransform";
 
 // The canvas view: nodes an agent wrote, arranged by a human, both writing the same file.
 //
@@ -77,7 +85,7 @@ function offsetFor(side: CanvasSide, reach: number): { x: number; y: number } {
   }
 }
 
-function NodeBody({ node, onOpen }: { node: CanvasNode; onOpen?: () => void }) {
+function NodeBody({ node }: { node: CanvasNode }) {
   if (node.kind === "text") {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-compact text-content-secondary">
@@ -98,20 +106,6 @@ function NodeBody({ node, onOpen }: { node: CanvasNode; onOpen?: () => void }) {
         <span className="block truncate text-compact text-content-secondary" title={detail}>{detail}</span>
         {node.view && <span className="mt-1 block truncate text-minimal text-content-muted">{node.view}</span>}
       </span>
-      {onOpen && (
-        <UiButton
-          variant="plain"
-          type="button"
-          onClick={onOpen}
-          aria-label={`Open ${detail} in Workbench`}
-          title={`Open ${detail} in Workbench`}
-          content="icon"
-          controlSize="compact"
-          className="flex-shrink-0 rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </UiButton>
-      )}
     </div>
   );
 }
@@ -121,12 +115,15 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 24, y: 24 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [connectingFromId, setConnectingFromId] = useState<string | null>(null);
   /** The node under an active drag, so it follows the cursor without a write per frame. */
   const [dragging, setDragging] = useState<{ id: string; rect: CanvasRect } | null>(null);
   /** The connector being pulled, in canvas coordinates. */
   const [wire, setWire] = useState<{ from: string; side: CanvasSide; x: number; y: number } | null>(null);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const nodeRefs = useRef(new Map<string, HTMLDivElement>());
   const gesture = useRef<Gesture | null>(null);
   const moved = useRef(false);
   const undoStack = useRef<PatchOp[][]>([]);
@@ -254,6 +251,23 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     setWire({ from: active.from, side: active.side, ...at });
   };
 
+  const activateNode = useCallback(
+    (targetId: string) => {
+      if (!document_) return;
+      const activation = activateCanvasNode(selectedId, connectingFromId, targetId);
+      if (activation.connection) {
+        emit(connectOps(
+          document_,
+          { node: activation.connection.from },
+          { node: activation.connection.to }
+        ));
+      }
+      setConnectingFromId(activation.connectingFromId);
+      setSelectedId(activation.selectedId);
+    },
+    [connectingFromId, document_, emit, selectedId]
+  );
+
   const finishGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
     const active = gesture.current;
     gesture.current = null;
@@ -265,7 +279,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       // stray pixel of movement does not silently rewrite the file.
       if (!moved.current || !dragging || !node) {
         setDragging(null);
-        if (!moved.current) setSelectedId((current) => (current === active.id ? null : active.id));
+        if (!moved.current) activateNode(active.id);
         return;
       }
       emit(pinNodeOps(node, dragging.rect));
@@ -289,7 +303,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     if (!moved.current) setSelectedId(null);
   };
 
-  const zoom = (factor: number) => setScale((current) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, current * factor)));
+  const zoom = (factor: number) =>
+    setScale((current) => Math.min(MAX_SCALE, Math.max(Math.min(MIN_SCALE, current), current * factor)));
 
   const openSource = useCallback(
     (node: CanvasNode) => {
@@ -305,9 +320,55 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
 
   const removeSelected = useCallback(() => {
     if (!selectedId || !document_) return;
+    const next = removeCanvasNodeState(selectedId, connectingFromId, selectedId);
     emit(removeNodeOps(document_, selectedId));
-    setSelectedId(null);
-  }, [document_, emit, selectedId]);
+    setSelectedId(next.selectedId);
+    setConnectingFromId(next.connectingFromId);
+  }, [connectingFromId, document_, emit, selectedId]);
+
+  const onNodeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>, node: CanvasNode) => {
+      const action = canvasNodeKeyAction(event.key, {
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        writable: !!onOps,
+      });
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (action.kind === "activate") {
+        activateNode(node.id);
+        return;
+      }
+      if (action.kind === "remove") {
+        const next = removeCanvasNodeState(selectedId, connectingFromId, node.id);
+        emit(removeNodeOps(document_!, node.id));
+        setSelectedId(next.selectedId);
+        setConnectingFromId(next.connectingFromId);
+        return;
+      }
+      if (action.kind === "move") {
+        const rect = rectOf(node.id);
+        if (rect) emit(pinNodeOps(node, moveCanvasRectWithKeyboard(rect, action.key, action.largeStep)));
+        return;
+      }
+      const nextId = nextCanvasNodeId((document_?.nodes ?? []).map((candidate) => candidate.id), node.id, action.delta);
+      if (nextId) {
+        setFocusedId(nextId);
+        nodeRefs.current.get(nextId)?.focus();
+      }
+    },
+    [activateNode, connectingFromId, document_, emit, onOps, rectOf, selectedId]
+  );
+
+  const fitCanvas = useCallback(() => {
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    if (!viewport || !document_) return;
+    const rects = document_.nodes.map((node) => rectOf(node.id)).filter((rect): rect is CanvasRect => !!rect);
+    const fitted = fitCanvasTransform(rects, viewport, 24, MAX_SCALE);
+    setScale(fitted.scale);
+    setOffset(fitted.offset);
+  }, [document_, rectOf]);
 
   const onDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const card = (event.target as HTMLElement).closest<HTMLElement>("[data-canvas-node]");
@@ -323,7 +384,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       undo();
       return;
     }
-    if (event.key === "Escape") setSelectedId(null);
+    if (event.key === "Escape") {
+      setSelectedId(null);
+      setConnectingFromId(null);
+    }
     if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
       event.preventDefault();
       removeSelected();
@@ -349,6 +413,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     height: Math.max(...rects.map((rect) => rect.y + rect.h), 0) + CONTENT_PAD,
   };
   const readOnly = !onOps;
+  const activeTabId =
+    (focusedId && document_.nodes.some((node) => node.id === focusedId) ? focusedId : null) ??
+    (selectedId && document_.nodes.some((node) => node.id === selectedId) ? selectedId : null) ??
+    document_.nodes[0]?.id;
 
   return (
     <div className="relative flex h-full min-h-0">
@@ -376,6 +444,9 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
         onKeyDown={onKeyDown}
       >
         <div
+          role="listbox"
+          aria-label="Canvas nodes"
+          aria-describedby="canvas-keyboard-help"
           className="absolute left-0 top-0 origin-top-left"
           style={{ width: extent.width, height: extent.height, transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
         >
@@ -429,25 +500,32 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             return (
               <div
                 key={node.id}
+                ref={(element) => {
+                  if (element) nodeRefs.current.set(node.id, element);
+                  else nodeRefs.current.delete(node.id);
+                }}
                 data-canvas-node={node.id}
                 data-workbench-context-target="canvas-node"
-                className={`absolute flex flex-col rounded-sm bg-zinc-900 shadow-lg shadow-black/20 ring-1 ${
+                role="option"
+                aria-selected={selected}
+                aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
+                tabIndex={activeTabId === node.id ? 0 : -1}
+                className={`absolute flex flex-col rounded-sm bg-zinc-900 shadow-lg shadow-black/20 ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                   selected ? "ring-indigo-500" : "ring-zinc-700 hover:ring-zinc-500"
                 }`}
                 style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: node.z ?? 0 }}
                 onContextMenu={(event) =>
                   requestContextPick?.(event, { label: nodeTitle(node), sourcePath: ["nodes", node.at] })
                 }
+                onKeyDown={(event) => onNodeKeyDown(event, node)}
+                onFocus={() => setFocusedId(node.id)}
                 onDoubleClick={() => openSource(node)}
               >
                 <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
                   {node.rect && <span className="flex-shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
-                <NodeBody
-                  node={node}
-                  onOpen={node.kind === "source" && openLocator ? () => openSource(node) : undefined}
-                />
+                <NodeBody node={node} />
                 {selected && !readOnly &&
                   SIDES.map((side) => (
                     <span
@@ -466,6 +544,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             );
           })}
         </div>
+
+        <p id="canvas-keyboard-help" className="sr-only">
+          Use arrow keys to move focus between nodes. Press Enter or Space to select. Hold Alt while pressing an arrow key to move a node; add Shift for a larger step. Use Connect selected node, then activate a target node, to create an edge.
+        </p>
 
         <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex items-end gap-3 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
           <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
@@ -493,6 +575,35 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             >
               <Trash2 className="h-4 w-4" />
             </UiButton>
+            <UiButton
+              variant="plain"
+              type="button"
+              onClick={() => setConnectingFromId((current) => current ? null : selectedId)}
+              disabled={readOnly || !selectedId}
+              aria-label={connectingFromId ? "Cancel connection" : "Connect selected node"}
+              aria-pressed={!!connectingFromId}
+              content="icon"
+              controlSize="regular"
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+            >
+              <Link2 className="h-4 w-4" />
+            </UiButton>
+            <UiButton
+              variant="plain"
+              type="button"
+              onClick={() => {
+                const node = document_?.nodes.find((candidate) => candidate.id === selectedId);
+                if (node) openSource(node);
+              }}
+              disabled={!selectedId || document_?.nodes.find((node) => node.id === selectedId)?.kind !== "source" || !openLocator}
+              aria-label="Open selected source in Workbench"
+              content="icon"
+              controlSize="regular"
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </UiButton>
+            {connectingFromId && <span role="status" className="px-2 text-minimal text-content-muted">Choose a target node</span>}
           </div>
           <div className="flex-1" />
           <div className="floating-control-surface pointer-events-auto flex items-center rounded-concentric p-1">
@@ -506,7 +617,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 24, y: 24 }); }} aria-label="Reset view" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
               <RotateCcw className="h-4 w-4" />
             </UiButton>
-            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 24, y: 24 }); }} aria-label="Fit canvas" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
+            <UiButton variant="plain" type="button" onClick={fitCanvas} aria-label="Fit canvas" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
               <Maximize2 className="h-4 w-4" />
             </UiButton>
           </div>

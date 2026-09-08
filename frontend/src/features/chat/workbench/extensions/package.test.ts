@@ -69,7 +69,7 @@ describe("parseExtensionPackage", () => {
       { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
       {
         "scenes/main.json": JSON.stringify({
-          items: [{ id: "notes", title: "Notes", source: { kind: "fs", path: "notes.md" }, view: "builtin:markdown" }],
+          items: [{ id: "notes", title: "Notes", file: "notes.md", renderer: "builtin:markdown" }],
           seed: [{ path: "notes.md", source: "seed/main/notes.md" }], pin: ["notes.md"],
         }),
         "seed/main/notes.md": "# Notes",
@@ -79,6 +79,14 @@ describe("parseExtensionPackage", () => {
     expect(parsed.scenes[0].id).toBe("extension:example:main");
     expect(parsed.scenes[0].seed?.["notes.md"]).toBe("# Notes");
     expect(parsed.scenes[0].items[0].view).toBe("builtin:markdown");
+  });
+
+  it("keeps schema-v1 scene items on the published file/renderer wire shape", async () => {
+    const bytes = archive(
+      { ...base, contributes: { scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }], renderers: [] } },
+      { "scenes/main.json": JSON.stringify({ items: [{ id: "notes", title: "Notes", source: { kind: "fs", path: "notes.md" }, view: "builtin:markdown" }] }) }
+    );
+    await expect(parseExtensionPackage(bytes, "global")).rejects.toThrow(/unknown field: source/);
   });
 
   it("rejects renderer code in browser/global scope", async () => {

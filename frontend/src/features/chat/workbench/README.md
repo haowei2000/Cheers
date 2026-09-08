@@ -2,10 +2,10 @@
 
 Workbench consumes one `.cheers-extension` contract. Global packages contribute declarative scenes; macOS personal packages may additionally contribute sandboxed renderers.
 
-A scene's `items` and a package's `panels` are ONE contribution — `{id, title, source,
-view, config}` — checked by `validatePanelContribution`, which narrows a scene item's
-source to `fs` and mirrors `validate_panel` on the server. `manifest.ts` holds the client
-side of that shape (`PanelDef`, `viewOf`, `builtinLensId`).
+A schema-v1 scene item keeps the published `{id, title, file, renderer, config}` wire
+shape; a package panel uses `{id, title, source, view, config}`. The package parser
+validates those boundaries separately and normalizes both to `PanelDef`. `manifest.ts`
+holds that internal shape (`PanelDef`, `viewOf`, `builtinLensId`).
 
 `extensions/package.ts` validates ZIP metadata and manifests before inflation/execution. `extensions/api.ts` consumes the unified gateway API. Shared scene state and `builtin:*` bindings live in `.workbench.json`; `personal:*` bindings live in device-local storage.
 

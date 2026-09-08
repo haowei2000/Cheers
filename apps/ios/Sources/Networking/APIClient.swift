@@ -1043,8 +1043,8 @@ struct APIClient: Sendable {
                     "/workbench/extensions/\(extensionValue.id)/scenes/\(contribution.id)",
                     as: WorkbenchResolvedScene.self)
                 let runtimeId = "extension:\(extensionValue.id):\(contribution.id)"
-                // The gateway already speaks this vocabulary, so the items pass straight
-                // through; there is no `lens`/`renderer` pair left to translate between.
+                // The DTO normalizes both the published v1 file/renderer response and
+                // the current source/view response before this boundary.
                 let manifest = WorkbenchTemplateManifest(
                     id: runtimeId,
                     title: scene.title,

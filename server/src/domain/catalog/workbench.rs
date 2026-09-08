@@ -35,9 +35,10 @@ fn build(source: &str) -> OfficialExtension {
             .expect("official Workbench source has version")
     );
     let scene_id = "default";
-    // A scene's items and a template's panels are the same contribution, so they are
-    // built and checked by the same function; a scene narrows the source to `fs`
-    // because `.workbench.json` indexes scene items by file path.
+    // A scene's items and a template's panels normalize to the same contribution, so
+    // they are built and checked by the same function. Scene responses also retain the
+    // published v1 file/renderer fields; a scene narrows the source to `fs` because
+    // `.workbench.json` indexes scene items by file path.
     let items = build_panels(&source, id, "items", true);
     assert!(!items.is_empty(), "{id}: a scene needs at least one item");
     let seed: Vec<Value> = source["seed"]
@@ -145,8 +146,20 @@ fn build_panels(source: &Value, extension_id: &str, key: &str, fs_only: bool) ->
                 !(kind == "resource" && view == "auto"),
                 "{extension_id}/{panel_id}: a resource panel cannot leave its view to `auto`"
             );
-            let mut built =
-                json!({"id": panel_id, "title": title, "source": panel["source"], "view": view});
+            let mut built = if fs_only {
+                // Keep the published v1 API readable by installed clients while current
+                // clients consume the normalized source/view fields.
+                json!({
+                    "id": panel_id,
+                    "title": title,
+                    "file": panel["source"]["path"],
+                    "renderer": view,
+                    "source": panel["source"],
+                    "view": view
+                })
+            } else {
+                json!({"id": panel_id, "title": title, "source": panel["source"], "view": view})
+            };
             if let Some(config) = panel.get("config") {
                 built["config"] = config.clone();
             }
@@ -182,6 +195,10 @@ mod tests {
             assert_eq!(extension["origin"], "system");
             let scene = get_scene(extension["id"].as_str().unwrap(), "default").unwrap();
             assert!(!scene["items"].as_array().unwrap().is_empty());
+            for item in scene["items"].as_array().unwrap() {
+                assert_eq!(item["file"], item["source"]["path"]);
+                assert_eq!(item["renderer"], item["view"]);
+            }
         }
     }
 
@@ -265,8 +282,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "indexes its items by path")]
     fn a_scene_item_cannot_read_a_resource_verb() {
-        // Items and panels are ONE contribution now, so the difference has to be stated
-        // rather than implied by two structs: `.workbench.json` indexes a scene's items
+        // Official template items and panels normalize to one internal contribution, so
+        // the semantic difference is explicit: `.workbench.json` indexes a scene's items
         // by file path, and a verb has no path to be indexed by.
         build(
             &json!({

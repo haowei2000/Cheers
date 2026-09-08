@@ -235,16 +235,12 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
 4. **Manifest grammar.** Add the `panels` contribution beside `scenes`, gated to Tier A
    sources. Corpus cases first, per boundary 4 above.
 
-   **Followed by the half this step left undone.** Adding `panels` beside `scenes` left
-   the grammar saying one thing two ways: a scene item was `{file, renderer}` and a panel
-   `{source, view}`, while an official template spelled the same item `{file, lens}` — so
-   the catalog converted `lens` → `renderer` and every client converted it back. A scene
-   item is now the same `PanelContribution`, checked by one function per side
-   (`validate_panel`, `validatePanelContribution`), narrowed by one rule: **a scene item's
-   source must be `fs`**, because `scene_state` indexes a scene's items by file path.
-   `view` defaults to `auto`, which only an `fs` source may leave unset. The mount point
-   is now the only difference, and it is expressed by where the contribution is declared
-   rather than by a second vocabulary.
+   **Compatibility boundary.** Adding `panels` beside `scenes` introduced
+   `{source, view}` for panels, while the already-published schema-v1 scene item remains
+   `{file, renderer}`. Both installers validate that legacy wire shape and normalize it
+   to `PanelContribution`; they must not change schema v1 in place. A scene item is then
+   narrowed by one rule: **its source must be `fs`**, because `scene_state` indexes scene
+   items by file path. `renderer` defaults to `auto`; a resource panel must name `view`.
 
 5. **One picker.** Done. The four toolbar toggles are one Panels control listing
    **Windows** (Channel files, Remote workspace, ViewBoard, Workbench) and **Boards**

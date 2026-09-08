@@ -144,22 +144,19 @@ export interface FileSession extends FileBuffer {
   reload: (skipIfDirty?: boolean) => Promise<void>;
 }
 
-/** Structured edit execution with automatic conflict recovery.
- *  When `fs.patch` rejects with VERSION_CONFLICT, re-fetches the latest document version
- *  via `fs.read` and replays the same ops against `fresh.version`. */
-export async function patchWithReplay(
+/** Execute a structured edit against exactly the version it was authored from.
+ *
+ * Patch paths may contain array indexes. After a concurrent insert, remove, or move,
+ * replaying those indexes against a newer version can target a different object while
+ * still succeeding. A conflict therefore stays a conflict: the session reloads the
+ * fresh document and asks the person to repeat the intent against what is now visible. */
+export async function patchWithVersionCheck(
   fs: FsClient,
   path: string,
   ops: readonly PatchOp[],
   version: number
 ): Promise<{ path: string; version: number }> {
-  try {
-    return await fs.patch(path, ops, version);
-  } catch (e) {
-    if (!(e instanceof ResourceError && e.code === "VERSION_CONFLICT")) throw e;
-    const fresh = await fs.read(path);
-    return await fs.patch(path, ops, fresh.version);
-  }
+  return fs.patch(path, ops, version);
 }
 
 export function useFileSession(fs: FsClient, path: string): FileSession {
@@ -255,10 +252,10 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
   }, [fs, path, version, load, write]);
 
   // Structured edit, for callers that know WHICH part changed (a canvas node moving, a
-  // row being inserted). Distinct from `save` in two ways that matter: it preserves YAML
-  // comments through an array length change, which the whole-document path documents as
-  // a loss; and a VERSION_CONFLICT is recoverable, because the ops are still meaningful
-  // against the newer document and can be replayed once — a stale document cannot.
+  // row being inserted). Distinct from `save` because it preserves YAML comments through
+  // an array length change, which the whole-document path documents as a loss. Like a
+  // whole-document save, it never guesses through VERSION_CONFLICT: an indexed op is only
+  // meaningful against the exact document version from which the caller derived it.
   const applyOps = useCallback(
     async (ops: readonly PatchOp[]) => {
       if (ops.length === 0) return;
@@ -281,10 +278,14 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
         // with no root object) — that has to surface as a status, not escape as a
         // rejected promise no caller is awaiting.
         write(patchData(bufferRef.current, ops));
-        await patchWithReplay(fs, path, ops, version);
+        await patchWithVersionCheck(fs, path, ops, version);
         setStatus("Saved");
       } catch (e) {
-        setStatus(errMsg(e));
+        setStatus(
+          e instanceof ResourceError && e.code === "VERSION_CONFLICT"
+            ? "Conflict — reloaded the latest version; please repeat your change"
+            : errMsg(e)
+        );
       } finally {
         await load();
       }

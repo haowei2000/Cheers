@@ -11,7 +11,7 @@ import {
   editText,
   emptyBuffer,
   patchData,
-  patchWithReplay,
+  patchWithVersionCheck,
   type FileBuffer,
 } from "./jsonFile";
 
@@ -144,7 +144,7 @@ describe("renderer matching", () => {
 });
 
 describe("structured edit conflict recovery", () => {
-  it("re-reads and replays the same ops when fs.patch conflicts", async () => {
+  it("never replays index-addressed ops after fs.patch conflicts", async () => {
     const patchCalls: { path: string; ops: readonly PatchOp[]; ifVersion: number }[] = [];
     let readCount = 0;
 
@@ -163,24 +163,19 @@ describe("structured edit conflict recovery", () => {
       },
       patch: async (p: string, ops: readonly PatchOp[], ifVersion: number) => {
         patchCalls.push({ path: p, ops, ifVersion });
-        if (ifVersion === 1) {
-          throw new ResourceError("VERSION_CONFLICT", "version conflict");
-        }
-        return { path: p, version: ifVersion + 1 };
+        throw new ResourceError("VERSION_CONFLICT", "version conflict");
       },
     };
 
     const ops: PatchOp[] = [{ op: "set", path: ["nodes", 0, "id"], value: "b" }];
-    const result = await patchWithReplay(mockFs, "canvas.yaml", ops, 1);
+    await expect(patchWithVersionCheck(mockFs, "canvas.yaml", ops, 1)).rejects.toThrow("version conflict");
 
-    // The first attempt with version 1 failed with VERSION_CONFLICT;
-    // patchWithReplay re-read the file (getting version 2) and replayed the exact same batch.
-    expect(patchCalls).toHaveLength(2);
+    // A fresh array may no longer have the same object at index 0. The session reloads
+    // outside this helper, but the stale intent is never issued against its new version.
+    expect(patchCalls).toHaveLength(1);
     expect(patchCalls[0].ifVersion).toBe(1);
-    expect(patchCalls[1].ifVersion).toBe(2);
-    expect(patchCalls[1].ops).toEqual(ops);
-    expect(readCount).toBe(1);
-    expect(result).toEqual({ path: "canvas.yaml", version: 3 });
+    expect(patchCalls[0].ops).toEqual(ops);
+    expect(readCount).toBe(0);
   });
 
   it("rethrows non-conflict errors without retrying", async () => {
@@ -195,6 +190,6 @@ describe("structured edit conflict recovery", () => {
     };
 
     const ops: PatchOp[] = [{ op: "set", path: ["nodes", 0, "id"], value: "b" }];
-    await expect(patchWithReplay(mockFs, "canvas.yaml", ops, 1)).rejects.toThrow("permission denied");
+    await expect(patchWithVersionCheck(mockFs, "canvas.yaml", ops, 1)).rejects.toThrow("permission denied");
   });
 });

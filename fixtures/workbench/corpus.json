@@ -47,10 +47,7 @@
             {
               "id": "notes",
               "title": "Notes",
-              "source": {
-                "kind": "fs",
-                "path": "notes.md"
-              }
+              "file": "notes.md"
             }
           ]
         }
@@ -322,10 +319,7 @@
             {
               "id": "notes",
               "title": "Notes",
-              "source": {
-                "kind": "fs",
-                "path": "notes.md"
-              }
+              "file": "notes.md"
             }
           ]
         },
@@ -361,10 +355,7 @@
             {
               "id": "notes",
               "title": "Notes",
-              "source": {
-                "kind": "fs",
-                "path": "notes.md"
-              }
+              "file": "notes.md"
             }
           ]
         },
@@ -497,21 +488,18 @@
             {
               "id": "notes",
               "title": "Notes",
-              "source": {
-                "kind": "fs",
-                "path": "notes.md"
-              },
-              "view": null
+              "file": "notes.md",
+              "renderer": null
             }
           ]
         }
       }
     },
     {
-      "name": "scene-item-in-the-retired-file-renderer-spelling",
-      "why": "A scene item is an fs panel. The old `file`/`renderer` spelling said the same thing in a second vocabulary and is gone, so a package still using it is rejected rather than silently ignored.",
-      "global": "reject",
-      "personal": "reject",
+      "name": "scene-item-in-the-published-v1-file-renderer-spelling",
+      "why": "Schema version 1 published scene items as `file`/`renderer`; both old and current hosts must continue to accept that contract.",
+      "global": "accept",
+      "personal": "accept",
       "files": {
         "manifest.json": {
           "schemaVersion": 1,
@@ -542,7 +530,7 @@
     },
     {
       "name": "scene-item-over-a-resource-source",
-      "why": "A scene item is indexed by file path in `.workbench.json`'s scene_state, so it must name a file. The source union is shared with panels; a scene narrows it to `fs` rather than inventing its own.",
+      "why": "Schema-v1 scenes accept only file/renderer, so a panel-style resource source is rejected rather than silently widening access.",
       "global": "reject",
       "personal": "reject",
       "files": {
@@ -578,7 +566,7 @@
     },
     {
       "name": "scene-item-trying-to-pick",
-      "why": "A scene item reaches the same source validator a panel does, so an fs source rejects `pick` here for the same reason it does there.",
+      "why": "Schema-v1 scenes accept only file/renderer, so a panel-style source carrying pick is rejected as an unknown contract.",
       "global": "reject",
       "personal": "reject",
       "files": {
@@ -646,11 +634,8 @@
             {
               "id": "chart",
               "title": "Chart",
-              "source": {
-                "kind": "fs",
-                "path": "data.json"
-              },
-              "view": "self:chart"
+              "file": "data.json",
+              "renderer": "self:chart"
             }
           ]
         },

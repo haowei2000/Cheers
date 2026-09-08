@@ -61,9 +61,9 @@ export type PanelSourceContribution =
 
 /** A declarative board: where its data lives plus which compiled view renders it.
  *
- * Also a scene's item type. The two were one statement in two vocabularies
- * (`file`/`renderer` against `source`/`view`); a scene narrows the source rather than
- * respelling it — see `validatePanelContribution`. */
+ * Scene definitions keep the published schema-v1 `file`/`renderer` wire shape. They are
+ * normalized to this internal shape only after validation; changing the v1 package
+ * grammar in place would make old packages and old hosts reject one another. */
 export interface PanelContribution {
   id: string;
   title: string;
@@ -102,7 +102,13 @@ export interface ExtensionManifest {
 }
 
 interface PackageSceneDefinition {
-  items: PanelContribution[];
+  items: Array<{
+    id: string;
+    title: string;
+    file: string;
+    renderer?: string;
+    config?: unknown;
+  }>;
   seed?: Array<{ path: string; source: string }>;
   pin?: string[];
 }
@@ -345,6 +351,30 @@ function validatePanelContribution(kind: string, panel: unknown, seen: Set<strin
   }
 }
 
+/** Validate the immutable schema-v1 scene-item boundary and normalize it for the app.
+ * `contributes.panels` intentionally uses the newer source/view vocabulary; only scene
+ * definitions were already published with file/renderer. */
+function normalizeSceneItemV1(item: unknown, seen: Set<string>): PanelDef {
+  requireObject(item, "scene item");
+  requireKnownKeys(item, ["id", "title", "file", "renderer", "config"], "scene item");
+  requireId("scene item", item.id);
+  const id = item.id as string;
+  if (typeof item.title !== "string" || !item.title.trim()) throw new Error(`Scene item title is required: ${id}`);
+  if (seen.has(id)) throw new Error(`Duplicate scene item id: ${id}`);
+  seen.add(id);
+  validateWorkspacePath(item.file, `scene item: ${id}`);
+  if (item.renderer !== undefined && (typeof item.renderer !== "string" || !item.renderer.trim())) {
+    throw new Error(`Scene item renderer must be a view reference: ${id}`);
+  }
+  return {
+    id,
+    title: item.title,
+    source: { kind: "fs", path: item.file },
+    view: item.renderer ?? AUTO_VIEW,
+    config: item.config,
+  };
+}
+
 function parseManifest(bytes: Uint8Array): ExtensionManifest {
   const manifest = JSON.parse(text(bytes, "manifest.json")) as ExtensionManifest;
   requireObject(manifest, "manifest");
@@ -525,16 +555,9 @@ export async function parseExtensionPackage(
     requireKnownKeys(definition, ["items", "seed", "pin"], `scene ${contribution.id}`);
     if (!Array.isArray(definition.items)) throw new Error(`Scene ${contribution.id} items must be an array`);
     const itemIds = new Set<string>();
-    const items: PanelDef[] = definition.items.map((item) => {
-      validatePanelContribution("Scene item", item, itemIds, true);
-      return {
-        id: item.id,
-        title: item.title,
-        // `fsOnly` above already refused every other kind.
-        source: item.source as { kind: "fs"; path: string },
-        view: resolveView(item.view),
-        config: item.config,
-      };
+    const items: PanelDef[] = definition.items.map((raw) => {
+      const item = normalizeSceneItemV1(raw, itemIds);
+      return { ...item, view: resolveView(item.view) };
     });
     const seed: Record<string, string> = {};
     const seedPaths = new Set<string>();
