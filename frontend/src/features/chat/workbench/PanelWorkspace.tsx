@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type SetStateAction,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -20,14 +21,17 @@ import {
   type ManagedPanel,
 } from "@/components/ui/managed-panel";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import type { SpawnKind } from "./laneSnap";
+import type { Rect, SpawnKind } from "./laneSnap";
 import {
   canSplitWorkspace,
   restoreLocalWorkspacePreference,
   resolveWorkspaceLayout,
+  toLaneRelativeRect,
+  toViewportRect,
+  workspacePreferenceKey,
 } from "./panelWorkspaceLayout";
 
-type Geometry = { x: number; y: number; w: number; h: number };
+type Geometry = Rect;
 
 export function PanelWorkspace({
   channelId,
@@ -38,12 +42,15 @@ export function PanelWorkspace({
   revealMessageKey,
   activationRequest,
   sharedLayout,
+  sharedGeometryFor,
   onLayoutChange,
 }: {
   sharedLayout?: SharedWorkspaceLayout;
+  sharedGeometryFor?: (kind: SpawnKind) => Rect | null;
   onLayoutChange?: (state: {
     layout: SharedWorkspaceLayout;
     overridden: boolean;
+    floatingPanels: Partial<Record<SpawnKind, Rect>>;
   }) => void;
   channelId: string;
   openPanels: { id: SpawnKind; label: string }[];
@@ -53,14 +60,20 @@ export function PanelWorkspace({
   revealMessageKey?: unknown;
   activationRequest?: { id: SpawnKind; nonce: number } | null;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const setStage = useCallback(
+  const setRoot = useCallback(
     (element: HTMLDivElement | null) => {
-      stageRef.current = element;
+      rootRef.current = element;
       onLaneElement(element);
     },
     [onLaneElement],
+  );
+  const setStage = useCallback(
+    (element: HTMLDivElement | null) => {
+      stageRef.current = element;
+    },
+    [],
   );
   const [stack, setStack] = useState<SpawnKind[]>([]);
   const [width, setWidth] = useState(0);
@@ -73,14 +86,25 @@ export function PanelWorkspace({
     openPanels[0]?.id ?? "viewboard",
   );
   const [showWork, setShowWork] = useState(openPanels.length > 0);
-  const [floats, setFloats] = useState<Partial<Record<SpawnKind, Geometry>>>(
+  const [floats, setFloatsState] = useState<Partial<Record<SpawnKind, Geometry>>>(
     {},
   );
+  const floatsRef = useRef<Partial<Record<SpawnKind, Geometry>>>({});
+  const setFloats = useCallback(
+    (update: SetStateAction<Partial<Record<SpawnKind, Geometry>>>) => {
+      const next = typeof update === "function" ? update(floatsRef.current) : update;
+      floatsRef.current = next;
+      setFloatsState(next);
+    },
+    [],
+  );
   const [dragging, setDragging] = useState(false);
+  const [restoredChannel, setRestoredChannel] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const previousOpen = useRef<SpawnKind[]>([]);
   const openPanelsRef = useRef(openPanels);
   openPanelsRef.current = openPanels;
+  const openPanelKey = openPanels.map((panel) => panel.id).join(",");
   const messageFocus = useRef<HTMLElement | null>(null);
   const layout = resolveWorkspaceLayout(width, requestedWidth);
   const docked = useMemo(
@@ -129,7 +153,7 @@ export function PanelWorkspace({
     cleanupRef.current = null;
     try {
       const restored = restoreLocalWorkspacePreference(
-        localStorage.getItem(`cheers.panel-workspace.${channelId}`),
+        localStorage.getItem(workspacePreferenceKey(channelId)),
         fallbackActive,
       );
       setRequestedWidth(restored.width);
@@ -137,19 +161,31 @@ export function PanelWorkspace({
       setRatio(restored.ratio);
       setActive(restored.active ?? fallbackActive);
       setOverridden(restored.overridden);
+      const lane = rootRef.current?.getBoundingClientRect();
+      setFloats(
+        lane
+          ? Object.fromEntries(
+              Object.entries(restored.floats).map(([id, rect]) => [
+                id,
+                toViewportRect(rect!, lane),
+              ]),
+            )
+          : {},
+      );
     } catch {
       setRequestedWidth(400);
       setSplit(false);
       setRatio(0.5);
       setActive(fallbackActive);
       setOverridden(false);
+      setFloats({});
     }
     setShowWork(channelPanels.length > 0);
     setStack([]);
-    setFloats({});
     setDragging(false);
     previousOpen.current = [];
-  }, [channelId]);
+    setRestoredChannel(channelId);
+  }, [channelId, setFloats]);
   useEffect(() => {
     const added = openPanels.filter(
       (p) => !previousOpen.current.includes(p.id),
@@ -190,7 +226,7 @@ export function PanelWorkspace({
     () =>
       subscribeLayoutReset(() => {
         try {
-          localStorage.removeItem(`cheers.panel-workspace.${channelId}`);
+          localStorage.removeItem(workspacePreferenceKey(channelId));
         } catch {
           /* optional storage */
         }
@@ -201,12 +237,12 @@ export function PanelWorkspace({
         setRatio(sharedLayout?.ratio ?? 0.5);
         if (sharedLayout?.active) setActive(sharedLayout.active);
       }),
-    [channelId, sharedLayout, width],
+    [channelId, setFloats, sharedLayout, width],
   );
   useEffect(() => {
     if (overridden || !sharedLayout || width <= 0) return;
     try {
-      if (localStorage.getItem(`cheers.panel-workspace.${channelId}`)) return;
+      if (localStorage.getItem(workspacePreferenceKey(channelId))) return;
     } catch {
       /* optional storage */
     }
@@ -216,7 +252,53 @@ export function PanelWorkspace({
     if (sharedLayout.active) setActive(sharedLayout.active);
   }, [sharedLayout, overridden, width, channelId]);
   useEffect(() => {
+    if (
+      restoredChannel !== channelId ||
+      overridden ||
+      !layout.sideBySide ||
+      !sharedGeometryFor
+    )
+      return;
+    const lane = rootRef.current?.getBoundingClientRect();
+    if (!lane || lane.width <= 0 || lane.height <= 0) return;
+    const next: Partial<Record<SpawnKind, Geometry>> = {};
+    for (const panel of openPanelsRef.current) {
+      const rect = sharedGeometryFor(panel.id);
+      if (rect) next[panel.id] = toViewportRect(rect, lane);
+    }
+    setFloats((current) => {
+      const ids = Object.keys(next) as SpawnKind[];
+      if (
+        ids.length === Object.keys(current).length &&
+        ids.every((id) => {
+          const a = current[id];
+          const b = next[id];
+          return a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+        })
+      )
+        return current;
+      return next;
+    });
+  }, [
+    channelId,
+    layout.sideBySide,
+    openPanelKey,
+    overridden,
+    restoredChannel,
+    setFloats,
+    sharedGeometryFor,
+    stageHeight,
+    width,
+  ]);
+  useEffect(() => {
     if (width <= 0) return;
+    const lane = rootRef.current?.getBoundingClientRect();
+    const floatingPanels: Partial<Record<SpawnKind, Rect>> = {};
+    if (lane) {
+      for (const [id, rect] of Object.entries(floats)) {
+        if (rect) floatingPanels[id as SpawnKind] = toLaneRelativeRect(rect, lane);
+      }
+    }
     onLayoutChange?.({
       layout: {
         width: Math.min(
@@ -227,7 +309,8 @@ export function PanelWorkspace({
         ratio,
         active,
       },
-      overridden: overridden || Object.keys(floats).length > 0,
+      overridden,
+      floatingPanels,
     });
   }, [
     width,
@@ -246,16 +329,25 @@ export function PanelWorkspace({
     nextSplit: boolean,
     nextRatio = ratio,
     nextActive = active,
+    nextFloats = floatsRef.current,
   ) => {
     setOverridden(true);
+    const lane = rootRef.current?.getBoundingClientRect();
+    const storedFloats: Partial<Record<SpawnKind, Rect>> = {};
+    if (lane) {
+      for (const [id, rect] of Object.entries(nextFloats)) {
+        if (rect) storedFloats[id as SpawnKind] = toLaneRelativeRect(rect, lane);
+      }
+    }
     try {
       localStorage.setItem(
-        `cheers.panel-workspace.${channelId}`,
+        workspacePreferenceKey(channelId),
         JSON.stringify({
           width: nextWidth,
           split: nextSplit,
           ratio: nextRatio,
           active: nextActive,
+          floats: storedFloats,
         }),
       );
     } catch {
@@ -297,11 +389,12 @@ export function PanelWorkspace({
       delete next[id];
       return next;
     });
+    remember(requestedWidth, split, ratio, id);
     setActive(id);
     setShowWork(true);
-  }, []);
+  }, [ratio, remember, requestedWidth, setFloats, split]);
   const initialGeometry = useCallback((): Geometry => {
-    const rect = stageRef.current?.getBoundingClientRect();
+    const rect = rootRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
     return {
       x: Math.max(8, Math.min(rect?.left ?? 80, window.innerWidth - 428)),
@@ -364,10 +457,14 @@ export function PanelWorkspace({
             height: "auto",
             zIndex: 1,
           },
-      toggleFloating: () =>
-        floating
-          ? dock(id)
-          : setFloats((current) => ({ ...current, [id]: initialGeometry() })),
+      toggleFloating: () => {
+        if (floating) {
+          dock(id);
+          return;
+        }
+        setFloats((current) => ({ ...current, [id]: initialGeometry() }));
+        remember(requestedWidth, split);
+      },
       dragProps: {
         style: { touchAction: "none", cursor: "grab" },
         onPointerDown: (event) => {
@@ -403,6 +500,7 @@ export function PanelWorkspace({
               )
                 return;
               moved = true;
+              setOverridden(true);
               setDragging(true);
               setFloats((current) => ({
                 ...current,
@@ -424,6 +522,8 @@ export function PanelWorkspace({
                 next.clientY <= root.bottom
               )
                 dock(id);
+              else
+                remember(requestedWidth, split);
             },
           );
         },
@@ -434,15 +534,18 @@ export function PanelWorkspace({
           const origin = geometry ?? initialGeometry();
           const x = event.clientX;
           const y = event.clientY;
-          trackPointer(event, (next) =>
-            setFloats((current) => ({
-              ...current,
-              [id]: {
-                ...origin,
-                w: Math.max(320, origin.w + next.clientX - x),
-                h: Math.max(240, origin.h + next.clientY - y),
-              },
-            })),
+          trackPointer(
+            event,
+            (next) =>
+              setFloats((current) => ({
+                ...current,
+                [id]: {
+                  ...origin,
+                  w: Math.max(320, origin.w + next.clientX - x),
+                  h: Math.max(240, origin.h + next.clientY - y),
+                },
+              })),
+            () => remember(requestedWidth, split),
           );
         },
       },
@@ -458,11 +561,15 @@ export function PanelWorkspace({
     splitRatio,
     stack,
     trackPointer,
+    remember,
+    requestedWidth,
+    setFloats,
+    split,
   ]);
   return (
     <ManagedPanelProvider resolve={getPanel}>
       <div
-        ref={rootRef}
+        ref={setRoot}
         data-panel-workspace=""
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
       >

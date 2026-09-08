@@ -53,7 +53,7 @@ import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
+import type { Rect, SpawnKind } from "@/features/chat/workbench/laneSnap";
 import { panelsFor } from "@/features/chat/panels/registry";
 import { useExtensionPanels } from "@/features/chat/panels/useExtensionPanels";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -537,7 +537,22 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
-  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<{ layout: SharedWorkspaceLayout; overridden: boolean } | null>(null);
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<{
+    channelId: string;
+    layout: SharedWorkspaceLayout;
+    overridden: boolean;
+    floatingPanels: Partial<Record<SpawnKind, Rect>>;
+  } | null>(null);
+  const currentWorkspaceSnapshot =
+    workspaceSnapshot?.channelId === layoutChannelId ? workspaceSnapshot : null;
+  const handleWorkspaceLayoutChange = useCallback(
+    (snapshot: {
+      layout: SharedWorkspaceLayout;
+      overridden: boolean;
+      floatingPanels: Partial<Record<SpawnKind, Rect>>;
+    }) => setWorkspaceSnapshot({ channelId: layoutChannelId, ...snapshot }),
+    [layoutChannelId],
+  );
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
     sendResourceReq,
@@ -1380,7 +1395,7 @@ export function ChannelView({
       workbenchOpen={wbOpen}
       boards={laneBoards}
       onOpenBoard={openBoard}
-      layoutOverridden={channelLayout.overridden || workspaceSnapshot?.overridden === true}
+      layoutOverridden={channelLayout.overridden || currentWorkspaceSnapshot?.overridden === true}
       layoutSaving={channelLayout.saving}
       onSaveLayout={() =>
         void channelLayout.saveLayout({
@@ -1388,7 +1403,7 @@ export function ChannelView({
           workspace: wsOpen,
           viewboard: vbOpen,
           workbench: wbOpen,
-        }, workspaceSnapshot?.layout)
+        }, currentWorkspaceSnapshot?.layout, currentWorkspaceSnapshot?.floatingPanels)
       }
       onResetLayout={channelLayout.resetLayout}
       onManage={() => setSettingsOpen(true)}
@@ -1437,7 +1452,8 @@ export function ChannelView({
           revealMessageKey={focusMsg}
           activationRequest={panelRequest}
           sharedLayout={channelLayout.workspace}
-          onLayoutChange={setWorkspaceSnapshot}
+          sharedGeometryFor={channelLayout.geomFor}
+          onLayoutChange={handleWorkspaceLayoutChange}
           panels={(
             <LaneBoundsContext.Provider
               value={anyWorkOpen ? getLaneBounds : null}

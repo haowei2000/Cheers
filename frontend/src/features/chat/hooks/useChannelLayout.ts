@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { getOccupant, SPAWN_KINDS, type Rect, type SpawnKind } from "@/features/chat/workbench/laneSnap";
-import { makeFsClient, type SendResourceReq } from "@/features/chat/workbench/fsClient";
+import { SPAWN_KINDS, type Rect, type SpawnKind } from "@/features/chat/workbench/laneSnap";
+import { makeFsClient, type FsClient, type SendResourceReq } from "@/features/chat/workbench/fsClient";
 import { WORKBENCH_CONFIG_PATH } from "@/features/chat/workbench/environmentRegistry";
 import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
 import {
@@ -8,7 +8,6 @@ import {
   mergeLayout,
   parseLayout,
   requestLayoutReset,
-  storageKeyFor,
   subscribeLayoutOverride,
   toFraction,
   toLaneRect,
@@ -35,7 +34,11 @@ export interface ChannelLayout {
   sharedOpen: Partial<Record<SpawnKind, boolean>>;
   /** Publish this viewer's current arrangement as the channel's, and drop their
    *  local overrides so they are following what they just saved. */
-  saveLayout: (open: Record<SpawnKind, boolean>, workspace?: SharedWorkspaceLayout) => Promise<void>;
+  saveLayout: (
+    open: Record<SpawnKind, boolean>,
+    workspace?: SharedWorkspaceLayout,
+    floatingPanels?: Partial<Record<SpawnKind, Rect>>,
+  ) => Promise<void>;
   /** Drop this device's overrides and follow the channel again. */
   resetLayout: () => void;
   /** True while at least one window has a local override — the only state in which
@@ -43,6 +46,76 @@ export interface ChannelLayout {
   overridden: boolean;
   saving: boolean;
   error: string | null;
+}
+
+interface ChannelLayoutState {
+  channelId: string;
+  layout: SharedLayout | undefined;
+}
+
+export function layoutForChannel(
+  state: ChannelLayoutState | undefined,
+  channelId: string,
+  enabled: boolean,
+): SharedLayout | undefined {
+  return enabled && state?.channelId === channelId ? state.layout : undefined;
+}
+
+/** Commit through one captured client so a channel switch cannot split a read/write
+ * transaction across two channel workspaces. */
+export async function commitSharedLayout(
+  fs: Pick<FsClient, "read" | "write">,
+  ours: SharedLayout,
+): Promise<SharedLayout> {
+  const attempt = async () => {
+    let document: Record<string, unknown> = {};
+    let version = 0;
+    try {
+      const file = await fs.read(WORKBENCH_CONFIG_PATH);
+      document = JSON.parse(file.content) as Record<string, unknown>;
+      version = file.version;
+    } catch {
+      /* no config yet — if_version 0 creates it */
+    }
+    const merged = mergeLayout(parseLayout(document.layout), ours);
+    document.layout = merged;
+    await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(document, null, 2), version);
+    return merged;
+  };
+
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!(error instanceof ResourceError && error.code === "VERSION_CONFLICT")) throw error;
+    return attempt();
+  }
+}
+
+export function buildLayoutUpdate(
+  open: Record<SpawnKind, boolean>,
+  workspace: SharedWorkspaceLayout | undefined,
+  floatingPanels: Partial<Record<SpawnKind, Rect>>,
+  bounds: { width: number; height: number } | null,
+): SharedLayout {
+  const ours: SharedLayout = {
+    version: 1,
+    panels: {},
+    ...(workspace ? { workspace } : {}),
+  };
+  for (const kind of SPAWN_KINDS) {
+    if (!bounds || !open[kind]) {
+      // A closed panel has not been instantiated, so absence from `floatingPanels`
+      // says nothing about whether its saved placement is docked or floating.
+      ours.panels[kind] = { open: open[kind] };
+      continue;
+    }
+    const rect = floatingPanels[kind];
+    ours.panels[kind] = {
+      rect: rect ? toFraction(rect, bounds) : null,
+      open: true,
+    };
+  }
+  return ours;
 }
 
 export function useChannelLayout({
@@ -60,32 +133,41 @@ export function useChannelLayout({
   /** Live push: a bot wrote to the channel workspace — re-read, in case it was this. */
   filesTick?: number;
 }): ChannelLayout {
-  const [shared, setShared] = useState<SharedLayout | undefined>();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sharedState, setSharedState] = useState<ChannelLayoutState>();
+  const [saveStatus, setSaveStatus] = useState<{
+    channelId: string;
+    saving: boolean;
+    error: string | null;
+  }>();
   const overridden = useSyncExternalStore(subscribeLayoutOverride, hasLocalOverride, () => false);
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
-  const fsRef = useRef(fs);
-  fsRef.current = fs;
+  const channelRef = useRef(channelId);
+  channelRef.current = channelId;
+  // Never expose the previous channel's value during the render before the new
+  // channel's asynchronous read finishes.
+  const shared = layoutForChannel(sharedState, channelId, enabled);
+  const currentSaveStatus = saveStatus?.channelId === channelId ? saveStatus : undefined;
+  const saving = currentSaveStatus?.saving ?? false;
+  const error = currentSaveStatus?.error ?? null;
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     void (async () => {
       try {
-        const file = await fsRef.current.read(WORKBENCH_CONFIG_PATH);
+        const file = await fs.read(WORKBENCH_CONFIG_PATH);
         const raw = JSON.parse(file.content) as { layout?: unknown };
-        if (!cancelled) setShared(parseLayout(raw.layout));
+        if (!cancelled) setSharedState({ channelId, layout: parseLayout(raw.layout) });
       } catch {
         // No config yet, or unreadable: the channel simply has no shared layout and
         // every window falls back to its spawn placement.
-        if (!cancelled) setShared(undefined);
+        if (!cancelled) setSharedState({ channelId, layout: undefined });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [channelId, enabled, filesTick]);
+  }, [channelId, enabled, filesTick, fs]);
 
   const geomFor = useCallback(
     (kind: SpawnKind): Rect | null => {
@@ -111,7 +193,11 @@ export function useChannelLayout({
   }, [shared]);
 
   const saveLayout = useCallback(
-    async (open: Record<SpawnKind, boolean>, workspace?: SharedWorkspaceLayout) => {
+    async (
+      open: Record<SpawnKind, boolean>,
+      workspace?: SharedWorkspaceLayout,
+      floatingPanels: Partial<Record<SpawnKind, Rect>> = {},
+    ) => {
       // Geometry and the workspace preference are independent halves of an arrangement,
       // so neither gates the other. A docked viewer has a workspace block but no lane to
       // measure against; a viewer who floated a window has geometry whether or not the
@@ -120,54 +206,40 @@ export function useChannelLayout({
       const measured = getLaneBounds();
       const bounds = measured && measured.width > 0 && measured.height > 0 ? measured : null;
       if (!workspace && !bounds) return;
-      setSaving(true);
-      setError(null);
-      const ours: SharedLayout = { version: 1, panels: {}, ...(workspace ? { workspace } : {}) };
-      for (const kind of SPAWN_KINDS) {
-        const rect = getOccupant(storageKeyFor(kind));
-        const fraction = rect && bounds ? toFraction(rect, bounds) : null;
-        ours.panels[kind] = fraction ? { rect: fraction, open: open[kind] } : { open: open[kind] };
-      }
-
-      // One merge-and-retry is enough because a drag never writes here: the only writers
-      // are a human pressing Save and an agent, so a collision is rare and a second one
-      // is not worth a backoff. Merging is per WINDOW, so a teammate who saved a
-      // different window keeps their change.
-      const attempt = async () => {
-        let document: Record<string, unknown> = {};
-        let version = 0;
-        try {
-          const file = await fsRef.current.read(WORKBENCH_CONFIG_PATH);
-          document = JSON.parse(file.content) as Record<string, unknown>;
-          version = file.version;
-        } catch {
-          /* no config yet — if_version 0 creates it */
-        }
-        const merged = mergeLayout(parseLayout(document.layout), ours);
-        document.layout = merged;
-        await fsRef.current.write(WORKBENCH_CONFIG_PATH, JSON.stringify(document, null, 2), version);
-        return merged;
-      };
+      const transactionChannel = channelId;
+      const transactionFs = fs;
+      setSaveStatus({ channelId: transactionChannel, saving: true, error: null });
+      // `null` explicitly removes a formerly-floating shared placement when a known
+      // open panel is docked. Closed panels update visibility only.
+      const ours = buildLayoutUpdate(open, workspace, floatingPanels, bounds);
 
       try {
-        let merged: SharedLayout;
-        try {
-          merged = await attempt();
-        } catch (e) {
-          if (!(e instanceof ResourceError && e.code === "VERSION_CONFLICT")) throw e;
-          merged = await attempt();
+        // One merge-and-retry is enough because a drag never writes here: the only
+        // writers are an explicit human save and an agent write.
+        const merged = await commitSharedLayout(transactionFs, ours);
+        if (channelRef.current === transactionChannel) {
+          setSharedState({ channelId: transactionChannel, layout: merged });
         }
-        setShared(merged);
         // The viewer is now following exactly what they published, so their overrides
         // would only be a way to drift back out of sync with themselves.
-        requestLayoutReset();
+        if (channelRef.current === transactionChannel) requestLayoutReset();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        if (channelRef.current === transactionChannel)
+          setSaveStatus({
+            channelId: transactionChannel,
+            saving: false,
+            error: e instanceof Error ? e.message : String(e),
+          });
       } finally {
-        setSaving(false);
+        if (channelRef.current === transactionChannel)
+          setSaveStatus((current) => ({
+            channelId: transactionChannel,
+            saving: false,
+            error: current?.channelId === transactionChannel ? current.error : null,
+          }));
       }
     },
-    [getLaneBounds]
+    [channelId, fs, getLaneBounds]
   );
 
   const resetLayout = useCallback(requestLayoutReset, []);
