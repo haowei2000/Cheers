@@ -1,3 +1,5 @@
+import { ButtonGroup } from "@/components/ui/button-group";
+import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -143,8 +145,8 @@ export default function FleetPage() {
   );
 
   return <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
-    <RouteChromeHeader actions={headerActions}>
-      <header className="flex items-center gap-4 px-6 py-5 max-md:px-4">
+    <RouteChromeHeader>
+      <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
         <UiButton
           variant="plain"
           type="button"
@@ -162,7 +164,6 @@ export default function FleetPage() {
           <h1 className="text-comfortable font-semibold leading-none">Fleet</h1>
           <p className="mt-1 hidden text-minimal text-content-muted sm:block">Personal bot cockpit</p>
         </div>
-        <div className="ml-auto flex items-center gap-1">{headerActions}</div>
       </header>
     </RouteChromeHeader>
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
@@ -199,6 +200,11 @@ export default function FleetPage() {
         </ItemList>
       </nav>
       <main className="min-w-0 flex-1">
+        <ContentActionScope>
+        <div className="mb-4 flex flex-wrap items-center gap-3" data-content-toolbar="fleet">
+          <h2 className="text-comfortable font-semibold">{sections.find(item => item.id === section)?.label ?? "Fleet"}</h2>
+          <ButtonGroup label="Fleet actions" controlSize="regular">{headerActions}</ButtonGroup>
+        </div>
         <div className="space-y-7">
         {loading ? <SurfaceSpinner /> : section === "overview" ? (
           <FleetOverview
@@ -220,9 +226,10 @@ export default function FleetPage() {
           <FleetAudit events={audit} bots={bots} />
         )}
         </div>
+        </ContentActionScope>
       </main>
     </div>
-    {selectedBot && <Dialog title={selectedBot.display_name || selectedBot.username} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel key={selectedBot.bot_id} bot={selectedBot} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
+    {selectedBot && <Dialog ariaLabel={`${selectedBot.display_name || selectedBot.username} — Bot details`} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel onClose={() => navigate("/fleet/bots")} key={selectedBot.bot_id} bot={selectedBot} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
       setCreateBotOpen(false);
       // Seed from the POST response (it carries can_manage) rather than waiting

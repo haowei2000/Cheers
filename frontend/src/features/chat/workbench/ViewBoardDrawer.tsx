@@ -1,3 +1,4 @@
+import { useManagedPanel } from "./PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { workbenchControlSize } from "./workbench-control";
@@ -7,7 +8,7 @@ import { workbenchControlSize } from "./workbench-control";
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
-import { LayoutDashboard, Layers, Plus } from "lucide-react";
+import { LayoutDashboard, ListFilter, Plus } from "lucide-react";
 import {
   useContextPickStore,
   type ContextItem,
@@ -77,13 +78,15 @@ function ViewBoardDrawerImpl({
   channelId,
   sendResourceReq,
   boardTick,
-  minimal,
+  minimal: requestedMinimal,
   onToggleMinimal,
   onJumpToMessage,
   pendingApprovals,
   currentUserId,
   focusBoard,
 }: Props) {
+  const managed = useManagedPanel("viewboard");
+  const minimal = !managed && requestedMinimal;
   const profile = useChannelProfile(channelId, open, boardTick?.["github-code"]);
   // Contributed panels are loaded by ChannelView (useExtensionPanels) so the toolbar's
   // picker can list them before this drawer has ever been opened.
@@ -228,9 +231,16 @@ function ViewBoardDrawerImpl({
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
       primaryNavigation={{
         ariaLabel: "ViewBoard sections",
-        // A dropdown, not a tab row — same reason as the Workbench: a menubar's width
-        // scales with how many boards exist, in a 420px-wide panel.
-        presentationOrder: ["collapsed"],
+        // Icons first, dropdown as the fallback. The original objection to a tab row
+        // — its width scales with how many boards exist, inside a 420px panel — is
+        // what AdaptiveControlGroup already measures for: five 28px icon triggers fit,
+        // and if boards are added or the panel is dragged narrower it collapses back to
+        // the dropdown on its own. Each board owns a distinct glyph, and the selected
+        // one keeps the shared neutral fill, so the state is not carried by color alone.
+        presentationOrder: ["icon", "collapsed"],
+        // The board's own content fills the panel directly below this control, so the
+        // fallback dropdown does not need to spell the name out either.
+        collapsedContent: "icon",
         items: boards.map((board) => ({
           id: board.id,
           label: board.title,
@@ -243,13 +253,21 @@ function ViewBoardDrawerImpl({
         // A DropdownSelect, not a native <select>. A native one sizes itself to its
         // LONGEST option, and these options are "bot name · session tag" — so in a 420px
         // panel it either blew the corner open or, once constrained, shrank past its own
-        // border and drew as a clipped sliver. Here the trigger label and the option
-        // labels are separate values: the trigger says which bot in a few characters,
-        // and the menu keeps the detail you actually choose by.
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        // border and drew as a clipped sliver. Constraining the trigger instead just
+        // moved the damage into the label, which is how "All sessions" came to render as
+        // "Al…". The trigger is now a glyph and carries no text at all; the menu keeps
+        // the full "bot · session" detail you actually choose by.
+        <div className="flex min-w-0 items-center gap-1">
           <DropdownSelect
-            ariaLabel="Scope"
-            leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            content="icon"
+            // ListFilter, not the Layers mark the Sessions board uses: once both are
+            // icon-only they sit inches apart on the same toolbar, and this one scopes
+            // the current board rather than navigating to sessions.
+            leading={<ListFilter className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            // The trigger has no visible label now, so the value rides the accessible
+            // name and the tooltip instead of being clipped to "Al…".
+            ariaLabel={`Scope: ${scopeLabel}`}
+            active={Boolean(scope)}
             label={scopeLabel}
             value={scope}
             options={[
@@ -266,8 +284,6 @@ function ViewBoardDrawerImpl({
             ]}
             onSelect={setScope}
             controlSize={workbenchControlSize.tab}
-            controlWidth="fill"
-            className="min-w-0 flex-1"
             menuClassName="max-w-80"
           />
         </div>

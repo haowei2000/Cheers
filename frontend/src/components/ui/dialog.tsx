@@ -1,3 +1,4 @@
+import { ButtonGroup } from "./button-group";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
@@ -132,14 +133,16 @@ export function Dialog({
             <h2 id={titleId} className="text-regular font-semibold text-content-primary">
               {title}
             </h2>
+            <ButtonGroup label="Dialog controls" className="ml-auto">
             <ActionButton
               action="close"
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close dialog"
               controlSize="compact"
-              className="ml-auto text-content-primary hover:text-content-strong max-md:p-2 max-md:-m-2"
+              className="text-content-primary hover:text-content-strong"
             />
+            </ButtonGroup>
           </div>
         )}
         {children}

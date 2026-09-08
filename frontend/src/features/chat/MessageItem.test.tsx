@@ -35,3 +35,24 @@ describe("MessageItem reply preview", () => {
     expect(markup).not.toContain(">Open<");
   });
 });
+
+describe("MessageItem identity anatomy", () => {
+  it("keeps the 96px name rail in chat", () => {
+    const markup = renderToStaticMarkup(<MessageItem message={source} />);
+
+    expect(markup).toContain("w-24"); // identityRailWidthClasses.regular
+    expect(markup).toContain(">System Administrator</span>");
+  });
+
+  it("renders the avatar alone in a discussion without losing attribution", () => {
+    const markup = renderToStaticMarkup(
+      <MessageItem message={source} identityLayout="avatar" />,
+    );
+
+    // The visible name and the rail it needed are both gone …
+    expect(markup).not.toContain(">System Administrator</span>");
+    expect(markup).not.toContain("w-24");
+    // … but the sender is still announced and still shown on hover.
+    expect(markup).toContain('aria-label="View profile for System Administrator"');
+  });
+});

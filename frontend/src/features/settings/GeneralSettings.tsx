@@ -1,3 +1,4 @@
+import { ButtonGroup } from "@/components/ui/button-group";
 import { useEffect, useState } from "react";
 import { Bell, Palette } from "lucide-react";
 import toast from "react-hot-toast";
@@ -170,17 +171,10 @@ export function AppUpdateCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <div className="flex items-center justify-between gap-4">
+      <div>
         <div className="min-w-0">
-          <p className="text-regular font-medium text-content-secondary">App updates</p>
-          <p className="text-compact text-content-muted mt-1">
-            {currentVersion ? `Installed ${currentVersion}. ` : null}
-            {update
-              ? `Version ${update.version} is available — installing restarts Cheers.`
-              : "Check GitHub for a newer signed desktop build."}
-          </p>
-        </div>
-        {update ? (
+          <div className="flex flex-wrap items-center gap-3"><p className="text-regular font-medium text-content-secondary">App updates</p>
+<ButtonGroup label="App update actions">        {update ? (
           <ActionButton
             action="restart"
             context="settings"
@@ -196,7 +190,15 @@ export function AppUpdateCard() {
             loading={checking}
             onClick={() => void check()}
           />
-        )}
+        )}</ButtonGroup></div>
+          <p className="text-compact text-content-muted mt-1">
+            {currentVersion ? `Installed ${currentVersion}. ` : null}
+            {update
+              ? `Version ${update.version} is available — installing restarts Cheers.`
+              : "Check GitHub for a newer signed desktop build."}
+          </p>
+        </div>
+
       </div>
     </section>
   );

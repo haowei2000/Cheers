@@ -33,7 +33,7 @@ import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
 import { FloatingLayer } from "@/components/ui/floating-layer";
 import { IconButton } from "@/components/ui/icon-button";
-import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
+import { controlIconClasses, controlSquareClasses, controlTextClasses } from "@/components/ui/control-size";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
 import {
@@ -92,6 +92,11 @@ interface Props {
   pendingApprovals?: Message[];
   /** Deep-link into Agent steps Approval (from ViewBoard jump). */
   focusRequestId?: string | null;
+  /** Identity anatomy. "rail" is Chat's 96px column of avatar + name; "avatar" is
+   * Discussion's bare mark, which gives the thread back ~60px of reading width.
+   * The name is not dropped, it moves: the avatar's tooltip and accessible name
+   * still carry it, so screen readers and hover keep full attribution. */
+  identityLayout?: "rail" | "avatar";
 }
 
 const SYSTEM_TYPES = new Set([
@@ -410,6 +415,7 @@ function RegularMessageItem({
   isConsecutive,
   nested = false,
   alignOwnMessages = true,
+  identityLayout = "rail",
   hideReplyQuote = false,
   currentUserId,
   channelId,
@@ -631,15 +637,20 @@ function RegularMessageItem({
     onDragStart: (event: React.DragEvent<HTMLButtonElement>) =>
       event.preventDefault(),
   };
-  // One identity anatomy for Chat and Discuss, including threaded replies.
+  // Two identity anatomies. Chat keeps the 96px rail of avatar + name. Discussion
+  // renders the mark alone: a thread is one continuous document read at a narrower
+  // measure, and repeating the name under every reply spent a rail's width to say
+  // what the avatar already says. Attribution is preserved in the tooltip and the
+  // accessible name below, not deleted.
   // Metadata intentionally sits outside the content="icon" avatar button so it cannot
   // be clipped by the shared control's overflow guard.
+  const nameIsVisible = identityLayout === "rail";
   const identityColumn = (
     <div
       data-content-size="regular"
       className={cn(
         "flex flex-shrink-0 flex-col items-center gap-1 pt-1 font-utility",
-        identityRailWidthClasses.regular,
+        nameIsVisible ? identityRailWidthClasses.regular : "w-fit",
       )}
     >
       <UiButton variant="plain"
@@ -664,15 +675,17 @@ function RegularMessageItem({
           size="regular"
         />
       </UiButton>
-      <span
-        className={cn(
-          "block w-full truncate text-center font-medium leading-4 text-content-secondary",
-          controlTextClasses.regular,
-        )}
-        title={name}
-      >
-        {name}
-      </span>
+      {nameIsVisible && (
+        <span
+          className={cn(
+            "block w-full truncate text-center font-medium leading-4 text-content-secondary",
+            controlTextClasses.regular,
+          )}
+          title={name}
+        >
+          {name}
+        </span>
+      )}
     </div>
   );
   const identityPlaceholder = (
@@ -680,7 +693,9 @@ function RegularMessageItem({
       data-content-size="regular"
       className={cn(
         "flex flex-shrink-0 items-start justify-center pt-1 font-utility",
-        identityRailWidthClasses.regular,
+        // A consecutive row indents to whatever the identity above it reserved —
+        // the rail in Chat, the avatar's own square in Discussion.
+        nameIsVisible ? identityRailWidthClasses.regular : controlSquareClasses.regular,
       )}
       aria-hidden="true"
     />

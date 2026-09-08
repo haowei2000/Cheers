@@ -1,3 +1,4 @@
+import { useManagedPanel } from "./PanelWorkspace";
 import { ActionButton } from "@/components/ui/action-button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -536,7 +537,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       return !c;
     });
   };
-  const minimized = collapsed && !isMobile;
+  const managed = useManagedPanel("workbench");
+  const minimized = collapsed && !isMobile && !managed;
 
   const ctx: WorkbenchContext = useMemo(
     () => ({

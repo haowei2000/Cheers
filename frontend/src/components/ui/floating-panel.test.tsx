@@ -259,12 +259,18 @@ describe("FloatingPanel window chrome", () => {
     expect(contextIndex).toBeGreaterThan(primaryIndex);
     expect(contentIndex).toBeGreaterThan(contextIndex);
     expect(markup).toContain("whitespace-nowrap");
-    expect(markup).toContain("w-0 overflow-hidden");
-    // `top-12` in the CHROME would mean a second stacked row. On the content element it
-    // means the opposite — the body clearing the chrome band — so the assertion has to
-    // name where it looks, not just whether the string is present anywhere.
+    // The context group used to be handed a zero-width slot and clipped. Chrome now
+    // WRAPS rather than clips, so no group in the row can hide its own controls
+    // (frontend/DESIGN.md, "Panel button groups").
+    expect(markup).not.toContain("w-0 overflow-hidden");
+    expect(markup.slice(0, contentIndex)).toContain("flex-wrap");
+    // A fixed offset in the CHROME would mean a second stacked row. On the content
+    // element the offset means the opposite — the body clearing the chrome band — so the
+    // assertion has to name where it looks, not just whether the string is present.
+    // The band is now MEASURED rather than a fixed 3rem, because a wrapping chrome row
+    // has no constant height (frontend/DESIGN.md, "Panel button groups").
     expect(markup.slice(0, contentIndex)).not.toContain("top-12");
-    expect(markup.slice(contentIndex)).toContain("md:top-12");
+    expect(markup.slice(contentIndex)).toContain("md:top-[var(--floating-panel-chrome-top)]");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
     expect(markup).toContain("workspace-content");
@@ -302,14 +308,20 @@ describe("FloatingPanel window chrome", () => {
     // sides claim theirs first.
     expect(chrome).not.toContain("left-1/2");
     expect(chrome).not.toContain("-translate-x-1/2");
-    // The left island is a CORNER, capped so it cannot stretch across the top and become
-    // the centered toolbar again.
-    expect(markup.slice(0, contentIndex)).toContain("45%");
+    // The left island no longer needs a percentage cap to stay a corner. The chrome row
+    // spans both edges and justifies its groups apart, so the actions group claims its
+    // own width and the navigation cannot stretch underneath it. Fixed percentage slots
+    // are now forbidden outright (frontend/DESIGN.md, "Panel button groups").
+    expect(markup.slice(0, contentIndex)).not.toContain("45%");
+    expect(markup.slice(0, contentIndex)).toContain("justify-between");
     // Both top islands anchor to their own corner.
-    expect(markup.slice(0, contentIndex)).toContain("left-2 top-2");
-    expect(chrome).toContain("right-2 top-2");
+    // The chrome is now ONE row spanning both edges instead of two separately anchored
+    // islands, and its groups are pushed apart — which is what keeps the navigation out
+    // from under the actions now that no percentage cap does it.
+    expect(markup.slice(0, contentIndex)).toContain("left-2 right-2 top-2");
+    expect(chrome).toContain("ml-auto");
     // The body starts below the chrome band rather than underneath it.
-    expect(content).toContain("md:top-12");
+    expect(content).toContain("md:top-[var(--floating-panel-chrome-top)]");
     expect(content).not.toContain("md:inset-0");
 
     // Just the top-LEFT island: from where it opens to where the actions island starts.

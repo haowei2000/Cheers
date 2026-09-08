@@ -1,3 +1,4 @@
+import { useReadingPosition } from "@/hooks/useReadingPosition";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import toast from "react-hot-toast";
@@ -70,6 +71,7 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  useReadingPosition(containerRef, `${channelId}:${loading && !messages.length ? "loading" : "ready"}:${threadRootId}`);
   // Transient flash for a jumped-to message (cleared after the highlight fades).
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
@@ -114,7 +116,8 @@ export function MessageList({
       });
       return;
     }
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    // The workspace may reveal a hidden narrow-screen timeline in this commit.
+    const frame = requestAnimationFrame(() => el.scrollIntoView({ block: "center", behavior: "smooth" }));
     setHighlightId(targetId);
     // content-visibility rows above the target materialize their real heights
     // during the smooth scroll (backfilled pages arrive with 80px estimates),
@@ -126,6 +129,7 @@ export function MessageList({
     }, 700);
     const t = setTimeout(() => setHighlightId(null), 1800);
     return () => {
+      cancelAnimationFrame(frame);
       clearTimeout(settle);
       clearTimeout(t);
     };
@@ -156,7 +160,7 @@ export function MessageList({
 
   function handleScroll() {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !el.clientHeight) return;
     isAtBottomRef.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
@@ -288,6 +292,9 @@ export function MessageList({
             isConsecutive={!!isConsecutive}
             nested={depth > 0}
             alignOwnMessages={false}
+            // renderNode is the Discussion path only (thread replies and discuss
+            // roots); renderChatMessage keeps the 96px name rail.
+            identityLayout="avatar"
             hideReplyQuote={parentInView}
             currentUserId={currentUserId}
             channelId={channelId}

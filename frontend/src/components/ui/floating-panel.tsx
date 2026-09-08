@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
+import { useManagedPanel } from "@/features/chat/workbench/PanelWorkspace";
+import { IconButton } from "./icon-button";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { GripHorizontal, type LucideIcon } from "lucide-react";
+import { GripHorizontal, PanelRightOpen, PanelRightClose, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
@@ -8,6 +10,7 @@ import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import type { AnchorPlacement } from "@/components/ui/floating-layer";
@@ -17,6 +20,9 @@ export interface FloatingPanelNavigation {
   items: AdaptiveControlItem[];
   ariaLabel: string;
   presentationOrder?: AdaptiveControlPresentation[];
+  /** Collapsed-dropdown trigger form; "icon" suits a panel whose body already
+   *  names the selected section. */
+  collapsedContent?: "text" | "icon";
 }
 
 export interface FloatingPanelAction {
@@ -66,7 +72,7 @@ export function FloatingPanelPrimaryNavigation({
     <>
       {mobile && <div className="md:hidden">{mobile}</div>}
       {host?.target && createPortal(
-        <div data-floating-panel-primary-navigation="" className="min-w-0 flex-[3]">
+        <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink-0">
           <AdaptiveControlGroup
             kind="navigation"
             ariaLabel={ariaLabel}
@@ -206,6 +212,7 @@ export function FloatingPanel({
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
+  const managed = useManagedPanel(spawnKind, viewport);
   const laneBounds = useContext(LaneBoundsContext);
   const sharedLayout = useContext(SharedLayoutContext);
   // Bounded to the canvas when one is present (snap on); otherwise floats free over
@@ -214,7 +221,7 @@ export function FloatingPanel({
   const getBounds = viewport ? undefined : (laneBounds ?? undefined);
   const drag = useWindowDrag(
     storageKey,
-    !isMobile,
+    !isMobile && !managed,
     getBounds,
     {
       // First-open placement still uses spawnKind, but a normal drag should stop
@@ -246,7 +253,7 @@ export function FloatingPanel({
     }
   });
   const controlled = collapsedProp !== undefined;
-  const collapsed = controlled ? collapsedProp : ownCollapsed;
+  const collapsed = !managed && (controlled ? collapsedProp : ownCollapsed);
   const toggleCollapsed = () => {
     if (controlled) {
       onToggleCollapsed?.();
@@ -267,7 +274,7 @@ export function FloatingPanel({
   // window is non-modal (chat stays usable behind it) and keeps close-button
   // only. Skip defaultPrevented so a nested popover/menu still claims its own Esc.
   useEffect(() => {
-    if (!isMobile || !open) return;
+    if (!isMobile || !open || (managed && !managed.visible)) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
         // Claim this Escape so, with several sheets/menus mounted, only the first
@@ -278,7 +285,7 @@ export function FloatingPanel({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isMobile, open, onClose]);
+  }, [isMobile, open, onClose, managed?.visible]);
 
   // Collapsed keeps the dragged position but sheds the resized width/height. Mobile
   // keeps only stacking order: persisted desktop x/y/w/h must not override the
@@ -290,7 +297,6 @@ export function FloatingPanel({
       : drag.style;
   const [panelWidth, setPanelWidth] = useState(0);
   // Width of the top-RIGHT island, so the top-LEFT one knows where to stop.
-  const [actionsWidth, setActionsWidth] = useState(0);
   const [navigationSlotWidth, setNavigationSlotWidth] = useState(0);
 
   // Title label — for the two places the name is the ONLY identity: the collapsed pill
@@ -341,7 +347,8 @@ export function FloatingPanel({
   const [portalNavigationPresent, setPortalNavigationPresent] = useState(false);
   const [portalContextPresent, setPortalContextPresent] = useState(false);
   const [portalActions, setPortalActions] = useState<Record<string, FloatingPanelAction>>({});
-  const fullTitleWidth = useRef(0);
+  const [chromeElement, setChromeElement] = useState<HTMLDivElement | null>(null);
+  const [chromeHeight, setChromeHeight] = useState(36);
   const dragRef = drag.ref;
   const panelRef = useCallback(
     (element: HTMLDivElement | null) => {
@@ -354,14 +361,15 @@ export function FloatingPanel({
   const hasContext = panelContext != null || portalContextPresent;
   const hasPrimaryNavigation = primaryNavigation != null || portalNavigationPresent;
   const hasNavigation = hasPrimaryNavigation || hasContext;
-  const chromeTop = "3.5rem";
+  const chromeTop = `${chromeHeight + 16}px`;
   const panelStyle = {
     ...style,
+    ...(managed ? { ...managed.style, maxWidth: "none", maxHeight: "none", transform: "none", display: open && managed.visible ? "flex" : "none", ...(managed.floating ? {} : { borderRadius: 0, boxShadow: "none" }) } : {}),
     "--floating-panel-chrome-top": chromeTop,
     "--floating-panel-safe-top": chromeTop,
   } as CSSProperties;
   const navigationHost = {
-    availableWidth: Math.max(96, navigationSlotWidth * (hasContext ? 0.58 : 1)),
+    availableWidth: navigationSlotWidth,
     target: navigationTarget,
     setPresent: setPortalNavigationPresent,
   };
@@ -395,24 +403,13 @@ export function FloatingPanel({
         actionsElement.getBoundingClientRect().width,
         actionsElement.scrollWidth
       );
-      setActionsWidth(measuredActions);
 
-      const islandGap = 12;
-      const panelInset = 16;
-
-      // Navigation now shares the TOP-LEFT island with the title, so its budget is what
-      // that island has left after the title — one subtraction, not the two it needed
-      // while it was centred between the title and the actions.
-      // Capped at 45% so the island stays a CORNER: past that it stretches across the
-      // top and reads as the centered toolbar the corner rule replaced. The tabs inside
-      // collapse to icons and then to an overflow menu, which is what they are for.
-      const leftIsland = Math.min(
-        Math.max(width * 0.45, 240),
-        width - measuredActions - 2 * islandGap - panelInset
-      );
-      // The grip and mark are a fixed-width prefix inside the same island; the rest is
-      // the tabs'. No title copy to budget for any more.
-      setNavigationSlotWidth(Math.max(96, leftIsland - titleWidth - islandGap));
+      // Reserve actual space for sibling groups instead of splitting selectors
+      // into fixed 3:2 slots. A group wraps as a whole when the row is too narrow.
+      const context = navigationTarget.querySelector<HTMLElement>("[data-floating-panel-context]");
+      const contextWidth = context ? Math.max(context.scrollWidth, context.getBoundingClientRect().width) : 0;
+      const budget = width - measuredActions - titleWidth - contextWidth - 40;
+      setNavigationSlotWidth(Math.max(28, budget));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -429,6 +426,15 @@ export function FloatingPanel({
     };
   }, [actionsElement, navigationTarget, panelElement, titleElement]);
 
+  useLayoutEffect(() => {
+    if (!chromeElement) return;
+    const measure = () => setChromeHeight(chromeElement.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(chromeElement);
+    return () => observer.disconnect();
+  }, [chromeElement]);
+
   return (
     // The root is a window surface, not a control: dragging it moves the window and
     // dropping a package onto it loads that package. Neither is a widget interaction,
@@ -439,7 +445,7 @@ export function FloatingPanel({
       ref={panelRef}
       data-floating-panel=""
       data-floating-panel-bounded={drag.bounded ? "true" : "false"}
-      onPointerDownCapture={drag.toFront}
+      onPointerDownCapture={managed?.toFront ?? drag.toFront}
       onDrop={dropTarget?.onDrop}
       onDragOver={dropTarget?.onDragOver}
       onDragLeave={dropTarget?.onDragLeave}
@@ -473,10 +479,10 @@ export function FloatingPanel({
     >
       {collapsed && !isMobile ? (
         <>
-          <div
+          <ButtonGroup label="Panel window controls"
             {...drag.handleProps}
             data-floating-panel-handle=""
-            className="flex h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
+            className="flex min-h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
           >
             <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
             {titleEl}
@@ -497,40 +503,19 @@ export function FloatingPanel({
               controlSize="compact"
               className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
             />
-          </div>
+          </ButtonGroup>
           {summaryEl}
         </>
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
-          {/* Floating chrome lives in the CORNERS, and each corner has one job.
-              
-                TOP-LEFT — WHERE YOU ARE. Identity, plus every control that changes what
-                  the panel is showing: scene and item tabs (`primaryNavigation`) and the
-                  panel's own state selectors (`panelContext` — session, host, bot).
-                  Reading it tells you what you are looking at.
-                TOP-RIGHT — WHAT YOU CAN DO. Actions on that thing (`panelActions`), then
-                  minimize and close. Pressing one changes something.
-                BOTTOM — the CONTENT's, not ours. A codemap puts its legend and zoom
-                  controls there.
-
-              Never a centered island: a centre cluster has no width it can call its own,
-              because the two sides claim theirs first and whatever is between them is
-              squeezed until it slides underneath one of them. That is what this header
-              looked like at any realistic width. Corners cannot collide — each grows away
-              from the others — and the left one is capped so it stays a corner instead of
-              stretching back across the top. */}
-          <div className="pointer-events-none absolute inset-0 z-30 hidden opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:block">
-            <div
-              className="floating-control-surface pointer-events-auto absolute left-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
-              // Stops where the actions corner begins, so the two top corners share the
-              // edge instead of stacking. Measured, not guessed: the actions island grows
-              // with whatever a panel contributes to it.
-              // Never past 45% of a wide panel — that is the corner rule. But a fraction
-              // alone starves a NARROW one: at 420px it left less than the controls need
-              // and they were clipped mid-border rather than collapsing. A floor of 15rem
-              // wins there, where there is no meaningful "middle" to protect anyway.
-              style={{ maxWidth: `min(calc(100% - ${Math.round(actionsWidth) + 24}px), max(45%, 15rem))` }}
+          {/* Each corner is a button group. Groups wrap without clipping their
+              controls, and the content inset follows the measured chrome height. */}
+          <div ref={setChromeElement} className={cn("pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-start justify-between gap-2 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:flex", managed && !managed.floating ? "opacity-100" : "opacity-0")}>
+            <ButtonGroup
+              label="Panel navigation and options"
+              floating
+              className="pointer-events-auto min-w-0"
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
                 separate pill beside it. Two surfaces read as two groups and cost the gap
@@ -540,7 +525,7 @@ export function FloatingPanel({
                 corner while being the one thing you never click. It stays where it is the
                 only identity there is — the collapsed pill and the mobile header. */}
             <div
-              {...drag.handleProps}
+              {...(managed?.dragProps ?? drag.handleProps)}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
@@ -557,40 +542,43 @@ export function FloatingPanel({
             <div
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
-              className="pointer-events-auto flex h-9 min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap"
+              className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-1"
             >
               {primaryNavigation && (
-                <div data-floating-panel-primary-navigation="" className="min-w-0 flex-[3]">
+                <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink-0">
                   <AdaptiveControlGroup
                     kind="navigation"
                     ariaLabel={primaryNavigation.ariaLabel}
                     items={primaryNavigation.items}
-                    availableWidth={Math.max(96, navigationSlotWidth * (hasContext ? 0.58 : 1))}
+                    availableWidth={navigationSlotWidth}
                     presentationOrder={primaryNavigation.presentationOrder}
+                    collapsedContent={primaryNavigation.collapsedContent}
                   />
                 </div>
               )}
               {hasContext && (
                 <div
                   data-floating-panel-context=""
-                  className="pointer-events-auto flex min-w-0 flex-[2] items-center overflow-hidden"
+                  className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1"
                 >
-                  {panelContext && <div className="min-w-0 flex-1 overflow-hidden">{panelContext}</div>}
+                  {panelContext && <div className="min-w-0 max-w-full">{panelContext}</div>}
                   <div
                     ref={setDesktopContextTarget}
                     className={cn(
                       "min-w-0",
-                      portalContextPresent ? "flex-1" : panelContext ? "w-0 overflow-hidden" : "w-full"
+                      portalContextPresent ? "max-w-full" : "hidden"
                     )}
                   />
                 </div>
               )}
             </div>
-            </div>
-            <div
+            </ButtonGroup>
+            <ButtonGroup
+              label="Panel actions"
+              floating
               ref={setActionsElement}
               data-floating-panel-actions=""
-              className="floating-control-surface pointer-events-auto absolute right-2 top-2 flex h-9 items-center gap-1 rounded-concentric p-1"
+              className="pointer-events-auto ml-auto"
             >
               {allPanelActions.length > 0 && (
                 <AdaptiveControlGroup
@@ -601,14 +589,15 @@ export function FloatingPanel({
                   presentationOrder={["iconText", "icon", "collapsed"]}
                 />
               )}
-              <ActionButton
+              {managed?.canFloat && <IconButton label={managed.floating ? "Dock panel" : "Float panel"} onClick={managed.toggleFloating}>{managed.floating ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}</IconButton>}
+              {!managed && <ActionButton
                 action="collapse"
                 context="disclosure"
                 onClick={toggleCollapsed}
                 accessibleLabel="Minimize panel"
                 controlSize="compact"
                 className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
-              />
+              />}
               <ActionButton
                 action="close"
                 context="windowChrome"
@@ -617,18 +606,19 @@ export function FloatingPanel({
                 controlSize="compact"
                 className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
               />
-            </div>
+            </ButtonGroup>
           </div>
 
           <div
-            {...drag.handleProps}
+            {...(managed?.dragProps ?? drag.handleProps)}
             data-floating-panel-handle=""
-            className="flex h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/35 px-3 active:cursor-grabbing md:hidden"
+            className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/35 px-3 active:cursor-grabbing md:hidden"
           >
             <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
             {titleLabel}
             <div className="flex-1" />
-            {allPanelActions.map((action) => <div key={action.id}>{action.control}</div>)}
+            <ButtonGroup label="Panel actions" controlSize="compact" className="ml-auto">
+            <AdaptiveControlGroup kind="actions" ariaLabel="Panel actions" items={allPanelActions} presentationOrder={["icon", "collapsed"]} />
             <ActionButton
               action="close"
               context="windowChrome"
@@ -637,41 +627,36 @@ export function FloatingPanel({
               controlSize="compact"
               className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
             />
+            </ButtonGroup>
           </div>
           {hasContext && (
-            <div
+            <ButtonGroup label="Panel options" floating
               data-floating-panel-context=""
-              className="floating-control-surface pointer-events-none relative z-30 mx-3 mt-2 flex min-h-9 flex-shrink-0 items-center overflow-hidden rounded-concentric p-1 md:hidden"
+              className="pointer-events-auto relative z-30 mx-3 mt-2 md:hidden"
             >
               {panelContext && <div className="pointer-events-auto min-w-0 flex-1">{panelContext}</div>}
               <div
                 ref={setMobileContextTarget}
                 className={cn(
                   "pointer-events-auto min-w-0",
-                  portalContextPresent ? "flex-1" : panelContext ? "w-0 overflow-hidden" : "w-full"
+                  portalContextPresent ? "max-w-full" : "hidden"
                 )}
               />
-            </div>
+            </ButtonGroup>
           )}
           <PanelActionContext.Provider value={registerPortalAction}>
             <div
               data-floating-panel-content=""
               className={cn(
-                // `top-12` (48px) not `inset-0`: clears the chrome band (top-2 + h-9 = 44px): the chrome band (top-2 + h-9) is reserved, so
-                // no panel's first row is drawn underneath the floating islands. Every
-                // panel used to lose its top row to them — a table lost its column
-                // headers, a file browser its path and controls — and hover-revealing the
-                // chrome is exactly the moment the pointer is over the panel, so the
-                // covered row was covered precisely when you reached for it.
-                // Positional, not padding: consumers pass `p-0` in bodyClassName.
-                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-12",
+                // Reserve the measured height when button groups wrap.
+                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-[var(--floating-panel-chrome-top)]",
                 bodyClassName
               )}
             >
               {children}
             </div>
           </PanelActionContext.Provider>
-          {!isMobile && <ResizeGrip resizeProps={drag.resizeProps} />}
+          {!isMobile && (!managed || managed.floating) && <ResizeGrip resizeProps={managed?.resizeProps ?? drag.resizeProps} />}
           </PanelContextContext.Provider>
         </PanelNavigationContext.Provider>
       )}

@@ -1,3 +1,5 @@
+import { useNearbyContentActions } from "./content-action-scope";
+import { ButtonGroup } from "./button-group";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import {
@@ -235,6 +237,7 @@ export function ItemSection({
   headerControlSize?: ControlSize;
   presentationLevel?: PresentationLevel;
 }) {
+  const nearbyActions = useNearbyContentActions();
   const size = useControlSize(controlSize);
   const level = usePresentationLevel(presentationLevel);
   return (
@@ -243,9 +246,9 @@ export function ItemSection({
       data-control-size={size}
       className={cn("min-w-0 space-y-1", className)}
     >
-      <header className={cn("flex items-center gap-2 px-1 text-section-label", controlMinHeightClasses[headerControlSize])}>
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {action}
+      <header className={cn("flex items-center gap-2 px-1 text-section-label", controlMinHeightClasses[headerControlSize], nearbyActions && "flex-wrap")}>
+        <span className={cn("min-w-0 truncate", !nearbyActions && "flex-1")}>{label}</span>
+        {nearbyActions && action ? <ButtonGroup label="Section actions" controlSize={headerControlSize}>{action}</ButtonGroup> : action}
       </header>
       {description && (
         <p className="px-1 text-caption">{description}</p>

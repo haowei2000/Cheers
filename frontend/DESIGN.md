@@ -417,10 +417,22 @@ primitives with local width or height classes. ContentSize is visual content
 scale only; its containing control still uses ControlSize for the hit target.
 
 Chat, Discussion, and Reply identity columns use the same regular avatar
-inside a regular control that retains a 44px hit target on touch viewports,
-plus the registered regular 96px identity rail. They show only the avatar and
-sender name; visible timestamps and BOT labels are omitted. The rail follows
-the ContentSize 64/96/128px scale and never uses a feature-local width. Message-record affordances use the
+inside a regular control that retains a 44px hit target on touch viewports.
+Visible timestamps and BOT labels are omitted everywhere. The name has two
+registered treatments and no third:
+
+- **Chat** keeps the registered regular 96px identity rail with the sender name
+  under the avatar. The rail follows the ContentSize 64/96/128px scale and never
+  uses a feature-local width.
+- **Discussion** (including threaded replies) renders the avatar alone, as a
+  leading slot rather than a rail — a thread is one continuous document read at a
+  narrower measure, and repeating the name under every reply spent a rail's width
+  restating the avatar. The name moves to the avatar's `title` and `aria-label`,
+  so hover and screen readers keep full attribution. A consecutive row indents to
+  the avatar's own square, not to 96px.
+
+`MessageItem` takes `identityLayout="rail" | "avatar"`; `MessageList` passes
+`"avatar"` on its Discussion render path only. Message-record affordances use the
 record icon; raw attachment/trace counts belong in the accessible label and
 tooltip, not as unexplained zero-padded folio numbers in the timeline.
 
@@ -680,3 +692,69 @@ Reject in review:
 - [ ] hand-rolled error banners / full-page error markup when §2.17 has a tier for it; 401 handling at a call site (the client classifier owns it)
 - [ ] `Plus` on anything that isn't "create a brand-new resource" — add-to-context is `MessageSquarePlus`, attach-file is `Paperclip`, add-person is `UserPlus` (§2.18)
 - [ ] a new add-to-context affordance drawn with any glyph other than `MessageSquarePlus` (or `TextQuote` for a ranged passage) — or bypassing `AttachContextButton` (§2.18)
+
+### Panel button groups
+
+Panel chrome uses `ButtonGroup` as its layout and surface boundary. Place action
+buttons, choice groups, selectors, and switches inside it; each child retains its
+own role and state. The group owns shared ControlSize, spacing, and wrapping.
+Adaptive controls choose their presentation from the measured space left after
+sibling groups. Do not split groups into fixed percentage slots or clip controls
+with `overflow-hidden`. When groups wrap, reserve the measured chrome height so
+content remains below the controls.
+
+### Conversation panel workspace
+
+Channel instruments (ViewBoard, Workbench, remote Workspace, Files) default to a
+real right-hand column managed by `PanelWorkspace`. The breakpoint uses the
+available **channel** width after navigation: 480px for messages + 320px for the
+panel + an 8px separator. Dragging or keyboard-resizing the separator never
+reduces either minimum. Width and split preference are remembered per channel.
+
+Multiple instruments use grouped selectors and keep their mounted content when
+inactive. Optional vertical split shows the active instrument and another open
+instrument; each gets at least 240px, otherwise the workspace returns to tabs.
+Float/Dock controls and dragging the panel grip out/back to the right edge offer
+explicit floating placement. Only user-floated instruments overlap messages.
+Message-specific inspectors remain contextual floating surfaces.
+
+Below the allocation threshold, Messages/Workspace switches replace overlapping
+sheets; both content trees stay mounted. Returning to messages restores composer
+focus without scrolling, and timeline reflow preserves the visible message anchor
+(or the bottom when following new messages). Explicit open requests activate an
+already-open instrument. All controls sit inside ButtonGroup boundaries, and
+selectors wrap without truncating groups.
+
+The existing Save/Reset layout controls also apply to the dock workspace.
+`.workbench.json` may include `layout.workspace` with column `width` as a channel
+fraction, `split`, `ratio`, and `active`. Invalid workspace preferences are ignored
+without losing panel visibility declarations. Local changes win until Reset or an
+explicit Save; sharing uses the existing version-checked file write. Floating
+positions are transient per viewer and never force overlapping windows on peers.
+
+### Host browsing and details
+
+Fleet hosts and a bot's Hosts tab share `HostItem`: a single-line device identity,
+Agent/Bot avatar, connection glyph with a short label, and any actionable sign-in
+warning. The row is one keyboard-accessible navigation button. It has no nested
+lifecycle controls, credential prefix, timestamps, or diagnostic paragraphs.
+
+Opening the row shows a shared Host details dialog, refreshes that host through
+the existing per-bot hosts API, and exposes version, identifiers, connection and
+sign-in history, and available login guidance. Lifecycle actions live in a named
+ButtonGroup inside the detail view and retain their existing confirmations. Failed
+reads keep the known summary visible and offer Refresh; closing returns focus to
+the invoking row, including when opened from the Bot dialog.
+
+### Management page action proximity
+
+Fleet and Settings share the same centered 5xl page boundary for their inline
+header and body. Fleet's Add/Refresh group belongs beside the current section
+heading inside the main content column, including desktop window mode; it is not
+forwarded to the window titlebar.
+
+Their content columns use `ContentActionScope`. Within this scope, ItemSection
+and CollectionManager group collection-level controls next to the heading and
+count. Search retains the content width below; Add is rendered exactly once.
+Groups may wrap on narrow screens. Item-specific operations remain with their
+items, and surfaces outside this scope retain their existing action placement.

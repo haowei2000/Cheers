@@ -13,6 +13,7 @@ import {
   toFraction,
   toLaneRect,
   type SharedLayout,
+  type SharedWorkspaceLayout,
 } from "@/features/chat/workbench/sharedLayout";
 
 // The provider behind SharedLayoutContext: the channel's window arrangement, read from
@@ -29,11 +30,12 @@ import {
 export interface ChannelLayout {
   /** This window's shared placement in lane pixels, or null when there is none. */
   geomFor: (kind: SpawnKind) => Rect | null;
+  workspace: SharedWorkspaceLayout | undefined;
   /** Windows the channel's layout asks to have open. */
   sharedOpen: Partial<Record<SpawnKind, boolean>>;
   /** Publish this viewer's current arrangement as the channel's, and drop their
    *  local overrides so they are following what they just saved. */
-  saveLayout: (open: Record<SpawnKind, boolean>) => Promise<void>;
+  saveLayout: (open: Record<SpawnKind, boolean>, workspace?: SharedWorkspaceLayout) => Promise<void>;
   /** Drop this device's overrides and follow the channel again. */
   resetLayout: () => void;
   /** True while at least one window has a local override — the only state in which
@@ -109,15 +111,21 @@ export function useChannelLayout({
   }, [shared]);
 
   const saveLayout = useCallback(
-    async (open: Record<SpawnKind, boolean>) => {
-      const bounds = getLaneBounds();
-      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    async (open: Record<SpawnKind, boolean>, workspace?: SharedWorkspaceLayout) => {
+      // Geometry and the workspace preference are independent halves of an arrangement,
+      // so neither gates the other. A docked viewer has a workspace block but no lane to
+      // measure against; a viewer who floated a window has geometry whether or not the
+      // workspace half came along. Save whichever halves this viewer actually has, and
+      // bail only when there is no arrangement at all.
+      const measured = getLaneBounds();
+      const bounds = measured && measured.width > 0 && measured.height > 0 ? measured : null;
+      if (!workspace && !bounds) return;
       setSaving(true);
       setError(null);
-      const ours: SharedLayout = { version: 1, panels: {} };
+      const ours: SharedLayout = { version: 1, panels: {}, ...(workspace ? { workspace } : {}) };
       for (const kind of SPAWN_KINDS) {
         const rect = getOccupant(storageKeyFor(kind));
-        const fraction = rect ? toFraction(rect, bounds) : null;
+        const fraction = rect && bounds ? toFraction(rect, bounds) : null;
         ours.panels[kind] = fraction ? { rect: fraction, open: open[kind] } : { open: open[kind] };
       }
 
@@ -164,5 +172,5 @@ export function useChannelLayout({
 
   const resetLayout = useCallback(requestLayoutReset, []);
 
-  return { geomFor, sharedOpen, saveLayout, resetLayout, overridden, saving, error };
+  return { workspace: shared?.workspace, geomFor, sharedOpen, saveLayout, resetLayout, overridden, saving, error };
 }
