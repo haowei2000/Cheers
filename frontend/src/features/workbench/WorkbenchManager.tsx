@@ -241,7 +241,7 @@ export function WorkbenchManager() {
             key={`official:${extension.id}`}
             title={`${extension.title} · ${extension.version}`}
             leading={<Package className="h-3.5 w-3.5 text-accent-300" />}
-            status={<span className="text-minimal text-content-muted">Official · This Gateway release · {extension.scenes.length} Scenes · {extension.automations.length} Automations</span>}
+            status={<span className="text-minimal text-content-muted">Official · This Gateway release · {extension.scenes.length} Collections · {extension.automations.length} Automations</span>}
           />
         ))}
         {personal.map((extension) => {
@@ -253,7 +253,7 @@ export function WorkbenchManager() {
             key={`personal:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Laptop className="h-3.5 w-3.5 text-success-300" />}
-            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
+            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
             actions={<div className="flex items-center gap-1">
               <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-content-primary hover:text-content-strong">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
               <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { setPersonalExtensionDisabled(extension.manifest.id, false); await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
@@ -266,7 +266,7 @@ export function WorkbenchManager() {
             key={`temporary:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Upload className="h-3.5 w-3.5 text-warning-300" />}
-            status={<span className={status === "failed" ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Scenes · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
+            status={<span className={status === "failed" ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
             actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-content-primary hover:text-danger-400"><X className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}

@@ -50,7 +50,7 @@ Typography has exactly three semantic roles:
   Greek, and Cyrillic, and Source Han Serif CN Semibold for Chinese product
   introductions, hero copy, and major headings;
 - `reading`: Source Serif 4 Text/Regular or Semibold (`opsz` 14 on Web) plus
-  Source Han Serif CN Regular/Semibold for Chinese
+  Source Han Serif CN Medium/Semibold for Chinese
   message copy, previews, and long-form content at a compact 14px Web / 16pt iOS / 15sp Android base size
   and approximately 1.55 line height;
 - `utility`: Source Sans 3 on Web and the native platform sans face on iOS and

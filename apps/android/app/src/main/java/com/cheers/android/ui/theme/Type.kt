@@ -28,6 +28,11 @@ val SourceHanSerifCNFontFamily = FontFamily(
     ),
     Font(
         R.font.source_han_serif_cn_vf,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.weight(FontWeight.Medium.weight)),
+    ),
+    Font(
+        R.font.source_han_serif_cn_vf,
         weight = FontWeight.SemiBold,
         variationSettings = FontVariation.Settings(FontVariation.weight(FontWeight.SemiBold.weight)),
     ),
@@ -52,7 +57,11 @@ private val cheersDisplayBaseStyle = TextStyle(
 fun cheersReadingStyle(text: String, emphasized: Boolean = false): TextStyle =
     cheersReadingBaseStyle.copy(
         fontFamily = if (text.containsChinese()) SourceHanSerifCNFontFamily else SourceSerif4ReadingFontFamily,
-        fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
+        fontWeight = when {
+            emphasized -> FontWeight.SemiBold
+            text.containsChinese() -> FontWeight.Medium
+            else -> FontWeight.Normal
+        },
     )
 
 fun cheersDisplayStyle(text: String): TextStyle =

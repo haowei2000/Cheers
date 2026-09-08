@@ -460,7 +460,7 @@ export function DiscussionView({
                   <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-display text-content-primary">{titleAndPreview(detail.root).title}</h2>
                   <p className="mt-1 font-utility text-compact text-content-muted">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
                   {titleAndPreview(detail.root).preview && (
-                    <p className="mt-2 line-clamp-3 font-reading text-regular font-normal leading-6 text-content-muted">{titleAndPreview(detail.root).preview}</p>
+                    <p className="mt-2 line-clamp-3 font-reading text-regular leading-6 text-content-muted">{titleAndPreview(detail.root).preview}</p>
                   )}
                 </div>
               </div>

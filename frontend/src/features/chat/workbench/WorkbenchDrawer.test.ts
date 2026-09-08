@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseCfg } from "./WorkbenchDrawer";
-import { reconcileSceneItems, sceneTabContextActions } from "./SceneWorkbench";
+import { appendCollectionTab, parseCfg } from "./WorkbenchDrawer";
+import { canAddTabToCollection, reconcileSceneItems, sceneTabContextActions, unclaimedRenderableTabs } from "./SceneWorkbench";
 
 describe("workbench scene config", () => {
   it("preserves native multi-scene navigation state", () => {
@@ -26,6 +26,40 @@ describe("workbench scene config", () => {
       "cheers-research-lab",
     ]);
     expect(config.scene_state?.items["cheers-code-project"]).toEqual(["dev/plan.yaml"]);
+  });
+});
+
+describe("appendCollectionTab", () => {
+  it("appends a Tab while preserving the latest Collection state", () => {
+    const state = {
+      version: 1 as const,
+      order: ["project", "research"],
+      titles: { project: "Project", research: "Research" },
+      items: { project: ["plan.md"], research: ["paper.md"] },
+    };
+    expect(appendCollectionTab(state, "project", "notes.md")).toEqual({
+      ...state,
+      items: { project: ["plan.md", "notes.md"], research: ["paper.md"] },
+    });
+  });
+
+  it("does not duplicate a Tab", () => {
+    const state = { version: 1 as const, order: ["project"], titles: {}, items: { project: ["plan.md"] } };
+    expect(appendCollectionTab(state, "project", "plan.md")).toBe(state);
+  });
+
+  it("removes an added file from the derived Other Collection", () => {
+    const state = { version: 1 as const, order: ["project"], titles: {}, items: { project: ["plan.md"] } };
+    expect(unclaimedRenderableTabs(["plan.md", "notes.md"], state)).toEqual(["notes.md"]);
+    const next = appendCollectionTab(state, "project", "notes.md");
+    expect(unclaimedRenderableTabs(["plan.md", "notes.md"], next)).toEqual([]);
+  });
+
+  it("allows adding Tabs only to persisted Collections", () => {
+    const state = { version: 1 as const, order: ["project"], titles: {}, items: { project: [] } };
+    expect(canAddTabToCollection(state, "project")).toBe(true);
+    expect(canAddTabToCollection(state, "__other__")).toBe(false);
+    expect(canAddTabToCollection(state, "canvas:board.canvas.json")).toBe(false);
   });
 });
 
@@ -55,8 +89,8 @@ describe("reconcileSceneItems", () => {
   });
 });
 
-describe("scene context actions", () => {
-  it("switches from a scene to Raw through the shared drawer callback", () => {
+describe("Collection context actions", () => {
+  it("switches from a Collection to Raw through the shared drawer callback", () => {
     let selected = false;
     let raw = false;
     const actions = sceneTabContextActions(
@@ -67,8 +101,8 @@ describe("scene context actions", () => {
     );
 
     expect(actions.map(({ id, label }) => ({ id, label }))).toEqual([
-      { id: "open-scene", label: "Open Research lab" },
-      { id: "add-context", label: "Add scene to context" },
+      { id: "open-collection", label: "Open Research lab" },
+      { id: "add-context", label: "Add Collection to context" },
       { id: "raw", label: "Raw" },
     ]);
     actions.find((action) => action.id === "raw")?.run();
@@ -76,7 +110,7 @@ describe("scene context actions", () => {
     expect(selected).toBe(false);
   });
 
-  it("disables context attachment for a scene with no files", () => {
+  it("disables context attachment for a Collection with no files", () => {
     const action = sceneTabContextActions(
       "Other",
       () => undefined,
@@ -86,6 +120,6 @@ describe("scene context actions", () => {
       false,
     ).find((candidate) => candidate.id === "add-context");
 
-    expect(action).toMatchObject({ label: "No scene files to add", disabled: true });
+    expect(action).toMatchObject({ label: "No Collection files to add", disabled: true });
   });
 });
