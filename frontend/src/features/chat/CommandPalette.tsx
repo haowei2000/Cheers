@@ -43,15 +43,16 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
             </div>
           )}
           <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
+            aria-selected={i === activeIndex}
+            selected={i === activeIndex}
             onMouseDown={(e) => {
               e.preventDefault();
               onSelect(c);
             }}
             controlSize="regular" className={cn(
- "flex items-center gap-2 text-left ",
- i === activeIndex
- ? "bg-indigo-600/30 text-content-primary": "text-content-primary hover:bg-zinc-800"
- )}
+              "flex items-center gap-2 text-left text-content-primary",
+              i !== activeIndex && "hover:bg-zinc-800",
+            )}
           >
             <Terminal className="w-4 h-4 text-success-400 flex-shrink-0" />
             <span className="font-medium font-code">/{c.name}</span>

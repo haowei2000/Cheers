@@ -74,6 +74,7 @@ export function ExistingFilePicker({
               <UiButton content="iconText" controlWidth="fill" variant="plain" role="option" aria-selected={checked}
                 key={f.file_id}
                 type="button"
+                selected={isSel}
                 disabled={isAttached}
                 onClick={() => toggle(f.file_id)}
                 controlSize="regular" className={
@@ -81,7 +82,7 @@ export function ExistingFilePicker({
  (isAttached
  ? "opacity-50 cursor-not-allowed"
  : isSel
- ? "bg-indigo-600/15"
+ ? ""
  : "hover:bg-zinc-800/60")
  }
               >

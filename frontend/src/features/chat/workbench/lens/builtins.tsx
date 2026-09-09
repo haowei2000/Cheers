@@ -826,7 +826,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
             const focused = document.focus.has(node.id);
             const selectedNode = selectedId === node.id;
             return (
-              <UiButton variant="plain" role="option" aria-selected={selectedNode}
+              <UiButton variant="plain" role="option" aria-selected={selectedNode} selected={selectedNode}
                 key={node.id}
                 data-workbench-context-target="codemap-node"
                 type="button"
@@ -835,7 +835,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
                   label: node.label,
                   sourcePath: ["nodes", node.id],
                 })}
-                controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm bg-zinc-900 text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-indigo-500 ring-1 ring-indigo-500/60": focused ? "border-indigo-500/70" : "border-zinc-700 hover:border-zinc-500"}`}
+                controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-selected-indicator": focused ? "border-indigo-500/70 bg-zinc-900" : "border-zinc-700 bg-zinc-900 hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >

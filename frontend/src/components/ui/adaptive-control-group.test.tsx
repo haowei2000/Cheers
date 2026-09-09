@@ -44,7 +44,8 @@ describe("AdaptiveControlGroup", () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain("ViewBoard sections");
     expect(markup).toContain('data-selected="true"');
-    expect(markup).toContain("bg-control");
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("ring-selected-indicator/70");
   });
 
   it("passes each measured presentation to rich controls", () => {

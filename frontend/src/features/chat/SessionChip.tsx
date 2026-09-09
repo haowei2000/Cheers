@@ -316,6 +316,7 @@ export function SessionChip({
     <div ref={rootRef} className="relative inline-flex min-w-0">
       <ComposerToolbarButton
         type="button"
+        selected={Boolean(selected || open)}
         onClick={toggle}
         onKeyDown={handleKeyDown}
         aria-expanded={open}
@@ -326,11 +327,7 @@ export function SessionChip({
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
         aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
-        className={cn(
-          selected || open
-            ? "bg-indigo-600/15 text-accent-200"
-            : "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary"
-        )}
+        className={cn(!selected && !open && "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary")}
       >
         {selected ? (
           <ArrowRight className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />

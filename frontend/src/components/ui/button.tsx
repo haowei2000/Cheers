@@ -153,12 +153,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       data-control-width={controlWidth}
       aria-busy={loading || undefined}
       role={role}
-      aria-pressed={role === "tab" ? undefined : selected || undefined}
+      aria-pressed={role === "tab" || props["aria-expanded"] !== undefined ? undefined : selected || undefined}
       data-selected={selected || undefined}
       className={cn(
         "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
         variantCls[variant],
-        selected && "bg-control text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
+        selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active",
         className,
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses.regular,

@@ -121,7 +121,7 @@ export function NewSessionDialog({
                 : "This connector does not let the platform set a working directory. Allowed roots: "}
               {/* design-system-exempt: form-suggestion — inline datalist shortcut. */}
               {meta.allowed_roots.map((r, i) => (
-                <UiButton variant="plain" role="option" aria-selected={cwd === r}
+                <UiButton variant="plain" role="option" aria-selected={cwd === r} selected={cwd === r}
                   key={r}
                   type="button"
                   disabled={busy}

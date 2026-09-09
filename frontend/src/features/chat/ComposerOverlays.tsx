@@ -52,10 +52,8 @@ export function ComposerMentionPicker({
           )}
           criticalStatus={candidate.type === "bot" ? <span className="text-minimal text-accent-300">{candidate.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
           selected={index === activeIndex}
-          className={cn(
-            index === activeIndex
-              ? "bg-indigo-600/30 text-content-primary"
-              : candidate.type === "bot" && candidate.isOnline === false
+          className={index === activeIndex ? undefined : cn(
+            candidate.type === "bot" && candidate.isOnline === false
                 ? "text-content-muted hover:bg-zinc-800"
                 : "text-content-secondary hover:bg-zinc-800",
           )}

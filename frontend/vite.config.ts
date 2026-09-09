@@ -67,8 +67,8 @@ export default defineConfig({
         description: "Multi-agent chat workspace",
         // The installed shell starts neutral-dark; the runtime meta color then
         // follows the user's System/Light/Dark preference.
-        theme_color: "#09090b",
-        background_color: "#09090b",
+        theme_color: "#121214",
+        background_color: "#121214",
         display: "standalone",
         start_url: "/login",
         icons: [
