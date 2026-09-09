@@ -174,8 +174,8 @@ describe("FloatingPanel drop target", () => {
 });
 
 describe("FloatingPanel window chrome", () => {
-  it("budgets navigation against the row it occupies after sibling groups wrap", () => {
-    expect(floatingPanelNavigationBudget(420, 60)).toBe(320);
+  it("budgets navigation after subtracting the measured fixed action island", () => {
+    expect(floatingPanelNavigationBudget(420, 60, 112)).toBe(224);
     expect(floatingPanelNavigationBudget(60, 40)).toBe(28);
   });
 
@@ -264,11 +264,11 @@ describe("FloatingPanel window chrome", () => {
     expect(contextIndex).toBeGreaterThan(primaryIndex);
     expect(contentIndex).toBeGreaterThan(contextIndex);
     expect(markup).toContain("whitespace-nowrap");
-    // The context group used to be handed a zero-width slot and clipped. Chrome now
-    // WRAPS rather than clips, so no group in the row can hide its own controls
-    // (frontend/DESIGN.md, "Panel button groups").
+    // Both islands and all controls stay on one line; navigation receives the width
+    // left after the fixed action island is measured.
     expect(markup).not.toContain("w-0 overflow-hidden");
-    expect(markup.slice(0, contentIndex)).toContain("flex-wrap");
+    expect(markup.slice(0, contentIndex)).toContain("flex-nowrap");
+    expect(markup.slice(0, contentIndex)).toContain("overflow-hidden");
     // A fixed offset in the CHROME would mean a second stacked row. On the content
     // element the offset means the opposite — the body clearing the chrome band — so the
     // assertion has to name where it looks, not just whether the string is present.

@@ -18,6 +18,8 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 - 三端追求相同的理解和操作结果，不追求逐像素相同。
 - 网站介绍与政策页可以更接近正式出版物；产品工作区在浅色和深色下都保持克制、紧凑和高可扫描性。
 - 外观支持 System / Light / Dark，默认跟随系统；颜色由共享语义 token 切换，业务组件不得维护平行主题 class。
+- 浅色与深色共享同一套状态语法，但不共享裸色值：画布、面板、控件、选中、hover、active 与
+  selection indicator 分别使用语义 token；`prefers-contrast: more` 只增强边界和状态，不创建第四种主题。
 
 ## 2. 不可破坏的视觉规则
 
@@ -39,6 +41,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 8. **四级中性前景**：Web 主正文、标题、普通按钮与功能图标使用 `zinc-50/100`；次要正文使用
    `zinc-200`；元数据与辅助说明使用 `zinc-400`；禁用状态沿用启用态前景并增加 `opacity-50`。
    禁止将 `zinc-300/500/600/700` 用作前景色。语义填充表面的正反色和语法分类色不计入该灰阶层级。
+9. **选中不是浅色填充**：selected / current / checked 必须同时使用共享 selected fill 与可辨认的
+   marker（方向性 rail、underline、checkmark 或 selected state ring）。marker 与 selected fill 至少
+   `3:1`；所有 resting / hover / active 文字组合在浅色和深色下都至少 `4.5:1`。focus ring 与 selected
+   marker 是两个独立状态，不能互相替代。
 
 ## 3. 三级字体体系
 
@@ -47,10 +53,10 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 | 角色 | 多语言字体 | 使用位置 | 禁止位置 |
 |---|---|---|---|
 | `display` | Source Serif 4 Display；中文 Source Han Serif CN Semibold；日/韩使用本地化系统衬线 | 网站介绍、Hero、masthead、页面大标题 | Button、状态、trace、列表名称 |
-| `reading` | Source Serif 4 Text；中文 Source Han Serif CN Regular/Semibold；日/韩使用本地化系统衬线 | 消息正文、政策、帮助、长预览 | User/Bot/Channel/Workspace 名称、高频控件 |
+| `reading` | Source Serif 4 Text；中文 Source Han Serif CN Medium/Semibold；日/韩使用本地化系统衬线 | 消息正文、政策、帮助、长预览 | User/Bot/Channel/Workspace 名称、高频控件 |
 | `utility` | Web Source Sans 3；iOS/Android 系统无衬线；完整多语言 sans fallback | 身份名称、导航、Button、Input、warning、trace、时间、状态 | 长篇消息正文 |
 
-- 消息正文使用 reading，但字号与行高必须像正文而非标题：Web 基准 `14px / 1.55`，iOS
+- 消息正文使用 reading，中文默认使用 Medium（500）、强调使用 Semibold（600），但字号与行高必须像正文而非标题：Web 基准 `14px / 1.55`，iOS
   `16pt`，Android `15sp`，再遵循平台动态字体。
 - Bot name、Channel name、User name、Workspace name 等快速扫描文字必须使用 utility。
 - 中文衬线使用随应用分发的 Source Han Serif CN，按完整文字 run 选择字体，避免逐字 fallback
@@ -138,6 +144,15 @@ Cheers 使用“编辑部、报纸、信件”的正式语义，强调清楚的�
 - FileTree、Diff 行使用 ControlSize；缩进、gutter、Canvas 节点和 Workbench 面板几何使用专用布局 token。
 - 拖拽柄使用共享视觉 token；其可交互命中区域由所属面板保证。
 - Editor/Composer textarea、隐藏 file input 与响应式浮层宽度不是内容尺寸，不强套 ContentSize。
+
+### 4.4 Workbench 顶栏层级
+
+Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放拖拽柄、Collection
+选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Dock/Float、Close。两侧为单行、
+不可换行的按钮岛，先实测右侧固定岛，再把剩余宽度交给左侧。空间不足时，先把新增入口收进
+对应选择器菜单，再把选择器收为具有 tooltip 与 accessible name 的图标。Raw workspace files
+是 Collection 菜单中的特殊导航项。产品文案使用 Collection/Tab；持久化 `scene_state` 与扩展
+协议 `scenes` 保持不变。
 
 ## 5. Item 与 ItemList
 
@@ -229,6 +244,9 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 - 产品工作区：导航和列表依靠选中 fill、左侧标记、留白或方向性 hairline，不靠每项四周边框。
 - Channel、DM 与其他 NavigationItem 的选中状态统一使用清晰的中性填充高亮和高对比文字；
   无边框场景不能移除唯一可见的选中提示，Web 同时暴露 `aria-current="page"`。
+- Tab、Choice、菜单选项、Composer selector、消息多选和 Workbench selector 复用同一 selected
+  语义 surface；NavigationItem 使用左侧 rail，page/detail Tab 使用 underline，option 使用 checkmark
+  或 selected state ring。业务组件不得用 `zinc-*` 或半透明 `indigo-*/15` 拼装平行选中态。
 - Sidebar 中 Channels、Voice Channels、Private、Direct Messages 等分组名称是静态文字分隔符，
   不作为展开按钮，也不显示 disclosure 箭头；创建动作保持为标题右侧独立的可访问按钮。
 - 弹层/表单：保留平台原生行为；resting 无框，focus、error、disabled、loading 必须明确可见。
@@ -239,6 +257,8 @@ ItemList: browse item | inline editor | inline delete confirmation | empty item
 ## 10. 可访问性与响应式
 
 - meaningful text 达到 WCAG AA；focus ring 清晰；颜色状态同时有文字、形状或位置备份。
+- 深色画布避免接近纯黑配近白正文造成长时间阅读眩光；`content-muted` 在两种主题下仍至少
+  `4.5:1`，小字与自定义文字组合优先接近 `7:1`。
 - Web 键盘路径覆盖 Item、menu、tab、disclosure、dialog escape 和 tree navigation。
 - VoiceOver/TalkBack 暴露名称、角色、selected/expanded/disabled/critical state。
 - Web 在 390/768/1280px 下无裁切和横向溢出；iOS/Android 支持 Dynamic Type、系统字号和横竖屏。

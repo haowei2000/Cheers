@@ -353,7 +353,7 @@ function FlowEpisode({
 }) {
   return (
     <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
-      <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded}
+      <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded} selected={expanded}
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
@@ -718,7 +718,7 @@ function MemberFilter({
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
                 return (
-                  <UiButton content="iconText" controlWidth="fill" variant="plain" role="option" aria-selected={on}
+                  <UiButton content="iconText" controlWidth="fill" variant="plain" role="option" aria-selected={on} selected={on}
                     key={mem.member_id}
                     type="button"
                     onClick={() => onToggle(mem.member_id)}

@@ -1,9 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
-import { MenuOption } from "@/components/ui/menu-option";
 import { Select as UiSelect } from "@/components/ui/select";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
@@ -49,8 +49,7 @@ import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
 import {
   FloatingPanelActionPortal,
-  FloatingPanelContextPortal,
-  FloatingPanelPrimaryNavigation,
+  FloatingPanelNavigationPortal,
 } from "@/components/ui/floating-panel";
 
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
@@ -69,12 +68,21 @@ const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
 const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
 const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
 
+export function canAddTabToCollection(state: WorkbenchSceneState, collectionId: string): boolean {
+  return collectionId !== OTHER_SCENE && !canvasScenePath(collectionId) && state.order.includes(collectionId);
+}
+
+export function unclaimedRenderableTabs(paths: string[], state: WorkbenchSceneState): string[] {
+  const claimed = new Set(state.order.flatMap((id) => state.items[id] ?? []));
+  return paths.filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b));
+}
+
 const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: string }> = {
   "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
   "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-research-300" },
   "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-info-300" },
   "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-warning-300" },
-  [OTHER_SCENE]: { subtitle: "Renderable items outside scenes", Icon: Boxes, color: "text-category-300" },
+  [OTHER_SCENE]: { subtitle: "Renderable tabs outside Collections", Icon: Boxes, color: "text-category-300" },
 };
 
 function metaFor(id: string) {
@@ -91,7 +99,7 @@ export function sceneTabContextActions(
 ): ContextAction[] {
   return [
     {
-      id: "open-scene",
+      id: "open-collection",
       label: `Open ${label}`,
       icon: <LayoutGrid className="h-4 w-4" />,
       run: onSelect,
@@ -99,10 +107,10 @@ export function sceneTabContextActions(
     {
       id: "add-context",
       label: !contextAvailable
-        ? "No scene files to add"
+        ? "No Collection files to add"
         : contextAdded
           ? "Already added to context"
-          : "Add scene to context",
+          : "Add Collection to context",
       icon: <Paperclip className="h-4 w-4" />,
       disabled: !contextAvailable || contextAdded,
       group: "secondary",
@@ -180,23 +188,30 @@ function SceneTab({
   );
 }
 
-function AddSceneControl({
+function AddCollectionControl({
   available,
   onSelect,
+  onLoad,
+  content = "icon",
 }: {
   available: TemplateManifest[];
   onSelect: (manifest: TemplateManifest) => void;
+  onLoad: () => void;
+  content?: "text" | "icon";
 }) {
-  if (available.length === 0) return null;
-
   return (
     <DropdownSelect
-        ariaLabel="Add scene"
-        label="Add scene"
+        ariaLabel="Add Collection"
+        label="Add Collection"
         leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
-        options={available.map((template) => ({ value: template.id, label: template.title }))}
+        content={content}
+        options={[
+          ...available.map((template) => ({ value: `template:${template.id}`, label: template.title })),
+          { value: "load-extension", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
+        ]}
         onSelect={(value) => {
-          const manifest = available.find((candidate) => candidate.id === value);
+          if (value === "load-extension") return onLoad();
+          const manifest = available.find((candidate) => `template:${candidate.id}` === value);
           if (manifest) onSelect(manifest);
         }}
         placement="up"
@@ -204,6 +219,151 @@ function AddSceneControl({
         controlWidth="fill"
         className="flex-shrink-0"
       />
+  );
+}
+
+function AddTabControl({
+  candidates,
+  onSelect,
+  content = "icon",
+}: {
+  candidates: string[];
+  onSelect: (path: string) => void;
+  content?: "text" | "icon";
+}) {
+  if (!candidates.length) return null;
+  return (
+    <DropdownSelect
+      ariaLabel="Open Tab"
+      label="Open Tab"
+      leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
+      content={content}
+      options={candidates.map((path) => ({ value: path, label: basename(path) }))}
+      onSelect={onSelect}
+      placement="up"
+      controlSize={workbenchControlSize.tab}
+      controlWidth="fill"
+      className="flex-shrink-0"
+    />
+  );
+}
+
+function WorkbenchHierarchyNavigation({
+  availableWidth,
+  collections,
+  activeCollection,
+  collectionTitle,
+  collectionIcon,
+  tabs,
+  selectedPath,
+  availableTemplates,
+  tabCandidates,
+  canAddTab,
+  onSelectCollection,
+  onSelectTab,
+  onAddCollection,
+  onLoadCollection,
+  onAddTab,
+  onShowRaw,
+}: {
+  availableWidth: number;
+  collections: Array<{ id: string; label: string; Icon: typeof Code2 }>;
+  activeCollection: string;
+  collectionTitle: string;
+  collectionIcon: typeof Code2;
+  tabs: Array<{ path: string; label: string }>;
+  selectedPath: string | null;
+  availableTemplates: TemplateManifest[];
+  tabCandidates: string[];
+  canAddTab: boolean;
+  onSelectCollection: (id: string) => void;
+  onSelectTab: (path: string) => void;
+  onAddCollection: (manifest: TemplateManifest) => void;
+  onLoadCollection: () => void;
+  onAddTab: (path: string) => void;
+  onShowRaw: () => void;
+}) {
+  const fullProbe = useRef<HTMLDivElement>(null);
+  const compactProbe = useRef<HTMLDivElement>(null);
+  const [required, setRequired] = useState({ full: Number.POSITIVE_INFINITY, compact: Number.POSITIVE_INFINITY });
+  useLayoutEffect(() => {
+    const measure = () => setRequired({
+      full: fullProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
+      compact: compactProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
+    });
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (fullProbe.current) observer.observe(fullProbe.current);
+    if (compactProbe.current) observer.observe(compactProbe.current);
+    return () => observer.disconnect();
+  }, [collections.length, tabs.length, availableTemplates.length, tabCandidates.length, collectionTitle, selectedPath]);
+  const mode = availableWidth >= required.full ? "full" : availableWidth >= required.compact ? "compact" : "icon";
+  const embedded = mode !== "full";
+  const iconOnly = mode === "icon";
+  const CollectionIcon = collectionIcon;
+
+  const collectionOptions = [
+    ...collections.map(({ id, label, Icon }) => ({ value: `collection:${id}`, label, leading: <Icon className="h-4 w-4" aria-hidden="true" /> })),
+    { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
+    ...(embedded ? availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `Add ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
+    ...(embedded ? [{ value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> }] : []),
+  ];
+  const tabOptions = [
+    ...tabs.map(({ path, label }) => ({ value: `tab:${path}`, label })),
+    ...(embedded && canAddTab ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Open ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
+  ];
+  const chooseCollection = (value: string) => {
+    if (value === "raw") return onShowRaw();
+    if (value === "load") return onLoadCollection();
+    if (value.startsWith("add:")) {
+      const manifest = availableTemplates.find((candidate) => candidate.id === value.slice(4));
+      if (manifest) onAddCollection(manifest);
+      return;
+    }
+    onSelectCollection(value.slice("collection:".length));
+  };
+  const chooseTab = (value: string) => value.startsWith("add:") ? onAddTab(value.slice(4)) : onSelectTab(value.slice(4));
+  const controls = (probe = false, compact = embedded, icons = iconOnly) => (
+    <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
+      <DropdownSelect
+        ariaLabel={`Collection: ${collectionTitle}`}
+        label={collectionTitle || "Collections"}
+        leading={<CollectionIcon className="h-4 w-4" aria-hidden="true" />}
+        content={icons ? "icon" : "text"}
+        value={`collection:${activeCollection}`}
+        options={collectionOptions}
+        onSelect={chooseCollection}
+        placement="up"
+        controlSize={workbenchControlSize.tab}
+        controlWidth="slot"
+        className="max-w-40"
+      />
+      {!compact && <AddCollectionControl available={availableTemplates} onSelect={onAddCollection} onLoad={onLoadCollection} />}
+      {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
+        <DropdownSelect
+          ariaLabel={`Tab: ${tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}`}
+          label={tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}
+          leading={<LayoutGrid className="h-4 w-4" aria-hidden="true" />}
+          content={icons ? "icon" : "text"}
+          value={selectedPath ? `tab:${selectedPath}` : null}
+          options={tabOptions}
+          onSelect={chooseTab}
+          placement="up"
+          controlSize={workbenchControlSize.tab}
+          controlWidth="slot"
+          className="max-w-40"
+        />
+      )}
+      {!compact && canAddTab && <AddTabControl candidates={tabCandidates} onSelect={onAddTab} />}
+    </div>
+  );
+
+  return (
+    <div className="relative min-w-0 max-w-full overflow-hidden">
+      {controls()}
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={fullProbe}>{controls(true, false, false)}</div>
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={compactProbe}>{controls(true, true, false)}</div>
+    </div>
   );
 }
 
@@ -435,6 +595,8 @@ export function SceneWorkbench({
   legacyEnvironment,
   templates,
   onAddScene,
+  onAddTab,
+  onLoadCollection,
   onShowRaw,
 }: {
   ctx: WorkbenchContext;
@@ -442,6 +604,8 @@ export function SceneWorkbench({
   legacyEnvironment?: string | null;
   templates: TemplateManifest[];
   onAddScene: (manifest: TemplateManifest) => Promise<boolean>;
+  onAddTab: (collectionId: string, path: string) => Promise<boolean>;
+  onLoadCollection: () => void;
   onShowRaw: () => void;
 }) {
   const [entries, setEntries] = useState<FsEntry[]>([]);
@@ -495,13 +659,9 @@ export function SceneWorkbench({
     }
     return found;
   }, [existing, contents, ctx, failedRenderers]);
-  const claimed = useMemo(
-    () => new Set(reconciled.order.flatMap((id) => reconciled.items[id] ?? [])),
-    [reconciled]
-  );
   const otherPaths = useMemo(
-    () => Object.keys(renderers).filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b)),
-    [renderers, claimed]
+    () => unclaimedRenderableTabs(Object.keys(renderers), reconciled),
+    [renderers, reconciled]
   );
   const canvasPaths = useMemo(
     () => [...existing].filter(isCanvasPath).sort((a, b) => a.localeCompare(b)),
@@ -610,7 +770,7 @@ export function SceneWorkbench({
       ? "Other"
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
-  const sceneTabs = () => sceneIds.map((id) => {
+  const collectionTabs = () => sceneIds.map((id) => {
     const meta = metaFor(id);
     const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
     const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
@@ -633,7 +793,7 @@ export function SceneWorkbench({
     );
   });
 
-  const sceneNavigationItems = sceneIds.map((id) => {
+  const collectionNavigationItems = sceneIds.map((id) => {
     const canvasPath = canvasScenePath(id);
     const meta = canvasPath
       ? { subtitle: "Canvas", Icon: Frame, color: "text-accent-300" }
@@ -669,26 +829,6 @@ export function SceneWorkbench({
     };
   });
 
-  const addSceneAction = useMemo(() => ({
-    id: "add-scene",
-    label: "Add scene",
-    priority: "secondary" as const,
-    icon: FolderPlus,
-    control: <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />,
-    overflow: (
-      <>
-        {available.map((manifest) => (
-          <MenuOption
-            key={manifest.id}
-            label={manifest.title}
-            leading={<FolderPlus className="h-4 w-4" />}
-            onClick={() => void onAddScene(manifest)}
-          />
-        ))}
-      </>
-    ),
-  }), [available, onAddScene]);
-
   // A canvas navigates itself — you click a node, not a tab — so the item strip that a
   // scene fills stays empty here. This is the same shape the ViewBoard already has.
   const itemNavigationItems = (canvasScenePath(activeScene) ? [] : activePaths).map((path) => ({
@@ -707,6 +847,25 @@ export function SceneWorkbench({
       />
     ),
   }));
+  const canAddTab = canAddTabToCollection(reconciled, activeScene);
+  const tabCandidates = canAddTab
+    ? Object.keys(renderers)
+      .filter((path) => !isCanvasPath(path) && !(reconciled.items[activeScene] ?? []).includes(path))
+      .sort((a, b) => a.localeCompare(b))
+    : [];
+  const collectionMenuItems = collectionNavigationItems.map((item) => ({
+    id: item.id,
+    label: item.label,
+    Icon: item.icon,
+  }));
+  const activeCollectionIcon = collectionMenuItems.find((item) => item.id === activeScene)?.Icon ?? LayoutGrid;
+  const addTabAndSelect = (path: string) => {
+    void onAddTab(activeScene, path).then((added) => {
+      if (!added) return;
+      setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
+      localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
+    });
+  };
 
   if (loading && entries.length === 0) {
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
@@ -717,9 +876,9 @@ export function SceneWorkbench({
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <LayoutGrid className="h-5 w-5 text-content-muted" />
         <div>
-          <div className="text-regular font-medium text-content-secondary">Choose a scene</div>
+          <div className="text-regular font-medium text-content-secondary">Choose a Collection</div>
           <p className="mt-1 max-w-sm text-compact leading-5 text-content-muted">
-            Scenes turn workspace data into focused tabs. Unsupported files remain available in Raw.
+            Collections turn workspace data into focused Tabs. Unsupported files remain available in Raw workspace files.
           </p>
         </div>
         {available.length > 0 && (
@@ -732,41 +891,58 @@ export function SceneWorkbench({
             }}
             controlSize={workbenchControlSize.tab} className="rounded-sm bg-indigo-600 text-compact font-medium text-content-on-accent outline-none"
           >
-            <option value="" disabled>Add a scene…</option>
+            <option value="" disabled>Add a Collection…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
           </UiSelect>
         )}
+        <ResponsiveActionButton
+          action="upload"
+          context="toolbar"
+          wideLabel="Load .cheers-extension…"
+          onClick={onLoadCollection}
+          controlSize={workbenchControlSize.tab}
+          className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700"
+        />
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <FloatingPanelPrimaryNavigation
-        ariaLabel="Scenes"
-        items={sceneNavigationItems}
-        // A dropdown, not a tab row. A menubar costs width proportional to how many
-        // scenes exist, in the one corner that also has to hold the item switcher — and
-        // it spends that width showing you the choices you did NOT make. A dropdown
-        // shows the one you did, in constant width.
-        presentationOrder={["collapsed"]}
+      <FloatingPanelNavigationPortal
         mobile={(
-          <div role="tablist" aria-label="Scenes" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
-            {sceneTabs()}
-            <AddSceneControl available={available} onSelect={(manifest) => void onAddScene(manifest)} />
+          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
+            {collectionTabs()}
+            <AddCollectionControl available={available} onSelect={(manifest) => void onAddScene(manifest)} onLoad={onLoadCollection} />
           </div>
         )}
-      />
-      <FloatingPanelActionPortal action={addSceneAction} active={available.length > 0} />
-      {itemNavigationItems.length > 0 && (
-        <FloatingPanelContextPortal>
-          <AdaptiveControlGroup
-            kind="navigation"
-            ariaLabel={`${title} items`}
-            items={itemNavigationItems}
-            presentationOrder={["collapsed"]}
+      >
+        {(availableWidth) => (
+          <WorkbenchHierarchyNavigation
+            availableWidth={availableWidth}
+            collections={collectionMenuItems}
+            activeCollection={activeScene}
+            collectionTitle={title}
+            collectionIcon={activeCollectionIcon}
+            tabs={itemNavigationItems.map((item) => ({ path: item.id, label: item.label }))}
+            selectedPath={selectedPath}
+            availableTemplates={available}
+            tabCandidates={tabCandidates}
+            canAddTab={canAddTab}
+            onSelectCollection={setActiveScene}
+            onSelectTab={selectPath}
+            onAddCollection={(manifest) => void onAddScene(manifest)}
+            onLoadCollection={onLoadCollection}
+            onAddTab={addTabAndSelect}
+            onShowRaw={onShowRaw}
           />
-        </FloatingPanelContextPortal>
+        )}
+      </FloatingPanelNavigationPortal>
+      {itemNavigationItems.length > 0 && (
+        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden">
+          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
+          {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
+        </div>
       )}
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
@@ -885,7 +1061,7 @@ export function SceneWorkbench({
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
                 <FileQuestion className="h-5 w-5 text-content-muted" />
-                <span>No native items in this scene.</span>
+                <span>No native Tabs in this Collection.</span>
                 <span className="max-w-xs text-compact leading-4 text-content-muted">Unsupported files stay hidden here and remain available from Raw.</span>
               </div>
             )}

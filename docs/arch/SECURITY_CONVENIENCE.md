@@ -45,10 +45,29 @@ handoff is intentionally fail-closed, as described below.
 | Refresh rotation with **reuse detection → whole session revoked** | [`domain/auth_sessions.rs:340`](../../server/src/domain/auth_sessions.rs) |
 | `HttpOnly; Secure; SameSite=Lax` cookies + CSRF token hash | [`api/auth.rs:256`](../../server/src/api/auth.rs) |
 | `token_version` for account-wide revoke; `is_suspended` check on load | [`domain/auth.rs`](../../server/src/domain/auth.rs) |
-| Passkeys (WebAuthn), TOTP 2FA, trusted devices | [`domain/webauthn.rs`](../../server/src/domain/webauthn.rs), [`domain/two_factor.rs`](../../server/src/domain/two_factor.rs) |
+| Passkeys (WebAuthn), method-plural 2FA (passkey / authenticator / email code), trusted devices | [`domain/webauthn.rs`](../../server/src/domain/webauthn.rs), [`domain/two_factor.rs`](../../server/src/domain/two_factor.rs) |
 | In-session step-up: fixed 15-minute window, bound to the current session | [`domain/auth_sessions.rs`](../../server/src/domain/auth_sessions.rs), [`api/auth_flow.rs`](../../server/src/api/auth_flow.rs) |
 | Passkey-first confirmation with password, TOTP/recovery, and constrained email fallback | [`features/auth/StepUpDialog.tsx`](../../frontend/src/features/auth/StepUpDialog.tsx) |
 | Structured `428 recent_authentication_required`, shared modal, one automatic retry | [`api/client.ts`](../../frontend/src/api/client.ts), [`lib/stepUpCoordinator.ts`](../../frontend/src/lib/stepUpCoordinator.ts) |
+
+### Which second factors count
+
+Two-step verification is on when **any** factor is armed, not only an authenticator app:
+
+| Factor | Armed by | Notes |
+|---|---|---|
+| Passkey | registering one under Passkeys | armed automatically — a passkey is already a possession factor |
+| Authenticator app (TOTP) | scanning the QR code and proving one code | unchanged enrolment |
+| Email one-time code | an explicit opt-in in settings | refused unless a password or passkey can carry step one, and never offered as the second step of a login that used an emailed code as the first |
+
+Recovery codes are account-level: minted when the first factor of any kind is armed,
+valid against every method, and cleared only when nothing is armed. Removing the last
+passkey is authority growth and requires step-up, because it can turn 2FA off.
+
+The login challenge advertises only the factors the account actually armed
+([`domain/webauthn.rs`](../../server/src/domain/webauthn.rs) `allowed_login_factors`);
+offering `totp` to a passkey-only account was a dead end, and `REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS`
+is satisfied by any armed factor rather than by TOTP alone.
 
 ### Step-up boundary
 

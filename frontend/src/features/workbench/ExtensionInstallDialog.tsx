@@ -48,7 +48,7 @@ export function ExtensionInstallDialog({
     {expanded.length > 0 && installed && <Banner severity="warning" icon={ShieldCheck}>New permissions: {expanded.join(", ")}</Banner>}
 
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-sm bg-zinc-950/30 px-3 py-3 text-compact">
-      <dt className="text-content-muted">Contributes</dt><dd className="text-content-secondary">{manifest.contributes.scenes?.length ?? 0} scenes · {manifest.contributes.renderers?.length ?? 0} renderers · {manifest.contributes.automations?.length ?? 0} automations</dd>
+      <dt className="text-content-muted">Contributes</dt><dd className="text-content-secondary">{manifest.contributes.scenes?.length ?? 0} Collections · {manifest.contributes.renderers?.length ?? 0} renderers · {manifest.contributes.automations?.length ?? 0} automations</dd>
       <dt className="text-content-muted">Permissions</dt><dd className="break-words text-content-secondary">{permissions.length ? permissions.join(", ") : "None"}</dd>
       <dt className="text-content-muted">Network</dt><dd className="text-content-secondary">{manifest.permissions?.network === "unrestricted" ? "Unrestricted" : "Blocked by CSP"}</dd>
       <dt className="text-content-muted">SHA-256</dt><dd className="break-all font-code text-minimal text-content-muted">{extension.sha256}</dd>

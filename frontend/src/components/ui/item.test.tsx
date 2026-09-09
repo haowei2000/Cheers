@@ -141,7 +141,8 @@ describe("ItemRow presentation levels", () => {
     const markup = renderToStaticMarkup(
       <NavigationItem title="general" selected onClick={() => undefined} />,
     );
-    expect(markup).toContain("bg-zinc-800");
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("border-l-selected-indicator");
     expect(markup).toContain('aria-current="page"');
     expect(markup).not.toContain("aria-pressed");
   });

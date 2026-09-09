@@ -68,10 +68,24 @@ export default function LoginPage() {
       : [];
   });
   const [factorCode, setFactorCode] = useState("");
+  // Authenticator, recovery and email codes all look like digits, so the account
+  // that armed several of them has to say which one it is typing — guessing sent
+  // authenticator codes to the email endpoint and burned login attempts.
+  const [codeSource, setCodeSource] = useState<"authenticator" | "email" | null>(null);
   const [emailHint, setEmailHint] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [unifiedFlow, setUnifiedFlow] = useState(false);
   const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
+
+  // "totp" and "recovery_code" are both answered by the authenticator endpoint;
+  // "email" is its own. Only offer a choice when both families are armed.
+  const hasAuthenticatorCodes =
+    allowedFactors.includes("totp") || allowedFactors.includes("recovery_code");
+  const hasEmailCodes = allowedFactors.includes("email");
+  const activeCodeSource =
+    codeSource ?? (hasAuthenticatorCodes ? "authenticator" : hasEmailCodes ? "email" : "authenticator");
+  const showCodeSourceChoice = hasAuthenticatorCodes && hasEmailCodes;
+
 
   useEffect(() => {
     void getAuthCapabilities().then(setCapabilities).catch(() => setCapabilities(null));
@@ -95,6 +109,7 @@ export default function LoginPage() {
       setEmailHint(null);
       setEmailSent(false);
       setFactorCode("");
+      setCodeSource(null);
       return;
     }
     if (!res.access_token || !res.user_id) throw new Error("Login response is incomplete");
@@ -133,7 +148,7 @@ export default function LoginPage() {
       const res = unifiedFlow
         ? await verifyLoginFlowCode(
             transactionId,
-            allowedFactors.includes("email") ? "email" : "totp",
+            activeCodeSource === "email" ? "email" : "totp",
             factorCode
           )
         : await verifyTwoFactorLogin({
@@ -158,6 +173,7 @@ export default function LoginPage() {
         : await sendTwoFactorEmail(transactionId);
       setEmailHint(typeof res.email_hint === "string" ? res.email_hint : null);
       setEmailSent(true);
+      setCodeSource("email");
       toast.success(
         res.email_hint
           ? `Code sent to ${res.email_hint}`
@@ -274,13 +290,32 @@ export default function LoginPage() {
               autoFocus
               value={factorCode}
               onChange={(e) => setFactorCode(e.target.value)}
-              placeholder={allowedFactors.includes("email") ? "123456 or email code" : "123456"}
+              placeholder="123456"
             />
           </div>
+          {showCodeSourceChoice && (
+            <div className="space-y-2">
+              <p className="text-compact font-medium text-content-muted">
+                {activeCodeSource === "email"
+                  ? "Using the code emailed to you."
+                  : "Using your authenticator app or a backup code."}
+              </p>
+              <Button action={activeCodeSource === "email" ? "authenticator" : "emailCode"}
+                controlWidth="fill"
+                type="button"
+                variant="plain"
+                disabled={loading}
+                onClick={() => {
+                  setCodeSource(activeCodeSource === "email" ? "authenticator" : "email");
+                  setFactorCode("");
+                }}
+              />
+            </div>
+          )}
           <Button action="send" controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
-          {allowedFactors.includes("email") && (
+          {hasEmailCodes && activeCodeSource === "email" && (
             <Button action="send" controlWidth="fill"
               type="button"
               variant="secondary"
@@ -315,6 +350,7 @@ export default function LoginPage() {
               setEmailHint(null);
               setEmailSent(false);
               setFactorCode("");
+              setCodeSource(null);
               setUnifiedFlow(false);
             }}
           >

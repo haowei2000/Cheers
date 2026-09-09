@@ -590,6 +590,18 @@ struct APIClient: Sendable {
         _ = try await postJSON("/auth/2fa/disable", body: TwoFactorCodeRequest(code: code), as: OkFlagResponse.self)
     }
 
+    func setEmailTwoFactor(enabled: Bool) async throws -> TwoFactorMethodResponse {
+        try await postJSON(
+            "/auth/2fa/methods/email",
+            body: TwoFactorEmailMethodRequest(enabled: enabled),
+            as: TwoFactorMethodResponse.self
+        )
+    }
+
+    func regenerateRecoveryCodes() async throws -> TwoFactorEnableResponse {
+        try await postJSON("/auth/2fa/recovery-codes", body: EmptyRequest(), as: TwoFactorEnableResponse.self)
+    }
+
     // MARK: Passkeys
 
     func passkeyRegisterOptions(name: String? = nil) async throws -> PasskeyRegisterOptionsResponse {
@@ -603,12 +615,12 @@ struct APIClient: Sendable {
         )
     }
 
-    func passkeyRegisterFinish(transactionId: String, credential: [String: Any]) async throws -> PasskeyCredentialDto {
+    func passkeyRegisterFinish(transactionId: String, credential: [String: Any]) async throws -> PasskeyRegisterFinishResponse {
         let body: [String: Any] = [
             "transaction_id": transactionId,
             "credential": credential,
         ]
-        return try await postRawJSON("/auth/passkey/register/finish", object: body, as: PasskeyCredentialDto.self)
+        return try await postRawJSON("/auth/passkey/register/finish", object: body, as: PasskeyRegisterFinishResponse.self)
     }
 
     func listPasskeys() async throws -> [PasskeyCredentialDto] {

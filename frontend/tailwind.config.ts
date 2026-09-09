@@ -21,12 +21,17 @@ const editorialInk = {
 
 const editorialNeutral = {
   ...colors.zinc,
-  400: "#b4b4bc",
+  50: "#f4f4f6",
+  100: "#e8e8eb",
+  200: "#ccccd2",
+  300: "#b8b8c0",
+  400: "#9d9da8",
   500: "#95959e",
   600: "#85858f",
-  700: "#4a4a52",
-  800: "#303035",
-  900: "#1c1c20",
+  700: "#3f3f46",
+  800: "#313137",
+  900: "#222226",
+  950: "#121214",
 };
 
 function rgbChannels(hex: string): string {
@@ -106,6 +111,12 @@ export default {
           DEFAULT: "rgb(var(--surface-control) / <alpha-value>)",
           hover: "rgb(var(--surface-control-hover) / <alpha-value>)",
           active: "rgb(var(--surface-control-active) / <alpha-value>)",
+        },
+        selected: {
+          DEFAULT: "rgb(var(--surface-selected) / <alpha-value>)",
+          hover: "rgb(var(--surface-selected-hover) / <alpha-value>)",
+          active: "rgb(var(--surface-selected-active) / <alpha-value>)",
+          indicator: "rgb(var(--selection-indicator) / <alpha-value>)",
         },
         emphasis: {
           DEFAULT: "rgb(var(--surface-emphasis) / <alpha-value>)",

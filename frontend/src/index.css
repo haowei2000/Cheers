@@ -87,6 +87,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 60;
+  font-weight: var(--weight-semibold);
 }
 
 /* Mastheads need a broader, sturdier cut than ordinary display headings. This
@@ -95,6 +96,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 32;
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-masthead);
 }
 
@@ -102,6 +104,7 @@ textarea::selection,
   font-family: var(--font-serif);
   font-optical-sizing: none;
   font-variation-settings: "opsz" 14;
+  font-weight: var(--weight-medium);
 }
 
 .font-utility {
@@ -130,7 +133,7 @@ textarea::selection,
   font-variation-settings: "opsz" 14;
   font-size: var(--type-regular-size);
   line-height: 1.6;
-  font-weight: 400;
+  font-weight: var(--weight-medium);
   letter-spacing: normal;
   color: rgb(var(--text-secondary));
 }
@@ -141,7 +144,7 @@ textarea::selection,
   font-variation-settings: "opsz" 14;
   font-size: var(--type-regular-size);
   line-height: 1.6;
-  font-weight: 400;
+  font-weight: var(--weight-medium);
   font-style: italic;
   letter-spacing: normal;
   color: rgb(var(--tone-danger-400));
@@ -344,35 +347,39 @@ textarea::selection,
   /* Theme palettes are semantic even where legacy Tailwind class names still
      say zinc/indigo. Changing these values recolors the whole application;
      feature components never carry a second set of light-mode classes. */
-  --tone-zinc-50: 250 250 250;
-  --tone-zinc-100: 244 244 245;
-  --tone-zinc-200: 228 228 231;
-  --tone-zinc-300: 212 212 216;
-  --tone-zinc-400: 180 180 188;
+  --tone-zinc-50: 244 244 246;
+  --tone-zinc-100: 232 232 235;
+  --tone-zinc-200: 204 204 210;
+  --tone-zinc-300: 184 184 192;
+  --tone-zinc-400: 157 157 168;
   --tone-zinc-500: 149 149 158;
   --tone-zinc-600: 133 133 143;
-  --tone-zinc-700: 74 74 82;
-  --tone-zinc-800: 48 48 53;
-  --tone-zinc-900: 28 28 32;
-  --tone-zinc-950: 9 9 11;
-  --surface-canvas: 9 9 11;
-  --surface-panel: 28 28 32;
-  --surface-control: 48 48 53;
-  --surface-control-hover: 74 74 82;
-  --surface-control-active: 133 133 143;
+  --tone-zinc-700: 63 63 70;
+  --tone-zinc-800: 49 49 55;
+  --tone-zinc-900: 34 34 38;
+  --tone-zinc-950: 18 18 20;
+  --surface-canvas: 18 18 20;
+  --surface-panel: 34 34 38;
+  --surface-control: 49 49 55;
+  --surface-control-hover: 63 63 70;
+  --surface-control-active: 74 74 82;
   --surface-glass: 88 88 96;
-  --surface-rail: 15 15 17;
-  --surface-sidebar: 24 24 27;
+  --surface-rail: 22 22 25;
+  --surface-sidebar: 27 27 30;
+  --surface-selected: 63 63 70;
+  --surface-selected-hover: 74 74 82;
+  --surface-selected-active: 82 82 91;
+  --selection-indicator: 204 204 210;
   --surface-emphasis: 74 74 82;
   --surface-emphasis-hover: 82 82 91;
   --surface-emphasis-active: 48 48 53;
 
   /* Semantic foreground hierarchy. Components describe meaning instead of
      selecting a zinc shade; state colors are registered beside these tokens. */
-  --text-strong: 250 250 250;
-  --text-primary: 244 244 245;
-  --text-secondary: 228 228 231;
-  --text-muted: 180 180 188;
+  --text-strong: 244 244 246;
+  --text-primary: 232 232 235;
+  --text-secondary: 204 204 210;
+  --text-muted: 157 157 168;
   --text-on-light: 9 9 11;
   --text-on-accent: 255 255 255;
   --syntax-keyword: 196 181 165;
@@ -396,32 +403,36 @@ textarea::selection,
   --tone-zinc-100: 24 24 27;
   --tone-zinc-200: 39 39 42;
   --tone-zinc-300: 63 63 70;
-  --tone-zinc-400: 82 82 91;
+  --tone-zinc-400: 91 91 102;
   --tone-zinc-500: 113 113 122;
   --tone-zinc-600: 161 161 170;
-  --tone-zinc-700: 212 212 216;
-  --tone-zinc-800: 228 228 231;
+  --tone-zinc-700: 210 210 216;
+  --tone-zinc-800: 226 226 230;
   --tone-zinc-900: 255 255 255;
-  --tone-zinc-950: 244 244 245;
+  --tone-zinc-950: 238 238 241;
   /* Light mode needs elevation by tone, not white-on-off-white ambiguity:
      canvas < panel < control < hover/active. Legacy zinc utilities map to
      the same values while feature code migrates to these semantic surfaces. */
-  --surface-canvas: 244 244 245;
+  --surface-canvas: 238 238 241;
   --surface-panel: 255 255 255;
-  --surface-control: 228 228 231;
-  --surface-control-hover: 212 212 216;
-  --surface-control-active: 161 161 170;
+  --surface-control: 226 226 230;
+  --surface-control-hover: 210 210 216;
+  --surface-control-active: 198 198 206;
   --surface-glass: 255 255 255;
-  --surface-rail: 228 228 231;
-  --surface-sidebar: 255 255 255;
+  --surface-rail: 232 232 236;
+  --surface-sidebar: 249 249 250;
+  --surface-selected: 210 210 216;
+  --surface-selected-hover: 200 200 208;
+  --surface-selected-active: 190 190 200;
+  --selection-indicator: 63 63 70;
   --surface-emphasis: 39 39 42;
   --surface-emphasis-hover: 63 63 70;
   --surface-emphasis-active: 24 24 27;
 
   --text-strong: 9 9 11;
-  --text-primary: 24 24 27;
-  --text-secondary: 63 63 70;
-  --text-muted: 82 82 91;
+  --text-primary: 32 32 36;
+  --text-secondary: 72 72 80;
+  --text-muted: 91 91 102;
   --text-on-light: 255 255 255;
   --text-on-accent: 255 255 255;
 
@@ -491,6 +502,25 @@ textarea::selection,
   --syntax-link: 55 65 81;
   --syntax-code: 127 29 29;
   --syntax-invalid: 185 28 28;
+}
+
+/* Increased contrast strengthens boundaries and state markers without adding
+   a third product theme. System/Light/Dark keep their authored palette while
+   the operating-system preference raises state and focus separation. */
+@media (prefers-contrast: more) {
+  :root {
+    --surface-selected: 74 74 82;
+    --surface-selected-hover: 82 82 91;
+    --surface-selected-active: 96 96 105;
+    --selection-indicator: 244 244 246;
+  }
+
+  :root[data-theme="light"] {
+    --surface-selected: 198 198 206;
+    --surface-selected-hover: 186 186 196;
+    --surface-selected-active: 174 174 186;
+    --selection-indicator: 24 24 27;
+  }
 }
 
 /* Progressive enhancement: browsers without CSS corner-shape keep the same

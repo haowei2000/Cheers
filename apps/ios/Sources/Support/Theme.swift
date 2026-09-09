@@ -81,7 +81,7 @@ enum Theme {
             return displayFont
         case .reading:
             if containsChinese(text) {
-                let name = emphasized ? "SourceHanSerifCNVF-SemiBold" : "SourceHanSerifCNVF-Regular"
+                let name = emphasized ? "SourceHanSerifCNVF-SemiBold" : "SourceHanSerifCNVF-Medium"
                 return Font.custom(name, size: 16, relativeTo: .body)
             }
             if containsJapaneseOrKorean(text) {

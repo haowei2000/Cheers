@@ -1,6 +1,14 @@
 import { ButtonGroup } from "@/components/ui/button-group";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, Fingerprint, ShieldCheck } from "lucide-react";
+import {
+  ChevronRight,
+  ExternalLink,
+  Fingerprint,
+  LifeBuoy,
+  Mail,
+  ShieldCheck,
+  Smartphone,
+} from "lucide-react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import {
@@ -11,9 +19,13 @@ import {
   listPasskeys,
   passkeyRegisterFinish,
   passkeyRegisterOptions,
+  regenerateRecoveryCodes,
+  setEmailTwoFactor,
   setupTwoFactor,
   twoFactorStatus,
   type PasskeyCredential,
+  type TwoFactorMethods,
+  type TwoFactorStatus,
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { ActionButton } from "@/components/ui/action-button";
@@ -37,12 +49,35 @@ export function authenticatorQrDataUrl(provisioningUri: string): Promise<string>
   });
 }
 
-/** Two-step verification entry point. TOTP enables the policy; login can then
- * use any enrolled/available factor (TOTP, recovery code, email, or passkey). */
+/** Row subtitle naming the armed factors, so the card says how the account is
+ * protected rather than only that it is. */
+export function twoFactorSummary(methods: TwoFactorMethods | undefined): string {
+  if (!methods) return "Require another verification step when you sign in";
+  const armed = [
+    methods.passkey ? "passkey" : null,
+    methods.totp ? "authenticator app" : null,
+    methods.email ? "email code" : null,
+  ].filter((name): name is string => name !== null);
+  if (!armed.length) return "Use a passkey, an authenticator app, or an email code";
+  return `Using ${armed.join(", ")}`;
+}
+
+/** On/Off marker for one second factor, matching the card's own status voice. */
+function MethodState({ on }: { on: boolean }) {
+  return (
+    <span className={on ? "text-success-400" : "text-content-muted"}>
+      {on ? "On" : "Off"}
+    </span>
+  );
+}
+
+/** Two-step verification. Any armed method — authenticator app, passkey, or
+ * emailed code — turns it on and can complete the second step at sign-in; the
+ * account is not required to enrol an authenticator first. */
 export function TwoFactorCard() {
   const [open, setOpen] = useState(false);
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [phase, setPhase] = useState<"idle" | "setup" | "backup" | "disable">("idle");
+  const [status, setStatus] = useState<TwoFactorStatus | null>(null);
+  const [phase, setPhase] = useState<"overview" | "setup" | "backup" | "disable">("overview");
   const [secret, setSecret] = useState("");
   const [provisioningUri, setProvisioningUri] = useState("");
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
@@ -53,8 +88,8 @@ export function TwoFactorCard() {
 
   const reload = useCallback(() => {
     twoFactorStatus()
-      .then((s) => setEnabled(s.enabled))
-      .catch(() => setEnabled(null));
+      .then(setStatus)
+      .catch(() => setStatus(null));
   }, []);
 
   useEffect(() => {
@@ -82,9 +117,12 @@ export function TwoFactorCard() {
     };
   }, [provisioningUri]);
 
+  const methods = status?.methods;
+  const enabled = status?.enabled ?? false;
+
   function closeDialog() {
     if (busy) return;
-    setPhase("idle");
+    setPhase("overview");
     setSecret("");
     setProvisioningUri("");
     setQrCodeDataUrl(null);
@@ -92,6 +130,18 @@ export function TwoFactorCard() {
     setCode("");
     setBackupCodes([]);
     setOpen(false);
+  }
+
+  /** Freshly minted recovery codes are returned once, so show them immediately. */
+  function afterArming(codes: string[], message: string) {
+    reload();
+    toast.success(message);
+    if (codes.length) {
+      setBackupCodes(codes);
+      setPhase("backup");
+    } else {
+      setPhase("overview");
+    }
   }
 
   async function beginSetup() {
@@ -114,11 +164,8 @@ export function TwoFactorCard() {
     setBusy(true);
     try {
       const res = await enableTwoFactor(code.trim());
-      setBackupCodes(res.backup_codes);
-      setEnabled(true);
-      setPhase("backup");
       setCode("");
-      toast.success("Two-step verification is on");
+      afterArming(res.backup_codes, "Authenticator app is on");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Invalid code");
     } finally {
@@ -131,13 +178,40 @@ export function TwoFactorCard() {
     setBusy(true);
     try {
       await disableTwoFactor(code.trim());
-      setEnabled(false);
-      setPhase("idle");
       setCode("");
-      setOpen(false);
-      toast.success("Two-step verification is off");
+      setPhase("overview");
+      reload();
+      toast.success("Authenticator app removed");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't turn off two-step verification");
+      toast.error(e instanceof Error ? e.message : "Couldn't remove the authenticator app");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleEmail() {
+    if (!methods) return;
+    const next = !methods.email;
+    setBusy(true);
+    try {
+      const res = await setEmailTwoFactor(next);
+      afterArming(res.backup_codes, next ? "Email codes are on" : "Email codes are off");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update email codes");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function newRecoveryCodes() {
+    setBusy(true);
+    try {
+      const res = await regenerateRecoveryCodes();
+      setBackupCodes(res.backup_codes);
+      setPhase("backup");
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't generate recovery codes");
     } finally {
       setBusy(false);
     }
@@ -166,34 +240,100 @@ export function TwoFactorCard() {
       <OperationsItem
         leading={<ShieldCheck className="h-4 w-4 text-content-muted" />}
         title="Two-step verification"
-        subtitle={enabled
-          ? "Use an authenticator, passkey, or recovery code"
-          : "Require another verification step when you sign in"}
-        criticalStatus={enabled != null ? (
-          <span className={enabled ? "text-success-400" : "text-content-muted"}>
-            {enabled ? "On" : "Off"}
-          </span>
-        ) : undefined}
+        subtitle={twoFactorSummary(methods)}
+        criticalStatus={status ? <MethodState on={enabled} /> : undefined}
         trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
-        aria-label={enabled ? "Manage two-step verification" : "Set up two-step verification"}
-        disabled={enabled == null}
+        aria-label="Manage two-step verification"
+        disabled={status == null}
         onClick={() => {
+          setPhase("overview");
           setOpen(true);
-          if (!enabled) void beginSetup();
         }}
       />
-      {open && (
+      {open && status && methods && (
         <Dialog title="Two-step verification" onClose={closeDialog}>
-          {phase === "idle" && enabled && (
+          {phase === "overview" && (
             <div className="space-y-3">
               <p className="text-caption">
-                An extra verification step is required at sign-in. Use any method offered for your account: authenticator app, passkey, or recovery code.
+                {enabled
+                  ? "A second step is required when you sign in. Any method below can complete it."
+                  : "Turn on any one method below. You do not need an authenticator app."}
               </p>
-              <ActionButton action="disable" context="security" accessibleLabel="Turn off two-step verification" onClick={() => { setCode(""); setPhase("disable"); }} />
+              <ItemList presentationLevel="medium" controlSize="regular">
+                <OperationsItem
+                  leading={<Fingerprint className="h-4 w-4 text-content-muted" />}
+                  title="Passkey"
+                  subtitle={
+                    methods.passkey
+                      ? "Armed by the passkeys on this account"
+                      : "Add a passkey under Passkeys to turn this on"
+                  }
+                  criticalStatus={<MethodState on={methods.passkey} />}
+                  aria-label="Passkey second factor"
+                  disabled
+                />
+                <OperationsItem
+                  leading={<Smartphone className="h-4 w-4 text-content-muted" />}
+                  title="Authenticator app"
+                  subtitle="Six-digit codes from an app on your phone"
+                  criticalStatus={<MethodState on={methods.totp} />}
+                  trailing={
+                    <ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />
+                  }
+                  aria-label={
+                    methods.totp ? "Remove the authenticator app" : "Set up an authenticator app"
+                  }
+                  disabled={busy}
+                  onClick={() => {
+                    setCode("");
+                    if (methods.totp) setPhase("disable");
+                    else void beginSetup();
+                  }}
+                />
+                <OperationsItem
+                  leading={<Mail className="h-4 w-4 text-content-muted" />}
+                  title="Email code"
+                  subtitle={
+                    methods.email || status.email_available
+                      ? "A one-time code sent to your address"
+                      : "Add an email address and a password or passkey first"
+                  }
+                  criticalStatus={<MethodState on={methods.email} />}
+                  trailing={
+                    <ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />
+                  }
+                  aria-label={methods.email ? "Turn off email codes" : "Turn on email codes"}
+                  disabled={busy || (!methods.email && !status.email_available)}
+                  onClick={() => void toggleEmail()}
+                />
+                <OperationsItem
+                  leading={<LifeBuoy className="h-4 w-4 text-content-muted" />}
+                  title="Recovery codes"
+                  subtitle={
+                    enabled
+                      ? `${status.recovery_codes_remaining} unused — they work when every other method is unavailable`
+                      : "Generated when you turn on your first method"
+                  }
+                  criticalStatus={
+                    <span
+                      className={
+                        status.recovery_codes_remaining > 0
+                          ? "text-content-muted"
+                          : "text-warning-200/90"
+                      }
+                    >
+                      {status.recovery_codes_remaining}
+                    </span>
+                  }
+                  trailing={
+                    <ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />
+                  }
+                  aria-label="Generate new recovery codes"
+                  disabled={busy || !enabled}
+                  onClick={() => void newRecoveryCodes()}
+                />
+              </ItemList>
             </div>
-          )}
-          {phase === "idle" && !enabled && (
-            <p className="text-caption">{busy ? "Preparing two-step verification…" : "Setup could not be started. Close this dialog and try again."}</p>
           )}
 
           {phase === "setup" && (
@@ -201,7 +341,7 @@ export function TwoFactorCard() {
           <div>
             <p className="text-regular font-medium text-content-secondary">Authenticator app</p>
             <p className="mt-1 text-compact text-content-muted">
-              Scan the QR code with your authenticator app. This turns on two-step verification; other available methods can also complete the second step.
+              Scan the QR code with your authenticator app. This is one way to turn on two-step verification; a passkey or an email code works too.
             </p>
           </div>
           <div className="grid grid-cols-[12rem_minmax(0,1fr)] items-start gap-4 max-sm:grid-cols-1">
@@ -252,14 +392,15 @@ export function TwoFactorCard() {
             />
           </Field>
           <div className="flex gap-2">
-            <ActionButton action="enable" context="security" accessibleLabel="Turn on two-step verification" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
+            <ActionButton action="enable" context="security" accessibleLabel="Turn on the authenticator app" loading={busy} disabled={!code.trim()} onClick={() => void confirmEnable()} />
             <ActionButton
-              action="cancel"
+              action="back"
               context="dialog"
               onClick={() => {
-                closeDialog();
+                setCode("");
+                setPhase("overview");
               }}
-              accessibleLabel="Cancel two-step verification setup"
+              accessibleLabel="Back to two-step verification methods"
             />
           </div>
             </div>
@@ -280,7 +421,8 @@ export function TwoFactorCard() {
             <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyBackup()} />
             <ActionButton action="done" context="security" accessibleLabel="Finish two-step verification setup"
               onClick={() => {
-                closeDialog();
+                setBackupCodes([]);
+                setPhase("overview");
               }}
             />
           </div>
@@ -290,7 +432,7 @@ export function TwoFactorCard() {
           {phase === "disable" && (
             <div className="space-y-3">
           <p className="text-compact text-content-muted">
-            Enter an authenticator or recovery code to turn off two-step verification.
+            Enter an authenticator or recovery code to remove the authenticator app. Your other methods keep protecting this account.
           </p>
           <Input
             value={code}
@@ -303,18 +445,19 @@ export function TwoFactorCard() {
             <ActionButton
               action="disable"
               context="security"
-              accessibleLabel="Confirm turning off two-step verification"
+              accessibleLabel="Confirm removing the authenticator app"
               loading={busy}
               disabled={busy || !code.trim()}
               onClick={() => void confirmDisable()}
             />
             <ActionButton
-              action="cancel"
+              action="back"
               context="dialog"
               onClick={() => {
-                closeDialog();
+                setCode("");
+                setPhase("overview");
               }}
-              accessibleLabel="Cancel turning off two-step verification"
+              accessibleLabel="Back to two-step verification methods"
             />
           </div>
             </div>
@@ -334,6 +477,16 @@ export function PasskeyCard() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  const [newRecoveryCodes, setNewRecoveryCodes] = useState<string[]>([]);
+
+  async function copyNewRecoveryCodes() {
+    try {
+      await navigator.clipboard.writeText(newRecoveryCodes.join("\n"));
+      toast.success("Recovery codes copied");
+    } catch {
+      toast.error("Clipboard unavailable");
+    }
+  }
 
   function closeAddDialog() {
     if (busy) return;
@@ -370,10 +523,17 @@ export function PasskeyCard() {
       const options = await passkeyRegisterOptions(name.trim() || undefined);
       const transactionId = passkeyTransactionId(options);
       const credential = await createPasskey(options);
-      await passkeyRegisterFinish(transactionId, credential);
+      const res = await passkeyRegisterFinish(transactionId, credential);
       setName("");
       setAddOpen(false);
-      toast.success("Passkey added");
+      // A first passkey turns two-step verification on by itself, and the server
+      // mints recovery codes once. Losing the only passkey must not lock you out.
+      if (res.backup_codes.length) {
+        setNewRecoveryCodes(res.backup_codes);
+        toast.success("Passkey added — two-step verification is on");
+      } else {
+        toast.success("Passkey added");
+      }
       await reload();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Couldn't add passkey";
@@ -454,6 +614,26 @@ export function PasskeyCard() {
           <div className="flex justify-end gap-2">
             <ActionButton action="cancel" context="dialog" onClick={closeAddDialog} disabled={busy} />
             <ActionButton action="add" context="security" accessibleLabel="Add passkey" loading={busy} onClick={() => void add()} />
+          </div>
+        </Dialog>
+      )}
+
+      {newRecoveryCodes.length > 0 && (
+        <Dialog title="Save your recovery codes" onClose={() => setNewRecoveryCodes([])}>
+          <div className="space-y-3">
+            <p className="text-compact text-warning-200/90">
+              This passkey turned on two-step verification. Save these recovery codes now — each works once if you lose access to your passkey.
+            </p>
+            <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
+              {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
+              {newRecoveryCodes.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyNewRecoveryCodes()} />
+              <ActionButton action="done" context="security" accessibleLabel="Finish saving recovery codes" onClick={() => setNewRecoveryCodes([])} />
+            </div>
           </div>
         </Dialog>
       )}

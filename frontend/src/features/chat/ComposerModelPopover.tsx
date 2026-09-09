@@ -82,16 +82,13 @@ export function ComposerModelPopover({
     <div className="relative inline-flex min-w-0" ref={rootRef}>
       <ComposerToolbarButton
         type="button"
+        selected={open}
         onClick={() => setOpen((o) => !o)}
         title={`Model & bot settings · ${currentValue}`}
         aria-label={`Model and bot settings: ${currentValue}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={cn(
-          open
-            ? "bg-indigo-600/15 text-accent-200"
-            : "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary"
-        )}
+        className={cn(!open && "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary")}
       >
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
         <span>Model</span>

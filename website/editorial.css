@@ -64,7 +64,7 @@ body {
   font-family: var(--font-reading);
   font-optical-sizing: auto;
   font-variation-settings: "opsz" 14;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -78,7 +78,7 @@ h1, h2, h3, .brand, .foot-brand, .title, .name {
   font-family: var(--font-display);
   font-optical-sizing: auto;
   font-variation-settings: "opsz" 32;
-  font-weight: 520;
+  font-weight: 600;
   letter-spacing: .002em;
   line-height: 1.08;
 }

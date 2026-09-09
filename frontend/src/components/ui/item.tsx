@@ -120,9 +120,7 @@ export function ItemRow({
     controlMinHeightClasses[size],
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
-      ? kind === "navigation"
-        ? "border-l-zinc-200 bg-zinc-800 text-content-primary"
-        : "border-l-zinc-200 bg-zinc-900 text-content-primary"
+      ? "border-l-selected-indicator bg-selected text-content-primary"
       : "border-l-transparent text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
     disabled && "pointer-events-none opacity-50",
     className
@@ -289,7 +287,7 @@ export function FileTreeItem({
       className={cn(
         "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
         controlMinHeightClasses[size],
-        selected && "bg-zinc-900 text-content-primary"
+        selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70"
       )}
       style={{ paddingLeft: depth * 12 + 8 }}
     >

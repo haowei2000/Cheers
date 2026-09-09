@@ -443,6 +443,7 @@ async fn login_response(
             &state.db,
             state.webauthn.as_deref(),
             user_id,
+            Some("oauth"),
         )
         .await?;
         return Ok(AppleLoginResult {
