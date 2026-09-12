@@ -141,6 +141,7 @@ final class AppModel {
         server: String,
         transactionId: String,
         code: String,
+        method: String = "code",
         rememberDevice: Bool = true
     ) async throws {
         guard let base = APIClient.normalizeBaseURL(server) else {
@@ -150,6 +151,7 @@ final class AppModel {
         let response = try await client.verifyTwoFactorLogin(
             transactionId: transactionId,
             code: code,
+            method: method,
             rememberDevice: rememberDevice
         )
         _ = try finishLoginOrChallenge(base: base, response: response)

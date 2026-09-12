@@ -205,11 +205,13 @@ function AddCollectionControl({
         label="Add Collection"
         leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
         content={content}
-        options={[
+        options={[]}
+        actions={[
           ...available.map((template) => ({ value: `template:${template.id}`, label: template.title })),
           { value: "load-extension", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
         ]}
-        onSelect={(value) => {
+        onSelect={() => undefined}
+        onAction={(value) => {
           if (value === "load-extension") return onLoad();
           const manifest = available.find((candidate) => `template:${candidate.id}` === value);
           if (manifest) onSelect(manifest);
@@ -238,8 +240,10 @@ function AddTabControl({
       label="Open Tab"
       leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
       content={content}
-      options={candidates.map((path) => ({ value: path, label: basename(path) }))}
-      onSelect={onSelect}
+      options={[]}
+      actions={candidates.map((path) => ({ value: path, label: basename(path) }))}
+      onSelect={() => undefined}
+      onAction={onSelect}
       placement="up"
       controlSize={workbenchControlSize.tab}
       controlWidth="fill"
@@ -283,49 +287,53 @@ function WorkbenchHierarchyNavigation({
   onAddTab: (path: string) => void;
   onShowRaw: () => void;
 }) {
-  // Two controls, always: picking a Collection and picking a Tab. Creating one is
-  // the last group of the menu you already opened to choose one, so width only
-  // decides whether those two triggers still show their labels.
-  const textProbe = useRef<HTMLDivElement>(null);
-  const [required, setRequired] = useState(Number.POSITIVE_INFINITY);
+  const fullProbe = useRef<HTMLDivElement>(null);
+  const compactProbe = useRef<HTMLDivElement>(null);
+  const [required, setRequired] = useState({ full: Number.POSITIVE_INFINITY, compact: Number.POSITIVE_INFINITY });
   useLayoutEffect(() => {
-    const measure = () => setRequired(textProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY);
+    const measure = () => setRequired({
+      full: fullProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
+      compact: compactProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
+    });
     measure();
     const observer = new ResizeObserver(measure);
-    if (textProbe.current) observer.observe(textProbe.current);
+    if (fullProbe.current) observer.observe(fullProbe.current);
+    if (compactProbe.current) observer.observe(compactProbe.current);
     return () => observer.disconnect();
   }, [collections.length, tabs.length, availableTemplates.length, tabCandidates.length, collectionTitle, selectedPath]);
-  const iconOnly = availableWidth < required;
+  const mode = availableWidth >= required.full ? "full" : availableWidth >= required.compact ? "compact" : "icon";
+  const embedded = mode !== "full";
+  const iconOnly = mode === "icon";
   const CollectionIcon = collectionIcon;
 
-  const collectionCreateOptions: DropdownSelectOption[] = [
+  const collectionActions: DropdownSelectOption[] = [
     ...availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `New ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })),
     { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
   const collectionOptions: DropdownSelectOption[] = [
     ...collections.map(({ id, label, Icon }) => ({ value: `collection:${id}`, label, leading: <Icon className="h-4 w-4" aria-hidden="true" /> })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-    ...collectionCreateOptions.map((option, index) => (index === 0 ? { ...option, separatorBefore: true } : option)),
   ];
-  const tabCreateOptions: DropdownSelectOption[] = canAddTab
+  const tabActions: DropdownSelectOption[] = canAddTab
     ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Add ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> }))
     : [];
   const tabOptions: DropdownSelectOption[] = [
     ...tabs.map(({ path, label }) => ({ value: `tab:${path}`, label })),
-    ...tabCreateOptions.map((option, index) => (index === 0 && tabs.length > 0 ? { ...option, separatorBefore: true } : option)),
   ];
   const chooseCollection = (value: string) => {
     if (value === "raw") return onShowRaw();
+    onSelectCollection(value.slice("collection:".length));
+  };
+  const runCollectionAction = (value: string) => {
     if (value === "load") return onLoadCollection();
     if (value.startsWith("add:")) {
       const manifest = availableTemplates.find((candidate) => candidate.id === value.slice(4));
       if (manifest) onAddCollection(manifest);
-      return;
     }
-    onSelectCollection(value.slice("collection:".length));
   };
-  const chooseTab = (value: string) => value.startsWith("add:") ? onAddTab(value.slice(4)) : onSelectTab(value.slice(4));
-  const controls = (probe = false, icons = iconOnly) => (
+  const chooseTab = (value: string) => onSelectTab(value.slice("tab:".length));
+  const runTabAction = (value: string) => onAddTab(value.slice(4));
+  const controls = (probe = false, compact = embedded, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
       <DropdownSelect
         ariaLabel={`Collection: ${collectionTitle}`}
@@ -335,13 +343,16 @@ function WorkbenchHierarchyNavigation({
         value={`collection:${activeCollection}`}
         options={collectionOptions}
         onSelect={chooseCollection}
+        actions={compact ? collectionActions : []}
+        onAction={runCollectionAction}
         placement="up"
         // Density is inherited from the chrome band these are portaled into, not
         // chosen here: the tab strip's own size belongs to the in-content strip.
         controlWidth="slot"
         className="max-w-40"
       />
-      {(tabOptions.length > 0) && (
+      {!compact && <AddCollectionControl available={availableTemplates} onSelect={onAddCollection} onLoad={onLoadCollection} />}
+      {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
         <DropdownSelect
           ariaLabel={`Tab: ${tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}`}
           label={tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}
@@ -350,18 +361,22 @@ function WorkbenchHierarchyNavigation({
           value={selectedPath ? `tab:${selectedPath}` : null}
           options={tabOptions}
           onSelect={chooseTab}
+          actions={compact ? tabActions : []}
+          onAction={runTabAction}
           placement="up"
           controlWidth="slot"
           className="max-w-40"
         />
       )}
+      {!compact && canAddTab && <AddTabControl candidates={tabCandidates} onSelect={onAddTab} />}
     </div>
   );
 
   return (
     <div className="relative min-w-0 max-w-full overflow-hidden">
       {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={fullProbe}>{controls(true, false, false)}</div>
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={compactProbe}>{controls(true, true, false)}</div>
     </div>
   );
 }

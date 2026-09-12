@@ -176,7 +176,48 @@ export function CollectionEditorItem({
   );
 }
 
-/** Delete never fires from a lone icon: the row changes into confirmation mode. */
+/** A consequential collection action never fires from a lone icon: the row
+ * changes into an explicit confirmation mode. */
+export function CollectionConfirmationItem({
+  title,
+  description,
+  action,
+  prompt,
+  onCancel,
+  onConfirm,
+  busy,
+}: {
+  title: ReactNode;
+  description: ReactNode;
+  action: "delete" | "remove" | "revoke";
+  prompt: ReactNode;
+  onCancel: () => void;
+  onConfirm: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <OperationsItem
+      presentationLevel="medium"
+      controlSize="regular"
+      leading={<AlertTriangle className="h-4 w-4 text-danger-400" />}
+      title={title}
+      subtitle={description}
+      criticalStatus={(
+        <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">
+          {prompt}
+        </span>
+      )}
+      actions={(
+        <>
+          <ActionButton action="cancel" context="confirmation" controlSize="compact" onClick={onCancel} disabled={busy} />
+          <ActionButton action={action} context="confirmation" controlSize="compact" loading={busy} onClick={onConfirm} />
+        </>
+      )}
+    />
+  );
+}
+
+/** Delete-specific compatibility wrapper for existing collection managers. */
 export function CollectionDeleteItem({
   title,
   description,
@@ -191,22 +232,14 @@ export function CollectionDeleteItem({
   deleting?: boolean;
 }) {
   return (
-    <OperationsItem
-      presentationLevel="medium"
-      controlSize="regular"
-      leading={<AlertTriangle className="h-4 w-4 text-danger-400" />}
-      title={<span title={String(description)}>{title}</span>}
-      criticalStatus={(
-        <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">
-          Delete?
-        </span>
-      )}
-      actions={(
-        <>
-          <ActionButton action="cancel" context="confirmation" controlSize="compact" onClick={onCancel} disabled={deleting} />
-          <ActionButton action="delete" context="confirmation" controlSize="compact" loading={deleting} onClick={onConfirm} />
-        </>
-      )}
+    <CollectionConfirmationItem
+      title={title}
+      description={description}
+      action="delete"
+      prompt="Delete?"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      busy={deleting}
     />
   );
 }

@@ -154,11 +154,13 @@ struct LoginResponse: Codable {
 struct TwoFactorLoginRequest: Encodable {
     let transactionId: String
     let code: String
+    let method: String
     let rememberDevice: Bool
 
     enum CodingKeys: String, CodingKey {
         case transactionId = "transaction_id"
         case code
+        case method
         case rememberDevice = "remember_device"
     }
 }

@@ -167,6 +167,7 @@ export default function LoginPage() {
         : await verifyTwoFactorLogin({
             transaction_id: transactionId,
             code: factorCode,
+            method: usePasswordFactor ? "password" : "code",
             remember_device: true,
           });
       completeOutcome(res);

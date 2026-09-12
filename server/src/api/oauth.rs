@@ -1159,6 +1159,7 @@ pub async fn handoff(
             &user_id,
             client,
             context["device_name"].as_str(),
+            "oauth",
         )
         .await?;
         let allowed_factors = crate::domain::webauthn::allowed_login_factors(

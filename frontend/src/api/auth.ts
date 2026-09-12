@@ -238,6 +238,7 @@ export async function login(credentials: {
 export interface TwoFactorVerifyRequest {
   transaction_id: string;
   code: string;
+  method?: "code" | "password";
   remember_device?: boolean;
 }
 
@@ -251,6 +252,7 @@ export async function verifyTwoFactorLogin(
       serverBase,
       transactionId: body.transaction_id,
       code: body.code,
+      method: body.method,
       rememberDevice: body.remember_device ?? true,
     });
   }

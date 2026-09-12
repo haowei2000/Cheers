@@ -344,6 +344,7 @@ pub async fn desktop_verify_factor(
     server_base: String,
     transaction_id: String,
     code: String,
+    method: Option<String>,
     remember_device: Option<bool>,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
@@ -353,6 +354,7 @@ pub async fn desktop_verify_factor(
         json!({
             "transaction_id": transaction_id,
             "code": code,
+            "method": method,
             "remember_device": remember_device.unwrap_or(true),
         }),
     )

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CollectionManagerDemo } from "./CollectionManagerDemo";
-import { CollectionDeleteItem, CollectionEmptyItem } from "./collection-manager";
+import { CollectionConfirmationItem, CollectionDeleteItem, CollectionEmptyItem } from "./collection-manager";
 
 describe("CollectionManager pattern", () => {
   it("renders one toolbar and semantic operations rows", () => {
@@ -10,6 +10,22 @@ describe("CollectionManager pattern", () => {
     expect(markup).toContain("OpenCode task claiming");
     expect(markup).toContain("7-day invite link");
     expect(markup).toContain('data-item-kind="operations"');
+  });
+
+  it("reuses the confirmation row for non-delete destructive actions", () => {
+    const markup = renderToStaticMarkup(
+      <CollectionConfirmationItem
+        title="Remembered device"
+        description="The device will verify again."
+        action="revoke"
+        prompt="Revoke?"
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Revoke?");
+    expect(markup).toContain("Revoke");
+    expect(markup.match(/<button/g)).toHaveLength(2);
   });
 
   it("keeps destructive confirmation as a composite row without nested buttons", () => {

@@ -157,6 +157,7 @@ pub async fn login(
             &user.id,
             client,
             body.device_name.as_deref(),
+            "password",
         )
         .await?;
         let allowed_factors = crate::domain::webauthn::allowed_login_factors(
@@ -1016,6 +1017,11 @@ pub struct TwoFactorVerifyRequest {
     #[serde(default)]
     pub two_factor_session_id: Option<String>,
     pub code: String,
+    /// Explicitly identifies password verification. Code-based clients may omit
+    /// this for backwards compatibility; a password must never be guessed from
+    /// the same opaque field as TOTP and recovery codes.
+    #[serde(default)]
+    pub method: Option<String>,
     #[serde(default)]
     pub remember_device: bool,
 }
@@ -1166,16 +1172,34 @@ pub async fn verify_two_factor_login(
         .transaction_id
         .as_deref()
         .ok_or_else(|| AppError::Unauthorized("authentication transaction is required".into()))?;
-    let (user_id, client, device_name) =
+    let (user_id, client, device_name, primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, transaction_id).await?;
     let remember_device = body.remember_device;
     let master_key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
     );
-    let mut verified =
-        two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?;
-    if !verified && two_factor::methods(&state.db, &user_id).await?.email {
+    let methods = two_factor::methods(&state.db, &user_id).await?;
+    let mut verified = if body.method.as_deref() == Some("password") {
+        let hash = sqlx::query_scalar::<_, String>(
+            "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        )
+        .bind(&user_id)
+        .fetch_optional(&state.db)
+        .await?;
+        primary_factor.as_deref() != Some("password")
+            && primary_factor.is_some()
+            && methods.password
+            && match hash {
+                Some(hash) => crate::infra::crypto::verify_password(body.code.clone(), hash)
+                    .await
+                    .unwrap_or(false),
+                None => false,
+            }
+    } else {
+        two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?
+    };
+    if body.method.as_deref() != Some("password") && !verified && methods.email {
         verified =
             two_factor::verify_email_code(&state.db, &state.config, &user_id, &body.code).await?;
     }
@@ -1253,7 +1277,7 @@ pub async fn send_two_factor_email(
     }
     limiter.record_failure(&key);
 
-    let (user_id, _client, _device_name) =
+    let (user_id, _client, _device_name, _primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
     if !two_factor::methods(&state.db, &user_id).await?.email {
         return Err(AppError::BadRequest(

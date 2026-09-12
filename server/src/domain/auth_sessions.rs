@@ -91,6 +91,7 @@ pub async fn create_factor_transaction(
     user_id: &str,
     client: ClientType,
     device_name: Option<&str>,
+    primary_factor: &str,
 ) -> Result<FactorTransaction, AppError> {
     let transaction_id = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::minutes(AUTH_TRANSACTION_TTL_MINUTES);
@@ -102,7 +103,7 @@ pub async fn create_factor_transaction(
     .bind(&transaction_id)
     .bind(user_id)
     .bind(client.as_str())
-    .bind(json!({ "device_name": device_name }))
+    .bind(json!({ "device_name": device_name, "primary_factor": primary_factor }))
     .bind(expires_at)
     .execute(db)
     .await?;
@@ -112,7 +113,7 @@ pub async fn create_factor_transaction(
 pub async fn factor_transaction_user(
     db: &PgPool,
     transaction_id: &str,
-) -> Result<(String, ClientType, Option<String>), AppError> {
+) -> Result<(String, ClientType, Option<String>, Option<String>), AppError> {
     let mut tx = db.begin().await?;
     let row = sqlx::query(
         "SELECT user_id, client_type, context_json, failed_attempts, expires_at
@@ -147,11 +148,16 @@ pub async fn factor_transaction_user(
         .get("device_name")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
+    let primary_factor = context
+        .get("primary_factor")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
     tx.commit().await?;
     Ok((
         user_id,
         ClientType::parse(Some(client_raw.as_str()))?,
         device_name,
+        primary_factor,
     ))
 }
 

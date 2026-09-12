@@ -40,6 +40,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
+import { CollectionConfirmationItem } from "@/components/ui/collection-manager";
 
 const inputCls =
   "bg-zinc-800 text-content-primary";
@@ -513,12 +514,16 @@ export function TwoFactorCard() {
  * card covers the rest — a shared laptop you want challenged again. */
 export function TrustedDevicesCard() {
   const [devices, setDevices] = useState<TrustedDevice[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<TrustedDevice | "all" | null>(null);
 
   const reload = useCallback(() => {
+    setLoadError(false);
+    setDevices(null);
     listTrustedDevices()
       .then(setDevices)
-      .catch(() => setDevices([]));
+      .catch(() => setLoadError(true));
   }, []);
 
   useEffect(() => {
@@ -530,6 +535,7 @@ export function TrustedDevicesCard() {
     try {
       await revokeTrustedDevice(device.trusted_device_id);
       toast.success("This device will be asked to verify again");
+      setRevokeTarget(null);
       reload();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't revoke this device");
@@ -543,6 +549,7 @@ export function TrustedDevicesCard() {
     try {
       const res = await revokeAllTrustedDevices();
       toast.success(`${res.revoked} device${res.revoked === 1 ? "" : "s"} will verify again`);
+      setRevokeTarget(null);
       reload();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't revoke devices");
@@ -570,7 +577,8 @@ export function TrustedDevicesCard() {
                 context="security"
                 accessibleLabel="Ask every device to verify again"
                 loading={busy}
-                onClick={() => void revokeAll()}
+                disabled={busy || revokeTarget !== null}
+                onClick={() => setRevokeTarget("all")}
               />
             </ButtonGroup>
           )}
@@ -580,33 +588,73 @@ export function TrustedDevicesCard() {
         </p>
       </div>
 
-      {devices == null ? (
+      {loadError ? (
+        <ItemList presentationLevel="medium" controlSize="regular">
+          <OperationsItem
+            title="Couldn't load remembered devices"
+            subtitle="The current remembered-device status is unavailable."
+            actions={
+              <ActionButton
+                action="retry"
+                context="settings"
+                accessibleLabel="Retry loading remembered devices"
+                onClick={reload}
+              />
+            }
+          />
+        </ItemList>
+      ) : devices == null ? (
         <p className="text-compact text-content-muted">Loading…</p>
       ) : devices.length === 0 ? (
         <p className="text-compact text-content-muted">No remembered devices.</p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular">
-          {devices.map((d) => (
-            <OperationsItem
-              key={d.trusted_device_id}
-              title={`${d.device_name || "Unnamed device"}${d.current ? " · this device" : ""}`}
-              subtitle={`Expires ${new Date(d.expires_at).toLocaleDateString()}`}
-              trailing={
-                <span className="text-compact text-content-muted">
-                  {d.last_used_at
-                    ? `Used ${new Date(d.last_used_at).toLocaleDateString()}`
-                    : `Added ${new Date(d.created_at).toLocaleDateString()}`}
-                </span>
-              }
-              actions={
-                <ActionButton
-                  action="revoke"
-                  context="security"
-                  accessibleLabel={`Stop remembering ${d.device_name || "this device"}`}
-                  onClick={() => void revokeOne(d)}
-                />
-              }
+          {revokeTarget === "all" && (
+            <CollectionConfirmationItem
+              title="Every remembered device"
+              description="Every remembered device will need the second verification step again."
+              action="revoke"
+              prompt="Revoke all?"
+              busy={busy}
+              onCancel={() => setRevokeTarget(null)}
+              onConfirm={() => void revokeAll()}
             />
+          )}
+          {devices.map((d) => (
+            revokeTarget !== "all" && revokeTarget?.trusted_device_id === d.trusted_device_id ? (
+              <CollectionConfirmationItem
+                key={d.trusted_device_id}
+                title={d.device_name || "Unnamed device"}
+                description="This device will need the second verification step again."
+                action="revoke"
+                prompt="Revoke?"
+                busy={busy}
+                onCancel={() => setRevokeTarget(null)}
+                onConfirm={() => void revokeOne(d)}
+              />
+            ) : (
+              <OperationsItem
+                key={d.trusted_device_id}
+                title={`${d.device_name || "Unnamed device"}${d.current ? " · this device" : ""}`}
+                subtitle={`Expires ${new Date(d.expires_at).toLocaleDateString()}`}
+                trailing={
+                  <span className="text-compact text-content-muted">
+                    {d.last_used_at
+                      ? `Used ${new Date(d.last_used_at).toLocaleDateString()}`
+                      : `Added ${new Date(d.created_at).toLocaleDateString()}`}
+                  </span>
+                }
+                actions={
+                  <ActionButton
+                    action="revoke"
+                    context="security"
+                    accessibleLabel={`Stop remembering ${d.device_name || "this device"}`}
+                    disabled={busy || revokeTarget !== null}
+                    onClick={() => setRevokeTarget(d)}
+                  />
+                }
+              />
+            )
           ))}
         </ItemList>
       )}

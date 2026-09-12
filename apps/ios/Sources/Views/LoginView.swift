@@ -12,6 +12,7 @@ struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var factorCode = ""
+    @State private var factorMethod: FactorMethod = .code
     @State private var factorChallenge: FactorChallenge?
     @State private var emailHint: String?
     @State private var emailSent = false
@@ -31,6 +32,7 @@ struct LoginView: View {
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password, factor }
+    private enum FactorMethod: String { case code, password }
 
     var body: some View {
         ScrollView {
@@ -295,15 +297,32 @@ struct LoginView: View {
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Verification code")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.textSecondary)
-                TextField(factorPlaceholder, text: $factorCode)
-                    .textContentType(.oneTimeCode)
-                    .keyboardType(.asciiCapable)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
+            if hasCodeFactor && hasPasswordFactor {
+                Picker("Verification method", selection: $factorMethod) {
+                    Text("Code").tag(FactorMethod.code)
+                    Text("Password").tag(FactorMethod.password)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: factorMethod) { _, _ in factorCode = "" }
+            }
+
+            if hasTypedFactor {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(factorMethod == .password ? "Password" : "Verification code")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.textSecondary)
+                    Group {
+                        if factorMethod == .password {
+                            SecureField("Account password", text: $factorCode)
+                                .textContentType(.password)
+                        } else {
+                            TextField(factorPlaceholder, text: $factorCode)
+                                .textContentType(.oneTimeCode)
+                                .keyboardType(.asciiCapable)
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                        }
+                    }
                     .focused($focusedField, equals: .factor)
                     .submitLabel(.go)
                     .onSubmit { submitFactor() }
@@ -315,6 +334,7 @@ struct LoginView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(focusedField == .factor ? Theme.accentHover.opacity(0.6) : Theme.borderStrong, lineWidth: 1)
                     )
+                }
             }
 
             if let errorText {
@@ -324,23 +344,25 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Button(action: submitFactor) {
-                HStack(spacing: 8) {
-                    if isBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white)
+            if hasTypedFactor {
+                Button(action: submitFactor) {
+                    HStack(spacing: 8) {
+                        if isBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        }
+                        Text(isBusy ? "Verifying…" : "Verify")
+                            .font(.subheadline.weight(.medium))
                     }
-                    Text(isBusy ? "Verifying…" : "Verify")
-                        .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: Theme.hitMin)
+                    .background(canSubmitFactor ? Theme.accent : Theme.accent.opacity(0.5))
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: Theme.hitMin)
-                .background(canSubmitFactor ? Theme.accent : Theme.accent.opacity(0.5))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .disabled(!canSubmitFactor || isBusy)
             }
-            .disabled(!canSubmitFactor || isBusy)
 
             if factorChallenge?.allowedFactors.contains("email") == true {
                 Button(action: sendEmailCode) {
@@ -389,17 +411,29 @@ struct LoginView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Theme.border, lineWidth: 1)
         )
-        .onAppear { focusedField = .factor }
+        .onAppear {
+            if hasCodeFactor {
+                factorMethod = .code
+            } else if hasPasswordFactor {
+                factorMethod = .password
+            }
+            focusedField = hasTypedFactor ? .factor : nil
+        }
     }
 
     private var factorHelpText: String {
         let factors = factorChallenge?.allowedFactors ?? []
-        var parts: [String] = ["authenticator app", "backup code"]
+        var parts: [String] = []
+        if factors.contains("totp") { parts.append("authenticator app") }
+        if factors.contains("recovery_code") { parts.append("backup code") }
         if factors.contains("email") {
             parts.append("email code")
         }
         if factors.contains("passkey") {
             parts.append("Passkey")
+        }
+        if factors.contains("password") {
+            parts.append("password")
         }
         let joined: String
         switch parts.count {
@@ -410,7 +444,20 @@ struct LoginView: View {
         default:
             joined = parts.dropLast().joined(separator: ", ") + ", or \(parts.last!)"
         }
-        return "Enter a code from your \(joined)."
+        return "Verify with your \(joined)."
+    }
+
+    private var hasCodeFactor: Bool {
+        let factors = factorChallenge?.allowedFactors ?? []
+        return factors.contains("totp") || factors.contains("recovery_code") || factors.contains("email")
+    }
+
+    private var hasPasswordFactor: Bool {
+        factorChallenge?.allowedFactors.contains("password") == true
+    }
+
+    private var hasTypedFactor: Bool {
+        hasCodeFactor || hasPasswordFactor
     }
 
     private var factorPlaceholder: String {
@@ -449,7 +496,9 @@ struct LoginView: View {
     }
 
     private var canSubmitFactor: Bool {
-        !factorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        hasTypedFactor && (factorMethod == .password
+            ? !factorCode.isEmpty
+            : !factorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var legalLinks: some View {
@@ -492,7 +541,10 @@ struct LoginView: View {
                 try await app.completeTwoFactorLogin(
                     server: server,
                     transactionId: challenge.transactionId,
-                    code: factorCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                    code: factorMethod == .password
+                        ? factorCode
+                        : factorCode.trimmingCharacters(in: .whitespacesAndNewlines),
+                    method: factorMethod.rawValue
                 )
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
@@ -514,6 +566,7 @@ struct LoginView: View {
                 let result = try await client.sendTwoFactorEmail(transactionId: challenge.transactionId)
                 emailHint = result.emailHint
                 emailSent = true
+                factorMethod = .code
                 focusedField = .factor
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
