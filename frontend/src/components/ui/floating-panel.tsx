@@ -521,7 +521,7 @@ export function FloatingPanel({
             data-floating-panel-handle=""
             className="flex min-h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
           >
-            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
+            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
             {titleEl}
             <div className="flex-1" />
             <ActionButton
@@ -568,7 +568,7 @@ export function FloatingPanel({
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-subtle active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-muted active:cursor-grabbing"
               aria-label={`${title} — drag to move`}
             >
               {/* The grip alone. The panel's mark went the way its name did: a panel whose
@@ -645,7 +645,7 @@ export function FloatingPanel({
             data-floating-panel-handle=""
             className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden"
           >
-            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
+            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
             {titleLabel}
             <div className="flex-1" />
             <ButtonGroup label="Panel actions" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="ml-auto">

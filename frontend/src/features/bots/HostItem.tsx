@@ -118,7 +118,7 @@ export function HostItem({
         }
         trailing={
           <ChevronRight
-            className="h-4 w-4 text-content-subtle"
+            className="h-4 w-4 text-content-muted"
             aria-hidden="true"
           />
         }
