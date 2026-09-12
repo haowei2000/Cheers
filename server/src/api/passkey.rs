@@ -113,6 +113,7 @@ pub async fn register_finish(
     Json(body): Json<RegisterFinishRequest>,
 ) -> Result<Json<RegisterFinishResponse>, AppError> {
     let service = require_webauthn(&state)?;
+    let was_armed = two_factor::methods(&state.db, &claims.sub).await?.any();
     let credential = webauthn::finish_registration(
         &state.db,
         service,
@@ -121,7 +122,7 @@ pub async fn register_finish(
         body.credential,
     )
     .await?;
-    let backup_codes = two_factor::ensure_recovery_codes(&state.db, &claims.sub).await?;
+    let backup_codes = two_factor::complete_arming(&state.db, &claims.sub, was_armed).await?;
     Ok(Json(RegisterFinishResponse {
         credential,
         backup_codes,

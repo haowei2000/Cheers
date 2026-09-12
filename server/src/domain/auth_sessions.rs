@@ -653,6 +653,83 @@ pub async fn revoke_other_sessions_and_trusted_devices(
     Ok(())
 }
 
+#[derive(Serialize)]
+pub struct TrustedDeviceSummary {
+    pub trusted_device_id: String,
+    pub device_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    /// True when this credential belongs to the session making the request.
+    pub current: bool,
+}
+
+/// Trusted devices skip the second step at sign-in, so they are worth showing
+/// and revoking in Settings rather than being invisible 30-day state.
+pub async fn list_trusted_devices(
+    db: &PgPool,
+    user_id: &str,
+    current_session_id: &str,
+) -> Result<Vec<TrustedDeviceSummary>, AppError> {
+    let rows = sqlx::query(
+        "SELECT trusted_device_id, session_id, device_name, created_at,
+                last_used_at, expires_at
+         FROM trusted_devices
+         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
+         ORDER BY COALESCE(last_used_at, created_at) DESC",
+    )
+    .bind(user_id)
+    .fetch_all(db)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let session_id: Option<String> = row.try_get("session_id").ok().flatten();
+            Ok(TrustedDeviceSummary {
+                trusted_device_id: row.try_get("trusted_device_id")?,
+                device_name: row.try_get("device_name").ok().flatten(),
+                created_at: row.try_get("created_at")?,
+                last_used_at: row.try_get("last_used_at").ok().flatten(),
+                expires_at: row.try_get("expires_at")?,
+                current: session_id.as_deref() == Some(current_session_id),
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(AppError::Db)
+}
+
+pub async fn revoke_trusted_device(
+    db: &PgPool,
+    user_id: &str,
+    trusted_device_id: &str,
+) -> Result<bool, AppError> {
+    let result = sqlx::query(
+        "UPDATE trusted_devices SET revoked_at = NOW()
+         WHERE user_id = $1 AND trusted_device_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(trusted_device_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+/// Revoke every live trusted device for the user.
+///
+/// Called when two-step verification turns on: a "remember this device"
+/// credential minted while the account was unprotected must not bypass the
+/// factor that was just armed. Without this, arming 2FA silently does nothing
+/// on devices the user had already ticked "remember me" on.
+pub async fn revoke_all_trusted_devices(db: &PgPool, user_id: &str) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        "UPDATE trusted_devices SET revoked_at = NOW()
+         WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn list_sessions(
     db: &PgPool,
     user_id: &str,

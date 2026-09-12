@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     config::Config,
+    domain::auth_sessions,
     errors::AppError,
     infra::crypto::{
         decrypt_secret, derive_master_key, encrypt_secret, generate_email_code, hash_email_code,
@@ -40,12 +41,15 @@ pub struct TwoFactorMethods {
     pub passkey: bool,
     /// Emailed one-time codes opted into, with an address on file.
     pub email: bool,
+    /// The account password, opted into as a *second* step. Only meaningful for
+    /// logins whose first step was something else (OAuth or a passkey).
+    pub password: bool,
 }
 
 impl TwoFactorMethods {
     /// Whether the account is protected by a second factor at all.
     pub fn any(self) -> bool {
-        self.totp || self.passkey || self.email
+        self.totp || self.passkey || self.email || self.password
     }
 
     /// Factor names the login step can challenge with, strongest first.
@@ -59,6 +63,11 @@ impl TwoFactorMethods {
         }
         if self.email {
             factors.push("email".to_string());
+        }
+        // Weakest last: a password is "something you know", the same category as
+        // most first steps, and phishable in the same stroke.
+        if self.password {
+            factors.push("password".to_string());
         }
         factors
     }
@@ -82,6 +91,7 @@ pub async fn methods(db: &PgPool, user_id: &str) -> Result<TwoFactorMethods, App
         "SELECT u.totp_enabled,
                 u.email_2fa_enabled AND u.email IS NOT NULL AND btrim(u.email) <> ''
                     AS email_armed,
+                u.password_2fa_enabled AND u.password_hash IS NOT NULL AS password_armed,
                 EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
                     AS has_passkey
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
@@ -94,6 +104,7 @@ pub async fn methods(db: &PgPool, user_id: &str) -> Result<TwoFactorMethods, App
         totp: row.try_get::<bool, _>("totp_enabled").unwrap_or(false),
         passkey: row.try_get::<bool, _>("has_passkey").unwrap_or(false),
         email: row.try_get::<bool, _>("email_armed").unwrap_or(false),
+        password: row.try_get::<bool, _>("password_armed").unwrap_or(false),
     })
 }
 
@@ -102,6 +113,7 @@ pub async fn status(db: &PgPool, user_id: &str) -> Result<TwoFactorStatus, AppEr
         "SELECT u.totp_enabled, u.totp_verified_at,
                 u.email_2fa_enabled AND u.email IS NOT NULL AND btrim(u.email) <> ''
                     AS email_armed,
+                u.password_2fa_enabled AND u.password_hash IS NOT NULL AS password_armed,
                 EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
                     AS has_passkey
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
@@ -114,6 +126,7 @@ pub async fn status(db: &PgPool, user_id: &str) -> Result<TwoFactorStatus, AppEr
         totp: row.try_get::<bool, _>("totp_enabled").unwrap_or(false),
         passkey: row.try_get::<bool, _>("has_passkey").unwrap_or(false),
         email: row.try_get::<bool, _>("email_armed").unwrap_or(false),
+        password: row.try_get::<bool, _>("password_armed").unwrap_or(false),
     };
     Ok(TwoFactorStatus {
         enabled: methods.any(),
@@ -174,6 +187,7 @@ pub async fn enable(
     if !totp::verify(&secret, code, chrono::Utc::now().timestamp() as u64) {
         return Err(AppError::Unauthorized("invalid verification code".into()));
     }
+    let was_armed = methods(db, user_id).await?.any();
     sqlx::query(
         "UPDATE users
          SET totp_enabled = TRUE,
@@ -183,7 +197,7 @@ pub async fn enable(
     .bind(user_id)
     .execute(db)
     .await?;
-    ensure_recovery_codes(db, user_id).await
+    complete_arming(db, user_id, was_armed).await
 }
 
 /// Opt an account into (or out of) emailed one-time codes as a second factor.
@@ -227,6 +241,7 @@ pub async fn set_email_factor(
             ));
         }
     }
+    let was_armed = methods(db, user_id).await?.any();
     sqlx::query(
         "UPDATE users SET email_2fa_enabled = $2 WHERE user_id = $1 AND is_deleted = FALSE",
     )
@@ -235,7 +250,74 @@ pub async fn set_email_factor(
     .execute(db)
     .await?;
     if enabled {
-        return ensure_recovery_codes(db, user_id).await;
+        return complete_arming(db, user_id, was_armed).await;
+    }
+    clear_recovery_codes_if_unprotected(db, user_id).await?;
+    Ok(Vec::new())
+}
+
+/// Side effects of arming a factor, shared by every method.
+///
+/// `was_armed` is the account's state *before* the write. On the off -> on
+/// transition every trusted device is revoked: a "remember this device"
+/// credential minted while the account was unprotected would otherwise bypass
+/// the factor that was just armed, for the rest of its 30-day life. Recovery
+/// codes are minted on the same transition and returned for one-time display.
+pub async fn complete_arming(
+    db: &PgPool,
+    user_id: &str,
+    was_armed: bool,
+) -> Result<Vec<String>, AppError> {
+    if !was_armed {
+        auth_sessions::revoke_all_trusted_devices(db, user_id).await?;
+    }
+    ensure_recovery_codes(db, user_id).await
+}
+
+/// Opt an account into (or out of) its password as a *second* step.
+///
+/// Only useful when something else proves the first step, so this is refused
+/// unless the account has a passkey or a linked OAuth identity. A password can
+/// never be both halves of a two-step sign-in.
+pub async fn set_password_factor(
+    db: &PgPool,
+    user_id: &str,
+    enabled: bool,
+) -> Result<Vec<String>, AppError> {
+    if enabled {
+        let row = sqlx::query(
+            "SELECT u.password_hash IS NOT NULL AS has_password,
+                    EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                        OR EXISTS(SELECT 1 FROM auth_external_identities e
+                                  WHERE e.user_id = u.user_id) AS has_other_primary
+             FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+        )
+        .bind(user_id)
+        .fetch_optional(db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+        if !row.try_get::<bool, _>("has_password").unwrap_or(false) {
+            return Err(AppError::BadRequest(
+                "set a password before using it for two-step verification".into(),
+            ));
+        }
+        if !row.try_get::<bool, _>("has_other_primary").unwrap_or(false) {
+            return Err(AppError::BadRequest(
+                "add a passkey or link a sign-in provider first: a password cannot be both sign-in steps"
+                    .into(),
+            ));
+        }
+    }
+    let was_armed = methods(db, user_id).await?.any();
+    sqlx::query(
+        "UPDATE users SET password_2fa_enabled = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+    )
+    .bind(user_id)
+    .bind(enabled)
+    .execute(db)
+    .await?;
+    if enabled {
+        return complete_arming(db, user_id, was_armed).await;
     }
     clear_recovery_codes_if_unprotected(db, user_id).await?;
     Ok(Vec::new())
@@ -643,6 +725,10 @@ mod tests {
                 email: true,
                 ..Default::default()
             },
+            TwoFactorMethods {
+                password: true,
+                ..Default::default()
+            },
         ] {
             assert!(
                 armed.any(),
@@ -668,13 +754,15 @@ mod tests {
             totp: true,
             passkey: true,
             email: true,
+            password: true,
         };
         assert_eq!(
             armed.login_factors(),
             vec![
                 "passkey".to_string(),
                 "totp".to_string(),
-                "email".to_string()
+                "email".to_string(),
+                "password".to_string()
             ]
         );
         let codes_only = TwoFactorMethods {
@@ -682,5 +770,18 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(codes_only.login_factors(), vec!["totp".to_string()]);
+    }
+
+    #[test]
+    fn a_password_alone_can_still_be_the_second_step() {
+        // Valid only behind an OAuth or passkey first step: `set_password_factor`
+        // refuses to arm it otherwise, and `allowed_login_factors` drops it when
+        // the password already carried step one.
+        let armed = TwoFactorMethods {
+            password: true,
+            ..Default::default()
+        };
+        assert!(armed.any());
+        assert_eq!(armed.login_factors(), vec!["password".to_string()]);
     }
 }

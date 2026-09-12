@@ -187,6 +187,9 @@ struct TwoFactorMethods: Decodable {
     let totp: Bool
     let passkey: Bool
     let email: Bool
+    /// The account password as a *second* step. Only meaningful behind an OAuth
+    /// or passkey first step — a password cannot be both halves of a sign-in.
+    let password: Bool
 }
 
 struct TwoFactorStatusResponse: Decodable {
@@ -196,12 +199,37 @@ struct TwoFactorStatusResponse: Decodable {
     /// Whether email codes could be armed: an address is on file and another
     /// method can carry the first sign-in step.
     let emailAvailable: Bool
+    /// Whether the password could be armed: one is set and a passkey or linked
+    /// provider can carry the first step.
+    let passwordAvailable: Bool
 
     enum CodingKeys: String, CodingKey {
         case enabled
         case methods
         case recoveryCodesRemaining = "recovery_codes_remaining"
         case emailAvailable = "email_available"
+        case passwordAvailable = "password_available"
+    }
+}
+
+/// A device that skips the second step at sign-in for up to 30 days.
+struct TrustedDeviceDto: Decodable, Identifiable, Hashable {
+    let trustedDeviceId: String
+    let deviceName: String?
+    let createdAt: String
+    let lastUsedAt: String?
+    let expiresAt: String
+    let current: Bool
+
+    var id: String { trustedDeviceId }
+
+    enum CodingKeys: String, CodingKey {
+        case trustedDeviceId = "trusted_device_id"
+        case deviceName = "device_name"
+        case createdAt = "created_at"
+        case lastUsedAt = "last_used_at"
+        case expiresAt = "expires_at"
+        case current
     }
 }
 

@@ -26,7 +26,7 @@ import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessages
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 import { AdminReports } from "./AdminReports";
-import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
+import { PasskeyCard, TrustedDevicesCard, TwoFactorCard } from "./SecurityCards";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { ProfileEditCard } from "./ProfileSettings";
 import {
@@ -227,6 +227,8 @@ export default function SettingsPage() {
                 <PasskeyCard />
 
                 <ExternalIdentitiesCard />
+
+                <TrustedDevicesCard />
 
                 <DevicesSessionsCard />
 
