@@ -44,6 +44,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/version_control.py check
+          python3 scripts/version_control.py verify-tag "$RELEASE_TAG"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 

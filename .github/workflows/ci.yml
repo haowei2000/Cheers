@@ -37,10 +37,11 @@ jobs:
           # history avoids incorrect partial plans after multi-commit pushes.
           fetch-depth: 0
 
-      - name: Test and audit CI/CD planner
+      - name: Test and audit CI/CD controls
         run: |
-          python3 -m unittest discover -s scripts/tests -p 'test_ci_tool.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           python3 scripts/ci_tool.py audit
+          python3 scripts/version_control.py check
 
       - name: Plan affected checks
         id: plan
@@ -448,8 +449,9 @@ jobs:
         if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           APP_INFO="$RUNNER_TEMP/cheers-ios-release/Build/Products/Release-iphoneos/Cheers.app/Info.plist"
+          EXPECTED_VERSION="$(python3 ../../scripts/version_control.py show ios)"
           test "$(plutil -extract CFBundleIdentifier raw "$APP_INFO")" = "app.cheers.ios"
-          test "$(plutil -extract CFBundleShortVersionString raw "$APP_INFO")" = "1.0.0"
+          test "$(plutil -extract CFBundleShortVersionString raw "$APP_INFO")" = "$EXPECTED_VERSION"
           BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP_INFO")"
           [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]
           test -n "$(plutil -extract NSCameraUsageDescription raw "$APP_INFO")"
