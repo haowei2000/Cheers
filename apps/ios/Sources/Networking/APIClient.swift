@@ -553,6 +553,7 @@ struct APIClient: Sendable {
     func verifyTwoFactorLogin(
         transactionId: String,
         code: String,
+        method: String = "code",
         rememberDevice: Bool = true
     ) async throws -> LoginResponse {
         try await postJSON(
@@ -560,6 +561,7 @@ struct APIClient: Sendable {
             body: TwoFactorLoginRequest(
                 transactionId: transactionId,
                 code: code,
+                method: method,
                 rememberDevice: rememberDevice
             ),
             as: LoginResponse.self

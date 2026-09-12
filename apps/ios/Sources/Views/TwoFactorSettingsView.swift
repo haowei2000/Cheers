@@ -14,9 +14,11 @@ struct TwoFactorSettingsView: View {
     @State private var setup: TwoFactorSetupResponse?
     @State private var backupCodes: [String] = []
     @State private var trustedDevices: [TrustedDeviceDto] = []
+    @State private var trustedDevicesLoadFailed = false
     @State private var code = ""
     @State private var isBusy = false
     @State private var errorText: String?
+    @State private var deviceToForget: TrustedDeviceDto?
     @State private var phase: Phase = .loading
 
     private enum Phase {
@@ -57,6 +59,22 @@ struct TwoFactorSettingsView: View {
                 }
             }
             .task { await reload() }
+            .confirmationDialog(
+                "Forget this remembered device?",
+                isPresented: Binding(
+                    get: { deviceToForget != nil },
+                    set: { if !$0 { deviceToForget = nil } }
+                ),
+                presenting: deviceToForget
+            ) { device in
+                CheersConfirmationButton(title: "Forget \(device.deviceName ?? "device")", role: .destructive) {
+                    deviceToForget = nil
+                    Task { await forgetDevice(device) }
+                }
+                CheersConfirmationButton(title: "Cancel", role: .cancel) { deviceToForget = nil }
+            } message: { _ in
+                Text("This device will need the second verification step again.")
+            }
         }
     }
 
@@ -154,7 +172,16 @@ struct TwoFactorSettingsView: View {
         }
 
         Section {
-            if trustedDevices.isEmpty {
+            if trustedDevicesLoadFailed {
+                CheersItemButton(
+                    row: CheersItemRow(
+                        title: "Couldn't load remembered devices",
+                        subtitle: "Tap to try again."
+                    )
+                ) {
+                    Task { await reloadTrustedDevices() }
+                }
+            } else if trustedDevices.isEmpty {
                 Text("No remembered devices.").foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(trustedDevices) { device in
@@ -164,7 +191,7 @@ struct TwoFactorSettingsView: View {
                     }
                     .swipeActions {
                         Button("Forget", role: .destructive) {
-                            Task { await forgetDevice(device) }
+                            deviceToForget = device
                         }
                     }
                 }
@@ -265,7 +292,13 @@ struct TwoFactorSettingsView: View {
         do {
             guard let api = app.api else { throw APIError.unauthorized }
             status = try await api.twoFactorStatus()
-            trustedDevices = (try? await api.listTrustedDevices()) ?? []
+            do {
+                trustedDevices = try await api.listTrustedDevices()
+                trustedDevicesLoadFailed = false
+            } catch {
+                trustedDevices = []
+                trustedDevicesLoadFailed = true
+            }
             phase = .idle
         } catch let error as APIError {
             if case .unauthorized = error { app.clearSession(); return }
@@ -274,6 +307,21 @@ struct TwoFactorSettingsView: View {
         } catch {
             errorText = error.localizedDescription
             phase = .idle
+        }
+    }
+
+    private func reloadTrustedDevices() async {
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            trustedDevices = try await api.listTrustedDevices()
+            trustedDevicesLoadFailed = false
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
+            trustedDevicesLoadFailed = true
+            errorText = error.errorDescription
+        } catch {
+            trustedDevicesLoadFailed = true
+            errorText = error.localizedDescription
         }
     }
 

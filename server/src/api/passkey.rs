@@ -165,8 +165,10 @@ pub async fn delete_credential(
               FROM users WHERE user_id = $2) AS has_local_strong_factor,
            (SELECT totp_enabled OR email_2fa_enabled
               FROM users WHERE user_id = $2) AS has_other_second_factor,
+           (SELECT password_2fa_enabled
+              FROM users WHERE user_id = $2) AS password_factor_armed,
            EXISTS(SELECT 1 FROM auth_external_identities
-                  WHERE user_id = $2 AND provider IN ('apple', 'google')) AS has_fresh_oauth",
+                  WHERE user_id = $2) AS has_external_primary",
     )
     .bind(&credential_pk)
     .bind(&claims.sub)
@@ -176,11 +178,26 @@ pub async fn delete_credential(
         return Err(AppError::NotFound);
     }
     let last_passkey = row.try_get::<i64, _>("total").unwrap_or(0) <= 1;
+    if last_passkey
+        && row
+            .try_get::<bool, _>("password_factor_armed")
+            .unwrap_or(false)
+        && !row
+            .try_get::<bool, _>("has_external_primary")
+            .unwrap_or(false)
+    {
+        return Err(AppError::Conflict(
+            "turn off password two-step verification or add another sign-in method before deleting this passkey"
+                .into(),
+        ));
+    }
     let removing_last_strong_factor = last_passkey
         && !row
             .try_get::<bool, _>("has_local_strong_factor")
             .unwrap_or(false)
-        && !row.try_get::<bool, _>("has_fresh_oauth").unwrap_or(false);
+        && !row
+            .try_get::<bool, _>("has_external_primary")
+            .unwrap_or(false);
     // Passkeys arm two-step verification on their own, so dropping the last one
     // can silently turn 2FA off. That is authority growth: make it step up.
     let removing_last_second_factor = last_passkey
@@ -206,7 +223,7 @@ pub async fn factor_options(
     Json(body): Json<FactorPasskeyOptionsRequest>,
 ) -> Result<Json<Value>, AppError> {
     let service = require_webauthn(&state)?;
-    let (user_id, _client, _device) =
+    let (user_id, _client, _device, _primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
     let options =
         webauthn::start_authentication(&state.db, service, &user_id, &body.transaction_id).await?;
@@ -224,7 +241,7 @@ pub async fn factor_verify(
     Json(body): Json<FactorPasskeyVerifyRequest>,
 ) -> Result<Response, AppError> {
     let service = require_webauthn(&state)?;
-    let (user_id, client, device_name) =
+    let (user_id, client, device_name, _primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
     if let Err(err) = webauthn::finish_authentication(
         &state.db,

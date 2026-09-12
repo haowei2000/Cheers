@@ -436,9 +436,14 @@ async fn login_response(
     let trusted =
         auth_sessions::trusted_device_is_valid(&state.db, user_id, trusted_credential).await?;
     if two_factor::status(&state.db, user_id).await?.enabled && !trusted {
-        let transaction =
-            auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
-                .await?;
+        let transaction = auth_sessions::create_factor_transaction(
+            &state.db,
+            user_id,
+            client,
+            device_name,
+            "oauth",
+        )
+        .await?;
         let allowed_factors = crate::domain::webauthn::allowed_login_factors(
             &state.db,
             state.webauthn.as_deref(),
@@ -667,12 +672,22 @@ pub async fn unlink(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let has_password: bool = sqlx::query("SELECT password_hash IS NOT NULL AS ok FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-        .bind(&claims.sub).fetch_optional(&state.db).await?
-        .and_then(|r| r.try_get("ok").ok()).unwrap_or(false);
-    if !has_password {
+    let has_alternative: bool = sqlx::query(
+        "SELECT
+           (password_hash IS NOT NULL AND NOT password_2fa_enabled)
+           OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = users.user_id)
+           OR EXISTS(SELECT 1 FROM auth_external_identities i
+                     WHERE i.user_id = users.user_id AND i.provider <> 'apple') AS ok
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .and_then(|r| r.try_get("ok").ok())
+    .unwrap_or(false);
+    if !has_alternative {
         return Err(AppError::Conflict(
-            "set a password before unlinking your only sign-in method".into(),
+            "turn off password two-step verification or add another sign-in method before unlinking Apple".into(),
         ));
     }
     revoke_for_user(&state, &claims.sub).await?;
@@ -816,6 +831,20 @@ pub async fn events(
                 .bind(&identity_id)
                 .execute(&state.db)
                 .await?;
+            // Provider revocation is external and cannot be refused. If it
+            // removes the last non-password primary method, immediately stop
+            // treating that same password as the second step so the account
+            // retains one usable sign-in path.
+            sqlx::query(
+                "UPDATE users u SET password_2fa_enabled = FALSE
+                 WHERE u.user_id = $1 AND u.password_2fa_enabled
+                   AND NOT EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                   AND NOT EXISTS(SELECT 1 FROM auth_external_identities i WHERE i.user_id = u.user_id)",
+            )
+            .bind(&user_id)
+            .execute(&state.db)
+            .await?;
+            two_factor::clear_recovery_codes_if_unprotected(&state.db, &user_id).await?;
             sqlx::query("UPDATE users SET token_version = token_version + 1 WHERE user_id = $1")
                 .bind(&user_id)
                 .execute(&state.db)
