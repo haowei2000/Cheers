@@ -147,3 +147,37 @@ describe("ItemRow presentation levels", () => {
     expect(markup).not.toContain("aria-pressed");
   });
 });
+
+describe("ItemRow resting foreground", () => {
+  // A row title is the object's name — primary content by the four-level
+  // hierarchy, not "metadata". Parking every unselected row at content-muted put
+  // the title and its own subtitle on the same grey, which is what made whole
+  // pages of rows (Settings especially) read as one flat wash.
+  it("keeps an unselected row title above the metadata tier", () => {
+    const markup = renderToStaticMarkup(
+      <OperationsItem title="Password" subtitle="Change your password" />
+    );
+    expect(markup).toContain("text-content-primary");
+    expect(markup).not.toContain("border-l-transparent text-content-muted");
+  });
+
+  it("lifts rather than dims the title on hover", () => {
+    const markup = renderToStaticMarkup(<OperationsItem title="Password" />);
+    expect(markup).toContain("hover:text-content-strong");
+    expect(markup).not.toContain("hover:text-content-secondary");
+  });
+
+  // bg-zinc-900/70 is white/70 once the light theme remaps the scale, so the
+  // hover state simply vanished there. Surfaces come from the semantic tokens.
+  it("uses a themed hover surface instead of a dark-only fill", () => {
+    const markup = renderToStaticMarkup(<OperationsItem title="Password" />);
+    expect(markup).toContain("hover:bg-control");
+    expect(markup).not.toContain("hover:bg-zinc-900/70");
+  });
+
+  it("still marks the selected row with the shared selected surface", () => {
+    const markup = renderToStaticMarkup(<OperationsItem title="Password" selected />);
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("border-l-selected-indicator");
+  });
+});

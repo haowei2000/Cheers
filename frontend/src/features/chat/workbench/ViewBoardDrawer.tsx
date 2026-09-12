@@ -301,7 +301,7 @@ function ViewBoardDrawerImpl({
             controlSize="compact"
             onClick={addActiveBoardToContext}
             title={addToContextTitle("this board")}
-            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-accent-300"
+            className="rounded-sm text-content-primary hover:bg-control hover:text-accent-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
@@ -320,7 +320,7 @@ function ViewBoardDrawerImpl({
       )}
     >
       <div
-        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-800 px-0 py-1 md:hidden"
+        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control px-0 py-1 md:hidden"
         role="tablist"
         aria-label="ViewBoard sections"
       >

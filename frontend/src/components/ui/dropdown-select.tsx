@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ControlTrigger } from "./control-trigger";
@@ -11,6 +11,9 @@ export interface DropdownSelectOption {
   label: ReactNode;
   leading?: ReactNode;
   disabled?: boolean;
+  /** Opens a new group above this entry. Choices and commands remain separate
+   *  collections so their accessibility roles cannot be confused. */
+  separatorBefore?: boolean;
 }
 
 export function DropdownSelect({
@@ -21,6 +24,8 @@ export function DropdownSelect({
   value,
   options,
   onSelect,
+  actions = [],
+  onAction,
   ariaLabel,
   placement = "down",
   align = "start",
@@ -46,6 +51,11 @@ export function DropdownSelect({
   value?: string | null;
   options: DropdownSelectOption[];
   onSelect: (value: string) => void;
+  /** Commands that belong beside the choices but do not become selectable
+   *  values. When present, the popup uses menu semantics: choices are
+   *  menuitemradio entries and commands are ordinary menuitems. */
+  actions?: DropdownSelectOption[];
+  onAction?: (value: string) => void;
   ariaLabel: string;
   placement?: "up" | "down";
   align?: "start" | "end";
@@ -59,18 +69,24 @@ export function DropdownSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const listboxId = useId();
+  const popupId = useId();
+  const popupRole = actions.length > 0 ? "menu" : "listbox";
+  const choiceRole = actions.length > 0 ? "menuitemradio" : "option";
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   useEffect(() => {
     if (!open) return;
     const frame = window.requestAnimationFrame(() => {
-      const selected = menuRef.current?.querySelector<HTMLButtonElement>("[role='option'][aria-selected='true']:not(:disabled)");
-      const first = menuRef.current?.querySelector<HTMLButtonElement>("[role='option']:not(:disabled)");
+      const selected = menuRef.current?.querySelector<HTMLButtonElement>(
+        actions.length > 0
+          ? "[role='menuitemradio'][aria-checked='true']:not(:disabled)"
+          : "[role='option'][aria-selected='true']:not(:disabled)",
+      );
+      const first = menuRef.current?.querySelector<HTMLButtonElement>("[role]:not([role='separator']):not(:disabled)");
       (selected ?? first)?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [actions.length, open]);
 
   const close = (restoreFocus = false) => {
     setOpen(false);
@@ -84,7 +100,7 @@ export function DropdownSelect({
       return;
     }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='option']:not(:disabled)") ?? []);
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role]:not([role='separator']):not(:disabled)") ?? []);
     if (!items.length) return;
     event.preventDefault();
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -114,11 +130,11 @@ export function DropdownSelect({
         controlWidth={iconOnly ? "slot" : controlWidth}
         square={iconOnly}
         selected={open || active}
-        disabled={disabled || options.length === 0}
+        disabled={disabled || (options.length === 0 && actions.length === 0)}
         aria-label={ariaLabel}
         title={iconOnly ? ariaLabel : undefined}
-        aria-haspopup="listbox"
-        aria-controls={open ? listboxId : undefined}
+        aria-haspopup={popupRole}
+        aria-controls={open ? popupId : undefined}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={(event) => {
@@ -143,14 +159,18 @@ export function DropdownSelect({
       </ControlTrigger>
       {open && (
         <PopoverPanel placement={placement} align={align} className={cn("w-56 p-1", menuClassName)}>
-          <div ref={menuRef} id={listboxId} role="listbox" tabIndex={-1} aria-label={ariaLabel} onKeyDown={onMenuKeyDown}>
+          <div ref={menuRef} id={popupId} role={popupRole} tabIndex={-1} aria-label={ariaLabel} onKeyDown={onMenuKeyDown}>
             {options.map((option) => {
               const selected = option.value === value;
               return (
+                <Fragment key={option.value}>
+                  {option.separatorBefore && (
+                    <div role="separator" className="my-1 h-px bg-zinc-800" />
+                  )}
                 <MenuOption
-                  key={option.value}
-                  role="option"
-                  aria-selected={selected}
+                  role={choiceRole}
+                  aria-selected={choiceRole === "option" ? selected : undefined}
+                  aria-checked={choiceRole === "menuitemradio" ? selected : undefined}
                   selected={selected}
                   disabled={option.disabled}
                   controlSize="regular"
@@ -162,8 +182,30 @@ export function DropdownSelect({
                     close(true);
                   }}
                 />
+                </Fragment>
               );
             })}
+            {actions.length > 0 && options.length > 0 && (
+              <div role="separator" className="my-1 h-px bg-zinc-800" />
+            )}
+            {actions.map((action) => (
+              <Fragment key={action.value}>
+                {action.separatorBefore && (
+                  <div role="separator" className="my-1 h-px bg-zinc-800" />
+                )}
+                <MenuOption
+                  role="menuitem"
+                  disabled={action.disabled}
+                  controlSize="regular"
+                  label={action.label}
+                  leading={action.leading}
+                  onClick={() => {
+                    onAction?.(action.value);
+                    close(true);
+                  }}
+                />
+              </Fragment>
+            ))}
           </div>
         </PopoverPanel>
       )}

@@ -26,7 +26,7 @@ import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessages
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 import { AdminReports } from "./AdminReports";
-import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
+import { PasskeyCard, TrustedDevicesCard, TwoFactorCard } from "./SecurityCards";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { ProfileEditCard } from "./ProfileSettings";
 import {
@@ -87,7 +87,7 @@ function BotsMovedCard() {
     <div className="bg-zinc-900 rounded-sm p-6">
       <div className="flex items-center gap-2 mb-2">
         <Bot className="w-4 h-4 text-accent-300" />
-        <p className="text-regular font-medium text-content-secondary">Bots live in Fleet</p>
+        <p className="text-regular font-semibold text-content-primary">Bots live in Fleet</p>
       </div>
       <p className="text-compact text-content-muted mb-4">
         Create and manage bots from Fleet — the primary home for your agent roster.
@@ -214,7 +214,7 @@ export default function SettingsPage() {
 
               <div className="bg-zinc-900 px-6 max-md:px-4">
                 <section className="py-5 first:pt-0">
-                  <p className="text-title text-content-secondary">Sign-in and security</p>
+                  <p className="text-title">Sign-in and security</p>
                   <p className="mb-4 mt-1 text-caption">
                     Manage how you sign in and verify sensitive actions.
                   </p>
@@ -228,6 +228,8 @@ export default function SettingsPage() {
 
                 <ExternalIdentitiesCard />
 
+                <TrustedDevicesCard />
+
                 <DevicesSessionsCard />
 
                 <ExternalAIPermissionsCard />
@@ -235,7 +237,7 @@ export default function SettingsPage() {
                 <PushNotificationsCard />
 
                 <section className="border-t border-zinc-600/70 py-5">
-                  <p className="text-title text-content-secondary">Account access</p>
+                  <p className="text-title">Account access</p>
                   <p className="mb-4 mt-1 text-caption">
                     End this session or permanently remove your account.
                   </p>

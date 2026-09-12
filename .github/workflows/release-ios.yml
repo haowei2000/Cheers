@@ -1,7 +1,6 @@
 name: release-ios-testflight
 
 on:
-  workflow_dispatch:
   push:
     tags: ["ios-v*"]
 
@@ -17,6 +16,15 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+
+      - name: Resolve and validate release version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 scripts/version_control.py check
+          python3 scripts/version_control.py verify-tag "$REF_NAME"
+          echo "value=$(python3 scripts/version_control.py show ios)" >> "$GITHUB_OUTPUT"
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -71,9 +79,11 @@ jobs:
       - name: Archive Release build
         env:
           TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MARKETING_VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
-          BUILD_NUMBER="$((1000 + GITHUB_RUN_NUMBER))"
+          # Include the attempt so a rerun never reuses an App Store build number.
+          BUILD_NUMBER="$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
           xcodebuild \
             -project apps/ios/Cheers.xcodeproj \
             -scheme Cheers \
@@ -88,7 +98,7 @@ jobs:
             IOS_PROVISIONING_PROFILE_NAME="$PROFILE_NAME" \
             PRODUCT_BUNDLE_IDENTIFIER=app.cheers.ios \
             APS_ENVIRONMENT=production \
-            MARKETING_VERSION=1.0.0 \
+            MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
       - name: Export IPA

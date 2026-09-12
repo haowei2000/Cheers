@@ -34,6 +34,9 @@ import {
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
 
+/** Which endpoint a typed second factor should be sent to. */
+type FactorFamily = "authenticator" | "email" | "password";
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -71,20 +74,28 @@ export default function LoginPage() {
   // Authenticator, recovery and email codes all look like digits, so the account
   // that armed several of them has to say which one it is typing — guessing sent
   // authenticator codes to the email endpoint and burned login attempts.
-  const [codeSource, setCodeSource] = useState<"authenticator" | "email" | null>(null);
+  const [codeSource, setCodeSource] = useState<FactorFamily | null>(null);
   const [emailHint, setEmailHint] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [unifiedFlow, setUnifiedFlow] = useState(false);
   const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
 
-  // "totp" and "recovery_code" are both answered by the authenticator endpoint;
-  // "email" is its own. Only offer a choice when both families are armed.
+  // Each family answers a different endpoint: "totp" and "recovery_code" both go
+  // to the authenticator endpoint, "email" and "password" to their own. They all
+  // look like one text box, so the account that armed several has to say which
+  // it is using — guessing burns attempts against the five-try lockout.
   const hasAuthenticatorCodes =
     allowedFactors.includes("totp") || allowedFactors.includes("recovery_code");
   const hasEmailCodes = allowedFactors.includes("email");
-  const activeCodeSource =
-    codeSource ?? (hasAuthenticatorCodes ? "authenticator" : hasEmailCodes ? "email" : "authenticator");
-  const showCodeSourceChoice = hasAuthenticatorCodes && hasEmailCodes;
+  const hasPasswordFactor = allowedFactors.includes("password");
+  const factorFamilies: FactorFamily[] = [
+    hasAuthenticatorCodes ? ("authenticator" as const) : null,
+    hasEmailCodes ? ("email" as const) : null,
+    hasPasswordFactor ? ("password" as const) : null,
+  ].filter((family): family is FactorFamily => family !== null);
+  const activeCodeSource: FactorFamily = codeSource ?? factorFamilies[0] ?? "authenticator";
+  const usePasswordFactor = activeCodeSource === "password";
+  const otherFamilies = factorFamilies.filter((family) => family !== activeCodeSource);
 
 
   useEffect(() => {
@@ -146,14 +157,17 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = unifiedFlow
-        ? await verifyLoginFlowCode(
-            transactionId,
-            activeCodeSource === "email" ? "email" : "totp",
-            factorCode
-          )
+        ? usePasswordFactor
+          ? await verifyLoginFlowPassword(transactionId, factorCode)
+          : await verifyLoginFlowCode(
+              transactionId,
+              activeCodeSource === "email" ? "email" : "totp",
+              factorCode
+            )
         : await verifyTwoFactorLogin({
             transaction_id: transactionId,
             code: factorCode,
+            method: usePasswordFactor ? "password" : "code",
             remember_device: true,
           });
       completeOutcome(res);
@@ -262,6 +276,7 @@ export default function LoginPage() {
     if (allowedFactors.includes("recovery_code")) parts.push("backup code");
     if (allowedFactors.includes("email")) parts.push("email");
     if (allowedFactors.includes("passkey")) parts.push("Passkey");
+    if (allowedFactors.includes("password")) parts.push("password");
     if (parts.length === 0) return "Verify your identity to finish signing in.";
     if (parts.length === 1) return `Continue with your ${parts[0]}.`;
     if (parts.length === 2) return `Continue with your ${parts[0]} or ${parts[1]}.`;
@@ -282,40 +297,53 @@ export default function LoginPage() {
         >
           <div className="space-y-2">
             <label htmlFor="factor-code" className={publicLabelClass}>
-              Verification code
+              {usePasswordFactor ? "Password" : "Verification code"}
             </label>
             <Input
               id="factor-code"
-              autoComplete="one-time-code"
+              type={usePasswordFactor ? "password" : "text"}
+              autoComplete={usePasswordFactor ? "current-password" : "one-time-code"}
               autoFocus
               value={factorCode}
               onChange={(e) => setFactorCode(e.target.value)}
-              placeholder="123456"
+              placeholder={usePasswordFactor ? "Your password" : "123456"}
             />
           </div>
-          {showCodeSourceChoice && (
+          {otherFamilies.length > 0 && (
             <div className="space-y-2">
               <p className="text-compact font-medium text-content-muted">
                 {activeCodeSource === "email"
                   ? "Using the code emailed to you."
-                  : "Using your authenticator app or a backup code."}
+                  : activeCodeSource === "password"
+                    ? "Using your account password."
+                    : "Using your authenticator app or a backup code."}
               </p>
-              <Button action={activeCodeSource === "email" ? "authenticator" : "emailCode"}
-                controlWidth="fill"
-                type="button"
-                variant="plain"
-                disabled={loading}
-                onClick={() => {
-                  setCodeSource(activeCodeSource === "email" ? "authenticator" : "email");
-                  setFactorCode("");
-                }}
-              />
+              {otherFamilies.map((family) => (
+                <Button
+                  key={family}
+                  action={
+                    family === "email"
+                      ? "emailCode"
+                      : family === "password"
+                        ? "usePassword"
+                        : "authenticator"
+                  }
+                  controlWidth="fill"
+                  type="button"
+                  variant="plain"
+                  disabled={loading}
+                  onClick={() => {
+                    setCodeSource(family);
+                    setFactorCode("");
+                  }}
+                />
+              ))}
             </div>
           )}
           <Button action="send" controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
-          {hasEmailCodes && activeCodeSource === "email" && (
+          {activeCodeSource === "email" && (
             <Button action="send" controlWidth="fill"
               type="button"
               variant="secondary"

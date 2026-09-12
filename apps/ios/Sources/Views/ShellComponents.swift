@@ -115,6 +115,19 @@ struct CheersItemButton: View {
     }
 }
 
+/// Native confirmation-dialog action with one shared call shape for semantic
+/// roles. Keeping this primitive separate also prevents feature screens from
+/// inventing button styling inside system-owned dialogs.
+struct CheersConfirmationButton: View {
+    let title: String
+    var role: ButtonRole?
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role) { action() } label: { Text(title) }
+    }
+}
+
 private struct CheersSemanticItem: View {
     let kind: CheersItemKind
     let row: CheersItemRow

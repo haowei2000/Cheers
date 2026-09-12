@@ -1275,7 +1275,7 @@ export function RemoteWorkspaceDialog({
             onClick={() => void refreshAll()}
             title="Refresh workspace"
             aria-label="Refresh workspace"
-            className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+            className="rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </UiButton>
@@ -1370,7 +1370,7 @@ export function RemoteWorkspaceDialog({
                 className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm ${
                   sameFile
                     ? "bg-amber-950/40 text-warning-300"
-                    : "bg-zinc-800 text-content-muted"
+                    : "bg-control text-content-muted"
                 }`}
               >
                 <PresenceDot contentSize="small" className="bg-emerald-500" />
@@ -1396,7 +1396,7 @@ export function RemoteWorkspaceDialog({
           <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
-              <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 md:hidden">
+              <div className="flex items-center gap-1 px-2 py-2 border-b border-control md:hidden">
                 <UiButton variant="plain" role="tab" aria-selected={leftView === "files"} selected={leftView === "files"}
                   onClick={() => {
                     setLeftView("files");
@@ -1431,7 +1431,7 @@ export function RemoteWorkspaceDialog({
 
             {leftView === "changes" && git ? (
               <>
-                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-content-muted">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
                   <UiButton action="diffWorking" content="iconText" variant="plain"
                     onClick={() => openDiff("", false)}
                     selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
@@ -1451,7 +1451,7 @@ export function RemoteWorkspaceDialog({
                     <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
                   <div className="flex-1" />
                   {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-zinc-800">
+                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
@@ -1470,8 +1470,8 @@ export function RemoteWorkspaceDialog({
                           key={(isStaged ? "s:" : "u:") + e.path}
                           onClick={() => openDiff(e.path, isStaged)}
                           title={e.path}
-                          controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-zinc-800 ${
- active ? "bg-zinc-800 text-content-primary": "text-content-primary"
+                          controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-control ${
+ active ? "bg-control text-content-primary": "text-content-primary"
  }`}
                         >
                           <span
@@ -1514,7 +1514,7 @@ export function RemoteWorkspaceDialog({
               </>
             ) : leftView === "history" && git ? (
               <>
-                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-content-muted">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
                   <span className="flex items-center gap-1 flex-1">
                     <History className="w-3.5 h-3.5" /> Commits
                   </span>
@@ -1523,7 +1523,7 @@ export function RemoteWorkspaceDialog({
                     onClick={() => void loadLog()}
                     title="Refresh"
                     content="icon" controlSize="compact"
-                    className="rounded-sm hover:bg-zinc-800"
+                    className="rounded-sm hover:bg-control"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1536,8 +1536,8 @@ export function RemoteWorkspaceDialog({
                         key={c.hash}
                         onClick={() => openCommit(c)}
                         title={c.subject}
-                        controlSize="regular" className={`flex flex-col gap-1 text-left border-b border-zinc-900 hover:bg-zinc-800 ${
- active ? "bg-zinc-800": ""
+                        controlSize="regular" className={`flex flex-col gap-1 text-left border-b border-panel hover:bg-control ${
+ active ? "bg-control": ""
  }`}
                       >
                         <div className="flex items-center gap-2 text-compact">
@@ -1568,7 +1568,7 @@ export function RemoteWorkspaceDialog({
                     <UiButton action="more" controlWidth="fill" variant="plain"
                       onClick={() => void loadMoreLog()}
                       disabled={logBusy}
-                      controlSize="regular" className=" text-content-primary hover:text-content-strong hover:bg-zinc-800 disabled:opacity-50"
+                      controlSize="regular" className=" text-content-primary hover:text-content-strong hover:bg-control disabled:opacity-50"
                     >
                       {logBusy ? "Loading…" : `Load ${LOG_PAGE} more`}
                     </UiButton>
@@ -1577,13 +1577,13 @@ export function RemoteWorkspaceDialog({
               </>
             ) : (
               <>
-                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact text-content-muted">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
                   <UiButton variant="plain"
                     onClick={() => parent !== null && loadDir(parent)}
                     disabled={!cwd}
                     title="Go up one level"
                     content="icon" controlSize="compact"
-                    className="rounded-sm hover:bg-zinc-800 disabled:opacity-50"
+                    className="rounded-sm hover:bg-control disabled:opacity-50"
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1593,7 +1593,7 @@ export function RemoteWorkspaceDialog({
                       onClick={() => openDiff(cwd, false)}
                       title="Diff this directory (working tree)"
                       content="icon" controlSize="compact"
-                      className="rounded-sm hover:bg-zinc-800"
+                      className="rounded-sm hover:bg-control"
                     >
                       <GitCompare className="w-3.5 h-3.5" />
                     </UiButton>
@@ -1604,12 +1604,12 @@ export function RemoteWorkspaceDialog({
                       disabled={creatingSession}
                       title={`Start a new session rooted here (${joinAbs(treeRoot, cwd)})`}
                       content="icon" controlSize="compact"
-                      className="rounded-sm hover:bg-zinc-800 hover:text-success-300 disabled:opacity-50"
+                      className="rounded-sm hover:bg-control hover:text-success-300 disabled:opacity-50"
                     >
                       <FolderPlus className="w-3.5 h-3.5" />
                     </UiButton>
                   )}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-zinc-800">
+                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
@@ -1620,8 +1620,8 @@ export function RemoteWorkspaceDialog({
                       <div key={ent.path} className="group/row relative">
                         <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
                           onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
-                          controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-zinc-800 ${
- file?.path === ent.path ? "bg-zinc-800 text-content-primary": "text-content-primary"
+                          controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-control ${
+ file?.path === ent.path ? "bg-control text-content-primary": "text-content-primary"
  }`}
                         >
                           <FsTreeIcon isDir={ent.is_dir} name={ent.name} size={16} />
@@ -1649,7 +1649,7 @@ export function RemoteWorkspaceDialog({
                                 disabled={creatingSession}
                                 title={`Start a new session rooted at ${ent.name}/`}
                                 content="icon" controlSize="compact"
-                                className="flex items-center rounded-sm bg-zinc-800 text-content-primary hover:text-success-300 disabled:opacity-50"
+                                className="flex items-center rounded-sm bg-control text-content-primary hover:text-success-300 disabled:opacity-50"
                               >
                                 <FolderPlus className="w-3.5 h-3.5" />
                               </UiButton>
@@ -1662,7 +1662,7 @@ export function RemoteWorkspaceDialog({
                                 }}
                                 title={`Diff ${ent.name}/ (working tree)`}
                                 content="icon" controlSize="compact"
-                                className="flex items-center rounded-sm bg-zinc-800 text-content-primary hover:text-content-strong"
+                                className="flex items-center rounded-sm bg-control text-content-primary hover:text-content-strong"
                               >
                                 <GitCompare className="w-3.5 h-3.5" />
                               </UiButton>
@@ -1689,7 +1689,7 @@ export function RemoteWorkspaceDialog({
                                 root: treeRoot ?? undefined,
                               })}
                               title={addToContextTitle(`${ent.name} (live reference)`)}
-                              className="flex items-center p-1 rounded-sm bg-zinc-800 text-content-muted hover:text-accent-300 disabled:opacity-50"
+                              className="flex items-center p-1 rounded-sm bg-control text-content-muted hover:text-accent-300 disabled:opacity-50"
                             />
                           </div>
                         )}
@@ -1708,7 +1708,7 @@ export function RemoteWorkspaceDialog({
           <div className="flex-1 min-h-0 rounded-sm overflow-hidden flex flex-col">
             {diff !== null ? (
               <>
-                <div className="flex items-center gap-2 px-2 py-2 border-b border-zinc-800 text-compact">
+                <div className="flex items-center gap-2 px-2 py-2 border-b border-control text-compact">
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
@@ -1740,14 +1740,14 @@ export function RemoteWorkspaceDialog({
                   <UiButton action="close" content="iconText" variant="plain"
                     onClick={() => setDiff(null)}
                     title="Close diff and return to the file view"
-                    controlSize="regular" className="flex items-center gap-1 rounded-sm hover:bg-zinc-800 text-content-primary"
+                    controlSize="regular" className="flex items-center gap-1 rounded-sm hover:bg-control text-content-primary"
                   >
                     <X className="w-3.5 h-3.5" />                  </UiButton>
                 </div>
                 {/* Changed-file strip for a commit: jump between per-file diffs without
                     fetching (cached) or scrolling through the whole patch. */}
                 {diff.kind === "commit" && diff.files && diff.files.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-auto px-2 py-1 border-b border-zinc-800 text-minimal">
+                  <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-auto px-2 py-1 border-b border-control text-minimal">
                     <UiButton variant="plain" role="tab" aria-selected={diff.path === null} selected={diff.path === null}
                       onClick={() =>
                         void openCommit(
@@ -1803,7 +1803,7 @@ export function RemoteWorkspaceDialog({
                 {/* Header actions are icon-only (+ hover tooltip) so the row
                     stays on one line in a narrow panel; the filename shrinks
                     first (min-w-0) and every action is shrink-0. */}
-                <div className="flex items-center gap-1 px-2 py-2 border-b border-zinc-800 text-compact">
+                <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact">
                   <span className="text-content-secondary truncate flex-1 min-w-0" title={file.path}>
                     {file.filename}
                   </span>
@@ -1833,7 +1833,7 @@ export function RemoteWorkspaceDialog({
                   <UiButton variant="plain"
                     onClick={() => downloadWorkspaceFile(file)}
                     title="Download this file"
-                    content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm hover:bg-zinc-800 text-content-primary"
+                    content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm hover:bg-control text-content-primary"
                   >
                     <Download className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1874,7 +1874,7 @@ export function RemoteWorkspaceDialog({
                       title={addToContextTitle(
                         "this workspace file as a live reference — the recipient reads it on demand"
                       )}
-                      content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm hover:bg-zinc-800 text-content-primary"
+                      content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm hover:bg-control text-content-primary"
                     >
                       {attached ? (
                         <Check className="w-3.5 h-3.5 text-success-400" />
@@ -1895,7 +1895,7 @@ export function RemoteWorkspaceDialog({
                       onClick={() => void openFile(file.path)}
                       disabled={busy}
                       title="Discard your edits and reload the latest from the server"
-                      controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-content-primary disabled:opacity-50"
+                      controlSize="regular" className="shrink-0 flex items-center gap-1 rounded-sm bg-control hover:bg-control-hover text-content-primary disabled:opacity-50"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </UiButton>
@@ -1921,7 +1921,7 @@ export function RemoteWorkspaceDialog({
                   {file.is_text ? (
                     // CodeMirror 6 editor: line numbers, undo, and syntax highlighting by
                     // filename (real repo source). Still inert text — no HTML execution.
-                    <Suspense fallback={<div className="w-full h-full bg-zinc-950" aria-busy="true" />}>
+                    <Suspense fallback={<div className="w-full h-full bg-canvas" aria-busy="true" />}>
                       <CodeEditor
                         value={edit}
                         onChange={(v) => {

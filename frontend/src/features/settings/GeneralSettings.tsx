@@ -173,7 +173,7 @@ export function AppUpdateCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-regular font-medium text-content-secondary">App updates</p>
+          <p className="text-regular font-semibold text-content-primary">App updates</p>
           <ButtonGroup label="App update actions">
             {update ? (
               <ActionButton
@@ -257,7 +257,7 @@ export function PushNotificationsCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
+          <p className="text-regular font-semibold text-content-primary flex items-center gap-2">
             <Bell className="w-4 h-4 text-accent-400" /> Push notifications
           </p>
           <p className="text-compact text-content-muted mt-1">

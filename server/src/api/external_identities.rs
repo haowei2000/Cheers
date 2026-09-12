@@ -48,7 +48,7 @@ pub async fn status(
     .await?;
     let alternatives: i64 = sqlx::query_scalar(
         "SELECT
-           (CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END) +
+           (CASE WHEN password_hash IS NOT NULL AND NOT password_2fa_enabled THEN 1 ELSE 0 END) +
            (SELECT COUNT(*) FROM auth_external_identities
               WHERE user_id = users.user_id AND provider <> $2) +
            (SELECT COUNT(*) FROM webauthn_credentials
@@ -120,7 +120,7 @@ pub async fn unlink(
     }
     let alternatives: i64 = sqlx::query_scalar(
         "SELECT
-           (CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END) +
+           (CASE WHEN password_hash IS NOT NULL AND NOT password_2fa_enabled THEN 1 ELSE 0 END) +
            (SELECT COUNT(*) FROM auth_external_identities
               WHERE user_id = users.user_id AND provider <> $2) +
            (SELECT COUNT(*) FROM webauthn_credentials
@@ -134,7 +134,7 @@ pub async fn unlink(
     .ok_or(AppError::NotFound)?;
     if alternatives == 0 {
         return Err(AppError::Conflict(
-            "add another sign-in method before unlinking this identity".into(),
+            "turn off password two-step verification or add another sign-in method before unlinking this identity".into(),
         ));
     }
 

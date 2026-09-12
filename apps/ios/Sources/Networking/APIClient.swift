@@ -553,6 +553,7 @@ struct APIClient: Sendable {
     func verifyTwoFactorLogin(
         transactionId: String,
         code: String,
+        method: String = "code",
         rememberDevice: Bool = true
     ) async throws -> LoginResponse {
         try await postJSON(
@@ -560,6 +561,7 @@ struct APIClient: Sendable {
             body: TwoFactorLoginRequest(
                 transactionId: transactionId,
                 code: code,
+                method: method,
                 rememberDevice: rememberDevice
             ),
             as: LoginResponse.self
@@ -596,6 +598,22 @@ struct APIClient: Sendable {
             body: TwoFactorEmailMethodRequest(enabled: enabled),
             as: TwoFactorMethodResponse.self
         )
+    }
+
+    func setPasswordTwoFactor(enabled: Bool) async throws -> TwoFactorMethodResponse {
+        try await postJSON(
+            "/auth/2fa/methods/password",
+            body: TwoFactorEmailMethodRequest(enabled: enabled),
+            as: TwoFactorMethodResponse.self
+        )
+    }
+
+    func listTrustedDevices() async throws -> [TrustedDeviceDto] {
+        try await getJSON("/auth/trusted-devices", as: [TrustedDeviceDto].self)
+    }
+
+    func revokeTrustedDevice(trustedDeviceId: String) async throws {
+        try await deleteEmpty("/auth/trusted-devices/\(trustedDeviceId)")
     }
 
     func regenerateRecoveryCodes() async throws -> TwoFactorEnableResponse {

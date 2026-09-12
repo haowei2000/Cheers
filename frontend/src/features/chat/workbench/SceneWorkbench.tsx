@@ -1,6 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
-import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -205,11 +205,13 @@ function AddCollectionControl({
         label="Add Collection"
         leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
         content={content}
-        options={[
+        options={[]}
+        actions={[
           ...available.map((template) => ({ value: `template:${template.id}`, label: template.title })),
           { value: "load-extension", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
         ]}
-        onSelect={(value) => {
+        onSelect={() => undefined}
+        onAction={(value) => {
           if (value === "load-extension") return onLoad();
           const manifest = available.find((candidate) => `template:${candidate.id}` === value);
           if (manifest) onSelect(manifest);
@@ -238,8 +240,10 @@ function AddTabControl({
       label="Open Tab"
       leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
       content={content}
-      options={candidates.map((path) => ({ value: path, label: basename(path) }))}
-      onSelect={onSelect}
+      options={[]}
+      actions={candidates.map((path) => ({ value: path, label: basename(path) }))}
+      onSelect={() => undefined}
+      onAction={onSelect}
       placement="up"
       controlSize={workbenchControlSize.tab}
       controlWidth="fill"
@@ -302,27 +306,33 @@ function WorkbenchHierarchyNavigation({
   const iconOnly = mode === "icon";
   const CollectionIcon = collectionIcon;
 
-  const collectionOptions = [
+  const collectionActions: DropdownSelectOption[] = [
+    ...availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `New ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })),
+    { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
+  ];
+  const collectionOptions: DropdownSelectOption[] = [
     ...collections.map(({ id, label, Icon }) => ({ value: `collection:${id}`, label, leading: <Icon className="h-4 w-4" aria-hidden="true" /> })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-    ...(embedded ? availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `Add ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
-    ...(embedded ? [{ value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> }] : []),
   ];
-  const tabOptions = [
+  const tabActions: DropdownSelectOption[] = canAddTab
+    ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Add ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> }))
+    : [];
+  const tabOptions: DropdownSelectOption[] = [
     ...tabs.map(({ path, label }) => ({ value: `tab:${path}`, label })),
-    ...(embedded && canAddTab ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Open ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
   ];
   const chooseCollection = (value: string) => {
     if (value === "raw") return onShowRaw();
+    onSelectCollection(value.slice("collection:".length));
+  };
+  const runCollectionAction = (value: string) => {
     if (value === "load") return onLoadCollection();
     if (value.startsWith("add:")) {
       const manifest = availableTemplates.find((candidate) => candidate.id === value.slice(4));
       if (manifest) onAddCollection(manifest);
-      return;
     }
-    onSelectCollection(value.slice("collection:".length));
   };
-  const chooseTab = (value: string) => value.startsWith("add:") ? onAddTab(value.slice(4)) : onSelectTab(value.slice(4));
+  const chooseTab = (value: string) => onSelectTab(value.slice("tab:".length));
+  const runTabAction = (value: string) => onAddTab(value.slice(4));
   const controls = (probe = false, compact = embedded, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
       <DropdownSelect
@@ -333,8 +343,11 @@ function WorkbenchHierarchyNavigation({
         value={`collection:${activeCollection}`}
         options={collectionOptions}
         onSelect={chooseCollection}
+        actions={compact ? collectionActions : []}
+        onAction={runCollectionAction}
         placement="up"
-        controlSize={workbenchControlSize.tab}
+        // Density is inherited from the chrome band these are portaled into, not
+        // chosen here: the tab strip's own size belongs to the in-content strip.
         controlWidth="slot"
         className="max-w-40"
       />
@@ -348,8 +361,9 @@ function WorkbenchHierarchyNavigation({
           value={selectedPath ? `tab:${selectedPath}` : null}
           options={tabOptions}
           onSelect={chooseTab}
+          actions={compact ? tabActions : []}
+          onAction={runTabAction}
           placement="up"
-          controlSize={workbenchControlSize.tab}
           controlWidth="slot"
           className="max-w-40"
         />
@@ -901,7 +915,7 @@ export function SceneWorkbench({
           wideLabel="Load .cheers-extension…"
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700"
+          className="rounded-sm bg-control text-content-primary hover:bg-control-hover"
         />
       </div>
     );
@@ -911,7 +925,7 @@ export function SceneWorkbench({
     <div className="flex h-full min-h-0 flex-col">
       <FloatingPanelNavigationPortal
         mobile={(
-          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
+          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
             {collectionTabs()}
             <AddCollectionControl available={available} onSelect={(manifest) => void onAddScene(manifest)} onLoad={onLoadCollection} />
           </div>
@@ -939,8 +953,8 @@ export function SceneWorkbench({
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden">
-          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
+        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2 md:hidden">
+          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
         </div>
       )}
@@ -1069,7 +1083,7 @@ export function SceneWorkbench({
           {/* Bottom strip: the one place nothing floats over. Carries what the file is
               and what state it is in, so neither has to sit under the chrome. */}
           {(selectedPath || status || session.status || annotations.status) && (
-            <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 text-compact">
+            <div className="flex items-center gap-2 border-t border-control px-3 py-2 text-compact">
               {selectedPath && (
                 <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
               )}

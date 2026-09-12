@@ -68,4 +68,21 @@ describe("DropdownSelect", () => {
     expect(classes).not.toContain("bg-zinc-900");
     expect(classes).not.toContain("hover:bg-zinc-800");
   });
+
+  it("uses menu semantics when commands accompany selectable values", () => {
+    const markup = renderToStaticMarkup(
+      <DropdownSelect
+        label="Scenes"
+        ariaLabel="Scenes"
+        value="one"
+        options={[{ value: "one", label: "Scene one" }]}
+        actions={[{ value: "new", label: "New scene" }]}
+        onSelect={() => undefined}
+        onAction={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('aria-haspopup="menu"');
+    expect(markup).not.toContain('aria-haspopup="listbox"');
+  });
 });

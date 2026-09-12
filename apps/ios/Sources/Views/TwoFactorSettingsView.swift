@@ -13,9 +13,12 @@ struct TwoFactorSettingsView: View {
     @State private var status: TwoFactorStatusResponse?
     @State private var setup: TwoFactorSetupResponse?
     @State private var backupCodes: [String] = []
+    @State private var trustedDevices: [TrustedDeviceDto] = []
+    @State private var trustedDevicesLoadFailed = false
     @State private var code = ""
     @State private var isBusy = false
     @State private var errorText: String?
+    @State private var deviceToForget: TrustedDeviceDto?
     @State private var phase: Phase = .loading
 
     private enum Phase {
@@ -56,6 +59,22 @@ struct TwoFactorSettingsView: View {
                 }
             }
             .task { await reload() }
+            .confirmationDialog(
+                "Forget this remembered device?",
+                isPresented: Binding(
+                    get: { deviceToForget != nil },
+                    set: { if !$0 { deviceToForget = nil } }
+                ),
+                presenting: deviceToForget
+            ) { device in
+                CheersConfirmationButton(title: "Forget \(device.deviceName ?? "device")", role: .destructive) {
+                    deviceToForget = nil
+                    Task { await forgetDevice(device) }
+                }
+                CheersConfirmationButton(title: "Cancel", role: .cancel) { deviceToForget = nil }
+            } message: { _ in
+                Text("This device will need the second verification step again.")
+            }
         }
     }
 
@@ -125,6 +144,20 @@ struct TwoFactorSettingsView: View {
                  : "Add an email address and a password or passkey first.")
         }
 
+        Section {
+            Toggle("Password step", isOn: Binding(
+                get: { methods?.password == true },
+                set: { newValue in Task { await togglePassword(to: newValue) } }
+            ))
+            .disabled(isBusy || (methods?.password != true && status?.passwordAvailable != true))
+        } header: {
+            Text("Password")
+        } footer: {
+            Text(methods?.password == true || status?.passwordAvailable == true
+                 ? "Re-enter your password after signing in with a passkey or provider."
+                 : "Needs a password plus a passkey or linked provider to sign in with first.")
+        }
+
         if enabled {
             Section {
                 Button("Generate new recovery codes") {
@@ -136,6 +169,37 @@ struct TwoFactorSettingsView: View {
             } footer: {
                 Text("\(status?.recoveryCodesRemaining ?? 0) unused. They work once each when every other method is unavailable.")
             }
+        }
+
+        Section {
+            if trustedDevicesLoadFailed {
+                CheersItemButton(
+                    row: CheersItemRow(
+                        title: "Couldn't load remembered devices",
+                        subtitle: "Tap to try again."
+                    )
+                ) {
+                    Task { await reloadTrustedDevices() }
+                }
+            } else if trustedDevices.isEmpty {
+                Text("No remembered devices.").foregroundStyle(Theme.textSecondary)
+            } else {
+                ForEach(trustedDevices) { device in
+                    LabeledContent(device.deviceName ?? "Unnamed device") {
+                        Text(device.current ? "this device" : String(device.expiresAt.prefix(10)))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .swipeActions {
+                        Button("Forget", role: .destructive) {
+                            deviceToForget = device
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Remembered devices")
+        } footer: {
+            Text("These skip the second step for 30 days. Turning on a new method clears the list. Swipe to forget one.")
         }
     }
 
@@ -228,6 +292,13 @@ struct TwoFactorSettingsView: View {
         do {
             guard let api = app.api else { throw APIError.unauthorized }
             status = try await api.twoFactorStatus()
+            do {
+                trustedDevices = try await api.listTrustedDevices()
+                trustedDevicesLoadFailed = false
+            } catch {
+                trustedDevices = []
+                trustedDevicesLoadFailed = true
+            }
             phase = .idle
         } catch let error as APIError {
             if case .unauthorized = error { app.clearSession(); return }
@@ -236,6 +307,21 @@ struct TwoFactorSettingsView: View {
         } catch {
             errorText = error.localizedDescription
             phase = .idle
+        }
+    }
+
+    private func reloadTrustedDevices() async {
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            trustedDevices = try await api.listTrustedDevices()
+            trustedDevicesLoadFailed = false
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
+            trustedDevicesLoadFailed = true
+            errorText = error.errorDescription
+        } catch {
+            trustedDevicesLoadFailed = true
+            errorText = error.localizedDescription
         }
     }
 
@@ -322,6 +408,36 @@ struct TwoFactorSettingsView: View {
             guard let api = app.api else { throw APIError.unauthorized }
             let response = try await api.setEmailTwoFactor(enabled: enabled)
             await afterArming(response.backupCodes)
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func togglePassword(to enabled: Bool) async {
+        guard !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        defer { isBusy = false }
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            let response = try await api.setPasswordTwoFactor(enabled: enabled)
+            await afterArming(response.backupCodes)
+        } catch let error as APIError {
+            if case .unauthorized = error { app.clearSession(); return }
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func forgetDevice(_ device: TrustedDeviceDto) async {
+        do {
+            guard let api = app.api else { throw APIError.unauthorized }
+            try await api.revokeTrustedDevice(trustedDeviceId: device.trustedDeviceId)
+            await reload()
         } catch let error as APIError {
             if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription

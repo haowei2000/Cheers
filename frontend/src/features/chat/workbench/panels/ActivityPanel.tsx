@@ -30,6 +30,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { cn } from "@/lib/cn";
+import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
@@ -151,7 +152,7 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
             src={mem?.avatar_url ?? undefined}
             id={id}
             size="small"
-            className={cn(i > 0 && "-ml-1 ring-1 ring-zinc-900")}
+            className={cn(i > 0 && "-ml-1 ring-1 ring-panel")}
           />
         );
       })}
@@ -289,7 +290,7 @@ function EpisodeDetail({
   return (
     <div className="px-3 pb-2">
       {summary && <div className="pl-[26px] pb-1 text-minimal text-content-muted">{summary}</div>}
-      <div className="ml-[7px] border-l-2 border-zinc-800 pl-3">
+      <div className="ml-[7px] border-l-2 border-control pl-3">
         {rows.map((row, i) => {
           if (row.type === "claim") {
             const failed = row.n.opType === "task_claim_failed";
@@ -359,7 +360,7 @@ function FlowEpisode({
         aria-expanded={expanded}
         controlSize="regular" className={cn(
  "flex items-center gap-2 text-left transition-colors",
- !expanded && "hover:bg-zinc-800/40"
+ !expanded && "hover:bg-control/40"
  )}
       >
         <ChainAvatars ep={ep} memberOf={memberOf} />
@@ -402,7 +403,7 @@ function ParticipantStrip({
   const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
 
   return (
-    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-900/50 px-2 py-2">
+    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-panel/50 px-2 py-2">
       <div className="flex items-center -space-x-2">
         {shown.map((id) => {
           const mem = memberOf(id);
@@ -421,7 +422,7 @@ function ParticipantStrip({
               controlSize="compact"
               className={cn(
  "relative rounded-full ring-2 transition-[box-shadow,opacity]",
- active ? "ring-indigo-500": "ring-zinc-900",
+ active ? "ring-indigo-500": "ring-panel",
  dim && !active && "opacity-50 hover:opacity-100"
  )}
             >
@@ -600,7 +601,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 key={l}
                 type="button"
                 onClick={() => setLens(l)}
-                controlSize="compact"
+                controlSize={FLOATING_CHROME_CONTROL_SIZE}
                 className="rounded-sm capitalize text-content-primary transition-colors hover:text-content-strong"
               >
                 {l}
@@ -709,7 +710,7 @@ function MemberFilter({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search members…"
-            className="bg-zinc-800/50 text-content-secondary placeholder:text-content-muted"
+            className="bg-control/50 text-content-secondary placeholder:text-content-muted"
           />
           <div className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
@@ -722,7 +723,7 @@ function MemberFilter({
                     key={mem.member_id}
                     type="button"
                     onClick={() => onToggle(mem.member_id)}
-                    controlSize="regular" className="flex items-center gap-2 text-left hover:bg-zinc-800/70 transition-colors"
+                    controlSize="regular" className="flex items-center gap-2 text-left hover:bg-control/70 transition-colors"
                   >
                     <span
                       className={cn(
@@ -751,7 +752,7 @@ function MemberFilter({
             )}
           </div>
           {selected.size > 0 && (
-            <div className="m-1 mt-2 flex items-center gap-2 rounded-sm bg-zinc-800/50 px-2 py-2">
+            <div className="m-1 mt-2 flex items-center gap-2 rounded-sm bg-control/50 px-2 py-2">
               <div className="flex-1 flex flex-wrap gap-1">
                 {members
                   .filter((mem) => selected.has(mem.member_id))

@@ -5,8 +5,11 @@
       "global_patterns": [
         ".github/ci-paths.json",
         ".github/workflows/ci.yml",
+        "VERSION",
         "scripts/ci_tool.py",
-        "scripts/tests/test_ci_tool.py"
+        "scripts/tests/test_ci_tool.py",
+        "scripts/tests/test_version_control.py",
+        "scripts/version_control.py"
       ],
       "lanes": {
         "gateway": [
@@ -46,9 +49,11 @@
         ".dockerignore",
         ".github/ci-paths.json",
         ".github/workflows/cd.yml",
+        "VERSION",
         "deploy/production/deploy.sh",
         "docker-compose.yml.template",
         "scripts/ci_tool.py",
+        "scripts/version_control.py",
         "scripts/verify-deploy-contract.sh"
       ],
       "lanes": {

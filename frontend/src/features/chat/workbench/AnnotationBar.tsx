@@ -74,7 +74,7 @@ export function AnnotationComposer({
       role="dialog"
       aria-label={`Note on ${pending.target.label}`}
       style={{ position: "fixed", left: box.left, top: box.top, width: COMPOSER_W }}
-      className="z-50 flex flex-col gap-2 rounded-concentric [--concentric-inset:0.5rem] bg-zinc-900 p-3 shadow-xl shadow-black/40 ring-1 ring-zinc-700"
+      className="z-50 flex flex-col gap-2 rounded-concentric [--concentric-inset:0.5rem] bg-panel p-3 elevation-overlay ring-1 ring-zinc-700"
     >
       <div className="flex items-center gap-2">
         <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />

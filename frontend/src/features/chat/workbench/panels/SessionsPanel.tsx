@@ -70,7 +70,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded-sm bg-zinc-800 text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-control text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -247,7 +247,7 @@ function SessionCard({
 
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
-        <div className="mt-1 space-y-2 rounded-sm bg-zinc-900/40 p-2">
+        <div className="mt-1 space-y-2 rounded-sm bg-panel/40 p-2">
           <div className="flex items-center gap-2 text-minimal text-content-muted">
             <span className="w-12 shrink-0">session</span>
             <span className="font-code text-content-secondary" title={s.session_id}>
@@ -350,7 +350,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 font-code text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-control font-code text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <IconButton label="Save additional roots"

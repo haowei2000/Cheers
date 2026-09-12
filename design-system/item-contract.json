@@ -139,7 +139,7 @@
     "settings": { "check": "iconText", "disable": "iconText", "dismiss": "text", "enable": "iconText", "open": "iconText", "resolve": "text", "restart": "iconText", "retry": "iconText", "review": "text", "save": "iconText", "signOut": "iconText", "switch": "iconText", "test": "text" }
   },
   "legacyBaselines": {
-    "iosDirectButtonCalls": 189,
+    "iosDirectButtonCalls": 191,
     "androidDirectButtonCalls": 6
   },
   "itemKinds": [
