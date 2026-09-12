@@ -128,6 +128,30 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(ci_tool.audit(ci_tool.load_config()), [])
 
 
+class DeploymentTriggerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = MODULE_PATH.parents[1] / ".github" / "workflows" / "cd.yml"
+        cls.workflow = path.read_text(encoding="utf-8")
+
+    def test_production_cd_is_release_tag_only(self):
+        trigger = self.workflow.split("on:\n", 1)[1].split("\nconcurrency:", 1)[0]
+        self.assertIn('tags: ["v*.*.*"]', trigger)
+        self.assertNotIn("branches:", trigger)
+
+    def test_production_uses_immutable_release_images(self):
+        self.assertIn(
+            "${{ env.IMAGE_GATEWAY }}:${{ needs.changes.outputs.release_version }}",
+            self.workflow,
+        )
+        self.assertIn(
+            "${{ env.IMAGE_FRONTEND }}:${{ needs.changes.outputs.release_version }}",
+            self.workflow,
+        )
+        self.assertNotIn("${{ env.IMAGE_GATEWAY }}:main", self.workflow)
+        self.assertNotIn("${{ env.IMAGE_FRONTEND }}:main", self.workflow)
+
+
 class DeployContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

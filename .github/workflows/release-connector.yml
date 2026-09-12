@@ -2,7 +2,7 @@ name: release-connector
 
 # Publish prebuilt `cce-acp-connector` binaries so non-developers can onboard an
 # agent without a Rust toolchain (install.sh downloads these). Trigger by pushing a
-# tag like `connector-v0.1.22`, or run manually.
+# tag like `connector-v0.1.22`.
 #
 # Linux assets are MUSL-STATIC on purpose: a gnu build inherits the runner's glibc
 # (ubuntu-latest = 24.04 → GLIBC_2.39), which refuses to run on the older distros
@@ -13,14 +13,28 @@ name: release-connector
 on:
   push:
     tags: ["connector-v*"]
-  workflow_dispatch: {}
 
 permissions:
   contents: write # create the release + upload assets
 
 jobs:
+  version:
+    name: validate release version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Match tag to connector manifests
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/version_control.py check
+          python3 scripts/version_control.py verify-tag "$RELEASE_TAG"
+
   build:
     name: build ${{ matrix.asset }}
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false # one target failing must not block the others
