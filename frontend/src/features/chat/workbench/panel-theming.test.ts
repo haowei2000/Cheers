@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { globSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 // The panel is the surface where dark-only recipes hurt most: it stacks glass on
@@ -9,18 +9,28 @@ import { describe, expect, it } from "vitest";
 // "raised card" written that way disappears into the panel it sits on. The tone
 // scale and the surface tokens hold the SAME values, so naming the surface costs
 // nothing and keeps the role legible.
-const files = globSync("src/features/chat/workbench/**/*.tsx", {
-  cwd: fileURLToPath(new URL("../../../..", import.meta.url)),
-})
+const root = fileURLToPath(new URL("../../../../", import.meta.url));
+
+/** Plain walk rather than fs.globSync, which needs a newer Node than CI runs. */
+function walk(dir: string): string[] {
+  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) => {
+    const child = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return walk(child);
+    return entry.name.endsWith(".tsx") ? [child] : [];
+  });
+}
+
+const files = walk("src/features/chat/workbench")
   .concat([
     "src/features/chat/RemoteWorkspaceDialog.tsx",
     "src/components/ui/floating-panel.tsx",
     "src/components/ui/popover.tsx",
   ])
-  .filter((path) => !path.endsWith(".test.tsx") && !path.endsWith(".preview.tsx"));
+  .filter((path) => !path.endsWith(".test.tsx") && !path.endsWith(".preview.tsx"))
+  .sort();
 
 function read(path: string): string {
-  return readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
+  return readFileSync(join(root, path), "utf8");
 }
 
 describe("panel surfaces use semantic tokens", () => {
