@@ -105,6 +105,7 @@ export const fillActionLabels = {
   sendCode: "Send code",
   upgradeAll: "Upgrade all",
   usePasskey: "Use passkey",
+  usePassword: "Your password",
 } as const;
 
 export const actionLabels = { ...slotActionLabels, ...fillActionLabels } as const;

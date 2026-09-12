@@ -184,8 +184,20 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::auth::set_email_two_factor),
         )
         .route(
+            "/api/v1/auth/2fa/methods/password",
+            post(api::auth::set_password_two_factor),
+        )
+        .route(
             "/api/v1/auth/2fa/recovery-codes",
             post(api::auth::regenerate_recovery_codes),
+        )
+        .route(
+            "/api/v1/auth/trusted-devices",
+            get(api::auth::list_trusted_devices).delete(api::auth::revoke_all_trusted_devices),
+        )
+        .route(
+            "/api/v1/auth/trusted-devices/:trusted_device_id",
+            delete(api::auth::revoke_trusted_device),
         )
         .route(
             "/api/v1/auth/passkey/register/options",

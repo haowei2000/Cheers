@@ -112,6 +112,7 @@ pub async fn allowed_login_factors(
         .filter(|factor| match factor.as_str() {
             "passkey" => webauthn.is_some(),
             "email" => primary_factor != Some("email"),
+            "password" => primary_factor != Some("password"),
             _ => true,
         })
         .collect();

@@ -201,6 +201,15 @@ pub async fn password(
         fail_attempt(&state, &flow, "password").await?;
         return Err(invalid_factor("password"));
     }
+    // At `factor_required` the password is the *second* step, which only the
+    // accounts that armed it may use — and never twice in one sign-in.
+    if flow.status == "factor_required" {
+        if !two_factor::methods(&state.db, user_id).await?.password {
+            fail_attempt(&state, &flow, "password").await?;
+            return Err(invalid_factor("password"));
+        }
+        return complete_verified(&state, flow, "password").await;
+    }
     complete_primary(&state, flow, "password").await
 }
 
@@ -462,19 +471,22 @@ async fn available_methods(
     .fetch_one(&state.db)
     .await?;
     let armed = two_factor::methods(&state.db, user_id).await?;
+    // A method that is also the account's *only* second factor cannot carry step
+    // one: using it would strand the login at a challenge it just satisfied.
+    // (A passkey is exempt — a passkey sign-in is already two factors.)
+    let armed_factors = armed.login_factors();
+    let sole_second_factor = |name: &str| armed_factors.len() == 1 && armed_factors[0] == name;
     let mut methods = Vec::new();
     if state.webauthn.is_some() && webauthn::user_has_passkeys(&state.db, user_id).await? {
         methods.push("passkey".into());
     }
-    if row.try_get::<bool, _>("has_password").unwrap_or(false) {
+    if row.try_get::<bool, _>("has_password").unwrap_or(false)
+        && !(login && sole_second_factor("password"))
+    {
         methods.push("password".into());
     }
-    // An emailed code cannot carry both sign-in steps. When the mailbox is the
-    // account's only second factor, offering it as a primary method would strand
-    // the login at a challenge it just satisfied.
-    let email_is_only_second_factor = armed.email && !armed.totp && !armed.passkey;
     if row.try_get::<bool, _>("has_email").unwrap_or(false)
-        && !(login && email_is_only_second_factor)
+        && !(login && sole_second_factor("email"))
     {
         methods.push("email".into());
     }

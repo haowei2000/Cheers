@@ -59,10 +59,31 @@ Two-step verification is on when **any** factor is armed, not only an authentica
 | Passkey | registering one under Passkeys | armed automatically — a passkey is already a possession factor |
 | Authenticator app (TOTP) | scanning the QR code and proving one code | unchanged enrolment |
 | Email one-time code | an explicit opt-in in settings | refused unless a password or passkey can carry step one, and never offered as the second step of a login that used an emailed code as the first |
+| Password | an explicit opt-in in settings | refused unless a passkey or linked provider can carry step one; never offered as the second step of a password login. The weakest option — "something you know", the same category as most first steps — so it is listed last |
 
 Recovery codes are account-level: minted when the first factor of any kind is armed,
 valid against every method, and cleared only when nothing is armed. Removing the last
 passkey is authority growth and requires step-up, because it can turn 2FA off.
+
+The general rule is not "any two credentials" but **two independent ones**. A method that
+is also the account's only second factor is dropped from the primary list at login
+(`available_methods`), because using it would strand the sign-in at a challenge it just
+satisfied; and `allowed_login_factors` drops any factor that already carried step one.
+
+### Trusted devices are a bypass, not a factor
+
+"Remember this device" skips the second step for 30 days. It never counts toward whether
+2FA is armed, and it cannot be one of the two factors — it only records that the two were
+already supplied. Treating it as a factor would make a stolen laptop both steps, and the
+credential is issued even on a bare password login when 2FA is off, so it would also be
+self-bootstrapping.
+
+Because of that issuance path, **arming any factor revokes every live trusted device**
+([`domain/two_factor.rs`](../../server/src/domain/two_factor.rs) `complete_arming`).
+Without it, a credential minted while the account was unprotected would bypass the factor
+that was just armed for the rest of its 30-day life — turning on 2FA would silently do
+nothing on every device the user had already ticked "remember me" on. Trusted devices are
+listed and revocable in Settings rather than being invisible state.
 
 The login challenge advertises only the factors the account actually armed
 ([`domain/webauthn.rs`](../../server/src/domain/webauthn.rs) `allowed_login_factors`);

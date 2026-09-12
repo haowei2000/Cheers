@@ -6,6 +6,8 @@ import {
   Fingerprint,
   LifeBuoy,
   Mail,
+  KeyRound,
+  Laptop,
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
@@ -19,11 +21,16 @@ import {
   listPasskeys,
   passkeyRegisterFinish,
   passkeyRegisterOptions,
+  listTrustedDevices,
   regenerateRecoveryCodes,
+  revokeAllTrustedDevices,
+  revokeTrustedDevice,
   setEmailTwoFactor,
+  setPasswordTwoFactor,
   setupTwoFactor,
   twoFactorStatus,
   type PasskeyCredential,
+  type TrustedDevice,
   type TwoFactorMethods,
   type TwoFactorStatus,
 } from "@/api/auth";
@@ -57,6 +64,7 @@ export function twoFactorSummary(methods: TwoFactorMethods | undefined): string 
     methods.passkey ? "passkey" : null,
     methods.totp ? "authenticator app" : null,
     methods.email ? "email code" : null,
+    methods.password ? "password" : null,
   ].filter((name): name is string => name !== null);
   if (!armed.length) return "Use a passkey, an authenticator app, or an email code";
   return `Using ${armed.join(", ")}`;
@@ -203,6 +211,20 @@ export function TwoFactorCard() {
     }
   }
 
+  async function togglePassword() {
+    if (!methods) return;
+    const next = !methods.password;
+    setBusy(true);
+    try {
+      const res = await setPasswordTwoFactor(next);
+      afterArming(res.backup_codes, next ? "Password step is on" : "Password step is off");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update the password step");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function newRecoveryCodes() {
     setBusy(true);
     try {
@@ -305,6 +327,22 @@ export function TwoFactorCard() {
                   aria-label={methods.email ? "Turn off email codes" : "Turn on email codes"}
                   disabled={busy || (!methods.email && !status.email_available)}
                   onClick={() => void toggleEmail()}
+                />
+                <OperationsItem
+                  leading={<KeyRound className="h-4 w-4 text-content-muted" />}
+                  title="Password"
+                  subtitle={
+                    methods.password || status.password_available
+                      ? "Re-enter your password after signing in with a passkey or provider"
+                      : "Needs a password plus a passkey or linked provider to sign in with first"
+                  }
+                  criticalStatus={<MethodState on={methods.password} />}
+                  trailing={
+                    <ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />
+                  }
+                  aria-label={methods.password ? "Turn off the password step" : "Turn on the password step"}
+                  disabled={busy || (!methods.password && !status.password_available)}
+                  onClick={() => void togglePassword()}
                 />
                 <OperationsItem
                   leading={<LifeBuoy className="h-4 w-4 text-content-muted" />}
@@ -465,6 +503,114 @@ export function TwoFactorCard() {
         </Dialog>
       )}
     </>
+  );
+}
+
+/** Devices that skip the second step at sign-in.
+ *
+ * These used to be invisible 30-day state: you ticked "remember me" once and
+ * had no way to see or undo it. Arming a factor now revokes them all, and this
+ * card covers the rest — a shared laptop you want challenged again. */
+export function TrustedDevicesCard() {
+  const [devices, setDevices] = useState<TrustedDevice[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    listTrustedDevices()
+      .then(setDevices)
+      .catch(() => setDevices([]));
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  async function revokeOne(device: TrustedDevice) {
+    setBusy(true);
+    try {
+      await revokeTrustedDevice(device.trusted_device_id);
+      toast.success("This device will be asked to verify again");
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't revoke this device");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeAll() {
+    setBusy(true);
+    try {
+      const res = await revokeAllTrustedDevices();
+      toast.success(`${res.revoked} device${res.revoked === 1 ? "" : "s"} will verify again`);
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't revoke devices");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="border-t border-zinc-600/70 py-5">
+      <div className="mb-4 min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
+            <Laptop className="h-4 w-4 text-content-muted" /> Remembered devices
+            {devices != null && devices.length > 0 && (
+              <span className="text-compact font-normal text-content-muted">
+                {devices.length} remembered
+              </span>
+            )}
+          </p>
+          {devices != null && devices.length > 0 && (
+            <ButtonGroup label="Remembered device actions">
+              <ActionButton
+                action="revoke"
+                context="security"
+                accessibleLabel="Ask every device to verify again"
+                loading={busy}
+                onClick={() => void revokeAll()}
+              />
+            </ButtonGroup>
+          )}
+        </div>
+        <p className="mt-1 text-compact text-content-muted">
+          These devices skip the second step for 30 days. Turning on a new verification method clears the list.
+        </p>
+      </div>
+
+      {devices == null ? (
+        <p className="text-compact text-content-muted">Loading…</p>
+      ) : devices.length === 0 ? (
+        <p className="text-compact text-content-muted">No remembered devices.</p>
+      ) : (
+        <ItemList presentationLevel="medium" controlSize="regular">
+          {devices.map((d) => (
+            <OperationsItem
+              key={d.trusted_device_id}
+              title={`${d.device_name || "Unnamed device"}${d.current ? " · this device" : ""}`}
+              subtitle={`Expires ${new Date(d.expires_at).toLocaleDateString()}`}
+              trailing={
+                <span className="text-compact text-content-muted">
+                  {d.last_used_at
+                    ? `Used ${new Date(d.last_used_at).toLocaleDateString()}`
+                    : `Added ${new Date(d.created_at).toLocaleDateString()}`}
+                </span>
+              }
+              actions={
+                <ActionButton
+                  action="revoke"
+                  context="security"
+                  accessibleLabel={`Stop remembering ${d.device_name || "this device"}`}
+                  onClick={() => void revokeOne(d)}
+                />
+              }
+            />
+          ))}
+        </ItemList>
+      )}
+    </section>
   );
 }
 

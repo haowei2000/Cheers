@@ -293,6 +293,9 @@ export interface TwoFactorMethods {
   passkey: boolean;
   /** Emailed one-time codes, opted into explicitly. */
   email: boolean;
+  /** The account password, opted into as a second step. Only meaningful behind
+   * an OAuth or passkey first step — a password can't be both halves. */
+  password: boolean;
 }
 
 export interface TwoFactorStatus {
@@ -301,6 +304,8 @@ export interface TwoFactorStatus {
   recovery_codes_remaining: number;
   /** Whether email codes could be armed (address on file + another first step). */
   email_available: boolean;
+  /** Whether the password could be armed (one is set + a passkey or provider). */
+  password_available: boolean;
 }
 
 export async function twoFactorStatus(): Promise<TwoFactorStatus> {
@@ -320,6 +325,45 @@ export async function setEmailTwoFactor(enabled: boolean): Promise<{
       actionClass: enabled ? "email_factor_enrollment" : "email_factor_removal",
     }
   );
+}
+
+export async function setPasswordTwoFactor(enabled: boolean): Promise<{
+  enabled: boolean;
+  methods: TwoFactorMethods;
+  backup_codes: string[];
+}> {
+  return apiJson(
+    "/auth/2fa/methods/password",
+    { method: "POST", body: JSON.stringify({ enabled }) },
+    {
+      recentAuth: "auto",
+      actionClass: enabled ? "password_factor_enrollment" : "password_factor_removal",
+    }
+  );
+}
+
+/** Devices that skip the second step at sign-in for up to 30 days. */
+export interface TrustedDevice {
+  trusted_device_id: string;
+  device_name?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at: string;
+  current: boolean;
+}
+
+export async function listTrustedDevices(): Promise<TrustedDevice[]> {
+  return apiJson("/auth/trusted-devices");
+}
+
+export async function revokeTrustedDevice(trustedDeviceId: string): Promise<{ ok: boolean }> {
+  return apiJson(`/auth/trusted-devices/${encodeURIComponent(trustedDeviceId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function revokeAllTrustedDevices(): Promise<{ ok: boolean; revoked: number }> {
+  return apiJson("/auth/trusted-devices", { method: "DELETE" });
 }
 
 export async function regenerateRecoveryCodes(): Promise<{ backup_codes: string[] }> {

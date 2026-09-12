@@ -1033,6 +1033,9 @@ pub struct TwoFactorStatusResponse {
     /// Whether email codes *could* be armed — an address is on file and another
     /// method can carry step one.
     pub email_available: bool,
+    /// Whether the password *could* be armed as a second step — one is set and
+    /// a passkey or linked provider can carry step one.
+    pub password_available: bool,
 }
 
 /// GET /api/v1/auth/2fa/status — which second factors the caller has armed.
@@ -1041,22 +1044,35 @@ pub async fn two_factor_status(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorStatusResponse>, AppError> {
     let status = two_factor::status(&state.db, &claims.sub).await?;
-    let email_available: bool = sqlx::query_scalar(
+    let availability = sqlx::query(
         "SELECT u.email IS NOT NULL AND btrim(u.email) <> ''
                 AND ((u.password_hash IS NOT NULL)
                      OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id))
+                    AS email_available,
+                u.password_hash IS NOT NULL
+                AND (EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                     OR EXISTS(SELECT 1 FROM auth_external_identities e WHERE e.user_id = u.user_id))
+                    AS password_available
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
     )
     .bind(&claims.sub)
     .fetch_optional(&state.db)
-    .await?
-    .unwrap_or(false);
+    .await?;
+    let email_available = availability
+        .as_ref()
+        .and_then(|row| row.try_get::<bool, _>("email_available").ok())
+        .unwrap_or(false);
+    let password_available = availability
+        .as_ref()
+        .and_then(|row| row.try_get::<bool, _>("password_available").ok())
+        .unwrap_or(false);
     Ok(Json(TwoFactorStatusResponse {
         enabled: status.enabled,
         methods: status.methods,
         recovery_codes_remaining: two_factor::recovery_codes_remaining(&state.db, &claims.sub)
             .await?,
         email_available,
+        password_available,
     }))
 }
 
@@ -1295,6 +1311,69 @@ pub async fn set_email_two_factor(
         methods,
         backup_codes,
     }))
+}
+
+/// POST /api/v1/auth/2fa/methods/password — arm or disarm the account password
+/// as a second step. Step-up guarded, like every other method change.
+pub async fn set_password_two_factor(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<TwoFactorEmailMethodRequest>,
+) -> Result<Json<TwoFactorMethodResponse>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    let backup_codes =
+        two_factor::set_password_factor(&state.db, &claims.sub, body.enabled).await?;
+    auth_sessions::record_direct_step_up(
+        &state.db,
+        &claims.sub,
+        &claims.sid,
+        "password",
+        if body.enabled {
+            "password_factor_enrollment"
+        } else {
+            "password_factor_removal"
+        },
+    )
+    .await?;
+    let methods = two_factor::methods(&state.db, &claims.sub).await?;
+    Ok(Json(TwoFactorMethodResponse {
+        enabled: methods.any(),
+        methods,
+        backup_codes,
+    }))
+}
+
+/// GET /api/v1/auth/trusted-devices — devices that skip the second step.
+pub async fn list_trusted_devices(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<auth_sessions::TrustedDeviceSummary>>, AppError> {
+    Ok(Json(
+        auth_sessions::list_trusted_devices(&state.db, &claims.sub, &claims.sid).await?,
+    ))
+}
+
+/// DELETE /api/v1/auth/trusted-devices/:trusted_device_id — stop skipping the
+/// second step on one device. Revocation never needs step-up: it only ever
+/// makes the account harder to reach.
+pub async fn revoke_trusted_device(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    axum::extract::Path(trusted_device_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    if !auth_sessions::revoke_trusted_device(&state.db, &claims.sub, &trusted_device_id).await? {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// DELETE /api/v1/auth/trusted-devices — challenge every device again.
+pub async fn revoke_all_trusted_devices(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Value>, AppError> {
+    let revoked = auth_sessions::revoke_all_trusted_devices(&state.db, &claims.sub).await?;
+    Ok(Json(json!({ "ok": true, "revoked": revoked })))
 }
 
 /// POST /api/v1/auth/2fa/recovery-codes — replace the account's recovery codes.
