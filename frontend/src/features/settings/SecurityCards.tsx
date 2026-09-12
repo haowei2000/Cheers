@@ -339,7 +339,7 @@ export function TwoFactorCard() {
           {phase === "setup" && (
             <div className="space-y-3">
           <div>
-            <p className="text-regular font-medium text-content-secondary">Authenticator app</p>
+            <p className="text-regular font-semibold text-content-primary">Authenticator app</p>
             <p className="mt-1 text-compact text-content-muted">
               Scan the QR code with your authenticator app. This is one way to turn on two-step verification; a passkey or an email code works too.
             </p>
@@ -559,7 +559,7 @@ export function PasskeyCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="mb-4 min-w-0">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
+          <p className="flex items-center gap-2 text-regular font-semibold text-content-primary">
             <Fingerprint className="h-4 w-4 text-accent-400" /> Passkeys
             {!loading && available && (
               <span className="text-compact font-normal text-content-muted">

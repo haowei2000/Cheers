@@ -253,7 +253,7 @@ export function ExternalIdentitiesCard() {
 
   return (
     <section className="border-t border-zinc-600/70 py-5">
-      <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
+      <p className="text-regular font-semibold text-content-primary flex items-center gap-2">
         <Link2 className="w-4 h-4 text-accent-400" /> Connected sign-in methods
       </p>
       <p className="text-compact text-content-muted mt-1 mb-4">
@@ -430,7 +430,7 @@ export function DevicesSessionsCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Laptop className="w-4 h-4 text-content-muted" />
-        <p className="text-regular font-medium text-content-secondary">Devices and sessions</p>
+        <p className="text-regular font-semibold text-content-primary">Devices and sessions</p>
       </div>
       {sessions.isPending ? (
         <p className="text-compact text-content-muted">Loading…</p>
@@ -488,7 +488,7 @@ export function ExternalAIPermissionsCard() {
     <section className="border-t border-zinc-600/70 py-5">
       <div className="flex items-center gap-2 mb-3">
         <Shield className="w-4 h-4 text-content-muted" />
-        <p className="text-regular font-medium text-content-secondary">External AI permissions</p>
+        <p className="text-regular font-semibold text-content-primary">External AI permissions</p>
       </div>
       {consents.isPending ? (
         <p className="text-compact text-content-muted">Loading…</p>

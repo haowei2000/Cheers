@@ -13,6 +13,7 @@ import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPre
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
+import { ControlSizeProvider, FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import type { AnchorPlacement } from "@/components/ui/floating-layer";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
@@ -77,9 +78,11 @@ export function FloatingPanelNavigationPortal({
     <>
       {mobile && <div className="md:hidden">{mobile}</div>}
       {host?.target && createPortal(
-        <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink overflow-hidden">
-          {content}
-        </div>,
+        <ControlSizeProvider size={FLOATING_CHROME_CONTROL_SIZE}>
+          <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink overflow-hidden">
+            {content}
+          </div>
+        </ControlSizeProvider>,
         host.target,
       )}
     </>
@@ -123,7 +126,12 @@ export function FloatingPanelContextPortal({
     setPresent(true);
     return () => setPresent(false);
   }, [setPresent]);
-  return host?.target ? createPortal(children, host.target) : null;
+  return host?.target
+    ? createPortal(
+        <ControlSizeProvider size={FLOATING_CHROME_CONTROL_SIZE}>{children}</ControlSizeProvider>,
+        host.target,
+      )
+    : null;
 }
 
 /** Lets active business content promote a panel-wide action into floating chrome. */
@@ -339,7 +347,6 @@ export function FloatingPanel({
   );
   const titleEl = collapsed ? (
     <ControlTrigger
-      controlSize="compact"
       controlWidth="fill"
       onClick={toggleCollapsed}
       title="Expand"
@@ -485,7 +492,7 @@ export function FloatingPanel({
         // Absolute inside the canvas, fixed over the viewport (drag.style sets the
         // matching `position` so this only decides the fallback box).
         isMobile ? "fixed" : drag.bounded ? "absolute" : "fixed",
-        "group/floating-panel pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:1rem] bg-zinc-900/95 shadow-[0_24px_64px_rgba(0,0,0,0.56),0_2px_12px_rgba(0,0,0,0.36)] ring-1 ring-black/40 backdrop-blur-xl",
+        "group/floating-panel floating-panel-surface pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:0.5rem] backdrop-blur-xl",
         // Cap to the box, leaving a 2rem inset in the canvas so a default-spawned
         // window (and its bottom-right resize grip) always fits inside the
         // overflow-clip; or short of the composer over the viewport.
@@ -510,6 +517,7 @@ export function FloatingPanel({
         <>
           <ButtonGroup label="Panel window controls"
             {...drag.handleProps}
+            controlSize={FLOATING_CHROME_CONTROL_SIZE}
             data-floating-panel-handle=""
             className="flex min-h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
           >
@@ -521,16 +529,14 @@ export function FloatingPanel({
               context="disclosure"
               onClick={toggleCollapsed}
               accessibleLabel="Expand panel"
-              controlSize="compact"
-              className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              className="text-content-primary hover:bg-control hover:text-content-strong"
             />
             <ActionButton
               action="close"
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              controlSize="compact"
-              className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              className="text-content-primary hover:bg-control hover:text-content-strong"
             />
           </ButtonGroup>
           {summaryEl}
@@ -544,6 +550,10 @@ export function FloatingPanel({
             <ButtonGroup
               label="Panel navigation and options"
               floating
+              // The chrome band owns its density. Both islands sit on one row, so a
+              // feature portaling navigation in must not pick its own control size:
+              // the two sides then differ by 8px and the band reads as ragged.
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
               className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden"
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
@@ -606,6 +616,7 @@ export function FloatingPanel({
               ref={setActionsElement}
               label="Panel actions"
               floating
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
               data-floating-panel-actions=""
               className="pointer-events-auto ml-auto flex-nowrap"
             >
@@ -624,8 +635,7 @@ export function FloatingPanel({
                 context="windowChrome"
                 onClick={onClose}
                 accessibleLabel="Close panel"
-                controlSize="compact"
-                className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+                className="text-content-primary hover:bg-control hover:text-content-strong"
               />
             </ButtonGroup>
           </div>
@@ -633,25 +643,25 @@ export function FloatingPanel({
           <div
             {...(managed?.dragProps ?? drag.handleProps)}
             data-floating-panel-handle=""
-            className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/35 px-3 active:cursor-grabbing md:hidden"
+            className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden"
           >
             <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-subtle" aria-hidden="true" />
             {titleLabel}
             <div className="flex-1" />
-            <ButtonGroup label="Panel actions" controlSize="compact" className="ml-auto">
+            <ButtonGroup label="Panel actions" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="ml-auto">
             <AdaptiveControlGroup kind="actions" ariaLabel="Panel actions" items={allPanelActions} presentationOrder={["icon", "collapsed"]} />
             <ActionButton
               action="close"
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              controlSize="compact"
-              className="text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              className="text-content-primary hover:bg-control hover:text-content-strong"
             />
             </ButtonGroup>
           </div>
           {hasContext && (
             <ButtonGroup label="Panel options" floating
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
               data-floating-panel-context=""
               className="pointer-events-auto relative z-30 mx-3 mt-2 md:hidden"
             >

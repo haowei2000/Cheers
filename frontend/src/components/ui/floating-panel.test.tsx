@@ -349,3 +349,45 @@ describe("FloatingPanel window chrome", () => {
     expect(leftIsland).toContain('aria-label="Workbench — drag to move"');
   });
 });
+
+describe("FloatingPanel chrome density", () => {
+  // Both islands sit on one row (`left-2 right-2 top-2`, `items-start`), so a
+  // difference in control size shows up directly as a ragged band: the tops line
+  // up and the bottoms do not. The band therefore owns ONE size, and everything
+  // in it — including navigation a feature portals up — resolves through it.
+  it("renders both chrome islands at the same control height", () => {
+    const markup = render(
+      <FloatingPanel
+        title="Workbench"
+        onClose={() => {}}
+        storageKey="t.density"
+        primaryNavigation={{
+          ariaLabel: "Collections",
+          items: [
+            { id: "code", label: "Code project", selected: true, onSelect: () => {} },
+            { id: "tasks", label: "Tasks", onSelect: () => {} },
+          ],
+        }}
+      >
+        <p>body</p>
+      </FloatingPanel>
+    );
+
+    const actionsIndex = markup.indexOf('data-floating-panel-actions=""');
+    const chromeStart = markup.indexOf("floating-control-surface");
+    const navIsland = markup.slice(chromeStart, actionsIndex);
+    const actionsIsland = markup.slice(actionsIndex);
+
+    // Every control resolves its own size and stamps it, so read that rather than
+    // a height class — the grip's hardcoded h-7 would mask a regular-sized button.
+    // Note AdaptiveControlGroup currently pins "compact" itself instead of reading
+    // the provider, so this locks the invariant rather than exercising the band;
+    // the case that actually drifted was portaled content picking its own size,
+    // which FloatingPanelNavigationPortal now wraps in the band's provider.
+    const sizesIn = (html: string) =>
+      new Set([...html.matchAll(/data-control-size="(\w+)"/g)].map((m) => m[1]));
+
+    expect(sizesIn(navIsland)).toEqual(new Set(["compact"]));
+    expect(sizesIn(actionsIsland)).toEqual(new Set(["compact"]));
+  });
+});

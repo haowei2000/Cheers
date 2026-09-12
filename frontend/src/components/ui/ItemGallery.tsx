@@ -58,7 +58,7 @@ function AdaptiveGroupPreview({ availableWidth }: { availableWidth: number }) {
   return (
     <div style={{ width: availableWidth + 16 }} className="max-w-full min-w-0 bg-zinc-900/50 p-2">
       <p className="mb-2 text-section-label">{availableWidth}px local slot</p>
-      <ButtonGroup label={`Panel group ${availableWidth}`} floating style={{ width: `min(100%, ${availableWidth}px)` }}>
+      <ButtonGroup label={`Panel group ${availableWidth}`} floating controlSize="compact" style={{ width: `min(100%, ${availableWidth}px)` }}>
         <AdaptiveControlGroup
           kind="navigation"
           ariaLabel={`Adaptive preview ${availableWidth}`}

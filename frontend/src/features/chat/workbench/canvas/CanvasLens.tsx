@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Boxes, Database, ExternalLink, FileText, Link2, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
+import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { LensProps } from "../lens/registry";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
@@ -99,7 +100,7 @@ function NodeBody({ node }: { node: CanvasNode }) {
   const detail = node.source.kind === "fs" ? node.source.path : node.source.verb;
   return (
     <div className="flex min-h-0 flex-1 items-start gap-2 px-3 pb-3">
-      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-content-secondary">
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
         {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1">
@@ -510,8 +511,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 aria-selected={selected}
                 aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
                 tabIndex={activeTabId === node.id ? 0 : -1}
-                className={`absolute flex flex-col rounded-sm shadow-lg shadow-black/20 ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                  selected ? "bg-selected ring-selected-indicator" : "bg-zinc-900 ring-zinc-700 hover:ring-zinc-500"
+                className={`absolute flex flex-col rounded-sm elevation-raised ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                  selected ? "bg-selected ring-selected-indicator" : "bg-panel ring-zinc-700 hover:ring-zinc-500"
                 }`}
                 style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: node.z ?? 0 }}
                 onContextMenu={(event) =>
@@ -533,7 +534,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                       data-canvas-port={node.id}
                       data-canvas-side={side}
                       aria-hidden="true"
-                      className="absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair rounded-sm bg-indigo-400 ring-1 ring-zinc-900"
+                      className="absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair rounded-sm bg-indigo-400 ring-1 ring-panel"
                       style={{
                         left: side === "left" ? 0 : side === "right" ? rect.w : rect.w / 2,
                         top: side === "top" ? 0 : side === "bottom" ? rect.h : rect.h / 2,
@@ -558,8 +559,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
               disabled={readOnly}
               aria-label="Undo"
               content="icon"
-              controlSize="regular"
-              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
             >
               <Undo2 className="h-4 w-4" />
             </UiButton>
@@ -570,8 +571,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
               disabled={readOnly || !selectedId}
               aria-label="Delete selected node"
               content="icon"
-              controlSize="regular"
-              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-danger-400"
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-danger-400"
             >
               <Trash2 className="h-4 w-4" />
             </UiButton>
@@ -583,8 +584,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
               aria-label={connectingFromId ? "Cancel connection" : "Connect selected node"}
               aria-pressed={!!connectingFromId}
               content="icon"
-              controlSize="regular"
-              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
             >
               <Link2 className="h-4 w-4" />
             </UiButton>
@@ -598,8 +599,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
               disabled={!selectedId || document_?.nodes.find((node) => node.id === selectedId)?.kind !== "source" || !openLocator}
               aria-label="Open selected source in Workbench"
               content="icon"
-              controlSize="regular"
-              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+              controlSize={FLOATING_CHROME_CONTROL_SIZE}
+              className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
             >
               <ExternalLink className="h-4 w-4" />
             </UiButton>
@@ -607,17 +608,17 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
           </div>
           <div className="flex-1" />
           <div className="floating-control-surface pointer-events-auto flex items-center rounded-concentric p-1">
-            <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
+            <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong">
               <Minus className="h-4 w-4" />
             </UiButton>
             <span className="w-12 text-center text-minimal tabular-nums text-content-muted">{Math.round(scale * 100)}%</span>
-            <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
+            <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong">
               <Plus className="h-4 w-4" />
             </UiButton>
-            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 24, y: 24 }); }} aria-label="Reset view" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
+            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 24, y: 24 }); }} aria-label="Reset view" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong">
               <RotateCcw className="h-4 w-4" />
             </UiButton>
-            <UiButton variant="plain" type="button" onClick={fitCanvas} aria-label="Fit canvas" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong">
+            <UiButton variant="plain" type="button" onClick={fitCanvas} aria-label="Fit canvas" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong">
               <Maximize2 className="h-4 w-4" />
             </UiButton>
           </div>

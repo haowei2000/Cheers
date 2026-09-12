@@ -1,6 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
-import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -283,34 +283,36 @@ function WorkbenchHierarchyNavigation({
   onAddTab: (path: string) => void;
   onShowRaw: () => void;
 }) {
-  const fullProbe = useRef<HTMLDivElement>(null);
-  const compactProbe = useRef<HTMLDivElement>(null);
-  const [required, setRequired] = useState({ full: Number.POSITIVE_INFINITY, compact: Number.POSITIVE_INFINITY });
+  // Two controls, always: picking a Collection and picking a Tab. Creating one is
+  // the last group of the menu you already opened to choose one, so width only
+  // decides whether those two triggers still show their labels.
+  const textProbe = useRef<HTMLDivElement>(null);
+  const [required, setRequired] = useState(Number.POSITIVE_INFINITY);
   useLayoutEffect(() => {
-    const measure = () => setRequired({
-      full: fullProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
-      compact: compactProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
-    });
+    const measure = () => setRequired(textProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY);
     measure();
     const observer = new ResizeObserver(measure);
-    if (fullProbe.current) observer.observe(fullProbe.current);
-    if (compactProbe.current) observer.observe(compactProbe.current);
+    if (textProbe.current) observer.observe(textProbe.current);
     return () => observer.disconnect();
   }, [collections.length, tabs.length, availableTemplates.length, tabCandidates.length, collectionTitle, selectedPath]);
-  const mode = availableWidth >= required.full ? "full" : availableWidth >= required.compact ? "compact" : "icon";
-  const embedded = mode !== "full";
-  const iconOnly = mode === "icon";
+  const iconOnly = availableWidth < required;
   const CollectionIcon = collectionIcon;
 
-  const collectionOptions = [
+  const collectionCreateOptions: DropdownSelectOption[] = [
+    ...availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `New ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })),
+    { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
+  ];
+  const collectionOptions: DropdownSelectOption[] = [
     ...collections.map(({ id, label, Icon }) => ({ value: `collection:${id}`, label, leading: <Icon className="h-4 w-4" aria-hidden="true" /> })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-    ...(embedded ? availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `Add ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
-    ...(embedded ? [{ value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> }] : []),
+    ...collectionCreateOptions.map((option, index) => (index === 0 ? { ...option, separatorBefore: true } : option)),
   ];
-  const tabOptions = [
+  const tabCreateOptions: DropdownSelectOption[] = canAddTab
+    ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Add ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> }))
+    : [];
+  const tabOptions: DropdownSelectOption[] = [
     ...tabs.map(({ path, label }) => ({ value: `tab:${path}`, label })),
-    ...(embedded && canAddTab ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Open ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })) : []),
+    ...tabCreateOptions.map((option, index) => (index === 0 && tabs.length > 0 ? { ...option, separatorBefore: true } : option)),
   ];
   const chooseCollection = (value: string) => {
     if (value === "raw") return onShowRaw();
@@ -323,7 +325,7 @@ function WorkbenchHierarchyNavigation({
     onSelectCollection(value.slice("collection:".length));
   };
   const chooseTab = (value: string) => value.startsWith("add:") ? onAddTab(value.slice(4)) : onSelectTab(value.slice(4));
-  const controls = (probe = false, compact = embedded, icons = iconOnly) => (
+  const controls = (probe = false, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
       <DropdownSelect
         ariaLabel={`Collection: ${collectionTitle}`}
@@ -334,12 +336,12 @@ function WorkbenchHierarchyNavigation({
         options={collectionOptions}
         onSelect={chooseCollection}
         placement="up"
-        controlSize={workbenchControlSize.tab}
+        // Density is inherited from the chrome band these are portaled into, not
+        // chosen here: the tab strip's own size belongs to the in-content strip.
         controlWidth="slot"
         className="max-w-40"
       />
-      {!compact && <AddCollectionControl available={availableTemplates} onSelect={onAddCollection} onLoad={onLoadCollection} />}
-      {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
+      {(tabOptions.length > 0) && (
         <DropdownSelect
           ariaLabel={`Tab: ${tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}`}
           label={tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}
@@ -349,20 +351,17 @@ function WorkbenchHierarchyNavigation({
           options={tabOptions}
           onSelect={chooseTab}
           placement="up"
-          controlSize={workbenchControlSize.tab}
           controlWidth="slot"
           className="max-w-40"
         />
       )}
-      {!compact && canAddTab && <AddTabControl candidates={tabCandidates} onSelect={onAddTab} />}
     </div>
   );
 
   return (
     <div className="relative min-w-0 max-w-full overflow-hidden">
       {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={fullProbe}>{controls(true, false, false)}</div>
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={compactProbe}>{controls(true, true, false)}</div>
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
     </div>
   );
 }
@@ -901,7 +900,7 @@ export function SceneWorkbench({
           wideLabel="Load .cheers-extension…"
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700"
+          className="rounded-sm bg-control text-content-primary hover:bg-control-hover"
         />
       </div>
     );
@@ -911,7 +910,7 @@ export function SceneWorkbench({
     <div className="flex h-full min-h-0 flex-col">
       <FloatingPanelNavigationPortal
         mobile={(
-          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2">
+          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
             {collectionTabs()}
             <AddCollectionControl available={available} onSelect={(manifest) => void onAddScene(manifest)} onLoad={onLoadCollection} />
           </div>
@@ -939,8 +938,8 @@ export function SceneWorkbench({
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-zinc-800/80 px-2 py-2 md:hidden">
-          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
+        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2 md:hidden">
+          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
         </div>
       )}
@@ -1069,7 +1068,7 @@ export function SceneWorkbench({
           {/* Bottom strip: the one place nothing floats over. Carries what the file is
               and what state it is in, so neither has to sit under the chrome. */}
           {(selectedPath || status || session.status || annotations.status) && (
-            <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 text-compact">
+            <div className="flex items-center gap-2 border-t border-control px-3 py-2 text-compact">
               {selectedPath && (
                 <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
               )}

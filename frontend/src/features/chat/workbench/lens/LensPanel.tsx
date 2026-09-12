@@ -117,7 +117,7 @@ export function LensView({
         )}
       </div>
       {standalone && (session.status || saveable) && (
-        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2">
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-panel/50 px-3 py-2">
           <span className="text-compact text-content-muted truncate flex-1">{session.status}</span>
           {saveable && (
             <ActionButton

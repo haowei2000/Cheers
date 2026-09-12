@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
@@ -97,7 +98,7 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
             <tr
               key={i}
               data-workbench-context-target="row"
-              className="border-t border-zinc-800/60"
+              className="border-t border-control/60"
               onContextMenu={(event) => requestContextPick?.(event, {
                 label: tableRowContextLabel(r, columns, i),
                 sourcePath: [i],
@@ -112,7 +113,7 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
                   ) : readOnly ? (
                     <span className="text-content-secondary">{String(r[c.key] ?? "")}</span>
                   ) : c.options ? (
-                    <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-content-secondary rounded-sm outline-none">
+                    <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-control text-content-secondary rounded-sm outline-none">
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
@@ -194,8 +195,8 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
     <div className="p-2 text-compact flex gap-2 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-content-muted">Empty board</div>}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded-sm ">
-          <div className="mx-1 mt-1 rounded-sm bg-zinc-800/50 px-2 py-1 text-content-secondary">
+        <div key={ci} className="w-40 flex-shrink-0 bg-canvas/60 rounded-sm ">
+          <div className="mx-1 mt-1 rounded-sm bg-control/50 px-2 py-1 text-content-secondary">
             {c.name} <span className="text-content-muted">{c.items.length}</span>
           </div>
           <div className="p-1 space-y-1">
@@ -227,7 +228,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
                   </>}
-                  className="border-b-0 bg-zinc-800/70 text-content-secondary"
+                  className="border-b-0 bg-control/70 text-content-secondary"
                 />
               </div>
             ))}
@@ -271,7 +272,7 @@ function MarkdownLens({ data, onChange, readOnly, requestContextPick }: LensProp
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
       placeholder="# Prompt / document…"
-      className="h-full resize-none bg-zinc-950 text-content-secondary font-code text-compact outline-none"
+      className="h-full resize-none bg-canvas text-content-secondary font-code text-compact outline-none"
       onContextMenu={(event) => {
         const target = event.currentTarget;
         const selected = target.value.slice(target.selectionStart, target.selectionEnd);
@@ -679,7 +680,7 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
             title="Close node details"
             content="icon"
             controlSize="compact"
-            className="flex-shrink-0 rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+            className="flex-shrink-0 rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
           >
             <PanelRightClose className="h-4 w-4" />
           </UiButton>
@@ -697,22 +698,22 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
           <dt className="text-minimal font-medium uppercase tracking-section text-content-muted">Summary</dt>
           <dd className="mt-2 whitespace-pre-wrap leading-5 text-content-secondary">{node.summary || "No summary yet."}</dd>
         </div>
-        <div className="border-t border-zinc-800 pt-4">
+        <div className="border-t border-control pt-4">
           <dt className="text-minimal font-medium uppercase tracking-section text-content-muted">Status</dt>
           <dd className="mt-2 flex items-center gap-2 capitalize text-content-secondary"><CodemapStatus status={node.status} />{node.status}</dd>
         </div>
         {node.tags.length > 0 && (
-          <div className="border-t border-zinc-800 pt-4">
+          <div className="border-t border-control pt-4">
             <dt className="text-minimal font-medium uppercase tracking-section text-content-muted">Tags</dt>
             <dd className="mt-2 flex flex-wrap gap-2">
-              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-zinc-800 px-2 py-1 text-compact text-content-secondary">{tag}</span>)}
+              {node.tags.map((tag) => <span key={tag} className="rounded-sm bg-control px-2 py-1 text-compact text-content-secondary">{tag}</span>)}
             </dd>
           </div>
         )}
         {node.loc && (
-          <div className="border-t border-zinc-800 pt-4">
+          <div className="border-t border-control pt-4">
             <dt className="text-minimal font-medium uppercase tracking-section text-content-muted">Source locator</dt>
-            <dd className="mt-2 break-all rounded-sm bg-zinc-950 px-3 py-2 font-code text-compact leading-4 text-content-secondary">{node.loc}</dd>
+            <dd className="mt-2 break-all rounded-sm bg-canvas px-3 py-2 font-code text-compact leading-4 text-content-secondary">{node.loc}</dd>
           </div>
         )}
       </dl>
@@ -835,11 +836,11 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
                   label: node.label,
                   sourcePath: ["nodes", node.id],
                 })}
-                controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm text-left shadow-lg shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-selected-indicator": focused ? "border-indigo-500/70 bg-zinc-900" : "border-zinc-700 bg-zinc-900 hover:border-zinc-500"}`}
+                controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm text-left elevation-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-selected-indicator": focused ? "border-indigo-500/70 bg-panel" : "border-control-hover bg-panel hover:border-zinc-500"}`}
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-zinc-800 text-content-secondary"><CodemapKindIcon kind={node.kind} /></span>
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary"><CodemapKindIcon kind={node.kind} /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-compact font-medium text-content-primary">{node.label}</span>
                   <span className="mt-1 flex items-center gap-1 text-minimal capitalize text-content-muted"><CodemapStatus status={node.status} />{node.status}</span>
@@ -857,11 +858,11 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
           </div>
           <div className="flex-1" />
           <div className="floating-control-surface pointer-events-auto flex items-center rounded-concentric p-1">
-            <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Minus className="h-4 w-4" /></UiButton>
             <span className="w-12 text-center text-minimal tabular-nums text-content-muted">{Math.round(scale * 100)}%</span>
-            <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
-            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
-            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize="regular" className="flex items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => zoom(1.2)} aria-label="Zoom in" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Plus className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }} aria-label="Reset graph" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><RotateCcw className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" type="button" onClick={() => { setScale(1); setOffset({ x: 20, y: 20 }); }} aria-label="Fit graph" content="icon" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="flex items-center justify-center rounded-sm text-content-primary hover:bg-control hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><Maximize2 className="h-4 w-4" /></UiButton>
           </div>
         </div>
       </div>

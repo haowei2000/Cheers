@@ -613,7 +613,7 @@ export function PanelWorkspace({
               aria-valuemax={Math.max(320, width - 488)}
               aria-valuenow={Math.round(layout.panelWidth)}
               tabIndex={0}
-              className="w-2 shrink-0 cursor-col-resize touch-none bg-zinc-800/30 focus-visible:bg-zinc-700"
+              className="w-2 shrink-0 cursor-col-resize touch-none bg-control/30 focus-visible:bg-control-hover"
               onKeyDown={(event) => {
                 if (
                   !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
@@ -654,7 +654,7 @@ export function PanelWorkspace({
           )}
           <aside
             data-workspace-dock=""
-            className="flex min-h-0 shrink-0 flex-col bg-zinc-900/40"
+            className="flex min-h-0 shrink-0 flex-col bg-panel/40"
             style={{
               width: hasDock
                 ? layout.sideBySide
@@ -721,7 +721,7 @@ export function PanelWorkspace({
                   )}
                   aria-valuenow={Math.round(splitRatio * 100)}
                   tabIndex={0}
-                  className="absolute inset-x-0 z-10 h-2 cursor-row-resize touch-none bg-zinc-800/40"
+                  className="absolute inset-x-0 z-10 h-2 cursor-row-resize touch-none bg-control/40"
                   style={{ top: `calc(${splitRatio * 100}% - 4px)` }}
                   onKeyDown={(event) => {
                     if (!["ArrowUp", "ArrowDown"].includes(event.key)) return;

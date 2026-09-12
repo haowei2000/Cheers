@@ -230,7 +230,7 @@ function AuditRow({
   );
 
   return (
-    <li className="mb-1 rounded-sm bg-zinc-900/30">
+    <li className="mb-1 rounded-sm bg-panel/30">
       <WorkbenchItem
         presentationLevel="medium"
         title={content || toolTitle || "Permission decision"}
@@ -266,7 +266,7 @@ function AuditRow({
       />
 
         {open && (
-          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-3 py-2">
+          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-canvas/50 px-3 py-2">
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
