@@ -61,7 +61,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: PanelContext }) {
   return (
     <table className="w-full text-compact">
       <thead>
-        <tr className="text-content-muted border-b border-zinc-800">
+        <tr className="text-content-muted border-b border-control">
           <th className="text-left font-normal px-3 py-2">Bot</th>
           <th className="text-left font-normal px-2 py-2">Session</th>
           <th className="text-right font-normal px-2 py-2">Input</th>
@@ -75,7 +75,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: PanelContext }) {
         {bots.map((b) => (
           <tr
             key={`${b.bot_id}:${b.session_id ?? "—"}`}
-            className="border-b border-zinc-900 hover:bg-zinc-800/40 text-content-secondary"
+            className="border-b border-panel hover:bg-control/40 text-content-secondary"
           >
             {/* Bot reads as avatar + name (full id in the tooltip); session_id is an
                 opaque technical id: short mono form + tooltip. */}

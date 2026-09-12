@@ -121,7 +121,7 @@ export function ItemRow({
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
       ? "border-l-selected-indicator bg-selected text-content-primary"
-      : "border-l-transparent text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
+      : "border-l-transparent text-content-primary hover:bg-control hover:text-content-strong",
     disabled && "pointer-events-none opacity-50",
     className
   );
@@ -285,7 +285,7 @@ export function FileTreeItem({
       data-control-size={size}
       aria-selected={selected || undefined}
       className={cn(
-        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-muted hover:bg-zinc-900/70 hover:text-content-secondary",
+        "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-primary hover:bg-control hover:text-content-strong",
         controlMinHeightClasses[size],
         selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70"
       )}

@@ -41,7 +41,7 @@ export function SettingsCard({
     <div className={cn("rounded-sm bg-panel p-6 max-md:p-4", className)}>
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-title text-content-secondary">{title}</p>
+          <p className="text-title">{title}</p>
           {description && <div className="mt-1 text-caption">{description}</div>}
         </div>
         {actions && <div className="flex flex-shrink-0 items-center">{actions}</div>}

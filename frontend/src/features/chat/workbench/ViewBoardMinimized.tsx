@@ -154,7 +154,7 @@ function ApprovalsGlance({
         <PopoverPanel
           placement="down"
           align="start"
-          className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-zinc-800 bg-zinc-950 p-2 shadow-xl"
+          className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-control bg-canvas p-2 shadow-xl"
         >
           <div className="px-2 pb-2 text-compact font-medium text-content-muted">
             Pending approvals
@@ -165,7 +165,7 @@ function ApprovalsGlance({
               return (
                 <li
                   key={m.msg_id}
-                  className="rounded-sm  border-zinc-800/80 bg-zinc-900/60 p-2"
+                  className="rounded-sm  border-control/80 bg-panel/60 p-2"
                 >
                   <UiButton controlWidth="fill" variant="plain" role="option"
                     type="button"
@@ -201,7 +201,7 @@ function ApprovalsGlance({
               setOpen(false);
               onExpandAudit();
             }}
-            controlSize="regular" className="mt-2 rounded-sm text-left  text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+            controlSize="regular" className="mt-2 rounded-sm text-left  text-content-primary hover:bg-control hover:text-content-strong"
           >
             Open full Audit board…
           </UiButton>

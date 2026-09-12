@@ -3,34 +3,66 @@
 @tailwind utilities;
 
 @layer components {
-  /* Floating chrome is a translucent material, not a Button variant. The
-     fallback remains legible when backdrop filtering is unavailable. */
+  /* Floating chrome is a translucent material, not a Button variant. Its tone,
+     opacity and luminance shift are tokens: a light theme cannot borrow the
+     dark theme's recipe, because glass tinted with the panel colour and then
+     brightened is invisible on a white panel. The fallback remains legible
+     when backdrop filtering is unavailable. Islands are the innermost surface
+     of the chrome they sit in, so they own the radius their own padding earns
+     instead of inheriting the containing window's. */
   .floating-control-surface {
-    background-color: rgb(var(--surface-glass) / 0.72);
+    --concentric-inset: 0.25rem;
+    background-color: rgb(var(--surface-glass) / var(--glass-alpha-opaque));
     box-shadow:
-      0 14px 32px rgb(0 0 0 / 0.18),
-      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 14px 32px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
+      inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha)),
       inset 0 -1px 0 rgb(0 0 0 / 0.08);
   }
 
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-glass) / 0.3);
-      -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
-      backdrop-filter: blur(28px) saturate(1.8) brightness(1.08);
+      background-color: rgb(var(--surface-glass) / var(--glass-alpha));
+      -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(var(--glass-brightness));
+      backdrop-filter: blur(28px) saturate(1.8) brightness(var(--glass-brightness));
       box-shadow:
-        0 16px 36px rgb(0 0 0 / 0.2),
-        inset 0 1px 0 rgb(255 255 255 / 0.16),
+        0 16px 36px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55)),
+        inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha)),
         inset 0 -1px 0 rgb(0 0 0 / 0.1);
     }
   }
 
   @media (prefers-reduced-transparency: reduce) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-panel) / 0.92);
+      background-color: rgb(var(--surface-glass) / 1);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
+  }
+
+  /* Overlay elevation for popovers, menus and detached cards. Same geometry as
+     Tailwind's shadow-xl / shadow-lg, but the ink is a token: a black/40 drop
+     tuned on a dark canvas turns into a grey smear on a light one. */
+  .elevation-overlay {
+    box-shadow:
+      0 20px 25px -5px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
+      0 8px 10px -6px rgb(var(--elevation-shadow) / var(--elevation-alpha));
+  }
+
+  .elevation-raised {
+    box-shadow:
+      0 10px 15px -3px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55)),
+      0 4px 6px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55));
+  }
+
+  /* Draggable window elevation. Borderless (DESIGN.md §2.4): layered shadow
+     plus a hairline edge, both tuned per theme — a 56%-black drop tuned for a
+     dark canvas reads as a muddy grey cloud on a light one. */
+  .floating-panel-surface {
+    background-color: rgb(var(--surface-panel) / 0.95);
+    box-shadow:
+      0 24px 64px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
+      0 2px 12px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.64)),
+      0 0 0 1px rgb(var(--elevation-edge) / var(--elevation-edge-alpha));
   }
 }
 
@@ -364,6 +396,18 @@ textarea::selection,
   --surface-control-hover: 63 63 70;
   --surface-control-active: 74 74 82;
   --surface-glass: 88 88 96;
+
+  /* Floating material and window elevation. Dark keeps today's recipe: glass is
+     a light tint over a dark ground, lifted slightly, dropped on heavy black. */
+  --glass-alpha: 0.3;
+  --glass-alpha-opaque: 0.72;
+  --glass-brightness: 1.08;
+  --glass-edge: 255 255 255;
+  --glass-edge-alpha: 0.16;
+  --elevation-shadow: 0 0 0;
+  --elevation-alpha: 0.56;
+  --elevation-edge: 0 0 0;
+  --elevation-edge-alpha: 0.4;
   --surface-rail: 22 22 25;
   --surface-sidebar: 27 27 30;
   --surface-selected: 63 63 70;
@@ -418,7 +462,18 @@ textarea::selection,
   --surface-control: 226 226 230;
   --surface-control-hover: 210 210 216;
   --surface-control-active: 198 198 206;
-  --surface-glass: 255 255 255;
+  /* Glass on a white panel has to be a *darker* tint, not a brightened copy of
+     the surface behind it, or the island disappears into the panel. */
+  --surface-glass: 214 214 221;
+  --glass-alpha: 0.62;
+  --glass-alpha-opaque: 0.92;
+  --glass-brightness: 0.98;
+  --glass-edge: 9 9 11;
+  --glass-edge-alpha: 0.1;
+  --elevation-shadow: 24 24 32;
+  --elevation-alpha: 0.18;
+  --elevation-edge: 9 9 11;
+  --elevation-edge-alpha: 0.1;
   --surface-rail: 232 232 236;
   --surface-sidebar: 249 249 250;
   --surface-selected: 210 210 216;
@@ -430,9 +485,9 @@ textarea::selection,
   --surface-emphasis-active: 24 24 27;
 
   --text-strong: 9 9 11;
-  --text-primary: 32 32 36;
-  --text-secondary: 72 72 80;
-  --text-muted: 91 91 102;
+  --text-primary: 24 24 27;
+  --text-secondary: 63 63 70;
+  --text-muted: 82 82 91;
   --text-on-light: 255 255 255;
   --text-on-accent: 255 255 255;
 

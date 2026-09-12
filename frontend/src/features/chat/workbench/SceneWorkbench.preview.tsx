@@ -141,7 +141,7 @@ function Preview() {
   return (
     <ThemeProvider>
       <ContextActionsProvider>
-      <main className="relative h-full overflow-hidden bg-zinc-950 text-content-primary">
+      <main className="relative h-full overflow-hidden bg-canvas text-content-primary">
         <FloatingPanel
           title="Workbench"
           icon={LayoutGrid}

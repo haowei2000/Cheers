@@ -458,7 +458,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           if (!newName.trim()) setCreatingIn(null);
         }}
         placeholder={creatingIn ? "File name" : "Path, e.g. notes/todo.md"}
-        controlSize="regular" className="flex-1 bg-zinc-800 text-content-secondary text-compact rounded-sm outline-none"
+        controlSize="regular" className="flex-1 bg-control text-content-secondary text-compact rounded-sm outline-none"
       />
     </div>
   );
@@ -564,14 +564,14 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const treeColumn = (
     <div
       className={cn(
-        "flex flex-col rounded-sm bg-zinc-900/50",
+        "flex flex-col rounded-sm bg-panel/50",
         // Compact: overlay drawer over the editor so reading width isn't halved.
         compact
-          ? "absolute inset-y-1.5 left-1.5 z-10 w-[min(16rem,calc(100%-1.5rem))] shadow-xl shadow-black/40 ring-1 ring-zinc-700/80"
+          ? "absolute inset-y-1.5 left-1.5 z-10 w-[min(16rem,calc(100%-1.5rem))] elevation-overlay ring-1 ring-zinc-700/80"
           : "w-52 flex-shrink-0"
       )}
     >
-      <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-zinc-800/50 px-2">
+      <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-control/50 px-2">
         <ActionButton action="add" context="toolbar"
           type="button"
           onClick={() => beginCreate("")}
@@ -622,7 +622,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-zinc-900/50 pt-2 text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -883,7 +883,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   // CodeMirror in raw mode: still inert text (no HTML execution, no XSS), now
                   // with line numbers, undo history and md/json syntax highlighting.
                   <Suspense
-                    fallback={<div className="flex-1 min-h-0 bg-zinc-950" aria-busy="true" />}
+                    fallback={<div className="flex-1 min-h-0 bg-canvas" aria-busy="true" />}
                   >
                     <CodeEditor
                       value={session.text}
@@ -903,7 +903,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {(selected || session.status || annotations.status || status) && (
           <div
             aria-live="polite"
-            className="mx-1 mb-1 flex items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-1 text-compact"
+            className="mx-1 mb-1 flex items-center gap-2 rounded-sm bg-panel/50 px-3 py-1 text-compact"
           >
             {selected && (
               <span className="min-w-0 truncate text-content-muted" title={selected}>

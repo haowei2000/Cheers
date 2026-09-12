@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ControlTrigger } from "./control-trigger";
@@ -11,6 +11,9 @@ export interface DropdownSelectOption {
   label: ReactNode;
   leading?: ReactNode;
   disabled?: boolean;
+  /** Opens a new group above this option: a hairline rule separating, for
+   *  example, "pick one of these" from "make a new one". */
+  separatorBefore?: boolean;
 }
 
 export function DropdownSelect({
@@ -147,8 +150,11 @@ export function DropdownSelect({
             {options.map((option) => {
               const selected = option.value === value;
               return (
+                <Fragment key={option.value}>
+                  {option.separatorBefore && (
+                    <div role="separator" className="my-1 h-px bg-zinc-800" />
+                  )}
                 <MenuOption
-                  key={option.value}
                   role="option"
                   aria-selected={selected}
                   selected={selected}
@@ -162,6 +168,7 @@ export function DropdownSelect({
                     close(true);
                   }}
                 />
+                </Fragment>
               );
             })}
           </div>

@@ -9,7 +9,7 @@ import { Ellipsis, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ButtonGroup } from "./button-group";
 import { Button } from "./button";
-import type { ControlSize } from "./control-size";
+import { useControlSize, type ControlSize } from "./control-size";
 import { DropdownSelect } from "./dropdown-select";
 import { MenuOption } from "./menu-option";
 import { PopoverPanel, usePopoverDismiss } from "./popover";
@@ -222,7 +222,7 @@ export function AdaptiveControlGroup({
   items,
   kind,
   ariaLabel,
-  controlSize = "compact",
+  controlSize,
   availableWidth,
   presentationOrder,
   collapsedContent = "text",
@@ -240,6 +240,10 @@ export function AdaptiveControlGroup({
   collapsedContent?: "text" | "icon";
   className?: string;
 }) {
+  // Density comes from the surrounding band, exactly as it does for Button,
+  // ActionButton and ItemRow. Pinning a private default here made this group the
+  // one control in the system whose size ignored the group it was placed in.
+  const resolvedSize = useControlSize(controlSize);
   const rootRef = useRef<HTMLDivElement>(null);
   const probeRefs = useRef<Partial<Record<AdaptiveControlPresentation, HTMLDivElement | null>>>({});
   const order = useMemo<AdaptiveControlPresentation[]>(
@@ -276,7 +280,7 @@ export function AdaptiveControlGroup({
   return (
     <ButtonGroup
       label={ariaLabel}
-      controlSize={controlSize}
+      controlSize={resolvedSize}
       ref={rootRef}
       role={kind === "navigation" ? "tablist" : "toolbar"}
       aria-label={ariaLabel}
@@ -289,7 +293,7 @@ export function AdaptiveControlGroup({
         presentation={presentation}
         kind={kind}
         ariaLabel={ariaLabel}
-        controlSize={controlSize}
+        controlSize={resolvedSize}
         collapsedContent={collapsedContent}
       />
       <div data-adaptive-measurements="" className="pointer-events-none fixed -left-[10000px] top-0 invisible flex w-max items-center gap-1" aria-hidden="true">
@@ -306,7 +310,7 @@ export function AdaptiveControlGroup({
               presentation={candidate}
               kind={kind}
               ariaLabel={`${ariaLabel} measurement`}
-              controlSize={controlSize}
+              controlSize={resolvedSize}
               collapsedContent={collapsedContent}
             />
           </div>

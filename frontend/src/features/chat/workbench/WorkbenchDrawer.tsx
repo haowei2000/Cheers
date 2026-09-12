@@ -717,7 +717,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                 </div>
               </Tip>
               {pinMenu && (
-                <div className="absolute right-0 top-6 z-50 w-64 rounded-sm bg-zinc-900 p-1 shadow-xl shadow-black/40">
+                <div className="absolute right-0 top-6 z-50 w-64 rounded-sm bg-panel p-1 elevation-overlay">
                   <div className="px-2 py-1 text-minimal uppercase tracking-section text-content-muted">Pinned (injected into every prompt)</div>
                   <ItemList presentationLevel="minimal" controlSize="compact">
                     {pinned.map((path) => (
@@ -784,7 +784,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         )}
 
         {allEnvs.length === 0 && selectedId === null && (
-          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-zinc-900/50 px-3 py-2 text-compact text-content-muted">
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-panel/50 px-3 py-2 text-compact text-content-muted">
             <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
             <span className="flex-1">
               No collections yet. Load a .cheers-extension package or install one in Settings.
@@ -794,7 +794,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               context="settings"
               onClick={() => navigate("/settings/workbench")}
               controlSize="regular"
-              className="rounded-sm bg-zinc-800 text-content-primary hover:bg-zinc-700 flex-shrink-0"
+              className="rounded-sm bg-control text-content-primary hover:bg-control-hover flex-shrink-0"
             />
           </div>
         )}

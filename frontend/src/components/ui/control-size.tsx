@@ -33,6 +33,11 @@ export const controlHeightClasses: Record<ControlSize, string> = {
   comfortable: "h-11",
 };
 
+/** The density of every floating chrome island — the panel's own navigation and
+ *  action bands, and the overlay islands a lens floats over its content. They are
+ *  the same material in the same window, so they are the same size. */
+export const FLOATING_CHROME_CONTROL_SIZE: ControlSize = "compact";
+
 export const controlMinHeightClasses: Record<ControlSize, string> = {
   compact: "min-h-7 max-md:min-h-11",
   regular: "min-h-9 max-md:min-h-11",
