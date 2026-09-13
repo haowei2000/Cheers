@@ -245,10 +245,10 @@ jobs:
       # include the authoritative policy pages from website/. A plain Vite build
       # cannot catch stale COPY paths between Docker stages.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build production image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./frontend/Dockerfile
