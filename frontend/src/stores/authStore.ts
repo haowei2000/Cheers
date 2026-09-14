@@ -21,6 +21,52 @@ interface AuthState {
   restoreSession: () => Promise<void>;
 }
 
+interface RefreshResponse {
+  access_token?: string;
+  user_id?: string;
+  username?: string;
+  display_name?: string | null;
+  role?: string;
+}
+
+const WEB_REFRESH_LOCK = "cheers-auth-refresh";
+const CONCURRENT_REFRESH_RETRY_MS = 100;
+let webRefreshInFlight: Promise<RefreshResponse | null> | null = null;
+
+async function requestWebRefresh(): Promise<RefreshResponse | null> {
+  const send = () => fetch(`${apiBase()}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+
+  let response = await send();
+  if (response.status === 409) {
+    // A request already in flight rotated the shared cookie. Give its Set-Cookie
+    // response a moment to land, then retry once with the current cookie.
+    await new Promise((resolve) => globalThis.setTimeout(resolve, CONCURRENT_REFRESH_RETRY_MS));
+    response = await send();
+  }
+  if (!response.ok) return null;
+  return response.json() as Promise<RefreshResponse>;
+}
+
+function restoreWebSession(): Promise<RefreshResponse | null> {
+  if (webRefreshInFlight) return webRefreshInFlight;
+
+  const refresh = async () => {
+    if (typeof navigator !== "undefined" && navigator.locks) {
+      return navigator.locks.request(WEB_REFRESH_LOCK, requestWebRefresh);
+    }
+    return requestWebRefresh();
+  };
+  webRefreshInFlight = refresh().finally(() => {
+    webRefreshInFlight = null;
+  });
+  return webRefreshInFlight;
+}
+
 export const useAuthStore = create<AuthState>()((set) => ({
   user: null,
   token: null,
@@ -62,20 +108,8 @@ export const useAuthStore = create<AuthState>()((set) => ({
         }
         return;
       }
-      const response = await fetch(`${apiBase()}/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (!response.ok) return;
-      const body = (await response.json()) as {
-        access_token?: string;
-        user_id?: string;
-        username?: string;
-        display_name?: string | null;
-        role?: string;
-      };
+      const body = await restoreWebSession();
+      if (!body) return;
       if (body.access_token && body.user_id) {
         set({
           user: {
