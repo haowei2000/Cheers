@@ -17,6 +17,10 @@ const AUTH_TRANSACTION_TTL_MINUTES: i64 = 10;
 const REFRESH_IDLE_TTL_DAYS: i64 = 30;
 const SESSION_ABSOLUTE_TTL_DAYS: i64 = 90;
 const TRUSTED_DEVICE_TTL_DAYS: i64 = 30;
+// Rotating a web cookie can briefly race across tabs. A duplicate inside this window
+// receives a retryable conflict, but never a replacement token. Older reuse still
+// revokes the session as a likely stolen-token signal.
+const WEB_REFRESH_CONCURRENCY_GRACE_SECONDS: i64 = 5;
 const MAX_FACTOR_ATTEMPTS: i16 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +81,13 @@ pub struct SessionSummary {
 
 pub struct FactorTransaction {
     pub transaction_id: String,
+}
+
+fn is_concurrent_web_refresh(client: &str, consumed_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    let age = now.signed_duration_since(consumed_at);
+    client == "web"
+        && age >= Duration::zero()
+        && age <= Duration::seconds(WEB_REFRESH_CONCURRENCY_GRACE_SECONDS)
 }
 
 fn random_secret() -> Result<String, AppError> {
@@ -341,7 +352,14 @@ pub async fn rotate_refresh_token(
 
     let session_id: String = row.try_get("session_id")?;
     let user_id: String = row.try_get("user_id")?;
+    let client: String = row.try_get("client_type")?;
     let consumed_at: Option<DateTime<Utc>> = row.try_get("consumed_at").ok().flatten();
+    let now = Utc::now();
+    if consumed_at.is_some_and(|consumed_at| is_concurrent_web_refresh(&client, consumed_at, now)) {
+        return Err(AppError::Conflict(
+            "refresh token was already rotated; retry with the current cookie".into(),
+        ));
+    }
     if consumed_at.is_some() {
         revoke_session_in_tx(&mut tx, &session_id, "refresh_token_reuse").await?;
         sqlx::query(
@@ -360,7 +378,6 @@ pub async fn rotate_refresh_token(
         ));
     }
 
-    let now = Utc::now();
     let refresh_expires_at: DateTime<Utc> = row.try_get("refresh_expires_at")?;
     let absolute_expires_at: DateTime<Utc> = row.try_get("absolute_expires_at")?;
     let token_revoked: Option<DateTime<Utc>> = row.try_get("token_revoked_at").ok().flatten();
@@ -375,7 +392,6 @@ pub async fn rotate_refresh_token(
         ));
     }
 
-    let client: String = row.try_get("client_type")?;
     let csrf_hash: Option<String> = row.try_get("csrf_token_hash").ok().flatten();
     if client == "web" && csrf_hash.as_deref() != csrf_token.map(sha256_hex).as_deref() {
         return Err(AppError::Unauthorized("invalid CSRF token".into()));
@@ -785,5 +801,25 @@ mod tests {
         let two = random_secret().unwrap();
         assert_ne!(one, two);
         assert_eq!(URL_SAFE_NO_PAD.decode(one).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn web_refresh_reuse_is_tolerated_only_inside_concurrency_window() {
+        let now = Utc::now();
+        assert!(is_concurrent_web_refresh(
+            "web",
+            now - Duration::seconds(WEB_REFRESH_CONCURRENCY_GRACE_SECONDS),
+            now,
+        ));
+        assert!(!is_concurrent_web_refresh(
+            "web",
+            now - Duration::seconds(WEB_REFRESH_CONCURRENCY_GRACE_SECONDS + 1),
+            now,
+        ));
+        assert!(!is_concurrent_web_refresh(
+            "macos",
+            now - Duration::seconds(1),
+            now,
+        ));
     }
 }

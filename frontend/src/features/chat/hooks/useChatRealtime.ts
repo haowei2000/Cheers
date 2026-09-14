@@ -21,7 +21,7 @@ export interface PresenceFocus {
 
 interface Callbacks {
   onMessage: (msg: Message) => void;
-  onStreamDelta: (msgId: string, delta: string) => void;
+  onStreamDelta: (msgId: string, delta: string, senderId?: string) => void;
   onStreamDone: (msg: Partial<Message> & { msg_id: string }) => void;
   onMessageDeleted: (msgId: string) => void;
   onBotProcessing?: (botId: string) => void;
@@ -303,8 +303,8 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     // A new message advances the channel's activity stream → nudge the board.
     cbs.onBoardSignal?.("activity");
   } else if (type === "message_stream") {
-    const d = data as { msg_id: string; delta: string };
-    cbs.onStreamDelta(d.msg_id, d.delta ?? "");
+    const d = data as { msg_id: string; delta: string; sender_id?: string };
+    cbs.onStreamDelta(d.msg_id, d.delta ?? "", d.sender_id);
   } else if (type === "message_done") {
     cbs.onStreamDone(data as unknown as Partial<Message> & { msg_id: string });
   } else if (type === "message_deleted") {

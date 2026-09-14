@@ -56,6 +56,7 @@ export default function LoginPage() {
       : accountLinkProvider === "google"
         ? "Google"
         : "Apple";
+  const authenticatedUser = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
@@ -97,6 +98,13 @@ export default function LoginPage() {
   const usePasswordFactor = activeCodeSource === "password";
   const otherFamilies = factorFamilies.filter((family) => family !== activeCodeSource);
 
+  // App restores the cookie-backed session before rendering routes. If a failed
+  // refresh previously sent the browser here, a later successful restore must
+  // take the user back to the preserved destination instead of still showing a
+  // login form for an already-authenticated session.
+  useEffect(() => {
+    if (authenticatedUser) navigate(redirect, { replace: true });
+  }, [authenticatedUser, navigate, redirect]);
 
   useEffect(() => {
     void getAuthCapabilities().then(setCapabilities).catch(() => setCapabilities(null));
