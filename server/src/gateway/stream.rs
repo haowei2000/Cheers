@@ -204,7 +204,15 @@ pub async fn handle_delta(
         channel_id,
         "message_stream",
         seq,
-        json!({ "msg_id": msg_id, "delta": delta }),
+        // A browser can subscribe after the placeholder broadcast but before the
+        // first delta. Carry enough identity to construct a complete temporary
+        // Message until the durable done frame arrives.
+        json!({
+            "msg_id": msg_id,
+            "sender_id": bot_id,
+            "sender_type": "bot",
+            "delta": delta,
+        }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
 

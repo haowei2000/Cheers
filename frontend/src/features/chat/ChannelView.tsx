@@ -1096,7 +1096,10 @@ export function ChannelView({
   // ── Message actions: reply / copy / forward / multi-select ────────────────
   const displayName = useCallback(
     (m: Message) =>
-      m.sender_name || memberNames.get(m.sender_id) || m.sender_id.slice(0, 8),
+      m.sender_name ||
+      memberNames.get(m.sender_id) ||
+      m.sender_id?.slice(0, 8) ||
+      (m.sender_type === "bot" ? "Bot" : "Unknown"),
     [memberNames],
   );
 

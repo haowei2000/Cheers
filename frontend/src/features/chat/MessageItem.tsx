@@ -267,7 +267,9 @@ function ReplyPreview({
     ? (repliedTo.content ?? "").replace(FILE_TOKEN_RE, "").trim().slice(0, 120) ||
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
-  const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  const who = repliedTo
+    ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id?.slice(0, 8) ?? "Unknown"
+    : "";
   const connector = (
     <span
       aria-hidden
@@ -432,7 +434,10 @@ function RegularMessageItem({
   const isOwn = message.sender_id === currentUserId;
   const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
   const name =
-    message.sender_name || senderName || message.sender_id.slice(0, 8);
+    message.sender_name ||
+    senderName ||
+    message.sender_id?.slice(0, 8) ||
+    (message.sender_type === "bot" ? "Bot" : "Unknown");
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
   const actionableApprovalCount = (pendingApprovals ?? []).filter(
