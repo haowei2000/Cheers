@@ -1089,7 +1089,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
   return (
     <UiButton action="stop" content="iconText" variant="plain"
       type="button"
-      disabled={stopping}
+      loading={stopping}
       onClick={async () => {
         setStopping(true);
         // On success leave it disabled: the turn finalizes via the stream and
@@ -1097,11 +1097,10 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-content-primary transition-colors hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+      controlSize="regular" className="bg-zinc-800/80 text-content-primary hover:bg-zinc-700 hover:text-content-strong"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3.5 h-3.5" fill="currentColor" />
-      {stopping ? "Stopping…" : "Stop"}
     </UiButton>
   );
 }
