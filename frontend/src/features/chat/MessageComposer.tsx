@@ -106,6 +106,8 @@ interface Props {
   toolbar?: ReactNode;
   /** Context picks share the composer surface instead of floating as a separate bar. */
   contextBar?: ReactNode;
+  /** Add-context picker rendered in the composer bottom action row. */
+  contextAction?: ReactNode;
   /** Fires with the bots currently @mentioned in the draft (token still present),
       so the parent can surface per-bot controls contextual to the mention. */
   onMentionsChange?: (mentionedBots: MentionCandidate[]) => void;
@@ -151,6 +153,7 @@ function MessageComposerImpl({
   commands = [],
   toolbar,
   contextBar,
+  contextAction,
   onMentionsChange,
   onTextChange,
   prefill,
@@ -882,6 +885,8 @@ function MessageComposerImpl({
               </PopoverPanel>
             )}
           </div>
+
+          {contextAction}
 
           {commands.length > 0 && (
             <IconButton

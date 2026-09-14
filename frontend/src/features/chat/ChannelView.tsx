@@ -27,7 +27,7 @@ import {
   messageContextItem,
   type ContextItem,
 } from "./context/contextPick";
-import { ContextPickBar } from "./context/ContextPickBar";
+import { ContextPickBar, ContextPickerButton } from "./context/ContextPickBar";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
@@ -1608,9 +1608,14 @@ export function ChannelView({
                                 replyTo={replyTo}
                                 draftText={draftText}
                                 files={channelFiles}
+                                onJumpToSource={jumpToContextSource}
+                              />
+                            }
+                            contextAction={
+                              <ContextPickerButton
+                                channelId={channel.channel_id}
                                 onBrowseWorkbench={browseWorkbench}
                                 onBrowseWorkspace={browseWorkspace}
-                                onJumpToSource={jumpToContextSource}
                               />
                             }
                             onMentionsChange={setMentionedBots}
@@ -1721,9 +1726,14 @@ export function ChannelView({
                         replyTo={replyTo}
                         draftText={draftText}
                         files={channelFiles}
+                        onJumpToSource={jumpToContextSource}
+                      />
+                    }
+                    contextAction={
+                      <ContextPickerButton
+                        channelId={channel.channel_id}
                         onBrowseWorkbench={browseWorkbench}
                         onBrowseWorkspace={browseWorkspace}
-                        onJumpToSource={jumpToContextSource}
                       />
                     }
                     onMentionsChange={setMentionedBots}
