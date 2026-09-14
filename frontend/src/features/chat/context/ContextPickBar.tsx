@@ -188,18 +188,12 @@ export function ContextPickBar({
   replyTo,
   draftText,
   files,
-  onBrowseWorkbench,
-  onBrowseWorkspace,
   onJumpToSource,
 }: {
   channelId: string;
   replyTo?: ReplyTargetLike | null;
   draftText?: string;
   files?: FileRef[];
-  /** Open the Workbench drawer so the user can pick a file to attach. */
-  onBrowseWorkbench?: () => void;
-  /** Open the Remote workspace dialog so the user can pick a workspace file. */
-  onBrowseWorkspace?: () => void;
   /** Jump to a pending item's source (Workbench file / workspace file). */
   onJumpToSource?: (item: ContextItem) => void;
 }) {
@@ -208,9 +202,8 @@ export function ContextPickBar({
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
   const dismissSuggestion = useContextPickStore((s) => s.dismissSuggestion);
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  usePopoverDismiss(open, () => setOpen(false), rootRef);
+
+  if (!items.length && !suggestions.length) return null;
 
   return (
     <div className="flex min-h-9 min-w-0 items-center gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -226,26 +219,28 @@ export function ContextPickBar({
             controlSize="regular"
             presentationLevel="medium"
             className={`flex-shrink-0 bg-zinc-800/50 text-content-muted ${controlHeightClasses.regular}`}
-            actions={<>
-            <IconButton
-              onClick={() => add(channelId, sg)}
-              label={`Add suggested context ${sg.label}`}
-              title="Add suggestion"
-              controlSize="compact"
-              className="hover:text-accent-300"
-            >
-              <MessageSquarePlus className="w-3.5 h-3.5" />
-            </IconButton>
-            <IconButton
-              onClick={() => dismissSuggestion(channelId, sg.id)}
-              label={`Dismiss suggestion ${sg.label}`}
-              title="Dismiss suggestion"
-              controlSize="compact"
-              className="text-content-primary hover:text-content-strong hover:bg-zinc-700"
-            >
-              <X className="w-3.5 h-3.5" />
-            </IconButton>
-            </>}
+            actions={
+              <>
+                <IconButton
+                  onClick={() => add(channelId, sg)}
+                  label={`Add suggested context ${sg.label}`}
+                  title="Add suggestion"
+                  controlSize="compact"
+                  className="hover:text-accent-300"
+                >
+                  <MessageSquarePlus className="w-3.5 h-3.5" />
+                </IconButton>
+                <IconButton
+                  onClick={() => dismissSuggestion(channelId, sg.id)}
+                  label={`Dismiss suggestion ${sg.label}`}
+                  title="Dismiss suggestion"
+                  controlSize="compact"
+                  className="text-content-primary hover:text-content-strong hover:bg-zinc-700"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </IconButton>
+              </>
+            }
           />
         );
       })}
@@ -288,83 +283,106 @@ export function ContextPickBar({
           />
         );
       })}
+    </div>
+  );
+}
 
-      <div ref={rootRef} className="relative ml-1 inline-flex w-36 flex-shrink-0 border-l border-zinc-700/80 pl-2">
-        <UiButton
-          action="addContext"
-          content="iconText"
-          variant="secondary"
-          controlWidth="fill"
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          title={ADD_CONTEXT_MENU_TITLE}
-          controlSize="regular"
-        >
-          <MessageSquarePlus className="h-4 w-4" />
-        </UiButton>
-        {open && (
-          <PopoverPanel placement="up" align="start" className="w-56 p-1">
-            <p className="px-2 py-1 text-minimal uppercase tracking-label text-content-muted">
-              Add to context
-            </p>
-            {QUICK.map((q) => {
-              const Icon = KIND_ICON[q.kind];
-              const already = items.some((i) => i.id === q.id);
-              return (
+/** Composer-toolbar entry for picking new context. Pending and suggested items
+ *  render separately above the editor through ContextPickBar. */
+export function ContextPickerButton({
+  channelId,
+  onBrowseWorkbench,
+  onBrowseWorkspace,
+}: {
+  channelId: string;
+  /** Open the Workbench drawer so the user can pick a file to attach. */
+  onBrowseWorkbench?: () => void;
+  /** Open the Remote workspace dialog so the user can pick a workspace file. */
+  onBrowseWorkspace?: () => void;
+}) {
+  const items = usePendingContext(channelId);
+  const add = useContextPickStore((s) => s.add);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(open, () => setOpen(false), rootRef);
+
+  return (
+    <div ref={rootRef} className="relative inline-flex w-36 flex-shrink-0">
+      <UiButton
+        action="addContext"
+        content="iconText"
+        variant="secondary"
+        controlWidth="fill"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title={ADD_CONTEXT_MENU_TITLE}
+        controlSize="regular"
+      >
+        <MessageSquarePlus className="h-4 w-4" />
+      </UiButton>
+      {open && (
+        <PopoverPanel placement="up" align="start" className="w-56 p-1">
+          <p className="px-2 py-1 text-minimal uppercase tracking-label text-content-muted">
+            Add to context
+          </p>
+          {QUICK.map((q) => {
+            const Icon = KIND_ICON[q.kind];
+            const already = items.some((i) => i.id === q.id);
+            return (
+              <MenuOption
+                key={q.id}
+                disabled={already}
+                onClick={() => {
+                  add(channelId, q);
+                  setOpen(false);
+                }}
+                controlSize="regular"
+                label={q.label}
+                leading={<Icon className="w-3.5 h-3.5 text-content-muted" />}
+                trailing={already ? <Check className="h-3.5 w-3.5" /> : undefined}
+              />
+            );
+          })}
+          {(onBrowseWorkbench || onBrowseWorkspace) && (
+            <>
+              <p className="px-2 pt-2 pb-1 text-minimal uppercase tracking-label text-content-muted border-t border-zinc-800 mt-1">
+                Browse &amp; attach
+              </p>
+              {onBrowseWorkbench && (
                 <MenuOption
-                  key={q.id}
-                  disabled={already}
                   onClick={() => {
-                    add(channelId, q);
                     setOpen(false);
+                    onBrowseWorkbench();
                   }}
+                  title="Open the Workbench to pick a file to attach"
                   controlSize="regular"
-                  label={q.label}
-                  leading={<Icon className="w-3.5 h-3.5 text-content-muted" />}
-                  trailing={already ? <Check className="h-3.5 w-3.5" /> : undefined}
+                  label="Workbench files"
+                  leading={<PanelRight className="w-3.5 h-3.5 text-content-muted" />}
+                  trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
                 />
-              );
-            })}
-            {(onBrowseWorkbench || onBrowseWorkspace) && (
-              <>
-                <p className="px-2 pt-2 pb-1 text-minimal uppercase tracking-label text-content-muted border-t border-zinc-800 mt-1">
-                  Browse &amp; attach
-                </p>
-                {onBrowseWorkbench && (
-                  <MenuOption
-                    onClick={() => {
-                      setOpen(false);
-                      onBrowseWorkbench();
-                    }}
-                    title="Open the Workbench to pick a file to attach"
-                    controlSize="regular"
-                    label="Workbench files"
-                    leading={<PanelRight className="w-3.5 h-3.5 text-content-muted" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
-                  />
-                )}
-                {onBrowseWorkspace && (
-                  <MenuOption
-                    onClick={() => {
-                      setOpen(false);
-                      onBrowseWorkspace();
-                    }}
-                    title="Open the Remote workspace to pick a file to attach"
-                    controlSize="regular"
-                    label="Workspace files"
-                    leading={<FolderTree className="w-3.5 h-3.5 text-content-muted" />}
-                    trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
-                  />
-                )}
-              </>
-            )}
-            <p className="px-2 pt-2 pb-1 text-minimal text-content-muted">
-              Or attach a message from its reply action.
-            </p>
-          </PopoverPanel>
-        )}
-      </div>
+              )}
+              {onBrowseWorkspace && (
+                <MenuOption
+                  onClick={() => {
+                    setOpen(false);
+                    onBrowseWorkspace();
+                  }}
+                  title="Open the Remote workspace to pick a file to attach"
+                  controlSize="regular"
+                  label="Workspace files"
+                  leading={<FolderTree className="w-3.5 h-3.5 text-content-muted" />}
+                  trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
+                />
+              )}
+            </>
+          )}
+          <p className="px-2 pt-2 pb-1 text-minimal text-content-muted">
+            Or attach a message from its reply action.
+          </p>
+        </PopoverPanel>
+      )}
     </div>
   );
 }
