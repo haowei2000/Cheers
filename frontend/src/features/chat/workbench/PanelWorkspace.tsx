@@ -596,7 +596,7 @@ export function PanelWorkspace({
             onFocusCapture={(event) => {
               messageFocus.current = event.target as HTMLElement;
             }}
-            className="flex min-w-0 flex-1 flex-col"
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
             style={{
               display:
                 !layout.sideBySide && hasDock && showWork ? "none" : undefined,
