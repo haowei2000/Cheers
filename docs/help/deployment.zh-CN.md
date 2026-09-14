@@ -120,6 +120,7 @@ docker compose up -d postgres rustfs
 #    源码运行时网关跑在你的主机上，所以要用 localhost：
 #      DATABASE_URL=postgresql://cheers:<密码>@localhost:5432/cheers   （.env.example 中已是 localhost）
 #      STORAGE_S3_ENDPOINT=http://localhost:9000
+#      CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 #    另外把 RS256 密钥对填入 JWT_PRIVATE_KEY / JWT_PUBLIC_KEY，并设置
 #    ADMIN_PASSWORD。网关会自动加载 .env（dotenvy）。
 
@@ -130,8 +131,9 @@ cd server && cargo run
 cd frontend && npm install && npm run dev     # → http://localhost:5173
 ```
 
-Vite 开发服务器会把 `/api` 和 `/ws` 代理到 `http://localhost:8000` 的网关。Redis 与
-Gotenberg 均为可选 —— 最简运行可保持 `REDIS_URL` 默认、不设 `GOTENBERG_URL`
+Vite 开发服务器会把 `/api` 和 `/ws` 代理到 `http://127.0.0.1:8000` 的网关
+（显式使用 IPv4，避免 `localhost` 被解析为 `::1`）。Redis 与 Gotenberg 均为可选 ——
+最简运行可保持 `REDIS_URL` 默认、不设 `GOTENBERG_URL`
 （未设置时 office→PDF 预览自动关闭）。
 
 ---

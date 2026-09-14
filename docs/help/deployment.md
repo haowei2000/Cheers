@@ -138,6 +138,7 @@ docker compose up -d postgres rustfs
 #    localhost:
 #      DATABASE_URL=postgresql://cheers:<password>@localhost:5432/cheers   (already localhost in .env.example)
 #      STORAGE_S3_ENDPOINT=http://localhost:9000
+#      CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 #    Also paste the RS256 keypair into JWT_PRIVATE_KEY / JWT_PUBLIC_KEY and set
 #    ADMIN_PASSWORD. The gateway auto-loads .env (dotenvy).
 
@@ -149,7 +150,8 @@ cd frontend && npm install && npm run dev     # → http://localhost:5173
 ```
 
 The Vite dev server proxies `/api` and `/ws` to the gateway at
-`http://localhost:8000`. Redis and Gotenberg are optional — leave `REDIS_URL`
+`http://127.0.0.1:8000` (explicit IPv4 avoids a `localhost`/`::1` mismatch).
+Redis and Gotenberg are optional — leave `REDIS_URL`
 default and `GOTENBERG_URL` unset for a minimal run (office→PDF preview is simply
 disabled when `GOTENBERG_URL` is not set).
 

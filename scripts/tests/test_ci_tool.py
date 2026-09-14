@@ -152,6 +152,32 @@ class DeploymentTriggerTests(unittest.TestCase):
         self.assertNotIn("${{ env.IMAGE_FRONTEND }}:main", self.workflow)
 
 
+class DockerActionRuntimeTests(unittest.TestCase):
+    def test_docker_actions_use_node24_generations(self):
+        workflow_dir = MODULE_PATH.parents[1] / ".github" / "workflows"
+        workflows = "\n".join(
+            path.read_text(encoding="utf-8") for path in workflow_dir.glob("*.yml")
+        )
+        expected = (
+            "docker/build-push-action@v7",
+            "docker/login-action@v4",
+            "docker/metadata-action@v6",
+            "docker/setup-buildx-action@v4",
+        )
+        legacy = (
+            "docker/build-push-action@v6",
+            "docker/login-action@v3",
+            "docker/metadata-action@v5",
+            "docker/setup-buildx-action@v3",
+        )
+        for action in expected:
+            with self.subTest(action=action):
+                self.assertIn(action, workflows)
+        for action in legacy:
+            with self.subTest(action=action):
+                self.assertNotIn(action, workflows)
+
+
 class DeployContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

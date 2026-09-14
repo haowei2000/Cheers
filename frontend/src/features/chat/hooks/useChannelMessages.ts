@@ -238,10 +238,12 @@ export function useChannelMessages({
   // rendered content is byte-identical, only intermediate paint frequency drops from
   // token-rate to display-refresh-rate.
   const pendingDeltas = useRef<Map<string, string>>(new Map());
+  const streamSenderIds = useRef<Map<string, string>>(new Map());
   const flushHandle = useRef<number | null>(null);
 
   useEffect(() => {
     pendingDeltas.current.clear();
+    streamSenderIds.current.clear();
     if (flushHandle.current !== null) {
       cancelAnimationFrame(flushHandle.current);
       flushHandle.current = null;
@@ -265,7 +267,9 @@ export function useChannelMessages({
           // Defensive: a delta beat its placeholder bubble — synthesize one.
           out = upsertMessage(out, {
             msg_id: msgId,
+            sender_id: streamSenderIds.current.get(msgId) ?? "unknown-bot",
             sender_type: "bot",
+            sender_name: streamSenderIds.current.has(msgId) ? undefined : "Bot",
             content: delta,
             is_partial: true,
             _streaming: true,
@@ -288,7 +292,8 @@ export function useChannelMessages({
   }, []);
 
   const handleStreamDelta = useCallback(
-    (msgId: string, delta: string) => {
+    (msgId: string, delta: string, senderId?: string) => {
+      if (senderId) streamSenderIds.current.set(msgId, senderId);
       const pending = pendingDeltas.current;
       pending.set(msgId, (pending.get(msgId) ?? "") + delta);
       if (flushHandle.current === null) {
@@ -304,6 +309,7 @@ export function useChannelMessages({
       // any buffered deltas for this message are stale — drop them (flushing first
       // would either duplicate text or append after finalize).
       pendingDeltas.current.delete(update.msg_id);
+      streamSenderIds.current.delete(update.msg_id);
       setMessages((prev) =>
         upsertMessage(prev, { ...update, _streaming: false, _trace: null }),
       );
@@ -331,6 +337,7 @@ export function useChannelMessages({
 
   const handleDeleted = useCallback((msgId: string) => {
     pendingDeltas.current.delete(msgId);
+    streamSenderIds.current.delete(msgId);
     setMessages((prev) =>
       prev.map((m) =>
         m.msg_id === msgId ? { ...m, is_deleted: true, content: "" } : m,

@@ -31,6 +31,7 @@ import { ContextPickBar } from "./context/ContextPickBar";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
+import { ConversationViewport } from "./ConversationViewport";
 import { ReplyComposerBanner } from "./ReplyComposerBanner";
 import { ForwardDialog } from "./ForwardDialog";
 import type { MessageActionHandlers } from "./MessageItem";
@@ -1096,7 +1097,10 @@ export function ChannelView({
   // ── Message actions: reply / copy / forward / multi-select ────────────────
   const displayName = useCallback(
     (m: Message) =>
-      m.sender_name || memberNames.get(m.sender_id) || m.sender_id.slice(0, 8),
+      m.sender_name ||
+      memberNames.get(m.sender_id) ||
+      m.sender_id?.slice(0, 8) ||
+      (m.sender_type === "bot" ? "Bot" : "Unknown"),
     [memberNames],
   );
 
@@ -1529,14 +1533,9 @@ export function ChannelView({
             </LaneBoundsContext.Provider>
           )}
         >
-          <div className="flex-1 min-w-0 flex flex-col">
-            <div
-              className={`flex h-full w-full min-w-0 flex-col ${
-                channel.conversation_mode === "discuss"
-                  ? ""
-                  : "md:mx-auto md:max-w-[52rem]"
-              }`}
-            >
+          <ConversationViewport
+            conversationMode={channel.conversation_mode ?? "chat"}
+          >
               {hasChannelFeature(channel, CHANNEL_FEATURE_VOICE) && (
                 <Suspense
                   fallback={
@@ -1736,8 +1735,7 @@ export function ChannelView({
                   />
                 </>
               )}
-            </div>
-          </div>
+          </ConversationViewport>
 
         </PanelWorkspace>
         {settingsOpen && (

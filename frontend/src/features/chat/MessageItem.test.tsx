@@ -37,6 +37,19 @@ describe("MessageItem reply preview", () => {
 });
 
 describe("MessageItem identity anatomy", () => {
+  it("does not crash while a realtime bot frame is missing identity metadata", () => {
+    const incomplete = {
+      msg_id: "early-stream-delta",
+      sender_type: "bot",
+      content: "Working",
+      is_partial: true,
+    } as Message;
+
+    expect(renderToStaticMarkup(<MessageItem message={incomplete} />)).toContain(
+      ">Bot</span>",
+    );
+  });
+
   it("keeps the 96px name rail in chat", () => {
     const markup = renderToStaticMarkup(<MessageItem message={source} />);
 
