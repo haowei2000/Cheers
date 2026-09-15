@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# End-to-end MCP 2026-07-28 gate. This deliberately obtains the MCP bearer via
-# the public host pairing + OAuth client_credentials flow; it never
-# inserts a Bot credential or bypasses the protected-resource boundary.
+# End-to-end MCP gate: the official 2026-07-28 suite plus a smoke check of the
+# stateless initialization-based (2025-06-18/2025-11-25) compatibility path.
+# This deliberately obtains the MCP bearer via the public host pairing + OAuth
+# client_credentials flow; it never inserts a Bot credential or bypasses the
+# protected-resource boundary.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 gateway_port="${CHEERS_MCP_GATEWAY_PORT:-38080}"
@@ -146,6 +148,49 @@ npx -y @modelcontextprotocol/conformance@0.2.0-alpha.11 server \
   --url "${proxy_origin}/mcp" \
   --suite all \
   --spec-version 2026-07-28
+
+# Initialization-based clients, still shipped by agent runtimes, are served
+# without sessions: initialize is answered, no Mcp-Session-Id is minted, and
+# later requests are recognized by their MCP-Protocol-Version header.
+legacy_init_headers="$tmp_dir/legacy-initialize.headers"
+legacy_init="$(curl -fsS -D "$legacy_init_headers" "${gateway_origin}/mcp" \
+  -H "authorization: Bearer ${access_token}" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"legacy-smoke","version":"1.0.0"}}}')"
+jq -e '.result.protocolVersion == "2025-06-18" and .result.serverInfo.name == "cheers"' \
+  <<<"$legacy_init" >/dev/null
+if grep -qi '^mcp-session-id:' "$legacy_init_headers"; then
+  echo "legacy initialize must not mint an Mcp-Session-Id" >&2
+  exit 1
+fi
+
+legacy_initialized_status="$(curl -sS -o /dev/null -w '%{http_code}' "${gateway_origin}/mcp" \
+  -H "authorization: Bearer ${access_token}" \
+  -H 'content-type: application/json' \
+  -H 'mcp-protocol-version: 2025-06-18' \
+  --data '{"jsonrpc":"2.0","method":"notifications/initialized"}')"
+if [[ "$legacy_initialized_status" != "202" ]]; then
+  echo "expected legacy notifications/initialized to return 202, got ${legacy_initialized_status}" >&2
+  exit 1
+fi
+
+legacy_tools="$(curl -fsS "${gateway_origin}/mcp" \
+  -H "authorization: Bearer ${access_token}" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-06-18' \
+  --data '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
+jq -e '(.result.tools | map(.name) | index("post_message")) != null
+  and (.result | has("resultType") | not)' <<<"$legacy_tools" >/dev/null
+
+# Legacy JSON-RPC errors travel in a 200 body with the pre-2026 error code.
+legacy_missing="$(curl -fsS "${gateway_origin}/mcp" \
+  -H "authorization: Bearer ${access_token}" \
+  -H 'content-type: application/json' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  --data '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"test://missing"}}')"
+jq -e '.error.code == -32002' <<<"$legacy_missing" >/dev/null
 
 # The access token is not merely JWT-valid: each request rechecks the live
 # host + current credential hash. Revocation must therefore invalidate

@@ -939,10 +939,11 @@ fn build_public_routes() -> Router<AppState> {
             "/.well-known/oauth-authorization-server",
             get(api::mcp::authorization_server_metadata),
         )
-        // MCP 2026-07-28 is stateless: every POST carries protocol metadata and
-        // a short-lived, operation-scoped bearer token. 12 MiB accommodates the
-        // existing 8 MiB binary attachment limit after base64 expansion while
-        // retaining an endpoint-local hard cap.
+        // MCP is stateless: 2026-07-28 POSTs carry protocol metadata, and
+        // initialization-based 2025-06-18/2025-11-25 clients get no session.
+        // Every POST carries a short-lived, operation-scoped bearer token.
+        // 12 MiB accommodates the existing 8 MiB binary attachment limit after
+        // base64 expansion while retaining an endpoint-local hard cap.
         .route(
             "/mcp",
             post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
