@@ -8,7 +8,10 @@ use crate::{
     infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
-use super::{authorize_channel_read, authorize_channel_write, Principal, ResourceResult};
+use super::{
+    authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, Principal,
+    ResourceResult,
+};
 
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
@@ -186,8 +189,14 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let idempotency = IdempotencyKey::from_params(principal, "channel.messages.create", params)?;
 
     authorize_channel_write(db, principal, channel_id).await?;
+    if let Some(key) = &idempotency {
+        if let Some(replayed) = key.replay(db).await? {
+            return Ok(replayed);
+        }
+    }
 
     let msg_id = Uuid::new_v4();
     let content = params
@@ -249,10 +258,23 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         }
     }
 
+    // Loaded before the transaction so the channel_seq row lock is not held for it.
+    let files = load_message_file_refs(db, &file_ids)
+        .await
+        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    let files_len = files.len();
+
     let mut tx = db
         .begin()
         .await
         .map_err(super::db_err("messages.create: begin tx"))?;
+    if let Some(key) = &idempotency {
+        if !key.claim(&mut tx).await? {
+            // A concurrent retry committed this key first; nothing was written here.
+            drop(tx);
+            return key.replay_claimed(db).await;
+        }
+    }
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
         .map_err(super::db_err("messages.create: allocate channel_seq"))?;
@@ -281,14 +303,6 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(super::db_err("messages.create: insert mentions"))?;
-    tx.commit()
-        .await
-        .map_err(super::db_err("messages.create: commit tx"))?;
-
-    let files = load_message_file_refs(db, &file_ids)
-        .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
-    let files_len = files.len();
 
     let mention_dtos = mention_dtos(&mentions);
     let dto = MessageDto {
@@ -316,16 +330,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         trace_has_failure: Some(false),
     };
 
-    tracing::debug!(
-        %channel_id,
-        %msg_id,
-        mentions = mentions.len(),
-        files = files_len,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "messages.create db-path complete"
-    );
-
-    Ok(serde_json::to_value(dto).unwrap_or_else(|_| {
+    let data = serde_json::to_value(dto).unwrap_or_else(|_| {
         serde_json::json!({
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": msg_id.to_string(),
@@ -342,7 +347,24 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             "files": [],
             "created_at": now,
         })
-    }))
+    });
+    if let Some(key) = &idempotency {
+        key.complete(&mut tx, &data).await?;
+    }
+    tx.commit()
+        .await
+        .map_err(super::db_err("messages.create: commit tx"))?;
+
+    tracing::debug!(
+        %channel_id,
+        %msg_id,
+        mentions = mentions.len(),
+        files = files_len,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "messages.create db-path complete"
+    );
+
+    Ok(data)
 }
 
 fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {

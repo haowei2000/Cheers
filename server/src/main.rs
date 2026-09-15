@@ -296,6 +296,21 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Idempotency-key retention sweep: keys answer retries for 24 hours, and an
+    // expired key is reclaimed on use anyway, so an hourly delete only bounds storage.
+    let idempotency_db = state.db.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match server::resource::idempotency::sweep_expired(&idempotency_db).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(removed = n, "idempotency-key retention sweep"),
+                Err(e) => tracing::warn!(err = %e, "idempotency-key retention sweep failed"),
+            }
+        }
+    });
+
     // Scheduled bot self-status refresh (audit item 6). The connector was
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).

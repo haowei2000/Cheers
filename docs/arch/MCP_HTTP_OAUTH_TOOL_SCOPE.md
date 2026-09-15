@@ -133,8 +133,15 @@ Connector. It never falls back to the gateway's filesystem.
   channel sequence allocation, fan-out, Agent triggering and audit behavior are
   identical to Agent Bridge writes.
 - Request arguments are size-limited and validated by both the MCP adapter and
-  the existing resource handler. Idempotency keys will be added before exposing
-  retryable non-idempotent writes to general third-party clients.
+  the existing resource handler.
+- `post_message`, `inbox_deliver` and `desk_append` accept an optional
+  `idempotency_key`. 2026-07-28 clients must re-issue a call whose response
+  stream broke. A retry that reuses the key gets the first result back with
+  `idempotent_replay: true`, and nothing is written or triggered again. A key is
+  scoped to the calling principal and tool, and bound to the call's arguments:
+  reusing it with different arguments fails with `E_IDEMPOTENCY_KEY_REUSED`.
+  Keys are retained for 24 hours. `desk_write` and `desk_edit` are already
+  retry-safe through `if_version`.
 
 ## 6. Approval boundary
 

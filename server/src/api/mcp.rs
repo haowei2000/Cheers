@@ -2436,17 +2436,19 @@ async fn call_tool(
         return Ok(response.get("data").cloned().unwrap_or(Value::Null));
     }
     Err(ToolCallFailure::Domain {
-        code: response
-            .get("code")
-            .and_then(Value::as_str)
+        code: resource_res_error(&response, "code")
             .unwrap_or("TOOL_ERROR")
             .to_string(),
-        message: response
-            .get("error")
-            .and_then(Value::as_str)
+        message: resource_res_error(&response, "message")
             .unwrap_or("tool call failed")
             .to_string(),
     })
+}
+
+/// A field of a failed `resource_res` frame, which nests `code` and `message` under
+/// `error` (see `resource::err_res`).
+fn resource_res_error<'a>(response: &'a Value, field: &str) -> Option<&'a str> {
+    response.get("error")?.get(field)?.as_str()
 }
 
 async fn read_resource(
@@ -2509,7 +2511,7 @@ async fn read_resource(
         let data = response.get("data").cloned().unwrap_or(Value::Null);
         return Ok(resource_content(uri, &data));
     }
-    let code = response.get("code").and_then(Value::as_str).unwrap_or("");
+    let code = resource_res_error(&response, "code").unwrap_or("");
     if code == "INTERNAL_ERROR" {
         Err(ResourceReadError::Internal)
     } else {
@@ -3137,6 +3139,24 @@ mod tests {
                 .code,
             -32020
         );
+    }
+
+    #[test]
+    fn tool_errors_read_the_nested_resource_error_frame() {
+        let frame = resource::err_res(
+            "r1",
+            "E_IDEMPOTENCY_KEY_REUSED",
+            "idempotency_key was already used for a different request",
+        );
+        assert_eq!(
+            resource_res_error(&frame, "code"),
+            Some("E_IDEMPOTENCY_KEY_REUSED")
+        );
+        assert_eq!(
+            resource_res_error(&frame, "message"),
+            Some("idempotency_key was already used for a different request")
+        );
+        assert_eq!(resource_res_error(&json!({"ok": true}), "code"), None);
     }
 
     #[test]
