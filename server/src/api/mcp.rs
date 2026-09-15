@@ -35,13 +35,13 @@ use crate::{
     resource::{self, Principal},
 };
 
-const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+pub(crate) const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 /// Initialization-based revisions still served for agents whose MCP clients predate
 /// 2026-07-28, newest first. They are served statelessly: `initialize` is answered but
 /// no `Mcp-Session-Id` is minted, so every later request is recognized by the
 /// `MCP-Protocol-Version` header these revisions send after initialization.
 /// 2025-03-26 is excluded: it has no such header and requires JSON-RPC batching.
-const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
+pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
 const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 const MCP_TOKEN_USE: &str = "mcp_access";
 const MCP_ACCESS_TOKEN_TTL_SECS: u64 = 10 * 60;
@@ -1058,26 +1058,33 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     };
     tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
 
+    let host_id = identity.host_id;
     let request: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => {
-            return rpc_error_response(
+            return reject_request(
+                &state,
+                host_id,
                 StatusCode::BAD_REQUEST,
                 Value::Null,
                 -32700,
                 "Parse error",
                 None,
             )
+            .await
         }
     };
     let Some(object) = request.as_object() else {
-        return rpc_error_response(
+        return reject_request(
+            &state,
+            host_id,
             StatusCode::BAD_REQUEST,
             Value::Null,
             -32600,
             "Invalid Request",
             None,
-        );
+        )
+        .await;
     };
     let method = object.get("method").and_then(Value::as_str);
     let era = request_era(&headers, method, object.get("params"));
@@ -1095,10 +1102,28 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
         || !matches!(id, Value::String(_) | Value::Number(_))
     {
-        return rpc_error_response(StatusCode::BAD_REQUEST, id, -32600, "Invalid Request", None);
+        return reject_request(
+            &state,
+            host_id,
+            StatusCode::BAD_REQUEST,
+            id,
+            -32600,
+            "Invalid Request",
+            None,
+        )
+        .await;
     }
     let Some(method) = method else {
-        return rpc_error_response(StatusCode::BAD_REQUEST, id, -32600, "Invalid Request", None);
+        return reject_request(
+            &state,
+            host_id,
+            StatusCode::BAD_REQUEST,
+            id,
+            -32600,
+            "Invalid Request",
+            None,
+        )
+        .await;
     };
     let no_params = Map::new();
     let params = match (object.get("params"), era) {
@@ -1106,22 +1131,28 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         // Initialization-based requests such as `ping` may omit params entirely.
         (None, ProtocolEra::Legacy) => &no_params,
         (_, ProtocolEra::Legacy) => {
-            return rpc_error_response(
+            return reject_request(
+                &state,
+                host_id,
                 StatusCode::BAD_REQUEST,
                 id,
                 -32602,
                 "params must be an object",
                 None,
             )
+            .await
         }
         (_, ProtocolEra::Modern) => {
-            return rpc_error_response(
+            return reject_request(
+                &state,
+                host_id,
                 StatusCode::BAD_REQUEST,
                 id,
                 -32602,
                 "params and params._meta are required",
                 None,
             )
+            .await
         }
     };
 
@@ -1130,13 +1161,16 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         ProtocolEra::Legacy => validate_mirrored_headers(&headers, method, params, false),
     };
     if let Err(error) = metadata {
-        return rpc_error_response(
+        return reject_request(
+            &state,
+            host_id,
             StatusCode::BAD_REQUEST,
             id,
             error.code,
             error.message,
             error.data,
-        );
+        )
+        .await;
     }
 
     let required_scope = if method == "tools/call" {
@@ -1164,6 +1198,8 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         SCOPE_READ
     };
     if !identity.scopes.contains(required_scope) {
+        let message = format!("Insufficient OAuth scope {required_scope}");
+        record_mcp_rejection(&state, host_id, -32003, &message, None).await;
         return insufficient_scope_response(&state, id, required_scope);
     }
 
@@ -1359,7 +1395,8 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
 
     // This is the only transition that establishes connected: the Gateway has
     // validated a host-bound token and handled a recognized MCP method.
-    if let Err(error) = mark_mcp_connected(&state, identity.host_id).await {
+    let seen = client_seen(era, &headers, method, params, &result);
+    if let Err(error) = mark_mcp_connected(&state, identity.host_id, &seen).await {
         tracing::warn!(%error, host_id=%identity.host_id, "MCP connection-state update failed");
     }
 
@@ -1386,39 +1423,142 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     private_json_response(StatusCode::OK, final_response)
 }
 
-/// Records a successfully authenticated and handled MCP method as connectivity evidence.
-async fn mark_mcp_connected(state: &AppState, host_id: Uuid) -> Result<(), sqlx::Error> {
+/// What a handled MCP request showed about the client that sent it.
+struct McpClientSeen<'a> {
+    protocol_version: &'a str,
+    client_name: Option<&'a str>,
+    client_version: Option<&'a str>,
+}
+
+/// Legacy clients identify themselves only in `initialize`; 2026-07-28 clients SHOULD
+/// on every request. The protocol version is the one this request was served under.
+fn client_seen<'a>(
+    era: ProtocolEra,
+    headers: &'a HeaderMap,
+    method: &str,
+    params: &'a Map<String, Value>,
+    result: &'a Value,
+) -> McpClientSeen<'a> {
+    let info = match era {
+        ProtocolEra::Modern => params
+            .get("_meta")
+            .and_then(|meta| meta.get("io.modelcontextprotocol/clientInfo")),
+        ProtocolEra::Legacy => params.get("clientInfo"),
+    };
+    let field = |name: &str| info.and_then(|info| info.get(name)).and_then(Value::as_str);
+    let protocol_version = match era {
+        ProtocolEra::Modern => MCP_PROTOCOL_VERSION,
+        ProtocolEra::Legacy if method == "initialize" => result
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .unwrap_or(MCP_LEGACY_PROTOCOL_VERSIONS[0]),
+        ProtocolEra::Legacy => header_string(headers, MCP_PROTOCOL_VERSION_HEADER)
+            .unwrap_or(MCP_LEGACY_PROTOCOL_VERSIONS[0]),
+    };
+    McpClientSeen {
+        protocol_version,
+        client_name: field("name"),
+        client_version: field("version"),
+    }
+}
+
+/// Client-supplied text is stored within its column width (characters, as Postgres
+/// counts VARCHAR length).
+fn truncated(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+/// Records a successfully authenticated and handled MCP method as connectivity evidence,
+/// along with the protocol version and client identity the MCP check reports.
+async fn mark_mcp_connected(
+    state: &AppState,
+    host_id: Uuid,
+    seen: &McpClientSeen<'_>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE connector_hosts
          SET mcp_connection_state = $2,
              mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
                                          THEN mcp_state_updated_at ELSE NOW() END,
              mcp_connected_at = COALESCE(mcp_connected_at, NOW()),
-             mcp_last_seen_at = NOW()
+             mcp_last_seen_at = NOW(),
+             mcp_protocol_version = $3,
+             mcp_client_name = COALESCE($4, mcp_client_name),
+             mcp_client_version = COALESCE($5, mcp_client_version)
          WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(host_id.to_string())
     .bind(mcp_state_for_evidence(
         McpConnectionEvidence::AuthenticatedRequest,
     ))
+    .bind(truncated(seen.protocol_version, 16))
+    .bind(seen.client_name.map(|name| truncated(name, 128)))
+    .bind(seen.client_version.map(|version| truncated(version, 64)))
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Records successful OAuth token issuance without claiming MCP connectivity.
+/// Records successful OAuth token issuance without claiming MCP connectivity, and
+/// stamps when the host last received a token for the MCP check to report.
 async fn mark_mcp_authorizing(state: &AppState, host_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE connector_hosts
-         SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
-         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL
-           AND mcp_connection_state <> 'connected'",
+         SET mcp_token_issued_at = NOW(),
+             mcp_connection_state = CASE WHEN mcp_connection_state = 'connected'
+                                         THEN mcp_connection_state ELSE $2 END,
+             mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
+                                         THEN mcp_state_updated_at ELSE NOW() END
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(host_id)
     .bind(mcp_state_for_evidence(McpConnectionEvidence::TokenIssued))
     .execute(&state.db)
     .await?;
     Ok(())
+}
+
+/// Records why an authenticated request was refused before any method ran. It is the
+/// only trace a client that cannot speak this endpoint leaves for the MCP check.
+async fn record_mcp_rejection(
+    state: &AppState,
+    host_id: Uuid,
+    code: i64,
+    message: &str,
+    data: Option<&Value>,
+) {
+    let reason = match data
+        .and_then(|data| data.get("requested"))
+        .and_then(Value::as_str)
+    {
+        Some(requested) => format!("{message} {requested} ({code})"),
+        None => format!("{message} ({code})"),
+    };
+    let recorded = sqlx::query(
+        "UPDATE connector_hosts SET mcp_rejected_at = NOW(), mcp_rejection = $2
+         WHERE host_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(host_id.to_string())
+    .bind(truncated(&reason, 255))
+    .execute(&state.db)
+    .await;
+    if let Err(error) = recorded {
+        tracing::warn!(%error, %host_id, "MCP rejection could not be recorded");
+    }
+}
+
+/// Refuses an authenticated request that cannot be handled, recording why.
+async fn reject_request(
+    state: &AppState,
+    host_id: Uuid,
+    status: StatusCode,
+    id: Value,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response {
+    record_mcp_rejection(state, host_id, code, message, data.as_ref()).await;
+    rpc_error_response(status, id, code, message, data)
 }
 
 /// Records a known host's rejected refresh token.

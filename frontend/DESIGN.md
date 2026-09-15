@@ -767,6 +767,13 @@ ButtonGroup inside the detail view and retain their existing confirmations. Fail
 reads keep the known summary visible and offer Refresh; closing returns focus to
 the invoking row, including when opened from the Bot dialog.
 
+The dialog's Cheers MCP section runs the host's MCP check only on request, through
+the registered settings `Check` action with the device name in its accessible
+label. Results group by layer (Gateway, Host, Agent) as `MetaRow` lines. Each line
+has a status glyph with a spoken verdict, then the finding, its evidence, and the
+fix. Verdicts are words, never raw status values. A failed check stays inline, and
+the same Check control retries it.
+
 ### Management page action proximity
 
 Fleet and Settings share the same centered 5xl page boundary for their inline

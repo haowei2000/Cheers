@@ -171,6 +171,39 @@ export async function listHostRepositories(
   return apiJson(`/bots/${botId}/hosts/${hostId}/repositories`);
 }
 
+export type McpCheckStatus = "pass" | "warn" | "fail" | "skip";
+
+export interface McpCheck {
+  id: string;
+  label: string;
+  status: McpCheckStatus;
+  summary: string;
+  detail?: string;
+  hint?: string;
+  /** When the evidence behind this verdict was recorded (RFC 3339). */
+  observed_at?: string;
+}
+
+export interface McpCheckLayer {
+  id: "gateway" | "host" | "agent";
+  title: string;
+  status: McpCheckStatus;
+  checks: McpCheck[];
+}
+
+export interface McpCheckReport {
+  status: McpCheckStatus;
+  checked_at: string;
+  layers: McpCheckLayer[];
+}
+
+/** The three-layer Cheers MCP check for one host: the address agents are given,
+ *  whether the host can run sessions, and what the agent's MCP client actually did.
+ *  Read-only, so it is safe to repeat. */
+export async function checkHostMcp(botId: string, hostId: string): Promise<McpCheckReport> {
+  return apiJson(`/bots/${botId}/hosts/${hostId}/mcp-check`);
+}
+
 export async function activateConnectorHost(botId: string, hostId: string): Promise<void> {
   await apiJson(`/bots/${botId}/hosts/${hostId}/activate`, { method: "POST" }, { recentAuth: "auto", actionClass: "host_activation" });
 }

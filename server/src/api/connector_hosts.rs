@@ -17,6 +17,7 @@ use crate::{
         middleware::Claims,
     },
     app_state::AppState,
+    domain::mcp_check,
     errors::AppError,
     infra::crypto::{generate_host_credential, hash_host_credential},
 };
@@ -76,6 +77,70 @@ pub async fn list_hosts(
         })
     }).collect::<Vec<_>>();
     Ok(Json(json!({ "bot_id": bot_id, "hosts": hosts })))
+}
+
+/// The three-layer Cheers MCP check for one host (see `domain::mcp_check`).
+pub async fn check_host_mcp(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((bot_id, host_id)): Path<(String, String)>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let bot_uuid = Uuid::parse_str(&bot_id).map_err(|_| AppError::NotFound)?;
+    let row = sqlx::query(
+        "SELECT status, revoked_at, agent_type, connector_version, last_seen_at,
+                mcp_connection_state, mcp_token_issued_at, mcp_connected_at,
+                mcp_last_seen_at, mcp_protocol_version, mcp_client_name,
+                mcp_client_version, mcp_rejected_at, mcp_rejection
+         FROM connector_hosts
+         WHERE host_id = $1 AND bot_id = $2",
+    )
+    .bind(&host_id)
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let at = |column: &str| {
+        row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(column)
+            .ok()
+            .flatten()
+    };
+    let text = |column: &str| row.try_get::<Option<String>, _>(column).ok().flatten();
+    let status: String = row.try_get("status").unwrap_or_else(|_| "standby".into());
+    let revoked = at("revoked_at").is_some();
+    let online = !revoked && status == "active" && state.bot_locator.is_online(bot_uuid).await;
+    let agent_type = text("agent_type").unwrap_or_else(|| "generic".into());
+    let host = mcp_check::HostEvidence {
+        revoked,
+        online,
+        connector_version: text("connector_version"),
+        last_seen_at: at("last_seen_at"),
+        agent: crate::domain::agent_profile::profile(&agent_type),
+        mcp_state: if revoked {
+            "revoked".into()
+        } else {
+            text("mcp_connection_state").unwrap_or_else(|| "unconfigured".into())
+        },
+        mcp_token_issued_at: at("mcp_token_issued_at"),
+        mcp_connected_at: at("mcp_connected_at"),
+        mcp_last_seen_at: at("mcp_last_seen_at"),
+        mcp_protocol_version: text("mcp_protocol_version"),
+        mcp_client_name: text("mcp_client_name"),
+        mcp_client_version: text("mcp_client_version"),
+        mcp_rejected_at: at("mcp_rejected_at"),
+        mcp_rejection: text("mcp_rejection"),
+        status,
+    };
+    let resource_url = state.config.mcp_resource_url();
+    let gateway = mcp_check::GatewayEvidence {
+        public_url: state.config.mcp_public_url.as_deref(),
+        resource_url: &resource_url,
+        protocol_version: crate::api::mcp::MCP_PROTOCOL_VERSION,
+        legacy_protocol_versions: &crate::api::mcp::MCP_LEGACY_PROTOCOL_VERSIONS,
+    };
+    let report = mcp_check::evaluate(&gateway, &host, chrono::Utc::now());
+    Ok(Json(json!(report)))
 }
 
 pub async fn list_host_repositories(
@@ -172,7 +237,10 @@ pub async fn rotate_host_credential(
          SET credential_hash = $1, credential_prefix = $2,
              credential_rotated_at = NOW(), updated_at = NOW(),
              mcp_connection_state = 'unconfigured', mcp_state_updated_at = NOW(),
-             mcp_connected_at = NULL, mcp_last_seen_at = NULL
+             mcp_connected_at = NULL, mcp_last_seen_at = NULL,
+             mcp_token_issued_at = NULL, mcp_protocol_version = NULL,
+             mcp_client_name = NULL, mcp_client_version = NULL,
+             mcp_rejected_at = NULL, mcp_rejection = NULL
          WHERE host_id = $3 AND bot_id = $4 AND revoked_at IS NULL
            AND status IN ('active', 'standby') AND credential_hash IS NOT NULL
          RETURNING status",
