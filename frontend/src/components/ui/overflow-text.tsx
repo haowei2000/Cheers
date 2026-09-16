@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 export type OverflowStrategy = "singleLine" | "wrap" | "horizontalScroll";
 
@@ -99,7 +100,7 @@ export function OverflowText({
           strategy === "wrap" && "whitespace-pre-wrap [overflow-wrap:anywhere]",
           strategy === "horizontalScroll" && "block overflow-x-auto whitespace-pre",
         )}
-        onMouseEnter={showLater}
+        onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showLater)}
         onMouseLeave={hideLater}
         onFocus={() => canReveal && setOpen(true)}
         onBlur={hideLater}

@@ -30,6 +30,7 @@ import { PresenceDot } from "@/components/ui/presence-dot";
 import type { SendResourceReq } from "./workbench/fsClient";
 import { sessionTag, statusDotColor } from "./sessionLabel";
 import { NewSessionDialog } from "./NewSessionDialog";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 export interface SwitcherBot {
   botId: string;
@@ -355,7 +356,7 @@ export function SessionChip({
                   e.preventDefault();
                   select("");
                 }}
-                onMouseEnter={() => setActiveIndex(autoIdx)}
+                onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(autoIdx))}
                 className={cn(rowCls(autoIdx, !value), "border-0")}
               />
             );
@@ -386,7 +387,7 @@ export function SessionChip({
                       e.preventDefault();
                       select(s.session_id);
                     }}
-                    onMouseEnter={() => setActiveIndex(idx)}
+                    onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                     className={cn(rowCls(idx, isSel), "border-0")}
                   />
                 );
@@ -412,7 +413,7 @@ export function SessionChip({
                     setOpen(false);
                     setNewOpen(true);
                   }}
-                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                   className={rowCls(idx, false)}
                 >
                   <Plus className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
@@ -429,7 +430,7 @@ export function SessionChip({
                   setOpen(false);
                   onManageSessions();
                 }}
-                onMouseEnter={() => setActiveIndex(idx)}
+                onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                 className={rowCls(idx, false)}
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />

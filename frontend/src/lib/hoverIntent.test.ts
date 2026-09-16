@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // `:hover` is positional, not event-driven: it starts matching the instant content
@@ -32,6 +34,48 @@ describe("hover is gated on pointer intent", () => {
       // A scrollbar thumb cannot be mistaken for the thing you meant to point at.
       .filter((selector) => !selector.startsWith("::-webkit-scrollbar"))
       .filter((selector) => !selector.includes("data-pointer-idle"));
+    expect(ungated).toEqual([]);
+  });
+});
+
+// The CSS guard only covers `hover:` utilities. JS hover handlers are a second,
+// independent path to the same symptom: `mouseenter` and `pointerover` fire when the
+// element under the cursor changes, and a page arriving under a still cursor changes
+// it exactly as an approach does. That is what pops the back button's tooltip open
+// when Settings opens beneath the pointer.
+const root = fileURLToPath(new URL("../", import.meta.url));
+
+// Keeping an already-open surface alive is not opening one. The message action bar
+// can only be under the pointer because the message's own reveal fired — which is
+// gated — so gating this too would stop the bar surviving the gap to reach it.
+const KEEPS_OPEN = new Set([
+  "features/chat/MessageItem.tsx:onMouseEnter={onEnter}",
+  "components/ui/floating-layer.tsx:onMouseEnter={onMouseEnter}",
+]);
+
+function sources(dir: string): string[] {
+  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) => {
+    const child = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return sources(child);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [child] : [];
+  });
+}
+
+describe("JS hover handlers wait for the same evidence", () => {
+  it("opens nothing on a hover the pointer never asked for", () => {
+    const ungated: string[] = [];
+    for (const path of sources("components").concat(sources("features"), sources("hooks"))) {
+      const source = readFileSync(join(root, path), "utf8");
+      for (const [line] of source.matchAll(/onMouseEnter=\{[^}]*\}|onPointerEnter=\{[^}]*\}/g)) {
+        if (line.includes("whenPointerMeans")) continue;
+        // Prop plumbing and declarations, not a handler that opens anything.
+        if (/^on(Mouse|Pointer)Enter=\{on(Mouse|Pointer)Enter\}$/.test(line)) {
+          if (KEEPS_OPEN.has(`${path}:${line}`)) continue;
+        }
+        if (KEEPS_OPEN.has(`${path}:${line}`)) continue;
+        ungated.push(`${path}: ${line}`);
+      }
+    }
     expect(ungated).toEqual([]);
   });
 });
