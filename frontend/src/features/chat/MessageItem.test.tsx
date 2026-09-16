@@ -50,6 +50,20 @@ describe("MessageItem identity anatomy", () => {
     );
   });
 
+  it("renders the registered Stop action for an active bot turn", () => {
+    const active = {
+      ...reply,
+      _streaming: true,
+    } as Message;
+
+    const markup = renderToStaticMarkup(
+      <MessageItem message={active} channelId="channel-1" />,
+    );
+
+    expect(markup).toContain(">Stop</span>");
+    expect(markup).toContain('data-button-content="iconText"');
+  });
+
   it("keeps the 96px name rail in chat", () => {
     const markup = renderToStaticMarkup(<MessageItem message={source} />);
 
