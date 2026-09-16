@@ -10,6 +10,11 @@ export interface WorkspaceBot {
   can_read: boolean;
   /** True only when the caller holds a write grant for this bot's workspace. */
   can_write: boolean;
+  /** Display name of the machine currently serving this bot's connector, or null
+   *  when no host is active (or the caller may not read this workspace). A label
+   *  its owner typed — several machines are routinely called the same thing — so
+   *  show it, never key off it. */
+  host_name: string | null;
 }
 
 export interface WorkspaceEntry {

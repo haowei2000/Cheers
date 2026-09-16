@@ -14,6 +14,23 @@ export interface DropdownSelectOption {
   /** Opens a new group above this entry. Choices and commands remain separate
    *  collections so their accessibility roles cannot be confused. */
   separatorBefore?: boolean;
+  /** Names the group this entry opens, the way `<optgroup>` labelled a native
+   *  select. The header is decorative; the name is folded into the accessible
+   *  name of every entry in the group, so a list of bare paths can still say
+   *  which ones are session workdirs and which are the connector's own roots. */
+  groupLabel?: string;
+}
+
+/** Carry each group's name down to the entries under it, so the decorative header
+ *  is not the only place the grouping exists. */
+export function withGroups(
+  options: DropdownSelectOption[]
+): Array<{ option: DropdownSelectOption; group?: string }> {
+  let group: string | undefined;
+  return options.map((option) => {
+    if (option.groupLabel) group = option.groupLabel;
+    return { option, group };
+  });
 }
 
 export function DropdownSelect({
@@ -160,14 +177,24 @@ export function DropdownSelect({
       {open && (
         <PopoverPanel placement={placement} align={align} className={cn("w-56 p-1", menuClassName)}>
           <div ref={menuRef} id={popupId} role={popupRole} tabIndex={-1} aria-label={ariaLabel} onKeyDown={onMenuKeyDown}>
-            {options.map((option) => {
+            {withGroups(options).map(({ option, group }) => {
               const selected = option.value === value;
               return (
                 <Fragment key={option.value}>
                   {option.separatorBefore && (
-                    <div role="separator" className="my-1 h-px bg-zinc-800" />
+                    <div role="separator" className="my-1 h-px bg-control" />
+                  )}
+                  {option.groupLabel && (
+                    <div className="px-2 pb-1 pt-2 text-section-label" aria-hidden="true">
+                      {option.groupLabel}
+                    </div>
                   )}
                 <MenuOption
+                  aria-label={
+                    group && typeof option.label === "string"
+                      ? `${group}: ${option.label}`
+                      : undefined
+                  }
                   role={choiceRole}
                   aria-selected={choiceRole === "option" ? selected : undefined}
                   aria-checked={choiceRole === "menuitemradio" ? selected : undefined}
