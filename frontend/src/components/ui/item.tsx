@@ -137,7 +137,7 @@ export function ItemRow({
         aria-pressed={kind !== "navigation" && selected ? true : undefined}
         className={cn(
           classes,
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         )}
         onClick={onClick}
         disabled={disabled}

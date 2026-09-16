@@ -41,14 +41,14 @@ export function initials(name?: string | null, fallback = "?"): string {
 }
 
 const AVATAR_COLORS = [
-  "bg-indigo-600",
-  "bg-violet-600",
-  "bg-blue-600",
-  "bg-emerald-600",
-  "bg-rose-600",
-  "bg-amber-600",
-  "bg-cyan-600",
-  "bg-pink-600",
+  "bg-[#2B303A]", // Slate Carbon
+  "bg-[#7A2E2B]", // Cinnabar Red
+  "bg-[#253D44]", // Prussian Pine
+  "bg-[#3E4535]", // Olive Moss
+  "bg-[#543D31]", // Umber Earth
+  "bg-[#4D3647]", // Mulberry
+  "bg-[#2F3E52]", // Indigo Ink
+  "bg-[#5A482B]", // Ochre Bronze
 ];
 
 export function avatarColor(id: string): string {

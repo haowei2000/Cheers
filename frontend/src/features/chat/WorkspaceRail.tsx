@@ -42,8 +42,8 @@ function RailButton({
     >
       <div
         className={cn(
-          "absolute left-0 w-1 rounded-r-full bg-zinc-100 transition-[height,transform] duration-150",
-          selected ? "h-5" : "h-0 group-hover:h-2"
+          "absolute left-0 w-1 rounded-r-sm bg-content-strong transition-[height,transform] duration-150",
+          selected ? "h-6" : "h-0 group-hover:h-2"
         )}
       />
       {children}
@@ -68,8 +68,10 @@ function WorkspaceButton({
         id={workspace.workspace_id}
         size="large"
         className={cn(
-          "rounded-sm transition-colors duration-150",
-          selected ? "bg-zinc-600" : "group-hover:bg-zinc-600"
+          "rounded-sm transition-all duration-150",
+          selected
+            ? "ring-2 ring-content-strong/80 shadow-xs"
+            : "opacity-80 group-hover:opacity-100"
         )}
       />
     </RailButton>
@@ -112,7 +114,7 @@ export function WorkspaceRail({
 
   return (
     <ControlSizeProvider size="comfortable">
-    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+    <div className="w-14 h-full bg-rail border-r border-control/80 flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
           mark until it's loaded. */}
@@ -131,10 +133,10 @@ export function WorkspaceRail({
           alt=""
           aria-hidden="true"
           className={cn(
-            "h-9 w-9 rounded-sm object-cover transition-[filter,opacity] duration-150",
+            "h-9 w-9 rounded-sm object-cover transition-all duration-150",
             personalSelected
-              ? "brightness-110"
-              : "opacity-80 group-hover:opacity-100 group-hover:brightness-110"
+              ? "ring-2 ring-content-strong/80 shadow-xs"
+              : "opacity-80 group-hover:opacity-100"
           )}
         />
       </RailButton>
@@ -209,7 +211,7 @@ export function WorkspaceRail({
           <Settings className={controlIconClasses.comfortable} />
         </IconButton>
 
-        <div className="w-px h-4 bg-zinc-700/60" />
+        <div className="w-6 h-px bg-control/80 my-1" />
 
         {/* Static identity mark — not interactive (no false click affordance). */}
         <Avatar

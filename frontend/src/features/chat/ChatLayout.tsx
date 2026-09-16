@@ -522,7 +522,7 @@ export default function ChatLayout() {
     const showChat = chatPushed && !!selectedChannel;
     return (
       <DesktopChatFrame sidebarOpen={false}>
-        <div className="flex h-full bg-zinc-950 overflow-hidden">
+        <div className="flex h-full bg-canvas overflow-hidden">
           {showChat ? (
             <main className="flex-1 min-w-0 flex flex-col">
               <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
@@ -557,7 +557,7 @@ export default function ChatLayout() {
 
   return (
     <DesktopChatFrame sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar}>
-      <div className="flex h-full bg-zinc-950">
+      <div className="flex h-full bg-canvas">
         <WorkspaceRail />
         {/* CSS-hidden (not unmounted) so sidebar-hosted dialogs (New DM / New
             channel / workspace settings) and their drafts survive a toggle. */}
