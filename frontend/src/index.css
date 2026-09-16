@@ -726,10 +726,11 @@ button:not(:disabled) {
 
 .prose pre {
   background: rgb(var(--tone-zinc-900));
+  box-shadow: inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
   border-radius: var(--radius-control);
   padding: 1em;
   overflow-x: auto;
-  margin: 0.5em 0;
+  margin: 0.75em 0;
 }
 .prose pre code {
   background: none;
@@ -747,10 +748,12 @@ button:not(:disabled) {
 }
 
 .prose blockquote {
-  border-left: 3px solid rgb(var(--tone-zinc-700));
-  margin: 0.5em 0;
-  padding-left: 1em;
-  color: rgb(var(--text-muted));
+  border-left: 2px solid rgb(var(--tone-zinc-500));
+  margin: 0.75em 0;
+  padding: 0.35em 0 0.35em 1em;
+  color: rgb(var(--text-secondary));
+  background: rgb(var(--surface-control) / 0.35);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
 .prose h1,

@@ -1185,7 +1185,7 @@ function MessageBody({
           </p>
         ))}
       {message._streaming && (
-        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
+        <span className="inline-block w-2 h-4 bg-content-strong animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
       )}
       {active && message._trace && (
         <p className="text-caption-italic mt-1">{message._trace}</p>
