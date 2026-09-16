@@ -3,65 +3,64 @@
 @tailwind utilities;
 
 @layer components {
-  /* Floating chrome is a translucent material, not a Button variant. Its tone,
-     opacity and luminance shift are tokens: a light theme cannot borrow the
-     dark theme's recipe, because glass tinted with the panel colour and then
-     brightened is invisible on a white panel. The fallback remains legible
-     when backdrop filtering is unavailable. Islands are the innermost surface
-     of the chrome they sit in, so they own the radius their own padding earns
-     instead of inheriting the containing window's. */
+  /* Floating chrome is a solid paper material, not a translucent plastic.
+     Its tone, contrast and hairline are tokens: resting surfaces stack as physical
+     paper sheets with a crisp 1px boundary and controlled print elevation.
+     Islands are the innermost surface of the chrome they sit in, so they own the
+     radius their own padding earns instead of inheriting the containing window's. */
   .floating-control-surface {
     --concentric-inset: 0.25rem;
-    background-color: rgb(var(--surface-glass) / var(--glass-alpha-opaque));
+    background-color: rgb(var(--surface-panel) / var(--glass-alpha-opaque));
     box-shadow:
-      0 14px 32px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
-      inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha)),
-      inset 0 -1px 0 rgb(0 0 0 / 0.08);
+      0 12px 28px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
+      0 2px 8px -1px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.3)),
+      inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
   }
 
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-glass) / var(--glass-alpha));
-      -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(var(--glass-brightness));
-      backdrop-filter: blur(28px) saturate(1.8) brightness(var(--glass-brightness));
+      background-color: rgb(var(--surface-panel) / var(--glass-alpha));
+      -webkit-backdrop-filter: blur(8px) brightness(var(--glass-brightness));
+      backdrop-filter: blur(8px) brightness(var(--glass-brightness));
       box-shadow:
-        0 16px 36px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55)),
-        inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha)),
-        inset 0 -1px 0 rgb(0 0 0 / 0.1);
+        0 12px 28px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
+        0 2px 8px -1px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.3)),
+        inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
     }
   }
 
   @media (prefers-reduced-transparency: reduce) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-glass) / 1);
+      background-color: rgb(var(--surface-panel) / 1);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
   }
 
   /* Overlay elevation for popovers, menus and detached cards. Same geometry as
-     Tailwind's shadow-xl / shadow-lg, but the ink is a token: a black/40 drop
-     tuned on a dark canvas turns into a grey smear on a light one. */
+     Tailwind's shadow-xl / shadow-lg, but the ink is a token: a disciplined print
+     drop tuned for crisp paper stacks without diffuse grey smears. */
   .elevation-overlay {
     box-shadow:
-      0 20px 25px -5px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
-      0 8px 10px -6px rgb(var(--elevation-shadow) / var(--elevation-alpha));
+      0 16px 24px -4px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
+      0 4px 8px -2px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.7)),
+      0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
   }
 
   .elevation-raised {
     box-shadow:
-      0 10px 15px -3px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55)),
-      0 4px 6px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.55));
+      0 8px 14px -3px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
+      0 2px 4px -2px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
+      0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
   }
 
-  /* Draggable window elevation. Borderless (DESIGN.md §2.4): layered shadow
-     plus a hairline edge, both tuned per theme — a 56%-black drop tuned for a
-     dark canvas reads as a muddy grey cloud on a light one. */
+  /* Draggable window elevation. Physical paper layer stack: dense paper surface
+     plus a crisp 1px hairline edge and controlled print shadow. */
   .floating-panel-surface {
-    background-color: rgb(var(--surface-panel) / 0.95);
+    background-color: rgb(var(--surface-panel));
     box-shadow:
-      0 24px 64px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
-      0 2px 12px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.64)),
+      0 20px 48px -8px rgb(var(--elevation-shadow) / var(--elevation-alpha)),
+      0 4px 12px -2px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.6)),
       0 0 0 1px rgb(var(--elevation-edge) / var(--elevation-edge-alpha));
   }
 }
@@ -379,52 +378,52 @@ textarea::selection,
   /* Theme palettes are semantic even where legacy Tailwind class names still
      say zinc/indigo. Changing these values recolors the whole application;
      feature components never carry a second set of light-mode classes. */
-  --tone-zinc-50: 244 244 246;
-  --tone-zinc-100: 232 232 235;
-  --tone-zinc-200: 204 204 210;
-  --tone-zinc-300: 184 184 192;
-  --tone-zinc-400: 157 157 168;
-  --tone-zinc-500: 149 149 158;
-  --tone-zinc-600: 133 133 143;
-  --tone-zinc-700: 63 63 70;
-  --tone-zinc-800: 49 49 55;
-  --tone-zinc-900: 34 34 38;
-  --tone-zinc-950: 18 18 20;
-  --surface-canvas: 18 18 20;
-  --surface-panel: 34 34 38;
-  --surface-control: 49 49 55;
-  --surface-control-hover: 63 63 70;
-  --surface-control-active: 74 74 82;
-  --surface-glass: 88 88 96;
+  --tone-zinc-50: 244 243 240;
+  --tone-zinc-100: 232 231 228;
+  --tone-zinc-200: 204 203 199;
+  --tone-zinc-300: 184 183 180;
+  --tone-zinc-400: 156 156 162;
+  --tone-zinc-500: 148 148 154;
+  --tone-zinc-600: 132 132 138;
+  --tone-zinc-700: 62 63 68;
+  --tone-zinc-800: 48 49 54;
+  --tone-zinc-900: 34 35 39;
+  --tone-zinc-950: 22 23 25;
+  --surface-canvas: 22 23 25;
+  --surface-panel: 30 31 34;
+  --surface-control: 44 45 49;
+  --surface-control-hover: 58 60 66;
+  --surface-control-active: 70 72 80;
+  --surface-glass: 78 80 88;
 
-  /* Floating material and window elevation. Dark keeps today's recipe: glass is
-     a light tint over a dark ground, lifted slightly, dropped on heavy black. */
-  --glass-alpha: 0.3;
-  --glass-alpha-opaque: 0.72;
-  --glass-brightness: 1.08;
+  /* Floating material and window elevation. Dark mode reflects stone slate / carbon
+     wash paper stacks with crisp edge definition and controlled elevation. */
+  --glass-alpha: 0.85;
+  --glass-alpha-opaque: 0.96;
+  --glass-brightness: 1.02;
   --glass-edge: 255 255 255;
-  --glass-edge-alpha: 0.16;
+  --glass-edge-alpha: 0.12;
   --elevation-shadow: 0 0 0;
-  --elevation-alpha: 0.56;
+  --elevation-alpha: 0.52;
   --elevation-edge: 0 0 0;
-  --elevation-edge-alpha: 0.4;
-  --surface-rail: 22 22 25;
-  --surface-sidebar: 27 27 30;
-  --surface-selected: 63 63 70;
-  --surface-selected-hover: 74 74 82;
-  --surface-selected-active: 82 82 91;
+  --elevation-edge-alpha: 0.36;
+  --surface-rail: 20 21 23;
+  --surface-sidebar: 25 26 29;
+  --surface-selected: 58 60 66;
+  --surface-selected-hover: 70 72 80;
+  --surface-selected-active: 80 82 90;
   --selection-indicator: 204 204 210;
-  --surface-emphasis: 74 74 82;
-  --surface-emphasis-hover: 82 82 91;
-  --surface-emphasis-active: 48 48 53;
+  --surface-emphasis: 70 72 80;
+  --surface-emphasis-hover: 80 82 90;
+  --surface-emphasis-active: 44 45 49;
 
   /* Semantic foreground hierarchy. Components describe meaning instead of
      selecting a zinc shade; state colors are registered beside these tokens. */
-  --text-strong: 244 244 246;
-  --text-primary: 232 232 235;
-  --text-secondary: 204 204 210;
-  --text-muted: 157 157 168;
-  --text-on-light: 9 9 11;
+  --text-strong: 244 243 240;
+  --text-primary: 232 231 228;
+  --text-secondary: 204 203 199;
+  --text-muted: 156 156 162;
+  --text-on-light: 15 16 18;
   --text-on-accent: 255 255 255;
   --syntax-keyword: 196 181 165;
   --syntax-string: 168 181 162;
@@ -443,77 +442,75 @@ textarea::selection,
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --tone-zinc-50: 9 9 11;
-  --tone-zinc-100: 24 24 27;
-  --tone-zinc-200: 39 39 42;
-  --tone-zinc-300: 63 63 70;
-  --tone-zinc-400: 91 91 102;
-  --tone-zinc-500: 113 113 122;
-  --tone-zinc-600: 161 161 170;
-  --tone-zinc-700: 210 210 216;
-  --tone-zinc-800: 226 226 230;
-  --tone-zinc-900: 255 255 255;
-  --tone-zinc-950: 238 238 241;
-  /* Light mode needs elevation by tone, not white-on-off-white ambiguity:
-     canvas < panel < control < hover/active. Legacy zinc utilities map to
-     the same values while feature code migrates to these semantic surfaces. */
-  --surface-canvas: 238 238 241;
-  --surface-panel: 255 255 255;
-  --surface-control: 226 226 230;
-  --surface-control-hover: 210 210 216;
-  --surface-control-active: 198 198 206;
-  /* Glass on a white panel has to be a *darker* tint, not a brightened copy of
-     the surface behind it, or the island disappears into the panel. */
-  --surface-glass: 214 214 221;
-  --glass-alpha: 0.62;
-  --glass-alpha-opaque: 0.92;
-  --glass-brightness: 0.98;
-  --glass-edge: 9 9 11;
-  --glass-edge-alpha: 0.1;
-  --elevation-shadow: 24 24 32;
-  --elevation-alpha: 0.18;
-  --elevation-edge: 9 9 11;
-  --elevation-edge-alpha: 0.1;
-  --surface-rail: 232 232 236;
-  --surface-sidebar: 249 249 250;
-  --surface-selected: 210 210 216;
-  --surface-selected-hover: 200 200 208;
-  --surface-selected-active: 190 190 200;
-  --selection-indicator: 63 63 70;
-  --surface-emphasis: 39 39 42;
-  --surface-emphasis-hover: 63 63 70;
-  --surface-emphasis-active: 24 24 27;
+  --tone-zinc-50: 15 16 18;
+  --tone-zinc-100: 28 29 32;
+  --tone-zinc-200: 42 43 47;
+  --tone-zinc-300: 68 68 74;
+  --tone-zinc-400: 92 92 98;
+  --tone-zinc-500: 114 114 120;
+  --tone-zinc-600: 162 160 154;
+  --tone-zinc-700: 212 208 198;
+  --tone-zinc-800: 228 224 214;
+  --tone-zinc-900: 250 248 244;
+  --tone-zinc-950: 243 240 232;
+  /* Light mode paper and stationery elevation:
+     canvas (warm desk substrate) < panel (warm uncoated bond paper) < control (stationery card).
+     Legacy zinc utilities map to the same values while feature code migrates to these semantic surfaces. */
+  --surface-canvas: 243 240 232;
+  --surface-panel: 250 248 244;
+  --surface-control: 234 229 218;
+  --surface-control-hover: 223 218 208;
+  --surface-control-active: 213 207 195;
+  /* Paper layer overlay material: tactile paper sheet with distinct tone. */
+  --surface-glass: 222 217 206;
+  --glass-alpha: 0.92;
+  --glass-alpha-opaque: 0.98;
+  --glass-brightness: 0.99;
+  --glass-edge: 28 29 32;
+  --glass-edge-alpha: 0.12;
+  --elevation-shadow: 36 34 30;
+  --elevation-alpha: 0.14;
+  --elevation-edge: 28 29 32;
+  --elevation-edge-alpha: 0.12;
+  --surface-rail: 238 234 226;
+  --surface-sidebar: 247 245 240;
+  --surface-selected: 218 213 202;
+  --surface-selected-hover: 208 203 192;
+  --surface-selected-active: 198 193 182;
+  --selection-indicator: 60 60 65;
+  --surface-emphasis: 36 37 40;
+  --surface-emphasis-hover: 58 59 64;
+  --surface-emphasis-active: 24 25 28;
 
-  --text-strong: 9 9 11;
-  --text-primary: 24 24 27;
-  --text-secondary: 63 63 70;
-  --text-muted: 82 82 91;
+  --text-strong: 15 16 18;
+  --text-primary: 28 29 32;
+  --text-secondary: 68 68 74;
+  --text-muted: 92 92 98;
   --text-on-light: 255 255 255;
   --text-on-accent: 255 255 255;
 
   /* Neutral ink doubles as the focus/selection scale. Filled actions stay
      dark while quiet selected surfaces become light in the light theme. */
-  --tone-ink-50: 9 9 11;
-  --tone-ink-100: 24 24 27;
-  --tone-ink-200: 39 39 42;
-  --tone-ink-300: 63 63 70;
-  --tone-ink-400: 82 82 91;
-  --tone-ink-500: 82 82 91;
-  --tone-ink-600: 82 82 91;
-  --tone-ink-700: 161 161 170;
-  --tone-ink-800: 212 212 216;
-  --tone-ink-900: 228 228 231;
-  --tone-ink-950: 244 244 245;
+  --tone-ink-50: 15 16 18;
+  --tone-ink-100: 28 29 32;
+  --tone-ink-200: 42 43 47;
+  --tone-ink-300: 68 68 74;
+  --tone-ink-400: 92 92 98;
+  --tone-ink-500: 92 92 98;
+  --tone-ink-600: 92 92 98;
+  --tone-ink-700: 162 160 154;
+  --tone-ink-800: 218 213 202;
+  --tone-ink-900: 234 229 218;
+  --tone-ink-950: 248 246 242;
 
-  /* Status palettes use pale resting surfaces and darker foreground shades so
-     success/warning/error text keeps AA contrast on white. */
-  --tone-danger-100: 127 29 29;
-  --tone-danger-200: 153 27 27;
-  --tone-danger-300: 185 28 28;
-  --tone-danger-400: 185 28 28;
-  --tone-danger-500: 220 38 38;
-  --tone-danger-900: 254 226 226;
-  --tone-danger-950: 254 242 242;
+  /* Status palettes: seal vermilion for danger/stamps, seal wax amber for warnings */
+  --tone-danger-100: 138 28 24;
+  --tone-danger-200: 162 30 26;
+  --tone-danger-300: 186 42 38;
+  --tone-danger-400: 186 42 38;
+  --tone-danger-500: 218 45 40;
+  --tone-danger-900: 252 232 230;
+  --tone-danger-950: 254 244 243;
   --tone-warning-100: 120 53 15;
   --tone-warning-200: 120 53 15;
   --tone-warning-300: 146 64 14;
@@ -554,7 +551,7 @@ textarea::selection,
   --syntax-function: 30 64 175;
   --syntax-type: 134 25 143;
   --syntax-operator: 51 65 85;
-  --syntax-link: 55 65 81;
+  --syntax-link: 30 58 95;
   --syntax-code: 127 29 29;
   --syntax-invalid: 185 28 28;
 }
@@ -564,17 +561,17 @@ textarea::selection,
    the operating-system preference raises state and focus separation. */
 @media (prefers-contrast: more) {
   :root {
-    --surface-selected: 74 74 82;
-    --surface-selected-hover: 82 82 91;
-    --surface-selected-active: 96 96 105;
-    --selection-indicator: 244 244 246;
+    --surface-selected: 70 72 80;
+    --surface-selected-hover: 80 82 90;
+    --surface-selected-active: 92 94 102;
+    --selection-indicator: 244 243 240;
   }
 
   :root[data-theme="light"] {
-    --surface-selected: 198 198 206;
-    --surface-selected-hover: 186 186 196;
-    --surface-selected-active: 174 174 186;
-    --selection-indicator: 24 24 27;
+    --surface-selected: 202 196 184;
+    --surface-selected-hover: 190 184 172;
+    --surface-selected-active: 178 172 160;
+    --selection-indicator: 28 29 32;
   }
 }
 
