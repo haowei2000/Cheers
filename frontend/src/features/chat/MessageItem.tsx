@@ -167,7 +167,7 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-1 rounded-sm  border-zinc-700/70 bg-zinc-800/95 p-1 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
+        "flex items-center gap-1 rounded-sm bg-panel elevation-raised p-1 transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >

@@ -452,7 +452,7 @@ export function DiscussionView({
         <ErrorState className="flex-1" title="Couldn't open discussion" description={detailError} action={{ label: "Retry", onClick: () => void refreshDetail() }} />
       ) : detail ? (
         <>
-          <header className="z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur">
+          <header className="z-10 border-b border-zinc-300/40 bg-panel px-4 py-3 dark:border-zinc-800/60">
             <div className="mx-auto max-w-[52rem]">
               <div className="flex items-start gap-3">
                 <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />

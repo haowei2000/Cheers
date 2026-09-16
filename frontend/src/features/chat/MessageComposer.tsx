@@ -926,9 +926,10 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Send message"
               className={cn(
- canSend
- ? "bg-indigo-600 text-content-on-accent hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-content-primary opacity-50 cursor-not-allowed"
- )}
+                canSend
+                  ? "bg-content-strong text-content-on-light hover:opacity-90 active:scale-[0.98] cursor-pointer shadow-sm"
+                  : "bg-zinc-700/50 text-content-primary opacity-50 cursor-not-allowed"
+              )}
               title="Send message"
             >
               <SendHorizontal className="w-4 h-4" />

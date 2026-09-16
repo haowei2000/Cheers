@@ -492,7 +492,7 @@ export function FloatingPanel({
         // Absolute inside the canvas, fixed over the viewport (drag.style sets the
         // matching `position` so this only decides the fallback box).
         isMobile ? "fixed" : drag.bounded ? "absolute" : "fixed",
-        "group/floating-panel floating-panel-surface pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:0.5rem] backdrop-blur-xl",
+        "group/floating-panel floating-panel-surface pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:0.5rem]",
         // Cap to the box, leaving a 2rem inset in the canvas so a default-spawned
         // window (and its bottom-right resize grip) always fits inside the
         // overflow-clip; or short of the composer over the viewport.
