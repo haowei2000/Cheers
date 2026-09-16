@@ -46,7 +46,7 @@ function applyTheme(preference: ThemePreference, resolved: ResolvedTheme) {
   root.style.colorScheme = resolved;
   document
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute("content", resolved === "dark" ? "#121214" : "#eeeef1");
+    ?.setAttribute("content", resolved === "dark" ? "#161719" : "#f3f0e8");
 }
 
 type ThemeContextValue = {
