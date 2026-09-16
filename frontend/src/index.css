@@ -713,7 +713,7 @@ button:not(:disabled) {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.prose a:hover {
+.prose a:hover:not(:where([data-pointer-idle] *)) {
   color: rgb(var(--text-strong));
 }
 
@@ -868,7 +868,7 @@ button:not(:disabled) {
   color: rgb(var(--text-on-light));
 }
 
-.public-edition button.bg-indigo-600:hover:not(:disabled) {
+.public-edition button.bg-indigo-600:hover:not(:disabled):not(:where([data-pointer-idle] *)) {
   background: transparent;
   color: rgb(var(--text-primary));
 }

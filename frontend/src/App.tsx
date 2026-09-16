@@ -13,6 +13,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { useAuthStore } from "@/stores/authStore";
 import { initPushBridge } from "@/lib/push";
 import { initDeepLinks } from "@/lib/deepLink";
+import { disarmHover } from "@/lib/hoverIntent";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { ServerPicker } from "@/features/desktop/ServerPicker";
 import { StepUpDialog } from "@/features/auth/StepUpDialog";
@@ -104,6 +105,16 @@ function SessionExpiredTakeover() {
   );
 }
 
+/** Re-disarms hover on navigation: the pointer has not moved, but everything under
+ *  it just did. Renders nothing. */
+function HoverIntent() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    disarmHover();
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const authInitialized = useAuthStore((s) => s.initialized);
@@ -155,6 +166,7 @@ export default function App() {
   }
   return (
     <DesktopWindowFrame>
+      <HoverIntent />
       <Suspense fallback={<DesktopPageFrame><Spinner /></DesktopPageFrame>}>
         <Routes>
         <Route path="/login" element={<DesktopPageFrame><LoginPage /></DesktopPageFrame>} />
