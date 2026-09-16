@@ -29,6 +29,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
+import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { cn } from "@/lib/cn";
 import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { listChannelMembers } from "@/api/channels";
@@ -730,14 +731,7 @@ function MemberFilter({
                     onClick={() => onToggle(mem.member_id)}
                     controlSize="regular" className="flex items-center gap-2 text-left hover:bg-control/70 transition-colors"
                   >
-                    <span
-                      className={cn(
-                        "flex items-center justify-center w-3.5 h-3.5 rounded-sm flex-shrink-0",
-                        on ? "border-content-strong bg-content-strong text-content-on-light" : "border-control"
-                      )}
-                    >
-                      {on && <Check className="h-3.5 w-3.5 text-content-on-light" />}
-                    </span>
+                    <BallotCheckbox checked={on} size="compact" />
                     <Avatar
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}
                       src={mem.avatar_url ?? undefined}

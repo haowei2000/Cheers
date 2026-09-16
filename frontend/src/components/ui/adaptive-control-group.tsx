@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type ReactNode,
 } from "react";
 import { Ellipsis, type LucideIcon } from "lucide-react";
@@ -19,7 +20,7 @@ export type AdaptiveControlPresentation = "iconText" | "text" | "icon" | "collap
 export interface AdaptiveControlItem {
   id: string;
   label: string;
-  icon?: LucideIcon;
+  icon?: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   badge?: ReactNode;
   selected?: boolean;
   disabled?: boolean;

@@ -18,8 +18,8 @@ describe("leading-icon inputs", () => {
     expect(markup).toContain('data-input-slot="leading"');
     expect(markup).toContain("pl-9");
     expect(markup).toContain("ring-inset");
-    expect(markup.match(/focus:ring-2/g)).toHaveLength(1);
-    expect(markup).not.toContain("focus-within:ring-2");
+    expect(markup.match(/focus:ring-1/g)).toHaveLength(1);
+    expect(markup).not.toContain("focus-within:ring");
   });
 
   it("renders search as an accessible semantic input", () => {

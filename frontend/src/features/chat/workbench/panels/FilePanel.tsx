@@ -825,19 +825,28 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <FloatingPanelActionPortal
                     action={{
                       id: "annotations",
-                      label: `Notes on ${selected}`,
-                      priority: "secondary",
+                      label: annotations.notes.length === 0
+                        ? (selected ? `Notes on ${selected}` : "Annotations")
+                        : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selected}`,
+                      priority: "primary",
                       icon: MessageSquare,
                       control: (
                         <AnnotationsButton
                           notes={annotations.notes}
+                          allNotes={annotations.doc.notes}
+                          currentPath={selected ?? undefined}
                           text={session.parsedText}
                           onRemove={onRemoveNote}
                           onReveal={onRevealNote}
+                          onSelectFile={(path) => {
+                            setSelected(path);
+                            showRaw(path, true);
+                          }}
+                          onAddNote={(entry) => void annotations.add(entry)}
                         />
                       ),
                     }}
-                    active={annotations.notes.length > 0}
+                    active={Boolean(selected || annotations.doc.notes.length > 0)}
                   />
                   <FloatingPanelActionPortal
                     action={{

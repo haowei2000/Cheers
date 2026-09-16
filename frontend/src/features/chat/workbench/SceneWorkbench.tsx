@@ -1,9 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { CollectionIcon, TabIcon } from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
@@ -86,7 +87,7 @@ const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: s
 };
 
 function metaFor(id: string) {
-  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: LayoutGrid, color: "text-content-secondary" };
+  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: CollectionIcon as unknown as typeof Code2, color: "text-content-secondary" };
 }
 
 export function sceneTabContextActions(
@@ -101,7 +102,7 @@ export function sceneTabContextActions(
     {
       id: "open-collection",
       label: `Open ${label}`,
-      icon: <LayoutGrid className="h-4 w-4" />,
+      icon: <CollectionIcon className="h-4 w-4" />,
       run: onSelect,
     },
     {
@@ -208,11 +209,15 @@ function AddCollectionControl({
     <DropdownSelect
         ariaLabel="Add Collection"
         label="Add Collection"
-        leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
+        leading={<CollectionIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
         content={content}
         options={[]}
         actions={[
-          ...available.map((template) => ({ value: `template:${template.id}`, label: template.title })),
+          ...available.map((template) => ({
+            value: `template:${template.id}`,
+            label: template.title,
+            leading: <CollectionIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />,
+          })),
           { value: "load-extension", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
         ]}
         onSelect={() => undefined}
@@ -243,10 +248,14 @@ function AddTabControl({
     <DropdownSelect
       ariaLabel="Open Tab"
       label="Open Tab"
-      leading={<FolderPlus className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
+      leading={<TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
       content={content}
       options={[]}
-      actions={candidates.map((path) => ({ value: path, label: basename(path) }))}
+      actions={candidates.map((path) => ({
+        value: path,
+        label: basename(path),
+        leading: <TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />,
+      }))}
       onSelect={() => undefined}
       onAction={onSelect}
       placement="up"
@@ -276,10 +285,10 @@ function WorkbenchHierarchyNavigation({
   onShowRaw,
 }: {
   availableWidth: number;
-  collections: Array<{ id: string; label: string; Icon: typeof Code2 }>;
+  collections: Array<{ id: string; label: string; Icon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }> }>;
   activeCollection: string;
   collectionTitle: string;
-  collectionIcon: typeof Code2;
+  collectionIcon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   tabs: Array<{ path: string; label: string }>;
   selectedPath: string | null;
   availableTemplates: TemplateManifest[];
@@ -292,38 +301,47 @@ function WorkbenchHierarchyNavigation({
   onAddTab: (path: string) => void;
   onShowRaw: () => void;
 }) {
-  const fullProbe = useRef<HTMLDivElement>(null);
-  const compactProbe = useRef<HTMLDivElement>(null);
-  const [required, setRequired] = useState({ full: Number.POSITIVE_INFINITY, compact: Number.POSITIVE_INFINITY });
+  const textProbe = useRef<HTMLDivElement>(null);
+  const [requiredTextWidth, setRequiredTextWidth] = useState(Number.POSITIVE_INFINITY);
   useLayoutEffect(() => {
-    const measure = () => setRequired({
-      full: fullProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
-      compact: compactProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY,
-    });
+    const measure = () => setRequiredTextWidth(textProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY);
     measure();
     const observer = new ResizeObserver(measure);
-    if (fullProbe.current) observer.observe(fullProbe.current);
-    if (compactProbe.current) observer.observe(compactProbe.current);
+    if (textProbe.current) observer.observe(textProbe.current);
     return () => observer.disconnect();
-  }, [collections.length, tabs.length, availableTemplates.length, tabCandidates.length, collectionTitle, selectedPath]);
-  const mode = availableWidth >= required.full ? "full" : availableWidth >= required.compact ? "compact" : "icon";
-  const embedded = mode !== "full";
-  const iconOnly = mode === "icon";
+  }, [collections.length, tabs.length, collectionTitle, selectedPath]);
+  const iconOnly = availableWidth < requiredTextWidth;
   const CollectionIcon = collectionIcon;
 
   const collectionActions: DropdownSelectOption[] = [
-    ...availableTemplates.map((template) => ({ value: `add:${template.id}`, label: `New ${template.title}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> })),
+    ...availableTemplates.map((template) => ({
+      value: `add:${template.id}`,
+      label: `New ${template.title}`,
+      leading: <CollectionIcon className="h-4 w-4" aria-hidden="true" />,
+    })),
     { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
   const collectionOptions: DropdownSelectOption[] = [
-    ...collections.map(({ id, label, Icon }) => ({ value: `collection:${id}`, label, leading: <Icon className="h-4 w-4" aria-hidden="true" /> })),
+    ...collections.map(({ id, label }) => ({
+      value: `collection:${id}`,
+      label,
+      leading: <CollectionIcon className="h-4 w-4" aria-hidden="true" />,
+    })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
   const tabActions: DropdownSelectOption[] = canAddTab
-    ? tabCandidates.map((path) => ({ value: `add:${path}`, label: `Add ${basename(path)}`, leading: <FolderPlus className="h-4 w-4" aria-hidden="true" /> }))
+    ? tabCandidates.map((path) => ({
+        value: `add:${path}`,
+        label: `Add ${basename(path)}`,
+        leading: <TabIcon className="h-4 w-4" aria-hidden="true" />,
+      }))
     : [];
   const tabOptions: DropdownSelectOption[] = [
-    ...tabs.map(({ path, label }) => ({ value: `tab:${path}`, label })),
+    ...tabs.map(({ path, label }) => ({
+      value: `tab:${path}`,
+      label,
+      leading: <TabIcon className="h-4 w-4" aria-hidden="true" />,
+    })),
   ];
   const chooseCollection = (value: string) => {
     if (value === "raw") return onShowRaw();
@@ -338,7 +356,7 @@ function WorkbenchHierarchyNavigation({
   };
   const chooseTab = (value: string) => onSelectTab(value.slice("tab:".length));
   const runTabAction = (value: string) => onAddTab(value.slice(4));
-  const controls = (probe = false, compact = embedded, icons = iconOnly) => (
+  const controls = (probe = false, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
       <DropdownSelect
         ariaLabel={`Collection: ${collectionTitle}`}
@@ -348,7 +366,7 @@ function WorkbenchHierarchyNavigation({
         value={`collection:${activeCollection}`}
         options={collectionOptions}
         onSelect={chooseCollection}
-        actions={compact ? collectionActions : []}
+        actions={collectionActions}
         onAction={runCollectionAction}
         placement="up"
         // Density is inherited from the chrome band these are portaled into, not
@@ -356,32 +374,29 @@ function WorkbenchHierarchyNavigation({
         controlWidth="slot"
         className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
       />
-      {!compact && <AddCollectionControl available={availableTemplates} onSelect={onAddCollection} onLoad={onLoadCollection} />}
       {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
         <DropdownSelect
           ariaLabel={`Tab: ${tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}`}
           label={tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}
-          leading={<LayoutGrid className="h-4 w-4" aria-hidden="true" />}
+          leading={<TabIcon className="h-4 w-4" aria-hidden="true" />}
           content={icons ? "icon" : "text"}
           value={selectedPath ? `tab:${selectedPath}` : null}
           options={tabOptions}
           onSelect={chooseTab}
-          actions={compact ? tabActions : []}
+          actions={tabActions}
           onAction={runTabAction}
           placement="up"
           controlWidth="slot"
           className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
         />
       )}
-      {!compact && canAddTab && <AddTabControl candidates={tabCandidates} onSelect={onAddTab} />}
     </div>
   );
 
   return (
     <div className="relative min-w-0 max-w-full overflow-hidden">
       {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={fullProbe}>{controls(true, false, false)}</div>
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={compactProbe}>{controls(true, true, false)}</div>
+      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
     </div>
   );
 }
@@ -452,7 +467,7 @@ function ItemTab({
       onPointerLeave={contextSurface.onPointerLeave}
       onClickCapture={contextSurface.onClickCapture}
     >
-      {presentation === "icon" ? <LayoutGrid className="h-4 w-4" aria-hidden="true" /> : label}
+      {presentation === "icon" ? <TabIcon className="h-4 w-4" aria-hidden="true" /> : label}
     </UiButton>
   );
 }
@@ -758,10 +773,21 @@ export function SceneWorkbench({
 
   useEffect(() => setPendingNote(null), [selectedPath]);
 
-  const selectPath = (path: string) => {
-    setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
-    localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
-  };
+  const selectPath = useCallback((path: string, sceneId = activeScene) => {
+    setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));
+    localStorage.setItem(`${storagePrefix}.item.${sceneId}`, path);
+  }, [activeScene, storagePrefix]);
+
+  const onSelectAnnotationFile = useCallback(
+    (path: string) => {
+      const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(path));
+      const targetScene = owner ?? OTHER_SCENE;
+      setActiveScene(targetScene);
+      selectPath(path, targetScene);
+      showRaw(path, true);
+    },
+    [reconciled.items, reconciled.order, selectPath, showRaw]
+  );
 
   const addPathToContext = (path: string) => {
     const item = workbenchFileContextItem(path);
@@ -880,7 +906,7 @@ export function SceneWorkbench({
     label: item.label,
     Icon: item.icon,
   }));
-  const activeCollectionIcon = collectionMenuItems.find((item) => item.id === activeScene)?.Icon ?? LayoutGrid;
+  const activeCollectionIcon = collectionMenuItems.find((item) => item.id === activeScene)?.Icon ?? CollectionIcon;
   const addTabAndSelect = (path: string) => {
     void onAddTab(activeScene, path).then((added) => {
       if (!added) return;
@@ -896,7 +922,7 @@ export function SceneWorkbench({
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <LayoutGrid className="h-5 w-5 text-content-muted" />
+        <CollectionIcon className="h-5 w-5 text-content-muted" />
         <div>
           <div className="text-regular font-medium text-content-secondary">Choose a Collection</div>
           <p className="mt-1 max-w-sm text-compact leading-5 text-content-muted">
@@ -1001,22 +1027,28 @@ export function SceneWorkbench({
                     <FloatingPanelActionPortal
                       action={{
                         id: "annotations",
-                        label: `Notes on ${selectedPath}`,
-                        priority: "secondary",
+                        label: annotations.notes.length === 0
+                          ? (selectedPath ? `Notes on ${selectedPath}` : "Annotations")
+                          : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
+                        priority: "primary",
                         icon: MessageSquare,
                         control: (
                           <AnnotationsButton
                             notes={annotations.notes}
+                            allNotes={annotations.doc.notes}
+                            currentPath={selectedPath}
                             text={session.parsedText}
                             onRemove={onRemoveNote}
                             onReveal={(range) => {
                               showRaw(selectedPath, true);
                               setRevealLine(range.start);
                             }}
+                            onSelectFile={onSelectAnnotationFile}
+                            onAddNote={(entry) => void annotations.add(entry)}
                           />
                         ),
                       }}
-                      active={annotations.notes.length > 0}
+                      active={Boolean(selectedPath || annotations.doc.notes.length > 0)}
                     />
                     <FloatingPanelActionPortal
                       action={{

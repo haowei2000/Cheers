@@ -149,7 +149,12 @@ function DiscussionTopicRow({
             <ChevronRight className={cn(controlIconClasses.regular, "text-content-muted transition-transform group-hover/item:translate-x-0.5")} />
           </span>
         )}
-        className={cn("border-b-0", !selected && "bg-zinc-900/45 hover:bg-zinc-900/80")}
+        className={cn(
+          "rounded-none border-b border-b-control/40 transition-colors",
+          selected
+            ? "border-l-content-strong bg-selected/50 font-medium text-content-strong"
+            : "border-l-transparent bg-transparent hover:bg-control/30 text-content-primary"
+        )}
       />
     </div>
   );
@@ -411,7 +416,7 @@ export function DiscussionView({
             <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-accent-300 hover:text-accent-200">Start the first discussion</UiButton>
           </div>
         ) : (
-          <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
+          <ItemList presentationLevel="medium" controlSize="regular">
             {topics.map((topic) => {
               const selected = selectedId === topic.root.msg_id && !creating;
               return (
@@ -424,7 +429,7 @@ export function DiscussionView({
               );
             })}
             {nextCursor && (
-              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className=" text-content-primary hover:bg-zinc-900 hover:text-content-strong">
+              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className="mt-2 text-content-primary hover:bg-control hover:text-content-strong">
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
               </UiButton>
             )}

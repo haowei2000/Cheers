@@ -5,7 +5,8 @@ import { MenuOption } from "@/components/ui/menu-option";
 import { Tip } from "@/components/ui/tip";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Folder, LayoutGrid, Package, Pin } from "lucide-react";
+import { CollectionIcon } from "@/components/ui/editorial-icons";
+import { Folder, Package, Pin } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
@@ -642,7 +643,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         presentationOrder: ["collapsed"],
         collapsedContent: "icon",
         items: [
-          { id: "collections", label: "Back to Collections", icon: LayoutGrid, onSelect: () => setRawMode(false) },
+          { id: "collections", label: "Back to Collections", icon: CollectionIcon, onSelect: () => setRawMode(false) },
           { id: "raw-workspace-files", label: "Raw workspace files", icon: Folder, selected: true, onSelect: () => undefined },
         ],
       } : undefined}

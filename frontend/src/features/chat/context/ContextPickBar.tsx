@@ -218,7 +218,7 @@ export function ContextPickBar({
             leading={<Icon className="w-3.5 h-3.5" />}
             controlSize="regular"
             presentationLevel="medium"
-            className={`flex-shrink-0 bg-zinc-800/50 text-content-muted ${controlHeightClasses.regular}`}
+            className={`flex-shrink-0 rounded-sm bg-control/30 text-content-muted ${controlHeightClasses.regular}`}
             actions={
               <>
                 <IconButton
@@ -235,7 +235,7 @@ export function ContextPickBar({
                   label={`Dismiss suggestion ${sg.label}`}
                   title="Dismiss suggestion"
                   controlSize="compact"
-                  className="text-content-primary hover:text-content-strong hover:bg-zinc-700"
+                  className="text-content-primary hover:bg-control hover:text-content-strong"
                 >
                   <X className="w-3.5 h-3.5" />
                 </IconButton>
@@ -255,7 +255,7 @@ export function ContextPickBar({
             leading={<Icon className="h-4 w-4 flex-shrink-0 text-content-muted" />}
             presentationLevel="medium"
             controlSize="regular"
-            className="bg-zinc-800/60 text-regular text-content-secondary"
+            className="rounded-sm bg-control/70 text-regular text-content-primary shadow-2xs transition-colors hover:bg-control/90"
             actions={
               <>
                 {jumpTo && (
@@ -264,7 +264,7 @@ export function ContextPickBar({
                     label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
                     title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
                     controlSize="compact"
-                    className="text-content-primary hover:bg-zinc-700 hover:text-accent-300"
+                    className="text-content-primary hover:bg-control hover:text-accent-300"
                   >
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </IconButton>
@@ -274,7 +274,7 @@ export function ContextPickBar({
                   label={`Remove ${it.label}`}
                   title="Remove"
                   controlSize="compact"
-                  className="text-content-primary hover:bg-zinc-700 hover:text-content-strong"
+                  className="text-content-primary hover:bg-control hover:text-content-strong"
                 >
                   <X className="h-3.5 w-3.5" />
                 </IconButton>
@@ -311,7 +311,7 @@ export function ContextPickerButton({
       <UiButton
         action="addContext"
         content="iconText"
-        variant="secondary"
+        variant="plain"
         controlWidth="fill"
         type="button"
         aria-haspopup="menu"

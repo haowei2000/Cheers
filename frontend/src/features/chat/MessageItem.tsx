@@ -21,6 +21,8 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
+import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
+import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
@@ -346,17 +348,7 @@ function ReplyPreview({
  *  `className` lets the own-message (flex-row-reverse) row pin it visually
  *  left via `order-last` so the selection column never flips sides. */
 function SelectBox({ selected, className }: { selected: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "flex items-center justify-center w-4 h-4 mt-2 rounded-sm  flex-shrink-0",
-        selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
-        className
-      )}
-    >
-      {selected && <Check className="w-3.5 h-3.5 text-content-on-accent" />}
-    </span>
-  );
+  return <BallotCheckbox checked={selected} className={cn("mt-2", className)} />;
 }
 
 export const MessageItem = memo(function MessageItem(props: Props) {
@@ -1133,11 +1125,7 @@ function MessageBody({
   if (active && !content && files.length === 0) {
     return (
       <div className="flex items-center gap-2 py-1">
-        <div className="flex items-center gap-1">
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
-        </div>
+        <TypewriterCursor label="Agent thinking" />
         {message._trace && (
           <span className="text-caption-italic truncate">
             {message._trace}
@@ -1185,7 +1173,7 @@ function MessageBody({
           </p>
         ))}
       {message._streaming && (
-        <span className="inline-block w-2 h-4 bg-content-strong animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
+        <TypewriterCursor className="ml-1" />
       )}
       {active && message._trace && (
         <p className="text-caption-italic mt-1">{message._trace}</p>

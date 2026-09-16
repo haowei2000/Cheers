@@ -84,13 +84,15 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
 
   return (
     <div className="p-2 text-compact overflow-auto h-full">
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse font-utility">
         <thead>
-          <tr className="text-content-muted text-left">
+          <tr className="border-b border-control/60 text-left">
             {columns.map((c) => (
-              <th key={c.key} className="p-1 font-normal">{c.label}</th>
+              <th key={c.key} className="px-2 py-1 font-utility text-compact font-medium uppercase tracking-label text-content-muted">
+                {c.label}
+              </th>
             ))}
-            <th />
+            <th className="w-8" />
           </tr>
         </thead>
         <tbody>
@@ -98,7 +100,7 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
             <tr
               key={i}
               data-workbench-context-target="row"
-              className="border-t border-control/60"
+              className="border-b border-control/30 transition-colors hover:bg-control/20"
               onContextMenu={(event) => requestContextPick?.(event, {
                 label: tableRowContextLabel(r, columns, i),
                 sourcePath: [i],
@@ -113,17 +115,27 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
                   ) : readOnly ? (
                     <span className="text-content-secondary">{String(r[c.key] ?? "")}</span>
                   ) : c.options ? (
-                    <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-control text-content-secondary rounded-sm outline-none">
+                    <UiSelect
+                      variant="plain"
+                      controlSize={workbenchControlSize.data}
+                      value={String(r[c.key] ?? "")}
+                      onChange={(e) => update(i, c.key, e.target.value)}
+                    >
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
                     </UiSelect>
                   ) : (
-                    <UiInput controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent text-content-secondary outline-none" />
+                    <UiInput
+                      variant="plain"
+                      controlSize={workbenchControlSize.data}
+                      value={String(r[c.key] ?? "")}
+                      onChange={(e) => update(i, c.key, e.target.value)}
+                    />
                   )}
                 </td>
               ))}
-              <td className="p-1">
+              <td className="p-1 text-right w-8">
                 {!readOnly && (
                   <ResponsiveActionButton
                     action="delete"

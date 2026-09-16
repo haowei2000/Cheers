@@ -322,7 +322,7 @@ export function ChannelSettingsDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              controlSize="regular"
             />
           ) : (
             <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-secondary">
@@ -375,7 +375,7 @@ export function ChannelSettingsDialog({
               value={purpose}
               placeholder="(Optional) what this channel is for…"
               onChange={(e) => setPurpose(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              controlSize="regular"
             />
           ) : (
             <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-muted">

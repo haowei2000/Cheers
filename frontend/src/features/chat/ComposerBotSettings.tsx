@@ -136,16 +136,16 @@ function BotInlineSettings({
   }
 
   const selBase = "rounded-sm text-compact outline-none";
-  const selOn = `${selBase} bg-zinc-800 text-content-secondary focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
+  const selOn = `${selBase} bg-control/60 text-content-secondary focus:ring-1 focus:ring-content-strong/50 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
-  const selOff = `${selBase} bg-zinc-900/30 text-content-primary opacity-50 cursor-not-allowed appearance-none`;
+  const selOff = `${selBase} bg-control/20 text-content-muted opacity-50 cursor-not-allowed appearance-none`;
 
   // Effective current values: optimistic overlay → session override → bot/agent default.
   const mode = localMode ?? targetSession?.session_config?.permission_mode ?? controls.current_mode ?? "";
   const canMode = controls.can_set_mode && !!target;
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-zinc-800/60 px-2 py-1">
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-control/40 px-2 py-1">
       <span className="inline-flex items-center gap-1">
         <SlidersHorizontal className="w-3.5 h-3.5 text-content-muted" />
         <span className="text-compact font-medium text-content-secondary">@{bot.name}</span>
