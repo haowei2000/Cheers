@@ -3,35 +3,26 @@
 @tailwind utilities;
 
 @layer components {
-  /* Floating chrome is a solid paper material, not a translucent plastic.
-     Its tone, contrast and hairline are tokens: resting surfaces stack as physical
-     paper sheets with a crisp 1px boundary and controlled print elevation.
-     Islands are the innermost surface of the chrome they sit in, so they own the
-     radius their own padding earns instead of inheriting the containing window's. */
+  /* Grounded panel chrome is a solid paper surface with crisp hairline boundary,
+     not a translucent elevated plastic HUD with 28px drop shadows. */
   .floating-control-surface {
     --concentric-inset: 0.25rem;
-    background-color: rgb(var(--surface-panel) / var(--glass-alpha-opaque));
-    box-shadow:
-      0 12px 28px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
-      0 2px 8px -1px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.3)),
-      inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
+    background-color: rgb(var(--surface-panel));
+    box-shadow: inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
   }
 
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-panel) / var(--glass-alpha));
-      -webkit-backdrop-filter: blur(8px) brightness(var(--glass-brightness));
-      backdrop-filter: blur(8px) brightness(var(--glass-brightness));
-      box-shadow:
-        0 12px 28px -4px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.5)),
-        0 2px 8px -1px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.3)),
-        inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
+      background-color: rgb(var(--surface-panel));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha));
     }
   }
 
   @media (prefers-reduced-transparency: reduce) {
     .floating-control-surface {
-      background-color: rgb(var(--surface-panel) / 1);
+      background-color: rgb(var(--surface-panel));
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }

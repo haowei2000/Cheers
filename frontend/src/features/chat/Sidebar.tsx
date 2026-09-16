@@ -86,11 +86,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
           ) : channel.type === "dm" ? (
             <Avatar name={channel.name} id={channel.channel_id} size="small" />
           ) : channel.type === "private" ? (
-            <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-content-muted/70">
+            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
               <Lock className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           ) : (
-            <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-content-muted/70">
+            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
               <Hash className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           )
@@ -104,7 +104,9 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
         criticalStatus={unread}
         className={cn(
           "rounded-sm border-b-0 transition-all duration-100",
-          selected && "border-l-selected-indicator bg-selected font-semibold text-content-strong shadow-xs ring-1 ring-inset ring-selected-indicator/60"
+          selected
+            ? "border-l-content-strong bg-panel font-semibold text-content-strong"
+            : "border-l-transparent text-content-primary hover:bg-control/60 hover:text-content-strong"
         )}
       />
       {voiceEnabled && participants.length > 0 && (

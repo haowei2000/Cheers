@@ -546,7 +546,7 @@ export function FloatingPanel({
           <PanelContextContext.Provider value={contextHost}>
           {/* Navigation and actions are two single-line islands. The measured action
               island determines the exact width available to navigation. */}
-          <div ref={setChromeElement} className={cn("pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:flex", managed && !managed.floating ? "opacity-100" : "opacity-0")}>
+          <div ref={setChromeElement} className="pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden md:flex">
             <ButtonGroup
               label="Panel navigation and options"
               floating
