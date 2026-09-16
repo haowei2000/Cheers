@@ -1,6 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { listChannelFiles } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { Dialog } from "@/components/ui/dialog";
@@ -86,14 +87,7 @@ export function ExistingFilePicker({
  : "hover:bg-zinc-800/60")
  }
               >
-                <span
-                  className={
-                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm  " +
-                    (checked ? "border-indigo-500 bg-indigo-600 text-content-on-accent" : "border-zinc-600")
-                  }
-                >
-                  {checked && <Check className="w-3.5 h-3.5" />}
-                </span>
+                <BallotCheckbox checked={checked} />
                 <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
                 <span
                   className="min-w-0 flex-1 truncate text-regular text-content-secondary"

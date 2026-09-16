@@ -89,7 +89,7 @@ export function NewSessionDialog({
             value={botId}
             disabled={busy}
             onChange={(e) => setBotId(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular"
           >
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
@@ -108,7 +108,8 @@ export function NewSessionDialog({
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
-            controlSize="regular" className="rounded-sm bg-zinc-800 font-code text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular"
+            className="font-code text-compact"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
@@ -143,7 +144,8 @@ export function NewSessionDialog({
             rows={2}
             placeholder={"/abs/extra-root"}
             onChange={(e) => setDirs(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 font-code text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular"
+            className="font-code text-compact"
           />
           <span className="block text-minimal text-content-muted">One absolute path per line.</span>
         </label>

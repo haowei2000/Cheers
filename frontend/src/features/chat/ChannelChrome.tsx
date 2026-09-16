@@ -29,7 +29,7 @@ export function ChannelChrome({
   }
 
   return (
-    <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-zinc-950/80 px-4 backdrop-blur-sm max-md:gap-1 max-md:px-2">
+    <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-300/40 bg-panel px-4 dark:border-zinc-800/60 max-md:gap-1 max-md:px-2">
       {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
       {onBack && (
         <UiButton
@@ -49,9 +49,14 @@ export function ChannelChrome({
       ) : (
         <Hash className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       )}
-      <span className="min-w-0 truncate text-regular font-semibold text-content-primary max-md:pl-1">
-        {title}
-      </span>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 truncate text-regular font-semibold text-content-primary max-md:pl-1">
+          {title}
+        </span>
+        <span className="hidden font-code text-minimal uppercase tracking-overline text-content-muted/75 lg:inline-block">
+          DISPATCH
+        </span>
+      </div>
       {purpose && (
         <div className="hidden min-w-0 items-center gap-3 pl-1 md:flex">
           <span className="truncate text-compact text-content-muted">{purpose}</span>

@@ -9,7 +9,7 @@ const sizeClasses: Record<ContentSize, string> = {
 };
 
 const toneClasses = {
-  unread: "bg-indigo-600 text-content-on-accent",
+  unread: "bg-accent-600 text-content-on-accent",
   mention: "bg-rose-600 text-content-on-accent",
   approval: "bg-amber-600 text-content-on-accent",
 } as const;

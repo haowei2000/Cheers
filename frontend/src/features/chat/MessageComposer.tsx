@@ -780,14 +780,14 @@ function MessageComposerImpl({
           along the bottom. The ring is the focus state — no resting border. */}
       <div
         className={cn(
-          "rounded-sm bg-zinc-800/80 transition-[background-color,box-shadow]",
+          "rounded-sm bg-panel transition-colors shadow-2xs",
           disabled
             ? "opacity-60"
-            : "focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50"
+            : "focus-within:ring-1 focus-within:ring-content-strong/40"
         )}
       >
         {contextBar && (
-          <div className="min-w-0 px-1 pt-1">
+          <div className="min-w-0 border-b border-control/60 bg-control/20 px-2 py-1">
             {contextBar}
           </div>
         )}
@@ -824,7 +824,7 @@ function MessageComposerImpl({
             className={cn(
  "disabled:opacity-50",
  dictating
- ? "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25 animate-pulse": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50",
+ ? "bg-rose-500/15 text-removed-300 hover:bg-rose-500/25 animate-pulse": "text-content-primary hover:text-content-strong hover:bg-control",
  )}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
@@ -845,7 +845,7 @@ function MessageComposerImpl({
               className={cn(
  "disabled:opacity-50",
  attachMenuOpen
- ? "text-content-primary bg-zinc-700/50": "text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
+ ? "text-content-primary bg-control": "text-content-primary hover:text-content-strong hover:bg-control"
  )}
               title="Attach file"
             >
@@ -893,7 +893,7 @@ function MessageComposerImpl({
               onClick={openCommandPicker}
               disabled={disabled || sending}
               controlSize="regular"
-              className="disabled:opacity-50 text-content-primary hover:text-content-strong hover:bg-zinc-700/50"
+              className="disabled:opacity-50 text-content-primary hover:text-content-strong hover:bg-control"
               label="Insert a command"
               title="Commands (/)"
             >
@@ -913,7 +913,7 @@ function MessageComposerImpl({
               onClick={() => void stopStreaming()}
               disabled={stopping}
               controlSize="regular"
-              className="bg-zinc-700/50 text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
+              className="bg-control text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
               label={stopTitle}
               title={stopTitle}
             >
@@ -926,9 +926,10 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Send message"
               className={cn(
- canSend
- ? "bg-indigo-600 text-content-on-accent hover:bg-indigo-500 cursor-pointer shadow-sm": "bg-zinc-700/50 text-content-primary opacity-50 cursor-not-allowed"
- )}
+                canSend
+                  ? "bg-content-strong text-content-on-light hover:opacity-90 active:scale-[0.98] cursor-pointer shadow-sm"
+                  : "bg-control text-content-primary opacity-50 cursor-not-allowed"
+              )}
               title="Send message"
             >
               <SendHorizontal className="w-4 h-4" />

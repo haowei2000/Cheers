@@ -16,6 +16,7 @@ import {
 import { ArrowLeft, Columns2, Rows2 } from "lucide-react";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/cn";
 import {
   ManagedPanelProvider,
   type ManagedPanel,
@@ -575,16 +576,34 @@ export function PanelWorkspace({
       >
         {!layout.sideBySide && hasDock && (
           <ButtonGroup
+            role="tablist"
             label="Conversation view"
             controlSize="regular"
-            className="shrink-0 px-3 py-1"
+            className="shrink-0 border-b border-control/80 px-3 py-1"
           >
-            <ControlTrigger selected={!showWork} onClick={showMessages}>
+            <ControlTrigger
+              role="tab"
+              selected={!showWork}
+              onClick={showMessages}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                !showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
+            >
               Messages
             </ControlTrigger>
             <ControlTrigger
+              role="tab"
               selected={showWork}
               onClick={() => setShowWork(true)}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               Workspace
             </ControlTrigger>
@@ -654,7 +673,7 @@ export function PanelWorkspace({
           )}
           <aside
             data-workspace-dock=""
-            className="flex min-h-0 shrink-0 flex-col bg-panel/40"
+            className="flex min-h-0 shrink-0 flex-col border-l border-control/80 bg-panel"
             style={{
               width: hasDock
                 ? layout.sideBySide
@@ -669,7 +688,7 @@ export function PanelWorkspace({
               <ButtonGroup
                 label="Workspace panels"
                 controlSize="compact"
-                className="shrink-0 flex-wrap p-1"
+                className="shrink-0 flex-wrap border-b border-control/80 bg-panel px-2 py-1"
               >
                 {!layout.sideBySide && (
                   <IconButton label="Back to messages" onClick={showMessages}>
@@ -684,6 +703,13 @@ export function PanelWorkspace({
                       setActive(panel.id);
                       remember(requestedWidth, split, ratio, panel.id);
                     }}
+                    role="tab"
+                    className={cn(
+                      "rounded-none border-b-2 bg-transparent shadow-none ring-0",
+                      effectiveActive === panel.id
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
+                    )}
                   >
                     {panel.label}
                   </ControlTrigger>

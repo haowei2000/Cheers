@@ -492,7 +492,7 @@ export function FloatingPanel({
         // Absolute inside the canvas, fixed over the viewport (drag.style sets the
         // matching `position` so this only decides the fallback box).
         isMobile ? "fixed" : drag.bounded ? "absolute" : "fixed",
-        "group/floating-panel floating-panel-surface pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:0.5rem] backdrop-blur-xl",
+        "group/floating-panel floating-panel-surface pointer-events-auto flex flex-col overflow-hidden rounded-concentric [--concentric-inset:0.5rem]",
         // Cap to the box, leaving a 2rem inset in the canvas so a default-spawned
         // window (and its bottom-right resize grip) always fits inside the
         // overflow-clip; or short of the composer over the viewport.
@@ -529,14 +529,14 @@ export function FloatingPanel({
               context="disclosure"
               onClick={toggleCollapsed}
               accessibleLabel="Expand panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
             <ActionButton
               action="close"
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
           </ButtonGroup>
           {summaryEl}
@@ -546,7 +546,7 @@ export function FloatingPanel({
           <PanelContextContext.Provider value={contextHost}>
           {/* Navigation and actions are two single-line islands. The measured action
               island determines the exact width available to navigation. */}
-          <div ref={setChromeElement} className={cn("pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 md:flex", managed && !managed.floating ? "opacity-100" : "opacity-0")}>
+          <div ref={setChromeElement} className="pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden md:flex">
             <ButtonGroup
               label="Panel navigation and options"
               floating
@@ -635,7 +635,7 @@ export function FloatingPanel({
                 context="windowChrome"
                 onClick={onClose}
                 accessibleLabel="Close panel"
-                className="text-content-primary hover:bg-control hover:text-content-strong"
+                className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
               />
             </ButtonGroup>
           </div>
@@ -655,7 +655,7 @@ export function FloatingPanel({
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
             </ButtonGroup>
           </div>

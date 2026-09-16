@@ -1,6 +1,7 @@
 import { useManagedPanel } from "@/components/ui/managed-panel";
 import { Button as UiButton } from "@/components/ui/button";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
+import { cn } from "@/lib/cn";
 import { workbenchControlSize } from "./workbench-control";
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
 // SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
@@ -301,7 +302,7 @@ function ViewBoardDrawerImpl({
             controlSize="compact"
             onClick={addActiveBoardToContext}
             title={addToContextTitle("this board")}
-            className="rounded-sm text-content-primary hover:bg-control hover:text-accent-300"
+            className="rounded-sm text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           >
             <Plus className="w-3.5 h-3.5" />
           </UiButton>
@@ -320,7 +321,7 @@ function ViewBoardDrawerImpl({
       )}
     >
       <div
-        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control px-0 py-1 md:hidden"
+        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-0 py-1 md:hidden"
         role="tablist"
         aria-label="ViewBoard sections"
       >
@@ -336,7 +337,12 @@ function ViewBoardDrawerImpl({
               key={b.id}
               onClick={() => setActive(b.id)}
               controlSize="regular"
-              className="inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap text-content-primary transition-colors hover:text-content-strong"
+              className={cn(
+                "inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap transition-colors rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                isActive
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               {Icon && <Icon className="w-3.5 h-3.5" />}
               {b.title}

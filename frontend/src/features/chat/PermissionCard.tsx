@@ -240,7 +240,12 @@ export function PermissionCard({
       <div className="flex items-center gap-2 py-1 text-compact">
         <span
           className={cn(
-            expired ? "text-content-muted" : ok ? "text-content-muted" : "text-danger-400"
+            "inline-flex items-center font-code text-minimal uppercase tracking-label px-2 py-1 rounded-sm",
+            expired
+              ? "bg-zinc-800/50 text-content-muted"
+              : ok
+                ? "bg-zinc-800 text-content-primary"
+                : "bg-danger-900/30 text-danger-300"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
@@ -331,7 +336,9 @@ export function PermissionCard({
           touchDisclosure={false}
         />
         {compact && (
-          <span className="shrink-0 text-minimal text-warning-400/90">Needs approval</span>
+          <span className="shrink-0 rounded-sm bg-warning-950/40 px-2 py-1 font-code text-minimal uppercase tracking-label text-warning-300">
+            Needs approval
+          </span>
         )}
         {!embedded && (
           <ActionButton action="collapse" context="disclosure"

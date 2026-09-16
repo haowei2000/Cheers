@@ -1,5 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
+import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { PresenceDot } from "@/components/ui/presence-dot";
@@ -1503,21 +1505,39 @@ export function RemoteWorkspaceDialog({
           <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
-              <div className="flex items-center gap-1 px-2 py-2 border-b border-control md:hidden">
-                <UiButton variant="plain" role="tab" aria-selected={leftView === "files"} selected={leftView === "files"}
+              <div role="tablist" aria-label="Workspace views" className="flex items-center gap-1 px-2 py-2 border-b border-control/80 md:hidden">
+                <UiButton
+                  variant="plain"
+                  role="tab"
+                  aria-selected={leftView === "files"}
+                  selected={leftView === "files"}
                   onClick={() => {
                     setLeftView("files");
                     setDiff(null);
                   }}
                   controlSize="regular"
-                  className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
+                  className={cn(
+                    "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                    leftView === "files"
+                      ? "border-content-strong text-content-strong font-semibold"
+                      : "border-transparent text-content-primary",
+                  )}
                 >
                   Files
                 </UiButton>
-                <UiButton variant="plain" role="tab" aria-selected={leftView === "changes"} selected={leftView === "changes"}
+                <UiButton
+                  variant="plain"
+                  role="tab"
+                  aria-selected={leftView === "changes"}
+                  selected={leftView === "changes"}
                   onClick={() => setLeftView("changes")}
                   controlSize="regular"
-                  className="flex items-center gap-1 rounded-sm text-content-primary transition-colors hover:text-content-strong"
+                  className={cn(
+                    "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                    leftView === "changes"
+                      ? "border-content-strong text-content-strong font-semibold"
+                      : "border-transparent text-content-primary",
+                  )}
                 >
                   Changes
                   {git.entries.length > 0 && (
@@ -1526,10 +1546,20 @@ export function RemoteWorkspaceDialog({
                     </span>
                   )}
                 </UiButton>
-                <UiButton content="iconText" variant="plain" role="tab" aria-selected={leftView === "history"} selected={leftView === "history"}
+                <UiButton
+                  content="iconText"
+                  variant="plain"
+                  role="tab"
+                  aria-selected={leftView === "history"}
+                  selected={leftView === "history"}
                   onClick={() => setLeftView("history")}
                   controlSize="regular"
-                  className="flex items-center gap-1 rounded-sm text-content-primary transition-colors hover:text-content-strong"
+                  className={cn(
+                    "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                    leftView === "history"
+                      ? "border-content-strong text-content-strong font-semibold"
+                      : "border-transparent text-content-primary",
+                  )}
                 >
                   <History className="w-3.5 h-3.5" /> History
                 </UiButton>

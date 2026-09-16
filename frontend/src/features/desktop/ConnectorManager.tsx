@@ -690,7 +690,8 @@ export function ConnectorManager() {
               placeholder="agbpair_…"
               autoFocus
               spellCheck={false}
-              controlSize="regular" className="rounded-sm bg-zinc-800 text-regular font-code text-content-primary placeholder:text-content-muted outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular"
+              className="font-code"
             />
             <p className="text-compact text-content-muted">
               Codes are single-use and expire after about 15 minutes. Using one
@@ -1031,7 +1032,7 @@ function OnboardForm(props: {
             id="onb-bot"
             value={p.existingBotId}
             onChange={(e) => p.setExistingBotId(e.target.value)}
-            controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular"
           >
             {p.bots.length === 0 && <option value="">No manageable bots</option>}
             {p.bots.map((b) => (

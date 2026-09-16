@@ -244,7 +244,8 @@ export function WorkspaceSettingsDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 text-regular text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              controlSize="regular"
+              className="flex-1"
             />
           ) : (
             <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-secondary">

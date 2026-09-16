@@ -125,7 +125,7 @@ function PanelRefreshAction({
           title="Refresh"
           disabled={loading}
           onClick={onRefresh}
-          className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong"
+          className="rounded-sm text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </UiButton>

@@ -201,6 +201,15 @@ be scanned as a table; underline *indicators* remain for tabs. Rings appear
 as field boundaries and **states**: neutral (`ring-zinc-600`), focus
 (`ring-indigo-500`), and error (`ring-red-500`).
 
+### Physical paper stacking & epistolary elements (E-Ink / Paper)
+
+- **Substrates & carbon ink**: Light mode uses warm uncoated bond paper (`#FAF8F4` canvas, `#FFFEFC` panel, `#F3F0E8` rail/substrate); dark mode uses carbon slate stone (`#161719` canvas, `#1E1F23` panel). Foreground copy uses the four-tier carbon ink ladder (`#0F1012` dense carbon ink, `#1C1D20` primary, `#403F3C` secondary, `#686660` muted) exceeding WCAG AAA standards.
+- **De-glassification (Solid Paper Stacking)**: Floating windows (`FloatingPanel`), diff headers, and floating action layers rely on physical paper stacking (`.floating-panel-surface`, `.elevation-raised`, `.elevation-overlay`), using opaque paper fills, 1px hairline perimeter rules, and controlled elevation shadows. Translucent glassmorphism (`backdrop-blur`) is avoided across all interactive surfaces.
+- **Dispatch chrome & typewriter cursor**: Channel headers feature an uppercase tracking `DISPATCH` label. Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
+- **Seal stamp authorizations**: Bot trace cards and permission requests render sign-off states as uppercase monospace seal stamps (`[✓ Approved]`, `[✕ Denied]`, `[Needs approval]`) using vermilion (`--tone-danger`) and seal wax amber (`--tone-warning`).
+- **Dispatch send action**: Primary message dispatch uses solid carbon ink (`bg-content-strong text-content-on-light`) with tactile active scale response.
+
+
 ### Typography
 
 All production text uses exactly four semantic size tokens: `text-minimal`

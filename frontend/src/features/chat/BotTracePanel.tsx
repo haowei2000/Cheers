@@ -324,7 +324,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular"
-                className="flex items-center gap-2 rounded-sm text-left text-content-primary transition-colors hover:text-content-strong"
+                className={cn("flex items-center gap-2 rounded-sm text-left transition-colors", !active && "text-content-primary hover:text-content-strong")}
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-compact">
@@ -572,11 +572,17 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </div>
         <span
           className={cn(
-            "shrink-0 text-compact",
-            pending ? "text-warning-400/90" : ok ? "text-content-muted" : denied || expired ? "text-danger-400" : "text-content-muted",
+            "shrink-0 font-code text-minimal uppercase tracking-label px-2 py-1 rounded-sm",
+            pending
+              ? "bg-warning-950/40 text-warning-300"
+              : ok
+                ? "bg-zinc-800 text-content-primary"
+                : denied || expired
+                  ? "bg-danger-900/30 text-danger-300"
+                  : "bg-zinc-800/40 text-content-muted",
           )}
         >
-          {pending ? "Needs approval" : expired ? "Expired" : ok ? "Approved" : denied ? "Denied" : statusLabel(event.status ?? "Done")}
+          {pending ? "Needs approval" : expired ? "Expired" : ok ? "✓ Approved" : denied ? "✕ Denied" : statusLabel(event.status ?? "Done")}
         </span>
       </header>
       {command && (
@@ -702,7 +708,7 @@ function TraceItem({
           </span>
         )}
         {statusText && (
-          <span className={cn("shrink-0 text-minimal", statusTone)}>
+          <span className={cn("shrink-0 font-code text-minimal uppercase tracking-label px-1 py-1 rounded-sm bg-zinc-900/50", statusTone)}>
             {statusText}
           </span>
         )}
