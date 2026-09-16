@@ -76,7 +76,7 @@ function AdaptiveItemControl({
   return (
     <Button
       type="button"
-      variant="plain"
+      variant={item.priority === "primary" ? "primary" : "plain"}
       content={iconOnly ? "icon" : "text"}
       controlWidth="content"
       controlSize={controlSize}

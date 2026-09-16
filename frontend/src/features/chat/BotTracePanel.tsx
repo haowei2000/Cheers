@@ -324,7 +324,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular"
-                className="flex items-center gap-2 rounded-sm text-left text-content-primary transition-colors hover:text-content-strong"
+                className={cn("flex items-center gap-2 rounded-sm text-left transition-colors", !active && "text-content-primary hover:text-content-strong")}
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-compact">

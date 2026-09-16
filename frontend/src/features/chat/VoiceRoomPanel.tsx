@@ -398,24 +398,24 @@ export function VoiceRoomPanel({
       )}
 
       {consentRequired && connected && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-compact">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-elevation-edge/40 bg-control/40 px-3 py-2 text-compact">
           <p className="min-w-0 flex-1 text-content-secondary">
             Live captions send final spoken text to this channel; audio is not recorded.
           </p>
-          <UiButton action="accept" variant="plain"
+          <UiButton action="accept" variant="primary"
             type="button"
             disabled={consenting}
             onClick={() => void grantConsent()}
-            controlSize="comfortable" className="inline-flex items-center gap-1 rounded-sm bg-indigo-500 font-medium text-content-on-accent hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+            controlSize="comfortable" className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:opacity-50"
           >
             {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
             Accept &amp; speak
           </UiButton>
-          <UiButton action="cancel" variant="plain"
+          <UiButton action="cancel" variant="secondary"
             type="button"
             disabled={consenting}
             onClick={() => setConsentRequired(false)}
-            controlSize="comfortable" className="rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+            controlSize="comfortable"
           >
             Listen only
           </UiButton>

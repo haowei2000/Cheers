@@ -529,14 +529,14 @@ export function FloatingPanel({
               context="disclosure"
               onClick={toggleCollapsed}
               accessibleLabel="Expand panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
             <ActionButton
               action="close"
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
           </ButtonGroup>
           {summaryEl}
@@ -635,7 +635,7 @@ export function FloatingPanel({
                 context="windowChrome"
                 onClick={onClose}
                 accessibleLabel="Close panel"
-                className="text-content-primary hover:bg-control hover:text-content-strong"
+                className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
               />
             </ButtonGroup>
           </div>
@@ -655,7 +655,7 @@ export function FloatingPanel({
               context="windowChrome"
               onClick={onClose}
               accessibleLabel="Close panel"
-              className="text-content-primary hover:bg-control hover:text-content-strong"
+              className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
             />
             </ButtonGroup>
           </div>

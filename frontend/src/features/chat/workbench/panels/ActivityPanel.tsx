@@ -353,7 +353,7 @@ function FlowEpisode({
   onJump?: (msgId: string) => void;
 }) {
   return (
-    <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
+    <div className={cn(expanded && "bg-selected/70")}>
       <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded} selected={expanded}
         type="button"
         onClick={onToggle}
@@ -421,10 +421,10 @@ function ParticipantStrip({
               content="icon"
               controlSize="compact"
               className={cn(
- "relative rounded-full ring-2 transition-[box-shadow,opacity]",
- active ? "ring-indigo-500": "ring-panel",
- dim && !active && "opacity-50 hover:opacity-100"
- )}
+                "relative rounded-full ring-2 transition-[box-shadow,opacity]",
+                active ? "ring-selected-indicator": "ring-panel",
+                dim && !active && "opacity-50 hover:opacity-100"
+              )}
             >
               <Avatar
                 name={name}
@@ -602,7 +602,10 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 type="button"
                 onClick={() => setLens(l)}
                 controlSize={FLOATING_CHROME_CONTROL_SIZE}
-                className="rounded-sm capitalize text-content-primary transition-colors hover:text-content-strong"
+                className={cn(
+                  "rounded-sm capitalize transition-colors",
+                  lens !== l && "text-content-primary hover:text-content-strong",
+                )}
               >
                 {l}
               </UiButton>
@@ -727,11 +730,11 @@ function MemberFilter({
                   >
                     <span
                       className={cn(
-                        "flex items-center justify-center w-3.5 h-3.5 rounded-sm  flex-shrink-0",
-                        on ? "border-indigo-400 bg-indigo-500/80" : "border-zinc-600"
+                        "flex items-center justify-center w-3.5 h-3.5 rounded-sm flex-shrink-0",
+                        on ? "border-content-strong bg-content-strong text-content-on-light" : "border-control"
                       )}
                     >
-                      {on && <Check className="h-3.5 w-3.5 text-content-on-accent" />}
+                      {on && <Check className="h-3.5 w-3.5 text-content-on-light" />}
                     </span>
                     <Avatar
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}

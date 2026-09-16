@@ -654,7 +654,7 @@ export function PanelWorkspace({
           )}
           <aside
             data-workspace-dock=""
-            className="flex min-h-0 shrink-0 flex-col bg-panel/40"
+            className="flex min-h-0 shrink-0 flex-col border-l border-control/80 bg-panel"
             style={{
               width: hasDock
                 ? layout.sideBySide
@@ -669,7 +669,7 @@ export function PanelWorkspace({
               <ButtonGroup
                 label="Workspace panels"
                 controlSize="compact"
-                className="shrink-0 flex-wrap p-1"
+                className="shrink-0 flex-wrap border-b border-control/80 bg-panel px-2 py-1"
               >
                 {!layout.sideBySide && (
                   <IconButton label="Back to messages" onClick={showMessages}>

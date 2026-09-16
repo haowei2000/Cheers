@@ -179,7 +179,10 @@ function SceneTab({
       type="button"
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong"
+      className={cn(
+        "flex-shrink-0 gap-1 rounded-sm transition-colors",
+        !selected && "text-content-primary hover:text-content-strong",
+      )}
       {...contextHandlers}
     >
       {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
@@ -433,7 +436,8 @@ function ItemTab({
       aria-current={selected ? "page" : undefined}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-sm text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500",
+        "flex-shrink-0 gap-1 rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
+        !selected && "text-content-primary hover:text-content-strong",
       )}
       onContextMenu={contextSurface.onContextMenu}
       onKeyDown={contextSurface.onKeyDown}
@@ -903,7 +907,7 @@ export function SceneWorkbench({
               if (manifest) void onAddScene(manifest);
               event.currentTarget.value = "";
             }}
-            controlSize={workbenchControlSize.tab} className="rounded-sm bg-indigo-600 text-compact font-medium text-content-on-accent outline-none"
+            controlSize={workbenchControlSize.tab} className="rounded-sm bg-content-strong text-compact font-medium text-content-on-light outline-none"
           >
             <option value="" disabled>Add a Collection…</option>
             {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
@@ -915,7 +919,7 @@ export function SceneWorkbench({
           wideLabel="Load .cheers-extension…"
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-control text-content-primary hover:bg-control-hover"
+          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         />
       </div>
     );

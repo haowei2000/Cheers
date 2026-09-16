@@ -157,10 +157,10 @@ export function BotDetailPanel({
   const name = bot.display_name || bot.username;
 
   return (
-    <div className="rounded-sm bg-zinc-900">
+    <div className="rounded-sm bg-panel">
       {/* Identity header — the avatar is the upload entry (managers); presence dot
           per §2.7 sits on it, with the online/offline pill carrying the text. */}
-      <div className="flex items-start gap-3 pb-4 border-b border-zinc-800">
+      <div className="flex items-start gap-3 pb-4 border-b border-control/80">
         <div className="relative flex-shrink-0">
           {bot.can_manage ? (
             <AvatarUpload
@@ -214,7 +214,7 @@ export function BotDetailPanel({
       </div>
 
       {/* Tab strip */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-800">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-control/80">
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
@@ -223,7 +223,7 @@ export function BotDetailPanel({
               type="button"
               onClick={() => setTab(id)}
               controlSize="regular"
-              className="inline-flex items-center gap-2 font-medium text-content-primary transition-colors hover:text-content-strong"
+              className={cn("inline-flex items-center gap-2 font-medium transition-colors", !active && "text-content-primary hover:text-content-strong")}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
@@ -393,7 +393,7 @@ function BotOverview({
       </div>
 
       {bot.can_manage && (
-        <section className="flex items-center justify-between gap-3 border-t border-zinc-800 pt-4">
+        <section className="flex items-center justify-between gap-3 border-t border-control/80 pt-4">
           <SectionHead className="mb-0">Bot controls</SectionHead>
           <div className="flex items-center gap-2">
             <Tip align="end" content={bot.is_disabled ? "Enable bot — allow its host to reconnect." : "Disable bot — disconnect its host and keep it offline. Channels and history are kept."}>
@@ -669,7 +669,7 @@ function BotStatusEditor({
         </Field>
       </div>
 
-      <div className="border-t border-zinc-800 pt-4">
+      <div className="border-t border-control/80 pt-4">
         <CheckboxField
           label="Sends channel data to an external AI provider"
           checked={externalProcessor}
@@ -694,7 +694,7 @@ function BotStatusEditor({
       </div>
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
-      <div className="border-t border-zinc-800 pt-4">
+      <div className="border-t border-control/80 pt-4">
         <div className="flex flex-wrap items-center gap-2">
         <CheckboxField
           label="Auto-refresh status"

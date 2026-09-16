@@ -43,10 +43,12 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
         aria-expanded={ariaExpanded}
         aria-pressed={role === "tab" || ariaExpanded !== undefined ? undefined : selected || undefined}
         className={cn(
-          "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden rounded-sm font-utility text-regular font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden rounded-sm font-utility text-regular font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50",
           square ? controlSquareClasses[size] : controlHeightClasses[size],
           !square && (controlWidth === "fill" ? "w-full" : "w-24 max-w-full px-3"),
-          selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active",
+          selected
+            ? "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active shadow-sm"
+            : "text-content-primary hover:bg-control hover:text-content-strong active:bg-control-active",
           className,
         )}
         {...props}

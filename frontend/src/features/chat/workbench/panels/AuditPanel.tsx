@@ -245,7 +245,7 @@ function AuditRow({
         trailing={<span className="text-minimal tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-content-primary hover:text-accent-300">
+            <UiButton action="open" content="icon" variant="plain" type="button" aria-label="Jump to source message" title="Jump to source message" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active">
               <MessageSquareText className="h-3.5 w-3.5" />
             </UiButton>
           )}
@@ -256,7 +256,7 @@ function AuditRow({
             title={open ? "Hide audit details" : "Show audit details"}
             aria-expanded={open}
             onClick={onToggleDetails}
-            className="text-content-primary hover:text-content-strong"
+            className="text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           >
             <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
           </UiButton>

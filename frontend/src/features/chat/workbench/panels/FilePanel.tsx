@@ -475,7 +475,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <Check className="w-3.5 h-3.5 text-danger-400 hover:text-danger-300" />
         </UiButton>
@@ -485,7 +485,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           aria-label="Cancel delete"
           title="Cancel"
           onClick={() => setConfirmDel(null)}
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <X className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -497,7 +497,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
         onClick={() => setConfirmDel(path)}
-        className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
       >
         <Trash2 className="w-3.5 h-3.5 text-content-muted hover:text-danger-400" />
       </UiButton>
@@ -532,7 +532,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   if (isCollapsed) toggleCollapse(node.path);
                   beginCreate(node.path);
                 }}
-                className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
               >
                 <Plus className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
               </UiButton>
@@ -586,7 +586,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => void refresh()}
           aria-label="Refresh file tree"
           title="Refresh"
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <RefreshCw className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -596,7 +596,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(false)}
           aria-label="Hide file tree"
           title="Hide file tree"
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftClose className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -622,7 +622,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
