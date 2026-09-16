@@ -13,11 +13,16 @@ import { TitleTooltip } from "./components/ui/title-tooltip";
 import { ContextActionsProvider } from "./components/ui/context-actions";
 import "./index.css";
 import { queryClient } from "./lib/queryClient";
+import { watchPointerIntent } from "./lib/hoverIntent";
 
 // PWA service worker (precached shell + Web Push, see src/sw.ts). immediate:
 // update checks run on load; registerType autoUpdate swaps the SW in place.
 // No-op in dev — vite-plugin-pwa devOptions are off.
 registerSW({ immediate: true });
+
+// Before the first frame: nothing is hovered until the pointer says otherwise, so
+// the opening paint never arrives with a row already lit. See lib/hoverIntent.ts.
+watchPointerIntent();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

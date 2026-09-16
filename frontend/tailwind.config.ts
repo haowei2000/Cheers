@@ -1,5 +1,6 @@
 import type { Config } from "tailwindcss";
 import colors from "tailwindcss/colors";
+import plugin from "tailwindcss/plugin";
 
 // The product historically used Tailwind's electric indigo as its default
 // accent. Keep the semantic class name while existing call sites migrate, but
@@ -157,5 +158,28 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addVariant, matchVariant }) => {
+      // `:hover` is positional: it starts matching the moment content mounts under a
+      // stationary cursor, and no pointer event ever arrives to clear it. Gate every
+      // hover utility on evidence that the pointer moved, so a page never opens with
+      // a row already lit. The flag is owned by src/lib/hoverIntent.ts.
+      //
+      // The guard hangs off the utility rather than sitting in front of the selector:
+      // a `:root:not(...)` prefix swallowed Tailwind's named-group rewriting, so
+      // `group-hover/floating-panel` came out keyed to a bare `.group` and fired for
+      // any group on the page. `:where()` also keeps it at zero specificity, so gated
+      // utilities win and lose exactly the arguments they did before.
+      const idle = ":not(:where([data-pointer-idle] *))";
+      addVariant("hover", `&:hover${idle}`);
+      // Named groups come from the variant's modifier, which is why this is
+      // matchVariant: a plain override loses the rewriting described above.
+      matchVariant(
+        "group-hover",
+        (_value, { modifier }) =>
+          `:merge(.group${modifier ? `\\/${modifier}` : ""}):hover &${idle}`,
+        { values: { DEFAULT: "" } },
+      );
+    }),
+  ],
 } satisfies Config;
