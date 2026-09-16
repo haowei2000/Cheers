@@ -582,10 +582,19 @@ pub async fn list_workspace_bots(
             return Err(AppError::Forbidden("channel member required".into()));
         }
     }
-    let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
-        "SELECT b.bot_id, b.username, b.display_name
+    // The active host is the machine a browse actually lands on: `allowed_roots` come
+    // from that machine's connector config, so "which workspace" is only meaningful
+    // alongside "which machine". At most one row can match — the schema carries a
+    // unique partial index for one active host per bot — so this LEFT JOIN cannot fan
+    // a bot out into several rows.
+    let rows = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
+        "SELECT b.bot_id, b.username, b.display_name, h.device_name
          FROM channel_memberships m
          JOIN bot_accounts b ON b.bot_id = m.member_id
+         LEFT JOIN connector_hosts h
+                ON h.bot_id = b.bot_id
+               AND h.status = 'active'
+               AND h.revoked_at IS NULL
          WHERE m.channel_id = $1 AND m.member_type = 'bot'
          ORDER BY b.username",
     )
@@ -595,7 +604,7 @@ pub async fn list_workspace_bots(
     .map_err(AppError::Db)?;
 
     let mut bots: Vec<Value> = Vec::with_capacity(rows.len());
-    for (bot_id, username, display_name) in rows {
+    for (bot_id, username, display_name, host_name) in rows {
         let parsed = Uuid::parse_str(&bot_id).ok();
         let online = match parsed {
             Some(id) => state.bot_locator.is_online(id).await,
@@ -621,6 +630,11 @@ pub async fn list_workspace_bots(
             "online": online,
             "can_read": can_read,
             "can_write": can_write,
+            // Named only to a caller who can already browse that machine's files, so
+            // the label reveals nothing they could not read for themselves. It is a
+            // display label the host's owner typed, never an identifier: several
+            // machines are routinely called the same thing.
+            "host_name": if can_read { host_name } else { None },
         }));
     }
     Ok(Json(json!({ "bots": bots })))

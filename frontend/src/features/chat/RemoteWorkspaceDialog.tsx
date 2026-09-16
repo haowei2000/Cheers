@@ -1,6 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { DropdownSelect } from "@/components/ui/dropdown-select";
-import { Select as UiSelect } from "@/components/ui/select";
+import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { PresenceDot } from "@/components/ui/presence-dot";
@@ -11,35 +10,25 @@ import {
   useContextPickStore,
   workspaceContextItem,
 } from "@/features/chat/context/contextPick";
-import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
-import {
-  addToContextTitle,
-} from "@/features/chat/context/contextLabels";
+import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
   Bot,
-  Check,
   File,
   FolderTree,
   Download,
   Lock,
-  MessageSquarePlus,
-  FolderPlus,
   GitBranch,
   GitCommit,
   GitCompare,
   History,
   Loader2,
+  Paperclip,
   RefreshCw,
   Save,
   X,
 } from "lucide-react";
-import toast from "react-hot-toast";
-import {
-  createChannelBotSession,
-  getSessionControls,
-} from "@/api/sessionControl";
 import {
   downloadWorkspaceFile,
   getGitCommitFiles,
@@ -171,10 +160,85 @@ function isUnstagedCode(xy: string): boolean {
  * `cwd` handed to session creation, which the gateway requires to be absolute and the
  * connector re-clamps against its `allowed_roots`.
  */
+/** Last segment of a path — what names a folder when the full path will not fit. */
+function basename(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() || path;
+}
+
 function joinAbs(root: string, rel: string): string {
   const base = root.replace(/\/+$/, "");
   const r = rel.replace(/^\/+/, "");
   return r ? `${base}/${r}` : base || "/";
+}
+
+/** Where the browse actually is. A bare "/" names nothing — it is relative to a root
+ *  the panel never showed, and with a single workspace there is no picker naming it
+ *  either. The root is allowed to truncate first so the part you navigate stays whole. */
+export function WorkspacePathLabel({ treeRoot, cwd }: { treeRoot: string | null; cwd: string }) {
+  return (
+    <span
+      className="flex min-w-0 flex-1 items-center"
+      title={treeRoot !== null ? joinAbs(treeRoot, cwd) : "/" + cwd}
+    >
+      {treeRoot !== null ? (
+        <>
+          <span className="truncate text-content-muted">{treeRoot}</span>
+          {cwd && <span className="shrink-0">/{cwd}</span>}
+        </>
+      ) : (
+        <span className="truncate">/{cwd}</span>
+      )}
+    </span>
+  );
+}
+
+/** One browse row. Opening is the click; everything else is the shared context
+ *  surface on the row itself, so focus returns here when the menu closes. */
+export function WorkspaceEntryRow({
+  entry,
+  selected,
+  mark,
+  actions,
+  onOpen,
+}: {
+  entry: WorkspaceEntry;
+  selected: boolean;
+  mark: { m: string; cls: string } | null;
+  actions: () => ContextAction[];
+  onOpen: () => void;
+}) {
+  const surfaceRef = useRef<HTMLButtonElement>(null);
+  const surface = useContextSurface({ surfaceRef, actions });
+  return (
+    <UiButton
+      ref={surfaceRef}
+      content="iconText"
+      controlWidth="fill"
+      variant="plain"
+      role="option"
+      onClick={onOpen}
+      controlSize="regular"
+      className={`flex items-center gap-2 text-left hover:bg-control text-content-primary ${
+        selected ? "bg-control" : ""
+      }`}
+      onContextMenu={surface.onContextMenu}
+      onKeyDown={surface.onKeyDown}
+      onPointerDown={surface.onPointerDown}
+      onPointerMove={surface.onPointerMove}
+      onPointerUp={surface.onPointerUp}
+      onPointerCancel={surface.onPointerCancel}
+      onPointerLeave={surface.onPointerLeave}
+      onClickCapture={surface.onClickCapture}
+    >
+      <FsTreeIcon isDir={entry.is_dir} name={entry.name} size={16} />
+      <span className="truncate flex-1">{entry.name}</span>
+      {mark && (
+        <span className={`shrink-0 font-code text-minimal ${mark.cls}`} title={`git: ${mark.m}`}>
+          {mark.m}
+        </span>
+      )}
+    </UiButton>
+  );
 }
 
 export function RemoteWorkspaceDialog({
@@ -241,7 +305,6 @@ export function RemoteWorkspaceDialog({
   const [edit, setEdit] = useState("");
   const [dirty, setDirty] = useState(false);
   const addContext = useContextPickStore((s) => s.add);
-  const [attached, setAttached] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Optimistic-concurrency version of the open file; sent back as `If-Match` on save.
@@ -276,14 +339,6 @@ export function RemoteWorkspaceDialog({
     : scoped
       ? sessionId
       : undefined;
-
-  // Whether the caller holds the `session_create` INITIATE grant for this bot in this
-  // channel (from /session-controls). Fail-closed: false until the server confirms it,
-  // so the "new session here" affordances stay hidden without the grant. The gateway
-  // re-checks the same grant on the create call — this only gates the UI. Reset per bot.
-  const [canCreateSession, setCanCreateSession] = useState(false);
-  // In-flight guard so a double-click can't fire two create calls.
-  const [creatingSession, setCreatingSession] = useState(false);
 
   // ── Read-only git visibility for the current directory's repo (supplementary) ──
   // Cleared silently when the dir isn't a git repo (`repo: false` answer) or git
@@ -603,23 +658,6 @@ export function RemoteWorkspaceDialog({
     }
   }, [root, rootOptions]);
 
-  // Resolve the caller's session-create grant for the selected bot (best-effort). The
-  // affordance is fail-closed: any error / older gateway leaves it hidden. Independent
-  // of the browse scope — the grant is per (bot, channel), not per root set.
-  useEffect(() => {
-    if (!botId) {
-      setCanCreateSession(false);
-      return;
-    }
-    let alive = true;
-    getSessionControls(channelId, botId)
-      .then((c) => alive && setCanCreateSession(c.can_create_session === true))
-      .catch(() => alive && setCanCreateSession(false));
-    return () => {
-      alive = false;
-    };
-  }, [channelId, botId]);
-
   // Refetch whenever the browse context changes (bot / directory / scope).
   useEffect(() => {
     void loadGitStatus();
@@ -914,29 +952,6 @@ export function RemoteWorkspaceDialog({
     setRootSessionId(null);
   }, []);
 
-  // Spin up a new "other" session rooted at a folder in this browse view. `rel` is a
-  // root-relative directory path ("" = the current browse root); the absolute `cwd`
-  // is treeRoot ⊕ rel. Gated in the UI by the caller's session_create grant, and
-  // re-validated server-side against the connector's `allowed_roots` — that gateway
-  // check (not this one) is the security boundary. The session then shows up in the
-  // channel's Sessions panel.
-  const createSessionAt = useCallback(
-    async (rel: string) => {
-      if (!botId || treeRoot === null || !canCreateSession || creatingSession) return;
-      const cwdAbs = joinAbs(treeRoot, rel);
-      setCreatingSession(true);
-      try {
-        await createChannelBotSession(channelId, botId, { cwd: cwdAbs });
-        toast.success(`New session rooted at ${cwdAbs}`);
-      } catch (e) {
-        toast.error(cleanErr(e));
-      } finally {
-        setCreatingSession(false);
-      }
-    },
-    [channelId, botId, treeRoot, canCreateSession, creatingSession]
-  );
-
   // Switch the browse to another root option (null = Auto): reset like a scope flip. A
   // session-workdir option also scopes the browse to its owning session (via
   // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
@@ -1111,6 +1126,77 @@ export function RemoteWorkspaceDialog({
   const selectedBot = bots?.find((b) => b.bot_id === botId) ?? null;
   // Fail-closed: advertise Save only when the server explicitly says we can write.
   const canWrite = selectedBot?.can_write === true;
+
+  // Every "add to context" gesture here attaches the same thing: a live reference
+  // (bot + root + path + session scope), NOT a snapshot. The recipient bot reads the
+  // file on demand under its own workspace.read permission, so a tree row has all it
+  // needs without opening the file first.
+  const addToContextAction = (path: string): ContextAction | null => {
+    if (!botId) return null;
+    const item = workspaceContextItem({
+      botId,
+      botName:
+        selectedBot?.display_name ||
+        selectedBot?.username ||
+        (memberNames && memberNames.get(botId)) ||
+        undefined,
+      path,
+      sessionId: effectiveSessionId || undefined,
+      root: treeRoot ?? undefined,
+    });
+    // Read at open time rather than subscribing every row to the store.
+    const added = (useContextPickStore.getState().byChannel[channelId] ?? []).some(
+      (candidate) => candidate.id === item.id
+    );
+    return {
+      id: "add-context",
+      label: added ? "Already added to context" : "Add to context",
+      icon: <Paperclip className="h-4 w-4" />,
+      disabled: added,
+      run: () => addContext(channelId, item),
+    };
+  };
+
+  // Secondary row gestures go through the shared context surface — right-click,
+  // long-press on touch, the ContextMenu key — like every other panel. They used to
+  // be hover-revealed buttons, which touch cannot reach and the keyboard cannot tab
+  // to (`hidden` takes them out of the tab order), laid over the row's own name.
+  const entryActions = (ent: WorkspaceEntry): ContextAction[] => {
+    if (!ent.is_dir) {
+      const add = addToContextAction(ent.path);
+      return add ? [add] : [];
+    }
+    return git
+      ? [
+          {
+            id: "diff",
+            label: "Diff working tree",
+            icon: <GitCompare className="h-4 w-4" />,
+            run: () => void openDiff(ent.path, false),
+          },
+        ]
+      : [];
+  };
+
+  const viewerSurfaceRef = useRef<HTMLDivElement>(null);
+  const viewerSurface = useContextSurface({
+    surfaceRef: viewerSurfaceRef,
+    actions: () => {
+      if (!file || diff !== null) return [];
+      // A binary file makes a useless text reference, so only text files offer it.
+      const add = file.is_text ? addToContextAction(file.path) : null;
+      return [
+        ...(add ? [add] : []),
+        {
+          id: "download",
+          label: "Download",
+          icon: <Download className="h-4 w-4" />,
+          group: "secondary",
+          run: () => downloadWorkspaceFile(file),
+        },
+      ];
+    },
+  });
   const selectPrimaryView = (view: "files" | "changes" | "history") => {
     setLeftView(view);
     if (view === "files") setDiff(null);
@@ -1122,6 +1208,26 @@ export function RemoteWorkspaceDialog({
     const bot = bots.find((candidate) => candidate.bot_id === botId);
     return bot ? bot.display_name || bot.username : "Select a bot";
   })();
+
+  // Grouped the way the native select's <optgroup>s were: a session workdir scopes
+  // the browse to that session's root set, an allowed root is the bot-wide clamp.
+  const rootPickerOptions: DropdownSelectOption[] = [
+    { value: "", label: "Auto" },
+    ...rootOptions
+      .filter((option) => option.kind === "session")
+      .map((option, index) => ({
+        value: option.path,
+        label: option.path,
+        ...(index === 0 ? { groupLabel: "Session workdirs", separatorBefore: true } : {}),
+      })),
+    ...rootOptions
+      .filter((option) => option.kind === "root")
+      .map((option, index) => ({
+        value: option.path,
+        label: option.path,
+        ...(index === 0 ? { groupLabel: "Allowed roots", separatorBefore: true } : {}),
+      })),
+  ];
 
   const workspaceContextControls = (
     <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-compact">
@@ -1163,37 +1269,38 @@ export function RemoteWorkspaceDialog({
         className="min-w-0 flex-1"
         menuClassName="max-w-72"
       />
-      {rootOptions.length > 1 && (
-        <UiSelect
-          aria-label="Select workspace root"
-          value={root ?? ""}
-          onChange={(e) =>
-            selectRoot(rootOptions.find((option) => option.path === e.target.value) ?? null)
-          }
-          title="Folder to browse — a session's workdir (scoped to that session) or one of the connector's allowed roots"
-          controlSize="compact"
-          className="min-w-0 max-w-[220px] flex-1 rounded-sm bg-transparent text-content-secondary outline-none"
+      {/* Which machine, read-only. `allowed_roots` are that host's config, so the
+          workspace below only means anything once you know the machine it is on.
+          Not a switch: moving a bot's active host is an owner-level failover that
+          moves every channel and running session with it. */}
+      {selectedBot?.host_name && (
+        <span
+          className="flex min-w-0 shrink items-center gap-1 text-content-muted"
+          title={`Browsing ${selectedBot.host_name} — the machine currently serving this bot`}
         >
-          <option value="">Root: auto</option>
-          {rootOptions.some((option) => option.kind === "session") && (
-            <optgroup label="Session workdirs">
-              {rootOptions
-                .filter((option) => option.kind === "session")
-                .map((option) => (
-                  <option key={option.path} value={option.path}>{option.path}</option>
-                ))}
-            </optgroup>
-          )}
-          {rootOptions.some((option) => option.kind === "root") && (
-            <optgroup label="Allowed roots">
-              {rootOptions
-                .filter((option) => option.kind === "root")
-                .map((option) => (
-                  <option key={option.path} value={option.path}>{option.path}</option>
-                ))}
-            </optgroup>
-          )}
-        </UiSelect>
+          <span aria-hidden="true">·</span>
+          <span className="truncate">{selectedBot.host_name}</span>
+        </span>
+      )}
+      {rootOptions.length > 1 && (
+        <DropdownSelect
+          ariaLabel={`Workspace root: ${root ?? "auto"}`}
+          leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+          // The trigger names the folder, the menu keeps the path. A native select
+          // sized itself to its longest option — here a full absolute path — which is
+          // what drove the bot selector off one; truncating an absolute path from the
+          // right also hides the only part that identifies it.
+          label={root ? basename(root) : "Auto"}
+          value={root ?? ""}
+          options={rootPickerOptions}
+          onSelect={(value) =>
+            selectRoot(rootOptions.find((option) => option.path === value) ?? null)
+          }
+          controlSize="compact"
+          controlWidth="fill"
+          className="min-w-0 max-w-40 flex-1"
+          menuClassName="max-w-96"
+        />
       )}
       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted" />}
       {err && <span className="truncate text-danger-400" title={err}>{err}</span>}
@@ -1587,7 +1694,7 @@ export function RemoteWorkspaceDialog({
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </UiButton>
-                  <span className="truncate flex-1" title={"/" + cwd}>/{cwd}</span>
+                  <WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />
                   {git && !!cwd && (
                     <UiButton variant="plain"
                       onClick={() => openDiff(cwd, false)}
@@ -1598,104 +1705,21 @@ export function RemoteWorkspaceDialog({
                       <GitCompare className="w-3.5 h-3.5" />
                     </UiButton>
                   )}
-                  {canCreateSession && treeRoot !== null && (
-                    <UiButton variant="plain"
-                      onClick={() => void createSessionAt(cwd)}
-                      disabled={creatingSession}
-                      title={`Start a new session rooted here (${joinAbs(treeRoot, cwd)})`}
-                      content="icon" controlSize="compact"
-                      className="rounded-sm hover:bg-control hover:text-success-300 disabled:opacity-50"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                    </UiButton>
-                  )}
                   <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
                 <div className="flex-1 overflow-auto">
-                  {entries?.map((ent) => {
-                    const mk = ent.is_dir ? null : (markMap.get(ent.path) ?? null);
-                    return (
-                      <div key={ent.path} className="group/row relative">
-                        <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
-                          onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
-                          controlSize="regular" className={`flex items-center gap-2 text-left  hover:bg-control ${
- file?.path === ent.path ? "bg-control text-content-primary": "text-content-primary"
- }`}
-                        >
-                          <FsTreeIcon isDir={ent.is_dir} name={ent.name} size={16} />
-                          <span className="truncate flex-1">{ent.name}</span>
-                          {mk && (
-                            <span
-                              className={`shrink-0 font-code text-minimal ${mk.cls}`}
-                              title={`git: ${mk.m}`}
-                            >
-                              {mk.m}
-                            </span>
-                          )}
-                        </UiButton>
-                        {/* Per-directory hover actions: start a new session rooted at
-                            this folder (with the session_create grant), and — for repo
-                            dirs — diff it. Grouped so the two buttons never overlap. */}
-                        {ent.is_dir && (canCreateSession || git) && (
-                          <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center gap-1">
-                            {canCreateSession && treeRoot !== null && (
-                              <UiButton variant="plain"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void createSessionAt(ent.path);
-                                }}
-                                disabled={creatingSession}
-                                title={`Start a new session rooted at ${ent.name}/`}
-                                content="icon" controlSize="compact"
-                                className="flex items-center rounded-sm bg-control text-content-primary hover:text-success-300 disabled:opacity-50"
-                              >
-                                <FolderPlus className="w-3.5 h-3.5" />
-                              </UiButton>
-                            )}
-                            {git && (
-                              <UiButton variant="plain"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void openDiff(ent.path, false);
-                                }}
-                                title={`Diff ${ent.name}/ (working tree)`}
-                                content="icon" controlSize="compact"
-                                className="flex items-center rounded-sm bg-control text-content-primary hover:text-content-strong"
-                              >
-                                <GitCompare className="w-3.5 h-3.5" />
-                              </UiButton>
-                            )}
-                          </div>
-                        )}
-                        {/* Per-FILE hover action: add this file to context without
-                            opening it. A workspace.read reference is text-only (bot +
-                            path, no content capture), so the tree row has everything
-                            it needs — no read required. */}
-                        {!ent.is_dir && botId && (
-                          <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center">
-                            <AttachContextButton
-                              channelId={channelId}
-                              item={workspaceContextItem({
-                                botId,
-                                botName:
-                                  selectedBot?.display_name ||
-                                  selectedBot?.username ||
-                                  (memberNames && memberNames.get(botId)) ||
-                                  undefined,
-                                path: ent.path,
-                                sessionId: effectiveSessionId || undefined,
-                                root: treeRoot ?? undefined,
-                              })}
-                              title={addToContextTitle(`${ent.name} (live reference)`)}
-                              className="flex items-center p-1 rounded-sm bg-control text-content-muted hover:text-accent-300 disabled:opacity-50"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {entries?.map((ent) => (
+                    <WorkspaceEntryRow
+                      key={ent.path}
+                      entry={ent}
+                      selected={file?.path === ent.path}
+                      mark={ent.is_dir ? null : (markMap.get(ent.path) ?? null)}
+                      actions={() => entryActions(ent)}
+                      onOpen={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
+                    />
+                  ))}
                   {entries?.length === 0 && (
                     <div className="px-2 py-3 text-compact text-content-muted">Empty directory</div>
                   )}
@@ -1704,8 +1728,25 @@ export function RemoteWorkspaceDialog({
             )}
           </div>
 
-          {/* Viewer / editor / diff pane */}
-          <div className="flex-1 min-h-0 rounded-sm overflow-hidden flex flex-col">
+          {/* Viewer / editor / diff pane. The open file's actions sit behind the same
+              context surface as the rows; the editor's own text keeps the native menu
+              (cut/copy/paste), because [contenteditable] is excluded by the surface. */}
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+          <div
+            ref={viewerSurfaceRef}
+            role="region"
+            aria-label="Open file"
+            tabIndex={-1}
+            className="flex-1 min-h-0 rounded-sm overflow-hidden flex flex-col"
+            onContextMenu={viewerSurface.onContextMenu}
+            onKeyDown={viewerSurface.onKeyDown}
+            onPointerDown={viewerSurface.onPointerDown}
+            onPointerMove={viewerSurface.onPointerMove}
+            onPointerUp={viewerSurface.onPointerUp}
+            onPointerCancel={viewerSurface.onPointerCancel}
+            onPointerLeave={viewerSurface.onPointerLeave}
+            onClickCapture={viewerSurface.onClickCapture}
+          >
             {diff !== null ? (
               <>
                 <div className="flex items-center gap-2 px-2 py-2 border-b border-control text-compact">
@@ -1847,41 +1888,6 @@ export function RemoteWorkspaceDialog({
                       filename={file.filename}
                       getBytesB64={() => file.content_b64 || null}
                     />
-                  )}
-                  {/* Attach this workspace file as context: a reference (which
-                      bot + path), NOT a snapshot. The recipient bot reads the live
-                      file on demand under its own permission (workspace.read). */}
-                  {file.is_text && botId && (
-                    <UiButton variant="plain"
-                      onClick={() => {
-                        addContext(
-                          channelId,
-                          workspaceContextItem({
-                            botId,
-                            botName:
-                              selectedBot?.display_name ||
-                              selectedBot?.username ||
-                              (memberNames && memberNames.get(botId)) ||
-                              undefined,
-                            path: file.path,
-                            sessionId: effectiveSessionId || undefined,
-                            root: treeRoot ?? undefined,
-                          })
-                        );
-                        setAttached(true);
-                        window.setTimeout(() => setAttached(false), 1500);
-                      }}
-                      title={addToContextTitle(
-                        "this workspace file as a live reference — the recipient reads it on demand"
-                      )}
-                      content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm hover:bg-control text-content-primary"
-                    >
-                      {attached ? (
-                        <Check className="w-3.5 h-3.5 text-success-400" />
-                      ) : (
-                        <MessageSquarePlus className="w-3.5 h-3.5" />
-                      )}
-                    </UiButton>
                   )}
                 </div>
                 {conflict && (
