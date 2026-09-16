@@ -428,7 +428,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             Some(ToolBinding {
                 name: "post_message",
                 title: "Post a message",
-                description: "Send or reply to a channel message.",
+                description: "Send or reply to a channel message. Reuse one idempotency_key when retrying so it posts once.",
                 scope: SCOPE_MESSAGES_WRITE,
                 read_only: false,
                 destructive_hint: false,
@@ -439,6 +439,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::opt("mention_names", ParamKind::StringArray),
                     Param::opt("reply_to_msg_id", ParamKind::String),
                     Param::opt("context", ParamKind::StringArray),
+                    Param::opt("idempotency_key", ParamKind::String),
                 ],
                 constants: &[("msg_type", "text")],
                 shaping: Shaping::ContextBundle,
@@ -479,13 +480,14 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "inbox_deliver",
                 "Deliver a channel attachment",
-                "Upload a base64-encoded attachment.",
+                "Upload a base64-encoded attachment. Reuse one idempotency_key when retrying so it uploads once.",
                 SCOPE_FILES_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::req("filename", ParamKind::String),
                     Param::req("data_b64", ParamKind::String),
                     Param::opt("content_type", ParamKind::String),
+                    Param::opt("idempotency_key", ParamKind::String),
                 ],
             ),
         ),
@@ -550,12 +552,13 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_append",
                 "Append to a Desk file",
-                "Append text to a Desk file.",
+                "Append text to a Desk file. Reuse one idempotency_key when retrying so it appends once.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::req("path", ParamKind::String),
                     Param::req("content", ParamKind::String),
+                    Param::opt("idempotency_key", ParamKind::String),
                 ],
             ),
         ),

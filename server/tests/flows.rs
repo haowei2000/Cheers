@@ -4035,3 +4035,156 @@ async fn connector_hosts_enforce_one_active_and_independent_credentials(db: PgPo
         "revoking standby must not alter active host"
     );
 }
+
+// ── Idempotency keys: post_message / inbox_deliver / desk_append ──────────────
+//
+// MCP 2026-07-28 clients must re-issue a call whose response stream broke. A retry
+// that reuses `idempotency_key` gets the first result back instead of a second write.
+
+use server::resource::idempotency::{self, IdempotencyKey};
+
+async fn channel_message_count(db: &PgPool, channel_id: Uuid) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE channel_id = $1")
+        .bind(channel_id.to_string())
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test]
+async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let post = |content: &str| {
+        req(
+            "channel.messages.create",
+            serde_json::json!({ "channel_id": ch.to_string(), "content": content, "idempotency_key": "post-1" }),
+        )
+    };
+
+    let first = dispatch(&db, Principal::bot(bot), &post("ship it")).await;
+    assert_eq!(first["ok"], true, "{first}");
+    assert!(first["data"].get("idempotent_replay").is_none());
+
+    let retry = dispatch(&db, Principal::bot(bot), &post("ship it")).await;
+    assert_eq!(retry["ok"], true, "{retry}");
+    assert_eq!(retry["data"]["idempotent_replay"], true);
+    assert_eq!(retry["data"]["msg_id"], first["data"]["msg_id"]);
+    assert_eq!(retry["data"]["channel_seq"], first["data"]["channel_seq"]);
+    assert_eq!(
+        channel_message_count(&db, ch).await,
+        1,
+        "a replay must not write"
+    );
+
+    let reused = dispatch(&db, Principal::bot(bot), &post("ship it now")).await;
+    assert_eq!(reused["ok"], false, "{reused}");
+    assert_eq!(reused["error"]["code"], "E_IDEMPOTENCY_KEY_REUSED");
+
+    // Keys are scoped to the caller: another bot's identical key is its own write.
+    let other = seed_bot(&db).await;
+    add_member(&db, ch, other, "bot").await;
+    let theirs = dispatch(&db, Principal::bot(other), &post("ship it")).await;
+    assert_eq!(theirs["ok"], true, "{theirs}");
+    assert!(theirs["data"].get("idempotent_replay").is_none());
+    assert_eq!(channel_message_count(&db, ch).await, 2);
+
+    // Past retention a key starts a new write, and the sweep drops expired keys.
+    sqlx::query("UPDATE resource_idempotency_keys SET created_at = NOW() - INTERVAL '25 hours'")
+        .execute(&db)
+        .await
+        .unwrap();
+    let after_expiry = dispatch(&db, Principal::bot(bot), &post("ship it again")).await;
+    assert_eq!(after_expiry["ok"], true, "{after_expiry}");
+    assert!(after_expiry["data"].get("idempotent_replay").is_none());
+    assert_eq!(channel_message_count(&db, ch).await, 3);
+    assert_eq!(
+        idempotency::sweep_expired(&db).await.unwrap(),
+        1,
+        "only the other bot's key is still expired"
+    );
+}
+
+#[sqlx::test]
+async fn concurrent_duplicate_desk_appends_land_once(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let append = req(
+        "fs.append",
+        serde_json::json!({ "channel_id": ch.to_string(), "path": "log.md", "content": "line\n", "idempotency_key": "append-1" }),
+    );
+
+    // The duplicates race to create the file; all but one wait on the key and replay.
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let db = db.clone();
+            let append = append.clone();
+            tokio::spawn(async move { dispatch(&db, Principal::bot(bot), &append).await })
+        })
+        .collect();
+    let mut results = Vec::new();
+    for handle in handles {
+        results.push(handle.await.unwrap());
+    }
+    assert!(results.iter().all(|r| r["ok"] == true), "{results:?}");
+    let writes = results
+        .iter()
+        .filter(|r| r["data"].get("idempotent_replay").is_none())
+        .count();
+    assert_eq!(writes, 1, "exactly one duplicate may write: {results:?}");
+    assert!(results
+        .iter()
+        .all(|r| r["data"]["channel_seq"] == results[0]["data"]["channel_seq"]));
+
+    let read = dispatch(
+        &db,
+        Principal::bot(bot),
+        &req(
+            "fs.read",
+            serde_json::json!({ "channel_id": ch.to_string(), "path": "log.md" }),
+        ),
+    )
+    .await;
+    assert_eq!(read["data"]["content"], "line\n", "{read}");
+    assert_eq!(read["data"]["version"], 1);
+}
+
+#[sqlx::test]
+async fn idempotent_inbox_deliver_retry_replays_before_touching_storage(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let params = serde_json::json!({
+        "channel_id": ch.to_string(), "filename": "a.txt", "data_b64": "aGk=", "idempotency_key": "deliver-1"
+    });
+
+    // Record the delivery the way a first successful call commits it.
+    let key = IdempotencyKey::from_params(&Principal::bot(bot), "channel.files.create", &params)
+        .unwrap()
+        .unwrap();
+    let mut tx = db.begin().await.unwrap();
+    assert!(key.claim(&mut tx).await.unwrap());
+    key.complete(
+        &mut tx,
+        &serde_json::json!({ "file_id": "f1", "status": "uploaded" }),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    // Tests configure no object storage, so only a replay can succeed here.
+    let retry = dispatch(
+        &db,
+        Principal::bot(bot),
+        &req("channel.files.create", params),
+    )
+    .await;
+    assert_eq!(retry["ok"], true, "{retry}");
+    assert_eq!(retry["data"]["file_id"], "f1");
+    assert_eq!(retry["data"]["idempotent_replay"], true);
+}

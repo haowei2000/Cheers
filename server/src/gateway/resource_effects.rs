@@ -56,6 +56,15 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
     if resp.get("ok").and_then(Value::as_bool) != Some(true) {
         return resp;
     }
+    // A write replayed for a reused idempotency key ran its effects the first time.
+    if resp
+        .get("data")
+        .and_then(|data| data.get(resource::idempotency::REPLAY_FLAG))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return resp;
+    }
     match frame.get("resource").and_then(Value::as_str) {
         Some("channel.messages.create") => {
             if let Some(created) = resp.get("data") {

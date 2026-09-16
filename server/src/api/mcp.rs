@@ -35,7 +35,14 @@ use crate::{
     resource::{self, Principal},
 };
 
-const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+pub(crate) const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+/// Initialization-based revisions still served for agents whose MCP clients predate
+/// 2026-07-28, newest first. They are served statelessly: `initialize` is answered but
+/// no `Mcp-Session-Id` is minted, so every later request is recognized by the
+/// `MCP-Protocol-Version` header these revisions send after initialization.
+/// 2025-03-26 is excluded: it has no such header and requires JSON-RPC batching.
+pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
+const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 const MCP_TOKEN_USE: &str = "mcp_access";
 const MCP_ACCESS_TOKEN_TTL_SECS: u64 = 10 * 60;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
@@ -51,6 +58,15 @@ fn server_info() -> Value {
 
 fn result_meta() -> Value {
     json!({"io.modelcontextprotocol/serverInfo": server_info()})
+}
+
+fn server_capabilities() -> Value {
+    json!({
+        "resources": {"subscribe": false, "listChanged": false},
+        "tools": {"listChanged": false},
+        "prompts": {"listChanged": false},
+        "completions": {}
+    })
 }
 
 /// RFC 9728 metadata for the stateless Cheers MCP protected resource.
@@ -1015,8 +1031,11 @@ fn narrowed_scope(original: &str, requested: &str) -> Result<String, String> {
     Ok(requested.join(" "))
 }
 
-/// Stateless MCP 2026-07-28 HTTP endpoint. Every request carries protocol and
-/// client capability metadata; no initialize/session state is retained.
+/// Stateless MCP HTTP endpoint. 2026-07-28 requests carry protocol and client
+/// capability metadata on every call. Initialization-based 2025-06-18/2025-11-25
+/// clients are served without sessions too: `initialize` is answered, no
+/// `Mcp-Session-Id` is minted, and later requests are recognized by their
+/// `MCP-Protocol-Version` header, so any replica can serve any request.
 pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     if !origin_allowed(&state, &headers) {
         return mcp_http_error(StatusCode::FORBIDDEN, "origin is not allowed");
@@ -1039,95 +1058,178 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     };
     tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
 
+    let host_id = identity.host_id;
     let request: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => {
-            return rpc_error_response(
+            return reject_request(
+                &state,
+                host_id,
                 StatusCode::BAD_REQUEST,
                 Value::Null,
                 -32700,
                 "Parse error",
                 None,
             )
+            .await
         }
     };
     let Some(object) = request.as_object() else {
-        return rpc_error_response(
+        return reject_request(
+            &state,
+            host_id,
             StatusCode::BAD_REQUEST,
             Value::Null,
             -32600,
             "Invalid Request",
             None,
-        );
+        )
+        .await;
     };
+    let method = object.get("method").and_then(Value::as_str);
+    let era = request_era(&headers, method, object.get("params"));
+    // Initialization-based clients post lifecycle notifications such as
+    // `notifications/initialized`. No per-client state exists to update, so
+    // acknowledge them as that transport binding requires.
+    if era == ProtocolEra::Legacy
+        && method.is_some()
+        && !object.contains_key("id")
+        && object.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+    {
+        return StatusCode::ACCEPTED.into_response();
+    }
     let id = object.get("id").cloned().unwrap_or(Value::Null);
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
         || !matches!(id, Value::String(_) | Value::Number(_))
     {
-        return rpc_error_response(StatusCode::BAD_REQUEST, id, -32600, "Invalid Request", None);
+        return reject_request(
+            &state,
+            host_id,
+            StatusCode::BAD_REQUEST,
+            id,
+            -32600,
+            "Invalid Request",
+            None,
+        )
+        .await;
     }
-    let Some(method) = object.get("method").and_then(Value::as_str) else {
-        return rpc_error_response(StatusCode::BAD_REQUEST, id, -32600, "Invalid Request", None);
+    let Some(method) = method else {
+        return reject_request(
+            &state,
+            host_id,
+            StatusCode::BAD_REQUEST,
+            id,
+            -32600,
+            "Invalid Request",
+            None,
+        )
+        .await;
     };
-    let params = match object.get("params") {
-        Some(Value::Object(params)) => params,
-        _ => {
-            return rpc_error_response(
+    let no_params = Map::new();
+    let params = match (object.get("params"), era) {
+        (Some(Value::Object(params)), _) => params,
+        // Initialization-based requests such as `ping` may omit params entirely.
+        (None, ProtocolEra::Legacy) => &no_params,
+        (_, ProtocolEra::Legacy) => {
+            return reject_request(
+                &state,
+                host_id,
+                StatusCode::BAD_REQUEST,
+                id,
+                -32602,
+                "params must be an object",
+                None,
+            )
+            .await
+        }
+        (_, ProtocolEra::Modern) => {
+            return reject_request(
+                &state,
+                host_id,
                 StatusCode::BAD_REQUEST,
                 id,
                 -32602,
                 "params and params._meta are required",
                 None,
             )
+            .await
         }
     };
 
-    if let Err(error) = validate_request_metadata(&headers, method, params) {
-        return rpc_error_response(
+    let metadata = match era {
+        ProtocolEra::Modern => validate_request_metadata(&headers, method, params),
+        ProtocolEra::Legacy => validate_mirrored_headers(&headers, method, params, false),
+    };
+    if let Err(error) = metadata {
+        return reject_request(
+            &state,
+            host_id,
             StatusCode::BAD_REQUEST,
             id,
             error.code,
             error.message,
             error.data,
-        );
+        )
+        .await;
     }
 
     let required_scope = if method == "tools/call" {
         let Some(name) = params.get("name").and_then(Value::as_str) else {
-            return invalid_params(id, "name is required");
+            return invalid_params(era, id, "name is required");
         };
         let scope = required_scope_for_tool(name).or_else(|| {
-            (conformance_fixtures_enabled() && is_conformance_tool(name)).then_some(SCOPE_READ)
+            (era == ProtocolEra::Modern
+                && conformance_fixtures_enabled()
+                && is_conformance_tool(name))
+            .then_some(SCOPE_READ)
         });
         let Some(scope) = scope else {
-            return rpc_error_response(StatusCode::NOT_FOUND, id, -32602, "Unknown tool", None);
+            return method_error_response(
+                era,
+                StatusCode::NOT_FOUND,
+                id,
+                -32602,
+                "Unknown tool",
+                None,
+            );
         };
         scope
     } else {
         SCOPE_READ
     };
     if !identity.scopes.contains(required_scope) {
+        let message = format!("Insufficient OAuth scope {required_scope}");
+        record_mcp_rejection(&state, host_id, -32003, &message, None).await;
         return insufficient_scope_response(&state, id, required_scope);
     }
 
     let result = match method {
-        "server/discover" => json!({
+        "server/discover" if era == ProtocolEra::Modern => json!({
             "resultType": "complete",
             "supportedVersions": [MCP_PROTOCOL_VERSION],
-            "capabilities": {
-                "resources": {"subscribe": false, "listChanged": false},
-                "tools": {"listChanged": false},
-                "prompts": {"listChanged": false},
-                "completions": {}
-            },
-            "instructions": "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.",
+            "capabilities": server_capabilities(),
+            "instructions": MCP_INSTRUCTIONS,
             "ttlMs": MCP_CATALOG_TTL_MS,
             "cacheScope": "private",
             "_meta": result_meta()
         }),
+        "initialize" if era == ProtocolEra::Legacy => match legacy_initialize_result(params) {
+            Ok(result) => result,
+            Err(message) => {
+                return method_error_response(
+                    era,
+                    StatusCode::BAD_REQUEST,
+                    id,
+                    -32602,
+                    message,
+                    Some(json!({"supported": MCP_LEGACY_PROTOCOL_VERSIONS})),
+                )
+            }
+        },
+        "ping" if era == ProtocolEra::Legacy => json!({}),
         "resources/list" => {
             if params.contains_key("cursor") {
-                return invalid_params(id, "cursor is not valid for this unpaginated catalog");
+                return invalid_params(era, id, "cursor is not valid for this unpaginated catalog");
             }
             json!({
                 "resultType": "complete",
@@ -1139,7 +1241,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
         "resources/templates/list" => {
             if params.contains_key("cursor") {
-                return invalid_params(id, "cursor is not valid for this unpaginated catalog");
+                return invalid_params(era, id, "cursor is not valid for this unpaginated catalog");
             }
             json!({
                 "resultType": "complete",
@@ -1151,7 +1253,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
         "resources/read" => {
             let Some(uri) = params.get("uri").and_then(Value::as_str) else {
-                return invalid_params(id, "uri is required");
+                return invalid_params(era, id, "uri is required");
             };
             match read_resource(&state, identity.bot_id, uri).await {
                 Ok(content) => json!({
@@ -1161,9 +1263,12 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                     "cacheScope": "private",
                     "_meta": result_meta()
                 }),
-                Err(ResourceReadError::Invalid(message)) => return invalid_params(id, &message),
+                Err(ResourceReadError::Invalid(message)) => {
+                    return invalid_params(era, id, &message)
+                }
                 Err(ResourceReadError::Unavailable) => {
-                    return rpc_error_response(
+                    return method_error_response(
+                        era,
                         StatusCode::OK,
                         id,
                         -32602,
@@ -1172,16 +1277,23 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                     )
                 }
                 Err(ResourceReadError::NotFound(uri)) => {
-                    return rpc_error_response(
+                    // 2026-07-28 moved resource-not-found from -32002 to -32602.
+                    let code = match era {
+                        ProtocolEra::Modern => -32602,
+                        ProtocolEra::Legacy => -32002,
+                    };
+                    return method_error_response(
+                        era,
                         StatusCode::OK,
                         id,
-                        -32602,
+                        code,
                         "Resource not found",
                         Some(json!({"uri": uri})),
-                    )
+                    );
                 }
                 Err(ResourceReadError::Internal) => {
-                    return rpc_error_response(
+                    return method_error_response(
+                        era,
                         StatusCode::INTERNAL_SERVER_ERROR,
                         id,
                         -32603,
@@ -1193,7 +1305,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
         "tools/list" => {
             if params.contains_key("cursor") {
-                return invalid_params(id, "cursor is not valid for this unpaginated catalog");
+                return invalid_params(era, id, "cursor is not valid for this unpaginated catalog");
             }
             json!({
                 "resultType": "complete",
@@ -1205,7 +1317,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
         "prompts/list" => {
             if params.contains_key("cursor") {
-                return invalid_params(id, "cursor is not valid for this unpaginated catalog");
+                return invalid_params(era, id, "cursor is not valid for this unpaginated catalog");
             }
             json!({
                 "resultType": "complete",
@@ -1217,11 +1329,11 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
         "prompts/get" => match get_prompt(&state, identity.bot_id, params).await {
             Ok(result) => result,
-            Err(message) => return invalid_params(id, &message),
+            Err(message) => return invalid_params(era, id, &message),
         },
         "completion/complete" => match complete_argument(&state, identity.bot_id, params).await {
             Ok(result) => result,
-            Err(message) => return invalid_params(id, &message),
+            Err(message) => return invalid_params(era, id, &message),
         },
         "tools/call" => {
             let name = params
@@ -1231,9 +1343,11 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             let arguments = match params.get("arguments") {
                 None => Map::new(),
                 Some(Value::Object(arguments)) => arguments.clone(),
-                Some(_) => return invalid_params(id, "arguments must be an object"),
+                Some(_) => return invalid_params(era, id, "arguments must be an object"),
             };
-            if conformance_fixtures_enabled() {
+            // Conformance fixtures model 2026-07-28 behaviour (input_required
+            // results), so initialization-based clients only reach real tools.
+            if era == ProtocolEra::Modern && conformance_fixtures_enabled() {
                 match conformance_tool_result(&state, name, params, &headers) {
                     Ok(Some(result)) => result,
                     Err(error) => {
@@ -1248,7 +1362,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                     Ok(None) => match call_tool(&state, identity.bot_id, name, &arguments).await {
                         Ok(data) => complete_tool_result(data),
                         Err(ToolCallFailure::Invalid(message)) => {
-                            return invalid_params(id, &message)
+                            return invalid_params(era, id, &message)
                         }
                         Err(ToolCallFailure::Domain { code, message }) => {
                             tool_error_result(&code, &message)
@@ -1258,7 +1372,9 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             } else {
                 match call_tool(&state, identity.bot_id, name, &arguments).await {
                     Ok(data) => complete_tool_result(data),
-                    Err(ToolCallFailure::Invalid(message)) => return invalid_params(id, &message),
+                    Err(ToolCallFailure::Invalid(message)) => {
+                        return invalid_params(era, id, &message)
+                    }
                     Err(ToolCallFailure::Domain { code, message }) => {
                         tool_error_result(&code, &message)
                     }
@@ -1266,16 +1382,28 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             }
         }
         _ => {
-            return rpc_error_response(StatusCode::NOT_FOUND, id, -32601, "Method not found", None)
+            return method_error_response(
+                era,
+                StatusCode::NOT_FOUND,
+                id,
+                -32601,
+                "Method not found",
+                None,
+            )
         }
     };
 
     // This is the only transition that establishes connected: the Gateway has
     // validated a host-bound token and handled a recognized MCP method.
-    if let Err(error) = mark_mcp_connected(&state, identity.host_id).await {
+    let seen = client_seen(era, &headers, method, params, &result);
+    if let Err(error) = mark_mcp_connected(&state, identity.host_id, &seen).await {
         tracing::warn!(%error, host_id=%identity.host_id, "MCP connection-state update failed");
     }
 
+    let result = match era {
+        ProtocolEra::Modern => result,
+        ProtocolEra::Legacy => legacy_result(result),
+    };
     let final_response = json!({"jsonrpc": "2.0", "id": id, "result": result});
     if method == "tools/call" {
         if let Some(progress_token) = params
@@ -1285,7 +1413,8 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         {
             return progress_sse_response(progress_token, final_response);
         }
-        if conformance_fixtures_enabled()
+        if era == ProtocolEra::Modern
+            && conformance_fixtures_enabled()
             && params.get("name").and_then(Value::as_str) == Some("test_streaming_elicitation")
         {
             return progress_sse_response(&json!("token-abc"), final_response);
@@ -1294,39 +1423,142 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     private_json_response(StatusCode::OK, final_response)
 }
 
-/// Records a successfully authenticated and handled MCP method as connectivity evidence.
-async fn mark_mcp_connected(state: &AppState, host_id: Uuid) -> Result<(), sqlx::Error> {
+/// What a handled MCP request showed about the client that sent it.
+struct McpClientSeen<'a> {
+    protocol_version: &'a str,
+    client_name: Option<&'a str>,
+    client_version: Option<&'a str>,
+}
+
+/// Legacy clients identify themselves only in `initialize`; 2026-07-28 clients SHOULD
+/// on every request. The protocol version is the one this request was served under.
+fn client_seen<'a>(
+    era: ProtocolEra,
+    headers: &'a HeaderMap,
+    method: &str,
+    params: &'a Map<String, Value>,
+    result: &'a Value,
+) -> McpClientSeen<'a> {
+    let info = match era {
+        ProtocolEra::Modern => params
+            .get("_meta")
+            .and_then(|meta| meta.get("io.modelcontextprotocol/clientInfo")),
+        ProtocolEra::Legacy => params.get("clientInfo"),
+    };
+    let field = |name: &str| info.and_then(|info| info.get(name)).and_then(Value::as_str);
+    let protocol_version = match era {
+        ProtocolEra::Modern => MCP_PROTOCOL_VERSION,
+        ProtocolEra::Legacy if method == "initialize" => result
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .unwrap_or(MCP_LEGACY_PROTOCOL_VERSIONS[0]),
+        ProtocolEra::Legacy => header_string(headers, MCP_PROTOCOL_VERSION_HEADER)
+            .unwrap_or(MCP_LEGACY_PROTOCOL_VERSIONS[0]),
+    };
+    McpClientSeen {
+        protocol_version,
+        client_name: field("name"),
+        client_version: field("version"),
+    }
+}
+
+/// Client-supplied text is stored within its column width (characters, as Postgres
+/// counts VARCHAR length).
+fn truncated(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+/// Records a successfully authenticated and handled MCP method as connectivity evidence,
+/// along with the protocol version and client identity the MCP check reports.
+async fn mark_mcp_connected(
+    state: &AppState,
+    host_id: Uuid,
+    seen: &McpClientSeen<'_>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE connector_hosts
          SET mcp_connection_state = $2,
              mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
                                          THEN mcp_state_updated_at ELSE NOW() END,
              mcp_connected_at = COALESCE(mcp_connected_at, NOW()),
-             mcp_last_seen_at = NOW()
+             mcp_last_seen_at = NOW(),
+             mcp_protocol_version = $3,
+             mcp_client_name = COALESCE($4, mcp_client_name),
+             mcp_client_version = COALESCE($5, mcp_client_version)
          WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(host_id.to_string())
     .bind(mcp_state_for_evidence(
         McpConnectionEvidence::AuthenticatedRequest,
     ))
+    .bind(truncated(seen.protocol_version, 16))
+    .bind(seen.client_name.map(|name| truncated(name, 128)))
+    .bind(seen.client_version.map(|version| truncated(version, 64)))
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Records successful OAuth token issuance without claiming MCP connectivity.
+/// Records successful OAuth token issuance without claiming MCP connectivity, and
+/// stamps when the host last received a token for the MCP check to report.
 async fn mark_mcp_authorizing(state: &AppState, host_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE connector_hosts
-         SET mcp_connection_state = $2, mcp_state_updated_at = NOW()
-         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL
-           AND mcp_connection_state <> 'connected'",
+         SET mcp_token_issued_at = NOW(),
+             mcp_connection_state = CASE WHEN mcp_connection_state = 'connected'
+                                         THEN mcp_connection_state ELSE $2 END,
+             mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'
+                                         THEN mcp_state_updated_at ELSE NOW() END
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
     )
     .bind(host_id)
     .bind(mcp_state_for_evidence(McpConnectionEvidence::TokenIssued))
     .execute(&state.db)
     .await?;
     Ok(())
+}
+
+/// Records why an authenticated request was refused before any method ran. It is the
+/// only trace a client that cannot speak this endpoint leaves for the MCP check.
+async fn record_mcp_rejection(
+    state: &AppState,
+    host_id: Uuid,
+    code: i64,
+    message: &str,
+    data: Option<&Value>,
+) {
+    let reason = match data
+        .and_then(|data| data.get("requested"))
+        .and_then(Value::as_str)
+    {
+        Some(requested) => format!("{message} {requested} ({code})"),
+        None => format!("{message} ({code})"),
+    };
+    let recorded = sqlx::query(
+        "UPDATE connector_hosts SET mcp_rejected_at = NOW(), mcp_rejection = $2
+         WHERE host_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(host_id.to_string())
+    .bind(truncated(&reason, 255))
+    .execute(&state.db)
+    .await;
+    if let Err(error) = recorded {
+        tracing::warn!(%error, %host_id, "MCP rejection could not be recorded");
+    }
+}
+
+/// Refuses an authenticated request that cannot be handled, recording why.
+async fn reject_request(
+    state: &AppState,
+    host_id: Uuid,
+    status: StatusCode,
+    id: Value,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response {
+    record_mcp_rejection(state, host_id, code, message, data.as_ref()).await;
+    rpc_error_response(status, id, code, message, data)
 }
 
 /// Records a known host's rejected refresh token.
@@ -2109,6 +2341,130 @@ struct MetadataError {
     data: Option<Value>,
 }
 
+/// The protocol era of one request. A dual-era server decides per request
+/// (2026-07-28 versioning): per-request `_meta` is modern, `initialize` opens the
+/// initialization-based lifecycle, and later legacy requests carry a legacy
+/// `MCP-Protocol-Version` header. Anything else is validated as 2026-07-28.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProtocolEra {
+    Modern,
+    Legacy,
+}
+
+fn request_era(headers: &HeaderMap, method: Option<&str>, params: Option<&Value>) -> ProtocolEra {
+    let declares_modern_version = params
+        .and_then(|params| params.get("_meta"))
+        .and_then(|meta| meta.get("io.modelcontextprotocol/protocolVersion"))
+        .is_some();
+    if declares_modern_version {
+        return ProtocolEra::Modern;
+    }
+    if method == Some("initialize") {
+        return ProtocolEra::Legacy;
+    }
+    match header_string(headers, MCP_PROTOCOL_VERSION_HEADER) {
+        Some(version) if MCP_LEGACY_PROTOCOL_VERSIONS.contains(&version) => ProtocolEra::Legacy,
+        _ => ProtocolEra::Modern,
+    }
+}
+
+/// Answers an initialization-based `initialize` without opening a session. A supported
+/// requested version is echoed; otherwise the newest legacy version is offered and,
+/// per the legacy negotiation rules, a client that cannot speak it disconnects.
+fn legacy_initialize_result(params: &Map<String, Value>) -> Result<Value, &'static str> {
+    let requested = params
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .ok_or("protocolVersion is required")?;
+    let negotiated = MCP_LEGACY_PROTOCOL_VERSIONS
+        .into_iter()
+        .find(|version| *version == requested)
+        .unwrap_or(MCP_LEGACY_PROTOCOL_VERSIONS[0]);
+    Ok(json!({
+        "protocolVersion": negotiated,
+        "capabilities": server_capabilities(),
+        "serverInfo": server_info(),
+        "instructions": MCP_INSTRUCTIONS
+    }))
+}
+
+/// Initialization-based revisions predate the 2026-07-28 result envelope: drop its
+/// fields, and keep `structuredContent` only in the object form those revisions allow
+/// (the text content block still carries the full JSON).
+fn legacy_result(mut result: Value) -> Value {
+    let Some(object) = result.as_object_mut() else {
+        return result;
+    };
+    for key in ["resultType", "ttlMs", "cacheScope"] {
+        object.remove(key);
+    }
+    let meta_is_empty = match object.get_mut("_meta") {
+        Some(Value::Object(meta)) => {
+            meta.remove("io.modelcontextprotocol/serverInfo");
+            meta.is_empty()
+        }
+        _ => false,
+    };
+    if meta_is_empty {
+        object.remove("_meta");
+    }
+    if object
+        .get("structuredContent")
+        .is_some_and(|content| !content.is_object())
+    {
+        object.remove("structuredContent");
+    }
+    result
+}
+
+/// Checks the `Mcp-Method`/`Mcp-Name` headers that mirror body fields. 2026-07-28
+/// requires them; initialization-based clients never send them, but any that are sent
+/// must still agree with the body so header-routing intermediaries cannot be misled.
+fn validate_mirrored_headers(
+    headers: &HeaderMap,
+    method: &str,
+    params: &Map<String, Value>,
+    required: bool,
+) -> Result<(), MetadataError> {
+    match header_string(headers, MCP_METHOD_HEADER) {
+        Some(header_method) if header_method != method => {
+            return Err(MetadataError {
+                code: -32020,
+                message: "Mcp-Method header does not match the request method",
+                data: None,
+            })
+        }
+        None if required => {
+            return Err(MetadataError {
+                code: -32020,
+                message: "Mcp-Method header is required",
+                data: None,
+            })
+        }
+        _ => {}
+    }
+    let expected_name = match method {
+        "resources/read" => params.get("uri").and_then(Value::as_str),
+        "tools/call" | "prompts/get" => params.get("name").and_then(Value::as_str),
+        _ => None,
+    };
+    match (expected_name, header_string(headers, MCP_NAME_HEADER)) {
+        (Some(expected), Some(actual)) if expected == actual => Ok(()),
+        (Some(_), None) if !required => Ok(()),
+        (Some(_), _) => Err(MetadataError {
+            code: -32020,
+            message: "Mcp-Name header is missing or does not match the requested name",
+            data: None,
+        }),
+        (None, Some(_)) => Err(MetadataError {
+            code: -32020,
+            message: "Mcp-Name is not valid for this method",
+            data: None,
+        }),
+        (None, None) => Ok(()),
+    }
+}
+
 fn validate_request_metadata(
     headers: &HeaderMap,
     method: &str,
@@ -2120,41 +2476,7 @@ fn validate_request_metadata(
             message: "MCP-Protocol-Version header is required",
             data: None,
         })?;
-    let header_method = header_string(headers, MCP_METHOD_HEADER).ok_or(MetadataError {
-        code: -32020,
-        message: "Mcp-Method header is required",
-        data: None,
-    })?;
-    if header_method != method {
-        return Err(MetadataError {
-            code: -32020,
-            message: "Mcp-Method header does not match the request method",
-            data: None,
-        });
-    }
-    let expected_name = match method {
-        "resources/read" => params.get("uri").and_then(Value::as_str),
-        "tools/call" | "prompts/get" => params.get("name").and_then(Value::as_str),
-        _ => None,
-    };
-    match (expected_name, header_string(headers, MCP_NAME_HEADER)) {
-        (Some(expected), Some(actual)) if expected == actual => {}
-        (Some(_), _) => {
-            return Err(MetadataError {
-                code: -32020,
-                message: "Mcp-Name header is missing or does not match the requested name",
-                data: None,
-            })
-        }
-        (None, Some(_)) => {
-            return Err(MetadataError {
-                code: -32020,
-                message: "Mcp-Name is not valid for this method",
-                data: None,
-            })
-        }
-        (None, None) => {}
-    }
+    validate_mirrored_headers(headers, method, params, true)?;
     let meta = params
         .get("_meta")
         .and_then(Value::as_object)
@@ -2254,17 +2576,19 @@ async fn call_tool(
         return Ok(response.get("data").cloned().unwrap_or(Value::Null));
     }
     Err(ToolCallFailure::Domain {
-        code: response
-            .get("code")
-            .and_then(Value::as_str)
+        code: resource_res_error(&response, "code")
             .unwrap_or("TOOL_ERROR")
             .to_string(),
-        message: response
-            .get("error")
-            .and_then(Value::as_str)
+        message: resource_res_error(&response, "message")
             .unwrap_or("tool call failed")
             .to_string(),
     })
+}
+
+/// A field of a failed `resource_res` frame, which nests `code` and `message` under
+/// `error` (see `resource::err_res`).
+fn resource_res_error<'a>(response: &'a Value, field: &str) -> Option<&'a str> {
+    response.get("error")?.get(field)?.as_str()
 }
 
 async fn read_resource(
@@ -2327,7 +2651,7 @@ async fn read_resource(
         let data = response.get("data").cloned().unwrap_or(Value::Null);
         return Ok(resource_content(uri, &data));
     }
-    let code = response.get("code").and_then(Value::as_str).unwrap_or("");
+    let code = resource_res_error(&response, "code").unwrap_or("");
     if code == "INTERNAL_ERROR" {
         Err(ResourceReadError::Internal)
     } else {
@@ -2430,8 +2754,26 @@ fn origin_allowed(state: &AppState, headers: &HeaderMap) -> bool {
         .any(|allowed| allowed == origin)
 }
 
-fn invalid_params(id: Value, message: &str) -> Response {
-    rpc_error_response(StatusCode::BAD_REQUEST, id, -32602, message, None)
+fn invalid_params(era: ProtocolEra, id: Value, message: &str) -> Response {
+    method_error_response(era, StatusCode::BAD_REQUEST, id, -32602, message, None)
+}
+
+/// Sends a JSON-RPC error raised while handling a method. The 2026-07-28 binding maps
+/// these onto HTTP statuses; initialization-based clients expect them in a 200 body and
+/// treat any non-2xx response as a transport failure, losing the JSON-RPC error.
+fn method_error_response(
+    era: ProtocolEra,
+    modern_status: StatusCode,
+    id: Value,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response {
+    let status = match era {
+        ProtocolEra::Modern => modern_status,
+        ProtocolEra::Legacy => StatusCode::OK,
+    };
+    rpc_error_response(status, id, code, message, data)
 }
 
 fn rpc_error_response(
@@ -2807,5 +3149,175 @@ mod tests {
     fn unsupported_resource_uri_is_not_found_not_an_empty_result() {
         let error = build_uri_resource_call("test://missing").unwrap_err();
         assert_eq!(error.code, "UNSUPPORTED_URI");
+    }
+
+    fn legacy_headers(version: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER,
+            HeaderValue::from_static(version),
+        );
+        headers
+    }
+
+    #[test]
+    fn request_era_follows_modern_meta_then_initialize_then_legacy_header() {
+        let modern = Value::Object(modern_params());
+        // Per-request metadata wins even when a legacy version header is present.
+        assert_eq!(
+            request_era(
+                &legacy_headers("2025-11-25"),
+                Some("tools/list"),
+                Some(&modern)
+            ),
+            ProtocolEra::Modern
+        );
+        // Legacy clients send `initialize` before they know a version to put in a header.
+        assert_eq!(
+            request_era(
+                &HeaderMap::new(),
+                Some("initialize"),
+                Some(&json!({"protocolVersion": "2025-06-18"}))
+            ),
+            ProtocolEra::Legacy
+        );
+        for version in MCP_LEGACY_PROTOCOL_VERSIONS {
+            assert_eq!(
+                request_era(&legacy_headers(version), Some("tools/list"), None),
+                ProtocolEra::Legacy
+            );
+        }
+        // Without a legacy signal the request is validated (and rejected) as 2026-07-28.
+        for headers in [
+            HeaderMap::new(),
+            legacy_headers("2025-03-26"),
+            modern_headers("tools/list"),
+        ] {
+            assert_eq!(
+                request_era(&headers, Some("tools/list"), None),
+                ProtocolEra::Modern
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_initialize_echoes_supported_versions_and_offers_the_newest_otherwise() {
+        for requested in MCP_LEGACY_PROTOCOL_VERSIONS {
+            let params = json!({
+                "protocolVersion": requested,
+                "capabilities": {},
+                "clientInfo": {"name": "legacy-client", "version": "1.0.0"}
+            });
+            let result = legacy_initialize_result(params.as_object().unwrap()).unwrap();
+            assert_eq!(result["protocolVersion"], requested);
+            assert_eq!(result["serverInfo"]["name"], "cheers");
+            assert_eq!(result["capabilities"], server_capabilities());
+        }
+        for requested in ["2025-03-26", "2024-11-05", MCP_PROTOCOL_VERSION] {
+            let params = json!({"protocolVersion": requested});
+            let result = legacy_initialize_result(params.as_object().unwrap()).unwrap();
+            assert_eq!(result["protocolVersion"], MCP_LEGACY_PROTOCOL_VERSIONS[0]);
+        }
+        assert!(legacy_initialize_result(&Map::new()).is_err());
+    }
+
+    #[test]
+    fn legacy_results_drop_the_modern_envelope() {
+        let posted = legacy_result(complete_tool_result(json!({"msg_id": "m1"})));
+        assert_eq!(posted["structuredContent"], json!({"msg_id": "m1"}));
+        assert_eq!(posted["isError"], false);
+        for key in ["resultType", "ttlMs", "cacheScope", "_meta"] {
+            assert!(posted.get(key).is_none(), "{key}");
+        }
+
+        // Legacy structuredContent must be an object; the text block still carries arrays.
+        let listed = legacy_result(complete_tool_result(json!([{"member_id": "u1"}])));
+        assert!(listed.get("structuredContent").is_none());
+        assert!(listed["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("u1"));
+
+        let catalog = legacy_result(json!({
+            "resultType": "complete",
+            "tools": tool_definitions(),
+            "ttlMs": MCP_CATALOG_TTL_MS,
+            "cacheScope": "private",
+            "_meta": result_meta()
+        }));
+        assert!(catalog.get("_meta").is_none());
+        assert!(catalog["tools"][0]["_meta"]["io.cheers/requiredScopes"].is_array());
+    }
+
+    #[test]
+    fn legacy_requests_validate_mirrored_headers_only_when_sent() {
+        let mut params = Map::new();
+        params.insert("name".to_string(), json!("post_message"));
+        let headers = legacy_headers("2025-06-18");
+        assert!(validate_mirrored_headers(&headers, "tools/call", &params, false).is_ok());
+        assert_eq!(
+            validate_mirrored_headers(&headers, "tools/call", &params, true)
+                .unwrap_err()
+                .code,
+            -32020
+        );
+
+        let mut wrong_method = headers.clone();
+        wrong_method.insert(MCP_METHOD_HEADER, HeaderValue::from_static("tools/list"));
+        assert_eq!(
+            validate_mirrored_headers(&wrong_method, "tools/call", &params, false)
+                .unwrap_err()
+                .code,
+            -32020
+        );
+
+        let mut wrong_name = headers;
+        wrong_name.insert(MCP_NAME_HEADER, HeaderValue::from_static("desk_rm"));
+        assert_eq!(
+            validate_mirrored_headers(&wrong_name, "tools/call", &params, false)
+                .unwrap_err()
+                .code,
+            -32020
+        );
+    }
+
+    #[test]
+    fn tool_errors_read_the_nested_resource_error_frame() {
+        let frame = resource::err_res(
+            "r1",
+            "E_IDEMPOTENCY_KEY_REUSED",
+            "idempotency_key was already used for a different request",
+        );
+        assert_eq!(
+            resource_res_error(&frame, "code"),
+            Some("E_IDEMPOTENCY_KEY_REUSED")
+        );
+        assert_eq!(
+            resource_res_error(&frame, "message"),
+            Some("idempotency_key was already used for a different request")
+        );
+        assert_eq!(resource_res_error(&json!({"ok": true}), "code"), None);
+    }
+
+    #[test]
+    fn legacy_method_errors_travel_in_a_200_body() {
+        let legacy = method_error_response(
+            ProtocolEra::Legacy,
+            StatusCode::NOT_FOUND,
+            json!(1),
+            -32601,
+            "Method not found",
+            None,
+        );
+        assert_eq!(legacy.status(), StatusCode::OK);
+        let modern = method_error_response(
+            ProtocolEra::Modern,
+            StatusCode::NOT_FOUND,
+            json!(1),
+            -32601,
+            "Method not found",
+            None,
+        );
+        assert_eq!(modern.status(), StatusCode::NOT_FOUND);
     }
 }

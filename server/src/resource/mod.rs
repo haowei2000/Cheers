@@ -7,6 +7,7 @@ pub mod context;
 pub mod dms;
 pub mod files;
 pub mod fs;
+pub mod idempotency;
 pub mod members;
 pub mod messages;
 pub mod plan;

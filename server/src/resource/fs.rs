@@ -11,7 +11,10 @@ use yamlpath::{Component as YamlComponent, Document as YamlDocument, FeatureKind
 
 use crate::domain::channel_seq;
 
-use super::{authorize_channel_read, authorize_channel_write, Principal, ResourceResult};
+use super::{
+    authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, Principal,
+    ResourceResult,
+};
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
@@ -860,13 +863,27 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
 /// `fs.append` — append to a file, creating it if missing.
 pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
+    let idempotency = IdempotencyKey::from_params(principal, "fs.append", params)?;
     check_fs_write(db, principal, channel_id).await?;
+    if let Some(key) = &idempotency {
+        if let Some(replayed) = key.replay(db).await? {
+            return Ok(replayed);
+        }
+    }
     let append = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut tx = db
         .begin()
         .await
         .map_err(super::db_err("fs.append: begin tx"))?;
+    // Claimed before the file row is touched, so a concurrent duplicate waits here
+    // rather than racing this call to create the file.
+    if let Some(key) = &idempotency {
+        if !key.claim(&mut tx).await? {
+            drop(tx);
+            return key.replay_claimed(db).await;
+        }
+    }
     let existing = sqlx::query(
         "SELECT content, version, is_dir
          FROM context_files
@@ -920,16 +937,20 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
         json!({"path": path, "version": version, "appended_bytes": append.len()}),
     )
     .await?;
-    tx.commit()
-        .await
-        .map_err(super::db_err("fs.append: commit tx"))?;
-
-    Ok(json!({
+    let data = json!({
         "channel_id": channel_id,
         "path": path,
         "version": version,
         "channel_seq": seq,
-    }))
+    });
+    if let Some(key) = &idempotency {
+        key.complete(&mut tx, &data).await?;
+    }
+    tx.commit()
+        .await
+        .map_err(super::db_err("fs.append: commit tx"))?;
+
+    Ok(data)
 }
 
 /// `fs.rm` — remove a file or, with `recursive=true`, a subtree.

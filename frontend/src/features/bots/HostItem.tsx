@@ -28,6 +28,7 @@ import {
   mcpStateTone,
   type HostLifecycleItem,
 } from "./hostLifecycle";
+import { McpCheckSection } from "./McpCheckSection";
 
 export type HostItemData = HostLifecycleItem & {
   agent_type: string;
@@ -279,6 +280,13 @@ export function HostDetailDialog({
               </p>
             )}
         </section>
+        {!host.revoked_at && (
+          <McpCheckSection
+            botId={host.bot_id}
+            hostId={host.host_id}
+            deviceName={host.device_name}
+          />
+        )}
         <section className="space-y-3">
           <SectionHead>Manage host</SectionHead>
           {!error && <HostActions item={host} onChanged={refresh} />}
