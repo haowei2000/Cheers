@@ -19,11 +19,27 @@ export const editorialIconNames = [
   "session",
   "taskDocket",
   "diffProof",
+  "collection",
+  "tab",
+  "annotation",
 ] as const;
 
 export type EditorialIconName = (typeof editorialIconNames)[number];
 
 const iconArtwork: Record<EditorialIconName, ReactNode> = {
+  annotation: (
+    <>
+      {/* The slip a remark is written on, dog-eared where the corner was turned
+          back. Its own silhouette on purpose: `correspondence` is the envelope a
+          message travels in, `tab` the ruled index card, `excerpt` the passage
+          being quoted — this is the note somebody left in the margin. */}
+      <path d="M5.5 4.5h8L18.5 9.5v10H5.5z" />
+      <path d="M13.5 4.5v5h5" />
+      {/* The remark itself: two ruled lines, the second run short the way a hand
+          -written note trails off rather than filling the measure. */}
+      <path d="M8.75 13h6.5M8.75 16.25h4" />
+    </>
+  ),
   correspondence: (
     <>
       <path d="M3.75 6.5h16.5v11H3.75z" />
@@ -101,6 +117,28 @@ const iconArtwork: Record<EditorialIconName, ReactNode> = {
       <path d="M5 16h4M15 16h4" />
     </>
   ),
+  collection: (
+    <>
+      {/* Bound manuscript folio booklet: perimeter */}
+      <path d="M5 4.5h14v15H5z" />
+      {/* Spine crease dividing binding rail from document cover */}
+      <path d="M8.5 4.5v15" />
+      {/* Archival thread stitches binding the spine */}
+      <path d="M5 8h3.5M5 16h3.5" />
+      {/* Ruled title / index lines on the cover */}
+      <path d="M12 9.5h4.5M12 13.5h3" />
+    </>
+  ),
+  tab: (
+    <>
+      {/* Main manuscript card body */}
+      <path d="M4.5 7h15v12.5h-15z" />
+      {/* Protruding index tab atop the card shoulder */}
+      <path d="M4.5 7V4.5h7V7" />
+      {/* Ruled handwriting lines on the card */}
+      <path d="M8 12h8M8 15.5h5" />
+    </>
+  ),
 };
 
 export interface EditorialIconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
@@ -129,4 +167,12 @@ export function EditorialIcon({ name, title, contentSize = "regular", className,
       {iconArtwork[name]}
     </svg>
   );
+}
+
+export function CollectionIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="collection" contentSize={contentSize} className={className} {...props} />;
+}
+
+export function TabIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="tab" contentSize={contentSize} className={className} {...props} />;
 }
