@@ -16,6 +16,7 @@ import {
 import { ArrowLeft, Columns2, Rows2 } from "lucide-react";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/cn";
 import {
   ManagedPanelProvider,
   type ManagedPanel,
@@ -684,6 +685,13 @@ export function PanelWorkspace({
                       setActive(panel.id);
                       remember(requestedWidth, split, ratio, panel.id);
                     }}
+                    role="tab"
+                    className={cn(
+                      "rounded-none border-b-2 bg-transparent shadow-none ring-0",
+                      effectiveActive === panel.id
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
+                    )}
                   >
                     {panel.label}
                   </ControlTrigger>

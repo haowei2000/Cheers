@@ -105,8 +105,8 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
         className={cn(
           "rounded-sm border-b-0 transition-all duration-100",
           selected
-            ? "border-l-content-strong bg-panel font-semibold text-content-strong"
-            : "border-l-transparent text-content-primary hover:bg-control/60 hover:text-content-strong"
+            ? "border-l-content-strong bg-transparent font-semibold text-content-strong hover:bg-transparent"
+            : "border-l-transparent text-content-primary hover:bg-control/40 hover:text-content-strong"
         )}
       />
       {voiceEnabled && participants.length > 0 && (

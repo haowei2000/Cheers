@@ -192,14 +192,15 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
   };
 
   return (
-    <div className="p-2 text-compact flex gap-2 items-start overflow-auto h-full">
+    <div className="p-3 text-compact flex gap-4 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-content-muted">Empty board</div>}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-40 flex-shrink-0 bg-canvas/60 rounded-sm ">
-          <div className="mx-1 mt-1 rounded-sm bg-control/50 px-2 py-1 text-content-secondary">
-            {c.name} <span className="text-content-muted">{c.items.length}</span>
+        <div key={ci} className="w-52 flex-shrink-0 flex flex-col border-r border-control/80 last:border-r-0 pr-4">
+          <div className="flex items-center justify-between pb-1 mb-2 border-b border-control/80 text-compact font-serif font-bold text-content-strong tracking-wide">
+            <span>{c.name}</span>
+            <span className="font-code text-minimal text-content-muted tabular-nums">{c.items.length}</span>
           </div>
-          <div className="p-1 space-y-1">
+          <div className="space-y-1 flex-1 min-h-0">
             {c.items.map((it, ii) => (
               <div
                 key={ii}
@@ -228,19 +229,19 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
                   </>}
-                  className="border-b-0 bg-control/70 text-content-secondary"
+                  className="border-b border-control/80 bg-panel text-content-strong hover:bg-control/30"
                 />
               </div>
             ))}
             {!readOnly && (
-            <div className="flex items-center gap-1 pt-1">
+            <div className="flex items-center gap-1 pt-2 border-t border-control/60 mt-2">
               <UiInput
                 controlSize={workbenchControlSize.data}
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
                 placeholder="+ Task"
-                className="bg-transparent flex-1 text-content-secondary outline-none placeholder:text-content-muted"
+                className="bg-transparent flex-1 text-content-primary outline-none placeholder:text-content-muted text-compact"
               />
               <ResponsiveActionButton
                 action="add"

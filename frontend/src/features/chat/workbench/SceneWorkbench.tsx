@@ -352,7 +352,7 @@ function WorkbenchHierarchyNavigation({
         // Density is inherited from the chrome band these are portaled into, not
         // chosen here: the tab strip's own size belongs to the in-content strip.
         controlWidth="slot"
-        className="max-w-40"
+        className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
       />
       {!compact && <AddCollectionControl available={availableTemplates} onSelect={onAddCollection} onLoad={onLoadCollection} />}
       {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
@@ -368,7 +368,7 @@ function WorkbenchHierarchyNavigation({
           onAction={runTabAction}
           placement="up"
           controlWidth="slot"
-          className="max-w-40"
+          className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
         />
       )}
       {!compact && canAddTab && <AddTabControl candidates={tabCandidates} onSelect={onAddTab} />}
@@ -1087,7 +1087,7 @@ export function SceneWorkbench({
           {/* Bottom strip: the one place nothing floats over. Carries what the file is
               and what state it is in, so neither has to sit under the chrome. */}
           {(selectedPath || status || session.status || annotations.status) && (
-            <div className="flex items-center gap-2 border-t border-control px-3 py-2 text-compact">
+            <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
               {selectedPath && (
                 <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
               )}

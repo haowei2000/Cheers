@@ -116,7 +116,7 @@ export function ItemRow({
     </>
   );
   const classes = cn(
-    "group/item flex w-full min-w-0 items-center gap-2 rounded-sm border-b border-l-2 border-b-zinc-800/90 px-2 text-left transition-colors duration-150",
+    "group/item flex w-full min-w-0 items-center gap-2 rounded-sm border-b border-l-2 border-b-control/80 px-2 text-left transition-colors duration-150",
     controlMinHeightClasses[size],
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected

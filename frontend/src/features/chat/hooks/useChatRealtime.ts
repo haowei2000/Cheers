@@ -250,10 +250,16 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
       pendingReqs.delete(res.req_id);
       clearTimeout(pending.timer);
       if (res.ok) pending.resolve(res.data);
-      else
+      else {
+        const errorMsg = typeof res.error === "string"
+          ? res.error
+          : res.error && typeof res.error === "object"
+            ? (res.error as { message?: string }).message || JSON.stringify(res.error)
+            : "resource error";
         pending.reject(
-          new ResourceError(res.code ?? "ERROR", res.error ?? "resource error")
+          new ResourceError(res.code ?? "ERROR", errorMsg)
         );
+      }
     }
     return;
   }
