@@ -23,6 +23,38 @@ export function disarmHover(): void {
   document.documentElement.setAttribute(IDLE_ATTR, "");
 }
 
+/** Whether the pointer has reported moving since the page last changed under it.
+ *  JS hover handlers need the same answer the CSS guard encodes: `pointerover`
+ *  fires when the element under the cursor changes, and content arriving under a
+ *  still cursor changes it just as a movement would. */
+export function pointerHasMoved(): boolean {
+  return !document.documentElement.hasAttribute(IDLE_ATTR);
+}
+
+/**
+ * Run a hover effect only once the pointer has proved it meant this element.
+ *
+ * `mouseenter` / `pointerover` fire whenever the element under the cursor changes,
+ * and content arriving under a still cursor changes it exactly as an approach does.
+ * Dropping such an event outright would cost the effect entirely — the cursor is
+ * already inside, so no second enter is coming — so it is held until the pointer
+ * moves, then honoured only if the cursor is still over the element it was meant
+ * for. A pointer that moved away instead simply never triggers it.
+ */
+export function whenPointerMeans(element: Element, run: () => void): void {
+  if (pointerHasMoved()) {
+    run();
+    return;
+  }
+  const honour = (event: PointerEvent) => {
+    document.removeEventListener("pointermove", honour);
+    if (!element.isConnected) return;
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    if (under && element.contains(under)) run();
+  };
+  document.addEventListener("pointermove", honour, { passive: true });
+}
+
 let watching = false;
 
 /** Call once, before the first paint, so the opening frame is never pre-hovered. */

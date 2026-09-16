@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { FloatingLayer } from "./floating-layer";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 const SHOW_DELAY_MS = 350;
 const EDGE_ZONE_PX = 180;
@@ -109,8 +110,13 @@ export function TitleTooltip() {
     const onPointerOver = (event: PointerEvent) => {
       const next = titleAnchor(event.target);
       if (!next) return;
-      hovered = next;
-      sync();
+      // Opening a page whose button lands under the pointer raises this event just
+      // as approaching the button does. Only the second one is a question worth
+      // answering with a tooltip.
+      whenPointerMeans(next, () => {
+        hovered = next;
+        sync();
+      });
     };
     const onPointerOut = (event: PointerEvent) => {
       if (!hovered || remainsInside(hovered, event.relatedTarget)) return;

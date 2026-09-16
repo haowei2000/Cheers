@@ -47,6 +47,7 @@ import {
   type ContextAction,
   useContextSurface,
 } from "@/components/ui/context-actions";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -945,7 +946,7 @@ function RegularMessageItem({
         onPointerCancel={contextSurface.onPointerCancel}
         onPointerLeave={contextSurface.onPointerLeave}
         onClickCapture={contextSurface.onClickCapture}
-        onMouseEnter={showActionBar}
+        onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showActionBar)}
         onMouseLeave={hideActionBar}
       >
         {selectable && (
@@ -1021,7 +1022,7 @@ function RegularMessageItem({
       onPointerCancel={contextSurface.onPointerCancel}
       onPointerLeave={contextSurface.onPointerLeave}
       onClickCapture={contextSurface.onClickCapture}
-      onMouseEnter={showActionBar}
+      onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showActionBar)}
       onMouseLeave={hideActionBar}
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}

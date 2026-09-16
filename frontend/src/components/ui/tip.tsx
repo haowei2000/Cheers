@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
@@ -60,7 +61,7 @@ export function Tip({
       ref={rootRef}
       className={cn("relative inline-flex", className)}
       data-managed-tooltip="true"
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setOpen(true))}
       onMouseLeave={() => setOpen(false)}
       onFocusCapture={() => setOpen(true)}
       onBlurCapture={() => requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && setOpen(false))}
