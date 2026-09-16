@@ -145,6 +145,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         `Button action="${action}" carries an unabbreviated label and requires controlWidth="fill".`
       );
     }
+    const isTab = role === "tab";
     return <button
       ref={ref}
       disabled={disabled || loading}
@@ -153,28 +154,39 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       data-control-width={controlWidth}
       aria-busy={loading || undefined}
       role={role}
-      aria-pressed={role === "tab" || props["aria-expanded"] !== undefined ? undefined : selected || undefined}
+      aria-pressed={isTab || props["aria-expanded"] !== undefined ? undefined : selected || undefined}
       data-selected={selected || undefined}
       className={cn(
         "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
         variantCls[variant],
-        selected && "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active",
-        className,
+        isTab
+          ? cn(
+              "rounded-none border-b-2 bg-transparent ring-0 shadow-none hover:bg-transparent",
+              selected
+                ? "border-content-strong text-content-strong font-semibold"
+                : "border-transparent text-content-primary hover:text-content-strong",
+            )
+          : cn(
+              selected && "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active",
+            ),
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses.regular,
-        content === "icon"
-          ? "rounded-sm p-0"
-          : cn(
-              "rounded-sm",
-              content === "text" ? "gap-2 px-3" : "gap-0 p-0",
-              controlWidth === "fill"
-                ? "w-full"
-                : controlWidth === "content"
-                  ? "w-auto max-w-full"
-                  : content === "iconText"
-                    ? "w-32 max-w-full"
-                    : "w-24 max-w-full",
-            ),
+        isTab
+          ? "rounded-none"
+          : content === "icon"
+            ? "rounded-sm p-0"
+            : cn(
+                "rounded-sm",
+                content === "text" ? "gap-2 px-3" : "gap-0 p-0",
+                controlWidth === "fill"
+                  ? "w-full"
+                  : controlWidth === "content"
+                    ? "w-auto max-w-full"
+                    : content === "iconText"
+                      ? "w-32 max-w-full"
+                      : "w-24 max-w-full",
+              ),
+        className,
       )}
       {...props}
     >

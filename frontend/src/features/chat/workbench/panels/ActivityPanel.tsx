@@ -594,7 +594,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
 
         {/* Content-local controls float over the Board; list padding keeps the final row reachable. */}
         <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
-          <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
+          <div role="tablist" aria-label="Activity views" className="pointer-events-auto flex items-center gap-1 border-b border-control/80 px-1 py-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <UiButton variant="plain" role="tab" aria-selected={lens === l} selected={lens === l}
@@ -603,8 +603,10 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 onClick={() => setLens(l)}
                 controlSize={FLOATING_CHROME_CONTROL_SIZE}
                 className={cn(
-                  "rounded-sm capitalize transition-colors",
-                  lens !== l && "text-content-primary hover:text-content-strong",
+                  "rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 capitalize transition-colors hover:bg-transparent -mb-[3px]",
+                  lens === l
+                    ? "border-content-strong text-content-strong font-semibold"
+                    : "border-transparent text-content-primary hover:text-content-strong",
                 )}
               >
                 {l}
@@ -613,7 +615,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           </div>
           <div className="flex-1" />
           {members.length > 0 && (
-            <div className="floating-control-surface pointer-events-auto rounded-concentric p-1">
+            <div className="pointer-events-auto">
               <MemberFilter
                 members={members}
                 memberOf={memberOf}

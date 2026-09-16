@@ -576,16 +576,34 @@ export function PanelWorkspace({
       >
         {!layout.sideBySide && hasDock && (
           <ButtonGroup
+            role="tablist"
             label="Conversation view"
             controlSize="regular"
-            className="shrink-0 px-3 py-1"
+            className="shrink-0 border-b border-control/80 px-3 py-1"
           >
-            <ControlTrigger selected={!showWork} onClick={showMessages}>
+            <ControlTrigger
+              role="tab"
+              selected={!showWork}
+              onClick={showMessages}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                !showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
+            >
               Messages
             </ControlTrigger>
             <ControlTrigger
+              role="tab"
               selected={showWork}
               onClick={() => setShowWork(true)}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               Workspace
             </ControlTrigger>

@@ -180,8 +180,10 @@ function SceneTab({
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-sm transition-colors",
-        !selected && "text-content-primary hover:text-content-strong",
+        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors hover:bg-transparent",
+        selected
+          ? "border-content-strong text-content-strong font-semibold"
+          : "border-transparent text-content-primary hover:text-content-strong",
       )}
       {...contextHandlers}
     >
@@ -436,8 +438,10 @@ function ItemTab({
       aria-current={selected ? "page" : undefined}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
-        !selected && "text-content-primary hover:text-content-strong",
+        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
+        selected
+          ? "border-content-strong text-content-strong font-semibold"
+          : "border-transparent text-content-primary hover:text-content-strong",
       )}
       onContextMenu={contextSurface.onContextMenu}
       onKeyDown={contextSurface.onKeyDown}

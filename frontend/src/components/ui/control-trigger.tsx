@@ -32,6 +32,7 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
     ...props
   }, ref) => {
     const size = useControlSize(controlSize);
+    const isTab = role === "tab";
     return (
       <button
         ref={ref}
@@ -41,14 +42,24 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
         data-selected={selected || undefined}
         role={role}
         aria-expanded={ariaExpanded}
-        aria-pressed={role === "tab" || ariaExpanded !== undefined ? undefined : selected || undefined}
+        aria-pressed={isTab || ariaExpanded !== undefined ? undefined : selected || undefined}
         className={cn(
-          "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden rounded-sm font-utility text-regular font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex min-w-0 items-center justify-center gap-2 overflow-hidden font-utility text-regular font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50",
           square ? controlSquareClasses[size] : controlHeightClasses[size],
           !square && (controlWidth === "fill" ? "w-full" : "w-24 max-w-full px-3"),
-          selected
-            ? "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active shadow-sm"
-            : "text-content-primary hover:bg-control hover:text-content-strong active:bg-control-active",
+          isTab
+            ? cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none hover:bg-transparent",
+                selected
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )
+            : cn(
+                "rounded-sm",
+                selected
+                  ? "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active shadow-sm"
+                  : "text-content-primary hover:bg-control hover:text-content-strong active:bg-control-active",
+              ),
           className,
         )}
         {...props}

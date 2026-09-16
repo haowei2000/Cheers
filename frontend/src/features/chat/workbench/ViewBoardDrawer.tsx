@@ -321,7 +321,7 @@ function ViewBoardDrawerImpl({
       )}
     >
       <div
-        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control px-0 py-1 md:hidden"
+        className="mx-3 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-0 py-1 md:hidden"
         role="tablist"
         aria-label="ViewBoard sections"
       >
@@ -337,7 +337,12 @@ function ViewBoardDrawerImpl({
               key={b.id}
               onClick={() => setActive(b.id)}
               controlSize="regular"
-              className={cn("inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap transition-colors", !isActive && "text-content-primary hover:text-content-strong")}
+              className={cn(
+                "inline-flex flex-shrink-0 items-center gap-2 whitespace-nowrap transition-colors rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                isActive
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               {Icon && <Icon className="w-3.5 h-3.5" />}
               {b.title}

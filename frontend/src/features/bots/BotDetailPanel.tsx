@@ -214,7 +214,7 @@ export function BotDetailPanel({
       </div>
 
       {/* Tab strip */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-control/80">
+      <div role="tablist" aria-label="Bot details" className="flex items-center gap-1 overflow-x-auto border-b border-control/80">
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
@@ -223,7 +223,12 @@ export function BotDetailPanel({
               type="button"
               onClick={() => setTab(id)}
               controlSize="regular"
-              className={cn("inline-flex items-center gap-2 font-medium transition-colors", !active && "text-content-primary hover:text-content-strong")}
+              className={cn(
+                "inline-flex items-center gap-2 font-medium transition-colors rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                active
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
