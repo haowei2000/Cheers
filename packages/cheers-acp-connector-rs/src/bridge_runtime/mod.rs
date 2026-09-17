@@ -3112,6 +3112,298 @@ use signing::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bridge::PermissionOption;
+    use crate::runtime_adapter::{
+        AgentCapabilities, ConfigApplyResult, PromptClient, PromptResult, SessionLoadResult,
+        SessionStartResult,
+    };
+
+    // ── 多频道并发夹具 ───────────────────────────────────────────────────────
+    //
+    // 一个 bot 通过单个 agent 进程服务所有频道，"频道 A 卡住不阻塞频道 B"这条
+    // 不变量此前只有 run_task 里的注释保护。夹具把真实的 run_task 跑起来，agent
+    // 换成可控的假实现，从而让锁纪律本身可回归。
+
+    /// 受测试控制何时返回的 prompt 客户端。
+    ///
+    /// 第一个 prompt 停在闸门上直到测试放行，之后的立即返回——这样无需让假 agent
+    /// 认识频道：谁先到谁就是"被卡住的那个"。
+    struct GatedPromptClient {
+        gate: Mutex<Option<oneshot::Receiver<()>>>,
+        started: Arc<Semaphore>,
+    }
+
+    #[async_trait::async_trait]
+    impl PromptClient for GatedPromptClient {
+        async fn prompt(
+            &self,
+            _session_id: &str,
+            _prompt: Vec<Value>,
+            _timeout_ms: u64,
+        ) -> anyhow::Result<PromptResult> {
+            let gate = self.gate.lock().await.take();
+            // 宣告"我已进入 prompt"必须发生在等待闸门之前，否则测试无从分辨
+            // "还没跑到"与"已经卡住"。
+            self.started.add_permits(1);
+            if let Some(gate) = gate {
+                let _ = gate.await;
+            }
+            Ok(PromptResult {
+                stop_reason: Some("end_turn".to_string()),
+            })
+        }
+    }
+
+    /// 只实现 run_task 真正触达的方法；其余留 unimplemented!，一旦被调用就是
+    /// 测试覆盖面变了，应当显式面对而不是静默返回默认值。
+    struct FakeAdapter {
+        prompt_client: Arc<GatedPromptClient>,
+        sessions: AtomicU64,
+    }
+
+    #[async_trait::async_trait]
+    impl RuntimeAdapter for FakeAdapter {
+        async fn start(&mut self) -> anyhow::Result<Value> {
+            unimplemented!("fixture never starts an agent process")
+        }
+        async fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn restart(&mut self) -> anyhow::Result<Value> {
+            unimplemented!("fixture never restarts an agent process")
+        }
+        async fn authenticate(
+            &mut self,
+            _method_id: &str,
+            _request_route: Option<RequestRoute>,
+        ) -> anyhow::Result<()> {
+            unimplemented!("fixture agent needs no authentication")
+        }
+        async fn new_session(
+            &mut self,
+            _options: SessionStartOptions,
+        ) -> anyhow::Result<SessionStartResult> {
+            let n = self.sessions.fetch_add(1, Ordering::SeqCst);
+            Ok(SessionStartResult {
+                session_id: format!("acp-session-{n}"),
+                metadata: json!({}),
+            })
+        }
+        async fn load_session(
+            &mut self,
+            _session_id: &str,
+            _options: SessionStartOptions,
+        ) -> anyhow::Result<SessionLoadResult> {
+            unimplemented!("fixture agent does not advertise loadSession")
+        }
+        async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn set_config_option(
+            &mut self,
+            _session_id: &str,
+            _config_id: &str,
+            _value: &str,
+        ) -> anyhow::Result<Value> {
+            unimplemented!("fixture exposes no config options")
+        }
+        async fn set_mode(&mut self, _session_id: &str, _mode: &str) -> anyhow::Result<()> {
+            unimplemented!("fixture exposes no modes")
+        }
+        async fn set_model(&mut self, _session_id: &str, _model_id: &str) -> anyhow::Result<()> {
+            unimplemented!("fixture exposes no models")
+        }
+        async fn apply_settings(
+            &mut self,
+            _settings: &ConnectorControlSettings,
+        ) -> anyhow::Result<ConfigApplyResult> {
+            unimplemented!("fixture takes no gateway settings")
+        }
+        fn permission_options(&self, _params: &Value) -> Vec<PermissionOption> {
+            Vec::new()
+        }
+        fn prompt_client(&self) -> Arc<dyn PromptClient> {
+            self.prompt_client.clone()
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            // loadSession off keeps every turn on the new_session path, so the
+            // fixture needs no session persistence.
+            AgentCapabilities {
+                load_session: false,
+                prompt_image: false,
+                prompt_audio: false,
+                mcp_http: true,
+                mcp_sse: false,
+            }
+        }
+        fn initialize_response(&self) -> Option<Value> {
+            None
+        }
+        async fn inject_fence(&self, _acp_session_id: String) {}
+    }
+
+    /// 走真实的 TOML 解析路径，因此夹具用的就是产品默认值（含 max_concurrent）。
+    async fn fixture_config(dir: &std::path::Path) -> AccountConfig {
+        // The credential is read from the environment by the real loader; a
+        // file keeps the fixture free of process-wide env mutation, which would
+        // race every other test in this binary.
+        let credential_path = dir.join("credential");
+        tokio::fs::write(&credential_path, "agbi_fixture\n")
+            .await
+            .unwrap();
+        let config_path = dir.join("connector.toml");
+        tokio::fs::write(
+            &config_path,
+            format!(
+                r#"
+version = 1
+
+[daemon]
+state_path = "state.json"
+
+[accounts.test.bridge]
+control_url = "wss://example.invalid/control"
+data_url = "wss://example.invalid/data"
+host_credential_file = "{credential}"
+
+[accounts.test.adapter]
+type = "stdio"
+command = "true"
+"#,
+                credential = credential_path.display()
+            ),
+        )
+        .await
+        .unwrap();
+        crate::config::load_config(&config_path)
+            .await
+            .unwrap()
+            .accounts
+            .remove("test")
+            .unwrap()
+    }
+
+    /// 运行时写入的接收端。测试全程持有：一旦丢弃，运行时的发送会变成
+    /// "writer closed"，看起来像 Bridge 掉线而不是测试本身的问题。
+    struct RuntimeTaps {
+        _control: mpsc::Receiver<ControlOutbound>,
+        _priority: mpsc::Receiver<DataOutbound>,
+        _stream: mpsc::Receiver<DataOutbound>,
+        _events: mpsc::Receiver<RuntimeInput>,
+    }
+
+    /// 组装一个跑得动 run_task 的 RuntimeContext，agent 为受控假实现。
+    ///
+    /// 返回：运行时、"已进入 prompt"信号量、放行闸门、以及必须被持有的接收端。
+    async fn fixture_runtime(
+        dir: &std::path::Path,
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Semaphore>,
+        oneshot::Sender<()>,
+        RuntimeTaps,
+    ) {
+        let (release, gate) = oneshot::channel();
+        let started = Arc::new(Semaphore::new(0));
+        let prompt_client = Arc::new(GatedPromptClient {
+            gate: Mutex::new(Some(gate)),
+            started: started.clone(),
+        });
+        let adapter: Box<dyn RuntimeAdapter> = Box::new(FakeAdapter {
+            prompt_client: prompt_client.clone(),
+            sessions: AtomicU64::new(0),
+        });
+        let config = fixture_config(dir).await;
+        let TestIo {
+            handle,
+            control,
+            priority,
+            stream,
+        } = io::test_io();
+        // run_loop never runs here — run_task is driven directly — so the event
+        // receiver is only parked to keep its sender alive.
+        let (runtime_tx, events) = mpsc::channel(64);
+        let shared = Arc::new(SharedRuntimeState::new(
+            HashMap::new(),
+            config.policy.prompt.max_concurrent,
+        ));
+        let context = Arc::new(RuntimeContext {
+            account_id: "test".to_string(),
+            config,
+            identity: test_identity(),
+            mcp_url: "https://example.invalid/mcp".to_string(),
+            mcp_token: None,
+            state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
+            adapter: Arc::new(Mutex::new(adapter)),
+            io: handle,
+            shared,
+            runtime_tx,
+        });
+        (
+            context,
+            started,
+            release,
+            RuntimeTaps {
+                _control: control,
+                _priority: priority,
+                _stream: stream,
+                _events: events,
+            },
+        )
+    }
+
+    /// 一个最小的频道回合。频道各自的 provider_session_key 是关键：会话锁按它
+    /// 分桶，这正是"跨频道并行"所依赖的东西。
+    fn fixture_task(channel: &str) -> TaskCommand {
+        TaskCommand {
+            task_id: format!("task-{channel}"),
+            channel_id: channel.to_string(),
+            msg_id: format!("msg-{channel}"),
+            provider_session_key: format!("cheers:channel:{channel}:bot:fixture"),
+            session_id: None,
+            trigger: Some("user_message".to_string()),
+            trigger_message: Some(json!({"msg_id": format!("origin-{channel}"), "text": "hi"})),
+            attachments: Vec::new(),
+            pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
+            context_bundle: None,
+        }
+    }
+
+    /// 验收矩阵 #3：频道 A 的回合卡在 agent 里时，频道 B 的回合照常跑完。
+    ///
+    /// 这条不变量此前只有 run_task 里那段"prompt 期间不持 adapter 锁"的注释
+    /// 保护。把 adapter 锁挪到 prompt 之上，这个测试就会在 B 上超时。
+    ///
+    /// 这里**不能**用暂停时钟：会话状态落盘走 tokio 的阻塞线程池，运行时在等它
+    /// 期间被视为 idle，自动推进会把超时凭空点着。"不被阻塞"本就是活性命题，
+    /// 用真实时间加宽松上限才是对的；确定性由 `started` 信号量提供——它保证
+    /// 断言发生在 A 确实进入 prompt 之后。
+    #[tokio::test]
+    async fn one_blocked_channel_does_not_block_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, started, release, _taps) = fixture_runtime(dir.path()).await;
+
+        let blocked = tokio::spawn(runtime.clone().run_task(fixture_task("channel-a"), None));
+        // A 已经进入 prompt——区分"卡住了"与"还没排到"。
+        let _entered = started.clone().acquire_owned().await.unwrap();
+
+        let other = tokio::spawn(runtime.clone().run_task(fixture_task("channel-b"), None));
+        tokio::time::timeout(Duration::from_secs(10), other)
+            .await
+            .expect("频道 B 不得被频道 A 阻塞")
+            .unwrap()
+            .unwrap();
+        assert!(!blocked.is_finished(), "哨兵：频道 A 本就该仍然卡着");
+
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), blocked)
+            .await
+            .expect("放行后频道 A 必须收尾")
+            .unwrap()
+            .unwrap();
+    }
 
     fn empty_run() -> ActiveRun {
         ActiveRun {

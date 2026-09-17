@@ -228,6 +228,52 @@ impl BridgeIoHandle {
     }
 }
 
+/// A [`BridgeIoHandle`] plus the receiving ends its frames land in.
+///
+/// Holding every receiver matters: a sender whose receiver was dropped makes the
+/// runtime's sends fail as "writer closed", which would look like a Bridge
+/// outage rather than the test it is.
+#[cfg(test)]
+pub(super) struct TestIo {
+    pub(super) handle: BridgeIoHandle,
+    pub(super) control: mpsc::Receiver<ControlOutbound>,
+    pub(super) priority: mpsc::Receiver<DataOutbound>,
+    pub(super) stream: mpsc::Receiver<DataOutbound>,
+}
+
+/// Wire an io handle to plain channels instead of a socket.
+///
+/// The real handle can only come from [`spawn_bridge_io`], which needs two live
+/// WebSockets, so a test of the runtime's orchestration would otherwise have to
+/// stand up a Bridge. Both ack modes are off, matching a Gateway that advertises
+/// neither: a send completes as soon as the frame is queued and returns a
+/// synthetic success, which is what a test driving turns wants.
+#[cfg(test)]
+pub(super) fn test_io() -> TestIo {
+    let (control_tx, control) = mpsc::channel(256);
+    let (priority_data_tx, priority) = mpsc::channel(PRIORITY_DATA_QUEUE_CAPACITY);
+    let (stream_data_tx, stream) = mpsc::channel(STREAM_DATA_QUEUE_CAPACITY);
+    TestIo {
+        handle: BridgeIoHandle {
+            control_tx,
+            priority_data_tx,
+            stream_data_tx,
+            pending_send_acks: Arc::new(Mutex::new(HashMap::new())),
+            pending_terminal_acks: Arc::new(Mutex::new(HashMap::new())),
+            pending_file_upload_acks: Arc::new(Mutex::new(HashMap::new())),
+            ack_timeout: Duration::from_secs(5),
+            terminal_ack_timeout: Duration::from_secs(5),
+            send_ack_enabled: false,
+            terminal_ack_enabled: false,
+            file_upload_enabled: false,
+            last_event_seq: Arc::new(AtomicU64::new(0)),
+        },
+        control,
+        priority,
+        stream,
+    }
+}
+
 pub(super) fn spawn_bridge_io(
     session: BridgeSession,
     config: BridgeSessionConfig,

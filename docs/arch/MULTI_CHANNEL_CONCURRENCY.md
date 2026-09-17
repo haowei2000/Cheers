@@ -118,8 +118,13 @@ target 为 `cheers::mcp::channel_scope`，按 `verdict` 聚合即得基线：
 | --- | --- | --- |
 | 1 | 同一 bot 两频道并发回合 | 上下文与 `cwd` 不互窜 |
 | 2 | 并发期间抓 MCP 请求头 | 阶段 2 后：每个请求的 `chan` 与其所属频道一致 |
-| 3 | 频道 A 卡在审批卡上 | 频道 B 的回合照常完成（`bridge_runtime` 释放 adapter 锁那段注释的回归） |
+| 3 | 频道 A 卡在审批卡上 | 频道 B 的回合照常完成（`bridge_runtime` 释放 adapter 锁那段注释的回归）✅ 已自动化 |
 | 4 | 并发度打满信号量 | 背压帧到达前端，频道显示"排队中"而非静默等待 |
 | 5 | agent 进程被 kill | 每个在途频道各自收到终帧，而非集体静默超时 |
 
-第 3 项今天没有自动化回归，需要一个假 `RuntimeAdapter` 的测试夹具，随阶段 1 一并补。
+第 3 项已由 `bridge_runtime` 的 `one_blocked_channel_does_not_block_the_others` 覆盖：
+夹具（`io::test_io` + `FakeAdapter` + 真实 TOML 解析出的配置）把真正的 `run_task` 跑起来，
+只把 agent 换成可控假实现，因此保护的是锁纪律本身而非某个 mock 的行为。它上线当天就抓到
+一个真 bug：`RawPromptPolicy` 手写的 `Default` 仍把 `max_concurrent` 钉在 1，而 serde
+的字段默认是 4——配置里整个 `[policy.prompt]` 表缺席时走的是前者，于是并发上限被悄悄
+锁死。剩余项（1、2、4、5）待补。
