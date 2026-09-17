@@ -142,10 +142,20 @@ function eventMeta(e: TraceEvent): EventVisual {
   }
 }
 
-/** The MCP server a startup failure is about, e.g. "cheers". */
-export function mcpStartupServer(e: TraceEvent): string {
+/**
+ * The MCP server a startup failure is about, or null when the trace does not
+ * name one.
+ *
+ * The connector gives each channel its own Cheers server name, so there is no
+ * fixed name to fall back on — and guessing one would print a login command
+ * that does not match any server the agent actually has. Reconstructing the
+ * name here would duplicate the connector's naming rule in a second place;
+ * better to say less.
+ */
+export function mcpStartupServer(e: TraceEvent): string | null {
   const id = e.tool_call_id ?? "";
-  return id.startsWith("mcp_startup.") ? id.slice("mcp_startup.".length) || "cheers" : "cheers";
+  if (!id.startsWith("mcp_startup.")) return null;
+  return id.slice("mcp_startup.".length) || null;
 }
 
 export function isMcpStartupError(e: TraceEvent): boolean {
@@ -166,10 +176,12 @@ export function isMcpStartupError(e: TraceEvent): boolean {
     })
     .join(" ");
   const fullText = `${text} ${contentText}`;
+  // The quoted name is matched by prefix: each channel gets its own Cheers
+  // server name (`cheers-<channel>`), so an exact "cheers" no longer appears.
   return (
     fullText.includes("mcp_startup") ||
-    fullText.includes("MCP server `cheers` failed to start") ||
-    fullText.includes("MCP server 'cheers' failed to start")
+    fullText.includes("MCP server `cheers") ||
+    fullText.includes("MCP server 'cheers")
   );
 }
 
@@ -385,7 +397,10 @@ function eventPreview(event: TraceEvent): string | null {
     return presentation.target ?? presentation.path ?? presentation.query ?? presentation.command ?? null;
   }
   if (isMcpStartupError(event)) {
-    return `Run 'mcp login ${mcpStartupServer(event)}' in your agent's CLI to grant tools`;
+    const server = mcpStartupServer(event);
+    return server
+      ? `Run 'mcp login ${server}' in your agent's CLI to grant tools`
+      : "Log in to the Cheers MCP server in your agent's CLI to grant tools";
   }
   const input = asRecord(data?.input);
   const command = stringField(input, "command") ?? stringField(data, "command");
@@ -399,7 +414,16 @@ function eventPreview(event: TraceEvent): string | null {
   return null;
 }
 
-function McpStartupErrorCard({ server }: { server: string }) {
+function McpStartupErrorCard({ server }: { server: string | null }) {
+  if (!server) {
+    return (
+      <Banner severity="warning" icon={KeyRound}>
+        Cheers MCP tools need a login. Run{" "}
+        <code className="font-code">mcp login</code> with the CLI of the agent
+        behind this bot, naming the Cheers server it lists.
+      </Banner>
+    );
+  }
   return (
     <Banner severity="warning" icon={KeyRound}>
       Cheers MCP tools need a login. Run{" "}

@@ -52,6 +52,20 @@ const MAX_BOOT_ATTEMPTS: u32 = 3;
 
 const DRAIN_POLL: Duration = Duration::from_secs(5);
 
+/// How long to wait for a quiet connector before abandoning this update attempt.
+///
+/// One bot serves every channel it belongs to through a single process, so
+/// `active_prompts()` counts turns across all of them at once: the busier the
+/// bot, the less often that total is ever zero. Waiting without a bound turns a
+/// staged update into a task that spins for the life of the process, holding
+/// staged files and reporting nothing above info level. Giving up instead lets
+/// the next check start clean — possibly on a newer manifest.
+///
+/// Abandoning is the safe half of the trade. The alternative — refusing new
+/// turns so the in-flight ones can drain — would guarantee the update but bounce
+/// real user messages, which is a product decision rather than a mechanical one.
+const DRAIN_DEADLINE: Duration = Duration::from_secs(30 * 60);
+
 /// Prompt turns currently in flight, process-wide. The updater refuses to swap
 /// binaries while this is non-zero so an exec never cuts off a streaming reply.
 static ACTIVE_PROMPTS: AtomicUsize = AtomicUsize::new(0);
@@ -587,6 +601,19 @@ impl SelfUpdater {
                 }
             } else {
                 quiet = 0;
+            }
+            if waited >= DRAIN_DEADLINE {
+                // Never exec mid-turn: cutting off a streaming reply is worse
+                // than running the old binary a while longer. Say so loudly —
+                // a bot busy enough to never fall quiet will otherwise look
+                // like a bot whose updates silently do nothing.
+                tracing::warn!(
+                    version = %manifest.version,
+                    in_flight = active_prompts(),
+                    waited_secs = waited.as_secs(),
+                    "self-update: gave up waiting for an idle connector; will retry on the next check"
+                );
+                return Ok(());
             }
             tokio::time::sleep(DRAIN_POLL).await;
             waited += DRAIN_POLL;

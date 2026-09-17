@@ -145,7 +145,7 @@ All policy tables are optional; each key falls back to the default below.
 | Key                     | Type | Default  | Meaning |
 |-------------------------|------|----------|---------|
 | `allow`                 | bool | `true`   | Master switch: accept prompt turns at all. |
-| `max_concurrent`        | int  | `1`      | Concurrent turns per bot (keep at 1 unless the agent is reentrant). |
+| `max_concurrent`        | int  | `4`      | Turns this daemon runs at once, across every channel. Enforced by a semaphore taken *after* the per-session lock, so a busy channel queues on its own lock without occupying the pool. Past the cap a turn waits and the channel gets a `turn_queued` trace. |
 | `max_prompt_bytes`      | int  | `200000` | Reject prompts larger than this. |
 | `max_duration_ms`       | int  | `900000` | Kill a turn that runs longer than this (15 min). |
 | `allow_attachments`     | bool | `true`   | Allow non-image file attachments in prompts. |
@@ -233,9 +233,19 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
-| `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? |
-| `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject (e.g. `["cheers"]`). |
-| `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. |
+| `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? **Inert today** — see below. |
+| `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject. **Inert today** — see below. |
+| `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. Enforced: these are injected as written (minus any the Agent's `mcpCapabilities` cannot transport). |
+
+> **The two injection keys gate a path that does not exist.** The Agent Bridge
+> protocol carries exactly one MCP-related field — `mcp_url` in the hello frame,
+> the Gateway's canonical HTTP endpoint. There is no frame through which the
+> Backend can add an MCP server, so nothing reaches these keys to be allowed or
+> refused; the connector composes `mcpServers` from `policy.mcp.servers` plus
+> that mandatory canonical endpoint. They are kept as the gate a future
+> Backend-injection feature must pass through, and are deliberately closed by
+> default. Do not read a present `allowed_servers` list as an enforced ceiling:
+> today it neither permits nor blocks anything.
 
 ### `[accounts.<id>.security.acp_capability]` — signed capability (optional)
 

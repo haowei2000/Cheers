@@ -18,7 +18,7 @@ use chrono::Utc;
 use ed25519_dalek::{pkcs8::DecodePrivateKey, Signature, Signer, SigningKey};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use tokio::sync::{mpsc, oneshot, Mutex, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -238,7 +238,10 @@ impl AccountRuntime {
                 }
             });
         }
-        let shared = Arc::new(SharedRuntimeState::new(channel_names));
+        let shared = Arc::new(SharedRuntimeState::new(
+            channel_names,
+            self.config.policy.prompt.max_concurrent,
+        ));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
@@ -1561,10 +1564,24 @@ impl RuntimeContext {
             let _ = handle.renew_tx.send(());
             return Ok(json!({ "watch_id": id, "ttl_secs": WATCH_TTL_SECS }));
         }
-        if guard.len() >= MAX_WATCHES {
+        // Charged per workspace root, not to one daemon-wide pool. A single
+        // daemon serves every channel its bot belongs to, and each channel's
+        // session scopes browsing to its own roots — so a global pool let one
+        // busy workspace exhaust the budget for all the others, and the operator
+        // could do nothing about it. Per root, the total is
+        // `allowed_roots × MAX_WATCHES`: still bounded, and bounded by a number
+        // the operator chose rather than one invented here.
+        let in_root = guard
+            .values()
+            .filter(|handle| handle.root == root_canon)
+            .count();
+        if in_root >= MAX_WATCHES {
             return Err(err(
                 "E_TOO_MANY_WATCHES",
-                format!("watch cap reached ({MAX_WATCHES} concurrent watches)"),
+                format!(
+                    "watch cap reached ({MAX_WATCHES} concurrent watches in {})",
+                    root_canon.display()
+                ),
             ));
         }
 
@@ -1601,6 +1618,7 @@ impl RuntimeContext {
             watch_id.clone(),
             WatchHandle {
                 dir,
+                root: root_canon.to_path_buf(),
                 renew_tx,
                 _abort: AbortOnDrop(task.abort_handle()),
             },
@@ -1761,7 +1779,31 @@ impl RuntimeContext {
         }
         let session_lock = self.session_lock(&task.provider_session_key).await;
         let _guard = session_lock.lock().await;
+        // Deliberately after the session lock: see TurnSlots. A channel queueing
+        // up behind its own turn must not hold a daemon slot while it waits.
+        let _slot = match self.shared.turn_slots.try_acquire() {
+            Some(slot) => slot,
+            None => {
+                // Say it before parking, not after: a turn that reports being
+                // queued only once it stops waiting has told the channel
+                // nothing it can use.
+                self.trace_task(
+                    &task,
+                    evaluation_id.as_deref(),
+                    "turn_queued",
+                    "running",
+                    "Waiting for a free turn slot",
+                    Some(&format!(
+                        "this bot is already running {} turns",
+                        self.config.policy.prompt.max_concurrent
+                    )),
+                )
+                .await;
+                self.shared.turn_slots.acquire().await?
+            }
+        };
         let start_options = self.session_start_options(&task).await;
+        let run_cwd = start_options.cwd.clone();
         // Evaluation turns retain Cheers MCP solely to record their decision
         // through the gateway-owned task-claim resource.
         let acp_session_id = match self.ensure_acp_session(&task, start_options).await {
@@ -1803,6 +1845,7 @@ impl RuntimeContext {
             task_id: task.task_id.clone(),
             msg_id: task.msg_id.clone(),
             channel_id: task.channel_id.clone(),
+            cwd: run_cwd.clone(),
             provider_session_key: task.provider_session_key.clone(),
             acp_session_id: acp_session_id.clone(),
             session_id: task.session_id.clone(),
@@ -1826,8 +1869,11 @@ impl RuntimeContext {
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
         }));
-        {
+        let sharing_cwd = {
             let mut shared = self.shared.runs.lock().await;
+            // Read the neighbours before inserting this run, so a run never
+            // reports itself as its own conflict.
+            let sharing = shared.channels_running_in(run_cwd.as_deref(), &task.channel_id);
             shared.by_msg.insert(task.msg_id.clone(), run.clone());
             shared
                 .by_acp_session
@@ -1835,6 +1881,39 @@ impl RuntimeContext {
             shared
                 .by_provider_key
                 .insert(task.provider_session_key.clone(), run.clone());
+            if let Some(cwd) = run_cwd.clone() {
+                shared
+                    .cwd_by_msg
+                    .insert(task.msg_id.clone(), (cwd, task.channel_id.clone()));
+            }
+            sharing
+        };
+        if !sharing_cwd.is_empty() {
+            // Not an error and not blocked: sharing a workspace between channels
+            // can be exactly what an operator wants. But the virtual filesystem
+            // is per channel while this directory is not, so two turns editing
+            // it at once can interleave writes with nothing to serialize them —
+            // worth saying out loud in the channel rather than leaving to be
+            // discovered as a mangled file.
+            let cwd = run_cwd.clone().unwrap_or_default();
+            tracing::warn!(
+                account = %self.account_id,
+                channel = %task.channel_id,
+                other_channels = ?sharing_cwd,
+                cwd = %cwd,
+                "another channel is running a turn in this working directory"
+            );
+            self.trace(
+                &run,
+                "workspace_shared",
+                "warning",
+                "Another channel is working in this directory",
+                Some(&format!(
+                    "{cwd} is also in use by {} other running turn(s); edits are not serialized between channels",
+                    sharing_cwd.len()
+                )),
+            )
+            .await?;
         }
         self.trace(
             &run,
@@ -1891,6 +1970,7 @@ impl RuntimeContext {
             shared.by_msg.remove(&task.msg_id);
             shared.by_acp_session.remove(&acp_session_id);
             shared.by_provider_key.remove(&task.provider_session_key);
+            shared.cwd_by_msg.remove(&task.msg_id);
             return Ok(());
         }
         // Inject the fence through the adapter event channel (the same FIFO that
@@ -2034,6 +2114,7 @@ impl RuntimeContext {
         shared.by_msg.remove(&task.msg_id);
         shared.by_acp_session.remove(&acp_session_id);
         shared.by_provider_key.remove(&task.provider_session_key);
+        shared.cwd_by_msg.remove(&task.msg_id);
         Ok(())
     }
 
@@ -2056,6 +2137,23 @@ impl RuntimeContext {
                 };
                 if let Ok(loaded) = load_result {
                     self.report_session_snapshot(&loaded.metadata).await;
+                    // Re-stamp the mapping so its TTL measures idleness rather
+                    // than age: a channel in daily use writes nothing here
+                    // otherwise, and would lose a perfectly live session to the
+                    // sweep once the TTL elapsed since it was created.
+                    if let Err(error) = self
+                        .state
+                        .lock()
+                        .await
+                        .set(&self.account_id, &task.provider_session_key, &session_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            account = %self.account_id,
+                            %error,
+                            "could not refresh the session mapping's last-used stamp"
+                        );
+                    }
                     // Claim evaluations use an ACP-only session key, not a
                     // CheersSession row. Only real channel/session work may
                     // update gateway session state.
@@ -2516,7 +2614,7 @@ impl RuntimeContext {
         }
     }
 
-    async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
+    async fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
         // stdio MCP is the ACP baseline transport (always supported); only the
         // optional http/sse transports are gated by mcpCapabilities. We drop a
         // configured http/sse server the agent can't speak with a LOUD warning
@@ -2536,10 +2634,16 @@ impl RuntimeContext {
             .unwrap_or_default();
         let mut servers: Vec<Value> = Vec::with_capacity(configured.len() + 1);
         for server in configured {
-            if server.get("name").and_then(Value::as_str) == Some("cheers") {
+            let configured_name = server.get("name").and_then(Value::as_str).unwrap_or("");
+            if is_cheers_mcp_server_name(configured_name) {
+                // The whole `cheers-*` namespace is reserved, not just the bare
+                // name: a local server called `cheers-<channel>` would shadow
+                // that channel's canonical endpoint, which is the one thing a
+                // per-channel name exists to keep unambiguous.
                 tracing::warn!(
                     account = %self.account_id,
-                    "ignoring configured MCP server named 'cheers'; the Gateway canonical native HTTP endpoint is mandatory"
+                    server = configured_name,
+                    "ignoring configured MCP server in the reserved 'cheers' namespace; the Gateway canonical native HTTP endpoint is mandatory"
                 );
                 continue;
             }
@@ -2562,7 +2666,7 @@ impl RuntimeContext {
         }
         let bearer = match self.mcp_token.as_ref() {
             Some(provider) => provider
-                .bearer()
+                .bearer(&task.channel_id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
@@ -2575,7 +2679,11 @@ impl RuntimeContext {
                 .ok(),
             None => None,
         };
-        servers.push(native_cheers_mcp_server(&self.mcp_url, bearer.as_deref()));
+        servers.push(native_cheers_mcp_server(
+            &task.channel_id,
+            &self.mcp_url,
+            bearer.as_deref(),
+        ));
         Value::Array(servers)
     }
 
@@ -2589,6 +2697,54 @@ impl RuntimeContext {
     ) -> anyhow::Result<()> {
         self.trace_with_data(run, phase, status, title, message, None)
             .await
+    }
+
+    /// Emit a trace for a task that has no [`ActiveRun`] yet.
+    ///
+    /// Everything before `session/new` — queueing, most notably — happens while
+    /// the channel shows a placeholder and no run exists to hang a trace off.
+    /// This builds the frame straight from the task so that stretch is visible
+    /// instead of looking like a stalled bot. Best-effort: a turn is never
+    /// failed over its own progress report.
+    async fn trace_task(
+        &self,
+        task: &TaskCommand,
+        evaluation_id: Option<&str>,
+        phase: &str,
+        status: &str,
+        title: &str,
+        message: Option<&str>,
+    ) {
+        if !self.config.policy.trace.allow || evaluation_id.is_some() {
+            return;
+        }
+        let message = message
+            .map(|value| limit_text_bytes(value, self.config.policy.trace.max_message_bytes));
+        let frame = DataOutbound::Trace {
+            v: BRIDGE_PROTOCOL_VERSION,
+            msg_id: task.msg_id.clone(),
+            task_id: Some(task.task_id.clone()),
+            channel_id: Some(task.channel_id.clone()),
+            // No ACP session yet, so no run_id/provider_session_id to report.
+            run_id: None,
+            session_key: Some(task.provider_session_key.clone()),
+            provider_session_key: Some(task.provider_session_key.clone()),
+            provider_session_id: None,
+            session_id: task.session_id.clone(),
+            stream: "acp".to_string(),
+            // Run-scoped sequence numbers start with the run; this precedes it.
+            seq: None,
+            ts: Some(Utc::now().timestamp()),
+            phase: Some(phase.to_string()),
+            status: Some(status.to_string()),
+            title: Some(title.to_string()),
+            message,
+            data: None,
+            acp_capability: None,
+        };
+        if let Err(error) = self.io.send_data(frame).await {
+            tracing::debug!(account = %self.account_id, %error, "task trace not delivered");
+        }
     }
 
     /// Like [`Self::trace`], but also carries a structured `data` payload (e.g. an
@@ -2638,6 +2794,57 @@ impl RuntimeContext {
     }
 }
 
+/// The daemon-wide cap on turns running at once.
+///
+/// One bot serves every channel it belongs to through a single agent process,
+/// so without a cap the in-flight turn count is simply however many channels
+/// happen to be talking — unbounded against the agent, the provider's rate
+/// limits and this machine.
+///
+/// **Acquire a slot only after the per-session lock.** A channel with a queue of
+/// messages then waits on its own lock holding nothing, so it cannot occupy the
+/// pool and starve the other channels. Taking the slot first would make the
+/// queue depth of one busy channel the whole daemon's concurrency.
+struct TurnSlots {
+    permits: Arc<Semaphore>,
+}
+
+impl TurnSlots {
+    fn new(max_concurrent: usize) -> Self {
+        Self {
+            // The config layer floors this at 1; `max` keeps the invariant local
+            // too, since a zero-permit semaphore would deadlock every turn.
+            permits: Arc::new(Semaphore::new(max_concurrent.max(1))),
+        }
+    }
+
+    /// Takes a slot if one is free right now, without waiting.
+    ///
+    /// Separate from [`Self::acquire`] so a caller can act on "about to wait"
+    /// BEFORE it waits. Rolling both into one call can only report queueing
+    /// once the wait is over, which tells a channel it was queued at the moment
+    /// it stops being queued — too late to be worth saying.
+    fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.permits.clone().try_acquire_owned().ok()
+    }
+
+    /// Takes a slot, waiting for one when the daemon is at capacity.
+    async fn acquire(&self) -> anyhow::Result<OwnedSemaphorePermit> {
+        self.permits
+            .clone()
+            .acquire_owned()
+            .await
+            .context("turn-slot semaphore closed")
+    }
+
+    /// Slots free right now. Test-only: the runtime never branches on it, since
+    /// anything read here is stale the moment it is returned.
+    #[cfg(test)]
+    fn available(&self) -> usize {
+        self.permits.available_permits()
+    }
+}
+
 struct SharedRuntimeState {
     /// Multi-index active-run registry; one lock preserves atomic insert/remove.
     runs: Mutex<RunRegistry>,
@@ -2649,6 +2856,8 @@ struct SharedRuntimeState {
     channel_names: RwLock<HashMap<String, String>>,
     /// Watch lifecycle has its own cap/insert/remove critical section.
     watches: Mutex<HashMap<String, WatchHandle>>,
+    /// Daemon-wide turn cap; no lock, the semaphore is its own synchronization.
+    turn_slots: TurnSlots,
 }
 
 #[derive(Default)]
@@ -2656,6 +2865,34 @@ struct RunRegistry {
     by_msg: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_acp_session: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
+    /// Working directory of each in-flight run, keyed by its msg_id.
+    ///
+    /// Kept beside the run handles rather than read out of them: answering
+    /// "who else is in this directory" by locking every ActiveRun would mean
+    /// taking a second lock per run while already holding the registry's, for a
+    /// field that never changes after the run starts.
+    cwd_by_msg: HashMap<String, (String, String)>,
+}
+
+impl RunRegistry {
+    /// Channels other than `channel_id` with a run currently in `cwd`.
+    ///
+    /// `None` cwd, or a run with none, never matches: "no pinned directory"
+    /// is not a directory two channels can collide in.
+    fn channels_running_in(&self, cwd: Option<&str>, channel_id: &str) -> Vec<String> {
+        let Some(cwd) = cwd else {
+            return Vec::new();
+        };
+        let mut channels: Vec<String> = self
+            .cwd_by_msg
+            .values()
+            .filter(|(run_cwd, run_channel)| run_cwd == cwd && run_channel != channel_id)
+            .map(|(_, run_channel)| run_channel.clone())
+            .collect();
+        channels.sort_unstable();
+        channels.dedup();
+        channels
+    }
 }
 
 #[derive(Default)]
@@ -2667,13 +2904,14 @@ struct InteractionRegistry {
 
 impl SharedRuntimeState {
     /// Creates independent lock domains with the initial membership snapshot.
-    fn new(channel_names: HashMap<String, String>) -> Self {
+    fn new(channel_names: HashMap<String, String>, max_concurrent: usize) -> Self {
         Self {
             runs: Mutex::new(RunRegistry::default()),
             interactions: Mutex::new(InteractionRegistry::default()),
             session_locks: Mutex::new(HashMap::new()),
             channel_names: RwLock::new(channel_names),
             watches: Mutex::new(HashMap::new()),
+            turn_slots: TurnSlots::new(max_concurrent),
         }
     }
 }
@@ -2683,6 +2921,9 @@ impl SharedRuntimeState {
 struct WatchHandle {
     /// Canonical watched dir — used to dedupe/renew a repeat `watch` on the same dir.
     dir: PathBuf,
+    /// Workspace root this watch was resolved against, so the cap can be
+    /// charged per root instead of to one daemon-wide pool.
+    root: PathBuf,
     /// Signal the watch_loop to reset its TTL deadline (renew).
     renew_tx: mpsc::UnboundedSender<()>,
     _abort: AbortOnDrop,
@@ -2793,6 +3034,10 @@ struct ActiveRun {
     task_id: String,
     msg_id: String,
     channel_id: String,
+    /// Resolved ACP `cwd` for this run, once policy has had its say. Kept so a
+    /// second channel starting work in the same directory can be noticed while
+    /// both are still running — which is the only window in which it matters.
+    cwd: Option<String>,
     provider_session_key: String,
     acp_session_id: String,
     session_id: Option<String>,
@@ -2991,12 +3236,481 @@ use signing::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+    use tokio::sync::watch;
+
+    use crate::bridge::PermissionOption;
+    use crate::runtime_adapter::{
+        AgentCapabilities, ConfigApplyResult, PromptClient, PromptResult, SessionLoadResult,
+        SessionStartResult,
+    };
+
+    // ── 多频道并发夹具 ───────────────────────────────────────────────────────
+    //
+    // 一个 bot 通过单个 agent 进程服务所有频道，"频道 A 卡住不阻塞频道 B"这条
+    // 不变量此前只有 run_task 里的注释保护。夹具把真实的 run_task 跑起来，agent
+    // 换成可控的假实现，从而让锁纪律本身可回归。
+
+    /// 受测试控制何时返回的 prompt 客户端。
+    ///
+    /// 第一个 prompt 停在闸门上直到测试放行，之后的立即返回——这样无需让假 agent
+    /// 认识频道：谁先到谁就是"被卡住的那个"。
+    /// 哪些 prompt 会停在闸门上。
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum PromptGate {
+        /// 只有第一个 prompt 停住，之后的直接返回——用来制造"一个频道卡住、
+        /// 其他频道继续"的局面，且无需让假 agent 认识频道。
+        First,
+        /// 所有 prompt 都停住，直到闸门给出结果——用来让多个回合同时在途。
+        All,
+    }
+
+    /// 闸门打开时，等待中的 prompt 得到什么。
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum PromptOutcome {
+        /// 正常收尾。
+        Finish,
+        /// agent 进程没了：真实实现里连接中断会丢弃所有 pending reply oneshot，
+        /// 于是每个在途 prompt 各自拿到这个错误。
+        Crash,
+    }
+
+    struct GatedPromptClient {
+        gate: PromptGate,
+        parked: AtomicBool,
+        started: Arc<Semaphore>,
+        release: watch::Receiver<Option<PromptOutcome>>,
+    }
+
+    #[async_trait::async_trait]
+    impl PromptClient for GatedPromptClient {
+        async fn prompt(
+            &self,
+            _session_id: &str,
+            _prompt: Vec<Value>,
+            _timeout_ms: u64,
+        ) -> anyhow::Result<PromptResult> {
+            let should_park = match self.gate {
+                PromptGate::All => true,
+                PromptGate::First => !self.parked.swap(true, Ordering::SeqCst),
+            };
+            // 宣告"我已进入 prompt"必须发生在等待闸门之前，否则测试无从分辨
+            // "还没跑到"与"已经卡住"。
+            self.started.add_permits(1);
+            let mut outcome = PromptOutcome::Finish;
+            if should_park {
+                let mut release = self.release.clone();
+                loop {
+                    let current = *release.borrow_and_update();
+                    if let Some(current) = current {
+                        outcome = current;
+                        break;
+                    }
+                    if release.changed().await.is_err() {
+                        break;
+                    }
+                }
+            }
+            match outcome {
+                PromptOutcome::Finish => Ok(PromptResult {
+                    stop_reason: Some("end_turn".to_string()),
+                }),
+                PromptOutcome::Crash => Err(anyhow!(
+                    "ACP runtime actor dropped reply (method=session/prompt)"
+                )),
+            }
+        }
+    }
+
+    /// 只实现 run_task 真正触达的方法；其余留 unimplemented!，一旦被调用就是
+    /// 测试覆盖面变了，应当显式面对而不是静默返回默认值。
+    struct FakeAdapter {
+        prompt_client: Arc<GatedPromptClient>,
+        sessions: AtomicU64,
+    }
+
+    #[async_trait::async_trait]
+    impl RuntimeAdapter for FakeAdapter {
+        async fn start(&mut self) -> anyhow::Result<Value> {
+            unimplemented!("fixture never starts an agent process")
+        }
+        async fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn restart(&mut self) -> anyhow::Result<Value> {
+            unimplemented!("fixture never restarts an agent process")
+        }
+        async fn authenticate(
+            &mut self,
+            _method_id: &str,
+            _request_route: Option<RequestRoute>,
+        ) -> anyhow::Result<()> {
+            unimplemented!("fixture agent needs no authentication")
+        }
+        async fn new_session(
+            &mut self,
+            _options: SessionStartOptions,
+        ) -> anyhow::Result<SessionStartResult> {
+            let n = self.sessions.fetch_add(1, Ordering::SeqCst);
+            Ok(SessionStartResult {
+                session_id: format!("acp-session-{n}"),
+                metadata: json!({}),
+            })
+        }
+        async fn load_session(
+            &mut self,
+            _session_id: &str,
+            _options: SessionStartOptions,
+        ) -> anyhow::Result<SessionLoadResult> {
+            unimplemented!("fixture agent does not advertise loadSession")
+        }
+        async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn set_config_option(
+            &mut self,
+            _session_id: &str,
+            _config_id: &str,
+            _value: &str,
+        ) -> anyhow::Result<Value> {
+            unimplemented!("fixture exposes no config options")
+        }
+        async fn set_mode(&mut self, _session_id: &str, _mode: &str) -> anyhow::Result<()> {
+            unimplemented!("fixture exposes no modes")
+        }
+        async fn set_model(&mut self, _session_id: &str, _model_id: &str) -> anyhow::Result<()> {
+            unimplemented!("fixture exposes no models")
+        }
+        async fn apply_settings(
+            &mut self,
+            _settings: &ConnectorControlSettings,
+        ) -> anyhow::Result<ConfigApplyResult> {
+            unimplemented!("fixture takes no gateway settings")
+        }
+        fn permission_options(&self, _params: &Value) -> Vec<PermissionOption> {
+            Vec::new()
+        }
+        fn prompt_client(&self) -> Arc<dyn PromptClient> {
+            self.prompt_client.clone()
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            // loadSession off keeps every turn on the new_session path, so the
+            // fixture needs no session persistence.
+            AgentCapabilities {
+                load_session: false,
+                prompt_image: false,
+                prompt_audio: false,
+                mcp_http: true,
+                mcp_sse: false,
+            }
+        }
+        fn initialize_response(&self) -> Option<Value> {
+            None
+        }
+        async fn inject_fence(&self, _acp_session_id: String) {}
+    }
+
+    /// 走真实的 TOML 解析路径，因此夹具用的就是产品默认值（含 max_concurrent）。
+    async fn fixture_config(dir: &std::path::Path, max_concurrent: usize) -> AccountConfig {
+        // The credential is read from the environment by the real loader; a
+        // file keeps the fixture free of process-wide env mutation, which would
+        // race every other test in this binary.
+        let credential_path = dir.join("credential");
+        tokio::fs::write(&credential_path, "agbi_fixture\n")
+            .await
+            .unwrap();
+        let config_path = dir.join("connector.toml");
+        tokio::fs::write(
+            &config_path,
+            format!(
+                r#"
+version = 1
+
+[daemon]
+state_path = "state.json"
+
+[accounts.test.bridge]
+control_url = "wss://example.invalid/control"
+data_url = "wss://example.invalid/data"
+host_credential_file = "{credential}"
+
+[accounts.test.adapter]
+type = "stdio"
+command = "true"
+
+[accounts.test.policy.prompt]
+max_concurrent = {max_concurrent}
+"#,
+                credential = credential_path.display(),
+                max_concurrent = max_concurrent
+            ),
+        )
+        .await
+        .unwrap();
+        crate::config::load_config(&config_path)
+            .await
+            .unwrap()
+            .accounts
+            .remove("test")
+            .unwrap()
+    }
+
+    /// 运行时写入的接收端。测试全程持有：一旦丢弃，运行时的发送会变成
+    /// "writer closed"，看起来像 Bridge 掉线而不是测试本身的问题。
+    struct RuntimeTaps {
+        _control: mpsc::Receiver<ControlOutbound>,
+        priority: mpsc::Receiver<DataOutbound>,
+        _stream: mpsc::Receiver<DataOutbound>,
+        _events: mpsc::Receiver<RuntimeInput>,
+    }
+
+    impl RuntimeTaps {
+        /// Every priority frame queued so far. Non-blocking: the runtime has
+        /// already finished the turns a test asserts on, so anything still
+        /// unsent would be a frame the test should not be waiting for.
+        fn drain_priority(&mut self) -> Vec<DataOutbound> {
+            let mut frames = Vec::new();
+            while let Ok(frame) = self.priority.try_recv() {
+                frames.push(frame);
+            }
+            frames
+        }
+    }
+
+    /// The trace phases in `frames`, in order.
+    fn trace_phases(frames: &[DataOutbound]) -> Vec<String> {
+        frames
+            .iter()
+            .filter_map(|frame| match frame {
+                DataOutbound::Trace { phase, .. } => phase.clone(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The msg_ids of every Error frame in `frames`.
+    fn error_msg_ids(frames: &[DataOutbound]) -> Vec<String> {
+        let mut ids: Vec<String> = frames
+            .iter()
+            .filter_map(|frame| match frame {
+                DataOutbound::Error { msg_id, .. } => Some(msg_id.clone()),
+                _ => None,
+            })
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// 组装一个跑得动 run_task 的 RuntimeContext，agent 为受控假实现。
+    ///
+    /// 返回：运行时、"已进入 prompt"信号量、放行闸门、以及必须被持有的接收端。
+    async fn fixture_runtime(
+        dir: &std::path::Path,
+        gate: PromptGate,
+        max_concurrent: usize,
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Semaphore>,
+        watch::Sender<Option<PromptOutcome>>,
+        RuntimeTaps,
+    ) {
+        let (release, release_rx) = watch::channel(None);
+        let started = Arc::new(Semaphore::new(0));
+        let prompt_client = Arc::new(GatedPromptClient {
+            gate,
+            parked: AtomicBool::new(false),
+            started: started.clone(),
+            release: release_rx,
+        });
+        let adapter: Box<dyn RuntimeAdapter> = Box::new(FakeAdapter {
+            prompt_client: prompt_client.clone(),
+            sessions: AtomicU64::new(0),
+        });
+        let config = fixture_config(dir, max_concurrent).await;
+        let TestIo {
+            handle,
+            control,
+            priority,
+            stream,
+        } = io::test_io();
+        // run_loop never runs here — run_task is driven directly — so the event
+        // receiver is only parked to keep its sender alive.
+        let (runtime_tx, events) = mpsc::channel(64);
+        let shared = Arc::new(SharedRuntimeState::new(
+            HashMap::new(),
+            config.policy.prompt.max_concurrent,
+        ));
+        let context = Arc::new(RuntimeContext {
+            account_id: "test".to_string(),
+            config,
+            identity: test_identity(),
+            mcp_url: "https://example.invalid/mcp".to_string(),
+            mcp_token: None,
+            state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
+            adapter: Arc::new(Mutex::new(adapter)),
+            io: handle,
+            shared,
+            runtime_tx,
+        });
+        (
+            context,
+            started,
+            release,
+            RuntimeTaps {
+                _control: control,
+                priority,
+                _stream: stream,
+                _events: events,
+            },
+        )
+    }
+
+    /// 一个最小的频道回合。频道各自的 provider_session_key 是关键：会话锁按它
+    /// 分桶，这正是"跨频道并行"所依赖的东西。
+    fn fixture_task(channel: &str) -> TaskCommand {
+        TaskCommand {
+            task_id: format!("task-{channel}"),
+            channel_id: channel.to_string(),
+            msg_id: format!("msg-{channel}"),
+            provider_session_key: format!("cheers:channel:{channel}:bot:fixture"),
+            session_id: None,
+            trigger: Some("user_message".to_string()),
+            trigger_message: Some(json!({"msg_id": format!("origin-{channel}"), "text": "hi"})),
+            attachments: Vec::new(),
+            pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
+            context_bundle: None,
+        }
+    }
+
+    /// 验收矩阵 #4：并发度打满时，排队的回合要让频道看见"排队中"，而不是静默等待。
+    #[tokio::test]
+    async fn a_queued_turn_tells_its_channel_it_is_queued() {
+        let dir = tempfile::tempdir().unwrap();
+        // 容量 1：第二个频道必然排队。
+        let (runtime, started, release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::First, 1).await;
+
+        let holder = tokio::spawn(runtime.clone().run_task(fixture_task("channel-a"), None));
+        let _entered = started.clone().acquire_owned().await.unwrap();
+
+        let queued = tokio::spawn(runtime.clone().run_task(fixture_task("channel-b"), None));
+        // B 必须真的在等——槽位还被 A 攥着。
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!queued.is_finished(), "容量为 1 时第二个频道不得放行");
+        assert!(
+            trace_phases(&taps.drain_priority()).contains(&"turn_queued".to_string()),
+            "排队必须发一条 turn_queued trace"
+        );
+
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        for handle in [holder, queued] {
+            tokio::time::timeout(Duration::from_secs(10), handle)
+                .await
+                .expect("放行后两个回合都要收尾")
+                .unwrap()
+                .unwrap();
+        }
+    }
+
+    /// 验收矩阵 #5：agent 进程没了，每个在途频道各自收到终帧，而不是集体静默超时。
+    ///
+    /// 真实实现里连接中断会丢弃所有 pending reply oneshot，于是每个在途 prompt
+    /// 各自报错；这里用同样的错误复现那一刻。
+    #[tokio::test]
+    async fn an_agent_crash_gives_every_in_flight_channel_its_own_terminal_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, started, release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+
+        let a = tokio::spawn(runtime.clone().run_task(fixture_task("channel-a"), None));
+        let b = tokio::spawn(runtime.clone().run_task(fixture_task("channel-b"), None));
+        // 两个回合都已进入 prompt，才谈得上"在途"。
+        let _first = started.clone().acquire_owned().await.unwrap();
+        let _second = started.clone().acquire_owned().await.unwrap();
+
+        release.send(Some(PromptOutcome::Crash)).unwrap();
+        for handle in [a, b] {
+            tokio::time::timeout(Duration::from_secs(10), handle)
+                .await
+                .expect("agent 崩溃后回合必须收尾，而不是挂住")
+                .unwrap()
+                .unwrap();
+        }
+
+        assert_eq!(
+            error_msg_ids(&taps.drain_priority()),
+            vec!["msg-channel-a".to_string(), "msg-channel-b".to_string()],
+            "每个频道各拿到自己的终帧"
+        );
+    }
+
+    /// 验收矩阵 #2 的连接器一侧：并发回合注入的 MCP 配置必须各自带本频道的
+    /// server 名。频道与凭证的绑定是否真的传到 agent，属于 agent 镜像的验收。
+    #[tokio::test]
+    async fn injected_mcp_servers_are_named_per_channel() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, _started, _release, _taps) =
+            fixture_runtime(dir.path(), PromptGate::First, 4).await;
+
+        let a = runtime
+            .mcp_servers_for_task(&fixture_task("channel-a"))
+            .await;
+        let b = runtime
+            .mcp_servers_for_task(&fixture_task("channel-b"))
+            .await;
+        let name = |servers: &Value| -> String {
+            servers.as_array().unwrap().last().unwrap()["name"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(name(&a), "cheers-channela");
+        assert_eq!(name(&b), "cheers-channelb");
+    }
+
+    /// 验收矩阵 #3：频道 A 的回合卡在 agent 里时，频道 B 的回合照常跑完。
+    ///
+    /// 这条不变量此前只有 run_task 里那段"prompt 期间不持 adapter 锁"的注释
+    /// 保护。把 adapter 锁挪到 prompt 之上，这个测试就会在 B 上超时。
+    ///
+    /// 这里**不能**用暂停时钟：会话状态落盘走 tokio 的阻塞线程池，运行时在等它
+    /// 期间被视为 idle，自动推进会把超时凭空点着。"不被阻塞"本就是活性命题，
+    /// 用真实时间加宽松上限才是对的；确定性由 `started` 信号量提供——它保证
+    /// 断言发生在 A 确实进入 prompt 之后。
+    #[tokio::test]
+    async fn one_blocked_channel_does_not_block_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, started, release, _taps) =
+            fixture_runtime(dir.path(), PromptGate::First, 4).await;
+
+        let blocked = tokio::spawn(runtime.clone().run_task(fixture_task("channel-a"), None));
+        // A 已经进入 prompt——区分"卡住了"与"还没排到"。
+        let _entered = started.clone().acquire_owned().await.unwrap();
+
+        let other = tokio::spawn(runtime.clone().run_task(fixture_task("channel-b"), None));
+        tokio::time::timeout(Duration::from_secs(10), other)
+            .await
+            .expect("频道 B 不得被频道 A 阻塞")
+            .unwrap()
+            .unwrap();
+        assert!(!blocked.is_finished(), "哨兵：频道 A 本就该仍然卡着");
+
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        tokio::time::timeout(Duration::from_secs(10), blocked)
+            .await
+            .expect("放行后频道 A 必须收尾")
+            .unwrap()
+            .unwrap();
+    }
 
     fn empty_run() -> ActiveRun {
         ActiveRun {
             task_id: "t".to_string(),
             msg_id: "m".to_string(),
             channel_id: "c".to_string(),
+            cwd: None,
             provider_session_key: "p".to_string(),
             acp_session_id: "s".to_string(),
             session_id: None,
@@ -3268,6 +3982,156 @@ mod tests {
             "no image block may be sent when the agent can't read images"
         );
         assert!(prompt[0]["text"].as_str().unwrap().contains("shot.png"));
+    }
+
+    // ── watch 配额按 workspace root 分摊 ─────────────────────────────────
+
+    /// 一个夹具 watch 句柄；只需要 dir/root 两个字段参与配额计数。
+    fn watch_handle(dir: &str, root: &str) -> WatchHandle {
+        let (renew_tx, _renew_rx) = mpsc::unbounded_channel::<()>();
+        let task = tokio::spawn(async {});
+        WatchHandle {
+            dir: PathBuf::from(dir),
+            root: PathBuf::from(root),
+            renew_tx,
+            _abort: AbortOnDrop(task.abort_handle()),
+        }
+    }
+
+    /// 配额按 root 计数：一个 root 打满，不影响另一个 root 还能不能开。
+    #[tokio::test]
+    async fn watch_budget_is_charged_per_root() {
+        let mut watches: HashMap<String, WatchHandle> = HashMap::new();
+        for i in 0..MAX_WATCHES {
+            watches.insert(format!("w{i}"), watch_handle(&format!("/a/d{i}"), "/a"));
+        }
+        let count_in = |watches: &HashMap<String, WatchHandle>, root: &str| {
+            watches
+                .values()
+                .filter(|handle| handle.root == Path::new(root))
+                .count()
+        };
+        assert_eq!(count_in(&watches, "/a"), MAX_WATCHES, "/a 已打满");
+        assert_eq!(
+            count_in(&watches, "/b"),
+            0,
+            "另一个 workspace root 的预算不受影响"
+        );
+
+        watches.insert("wb".to_string(), watch_handle("/b/d0", "/b"));
+        assert_eq!(count_in(&watches, "/b"), 1);
+        assert_eq!(
+            count_in(&watches, "/a"),
+            MAX_WATCHES,
+            "/a 的计数不被 /b 干扰"
+        );
+    }
+
+    // ── 共享 cwd 检测：只在两个回合同时在跑时才算冲突 ──────────────────────
+
+    fn running(registry: &mut RunRegistry, msg: &str, cwd: &str, channel: &str) {
+        registry
+            .cwd_by_msg
+            .insert(msg.to_string(), (cwd.to_string(), channel.to_string()));
+    }
+
+    /// 另一个频道正在同一目录里跑 → 报出来。
+    #[test]
+    fn shared_cwd_reports_the_other_channel() {
+        let mut registry = RunRegistry::default();
+        running(&mut registry, "m1", "/repo", "channel-a");
+        assert_eq!(
+            registry.channels_running_in(Some("/repo"), "channel-b"),
+            vec!["channel-a".to_string()]
+        );
+    }
+
+    /// 自己的在途回合不算冲突——同频道由会话锁串行，本就不会并发写。
+    #[test]
+    fn shared_cwd_ignores_the_same_channel() {
+        let mut registry = RunRegistry::default();
+        running(&mut registry, "m1", "/repo", "channel-a");
+        assert!(registry
+            .channels_running_in(Some("/repo"), "channel-a")
+            .is_empty());
+    }
+
+    /// 同一频道的多个回合去重，多个不同频道各报一次。
+    #[test]
+    fn shared_cwd_deduplicates_channels() {
+        let mut registry = RunRegistry::default();
+        running(&mut registry, "m1", "/repo", "channel-a");
+        running(&mut registry, "m2", "/repo", "channel-a");
+        running(&mut registry, "m3", "/repo", "channel-c");
+        running(&mut registry, "m4", "/elsewhere", "channel-d");
+        assert_eq!(
+            registry.channels_running_in(Some("/repo"), "channel-b"),
+            vec!["channel-a".to_string(), "channel-c".to_string()]
+        );
+    }
+
+    /// 没有 pin 目录就没有可冲突的目录——两边都不匹配。
+    #[test]
+    fn shared_cwd_needs_an_actual_directory() {
+        let mut registry = RunRegistry::default();
+        running(&mut registry, "m1", "/repo", "channel-a");
+        assert!(registry.channels_running_in(None, "channel-b").is_empty());
+    }
+
+    // ── TurnSlots：daemon 级并发阀门 ──────────────────────────────────────
+
+    /// 容量之内直接放行，且不报"排队"——正常多频道工作不该被标记成拥塞。
+    #[tokio::test]
+    async fn turn_slots_admit_up_to_capacity_without_queueing() {
+        let slots = TurnSlots::new(3);
+        let mut held = Vec::new();
+        for _ in 0..3 {
+            held.push(slots.try_acquire().expect("容量之内应立即拿到槽位"));
+        }
+        assert_eq!(slots.available(), 0);
+    }
+
+    /// 打满后的第 N+1 个回合必须等待，并被标记为排队（前端据此显示"排队中"）。
+    ///
+    /// 时间暂停后，`sleep` 只在其余任务全部 idle 时才推进，因此这一觉醒来即证明
+    /// 等待者已经停在信号量上——而不是靠睡够毫秒数去赌调度顺序。
+    #[tokio::test(start_paused = true)]
+    async fn turn_slots_queue_the_turn_past_capacity() {
+        let slots = Arc::new(TurnSlots::new(1));
+        let held = slots.try_acquire().expect("第一个回合拿到唯一的槽位");
+        assert!(
+            slots.try_acquire().is_none(),
+            "打满后 try_acquire 必须落空——调用方据此在 park 前告知频道"
+        );
+
+        let waiter = tokio::spawn({
+            let slots = slots.clone();
+            async move { slots.acquire().await.map(|_| ()) }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiter.is_finished(), "槽位占满时不得放行");
+
+        drop(held);
+        waiter.await.unwrap().unwrap();
+    }
+
+    /// 槽位随回合结束归还——否则 daemon 会一路耗尽到永久阻塞。
+    #[tokio::test]
+    async fn turn_slots_return_to_the_pool_after_a_turn() {
+        let slots = TurnSlots::new(2);
+        {
+            let _a = slots.try_acquire().unwrap();
+            let _b = slots.try_acquire().unwrap();
+            assert_eq!(slots.available(), 0);
+        }
+        assert_eq!(slots.available(), 2);
+    }
+
+    /// 配置为 0（或被写坏）时退化为 1，而不是零容量死锁。
+    #[tokio::test]
+    async fn turn_slots_never_have_zero_capacity() {
+        let slots = TurnSlots::new(0);
+        assert!(slots.try_acquire().is_some(), "零容量会让每个回合永久阻塞");
     }
 
     fn test_identity() -> BotIdentity {

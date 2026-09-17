@@ -126,6 +126,30 @@ impl StreamRegistry {
     pub fn contains(&self, msg_id: Uuid) -> bool {
         self.entries.contains_key(&msg_id)
     }
+
+    /// The channels this bot currently has a turn running in, de-duplicated.
+    ///
+    /// A bot works in many channels at once, so this is a set, not one value.
+    /// Finalized entries are excluded: their turn has produced its terminal
+    /// frame and only awaits cleanup, so anything still calling in is no longer
+    /// "inside" that turn.
+    ///
+    /// **Process-local.** On a multi-replica gateway the stream lives on the
+    /// replica holding the bot's WS, which need not be the one serving an MCP
+    /// request. An empty result therefore means "no in-flight turn *here*", not
+    /// "no in-flight turn" — which is why this feeds measurement and never an
+    /// authorization decision (that binding belongs in the access token).
+    pub fn active_channels(&self, bot_id: Uuid) -> Vec<Uuid> {
+        let mut channels: Vec<Uuid> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.bot_id == bot_id && !entry.finalized)
+            .map(|entry| entry.channel_id)
+            .collect();
+        channels.sort_unstable();
+        channels.dedup();
+        channels
+    }
 }
 
 /// `claim_finalize` 的认领结果（R4 守卫）。
@@ -1075,5 +1099,56 @@ mod tests {
             reg.claim_finalize(Uuid::new_v4()),
             FinalizeClaim::NotRegistered
         );
+    }
+
+    // ── active_channels：一个 bot 同时在多个频道工作时的在途频道集合 ──────────
+
+    /// 同一 bot 的多个并发回合 → 每个频道各出现一次，去重且稳定有序。
+    #[test]
+    fn active_channels_collects_every_in_flight_channel_once() {
+        let reg = StreamRegistry::new();
+        let bot = Uuid::new_v4();
+        let ch_a = Uuid::new_v4();
+        let ch_b = Uuid::new_v4();
+        for channel_id in [ch_a, ch_b, ch_a] {
+            reg.register(StreamEntry {
+                bot_id: bot,
+                channel_id,
+                ..entry(Uuid::new_v4())
+            });
+        }
+        let mut expected = vec![ch_a, ch_b];
+        expected.sort_unstable();
+        assert_eq!(reg.active_channels(bot), expected);
+    }
+
+    /// 别的 bot 的在途回合不计入本 bot。
+    #[test]
+    fn active_channels_ignores_other_bots() {
+        let reg = StreamRegistry::new();
+        let bot = Uuid::new_v4();
+        let channel_id = Uuid::new_v4();
+        reg.register(StreamEntry {
+            bot_id: bot,
+            channel_id,
+            ..entry(Uuid::new_v4())
+        });
+        reg.register(entry(Uuid::new_v4()));
+        assert_eq!(reg.active_channels(bot), vec![channel_id]);
+    }
+
+    /// 已 finalize 的流不再算"在途"——终帧发出后调用方已在回合之外。
+    #[test]
+    fn active_channels_excludes_finalized_streams() {
+        let reg = StreamRegistry::new();
+        let bot = Uuid::new_v4();
+        let msg = Uuid::new_v4();
+        reg.register(StreamEntry {
+            bot_id: bot,
+            ..entry(msg)
+        });
+        assert_eq!(reg.active_channels(bot).len(), 1);
+        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
+        assert!(reg.active_channels(bot).is_empty());
     }
 }

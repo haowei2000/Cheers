@@ -61,6 +61,17 @@ the RFC 9728 path-derived alias:
 - `/.well-known/oauth-protected-resource`
 - `/.well-known/oauth-protected-resource/mcp`
 
+`MCP_CHANNEL_SCOPE` (`off` | `warn` | `enforce`, default `warn`) decides how
+strictly a call must stay inside the channel its token was minted for. The
+`client_credentials` grant accepts an optional `cheers_channel` parameter; the
+Gateway refuses to mint a token naming a channel the bot is not a member of, and
+records the channel as the token's `chan` claim. The claim only ever **narrows**
+— the bot's channel role is still checked for every operation — so a token that
+reaches the wrong channel's connection costs its holder access and can never buy
+any. Connectors that predate the parameter send no channel and are classified
+`unnarrowed`: allowed under `warn`, refused under `enforce`. Move a deployment to
+`enforce` only once every connector reaching it mints channel-scoped tokens.
+
 `MCP_PUBLIC_URL` is the sole production source of the returned `resource`, token
 audience, and challenge metadata URL. It must be an externally visible HTTPS URL
 ending in `/mcp`; request `Host` and forwarded headers are never trusted for this

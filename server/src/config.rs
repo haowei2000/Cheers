@@ -170,6 +170,9 @@ pub struct Config {
     /// Canonical externally visible MCP protected-resource URL, including
     /// `/mcp`. Token audience binding and RFC 9728 metadata use this exact URL.
     pub mcp_public_url: Option<String>,
+    /// How strictly an MCP call must stay inside the channel its token was
+    /// minted for (`MCP_CHANNEL_SCOPE`: off | warn | enforce).
+    pub mcp_channel_scope: McpChannelScope,
     /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
     pub mcp_authorization_server_issuer: Option<String>,
 
@@ -306,6 +309,39 @@ pub struct Config {
     /// scheduler is not spawned and monitoring writes are accepted but never
     /// evaluated — ship-safe default for a first release behind a flag.
     pub task_claims_enabled: bool,
+}
+
+/// How strictly the MCP endpoint holds a call to the channel its token names.
+///
+/// A bot works in many channels at once through one agent process, and the
+/// channel an MCP call acts on arrives as a model-supplied argument. A token
+/// minted for one channel is the only per-turn thing the transport carries, so
+/// this decides what happens when a call names a different one.
+///
+/// Rolling out in stages is the point: connectors that predate channel-narrowed
+/// tokens send no channel at all, and `Warn` measures what `Enforce` would
+/// refuse before it refuses anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum McpChannelScope {
+    /// Never check. The pre-existing behaviour.
+    Off,
+    /// Check and log, allow either way. The default while connectors roll out.
+    #[default]
+    Warn,
+    /// Refuse a call that leaves its token's channel, and refuse a token that
+    /// names no channel at all.
+    Enforce,
+}
+
+impl McpChannelScope {
+    fn from_env_value(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).unwrap_or_default() {
+            "off" => Self::Off,
+            "enforce" => Self::Enforce,
+            "" | "warn" => Self::Warn,
+            other => panic!("MCP_CHANNEL_SCOPE must be off, warn or enforce (got {other:?})"),
+        }
+    }
 }
 
 impl Config {
@@ -461,6 +497,9 @@ impl Config {
                 validate_mcp_url("MCP_PUBLIC_URL", &value, true);
                 value.trim_end_matches('/').to_string()
             }),
+            mcp_channel_scope: McpChannelScope::from_env_value(
+                optional("MCP_CHANNEL_SCOPE").as_deref(),
+            ),
             mcp_authorization_server_issuer: optional("MCP_AUTHORIZATION_SERVER_ISSUER").map(
                 |value| {
                     validate_mcp_url("MCP_AUTHORIZATION_SERVER_ISSUER", &value, false);
