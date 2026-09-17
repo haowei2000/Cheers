@@ -30,6 +30,7 @@ use uuid::Uuid;
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
+    config::McpChannelScope,
     errors::AppError,
     infra::crypto::hash_host_credential,
     resource::{self, Principal},
@@ -540,6 +541,11 @@ struct McpAccessClaims {
     host_id: String,
     credential_hash: String,
     scope: String,
+    /// Channel this token is narrowed to, when the connector asked for one.
+    /// Absent on tokens from connectors that predate the request, which the
+    /// endpoint treats per `mcp_channel_scope` rather than as authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chan: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -569,6 +575,11 @@ struct McpTokenRequest {
     redirect_uri: Option<String>,
     code_verifier: Option<String>,
     refresh_token: Option<String>,
+    /// Cheers extension to `client_credentials`: the channel whose turn this
+    /// token will serve. It only ever NARROWS the token — the bot's channel
+    /// role still decides every operation — so a token minted for the wrong
+    /// channel can be refused, never mistaken for authority it does not have.
+    cheers_channel: Option<String>,
 }
 
 /// Exchange an active host credential for a narrowly scoped MCP token.
@@ -678,9 +689,61 @@ pub async fn issue_mcp_access_token(
     };
     let scope = scopes.join(" ");
 
+    // Narrowing is checked here, not at call time: a token that names a channel
+    // the bot is not in must never exist. Membership still decides each
+    // operation later — this only refuses to mint a narrowing that could not be
+    // honest.
+    let channel = match request.cheers_channel.as_deref() {
+        None => None,
+        Some(raw) => {
+            let Ok(channel_id) = Uuid::parse_str(raw) else {
+                return oauth_token_error("invalid_request", "cheers_channel must be a uuid");
+            };
+            match bot_is_channel_member(&state, &bot_id, channel_id).await {
+                Ok(true) => Some(channel_id.to_string()),
+                Ok(false) => {
+                    return oauth_token_error(
+                        "invalid_target",
+                        "bot is not a member of cheers_channel",
+                    )
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "MCP token channel-membership lookup failed");
+                    return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+            }
+        }
+    };
+
     let _ = mark_mcp_authorizing(&state, &host_id).await;
 
-    mint_mcp_access_token(&state, bot_id, host_id, credential_hash, scope, None)
+    mint_mcp_access_token(
+        &state,
+        bot_id,
+        host_id,
+        credential_hash,
+        scope,
+        channel,
+        None,
+    )
+}
+
+/// Whether this bot is a member of the channel, in any role.
+async fn bot_is_channel_member(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE member_id = $1 AND member_type = 'bot' AND channel_id = $2
+         )",
+    )
+    .bind(bot_id)
+    .bind(channel_id.to_string())
+    .fetch_one(&state.db)
+    .await
 }
 
 fn mint_mcp_access_token(
@@ -689,6 +752,7 @@ fn mint_mcp_access_token(
     host_id: String,
     credential_hash: String,
     scope: String,
+    channel: Option<String>,
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
@@ -697,6 +761,7 @@ fn mint_mcp_access_token(
         host_id,
         credential_hash,
         scope: scope.clone(),
+        chan: channel,
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -820,7 +885,15 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
     let _ = mark_mcp_authorizing(state, &host_id).await;
-    mint_mcp_access_token(state, host.0, host_id, host.1, scope, Some(refresh_token))
+    mint_mcp_access_token(
+        state,
+        host.0,
+        host_id,
+        host.1,
+        scope,
+        None,
+        Some(refresh_token),
+    )
 }
 
 async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> Response {
@@ -996,7 +1069,15 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
     let _ = mark_mcp_authorizing(state, &host_id).await;
-    mint_mcp_access_token(state, host.0, host_id, host.1, scope, Some(replacement))
+    mint_mcp_access_token(
+        state,
+        host.0,
+        host_id,
+        host.1,
+        scope,
+        None,
+        Some(replacement),
+    )
 }
 
 async fn active_host(
@@ -1255,7 +1336,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             let Some(uri) = params.get("uri").and_then(Value::as_str) else {
                 return invalid_params(era, id, "uri is required");
             };
-            match read_resource(&state, identity.bot_id, uri).await {
+            match read_resource(&state, &identity, uri).await {
                 Ok(content) => json!({
                     "resultType": "complete",
                     "contents": [content],
@@ -1327,7 +1408,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                 "_meta": result_meta()
             })
         }
-        "prompts/get" => match get_prompt(&state, identity.bot_id, params).await {
+        "prompts/get" => match get_prompt(&state, &identity, params).await {
             Ok(result) => result,
             Err(message) => return invalid_params(era, id, &message),
         },
@@ -1359,7 +1440,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                             error.data,
                         )
                     }
-                    Ok(None) => match call_tool(&state, identity.bot_id, name, &arguments).await {
+                    Ok(None) => match call_tool(&state, &identity, name, &arguments).await {
                         Ok(data) => complete_tool_result(data),
                         Err(ToolCallFailure::Invalid(message)) => {
                             return invalid_params(era, id, &message)
@@ -1370,7 +1451,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
                     },
                 }
             } else {
-                match call_tool(&state, identity.bot_id, name, &arguments).await {
+                match call_tool(&state, &identity, name, &arguments).await {
                     Ok(data) => complete_tool_result(data),
                     Err(ToolCallFailure::Invalid(message)) => {
                         return invalid_params(era, id, &message)
@@ -2030,7 +2111,7 @@ fn prompt_definitions() -> Vec<Value> {
 
 async fn get_prompt(
     state: &AppState,
-    bot_id: Uuid,
+    identity: &McpIdentity,
     params: &Map<String, Value>,
 ) -> Result<Value, String> {
     let name = params
@@ -2091,7 +2172,7 @@ async fn get_prompt(
             // channel the Bot cannot read.
             read_resource(
                 state,
-                bot_id,
+                identity,
                 &format!("cheers://channel/{channel_id}/info"),
             )
             .await
@@ -2104,7 +2185,7 @@ async fn get_prompt(
             let channel_id = required_uuid_string(&args, "channel_id")?;
             let file_id = required_uuid_string(&args, "file_id")?;
             let uri = format!("cheers://channel/{channel_id}/files/{file_id}?as_base64=true");
-            let resource = read_resource(state, bot_id, &uri)
+            let resource = read_resource(state, identity, &uri)
                 .await
                 .map_err(|_| "attachment is unavailable".to_string())?;
             let content = resource_prompt_content(resource);
@@ -2250,6 +2331,8 @@ struct McpIdentity {
     bot_id: Uuid,
     host_id: Uuid,
     scopes: HashSet<String>,
+    /// Channel this token was narrowed to at mint time, when it named one.
+    channel_scope: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2330,6 +2413,13 @@ async fn authenticate_mcp(
             bot_id,
             host_id,
             scopes: scopes.into_iter().map(str::to_string).collect(),
+            // An unparseable `chan` is treated as absent rather than rejected:
+            // the claim only ever narrows, so a malformed one can cost the
+            // token its narrowing but must not be able to widen it.
+            channel_scope: claims
+                .chan
+                .as_deref()
+                .and_then(|value| Uuid::parse_str(value).ok()),
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
@@ -2551,28 +2641,25 @@ enum ToolCallFailure {
     Domain { code: String, message: String },
 }
 
-/// Tracing target every channel-scope audit event carries, so a deployment can
+/// Tracing target every channel-scope event carries, so a deployment can
 /// aggregate the baseline (`verdict` counts) without filtering on message text.
 const MCP_SCOPE_AUDIT: &str = "cheers::mcp::channel_scope";
 
-/// Where an MCP call landed relative to the bot's in-flight turns.
+/// Where an MCP call landed relative to the channel its token was minted for.
 ///
 /// A bot's MCP token authorizes the bot *account*, and the channel it acts on
 /// comes from a model-supplied `channel_id` argument, re-checked against channel
-/// membership. Nothing today ties a call to the turn that provoked it — so a bot
-/// prompted in one channel may legitimately, or under prompt injection, reach
-/// into any other channel it belongs to. This enum records which of those
-/// happened; it decides nothing.
+/// membership. The token's `chan` claim is what ties a call to the turn that
+/// provoked it: it can only ever narrow, so a mismatch means "refuse", never
+/// "this call is someone else".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChannelScopeVerdict {
-    /// The call names a channel this bot has a turn running in.
-    InTurn,
-    /// The bot has in-flight turns, and this call names none of their channels.
-    /// The ambient-authority case the scoping work exists to close.
-    CrossChannel,
-    /// No in-flight turn is visible on this gateway process — background work,
-    /// or the turn is streaming through another replica. Not classifiable.
-    NoActiveTurn,
+    /// The call names the channel its token was minted for.
+    InScope,
+    /// The token names a channel and the call names a different one.
+    OutOfScope,
+    /// The token carries no channel — a connector that predates narrowing.
+    Unnarrowed,
     /// The call carries no channel at all (`dm.open`, `bot.status.write`).
     Channelless,
 }
@@ -2580,83 +2667,111 @@ enum ChannelScopeVerdict {
 impl ChannelScopeVerdict {
     fn as_str(self) -> &'static str {
         match self {
-            Self::InTurn => "in_turn",
-            Self::CrossChannel => "cross_channel",
-            Self::NoActiveTurn => "no_active_turn",
+            Self::InScope => "in_scope",
+            Self::OutOfScope => "out_of_scope",
+            Self::Unnarrowed => "unnarrowed",
             Self::Channelless => "channelless",
+        }
+    }
+
+    /// Whether this verdict is a refusal at the given strictness.
+    ///
+    /// `Channelless` is never refused: a resource that takes no channel cannot
+    /// leave one, and refusing it would break `dm.open` for every bot.
+    fn is_refused(self, scope: McpChannelScope) -> bool {
+        match scope {
+            McpChannelScope::Off | McpChannelScope::Warn => false,
+            McpChannelScope::Enforce => matches!(self, Self::OutOfScope | Self::Unnarrowed),
         }
     }
 }
 
-/// Classify one call against the bot's in-flight channels. Pure so the decision
-/// table is testable without a registry or a database.
-fn classify_channel_scope(active: &[Uuid], channel: Option<Uuid>) -> ChannelScopeVerdict {
-    let Some(channel) = channel else {
+/// Classify one call against its token's channel. Pure so the decision table is
+/// testable without a token, a registry or a database.
+fn classify_channel_scope(
+    token_channel: Option<Uuid>,
+    call_channel: Option<Uuid>,
+) -> ChannelScopeVerdict {
+    let Some(call_channel) = call_channel else {
         return ChannelScopeVerdict::Channelless;
     };
-    if active.is_empty() {
-        return ChannelScopeVerdict::NoActiveTurn;
-    }
-    if active.contains(&channel) {
-        ChannelScopeVerdict::InTurn
-    } else {
-        ChannelScopeVerdict::CrossChannel
+    match token_channel {
+        None => ChannelScopeVerdict::Unnarrowed,
+        Some(token_channel) if token_channel == call_channel => ChannelScopeVerdict::InScope,
+        Some(_) => ChannelScopeVerdict::OutOfScope,
     }
 }
 
-/// Emit one structured event per MCP call so we can measure how much traffic a
-/// turn-scoped rule would reject before any rule starts rejecting it.
+/// Hold an MCP call to the channel its token names, and record what happened.
 ///
-/// Measurement only — it never changes what the call is allowed to do. Enforcing
-/// against `active_channels` would be wrong anyway: that set is process-local,
-/// and a multi-channel bot's set holds several channels at once, so it cannot
-/// say which turn a given call belongs to. Binding a call to its turn needs the
-/// access token to carry the channel; this is the baseline that sizes that work.
-fn audit_channel_scope(
+/// Returns the refusal when the call must not proceed. Off and warn always
+/// return `None`, so a deployment can measure exactly what enforce would refuse
+/// before it refuses anything — connectors that predate channel-narrowed tokens
+/// send no channel and would otherwise be cut off on upgrade.
+///
+/// This narrowing never *grants*: the bot's channel role is still checked for
+/// every operation downstream. A token whose channel is wrong therefore costs
+/// its holder access, and can never buy any.
+fn enforce_channel_scope(
     state: &AppState,
-    bot_id: Uuid,
+    identity: &McpIdentity,
     resource: &str,
     params: &Map<String, Value>,
-) {
-    let channel = params
+) -> Option<ToolCallFailure> {
+    let call_channel = params
         .get("channel_id")
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
-    let active = state.stream_registry.active_channels(bot_id);
-    let verdict = classify_channel_scope(&active, channel);
-    // Cross-channel is the finding; everything else is denominator. Both carry
-    // the same fields so one aggregation covers the whole baseline.
-    if verdict == ChannelScopeVerdict::CrossChannel {
+    let verdict = classify_channel_scope(identity.channel_scope, call_channel);
+    let scope = state.config.mcp_channel_scope;
+    let refused = verdict.is_refused(scope);
+
+    if refused || verdict == ChannelScopeVerdict::OutOfScope {
         tracing::warn!(
             target: MCP_SCOPE_AUDIT,
             verdict = verdict.as_str(),
-            %bot_id,
+            refused,
+            bot_id = %identity.bot_id,
             resource,
-            channel_id = ?channel,
-            active_turns = active.len(),
-            "MCP call names a channel outside this bot's in-flight turns"
+            call_channel = ?call_channel,
+            token_channel = ?identity.channel_scope,
+            "MCP call left the channel its token was minted for"
         );
     } else {
         tracing::info!(
             target: MCP_SCOPE_AUDIT,
             verdict = verdict.as_str(),
-            %bot_id,
+            refused,
+            bot_id = %identity.bot_id,
             resource,
-            channel_id = ?channel,
-            active_turns = active.len(),
+            call_channel = ?call_channel,
+            token_channel = ?identity.channel_scope,
         );
     }
+
+    refused.then(|| ToolCallFailure::Domain {
+        code: "PERMISSION_DENIED".to_string(),
+        message: match verdict {
+            ChannelScopeVerdict::Unnarrowed => {
+                "this gateway requires a channel-scoped MCP token".to_string()
+            }
+            _ => "this token is scoped to a different channel".to_string(),
+        },
+    })
 }
 
 async fn call_tool(
     state: &AppState,
-    bot_id: Uuid,
+    identity: &McpIdentity,
     name: &str,
     arguments: &Map<String, Value>,
 ) -> Result<Value, ToolCallFailure> {
     let call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
-    audit_channel_scope(state, bot_id, call.resource, &call.params);
+    if let Some(refusal) = enforce_channel_scope(state, identity, call.resource, &call.params) {
+        return Err(refusal);
+    }
+    let bot_id = identity.bot_id;
     let frame = json!({
         "type": "resource_req",
         "v": 1,
@@ -2691,9 +2806,10 @@ fn resource_res_error<'a>(response: &'a Value, field: &str) -> Option<&'a str> {
 
 async fn read_resource(
     state: &AppState,
-    bot_id: Uuid,
+    identity: &McpIdentity,
     uri: &str,
 ) -> Result<Value, ResourceReadError> {
+    let bot_id = identity.bot_id;
     if conformance_fixtures_enabled() {
         match uri {
             "test://static-text" => {
@@ -2736,7 +2852,11 @@ async fn read_resource(
             ResourceReadError::Invalid(error.message)
         }
     })?;
-    audit_channel_scope(state, bot_id, call.resource, &call.params);
+    if enforce_channel_scope(state, identity, call.resource, &call.params).is_some() {
+        // Same opaque result as a missing channel: a refusal must not tell the
+        // caller whether the resource exists in a channel it cannot reach.
+        return Err(ResourceReadError::Unavailable);
+    }
     let req_id = Uuid::new_v4().to_string();
     let frame = json!({
         "type": "resource_req",
@@ -3420,48 +3540,70 @@ mod tests {
         assert_eq!(modern.status(), StatusCode::NOT_FOUND);
     }
 
-    // ── channel-scope 审计（Phase 0 基线，只观测不决策）────────────────────
+    // ── channel-scope：token 的频道声明只收窄，不授权 ──────────────────────
 
-    /// 调用命中 bot 某个在途回合的频道 → in_turn。
+    /// 调用的频道与 token 声明一致 → in_scope。
     #[test]
-    fn scope_audit_marks_a_call_inside_an_in_flight_turn() {
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
+    fn scope_accepts_a_call_inside_its_tokens_channel() {
+        let channel = Uuid::new_v4();
         assert_eq!(
-            classify_channel_scope(&[a, b], Some(b)),
-            ChannelScopeVerdict::InTurn
+            classify_channel_scope(Some(channel), Some(channel)),
+            ChannelScopeVerdict::InScope
         );
     }
 
-    /// 有在途回合，但调用指向别的频道 → cross_channel（要找的就是这个）。
+    /// token 声明了频道，调用指向另一个 → out_of_scope（要挡的就是这个）。
     #[test]
-    fn scope_audit_flags_a_call_outside_every_in_flight_turn() {
+    fn scope_flags_a_call_outside_its_tokens_channel() {
         assert_eq!(
-            classify_channel_scope(&[Uuid::new_v4()], Some(Uuid::new_v4())),
-            ChannelScopeVerdict::CrossChannel
+            classify_channel_scope(Some(Uuid::new_v4()), Some(Uuid::new_v4())),
+            ChannelScopeVerdict::OutOfScope
         );
     }
 
-    /// 本进程看不到在途回合 → 不可判定，不能算越界。多副本下流可能在另一个
-    /// 副本上，这也是该判定永远不能用来鉴权的原因。
+    /// token 没有频道声明（旧连接器）→ unnarrowed，单独归类以便灰度。
     #[test]
-    fn scope_audit_does_not_call_an_unobservable_turn_cross_channel() {
+    fn scope_separates_a_token_that_carries_no_channel() {
         assert_eq!(
-            classify_channel_scope(&[], Some(Uuid::new_v4())),
-            ChannelScopeVerdict::NoActiveTurn
+            classify_channel_scope(None, Some(Uuid::new_v4())),
+            ChannelScopeVerdict::Unnarrowed
         );
     }
 
-    /// 无频道参数的资源（dm.open / bot.status.write）单独归类，不污染基线。
+    /// 无频道参数的资源（dm.open / bot.status.write）不受收窄影响。
     #[test]
-    fn scope_audit_separates_channelless_resources() {
+    fn scope_leaves_channelless_resources_alone() {
         assert_eq!(
-            classify_channel_scope(&[Uuid::new_v4()], None),
+            classify_channel_scope(Some(Uuid::new_v4()), None),
             ChannelScopeVerdict::Channelless
         );
         assert_eq!(
-            classify_channel_scope(&[], None),
+            classify_channel_scope(None, None),
             ChannelScopeVerdict::Channelless
         );
+    }
+
+    /// off / warn 一律放行——灰度期先量出 enforce 会拒掉什么，再去拒。
+    #[test]
+    fn scope_refuses_nothing_before_enforce() {
+        for verdict in [
+            ChannelScopeVerdict::InScope,
+            ChannelScopeVerdict::OutOfScope,
+            ChannelScopeVerdict::Unnarrowed,
+            ChannelScopeVerdict::Channelless,
+        ] {
+            assert!(!verdict.is_refused(McpChannelScope::Off));
+            assert!(!verdict.is_refused(McpChannelScope::Warn));
+        }
+    }
+
+    /// enforce 下越界与无声明都拒；无频道资源永远不拒，否则每个 bot 的
+    /// dm.open 都会被打断。
+    #[test]
+    fn enforce_refuses_out_of_scope_and_unnarrowed_only() {
+        assert!(ChannelScopeVerdict::OutOfScope.is_refused(McpChannelScope::Enforce));
+        assert!(ChannelScopeVerdict::Unnarrowed.is_refused(McpChannelScope::Enforce));
+        assert!(!ChannelScopeVerdict::InScope.is_refused(McpChannelScope::Enforce));
+        assert!(!ChannelScopeVerdict::Channelless.is_refused(McpChannelScope::Enforce));
     }
 }

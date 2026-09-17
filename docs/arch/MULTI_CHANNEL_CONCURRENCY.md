@@ -42,8 +42,8 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 不变量 | 现状 |
 | --- | --- |
 | 1 每频道一会话 | ✅ 已成立。**但**：两个频道可能 pin 到同一个真实 `cwd` 并发写同一个仓库，无检测；长期不活跃的频道会话无 TTL |
-| 2 权限随回合收窄 | ❌ 未实现。access token 只绑 bot 账号，无频道声明 |
-| 3 绑定不放在可变连接状态 | ⚠️ 今天无绑定可放，因而无风险；一旦引入频道绑定即成为硬约束 |
+| 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 warn |
+| 3 绑定不放在可变连接状态 | ✅ 阶段 2a：server 名按频道唯一，名字键控的 client 无法把两个频道的连接合并 |
 | 4 容量有界 | ✅ 阶段 1：`TurnSlots` 信号量，默认 4（原默认 1 从未生效，实际并发无上限）；超限回合发 `turn_queued` trace |
 | 4 配额按频道 | ❌ `MAX_WATCHES = 16` 挂在 daemon 全局的 `shared.watches`，单频道可饿死其他频道 |
 | 4 故障隔离 | ⚠️ 单进程服务全部频道；`BusyGuard` 整个回合持有，持续多频道流量下自更新可能永远等不到空窗 |
@@ -57,7 +57,7 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 0 | 跨频道调用基线埋点；隔离验收矩阵成文 | ✅ 本文 + `api/mcp.rs` 的 channel-scope 审计 |
 | 1 | 并发阀门：让 `max_concurrent` 生效 + 背压 trace | ✅ 连接器 0.1.42 |
 | 2a | MCP server 名字按频道唯一化 | ✅ 连接器 0.1.43 |
-| 2b | token 带 `chan` 声明 → warn → enforce | 待办 |
+| 2b | token 带 `chan` 声明 → warn → enforce | ✅ 网关 + 连接器 0.1.44（默认 warn） |
 | 3 | 隔离补强：cwd 冲突检测、会话 TTL、崩溃终帧、自更新静默窗口 | 待办 |
 
 阶段 1 排在 2 前面：阶段 2 修的是需要提示注入配合才能利用的越权，阶段 1 修的是正常
@@ -81,8 +81,23 @@ per-session 锁**之后**获取，频道 A 连收 10 条消息时，排队的回
   查表，`tool_presentation.rs` 与 server 名无关，`mcp_check.rs` 全按 URL 判定。实际需要跟着
   改的只有两处——连接器的防影子守卫（改为整个 `cheers-*` 命名空间保留）和前端
   `BotTracePanel` 里两条字面量兜底。
-- **第二层，碰撞发生也只降级为拒绝**：access token 带 `chan` 声明（铸造时即校验成员
-  资格），网关在 `call_tool` / `read_resource` 做等值校验，不匹配即 `PERMISSION_DENIED`。
+- **第二层，碰撞发生也只降级为拒绝**（已完成）：access token 带 `chan` 声明，**铸造时**
+  即校验成员资格——声明了 bot 不在的频道的 token 根本不该存在。网关在 `call_tool` /
+  `read_resource` / `prompts/get` 三条入口做等值校验，不匹配即 `PERMISSION_DENIED`
+  （资源读侧返回与"不存在"相同的不透明结果，避免探测）。
+
+  判定表（`MCP_CHANNEL_SCOPE`，默认 `warn`）：
+
+  | verdict | 含义 | off | warn | enforce |
+  | --- | --- | --- | --- | --- |
+  | `in_scope` | 调用频道 = token 频道 | 放行 | 放行 | 放行 |
+  | `out_of_scope` | token 有频道，调用指向别处 | 放行 | 放行+告警 | **拒绝** |
+  | `unnarrowed` | token 无频道声明（旧连接器） | 放行 | 放行 | **拒绝** |
+  | `channelless` | 资源本身无频道（`dm.open`） | 放行 | 放行 | 放行 |
+
+  `channelless` 在 enforce 下也不拒——无频道的资源不可能"越出"频道，拒了会打断每个 bot
+  的 `dm.open`。`unnarrowed` 单独成一类正是为了灰度：旧连接器不发频道，warn 期先量出
+  enforce 会拒掉多少，再决定何时收紧。
 
 只做第二层是"能扛"，只做第一层是"侥幸"。两层一起，才满足不变量 2 + 3。
 

@@ -2588,7 +2588,7 @@ impl RuntimeContext {
         }
         let bearer = match self.mcp_token.as_ref() {
             Some(provider) => provider
-                .bearer()
+                .bearer(&task.channel_id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
