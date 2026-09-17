@@ -233,9 +233,19 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
-| `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? |
-| `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject (e.g. `["cheers"]`). |
-| `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. |
+| `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? **Inert today** — see below. |
+| `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject. **Inert today** — see below. |
+| `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. Enforced: these are injected as written (minus any the Agent's `mcpCapabilities` cannot transport). |
+
+> **The two injection keys gate a path that does not exist.** The Agent Bridge
+> protocol carries exactly one MCP-related field — `mcp_url` in the hello frame,
+> the Gateway's canonical HTTP endpoint. There is no frame through which the
+> Backend can add an MCP server, so nothing reaches these keys to be allowed or
+> refused; the connector composes `mcpServers` from `policy.mcp.servers` plus
+> that mandatory canonical endpoint. They are kept as the gate a future
+> Backend-injection feature must pass through, and are deliberately closed by
+> default. Do not read a present `allowed_servers` list as an enforced ceiling:
+> today it neither permits nor blocks anything.
 
 ### `[accounts.<id>.security.acp_capability]` — signed capability (optional)
 

@@ -2536,7 +2536,7 @@ impl RuntimeContext {
         }
     }
 
-    async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
+    async fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
         // stdio MCP is the ACP baseline transport (always supported); only the
         // optional http/sse transports are gated by mcpCapabilities. We drop a
         // configured http/sse server the agent can't speak with a LOUD warning
@@ -2556,10 +2556,16 @@ impl RuntimeContext {
             .unwrap_or_default();
         let mut servers: Vec<Value> = Vec::with_capacity(configured.len() + 1);
         for server in configured {
-            if server.get("name").and_then(Value::as_str) == Some("cheers") {
+            let configured_name = server.get("name").and_then(Value::as_str).unwrap_or("");
+            if is_cheers_mcp_server_name(configured_name) {
+                // The whole `cheers-*` namespace is reserved, not just the bare
+                // name: a local server called `cheers-<channel>` would shadow
+                // that channel's canonical endpoint, which is the one thing a
+                // per-channel name exists to keep unambiguous.
                 tracing::warn!(
                     account = %self.account_id,
-                    "ignoring configured MCP server named 'cheers'; the Gateway canonical native HTTP endpoint is mandatory"
+                    server = configured_name,
+                    "ignoring configured MCP server in the reserved 'cheers' namespace; the Gateway canonical native HTTP endpoint is mandatory"
                 );
                 continue;
             }
@@ -2595,7 +2601,11 @@ impl RuntimeContext {
                 .ok(),
             None => None,
         };
-        servers.push(native_cheers_mcp_server(&self.mcp_url, bearer.as_deref()));
+        servers.push(native_cheers_mcp_server(
+            &task.channel_id,
+            &self.mcp_url,
+            bearer.as_deref(),
+        ));
         Value::Array(servers)
     }
 

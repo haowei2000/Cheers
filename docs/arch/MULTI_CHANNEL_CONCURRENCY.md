@@ -56,7 +56,8 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | --- | --- | --- |
 | 0 | 跨频道调用基线埋点；隔离验收矩阵成文 | ✅ 本文 + `api/mcp.rs` 的 channel-scope 审计 |
 | 1 | 并发阀门：让 `max_concurrent` 生效 + 背压 trace | ✅ 连接器 0.1.42 |
-| 2 | 身份收窄：MCP server 名字按频道唯一化 → token 带 `chan` 声明 → warn → enforce | 待办 |
+| 2a | MCP server 名字按频道唯一化 | ✅ 连接器 0.1.43 |
+| 2b | token 带 `chan` 声明 → warn → enforce | 待办 |
 | 3 | 隔离补强：cwd 冲突检测、会话 TTL、崩溃终帧、自更新静默窗口 | 待办 |
 
 阶段 1 排在 2 前面：阶段 2 修的是需要提示注入配合才能利用的越权，阶段 1 修的是正常
@@ -74,10 +75,12 @@ per-session 锁**之后**获取，频道 A 连收 10 条消息时，排队的回
 
 ### 阶段 2 为什么要两层
 
-- **第一层，让碰撞不发生**：MCP server 名字按频道唯一化（`cheers-{channel_short}`）。
-  连接器自己生成名字，成本近乎为零，从物理上让"按名字复用 client"无法串台。
-  代价是工具名带 server 前缀会随频道变化，落地前须核对 `domain/tool_presentation.rs`
-  与提示词是否硬依赖 `cheers` 这个名字。
+- **第一层，让碰撞不发生**（已完成）：MCP server 名字按频道唯一化，`cheers-<频道 id>`。
+  用完整频道 id 而非截断前缀：截断是拿确定性换一个生日问题概率，而"同名"正是要设计掉的
+  那个故障。核查结论：全仓库没有 `mcp__<server>__<tool>` 形式的工具名假设，网关按裸工具名
+  查表，`tool_presentation.rs` 与 server 名无关，`mcp_check.rs` 全按 URL 判定。实际需要跟着
+  改的只有两处——连接器的防影子守卫（改为整个 `cheers-*` 命名空间保留）和前端
+  `BotTracePanel` 里两条字面量兜底。
 - **第二层，碰撞发生也只降级为拒绝**：access token 带 `chan` 声明（铸造时即校验成员
   资格），网关在 `call_tool` / `read_resource` 做等值校验，不匹配即 `PERMISSION_DENIED`。
 
