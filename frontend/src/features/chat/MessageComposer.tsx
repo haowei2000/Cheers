@@ -812,7 +812,7 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-comfortable leading-reading text-content-primary outline-none placeholder-zinc-400 md:text-regular"
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 font-reading text-comfortable leading-reading text-content-primary outline-none placeholder:font-ui placeholder-zinc-400 md:text-regular"
         />
 
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">

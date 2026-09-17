@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, LayoutGrid, RotateCcw, Save, Settings, Users } from "lucide-react";
+import { Check, LayoutGrid, RotateCcw, Save, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import { PresenceDot } from "@/components/ui/presence-dot";
 import { usePopoverDismiss } from "@/components/ui/popover";
 import { MembersPopover } from "./MembersPopover";
 import { PopoverPanel } from "@/components/ui/popover";
@@ -114,38 +113,45 @@ export function ChannelToolbar(props: Props) {
 
   return (
     <>
-      <div className="hidden md:flex items-center gap-3 text-compact text-content-muted">
-        <div className="relative" ref={membersRootRef}>
-          <ControlTrigger
-            controlWidth="slot"
-            type="button"
-            onClick={() => setMembersOpen((open) => !open)}
-            title="Channel members"
-            aria-expanded={membersOpen}
-            controlSize="regular"
-            selected={membersOpen}
-          >
-            <Users className="w-3.5 h-3.5" aria-hidden="true" />
-            {props.memberCount || "Members"}
-            {props.onlineCount > 0 && (
-              <span className="ml-1 flex items-center gap-2">
-                <PresenceDot contentSize="small" className="bg-emerald-500" />
-                {props.onlineCount} online
-              </span>
-            )}
-          </ControlTrigger>
-          {membersOpen && (
-            <MembersPopover
-              channelId={props.channelId}
-              isDm={props.isDm}
-              onManage={props.onManage}
-              onClose={closeMembers}
-              currentUserId={props.currentUserId}
-              onMention={props.onMentionMember}
-              onStartDm={props.onStartDm}
-            />
-          )}
-        </div>
+      <div className="relative hidden md:block" ref={membersRootRef}>
+        <ControlTrigger
+          controlWidth="content"
+          controlSize="compact"
+          type="button"
+          onClick={() => setMembersOpen((open) => !open)}
+          title={
+            props.onlineCount > 0
+              ? `Channel roster (${props.memberCount || 0} members, ${props.onlineCount} online)`
+              : `Channel roster (${props.memberCount || 0})`
+          }
+          aria-label={
+            props.onlineCount > 0
+              ? `Channel roster: ${props.memberCount || 0} members, ${props.onlineCount} online`
+              : `Channel roster: ${props.memberCount || 0} members`
+          }
+          aria-expanded={membersOpen}
+          aria-haspopup="dialog"
+          selected={membersOpen}
+        >
+          <span className="font-code text-minimal uppercase tracking-overline text-content-muted/80">
+            ROSTER
+          </span>
+          <span className="font-code text-minimal text-content-muted/40">·</span>
+          <span className="font-code text-compact tabular-nums font-medium text-content-primary">
+            {props.memberCount || 0}
+          </span>
+        </ControlTrigger>
+        {membersOpen && (
+          <MembersPopover
+            channelId={props.channelId}
+            isDm={props.isDm}
+            onManage={props.onManage}
+            onClose={closeMembers}
+            currentUserId={props.currentUserId}
+            onMention={props.onMentionMember}
+            onStartDm={props.onStartDm}
+          />
+        )}
       </div>
 
       {/* One control for every lane surface. Windows are containers ChannelView renders

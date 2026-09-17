@@ -122,20 +122,19 @@ export default function SettingsPage() {
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
     <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
-        <div className="mx-auto w-full max-w-5xl px-6 max-md:px-4 py-5 flex items-center gap-4">
-          <UiButton variant="plain"
-            type="button"
-            content="icon"
-            controlSize="regular"
-            onClick={() => navigate("/chat")}
-            title="Back to chat"
-            aria-label="Back to chat"
-            className="text-content-primary hover:text-content-strong transition-colors rounded-sm"
-          >
-            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
-          </UiButton>
-          <h1 className="text-comfortable font-semibold">Settings</h1>
-        </div>
+        <header className="sticky top-0 z-10 bg-canvas/95 backdrop-blur-sm border-b border-control/30">
+          <div className="mx-auto w-full max-w-5xl px-6 max-md:px-4 py-4 flex items-center gap-4">
+            <ActionButton
+              action="back"
+              context="windowChrome"
+              onClick={() => navigate("/chat")}
+              accessibleLabel="Back to chat"
+              controlSize="regular"
+              className="text-content-primary hover:text-content-strong transition-colors rounded-sm"
+            />
+            <h1 className="text-comfortable font-semibold">Settings</h1>
+          </div>
+        </header>
       </RouteChromeHeader>
 
       <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">

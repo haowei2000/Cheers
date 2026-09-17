@@ -30,7 +30,7 @@ export function ReplyComposerBanner({
           <p className="text-compact font-medium font-utility text-content-strong">
             Replying to {preview.sender}
           </p>
-          <p className="truncate text-compact text-content-muted">{preview.excerpt}</p>
+          <p className="truncate font-reading text-compact italic text-content-muted">{preview.excerpt}</p>
         </div>
         <UiButton
           variant="plain"

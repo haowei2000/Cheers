@@ -8,8 +8,8 @@
 ## 1. 核心结构
 
 ```text
-Section header: 名称 + 非交互计数
-Toolbar: Search（flex） + Add（regular）
+Section header (resting): 名称 + 计数 (left) + Search (icon) + Add (icon) (right)
+Section header (active search): SearchInput（flex-1） + Close (icon) + Add (icon)
 ItemList:
   OperationsItem × n
   或 CollectionEditorItem
@@ -59,7 +59,8 @@ ItemList:
 
 ## 6. Search 与空状态
 
-- Search 使用 regular 36px 控件，移动触屏保留 44px 命中高度。
+- 静止态下 Section header 右侧整合 Search 与 Add 图标按钮，避免无搜索时占用独立行高；点击 Search 图标或存在查询词时展开带 Close 按钮的 SearchInput。
+- SearchInput 使用 regular 36px 控件，移动触屏保留 44px 命中高度；支持 Escape 键快速重置并收起。
 - 查询为空且集合为空：只显示 “No items yet”；Add 仅保留在顶部工具栏，避免重复入口。
 - 查询非空且无结果：显示 “No matching items” 和 Clear search。
 - 搜索结果仍使用同一 OperationsItem，不创建另一套 result row。

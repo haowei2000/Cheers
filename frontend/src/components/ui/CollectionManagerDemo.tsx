@@ -127,6 +127,7 @@ export function CollectionManagerDemo() {
       addLabel="Add item"
       onAdd={beginAdd}
       addDisabled={mode.kind !== "browse"}
+      searchDisabled={mode.kind !== "browse"}
     >
       {mode.kind === "add" && editor("add")}
 

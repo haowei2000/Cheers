@@ -18,9 +18,9 @@ import {
   ChevronRight,
   Loader2,
   MessageCircle,
-  Plus,
   Users,
 } from "lucide-react";
+import { ActionButton } from "@/components/ui/action-button";
 import { useContextSurface } from "@/components/ui/context-actions";
 import {
   getDiscussion,
@@ -185,6 +185,7 @@ export function DiscussionView({
   });
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [topics, setTopics] = useState<DiscussionSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -383,26 +384,65 @@ export function DiscussionView({
       )}
       style={isWide ? { width: topicWidth } : undefined}
     >
-      <div className="border-b border-zinc-800/80 p-3">
-        <div className="flex items-center gap-2">
-          <SearchInput
-            containerClassName="flex-1"
-            aria-label="Search discussions"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search discussions"
-            className="bg-zinc-900/70 placeholder:text-content-muted"
-          />
-          <UiButton content="iconText" action="create" variant="plain"
-            type="button"
-            onClick={startDiscussion}
-            aria-label="Create a new discussion"
-            controlSize="regular"
-            className="shrink-0 bg-indigo-500 text-content-on-accent hover:bg-indigo-400 focus-visible:ring-indigo-400"
-          >
-            <Plus className="h-4 w-4" />
-          </UiButton>
-        </div>
+      <div className="border-b border-zinc-300/40 p-3 dark:border-zinc-800/80">
+        {searchOpen || query ? (
+          <div className="flex h-9 items-center gap-2">
+            <SearchInput
+              autoFocus
+              containerClassName="flex-1"
+              aria-label="Search discussions"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setQuery("");
+                  setSearchOpen(false);
+                }
+              }}
+              placeholder="Search discussions"
+              className="bg-zinc-900/70 placeholder:text-content-muted"
+            />
+            <ActionButton
+              action="close"
+              context="windowChrome"
+              controlSize="regular"
+              accessibleLabel="Close search"
+              onClick={() => {
+                setQuery("");
+                setSearchOpen(false);
+              }}
+            />
+            <ActionButton
+              action="add"
+              context="toolbar"
+              controlSize="regular"
+              accessibleLabel="New discussion"
+              onClick={startDiscussion}
+            />
+          </div>
+        ) : (
+          <div className="flex h-9 items-center justify-between gap-2">
+            <span className="font-serif text-regular font-bold tracking-tight text-content-strong select-none">
+              Discussions
+            </span>
+            <div className="flex items-center gap-1">
+              <ActionButton
+                action="search"
+                context="toolbar"
+                controlSize="regular"
+                accessibleLabel="Search discussions"
+                onClick={() => setSearchOpen(true)}
+              />
+              <ActionButton
+                action="add"
+                context="toolbar"
+                controlSize="regular"
+                accessibleLabel="New discussion"
+                onClick={startDiscussion}
+              />
+            </div>
+          </div>
+        )}
       </div>
       <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
         {loadingTopics && topics.length === 0 ? (

@@ -969,7 +969,7 @@ export function BotTracePanel({
   const latestOnly = view === "record" && streaming && !showAll && timeline.length > 1;
 
   return (
-    <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
+    <div className={cn(view === "record" ? "w-full" : hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
         <ControlTrigger
           type="button"

@@ -199,7 +199,7 @@ export function MessageList({
 
   if (!loading && topLevel.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-content-muted text-regular">
+      <div className="flex-1 flex items-center justify-center font-reading italic text-content-muted text-regular">
         No messages yet. Start the conversation!
       </div>
     );
@@ -218,11 +218,11 @@ export function MessageList({
   function renderDayLabel(msg: Message) {
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
-        <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-sm bg-zinc-950 px-3 py-1 text-compact font-medium text-content-muted">
+        <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+        <span className="px-2 font-serif text-compact italic tracking-wide text-content-muted select-none">
           {formatDayLabel(msg.created_at)}
         </span>
-        <span className="h-px flex-1 bg-zinc-800/80" />
+        <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
       </div>
     );
   }
