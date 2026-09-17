@@ -18,7 +18,7 @@ use chrono::Utc;
 use ed25519_dalek::{pkcs8::DecodePrivateKey, Signature, Signer, SigningKey};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use tokio::sync::{mpsc, oneshot, Mutex, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -238,7 +238,10 @@ impl AccountRuntime {
                 }
             });
         }
-        let shared = Arc::new(SharedRuntimeState::new(channel_names));
+        let shared = Arc::new(SharedRuntimeState::new(
+            channel_names,
+            self.config.policy.prompt.max_concurrent,
+        ));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
@@ -1761,6 +1764,23 @@ impl RuntimeContext {
         }
         let session_lock = self.session_lock(&task.provider_session_key).await;
         let _guard = session_lock.lock().await;
+        // Deliberately after the session lock: see TurnSlots. A channel queueing
+        // up behind its own turn must not hold a daemon slot while it waits.
+        let (_slot, queued) = self.shared.turn_slots.acquire().await?;
+        if queued {
+            self.trace_task(
+                &task,
+                evaluation_id.as_deref(),
+                "turn_queued",
+                "running",
+                "Waiting for a free turn slot",
+                Some(&format!(
+                    "this bot is already running {} turns",
+                    self.config.policy.prompt.max_concurrent
+                )),
+            )
+            .await;
+        }
         let start_options = self.session_start_options(&task).await;
         // Evaluation turns retain Cheers MCP solely to record their decision
         // through the gateway-owned task-claim resource.
@@ -2591,6 +2611,54 @@ impl RuntimeContext {
             .await
     }
 
+    /// Emit a trace for a task that has no [`ActiveRun`] yet.
+    ///
+    /// Everything before `session/new` — queueing, most notably — happens while
+    /// the channel shows a placeholder and no run exists to hang a trace off.
+    /// This builds the frame straight from the task so that stretch is visible
+    /// instead of looking like a stalled bot. Best-effort: a turn is never
+    /// failed over its own progress report.
+    async fn trace_task(
+        &self,
+        task: &TaskCommand,
+        evaluation_id: Option<&str>,
+        phase: &str,
+        status: &str,
+        title: &str,
+        message: Option<&str>,
+    ) {
+        if !self.config.policy.trace.allow || evaluation_id.is_some() {
+            return;
+        }
+        let message = message
+            .map(|value| limit_text_bytes(value, self.config.policy.trace.max_message_bytes));
+        let frame = DataOutbound::Trace {
+            v: BRIDGE_PROTOCOL_VERSION,
+            msg_id: task.msg_id.clone(),
+            task_id: Some(task.task_id.clone()),
+            channel_id: Some(task.channel_id.clone()),
+            // No ACP session yet, so no run_id/provider_session_id to report.
+            run_id: None,
+            session_key: Some(task.provider_session_key.clone()),
+            provider_session_key: Some(task.provider_session_key.clone()),
+            provider_session_id: None,
+            session_id: task.session_id.clone(),
+            stream: "acp".to_string(),
+            // Run-scoped sequence numbers start with the run; this precedes it.
+            seq: None,
+            ts: Some(Utc::now().timestamp()),
+            phase: Some(phase.to_string()),
+            status: Some(status.to_string()),
+            title: Some(title.to_string()),
+            message,
+            data: None,
+            acp_capability: None,
+        };
+        if let Err(error) = self.io.send_data(frame).await {
+            tracing::debug!(account = %self.account_id, %error, "task trace not delivered");
+        }
+    }
+
     /// Like [`Self::trace`], but also carries a structured `data` payload (e.g. an
     /// agent plan's to-do entries) so a remote observer gets more than a label.
     async fn trace_with_data(
@@ -2638,6 +2706,56 @@ impl RuntimeContext {
     }
 }
 
+/// The daemon-wide cap on turns running at once.
+///
+/// One bot serves every channel it belongs to through a single agent process,
+/// so without a cap the in-flight turn count is simply however many channels
+/// happen to be talking — unbounded against the agent, the provider's rate
+/// limits and this machine.
+///
+/// **Acquire a slot only after the per-session lock.** A channel with a queue of
+/// messages then waits on its own lock holding nothing, so it cannot occupy the
+/// pool and starve the other channels. Taking the slot first would make the
+/// queue depth of one busy channel the whole daemon's concurrency.
+struct TurnSlots {
+    permits: Arc<Semaphore>,
+}
+
+impl TurnSlots {
+    fn new(max_concurrent: usize) -> Self {
+        Self {
+            // The config layer floors this at 1; `max` keeps the invariant local
+            // too, since a zero-permit semaphore would deadlock every turn.
+            permits: Arc::new(Semaphore::new(max_concurrent.max(1))),
+        }
+    }
+
+    /// Takes a slot, waiting when the daemon is at capacity. The flag reports
+    /// whether waiting happened, so the caller can tell the channel it is
+    /// queued rather than leaving the turn silent.
+    async fn acquire(&self) -> anyhow::Result<(OwnedSemaphorePermit, bool)> {
+        match self.permits.clone().try_acquire_owned() {
+            Ok(permit) => Ok((permit, false)),
+            Err(_) => {
+                let permit = self
+                    .permits
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .context("turn-slot semaphore closed")?;
+                Ok((permit, true))
+            }
+        }
+    }
+
+    /// Slots free right now. Test-only: the runtime never branches on it, since
+    /// anything read here is stale the moment it is returned.
+    #[cfg(test)]
+    fn available(&self) -> usize {
+        self.permits.available_permits()
+    }
+}
+
 struct SharedRuntimeState {
     /// Multi-index active-run registry; one lock preserves atomic insert/remove.
     runs: Mutex<RunRegistry>,
@@ -2649,6 +2767,8 @@ struct SharedRuntimeState {
     channel_names: RwLock<HashMap<String, String>>,
     /// Watch lifecycle has its own cap/insert/remove critical section.
     watches: Mutex<HashMap<String, WatchHandle>>,
+    /// Daemon-wide turn cap; no lock, the semaphore is its own synchronization.
+    turn_slots: TurnSlots,
 }
 
 #[derive(Default)]
@@ -2667,13 +2787,14 @@ struct InteractionRegistry {
 
 impl SharedRuntimeState {
     /// Creates independent lock domains with the initial membership snapshot.
-    fn new(channel_names: HashMap<String, String>) -> Self {
+    fn new(channel_names: HashMap<String, String>, max_concurrent: usize) -> Self {
         Self {
             runs: Mutex::new(RunRegistry::default()),
             interactions: Mutex::new(InteractionRegistry::default()),
             session_locks: Mutex::new(HashMap::new()),
             channel_names: RwLock::new(channel_names),
             watches: Mutex::new(HashMap::new()),
+            turn_slots: TurnSlots::new(max_concurrent),
         }
     }
 }
@@ -3268,6 +3389,62 @@ mod tests {
             "no image block may be sent when the agent can't read images"
         );
         assert!(prompt[0]["text"].as_str().unwrap().contains("shot.png"));
+    }
+
+    // ── TurnSlots：daemon 级并发阀门 ──────────────────────────────────────
+
+    /// 容量之内直接放行，且不报"排队"——正常多频道工作不该被标记成拥塞。
+    #[tokio::test]
+    async fn turn_slots_admit_up_to_capacity_without_queueing() {
+        let slots = TurnSlots::new(3);
+        let mut held = Vec::new();
+        for _ in 0..3 {
+            let (permit, queued) = slots.acquire().await.unwrap();
+            assert!(!queued, "容量之内不应排队");
+            held.push(permit);
+        }
+        assert_eq!(slots.available(), 0);
+    }
+
+    /// 打满后的第 N+1 个回合必须等待，并被标记为排队（前端据此显示"排队中"）。
+    ///
+    /// 时间暂停后，`sleep` 只在其余任务全部 idle 时才推进，因此这一觉醒来即证明
+    /// 等待者已经停在信号量上——而不是靠睡够毫秒数去赌调度顺序。
+    #[tokio::test(start_paused = true)]
+    async fn turn_slots_queue_the_turn_past_capacity() {
+        let slots = Arc::new(TurnSlots::new(1));
+        let (held, _) = slots.acquire().await.unwrap();
+
+        let waiter = tokio::spawn({
+            let slots = slots.clone();
+            async move { slots.acquire().await.map(|(_, queued)| queued) }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiter.is_finished(), "槽位占满时不得放行");
+
+        drop(held);
+        let queued = waiter.await.unwrap().unwrap();
+        assert!(queued, "等待过的回合必须被标记为排队");
+    }
+
+    /// 槽位随回合结束归还——否则 daemon 会一路耗尽到永久阻塞。
+    #[tokio::test]
+    async fn turn_slots_return_to_the_pool_after_a_turn() {
+        let slots = TurnSlots::new(2);
+        {
+            let _a = slots.acquire().await.unwrap();
+            let _b = slots.acquire().await.unwrap();
+            assert_eq!(slots.available(), 0);
+        }
+        assert_eq!(slots.available(), 2);
+    }
+
+    /// 配置为 0（或被写坏）时退化为 1，而不是零容量死锁。
+    #[tokio::test]
+    async fn turn_slots_never_have_zero_capacity() {
+        let slots = TurnSlots::new(0);
+        let (_permit, queued) = slots.acquire().await.unwrap();
+        assert!(!queued);
     }
 
     fn test_identity() -> BotIdentity {

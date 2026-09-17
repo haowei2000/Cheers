@@ -424,7 +424,7 @@ impl Default for RawSessionsPolicy {
 struct RawPromptPolicy {
     #[serde(default = "default_true")]
     allow: bool,
-    #[serde(default = "default_one")]
+    #[serde(default = "default_max_concurrent")]
     max_concurrent: usize,
     #[serde(default = "default_max_prompt_bytes")]
     max_prompt_bytes: usize,
@@ -1177,8 +1177,15 @@ fn default_true() -> bool {
     true
 }
 
-fn default_one() -> usize {
-    1
+/// Turns this daemon may run at once, across every channel the bot works in.
+///
+/// One bot serves many channels through a single agent process, so 1 would make
+/// a second channel wait for the first to finish — the exact head-of-line block
+/// the runtime's lock discipline is built to avoid. The value bounds the agent
+/// process and the provider's rate limits; per-channel ordering is a separate
+/// guarantee, held by the per-session lock.
+fn default_max_concurrent() -> usize {
+    4
 }
 
 fn default_max_prompt_bytes() -> usize {

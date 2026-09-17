@@ -145,7 +145,7 @@ All policy tables are optional; each key falls back to the default below.
 | Key                     | Type | Default  | Meaning |
 |-------------------------|------|----------|---------|
 | `allow`                 | bool | `true`   | Master switch: accept prompt turns at all. |
-| `max_concurrent`        | int  | `1`      | Concurrent turns per bot (keep at 1 unless the agent is reentrant). |
+| `max_concurrent`        | int  | `4`      | Turns this daemon runs at once, across every channel. Enforced by a semaphore taken *after* the per-session lock, so a busy channel queues on its own lock without occupying the pool. Past the cap a turn waits and the channel gets a `turn_queued` trace. |
 | `max_prompt_bytes`      | int  | `200000` | Reject prompts larger than this. |
 | `max_duration_ms`       | int  | `900000` | Kill a turn that runs longer than this (15 min). |
 | `allow_attachments`     | bool | `true`   | Allow non-image file attachments in prompts. |
