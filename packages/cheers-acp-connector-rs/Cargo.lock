@@ -326,7 +326,7 @@ dependencies = [
 
 [[package]]
 name = "cce-acp-connector"
-version = "0.1.44"
+version = "0.1.45"
 dependencies = [
  "agent-client-protocol",
  "anyhow",

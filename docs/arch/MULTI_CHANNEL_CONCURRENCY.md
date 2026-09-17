@@ -41,12 +41,12 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 
 | 不变量 | 现状 |
 | --- | --- |
-| 1 每频道一会话 | ✅ 已成立。**但**：两个频道可能 pin 到同一个真实 `cwd` 并发写同一个仓库，无检测；长期不活跃的频道会话无 TTL |
+| 1 每频道一会话 | ✅ 阶段 3：并发同 cwd 的回合互相告警（`workspace_shared` trace）；会话映射 30 天未用即清扫，`updated_at` 在复用时刷新以度量闲置而非年龄 |
 | 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 warn |
 | 3 绑定不放在可变连接状态 | ✅ 阶段 2a：server 名按频道唯一，名字键控的 client 无法把两个频道的连接合并 |
 | 4 容量有界 | ✅ 阶段 1：`TurnSlots` 信号量，默认 4（原默认 1 从未生效，实际并发无上限）；超限回合发 `turn_queued` trace |
-| 4 配额按频道 | ❌ `MAX_WATCHES = 16` 挂在 daemon 全局的 `shared.watches`，单频道可饿死其他频道 |
-| 4 故障隔离 | ⚠️ 单进程服务全部频道；`BusyGuard` 整个回合持有，持续多频道流量下自更新可能永远等不到空窗 |
+| 4 配额按频道 | ❌ `MAX_WATCHES = 16` 挂在 daemon 全局的 `shared.watches`，单频道可饿死其他频道（未处理） |
+| 4 故障隔离 | ⚠️ agent 崩溃时每个在途频道各自收到终帧（已验证并加回归）；自更新排空改为有界等待，超时放弃并告警。**但根因仍在**：忙碌 bot 仍可能一直更新不了，彻底解决需要协议级 drain 信号 |
 
 ---
 
@@ -58,7 +58,7 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 1 | 并发阀门：让 `max_concurrent` 生效 + 背压 trace | ✅ 连接器 0.1.42 |
 | 2a | MCP server 名字按频道唯一化 | ✅ 连接器 0.1.43 |
 | 2b | token 带 `chan` 声明 → warn → enforce | ✅ 网关 + 连接器 0.1.44（默认 warn） |
-| 3 | 隔离补强：cwd 冲突检测、会话 TTL、崩溃终帧、自更新静默窗口 | 待办 |
+| 3 | 隔离补强：cwd 冲突检测、会话 TTL、崩溃终帧、自更新排空上界 | ✅ 连接器 0.1.45 |
 
 阶段 1 排在 2 前面：阶段 2 修的是需要提示注入配合才能利用的越权，阶段 1 修的是正常
 业务增长就会撞上的稳定性悬崖；且阶段 2 的方案要在高并发下才验证得出来，先有阀门才好做
@@ -132,13 +132,17 @@ target 为 `cheers::mcp::channel_scope`，按 `verdict` 聚合即得基线：
 以下五项是 agent 镜像的验收标准。**架构上不依赖它们通过**——不变量 2、3 的设计前提
 就是"agent 可能不隔离"——但通不过的 agent 应被记录在案。
 
-| # | 场景 | 通过标准 |
-| --- | --- | --- |
-| 1 | 同一 bot 两频道并发回合 | 上下文与 `cwd` 不互窜 |
-| 2 | 并发期间抓 MCP 请求头 | 阶段 2 后：每个请求的 `chan` 与其所属频道一致 |
-| 3 | 频道 A 卡在审批卡上 | 频道 B 的回合照常完成（`bridge_runtime` 释放 adapter 锁那段注释的回归）✅ 已自动化 |
-| 4 | 并发度打满信号量 | 背压帧到达前端，频道显示"排队中"而非静默等待 |
-| 5 | agent 进程被 kill | 每个在途频道各自收到终帧，而非集体静默超时 |
+| # | 场景 | 通过标准 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 同一 bot 两频道并发回合 | 上下文与 `cwd` 不互窜 | ⚠️ **测的是 agent 不是我们**，仓库内无法自动化；连接器侧只能保证两个频道拿到不同的会话与不同的 MCP server 名 |
+| 2 | 并发期间抓 MCP 请求头 | 每个请求的 `chan` 与其所属频道一致 | ⚠️ 连接器一侧已自动化（`injected_mcp_servers_are_named_per_channel` + `caches_one_token_per_channel`）；"agent 是否原样带上"仍属 agent 验收 |
+| 3 | 频道 A 卡在审批卡上 | 频道 B 的回合照常完成 | ✅ `one_blocked_channel_does_not_block_the_others` |
+| 4 | 并发度打满信号量 | 频道显示"排队中"而非静默等待 | ✅ `a_queued_turn_tells_its_channel_it_is_queued` |
+| 5 | agent 进程被 kill | 每个在途频道各自收到终帧 | ✅ `an_agent_crash_gives_every_in_flight_channel_its_own_terminal_frame` |
+
+第 1、2 项标注的是**边界，不是偷懒**：它们检验的是 agent 进程内部是否真的按 session 隔离，
+而我们仓库里没有真实 agent 可驱动。不变量 2、3 的整个设计前提就是"agent 可能不隔离"——
+这两项通不过也不该让平台失守，所以它们是 agent 镜像的验收项，不是 CI 的门禁。
 
 第 3 项已由 `bridge_runtime` 的 `one_blocked_channel_does_not_block_the_others` 覆盖：
 夹具（`io::test_io` + `FakeAdapter` + 真实 TOML 解析出的配置）把真正的 `run_task` 跑起来，
