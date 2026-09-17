@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { Lock } from "lucide-react";
 import toast from "react-hot-toast";
 import { Spinner as LoadingIcon } from "@/components/ui/spinner";
@@ -109,7 +109,11 @@ function SessionExpiredTakeover() {
  *  it just did. Renders nothing. */
 function HoverIntent() {
   const { pathname } = useLocation();
-  useEffect(() => {
+  // Layout effect, not passive: the browser recomputes what is under the cursor
+  // from the new layout and fires `pointerover` off the back of that same frame,
+  // so a disarm that waits for paint can arrive after the hover it was meant to
+  // hold back.
+  useLayoutEffect(() => {
     disarmHover();
   }, [pathname]);
   return null;

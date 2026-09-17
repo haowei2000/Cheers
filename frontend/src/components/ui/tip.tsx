@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerMeans } from "@/lib/hoverIntent";
+import { whenPointerRests } from "@/lib/hoverIntent";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
@@ -36,7 +36,16 @@ export function Tip({
 }) {
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
+  const cancelRest = useRef<(() => void) | null>(null);
   const [open, setOpen] = useState(false);
+
+  // Hover is a question the pointer asks by staying; focus is one the user asks
+  // outright, so the keyboard path answers immediately.
+  const closeTip = () => {
+    cancelRest.current?.();
+    cancelRest.current = null;
+    setOpen(false);
+  };
 
   const trigger =
     children && isValidElement(children) ? (
@@ -61,10 +70,15 @@ export function Tip({
       ref={rootRef}
       className={cn("relative inline-flex", className)}
       data-managed-tooltip="true"
-      onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setOpen(true))}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={(event) => {
+        cancelRest.current?.();
+        cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
+      }}
+      onMouseLeave={closeTip}
       onFocusCapture={() => setOpen(true)}
-      onBlurCapture={() => requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && setOpen(false))}
+      onBlurCapture={() =>
+        requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && closeTip())
+      }
     >
       {trigger}
       {open && (

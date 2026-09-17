@@ -547,6 +547,14 @@ associated to its trigger via `aria-describedby`. The app-level `TitleTooltip`
 applies the same surface to existing native `title` hints without changing the
 trigger's layout or hover treatment.
 
+A bubble answers a question, and the pointer only asks one by **coming to rest**:
+every hover-opened tip waits out `TOOLTIP_REST_MS` (`src/lib/hoverIntent.ts`) of
+stillness on the trigger, and neither a cursor that content arrived under nor one
+crossing a toolbar on its way elsewhere opens anything. A press cancels the wait,
+so clicking a control never leaves its tooltip standing open. Keyboard focus asks
+outright and is answered at once. Never start a private `setTimeout` for a tip —
+use `whenPointerRests`, so every bubble in the app answers at the same speed.
+
 ```tsx
 <Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}
 <Tip content={`Current prompt: "${p}". Click to edit.`}>                    {/* wrap any control */}

@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerMeans } from "@/lib/hoverIntent";
+import { whenPointerRests } from "@/lib/hoverIntent";
 
 export type OverflowStrategy = "singleLine" | "wrap" | "horizontalScroll";
 
@@ -39,7 +39,7 @@ export function OverflowText({
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const hoverTimer = useRef<number>();
+  const cancelRest = useRef<(() => void) | null>(null);
   const [overflowing, setOverflowing] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -78,13 +78,9 @@ export function OverflowText({
   }, [open]);
 
   const canReveal = reveal === "always" || (reveal === "auto" && overflowing);
-  const showLater = () => {
-    if (!canReveal) return;
-    window.clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(() => setOpen(true), 400);
-  };
-  const hideLater = () => {
-    window.clearTimeout(hoverTimer.current);
+  const hide = () => {
+    cancelRest.current?.();
+    cancelRest.current = null;
     setOpen(false);
   };
 
@@ -100,10 +96,15 @@ export function OverflowText({
           strategy === "wrap" && "whitespace-pre-wrap [overflow-wrap:anywhere]",
           strategy === "horizontalScroll" && "block overflow-x-auto whitespace-pre",
         )}
-        onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showLater)}
-        onMouseLeave={hideLater}
+        onMouseEnter={(event) => {
+          cancelRest.current?.();
+          cancelRest.current = canReveal
+            ? whenPointerRests(event.currentTarget, () => setOpen(true))
+            : null;
+        }}
+        onMouseLeave={hide}
         onFocus={() => canReveal && setOpen(true)}
-        onBlur={hideLater}
+        onBlur={hide}
       >
         {children ?? fullText}
       </span>

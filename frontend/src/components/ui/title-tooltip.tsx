@@ -1,9 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { FloatingLayer } from "./floating-layer";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerMeans } from "@/lib/hoverIntent";
+import { whenPointerRests } from "@/lib/hoverIntent";
 
-const SHOW_DELAY_MS = 350;
 const EDGE_ZONE_PX = 180;
 
 type TooltipAlign = "start" | "center" | "end";
@@ -77,46 +76,53 @@ export function TitleTooltip() {
     let hovered: HTMLElement | null = null;
     let focused: HTMLElement | null = null;
     let active: CapturedTitle | null = null;
-    let showTimer: number | undefined;
+    let cancelRest: (() => void) | null = null;
 
-    const switchTo = (next: HTMLElement | null) => {
+    const switchTo = (next: HTMLElement | null, immediate: boolean) => {
       if (active?.anchor === next) return;
-      window.clearTimeout(showTimer);
-      showTimer = undefined;
+      cancelRest?.();
+      cancelRest = null;
       setVisible(null);
       if (active) restoreTitle(active, tooltipId);
       active = null;
       anchorRef.current = null;
 
       if (!next) return;
+      // The title is taken the moment the pointer arrives, so the native bubble
+      // never gets its chance — the decision still pending is only ours.
       const captured = captureTitle(next, tooltipId);
       if (!captured) return;
       active = captured;
       anchorRef.current = next;
-      const rect = next.getBoundingClientRect();
-      const align = resolveTitleTooltipAlign(rect.left, rect.right, window.innerWidth);
-      showTimer = window.setTimeout(() => {
-        if (active?.anchor === next) setVisible({ text: captured.text, align });
-      }, SHOW_DELAY_MS);
+      const show = () => {
+        if (active?.anchor !== next) return;
+        const rect = next.getBoundingClientRect();
+        setVisible({
+          text: captured.text,
+          align: resolveTitleTooltipAlign(rect.left, rect.right, window.innerWidth),
+        });
+      };
+      // Focus asks outright; a pointer asks by coming to rest on the control.
+      if (immediate) show();
+      else cancelRest = whenPointerRests(next, show);
     };
 
-    const sync = () => switchTo(hovered ?? focused);
+    const sync = () => switchTo(hovered ?? focused, !hovered && !!focused);
     const close = () => {
       hovered = null;
       focused = null;
-      switchTo(null);
+      switchTo(null, false);
     };
 
     const onPointerOver = (event: PointerEvent) => {
       const next = titleAnchor(event.target);
       if (!next) return;
       // Opening a page whose button lands under the pointer raises this event just
-      // as approaching the button does. Only the second one is a question worth
-      // answering with a tooltip.
-      whenPointerMeans(next, () => {
-        hovered = next;
-        sync();
-      });
+      // as approaching the button does. Only a pointer that then comes to rest on
+      // the button is asking a question worth answering — `whenPointerRests`
+      // inside switchTo decides that, and answers nothing until it does.
+      hovered = next;
+      sync();
     };
     const onPointerOut = (event: PointerEvent) => {
       if (!hovered || remainsInside(hovered, event.relatedTarget)) return;
@@ -146,7 +152,7 @@ export function TitleTooltip() {
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("scroll", close, true);
     return () => {
-      window.clearTimeout(showTimer);
+      cancelRest?.();
       if (active) restoreTitle(active, tooltipId);
       document.removeEventListener("pointerover", onPointerOver);
       document.removeEventListener("pointerout", onPointerOut);

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { MEANT_MOVE_PX, pointerTravelled } from "./hoverIntent";
 
 // `:hover` is positional, not event-driven: it starts matching the instant content
 // mounts under a stationary cursor, and no pointer event arrives to clear it. The
@@ -67,7 +68,7 @@ describe("JS hover handlers wait for the same evidence", () => {
     for (const path of sources("components").concat(sources("features"), sources("hooks"))) {
       const source = readFileSync(join(root, path), "utf8");
       for (const [line] of source.matchAll(/onMouseEnter=\{[^}]*\}|onPointerEnter=\{[^}]*\}/g)) {
-        if (line.includes("whenPointerMeans")) continue;
+        if (line.includes("whenPointerMeans") || line.includes("whenPointerRests")) continue;
         // Prop plumbing and declarations, not a handler that opens anything.
         if (/^on(Mouse|Pointer)Enter=\{on(Mouse|Pointer)Enter\}$/.test(line)) {
           if (KEEPS_OPEN.has(`${path}:${line}`)) continue;
@@ -77,5 +78,34 @@ describe("JS hover handlers wait for the same evidence", () => {
       }
     }
     expect(ungated).toEqual([]);
+  });
+});
+
+// A bubble is an answer, and the pointer only asks by coming to rest. The two
+// symptoms this encodes: a tooltip that opened because a click put content under
+// a cursor that never moved, and one that opened while the cursor was still on
+// its way somewhere else.
+describe("tooltips wait for the pointer to come to rest", () => {
+  it("reads drift as the pointer staying put, and travel as moving on", () => {
+    expect(pointerTravelled(null, { x: 100, y: 100 })).toBe(false);
+    expect(pointerTravelled({ x: 100, y: 100 }, { x: 102, y: 101 })).toBe(false);
+    expect(pointerTravelled({ x: 100, y: 100 }, { x: 100, y: 100 + MEANT_MOVE_PX })).toBe(true);
+  });
+
+  const BUBBLES = [
+    "../components/ui/tip.tsx",
+    "../components/ui/title-tooltip.tsx",
+    "../components/ui/overflow-text.tsx",
+  ];
+
+  it("opens every bubble through the same wait", () => {
+    for (const path of BUBBLES) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      expect(source, path).toContain("whenPointerRests");
+      // A private timer is a second, divergent answer to the same question — and
+      // one that starts on arrival rather than on rest, which is the fast-popping
+      // bubble itself.
+      expect(source, path).not.toContain("setTimeout(() => setOpen(true)");
+    }
   });
 });
