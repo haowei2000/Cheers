@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import {
-  Annotation,
+  Annotation as CmAnnotation,
   Compartment,
   EditorState,
+  RangeSetBuilder,
   StateEffect,
   type Extension,
 } from "@codemirror/state";
@@ -13,7 +14,12 @@ import {
   highlightActiveLine,
   highlightActiveLineGutter,
   drawSelection,
+  gutter,
+  GutterMarker,
+  Decoration,
 } from "@codemirror/view";
+import type { Annotation as WorkbenchAnnotation } from "./annotations";
+import { resolveAnnotation } from "./annotations";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
@@ -68,6 +74,32 @@ const editorTheme = (dark: boolean) => EditorView.theme(
       backgroundColor: "rgb(var(--tone-zinc-500) / 0.2)",
       outline: "none",
     },
+    ".cm-annotation-gutter": { width: "20px" },
+    ".cm-annotation-gutter .cm-gutterElement": {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "0",
+    },
+    ".cm-annotation-marker": {
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "16px",
+      height: "16px",
+      borderRadius: "2px",
+      color: "rgb(var(--text-secondary))",
+      transition: "color 0.15s ease, transform 0.15s ease",
+    },
+    ".cm-annotation-marker:hover": { color: "rgb(var(--text-strong))" },
+    ".cm-annotation-marker-active": {
+      color: "rgb(var(--accent-400))",
+      transform: "scale(1.15)",
+    },
+    ".cm-active-annotation-line": {
+      backgroundColor: "rgb(var(--accent-600) / 0.15) !important",
+    },
   },
   { dark }
 );
@@ -93,6 +125,7 @@ const highlight = HighlightStyle.define([
 // path change, or when an async language pack finishes loading) without rebuilding the view.
 const languageConf = new Compartment();
 const themeConf = new Compartment();
+const annotationsConf = new Compartment();
 
 // Synchronous fast path for the workspace's own formats (no async flash on the common case).
 // Everything else resolves via @codemirror/language-data below.
@@ -120,10 +153,101 @@ async function loadLanguageFor(path: string): Promise<Extension | null> {
 
 // Marks a dispatch as a programmatic content sync (not a user edit), so the updateListener
 // can skip onChange for it — see the listener below.
-const syncAnnotation = Annotation.define<boolean>();
+const syncAnnotation = CmAnnotation.define<boolean>();
 
-function baseExtensions(path: string, onChange: (v: string) => void, dark: boolean): Extension[] {
+class AnnotationGutterMarker extends GutterMarker {
+  constructor(
+    readonly note: WorkbenchAnnotation,
+    readonly isActive: boolean,
+    readonly onSelect?: (id: string) => void
+  ) {
+    super();
+  }
+
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = `cm-annotation-marker${this.isActive ? " cm-annotation-marker-active" : ""}`;
+    el.title = `Note on ${this.note.label}: ${this.note.note}`;
+    el.setAttribute("aria-label", `Note on ${this.note.label}`);
+    el.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5h8L18.5 9.5v10H5.5z"/><path d="M13.5 4.5v5h5"/><path d="M8.75 13h6.5M8.75 16.25h4"/></svg>`;
+    if (this.onSelect) {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        this.onSelect?.(this.note.id);
+      };
+    }
+    return el;
+  }
+}
+
+function createAnnotationExtensions(
+  notes: readonly WorkbenchAnnotation[] | undefined,
+  activeAnnotationId: string | null | undefined,
+  onSelect?: (id: string) => void
+): Extension {
+  if (!notes || notes.length === 0) return [];
+
+  const gutterExt = gutter({
+    class: "cm-annotation-gutter",
+    markers: (view) => {
+      const markers = new RangeSetBuilder<GutterMarker>();
+      const doc = view.state.doc;
+      const text = doc.toString();
+
+      const lineMarkers: { lineNo: number; note: WorkbenchAnnotation; isActive: boolean }[] = [];
+      notes.forEach((note) => {
+        const range = resolveAnnotation(note, text);
+        if (range && range.start >= 1 && range.start <= doc.lines) {
+          lineMarkers.push({
+            lineNo: range.start,
+            note,
+            isActive: note.id === activeAnnotationId,
+          });
+        }
+      });
+
+      lineMarkers.sort((a, b) => a.lineNo - b.lineNo);
+      lineMarkers.forEach(({ lineNo, note, isActive }) => {
+        const line = doc.line(lineNo);
+        markers.add(line.from, line.from, new AnnotationGutterMarker(note, isActive, onSelect));
+      });
+
+      return markers.finish();
+    },
+  });
+
+  const activeNote = activeAnnotationId ? notes.find((n) => n.id === activeAnnotationId) : null;
+  const lineHighlightExt = activeNote
+    ? EditorView.decorations.compute(["doc"], (state) => {
+        const text = state.doc.toString();
+        const range = resolveAnnotation(activeNote, text);
+        if (!range || range.start < 1 || range.start > state.doc.lines) {
+          return Decoration.none;
+        }
+        const startLine = state.doc.line(range.start);
+        const endLine = state.doc.line(Math.min(range.end, state.doc.lines));
+        const builder = new RangeSetBuilder<Decoration>();
+        for (let l = startLine.number; l <= endLine.number; l++) {
+          const line = state.doc.line(l);
+          builder.add(line.from, line.from, Decoration.line({ class: "cm-active-annotation-line" }));
+        }
+        return builder.finish();
+      })
+    : [];
+
+  return [gutterExt, lineHighlightExt];
+}
+
+function baseExtensions(
+  path: string,
+  onChange: (v: string) => void,
+  dark: boolean,
+  notes?: readonly WorkbenchAnnotation[],
+  activeAnnotationId?: string | null,
+  onSelectAnnotation?: (id: string) => void
+): Extension[] {
   return [
+    annotationsConf.of(createAnnotationExtensions(notes, activeAnnotationId, onSelectAnnotation)),
     lineNumbers(),
     highlightActiveLine(),
     highlightActiveLineGutter(),
@@ -157,6 +281,9 @@ interface CodeEditorProps {
    *  clamps to the last line (lines drift as code changes; a stale anchor still lands
    *  nearby instead of erroring). Selection-only: never dirties the buffer. */
   scrollToLine?: number;
+  notes?: readonly WorkbenchAnnotation[];
+  activeAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string) => void;
 }
 
 // Uncontrolled-with-sync: CodeMirror owns the document, we push external changes in only
@@ -164,7 +291,16 @@ interface CodeEditorProps {
 // keeps the cursor/selection intact while typing — our own edits round-trip back as `value`
 // equal to the doc, so the sync effect no-ops. onChange/path changes rebuild only the tiny
 // bits that depend on them, not the whole view.
-export function CodeEditor({ value, onChange, path, className, scrollToLine }: CodeEditorProps) {
+export function CodeEditor({
+  value,
+  onChange,
+  path,
+  className,
+  scrollToLine,
+  notes,
+  activeAnnotationId,
+  onSelectAnnotation,
+}: CodeEditorProps) {
   const { resolvedTheme } = useTheme();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -180,7 +316,14 @@ export function CodeEditor({ value, onChange, path, className, scrollToLine }: C
     const view = new EditorView({
       state: EditorState.create({
         doc: value,
-        extensions: baseExtensions(pathRef.current, (v) => onChangeRef.current(v), resolvedTheme === "dark"),
+        extensions: baseExtensions(
+          pathRef.current,
+          (v) => onChangeRef.current(v),
+          resolvedTheme === "dark",
+          notes,
+          activeAnnotationId,
+          onSelectAnnotation
+        ),
       }),
       parent: hostRef.current,
     });
@@ -200,7 +343,16 @@ export function CodeEditor({ value, onChange, path, className, scrollToLine }: C
     pathRef.current = path;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
-      effects: StateEffect.reconfigure.of(baseExtensions(path, (v) => onChangeRef.current(v), resolvedTheme === "dark")),
+      effects: StateEffect.reconfigure.of(
+        baseExtensions(
+          path,
+          (v) => onChangeRef.current(v),
+          resolvedTheme === "dark",
+          notes,
+          activeAnnotationId,
+          onSelectAnnotation
+        )
+      ),
       annotations: syncAnnotation.of(true),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -211,6 +363,30 @@ export function CodeEditor({ value, onChange, path, className, scrollToLine }: C
       effects: themeConf.reconfigure(editorTheme(resolvedTheme === "dark")),
     });
   }, [resolvedTheme]);
+
+  // Update annotations and active marker/highlight without resetting the document.
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: annotationsConf.reconfigure(
+        createAnnotationExtensions(notes, activeAnnotationId, onSelectAnnotation)
+      ),
+    });
+  }, [notes, activeAnnotationId, onSelectAnnotation]);
+
+  // Smoothly scroll active annotation line into view when activeAnnotationId changes.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !activeAnnotationId || !notes) return;
+    const activeNote = notes.find((n) => n.id === activeAnnotationId);
+    if (!activeNote) return;
+    const range = resolveAnnotation(activeNote, view.state.doc.toString());
+    if (range && range.start >= 1 && range.start <= view.state.doc.lines) {
+      const line = view.state.doc.line(range.start);
+      view.dispatch({
+        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+      });
+    }
+  }, [activeAnnotationId, notes]);
 
   // Async language highlighting for non-md/json files (real repo source in Remote Workspace).
   // The reconfigure above resets the language compartment to the sync value ([] for these);

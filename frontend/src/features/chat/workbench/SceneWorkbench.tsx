@@ -771,7 +771,11 @@ export function SceneWorkbench({
     setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
   }, [selectedPath, session.path, session.version, session.parsedText]);
 
-  useEffect(() => setPendingNote(null), [selectedPath]);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  useEffect(() => {
+    setPendingNote(null);
+    setActiveAnnotationId(null);
+  }, [selectedPath]);
 
   const selectPath = useCallback((path: string, sceneId = activeScene) => {
     setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));
@@ -1038,6 +1042,8 @@ export function SceneWorkbench({
                             allNotes={annotations.doc.notes}
                             currentPath={selectedPath}
                             text={session.parsedText}
+                            activeAnnotationId={activeAnnotationId}
+                            onSelectAnnotation={setActiveAnnotationId}
                             onRemove={onRemoveNote}
                             onReveal={(range) => {
                               showRaw(selectedPath, true);
@@ -1088,6 +1094,8 @@ export function SceneWorkbench({
                             config={ctx.configs[selectedPath]}
                             session={session}
                             annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                            activeAnnotationId={activeAnnotationId}
+                            onSelectAnnotation={setActiveAnnotationId}
                             onFailure={(rendererId, reason) => {
                               setFailedRenderers((current) => ({
                                 ...current,
@@ -1103,6 +1111,9 @@ export function SceneWorkbench({
                               onChange={session.editText}
                               path={selectedPath}
                               scrollToLine={revealLine}
+                              notes={annotations.notes}
+                              activeAnnotationId={activeAnnotationId}
+                              onSelectAnnotation={setActiveAnnotationId}
                               className="h-full min-h-0 overflow-hidden"
                             />
                           </Suspense>

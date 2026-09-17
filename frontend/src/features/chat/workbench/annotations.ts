@@ -109,6 +109,16 @@ export function sameAnchor(a: AnnotationAnchor, b: AnnotationAnchor): boolean {
   return true;
 }
 
+export function sourcePathKey(path: ReadonlyArray<string | number>): string {
+  return JSON.stringify(path);
+}
+
+export function anchorKey(anchor: AnnotationAnchor): string {
+  if (anchor.kind === "path") return sourcePathKey(anchor.sourcePath);
+  if (anchor.kind === "text") return `text:${anchor.sourceText}`;
+  return "file";
+}
+
 export function notesOnTarget(doc: AnnotationDoc, path: string, target: LensContextTarget): Annotation[] {
   const anchor = anchorOf(target);
   return annotationsFor(doc, path).filter((note) => sameAnchor(note.anchor, anchor));

@@ -224,9 +224,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     },
     [selected, showRaw]
   );
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   // A pending note belongs to the file it was started on; changing files abandons it
   // rather than silently re-aiming it at a row in a different document.
-  useEffect(() => setPendingNote(null), [selected]);
+  useEffect(() => {
+    setPendingNote(null);
+    setActiveAnnotationId(null);
+  }, [selected]);
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -836,6 +840,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           allNotes={annotations.doc.notes}
                           currentPath={selected ?? undefined}
                           text={session.parsedText}
+                          activeAnnotationId={activeAnnotationId}
+                          onSelectAnnotation={setActiveAnnotationId}
                           onRemove={onRemoveNote}
                           onReveal={onRevealNote}
                           onSelectFile={(path) => {
@@ -879,6 +885,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       config={configs[selected]}
                       session={session}
                       annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                      activeAnnotationId={activeAnnotationId}
+                      onSelectAnnotation={setActiveAnnotationId}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
@@ -899,6 +907,9 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       onChange={session.editText}
                       path={selected}
                       scrollToLine={revealLine}
+                      notes={annotations.notes}
+                      activeAnnotationId={activeAnnotationId}
+                      onSelectAnnotation={setActiveAnnotationId}
                       className="flex-1 min-h-0 overflow-hidden"
                     />
                   </Suspense>

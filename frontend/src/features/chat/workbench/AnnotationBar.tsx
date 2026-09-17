@@ -150,6 +150,8 @@ export interface AnnotationListContentProps {
   allNotes?: readonly Annotation[];
   currentPath?: string;
   text?: string;
+  activeAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string | null) => void;
   onRemove: (id: string) => void;
   onReveal?: (range: { start: number; end: number }) => void;
   onSelectFile?: (path: string) => void;
@@ -162,6 +164,8 @@ export function AnnotationListContent({
   allNotes,
   currentPath,
   text = "",
+  activeAnnotationId,
+  onSelectAnnotation,
   onRemove,
   onReveal,
   onSelectFile,
@@ -177,6 +181,7 @@ export function AnnotationListContent({
   const showScopeTabs = Boolean(allNotes && allNotes.length > 0 && currentPath);
 
   const handleReveal = (note: Annotation, range: { start: number; end: number } | null) => {
+    onSelectAnnotation?.(note.id);
     if (note.path !== currentPath && onSelectFile) {
       onSelectFile(note.path);
     }
@@ -319,10 +324,14 @@ export function AnnotationListContent({
             const range = isCurrentFile && text ? resolveAnnotation(note, text) : null;
             const showFilePath = scope === "all" || !isCurrentFile;
             const formattedDate = formatNoteDate(note.created);
+            const isSelected = note.id === activeAnnotationId;
             return (
               <li
                 key={note.id}
-                className="group flex flex-col gap-1 p-3 transition-colors hover:bg-control/20"
+                onClick={() => onSelectAnnotation?.(note.id)}
+                className={`group flex flex-col gap-1 p-3 transition-colors cursor-pointer ${
+                  isSelected ? "bg-control/30 ring-1 ring-accent-400/40" : "hover:bg-control/20"
+                }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1 overflow-hidden">
@@ -410,6 +419,8 @@ export interface AnnotationsButtonProps {
   defaultOpen?: boolean;
   /** The file's current text, for resolving each anchor to where it now points. */
   text?: string;
+  activeAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string | null) => void;
   onRemove: (id: string) => void;
   onReveal?: (range: { start: number; end: number }) => void;
   onSelectFile?: (path: string) => void;
@@ -423,6 +434,8 @@ export function AnnotationsButton({
   currentPath,
   defaultOpen = false,
   text = "",
+  activeAnnotationId,
+  onSelectAnnotation,
   onRemove,
   onReveal,
   onSelectFile,
@@ -446,7 +459,15 @@ export function AnnotationsButton({
             : `${totalCount} annotation${totalCount > 1 ? "s" : ""}`
         }
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen((current) => {
+            const next = !current;
+            if (next && notes.length > 0 && !activeAnnotationId) {
+              onSelectAnnotation?.(notes[0].id);
+            }
+            return next;
+          });
+        }}
         controlSize="compact"
       >
         <span className="relative inline-flex">
@@ -465,6 +486,8 @@ export function AnnotationsButton({
             allNotes={allNotes}
             currentPath={currentPath}
             text={text}
+            activeAnnotationId={activeAnnotationId}
+            onSelectAnnotation={onSelectAnnotation}
             onRemove={onRemove}
             onReveal={onReveal}
             onSelectFile={onSelectFile}

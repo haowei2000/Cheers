@@ -57,6 +57,26 @@
   }
 }
 
+/* Editorial Annotation anchoring and active highlights for workbench lenses */
+[data-has-annotation="true"]:not([data-annotation-active="true"]) {
+  box-shadow: inset 2px 0 0 0 rgb(var(--accent-500) / 0.6);
+}
+
+[data-has-annotation="true"]:not([data-annotation-active="true"]) > td:first-child {
+  box-shadow: inset 2px 0 0 0 rgb(var(--accent-500) / 0.6);
+}
+
+[data-annotation-active="true"] {
+  outline: 1.5px solid rgb(var(--accent-600)) !important;
+  outline-offset: -1px;
+  background-color: rgb(var(--accent-600) / 0.12) !important;
+  transition: outline 0.15s ease, background-color 0.15s ease;
+}
+
+[data-annotation-active="true"] > td {
+  background-color: rgb(var(--accent-600) / 0.12) !important;
+}
+
 /* Selection belongs to the content layer: high-contrast enough to remain
    legible in both themes, but neutral so it never reads like an app command. */
 ::selection {

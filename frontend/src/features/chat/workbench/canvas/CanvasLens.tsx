@@ -5,6 +5,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { LensProps } from "../lens/registry";
+import { sourcePathKey } from "../annotations";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
@@ -507,6 +508,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 }}
                 data-canvas-node={node.id}
                 data-workbench-context-target="canvas-node"
+                data-workbench-anchor={sourcePathKey(["nodes", node.at])}
                 role="option"
                 aria-selected={selected}
                 aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
