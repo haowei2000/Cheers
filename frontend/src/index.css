@@ -76,6 +76,35 @@
       0 4px 14px -2px rgb(var(--elevation-shadow) / calc(var(--elevation-alpha) * 0.7)),
       0 0 0 1.5px rgb(var(--elevation-edge) / calc(var(--elevation-edge-alpha) * 1.5));
   }
+
+  /* Locked paper jiggle feedback when user tries to scroll or switch away */
+  @keyframes paper-shake {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    15% {
+      transform: translateX(-8px) rotate(-0.35deg);
+    }
+    30% {
+      transform: translateX(8px) rotate(0.35deg);
+    }
+    45% {
+      transform: translateX(-5px) rotate(-0.2deg);
+    }
+    60% {
+      transform: translateX(5px) rotate(0.2deg);
+    }
+    75% {
+      transform: translateX(-2px);
+    }
+    90% {
+      transform: translateX(2px);
+    }
+  }
+
+  .animate-paper-shake {
+    animation: paper-shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
 }
 
 /* Editorial Annotation anchoring and active highlights for workbench lenses */
