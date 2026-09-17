@@ -4,11 +4,11 @@ import { controlHeightClasses, controlSquareClasses, useControlSize, type Contro
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   controlSize?: ControlSize;
-  controlWidth?: "slot" | "fill" | "icon";
+  controlWidth?: "slot" | "fill" | "icon" | "content";
   variant?: "default" | "plain";
 }
 
-// Filled select with the same accessible inset boundary as Input (DESIGN.md §2.3).
+// Resting unboxed select that reveals outline and background on hover and click/focus.
 export const Select = forwardRef<
   HTMLSelectElement,
   SelectProps
@@ -18,14 +18,25 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "text-comfortable md:text-regular text-content-primary transition-shadow",
+      "text-comfortable md:text-regular text-content-primary transition-all duration-150 cursor-pointer",
       variant === "plain"
         ? "bg-transparent ring-0 border-0 rounded-none px-2 focus:bg-control/40 focus:ring-1 focus:ring-content-strong/40"
-        : "rounded-sm bg-control/60 px-3 ring-1 ring-inset ring-zinc-700/60 focus:ring-1 focus:ring-content-strong/50",
-      controlWidth === "fill" ? "w-full" : controlWidth === "icon" ? controlSquareClasses[size] : "w-32 max-w-full",
+        : cn(
+            "rounded-sm px-2 bg-transparent ring-1 ring-inset ring-transparent",
+            "hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong",
+            "focus:bg-control/60 focus:ring-1 focus:ring-inset focus:ring-content-strong/50 focus:text-content-strong active:bg-control-active",
+          ),
+      controlWidth === "fill"
+        ? "w-full"
+        : controlWidth === "icon"
+          ? controlSquareClasses[size]
+          : controlWidth === "content"
+            ? "w-auto max-w-full"
+            : "w-32 max-w-full",
       controlHeightClasses[size],
       "focus:outline-none",
       "disabled:opacity-50 disabled:cursor-not-allowed",
+      "[&>option]:bg-panel [&>option]:text-content-primary",
       className
     )}
     {...props}

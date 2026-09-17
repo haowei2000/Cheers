@@ -481,6 +481,8 @@ export function FloatingPanel({
       ref={panelRef}
       data-floating-panel=""
       data-floating-panel-bounded={drag.bounded ? "true" : "false"}
+      data-dragging={drag.isDragging ? "true" : undefined}
+      data-snapped={drag.isSnapped ? "true" : undefined}
       onPointerDownCapture={managed?.toFront ?? drag.toFront}
       onDrop={dropTarget?.onDrop}
       onDragOver={dropTarget?.onDragOver}
@@ -544,6 +546,14 @@ export function FloatingPanel({
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
+          {/* Underlay drag strip spanning the full width of the chrome header */}
+          <div
+            {...(managed?.dragProps ?? drag.handleProps)}
+            data-floating-panel-drag-strip=""
+            className="pointer-events-auto absolute inset-x-0 top-0 z-20 hidden cursor-grab select-none active:cursor-grabbing md:block"
+            style={{ height: "var(--floating-panel-chrome-top, 3.5rem)" }}
+            aria-hidden="true"
+          />
           {/* Navigation and actions are two single-line islands. The measured action
               island determines the exact width available to navigation. */}
           <div ref={setChromeElement} className="pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden md:flex">
@@ -554,7 +564,8 @@ export function FloatingPanel({
               // feature portaling navigation in must not pick its own control size:
               // the two sides then differ by 8px and the band reads as ragged.
               controlSize={FLOATING_CHROME_CONTROL_SIZE}
-              className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden"
+              className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden cursor-grab active:cursor-grabbing"
+              {...(managed?.dragProps ?? drag.handleProps)}
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
                 separate pill beside it. Two surfaces read as two groups and cost the gap

@@ -1,10 +1,10 @@
-import { cloneElement, isValidElement, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerRests } from "@/lib/hoverIntent";
+import { isPointerFocus, markPointerInteraction, onDisarmHover, whenPointerRests } from "@/lib/hoverIntent";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
@@ -40,12 +40,17 @@ export function Tip({
   const [open, setOpen] = useState(false);
 
   // Hover is a question the pointer asks by staying; focus is one the user asks
-  // outright, so the keyboard path answers immediately.
+  // outright, so the keyboard path answers immediately. Clicks and pointer taps
+  // never pop open hover tooltips.
   const closeTip = () => {
     cancelRest.current?.();
     cancelRest.current = null;
     setOpen(false);
   };
+
+  useEffect(() => {
+    return onDisarmHover(closeTip);
+  }, []);
 
   const trigger =
     children && isValidElement(children) ? (
@@ -75,7 +80,18 @@ export function Tip({
         cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
       }}
       onMouseLeave={closeTip}
-      onFocusCapture={() => setOpen(true)}
+      onPointerDownCapture={() => {
+        markPointerInteraction();
+        closeTip();
+      }}
+      onClickCapture={() => {
+        markPointerInteraction();
+        closeTip();
+      }}
+      onFocusCapture={(event) => {
+        if (isPointerFocus(event.nativeEvent)) return;
+        setOpen(true);
+      }}
       onBlurCapture={() =>
         requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && closeTip())
       }

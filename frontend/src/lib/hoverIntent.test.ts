@@ -2,7 +2,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MEANT_MOVE_PX, pointerTravelled } from "./hoverIntent";
+import {
+  MEANT_MOVE_PX,
+  pointerTravelled,
+  onDisarmHover,
+  disarmHover,
+  markPointerInteraction,
+  clearPointerInteraction,
+  isPointerFocus,
+} from "./hoverIntent";
 
 // `:hover` is positional, not event-driven: it starts matching the instant content
 // mounts under a stationary cursor, and no pointer event arrives to clear it. The
@@ -98,7 +106,7 @@ describe("tooltips wait for the pointer to come to rest", () => {
     "../components/ui/overflow-text.tsx",
   ];
 
-  it("opens every bubble through the same wait", () => {
+  it("opens every bubble through the same wait and suppresses pointer clicks", () => {
     for (const path of BUBBLES) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       expect(source, path).toContain("whenPointerRests");
@@ -106,6 +114,45 @@ describe("tooltips wait for the pointer to come to rest", () => {
       // one that starts on arrival rather than on rest, which is the fast-popping
       // bubble itself.
       expect(source, path).not.toContain("setTimeout(() => setOpen(true)");
+      // All bubble surfaces must suppress accidental tooltips on mouse / pointer clicks
+      expect(source, path).toContain("isPointerFocus");
     }
   });
+
+  it("suppresses tooltips when pointer interaction occurs", () => {
+    markPointerInteraction();
+    expect(isPointerFocus()).toBe(true);
+
+    clearPointerInteraction();
+    // Still within suppression window (600ms)
+    expect(isPointerFocus()).toBe(true);
+
+    // Matches non-visible focus when HTMLElement is available
+    class MockHTMLElement {
+      matches(selector: string) {
+        return selector !== ":focus-visible";
+      }
+    }
+    const origHtmlElement = (globalThis as unknown as { HTMLElement?: unknown }).HTMLElement;
+    (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = MockHTMLElement;
+    try {
+      const fakeEl = new MockHTMLElement();
+      expect(isPointerFocus({ target: fakeEl } as unknown as FocusEvent)).toBe(true);
+    } finally {
+      (globalThis as unknown as { HTMLElement?: unknown }).HTMLElement = origHtmlElement;
+    }
+  });
+
+  it("notifies listeners when hover is disarmed", () => {
+    let called = 0;
+    const unsub = onDisarmHover(() => {
+      called++;
+    });
+    disarmHover();
+    expect(called).toBe(1);
+    unsub();
+    disarmHover();
+    expect(called).toBe(1);
+  });
 });
+

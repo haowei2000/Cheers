@@ -52,11 +52,72 @@ let restingPoint: { x: number; y: number } | null = null;
  *  of the very control being clicked. */
 let pressedSinceMove = false;
 
+export const POINTER_FOCUS_SUPPRESS_MS = 600;
+
+let lastPointerTime = 0;
+let isPointerInteracting = false;
+
+/**
+ * Record that pointer interaction (mouse/touch click or press) just occurred.
+ * Call this when a pointerdown or click event happens to suppress accidental tooltips.
+ */
+export function markPointerInteraction(): void {
+  lastPointerTime = Date.now();
+  isPointerInteracting = true;
+}
+
+/**
+ * Clear pointer press state once the pointer is released.
+ */
+export function clearPointerInteraction(): void {
+  isPointerInteracting = false;
+}
+
+/**
+ * Check whether a focus event originated from pointer interaction (mouse click, tap)
+ * rather than intentional keyboard navigation (Tab key).
+ *
+ * Browsers fire focus events when buttons or focusable elements are clicked with
+ * a mouse/pointer. Components should check this before opening tooltips or help bubbles.
+ */
+export function isPointerFocus(event?: FocusEvent | Event): boolean {
+  if (isPointerInteracting) return true;
+  if (Date.now() - lastPointerTime < POINTER_FOCUS_SUPPRESS_MS) return true;
+  if (
+    event &&
+    "target" in event &&
+    typeof HTMLElement !== "undefined" &&
+    event.target instanceof HTMLElement
+  ) {
+    try {
+      if (typeof event.target.matches === "function" && !event.target.matches(":focus-visible")) {
+        return true;
+      }
+    } catch {
+      // Ignore selector errors in environments without :focus-visible support
+    }
+  }
+  return false;
+}
+
+const disarmListeners = new Set<() => void>();
+
+export function onDisarmHover(listener: () => void): () => void {
+  disarmListeners.add(listener);
+  return () => disarmListeners.delete(listener);
+}
+
 /** The page changed under a pointer that has not reported moving since. */
 export function disarmHover(): void {
-  document.documentElement.setAttribute(IDLE_ATTR, "");
+  if (typeof document !== "undefined") {
+    document.documentElement.setAttribute(IDLE_ATTR, "");
+  }
   restingPoint = null;
+  for (const listener of disarmListeners) {
+    listener();
+  }
 }
+
 
 /** Whether the pointer has reported moving since the page last changed under it.
  *  JS hover handlers need the same answer the CSS guard encodes: `pointerover`
@@ -200,8 +261,30 @@ export function watchPointerIntent(): void {
   window.addEventListener(
     "pointerdown",
     (event: PointerEvent) => {
+      markPointerInteraction();
       pressedSinceMove = true;
       restingPoint = { x: event.clientX, y: event.clientY };
+    },
+    { passive: true, capture: true },
+  );
+  window.addEventListener(
+    "pointerup",
+    () => {
+      clearPointerInteraction();
+    },
+    { passive: true, capture: true },
+  );
+  window.addEventListener(
+    "pointercancel",
+    () => {
+      clearPointerInteraction();
+    },
+    { passive: true, capture: true },
+  );
+  window.addEventListener(
+    "click",
+    () => {
+      markPointerInteraction();
     },
     { passive: true, capture: true },
   );

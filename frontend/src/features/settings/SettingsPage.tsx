@@ -3,7 +3,6 @@ import { Button as UiButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft,
   User,
   Bot,
   Blocks,

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ActionButton } from "./action-button";
+import { disarmHover } from "@/lib/hoverIntent";
 
 // A centered modal shell: backdrop (click-to-close) + card (click-stop) + optional titled
 // header with a close button. Reused by NewDmDialog, the bot-token modal, etc.
@@ -57,6 +58,7 @@ export function Dialog({
   );
 
   useEffect(() => {
+    disarmHover();
     const card = cardRef.current;
     if (!card) return;
 
@@ -100,6 +102,7 @@ export function Dialog({
 
     card.addEventListener("keydown", onKeyDown);
     return () => {
+      disarmHover();
       card.removeEventListener("keydown", onKeyDown);
       // Return focus to whatever opened the dialog, so keyboard users resume in place.
       // Guard isConnected so a since-unmounted trigger doesn't throw / strand focus.

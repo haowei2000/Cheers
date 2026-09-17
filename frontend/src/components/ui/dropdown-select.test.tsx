@@ -85,6 +85,20 @@ describe("DropdownSelect", () => {
     expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).not.toContain('aria-haspopup="listbox"');
   });
+
+  it("keeps text dropdown select resting unboxed and reveals outline on hover", () => {
+    const markup = renderToStaticMarkup(
+      <DropdownSelect
+        label="Chat"
+        ariaLabel="Channel type"
+        options={[{ value: "chat", label: "Chat" }]}
+        onSelect={() => undefined}
+      />,
+    );
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("ring-transparent");
+    expect(markup).toContain("hover:ring-zinc-300/80");
+  });
 });
 
 describe("DropdownSelect groups", () => {

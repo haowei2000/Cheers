@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
 import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerRests } from "@/lib/hoverIntent";
+import { isPointerFocus, markPointerInteraction, onDisarmHover, whenPointerRests } from "@/lib/hoverIntent";
 
 export type OverflowStrategy = "singleLine" | "wrap" | "horizontalScroll";
 
@@ -61,6 +61,17 @@ export function OverflowText({
     return () => observer.disconnect();
   }, [fullText, measure]);
 
+  const canReveal = reveal === "always" || (reveal === "auto" && overflowing);
+  const hide = () => {
+    cancelRest.current?.();
+    cancelRest.current = null;
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    return onDisarmHover(hide);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
@@ -76,13 +87,6 @@ export function OverflowText({
       document.removeEventListener("keydown", escape);
     };
   }, [open]);
-
-  const canReveal = reveal === "always" || (reveal === "auto" && overflowing);
-  const hide = () => {
-    cancelRest.current?.();
-    cancelRest.current = null;
-    setOpen(false);
-  };
 
   return (
     <span ref={rootRef} className={cn("relative inline-flex min-w-0 max-w-full items-center", className)} {...props}>
@@ -103,7 +107,18 @@ export function OverflowText({
             : null;
         }}
         onMouseLeave={hide}
-        onFocus={() => canReveal && setOpen(true)}
+        onPointerDownCapture={() => {
+          markPointerInteraction();
+          hide();
+        }}
+        onClickCapture={() => {
+          markPointerInteraction();
+          hide();
+        }}
+        onFocus={(event) => {
+          if (isPointerFocus(event.nativeEvent)) return;
+          if (canReveal) setOpen(true);
+        }}
         onBlur={hide}
       >
         {children ?? fullText}

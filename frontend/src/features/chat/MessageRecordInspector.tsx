@@ -120,6 +120,8 @@ export function MessageRecordInspector({
         aria-modal={isMobile}
         aria-labelledby={titleId}
         tabIndex={-1}
+        data-dragging={drag.isDragging ? "true" : undefined}
+        data-snapped={drag.isSnapped ? "true" : undefined}
         onPointerDownCapture={drag.toFront}
         style={isMobile ? undefined : {
           ...drag.posStyle,
@@ -132,8 +134,14 @@ export function MessageRecordInspector({
         )}
       >
         <div className="shrink-0 px-5 pt-3 md:px-6 md:pt-5">
-          <DragHandle className="mx-auto mb-3 md:hidden" />
-          <header {...drag.handleProps} className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
+          <DragHandle
+            {...drag.handleProps}
+            className="mx-auto mb-3 cursor-grab select-none active:cursor-grabbing md:hidden"
+          />
+          <header
+            {...drag.handleProps}
+            className="flex cursor-grab select-none items-start gap-4 border-b border-zinc-800/80 pb-4 active:cursor-grabbing"
+          >
             <GripHorizontal className="mt-1 hidden h-4 w-4 shrink-0 text-content-muted md:block" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <p className="text-minimal font-semibold uppercase tracking-overline text-content-muted">

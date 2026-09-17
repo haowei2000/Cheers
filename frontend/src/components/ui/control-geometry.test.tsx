@@ -101,6 +101,16 @@ describe("shared control geometry", () => {
     expect(markup).not.toContain("w-32");
   });
 
+  it("keeps resting selects unboxed and reveals outline on hover and focus", () => {
+    const markup = renderToStaticMarkup(
+      <Select aria-label="Role"><option>Member</option></Select>,
+    );
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("ring-transparent");
+    expect(markup).toContain("hover:ring-zinc-300/80");
+    expect(markup).toContain("focus:ring-1");
+  });
+
   it("supports compact content-width control triggers with matching typography and height", () => {
     const defaultTrigger = renderToStaticMarkup(<ControlTrigger>Default</ControlTrigger>);
     const compactContent = renderToStaticMarkup(
