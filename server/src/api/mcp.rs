@@ -2551,6 +2551,103 @@ enum ToolCallFailure {
     Domain { code: String, message: String },
 }
 
+/// Tracing target every channel-scope audit event carries, so a deployment can
+/// aggregate the baseline (`verdict` counts) without filtering on message text.
+const MCP_SCOPE_AUDIT: &str = "cheers::mcp::channel_scope";
+
+/// Where an MCP call landed relative to the bot's in-flight turns.
+///
+/// A bot's MCP token authorizes the bot *account*, and the channel it acts on
+/// comes from a model-supplied `channel_id` argument, re-checked against channel
+/// membership. Nothing today ties a call to the turn that provoked it — so a bot
+/// prompted in one channel may legitimately, or under prompt injection, reach
+/// into any other channel it belongs to. This enum records which of those
+/// happened; it decides nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelScopeVerdict {
+    /// The call names a channel this bot has a turn running in.
+    InTurn,
+    /// The bot has in-flight turns, and this call names none of their channels.
+    /// The ambient-authority case the scoping work exists to close.
+    CrossChannel,
+    /// No in-flight turn is visible on this gateway process — background work,
+    /// or the turn is streaming through another replica. Not classifiable.
+    NoActiveTurn,
+    /// The call carries no channel at all (`dm.open`, `bot.status.write`).
+    Channelless,
+}
+
+impl ChannelScopeVerdict {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InTurn => "in_turn",
+            Self::CrossChannel => "cross_channel",
+            Self::NoActiveTurn => "no_active_turn",
+            Self::Channelless => "channelless",
+        }
+    }
+}
+
+/// Classify one call against the bot's in-flight channels. Pure so the decision
+/// table is testable without a registry or a database.
+fn classify_channel_scope(active: &[Uuid], channel: Option<Uuid>) -> ChannelScopeVerdict {
+    let Some(channel) = channel else {
+        return ChannelScopeVerdict::Channelless;
+    };
+    if active.is_empty() {
+        return ChannelScopeVerdict::NoActiveTurn;
+    }
+    if active.contains(&channel) {
+        ChannelScopeVerdict::InTurn
+    } else {
+        ChannelScopeVerdict::CrossChannel
+    }
+}
+
+/// Emit one structured event per MCP call so we can measure how much traffic a
+/// turn-scoped rule would reject before any rule starts rejecting it.
+///
+/// Measurement only — it never changes what the call is allowed to do. Enforcing
+/// against `active_channels` would be wrong anyway: that set is process-local,
+/// and a multi-channel bot's set holds several channels at once, so it cannot
+/// say which turn a given call belongs to. Binding a call to its turn needs the
+/// access token to carry the channel; this is the baseline that sizes that work.
+fn audit_channel_scope(
+    state: &AppState,
+    bot_id: Uuid,
+    resource: &str,
+    params: &Map<String, Value>,
+) {
+    let channel = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let active = state.stream_registry.active_channels(bot_id);
+    let verdict = classify_channel_scope(&active, channel);
+    // Cross-channel is the finding; everything else is denominator. Both carry
+    // the same fields so one aggregation covers the whole baseline.
+    if verdict == ChannelScopeVerdict::CrossChannel {
+        tracing::warn!(
+            target: MCP_SCOPE_AUDIT,
+            verdict = verdict.as_str(),
+            %bot_id,
+            resource,
+            channel_id = ?channel,
+            active_turns = active.len(),
+            "MCP call names a channel outside this bot's in-flight turns"
+        );
+    } else {
+        tracing::info!(
+            target: MCP_SCOPE_AUDIT,
+            verdict = verdict.as_str(),
+            %bot_id,
+            resource,
+            channel_id = ?channel,
+            active_turns = active.len(),
+        );
+    }
+}
+
 async fn call_tool(
     state: &AppState,
     bot_id: Uuid,
@@ -2559,6 +2656,7 @@ async fn call_tool(
 ) -> Result<Value, ToolCallFailure> {
     let call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
+    audit_channel_scope(state, bot_id, call.resource, &call.params);
     let frame = json!({
         "type": "resource_req",
         "v": 1,
@@ -2638,6 +2736,7 @@ async fn read_resource(
             ResourceReadError::Invalid(error.message)
         }
     })?;
+    audit_channel_scope(state, bot_id, call.resource, &call.params);
     let req_id = Uuid::new_v4().to_string();
     let frame = json!({
         "type": "resource_req",
@@ -3319,5 +3418,50 @@ mod tests {
             None,
         );
         assert_eq!(modern.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── channel-scope 审计（Phase 0 基线，只观测不决策）────────────────────
+
+    /// 调用命中 bot 某个在途回合的频道 → in_turn。
+    #[test]
+    fn scope_audit_marks_a_call_inside_an_in_flight_turn() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        assert_eq!(
+            classify_channel_scope(&[a, b], Some(b)),
+            ChannelScopeVerdict::InTurn
+        );
+    }
+
+    /// 有在途回合，但调用指向别的频道 → cross_channel（要找的就是这个）。
+    #[test]
+    fn scope_audit_flags_a_call_outside_every_in_flight_turn() {
+        assert_eq!(
+            classify_channel_scope(&[Uuid::new_v4()], Some(Uuid::new_v4())),
+            ChannelScopeVerdict::CrossChannel
+        );
+    }
+
+    /// 本进程看不到在途回合 → 不可判定，不能算越界。多副本下流可能在另一个
+    /// 副本上，这也是该判定永远不能用来鉴权的原因。
+    #[test]
+    fn scope_audit_does_not_call_an_unobservable_turn_cross_channel() {
+        assert_eq!(
+            classify_channel_scope(&[], Some(Uuid::new_v4())),
+            ChannelScopeVerdict::NoActiveTurn
+        );
+    }
+
+    /// 无频道参数的资源（dm.open / bot.status.write）单独归类，不污染基线。
+    #[test]
+    fn scope_audit_separates_channelless_resources() {
+        assert_eq!(
+            classify_channel_scope(&[Uuid::new_v4()], None),
+            ChannelScopeVerdict::Channelless
+        );
+        assert_eq!(
+            classify_channel_scope(&[], None),
+            ChannelScopeVerdict::Channelless
+        );
     }
 }
