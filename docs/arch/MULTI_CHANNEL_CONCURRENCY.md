@@ -45,7 +45,7 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 warn |
 | 3 绑定不放在可变连接状态 | ✅ 阶段 2a：server 名按频道唯一，名字键控的 client 无法把两个频道的连接合并 |
 | 4 容量有界 | ✅ 阶段 1：`TurnSlots` 信号量，默认 4（原默认 1 从未生效，实际并发无上限）；超限回合发 `turn_queued` trace |
-| 4 配额按频道 | ❌ `MAX_WATCHES = 16` 挂在 daemon 全局的 `shared.watches`，单频道可饿死其他频道（未处理） |
+| 4 配额按维度 | ✅ 阶段 3：`MAX_WATCHES` 改为按 workspace root 计费。注：workspace RPC 帧不带频道，watch 由工作台浏览驱动，真实维度是 root——而会话的 root 集合本就是它的 `cwd` + `additionalDirectories`，所以按 root 分摊即按各频道的工作区分摊 |
 | 4 故障隔离 | ⚠️ agent 崩溃时每个在途频道各自收到终帧（已验证并加回归）；自更新排空改为有界等待，超时放弃并告警。**但根因仍在**：忙碌 bot 仍可能一直更新不了，彻底解决需要协议级 drain 信号 |
 
 ---

@@ -1564,10 +1564,24 @@ impl RuntimeContext {
             let _ = handle.renew_tx.send(());
             return Ok(json!({ "watch_id": id, "ttl_secs": WATCH_TTL_SECS }));
         }
-        if guard.len() >= MAX_WATCHES {
+        // Charged per workspace root, not to one daemon-wide pool. A single
+        // daemon serves every channel its bot belongs to, and each channel's
+        // session scopes browsing to its own roots — so a global pool let one
+        // busy workspace exhaust the budget for all the others, and the operator
+        // could do nothing about it. Per root, the total is
+        // `allowed_roots × MAX_WATCHES`: still bounded, and bounded by a number
+        // the operator chose rather than one invented here.
+        let in_root = guard
+            .values()
+            .filter(|handle| handle.root == root_canon)
+            .count();
+        if in_root >= MAX_WATCHES {
             return Err(err(
                 "E_TOO_MANY_WATCHES",
-                format!("watch cap reached ({MAX_WATCHES} concurrent watches)"),
+                format!(
+                    "watch cap reached ({MAX_WATCHES} concurrent watches in {})",
+                    root_canon.display()
+                ),
             ));
         }
 
@@ -1604,6 +1618,7 @@ impl RuntimeContext {
             watch_id.clone(),
             WatchHandle {
                 dir,
+                root: root_canon.to_path_buf(),
                 renew_tx,
                 _abort: AbortOnDrop(task.abort_handle()),
             },
@@ -2906,6 +2921,9 @@ impl SharedRuntimeState {
 struct WatchHandle {
     /// Canonical watched dir — used to dedupe/renew a repeat `watch` on the same dir.
     dir: PathBuf,
+    /// Workspace root this watch was resolved against, so the cap can be
+    /// charged per root instead of to one daemon-wide pool.
+    root: PathBuf,
     /// Signal the watch_loop to reset its TTL deadline (renew).
     renew_tx: mpsc::UnboundedSender<()>,
     _abort: AbortOnDrop,
@@ -3964,6 +3982,49 @@ max_concurrent = {max_concurrent}
             "no image block may be sent when the agent can't read images"
         );
         assert!(prompt[0]["text"].as_str().unwrap().contains("shot.png"));
+    }
+
+    // ── watch 配额按 workspace root 分摊 ─────────────────────────────────
+
+    /// 一个夹具 watch 句柄；只需要 dir/root 两个字段参与配额计数。
+    fn watch_handle(dir: &str, root: &str) -> WatchHandle {
+        let (renew_tx, _renew_rx) = mpsc::unbounded_channel::<()>();
+        let task = tokio::spawn(async {});
+        WatchHandle {
+            dir: PathBuf::from(dir),
+            root: PathBuf::from(root),
+            renew_tx,
+            _abort: AbortOnDrop(task.abort_handle()),
+        }
+    }
+
+    /// 配额按 root 计数：一个 root 打满，不影响另一个 root 还能不能开。
+    #[tokio::test]
+    async fn watch_budget_is_charged_per_root() {
+        let mut watches: HashMap<String, WatchHandle> = HashMap::new();
+        for i in 0..MAX_WATCHES {
+            watches.insert(format!("w{i}"), watch_handle(&format!("/a/d{i}"), "/a"));
+        }
+        let count_in = |watches: &HashMap<String, WatchHandle>, root: &str| {
+            watches
+                .values()
+                .filter(|handle| handle.root == Path::new(root))
+                .count()
+        };
+        assert_eq!(count_in(&watches, "/a"), MAX_WATCHES, "/a 已打满");
+        assert_eq!(
+            count_in(&watches, "/b"),
+            0,
+            "另一个 workspace root 的预算不受影响"
+        );
+
+        watches.insert("wb".to_string(), watch_handle("/b/d0", "/b"));
+        assert_eq!(count_in(&watches, "/b"), 1);
+        assert_eq!(
+            count_in(&watches, "/a"),
+            MAX_WATCHES,
+            "/a 的计数不被 /b 干扰"
+        );
     }
 
     // ── 共享 cwd 检测：只在两个回合同时在跑时才算冲突 ──────────────────────
