@@ -21,6 +21,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
+import { sourcePathKey } from "../annotations";
 import { CanvasLens } from "../canvas/CanvasLens";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
@@ -84,13 +85,15 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
 
   return (
     <div className="p-2 text-compact overflow-auto h-full">
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse font-utility">
         <thead>
-          <tr className="text-content-muted text-left">
+          <tr className="border-b border-control/60 text-left">
             {columns.map((c) => (
-              <th key={c.key} className="p-1 font-normal">{c.label}</th>
+              <th key={c.key} className="px-2 py-1 font-utility text-compact font-medium uppercase tracking-label text-content-muted">
+                {c.label}
+              </th>
             ))}
-            <th />
+            <th className="w-8" />
           </tr>
         </thead>
         <tbody>
@@ -98,7 +101,8 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
             <tr
               key={i}
               data-workbench-context-target="row"
-              className="border-t border-control/60"
+              data-workbench-anchor={sourcePathKey([i])}
+              className="border-b border-control/30 transition-colors hover:bg-control/20"
               onContextMenu={(event) => requestContextPick?.(event, {
                 label: tableRowContextLabel(r, columns, i),
                 sourcePath: [i],
@@ -113,17 +117,27 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
                   ) : readOnly ? (
                     <span className="text-content-secondary">{String(r[c.key] ?? "")}</span>
                   ) : c.options ? (
-                    <UiSelect controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-control text-content-secondary rounded-sm outline-none">
+                    <UiSelect
+                      variant="plain"
+                      controlSize={workbenchControlSize.data}
+                      value={String(r[c.key] ?? "")}
+                      onChange={(e) => update(i, c.key, e.target.value)}
+                    >
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
                     </UiSelect>
                   ) : (
-                    <UiInput controlSize={workbenchControlSize.data} value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-transparent text-content-secondary outline-none" />
+                    <UiInput
+                      variant="plain"
+                      controlSize={workbenchControlSize.data}
+                      value={String(r[c.key] ?? "")}
+                      onChange={(e) => update(i, c.key, e.target.value)}
+                    />
                   )}
                 </td>
               ))}
-              <td className="p-1">
+              <td className="p-1 text-right w-8">
                 {!readOnly && (
                   <ResponsiveActionButton
                     action="delete"
@@ -192,18 +206,21 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
   };
 
   return (
-    <div className="p-2 text-compact flex gap-2 items-start overflow-auto h-full">
+    <div className="p-3 text-compact flex gap-4 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-content-muted">Empty board</div>}
+      {/* design-system-exempt: item-section - Kanban column grouping container */}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-40 flex-shrink-0 bg-canvas/60 rounded-sm ">
-          <div className="mx-1 mt-1 rounded-sm bg-control/50 px-2 py-1 text-content-secondary">
-            {c.name} <span className="text-content-muted">{c.items.length}</span>
+        <div key={ci} className="w-52 flex-shrink-0 flex flex-col border-r border-control/80 last:border-r-0 pr-4">
+          <div className="flex items-center justify-between pb-1 mb-2 border-b border-control/80 text-compact font-serif font-bold text-content-strong tracking-wide">
+            <span>{c.name}</span>
+            <span className="font-code text-minimal text-content-muted tabular-nums">{c.items.length}</span>
           </div>
-          <div className="p-1 space-y-1">
+          <div className="space-y-1 flex-1 min-h-0">
             {c.items.map((it, ii) => (
               <div
                 key={ii}
                 data-workbench-context-target="card"
+                data-workbench-anchor={sourcePathKey(["columns", ci, "items", ii])}
                 onContextMenu={(event) => requestContextPick?.(event, {
                   label: it,
                   sourcePath: ["columns", ci, "items", ii],
@@ -228,19 +245,19 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
                   </>}
-                  className="border-b-0 bg-control/70 text-content-secondary"
+                  className="border-b border-control/80 bg-panel text-content-strong hover:bg-control/30"
                 />
               </div>
             ))}
             {!readOnly && (
-            <div className="flex items-center gap-1 pt-1">
+            <div className="flex items-center gap-1 pt-2 border-t border-control/60 mt-2">
               <UiInput
                 controlSize={workbenchControlSize.data}
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
                 placeholder="+ Task"
-                className="bg-transparent flex-1 text-content-secondary outline-none placeholder:text-content-muted"
+                className="bg-transparent flex-1 text-content-primary outline-none placeholder:text-content-muted text-compact"
               />
               <ResponsiveActionButton
                 action="add"
@@ -494,6 +511,7 @@ function ChartLens({ data, requestContextPick }: LensProps) {
           <circle
             key={`pick:${s.sourceIndex}:${point.sourceIndex}`}
             data-workbench-context-target="chart-point"
+            data-workbench-anchor={sourcePathKey(["series", s.sourceIndex, "points", point.sourceIndex])}
             cx={sx(point.x)}
             cy={sy(point.y)}
             r="7"
@@ -830,6 +848,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
               <UiButton variant="plain" role="option" aria-selected={selectedNode} selected={selectedNode}
                 key={node.id}
                 data-workbench-context-target="codemap-node"
+                data-workbench-anchor={sourcePathKey(["nodes", node.id])}
                 type="button"
                 onClick={() => setSelectedId((cur) => (cur === node.id ? null : node.id))}
                 onContextMenu={(event) => requestContextPick?.(event, {

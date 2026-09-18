@@ -70,7 +70,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded-sm bg-control text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-control text-compact text-content-secondary focus:outline-none focus:ring-2 focus:ring-zinc-700/60 dark:focus:ring-zinc-300/60 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -179,8 +179,8 @@ function SessionCard({
         canDrag && (isDragging ? "cursor-grabbing" : "cursor-grab"),
         isDragging && "opacity-40",
         // A card is being dragged → invite the drop on the primary card.
-        dropTarget && dragActive && !showHot && "ring-1 ring-inset ring-indigo-500/50",
-        showHot && "bg-indigo-500/10 ring-2 ring-indigo-500/70"
+        dropTarget && dragActive && !showHot && "ring-1 ring-inset ring-selected-indicator/50",
+        showHot && "bg-selected/80 ring-2 ring-selected-indicator/70"
       )}
     >
       {/* Card face: workdir · primary badge · status · created · ⓘ · ✕ */}
@@ -198,7 +198,7 @@ function SessionCard({
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>}
         criticalStatus={s.is_primary ? (
-          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-1 text-minimal text-accent-300">
+          <span className="shrink-0 rounded-sm bg-selected px-1 py-1 text-minimal font-semibold text-content-strong ring-1 ring-inset ring-selected-indicator/80">
             primary
           </span>
         ) : undefined}
@@ -217,7 +217,7 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-accent-300": "text-content-primary hover:text-content-strong"}`}
+          className={`shrink-0 ${open ? "text-content-strong font-semibold": "text-content-primary hover:text-content-strong"}`}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>
@@ -336,7 +336,7 @@ function SessionCard({
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
-                    className="text-accent-300/70 hover:text-accent-200 disabled:opacity-50 shrink-0"
+                    className="text-content-primary hover:text-content-strong underline underline-offset-2 disabled:opacity-50 shrink-0"
                   >
                     edit
                   </UiButton>
@@ -350,7 +350,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  controlSize="regular" className="rounded-sm bg-control font-code text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="rounded-sm bg-control font-code text-minimal text-content-secondary focus:outline-none focus:ring-2 focus:ring-zinc-700/60 dark:focus:ring-zinc-300/60"
                 />
                 <div className="flex items-center gap-2">
                   <IconButton label="Save additional roots"
@@ -631,7 +631,7 @@ function SessionsBody({
             onClick={() => setDialogOpen(true)}
             accessibleLabel="New session"
             controlSize="regular"
-            className="rounded-sm bg-indigo-600/15 text-accent-200 hover:bg-indigo-600/30"
+            className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           />
         )}
       </div>

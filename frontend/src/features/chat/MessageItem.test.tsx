@@ -37,6 +37,33 @@ describe("MessageItem reply preview", () => {
 });
 
 describe("MessageItem identity anatomy", () => {
+  it("does not crash while a realtime bot frame is missing identity metadata", () => {
+    const incomplete = {
+      msg_id: "early-stream-delta",
+      sender_type: "bot",
+      content: "Working",
+      is_partial: true,
+    } as Message;
+
+    expect(renderToStaticMarkup(<MessageItem message={incomplete} />)).toContain(
+      ">Bot</span>",
+    );
+  });
+
+  it("renders the registered Stop action for an active bot turn", () => {
+    const active = {
+      ...reply,
+      _streaming: true,
+    } as Message;
+
+    const markup = renderToStaticMarkup(
+      <MessageItem message={active} channelId="channel-1" />,
+    );
+
+    expect(markup).toContain(">Stop</span>");
+    expect(markup).toContain('data-button-content="iconText"');
+  });
+
   it("keeps the 96px name rail in chat", () => {
     const markup = renderToStaticMarkup(<MessageItem message={source} />);
 
@@ -54,5 +81,30 @@ describe("MessageItem identity anatomy", () => {
     expect(markup).not.toContain("w-24");
     // … but the sender is still announced and still shown on hover.
     expect(markup).toContain('aria-label="View profile for System Administrator"');
+  });
+
+  it("renders the standard channel ReplyPreview when replying to another reply in a sub-thread", () => {
+    const subReply: Message = {
+      msg_id: "sub-1",
+      sender_id: "user-2",
+      sender_type: "user",
+      sender_name: "Alice",
+      content: "I agree with this proposal.",
+      reply_to_msg_id: source.msg_id,
+    };
+
+    const markup = renderToStaticMarkup(
+      <MessageItem
+        message={subReply}
+        nested
+        identityLayout="avatar"
+        hideReplyQuote={false}
+        repliedTo={source}
+        nameOf={() => "System Administrator"}
+      />,
+    );
+
+    expect(markup).toContain("@System Administrator");
+    expect(markup).toContain("Please prepare the document and attach it here.");
   });
 });

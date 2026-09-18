@@ -1,6 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
-import { Select as UiSelect } from "@/components/ui/select";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
 // the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
 // message goes ("Auto" = mention routing → each bot's primary session, or one
@@ -30,6 +29,7 @@ import { PresenceDot } from "@/components/ui/presence-dot";
 import type { SendResourceReq } from "./workbench/fsClient";
 import { sessionTag, statusDotColor } from "./sessionLabel";
 import { NewSessionDialog } from "./NewSessionDialog";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 export interface SwitcherBot {
   botId: string;
@@ -327,7 +327,6 @@ export function SessionChip({
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
         aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
-        className={cn(!selected && !open && "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary")}
       >
         {selected ? (
           <ArrowRight className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
@@ -355,7 +354,7 @@ export function SessionChip({
                   e.preventDefault();
                   select("");
                 }}
-                onMouseEnter={() => setActiveIndex(autoIdx)}
+                onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(autoIdx))}
                 className={cn(rowCls(autoIdx, !value), "border-0")}
               />
             );
@@ -386,7 +385,7 @@ export function SessionChip({
                       e.preventDefault();
                       select(s.session_id);
                     }}
-                    onMouseEnter={() => setActiveIndex(idx)}
+                    onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                     className={cn(rowCls(idx, isSel), "border-0")}
                   />
                 );
@@ -412,7 +411,7 @@ export function SessionChip({
                     setOpen(false);
                     setNewOpen(true);
                   }}
-                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                   className={rowCls(idx, false)}
                 >
                   <Plus className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
@@ -429,7 +428,7 @@ export function SessionChip({
                   setOpen(false);
                   onManageSessions();
                 }}
-                onMouseEnter={() => setActiveIndex(idx)}
+                onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                 className={rowCls(idx, false)}
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />

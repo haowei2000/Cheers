@@ -116,7 +116,7 @@ export function ItemRow({
     </>
   );
   const classes = cn(
-    "group/item flex w-full min-w-0 items-center gap-2 rounded-sm border-b border-l-2 border-b-zinc-800/90 px-2 text-left transition-colors duration-150",
+    "group/item flex w-full min-w-0 items-center gap-2 rounded-none border-b border-l-2 border-b-control/80 px-2 text-left transition-colors duration-150",
     controlMinHeightClasses[size],
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
@@ -137,7 +137,7 @@ export function ItemRow({
         aria-pressed={kind !== "navigation" && selected ? true : undefined}
         className={cn(
           classes,
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         )}
         onClick={onClick}
         disabled={disabled}

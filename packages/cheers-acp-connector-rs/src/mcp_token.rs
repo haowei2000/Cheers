@@ -20,6 +20,7 @@
 //! credential hash, bot enablement — on *every* MCP request, so a revoked or
 //! rotated host stops working immediately regardless of token lifetime.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
@@ -95,9 +96,12 @@ pub(crate) struct McpTokenProvider {
     host_id: String,
     credential: String,
     http: reqwest::Client,
-    /// Held across the mint await so concurrent `session/new` calls collapse
-    /// into one token request rather than stampeding the token endpoint.
-    cached: Mutex<Option<CachedToken>>,
+    /// One entry per channel. A bot works in many channels at once and each
+    /// gets a token narrowed to it, so a single slot would have every channel
+    /// evicting the others' tokens on every turn. Held across the mint await so
+    /// concurrent `session/new` calls for one channel collapse into a single
+    /// token request rather than stampeding the endpoint.
+    cached: Mutex<HashMap<String, CachedToken>>,
     discovered: Mutex<Option<Discovered>>,
 }
 
@@ -130,35 +134,46 @@ impl McpTokenProvider {
             host_id,
             credential,
             http,
-            cached: Mutex::new(None),
+            cached: Mutex::new(HashMap::new()),
             discovered: Mutex::new(None),
         })
     }
 
-    /// Returns a currently-valid access token, minting one if needed.
-    pub(crate) async fn bearer(&self) -> anyhow::Result<String> {
+    /// Returns a currently-valid access token narrowed to `channel_id`.
+    ///
+    /// The narrowing is what ties an MCP call back to the turn that provoked
+    /// it. It can only ever reduce what the token reaches — the Gateway still
+    /// checks the bot's channel role for every operation — so a token that ends
+    /// up on the wrong channel's connection costs its holder access and can
+    /// never buy any. That is the property that makes it safe to put per-turn
+    /// context on a connection at all.
+    pub(crate) async fn bearer(&self, channel_id: &str) -> anyhow::Result<String> {
         let mut cached = self.cached.lock().await;
-        if let Some(token) = cached.as_ref() {
+        if let Some(token) = cached.get(channel_id) {
             if Instant::now() < token.renew_after {
                 return Ok(token.value.clone());
             }
         }
-        let minted = self.mint().await?;
+        let minted = self.mint(channel_id).await?;
         let value = minted.value.clone();
-        *cached = Some(minted);
+        cached.insert(channel_id.to_string(), minted);
         Ok(value)
     }
 
     /// Performs the `client_credentials` exchange against the discovered
     /// token endpoint.
-    async fn mint(&self) -> anyhow::Result<CachedToken> {
+    async fn mint(&self, channel_id: &str) -> anyhow::Result<CachedToken> {
         let discovered = self.discover().await?;
-        let form: [(&str, &str); 5] = [
+        let form: [(&str, &str); 6] = [
             ("grant_type", "client_credentials"),
             ("client_id", &self.host_id),
             ("client_secret", &self.credential),
             ("resource", &self.mcp_url),
             ("scope", &discovered.scope),
+            // Cheers extension: narrow this token to one channel. A Gateway that
+            // predates it ignores the field, which leaves the token exactly as
+            // wide as it is today — never wider.
+            ("cheers_channel", channel_id),
         ];
         let response = self
             .http
@@ -474,7 +489,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(provider.bearer().await.unwrap(), "minted-token");
+        assert_eq!(provider.bearer("channel-a").await.unwrap(), "minted-token");
 
         let requests = gateway.token_requests.lock().await;
         let body = requests.first().expect("a token request was made");
@@ -489,6 +504,9 @@ mod tests {
         );
         // RFC 8707: the token must be bound to this exact MCP resource.
         assert!(body.contains("resource=http"), "{body}");
+        // Cheers narrowing: the turn's channel rides the mint request, so the
+        // token the Agent presents can only reach that channel.
+        assert!(body.contains("cheers_channel=channel-a"), "{body}");
     }
 
     #[tokio::test]
@@ -502,9 +520,35 @@ mod tests {
         .unwrap();
 
         for _ in 0..3 {
-            assert_eq!(provider.bearer().await.unwrap(), "minted-token");
+            assert_eq!(provider.bearer("channel-a").await.unwrap(), "minted-token");
         }
         assert_eq!(gateway.token_hits.load(Ordering::SeqCst), 1);
+    }
+
+    /// 每个频道一份 token：一个 bot 同时在多个频道工作，单槽位缓存会让频道之间
+    /// 互相驱逐，每个回合都要重新铸造。
+    #[tokio::test]
+    async fn caches_one_token_per_channel() {
+        let gateway = spawn_gateway().await;
+        let provider = McpTokenProvider::new(
+            format!("{}/mcp", gateway.base),
+            "host-42".to_string(),
+            "credential-secret".to_string(),
+        )
+        .unwrap();
+
+        for channel in ["channel-a", "channel-b", "channel-a", "channel-b"] {
+            assert_eq!(provider.bearer(channel).await.unwrap(), "minted-token");
+        }
+        assert_eq!(
+            gateway.token_hits.load(Ordering::SeqCst),
+            2,
+            "两个频道各铸造一次，复用各自的缓存"
+        );
+
+        let requests = gateway.token_requests.lock().await;
+        assert!(requests[0].contains("cheers_channel=channel-a"));
+        assert!(requests[1].contains("cheers_channel=channel-b"));
     }
 
     #[tokio::test]
@@ -518,7 +562,7 @@ mod tests {
             "credential-secret".to_string(),
         )
         .unwrap();
-        let error = provider.bearer().await.unwrap_err().to_string();
+        let error = provider.bearer("channel-a").await.unwrap_err().to_string();
         assert!(error.contains("protected-resource metadata"), "{error}");
     }
 

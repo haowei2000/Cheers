@@ -1,37 +1,38 @@
 import type { Config } from "tailwindcss";
 import colors from "tailwindcss/colors";
+import plugin from "tailwindcss/plugin";
 
 // The product historically used Tailwind's electric indigo as its default
 // accent. Keep the semantic class name while existing call sites migrate, but
 // map it to a neutral ink scale so focus, selection, and primary actions remain
 // visible without turning every interaction into a neon highlight.
 const editorialInk = {
-  50: "#fafafa",
-  100: "#f4f4f5",
-  200: "#e4e4e7",
-  300: "#d4d4d8",
-  400: "#a1a1aa",
-  500: "#71717a",
-  600: "#52525b",
-  700: "#3f3f46",
-  800: "#27272a",
-  900: "#18181b",
-  950: "#09090b",
+  50: "#f8f6f2",
+  100: "#eae5da",
+  200: "#dad5ca",
+  300: "#c8c3b6",
+  400: "#9c9a92",
+  500: "#6e6d66",
+  600: "#484742",
+  700: "#32312d",
+  800: "#222220",
+  900: "#161719",
+  950: "#0f1012",
 };
 
 const editorialNeutral = {
   ...colors.zinc,
-  50: "#f4f4f6",
-  100: "#e8e8eb",
-  200: "#ccccd2",
-  300: "#b8b8c0",
-  400: "#9d9da8",
-  500: "#95959e",
-  600: "#85858f",
-  700: "#3f3f46",
-  800: "#313137",
-  900: "#222226",
-  950: "#121214",
+  50: "#f4f3f0",
+  100: "#e8e7e4",
+  200: "#cccbc7",
+  300: "#b8b7b4",
+  400: "#9c9ca2",
+  500: "#94949a",
+  600: "#84848a",
+  700: "#3e3f44",
+  800: "#303136",
+  900: "#222327",
+  950: "#161719",
 };
 
 function rgbChannels(hex: string): string {
@@ -157,5 +158,28 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addVariant, matchVariant }) => {
+      // `:hover` is positional: it starts matching the moment content mounts under a
+      // stationary cursor, and no pointer event ever arrives to clear it. Gate every
+      // hover utility on evidence that the pointer moved, so a page never opens with
+      // a row already lit. The flag is owned by src/lib/hoverIntent.ts.
+      //
+      // The guard hangs off the utility rather than sitting in front of the selector:
+      // a `:root:not(...)` prefix swallowed Tailwind's named-group rewriting, so
+      // `group-hover/floating-panel` came out keyed to a bare `.group` and fired for
+      // any group on the page. `:where()` also keeps it at zero specificity, so gated
+      // utilities win and lose exactly the arguments they did before.
+      const idle = ":not(:where([data-pointer-idle] *))";
+      addVariant("hover", `&:hover${idle}`);
+      // Named groups come from the variant's modifier, which is why this is
+      // matchVariant: a plain override loses the rewriting described above.
+      matchVariant(
+        "group-hover",
+        (_value, { modifier }) =>
+          `:merge(.group${modifier ? `\\/${modifier}` : ""}):hover &${idle}`,
+        { values: { DEFAULT: "" } },
+      );
+    }),
+  ],
 } satisfies Config;

@@ -53,6 +53,13 @@ describe("ActionButton", () => {
     expect(markup).toContain('title="Add bot"');
     expect(markup).toContain('data-button-content="icon"');
     expect(markup).not.toContain('data-button-slot="label"');
+
+    const searchMarkup = renderToStaticMarkup(
+      <ActionButton action="search" context="toolbar" accessibleLabel="Search discussions" />,
+    );
+    expect(searchMarkup).toContain('aria-label="Search discussions"');
+    expect(searchMarkup).toContain('title="Search discussions"');
+    expect(searchMarkup).toContain('data-button-content="icon"');
   });
 
   it("keeps disabled security actions labelled and legible", () => {

@@ -29,15 +29,19 @@ describe("shared control selection state", () => {
     expect(markup).toContain('aria-selected="true"');
     expect(markup).not.toContain("aria-pressed");
     expect(markup).toContain('data-selected="true"');
+    expect(markup).toContain("border-b-2");
+    expect(markup).toContain("border-content-strong");
+    expect(markup).not.toContain("ring-selected-indicator/70");
   });
 
-  it("keeps legacy tab callers on the shared selected surface", () => {
+  it("styles tab options with canonical epistolary underline", () => {
     const markup = renderToStaticMarkup(<TabOption label="Active" selected />);
 
     expect(markup).toContain('aria-selected="true"');
     expect(markup).toContain('data-selected="true"');
-    expect(markup).toContain("bg-selected");
-    expect(markup).not.toContain("border-b-2");
+    expect(markup).toContain("border-b-2");
+    expect(markup).toContain("border-content-strong");
+    expect(markup).not.toContain("ring-selected-indicator/70");
   });
 
   it("uses expanded semantics instead of pressed semantics for disclosures", () => {

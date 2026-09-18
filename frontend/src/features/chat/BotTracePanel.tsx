@@ -142,10 +142,20 @@ function eventMeta(e: TraceEvent): EventVisual {
   }
 }
 
-/** The MCP server a startup failure is about, e.g. "cheers". */
-export function mcpStartupServer(e: TraceEvent): string {
+/**
+ * The MCP server a startup failure is about, or null when the trace does not
+ * name one.
+ *
+ * The connector gives each channel its own Cheers server name, so there is no
+ * fixed name to fall back on — and guessing one would print a login command
+ * that does not match any server the agent actually has. Reconstructing the
+ * name here would duplicate the connector's naming rule in a second place;
+ * better to say less.
+ */
+export function mcpStartupServer(e: TraceEvent): string | null {
   const id = e.tool_call_id ?? "";
-  return id.startsWith("mcp_startup.") ? id.slice("mcp_startup.".length) || "cheers" : "cheers";
+  if (!id.startsWith("mcp_startup.")) return null;
+  return id.slice("mcp_startup.".length) || null;
 }
 
 export function isMcpStartupError(e: TraceEvent): boolean {
@@ -166,10 +176,12 @@ export function isMcpStartupError(e: TraceEvent): boolean {
     })
     .join(" ");
   const fullText = `${text} ${contentText}`;
+  // The quoted name is matched by prefix: each channel gets its own Cheers
+  // server name (`cheers-<channel>`), so an exact "cheers" no longer appears.
   return (
     fullText.includes("mcp_startup") ||
-    fullText.includes("MCP server `cheers` failed to start") ||
-    fullText.includes("MCP server 'cheers' failed to start")
+    fullText.includes("MCP server `cheers") ||
+    fullText.includes("MCP server 'cheers")
   );
 }
 
@@ -324,7 +336,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular"
-                className="flex items-center gap-2 rounded-sm text-left text-content-primary transition-colors hover:text-content-strong"
+                className={cn("flex items-center gap-2 rounded-sm text-left transition-colors", !active && "text-content-primary hover:text-content-strong")}
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-compact">
@@ -385,7 +397,10 @@ function eventPreview(event: TraceEvent): string | null {
     return presentation.target ?? presentation.path ?? presentation.query ?? presentation.command ?? null;
   }
   if (isMcpStartupError(event)) {
-    return `Run 'mcp login ${mcpStartupServer(event)}' in your agent's CLI to grant tools`;
+    const server = mcpStartupServer(event);
+    return server
+      ? `Run 'mcp login ${server}' in your agent's CLI to grant tools`
+      : "Log in to the Cheers MCP server in your agent's CLI to grant tools";
   }
   const input = asRecord(data?.input);
   const command = stringField(input, "command") ?? stringField(data, "command");
@@ -399,7 +414,16 @@ function eventPreview(event: TraceEvent): string | null {
   return null;
 }
 
-function McpStartupErrorCard({ server }: { server: string }) {
+function McpStartupErrorCard({ server }: { server: string | null }) {
+  if (!server) {
+    return (
+      <Banner severity="warning" icon={KeyRound}>
+        Cheers MCP tools need a login. Run{" "}
+        <code className="font-code">mcp login</code> with the CLI of the agent
+        behind this bot, naming the Cheers server it lists.
+      </Banner>
+    );
+  }
   return (
     <Banner severity="warning" icon={KeyRound}>
       Cheers MCP tools need a login. Run{" "}
@@ -572,11 +596,17 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
         </div>
         <span
           className={cn(
-            "shrink-0 text-compact",
-            pending ? "text-warning-400/90" : ok ? "text-content-muted" : denied || expired ? "text-danger-400" : "text-content-muted",
+            "shrink-0 font-code text-minimal uppercase tracking-label px-2 py-1 rounded-sm",
+            pending
+              ? "bg-warning-950/40 text-warning-300"
+              : ok
+                ? "bg-zinc-800 text-content-primary"
+                : denied || expired
+                  ? "bg-danger-900/30 text-danger-300"
+                  : "bg-zinc-800/40 text-content-muted",
           )}
         >
-          {pending ? "Needs approval" : expired ? "Expired" : ok ? "Approved" : denied ? "Denied" : statusLabel(event.status ?? "Done")}
+          {pending ? "Needs approval" : expired ? "Expired" : ok ? "✓ Approved" : denied ? "✕ Denied" : statusLabel(event.status ?? "Done")}
         </span>
       </header>
       {command && (
@@ -702,7 +732,7 @@ function TraceItem({
           </span>
         )}
         {statusText && (
-          <span className={cn("shrink-0 text-minimal", statusTone)}>
+          <span className={cn("shrink-0 font-code text-minimal uppercase tracking-label px-1 py-1 rounded-sm bg-zinc-900/50", statusTone)}>
             {statusText}
           </span>
         )}
@@ -963,7 +993,7 @@ export function BotTracePanel({
   const latestOnly = view === "record" && streaming && !showAll && timeline.length > 1;
 
   return (
-    <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
+    <div className={cn(view === "record" ? "w-full" : hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
         <ControlTrigger
           type="button"

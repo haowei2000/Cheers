@@ -5,22 +5,23 @@ import { controlHeightClasses, useControlSize, type ControlSize } from "./contro
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: boolean;
   controlSize?: ControlSize;
+  variant?: "default" | "plain";
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ error, controlSize, className, ...props }, ref) => {
+  ({ error, controlSize, variant = "default", className, ...props }, ref) => {
     const size = useControlSize(controlSize);
     return (
     <input
       ref={ref}
       className={cn(
-        // Filled field with an inset neutral boundary (DESIGN.md §2.3).
-        // Focus and error replace the neutral ring with semantic state colors.
-        // text-comfortable (16px) below md prevents iOS Safari's auto-zoom on focus.
-        "w-full rounded-sm px-3 bg-zinc-800 text-content-primary placeholder-zinc-400 ring-1 ring-inset ring-zinc-600 transition-shadow",
+        "w-full text-content-primary placeholder:text-content-muted transition-shadow",
+        variant === "plain"
+          ? "bg-transparent ring-0 border-0 rounded-none px-2 focus:bg-control/40 focus:ring-1 focus:ring-content-strong/40"
+          : "rounded-sm px-3 bg-control/60 ring-1 ring-inset ring-zinc-700/60 focus:ring-1 focus:ring-content-strong/50",
         controlHeightClasses[size],
         "text-comfortable md:text-regular",
-        "focus:outline-none focus:ring-2 focus:ring-indigo-500",
+        "focus:outline-none",
         error && "ring-1 ring-red-500/70",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className

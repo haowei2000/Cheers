@@ -424,7 +424,7 @@ impl Default for RawSessionsPolicy {
 struct RawPromptPolicy {
     #[serde(default = "default_true")]
     allow: bool,
-    #[serde(default = "default_one")]
+    #[serde(default = "default_max_concurrent")]
     max_concurrent: usize,
     #[serde(default = "default_max_prompt_bytes")]
     max_prompt_bytes: usize,
@@ -441,15 +441,20 @@ struct RawPromptPolicy {
 }
 
 impl Default for RawPromptPolicy {
+    /// Every field defers to the same function serde uses for it. A literal here
+    /// is a second source of truth: serde only applies a field default when that
+    /// field is missing from a table that IS present, so a config with no
+    /// `[policy.prompt]` table at all comes through this impl instead — and the
+    /// two would silently disagree.
     fn default() -> Self {
         Self {
-            allow: true,
-            max_concurrent: 1,
+            allow: default_true(),
+            max_concurrent: default_max_concurrent(),
             max_prompt_bytes: default_max_prompt_bytes(),
             max_duration_ms: default_prompt_timeout_ms(),
-            allow_attachments: true,
-            allow_images: true,
-            allow_audio: true,
+            allow_attachments: default_true(),
+            allow_images: default_true(),
+            allow_audio: default_true(),
             allow_local_file_refs: false,
         }
     }
@@ -1177,8 +1182,15 @@ fn default_true() -> bool {
     true
 }
 
-fn default_one() -> usize {
-    1
+/// Turns this daemon may run at once, across every channel the bot works in.
+///
+/// One bot serves many channels through a single agent process, so 1 would make
+/// a second channel wait for the first to finish — the exact head-of-line block
+/// the runtime's lock discipline is built to avoid. The value bounds the agent
+/// process and the provider's rate limits; per-channel ordering is a separate
+/// guarantee, held by the per-session lock.
+fn default_max_concurrent() -> usize {
+    4
 }
 
 fn default_max_prompt_bytes() -> usize {
@@ -1240,6 +1252,38 @@ fn default_acp_capability_algorithm() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 配置里整个 `[policy.prompt]` 表缺席时，走的是 `Default` impl 而不是 serde
+    /// 的字段默认——两者曾经不一致，把并发上限悄悄钉死在 1。
+    #[test]
+    fn prompt_policy_defaults_agree_between_serde_and_default_impl() {
+        let from_default = RawPromptPolicy::default();
+        let from_empty_table: RawPromptPolicy = toml::from_str("").unwrap();
+        assert_eq!(
+            from_default.max_concurrent, from_empty_table.max_concurrent,
+            "缺表与缺字段必须得到同一个并发上限"
+        );
+        assert_eq!(from_default.max_concurrent, default_max_concurrent());
+        assert_eq!(from_default.allow, from_empty_table.allow);
+        assert_eq!(
+            from_default.max_prompt_bytes,
+            from_empty_table.max_prompt_bytes
+        );
+        assert_eq!(
+            from_default.max_duration_ms,
+            from_empty_table.max_duration_ms
+        );
+        assert_eq!(
+            from_default.allow_attachments,
+            from_empty_table.allow_attachments
+        );
+        assert_eq!(from_default.allow_images, from_empty_table.allow_images);
+        assert_eq!(from_default.allow_audio, from_empty_table.allow_audio);
+        assert_eq!(
+            from_default.allow_local_file_refs,
+            from_empty_table.allow_local_file_refs
+        );
+    }
 
     #[tokio::test]
     async fn loads_toml_config_with_local_policy() {

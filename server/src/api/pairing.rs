@@ -590,12 +590,14 @@ mod connector_asset_tests {
         use crate::api::pairing::{connector_version_below_floor, MIN_CONNECTOR_VERSION};
 
         /// The prod incident (#538): 0.1.36 cannot parse the config schema
-        /// 0.1.37 introduced. 0.1.39 is the same failure one rename later —
-        /// it rejects the `host_credential_*` keys 0.1.40 emits. Both must be
-        /// refused, along with anything unparsable.
+        /// 0.1.37 introduced. The published 0.1.40 artifact is the same failure
+        /// one rename later — it rejects the `host_credential_*` keys first
+        /// released in 0.1.41. Both must be refused, along with anything
+        /// unparsable.
         #[test]
         fn floor_rejects_older_and_malformed_versions() {
             assert!(connector_version_below_floor("0.1.39"));
+            assert!(connector_version_below_floor("0.1.40"));
             assert!(connector_version_below_floor("0.1.36"));
             assert!(connector_version_below_floor("0.1.0"));
             assert!(connector_version_below_floor("latest"));
@@ -605,8 +607,8 @@ mod connector_asset_tests {
         #[test]
         fn floor_accepts_current_and_newer_versions() {
             assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
-            assert!(!connector_version_below_floor("0.1.41"));
-            assert!(!connector_version_below_floor("v0.1.40"));
+            assert!(!connector_version_below_floor("0.1.42"));
+            assert!(!connector_version_below_floor("v0.1.41"));
         }
     }
 }
@@ -614,7 +616,7 @@ mod connector_asset_tests {
 static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
 
 /// Minimum connector release that can parse the config this gateway's
-/// install.sh generates (the `host_credential_*` keys arrived in 0.1.40,
+/// install.sh generates (the `host_credential_*` keys arrived in 0.1.41,
 /// renaming the `installation_credential_*` pair 0.1.37 introduced; the
 /// connector's `[bridge]` table is `deny_unknown_fields`, so an older binary
 /// does not ignore the new key — it refuses the whole config).
@@ -622,7 +624,7 @@ static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLo
 /// the download proxy refuses anything below it (#539) so a forgotten
 /// `CHEERS_CONNECTOR_RELEASE_VERSION` bump fails loudly at the server instead
 /// of crash-looping on user machines.
-pub const MIN_CONNECTOR_VERSION: &str = "0.1.40";
+pub const MIN_CONNECTOR_VERSION: &str = "0.1.41";
 
 /// True when `v` must not be distributed: strictly older than
 /// [`MIN_CONNECTOR_VERSION`], or not a semver triple at all — a garbled pin

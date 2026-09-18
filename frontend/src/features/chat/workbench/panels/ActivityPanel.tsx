@@ -29,6 +29,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
+import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { cn } from "@/lib/cn";
 import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { listChannelMembers } from "@/api/channels";
@@ -353,7 +354,7 @@ function FlowEpisode({
   onJump?: (msgId: string) => void;
 }) {
   return (
-    <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
+    <div className={cn(expanded && "bg-selected/70")}>
       <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded} selected={expanded}
         type="button"
         onClick={onToggle}
@@ -421,10 +422,10 @@ function ParticipantStrip({
               content="icon"
               controlSize="compact"
               className={cn(
- "relative rounded-full ring-2 transition-[box-shadow,opacity]",
- active ? "ring-indigo-500": "ring-panel",
- dim && !active && "opacity-50 hover:opacity-100"
- )}
+                "relative rounded-full ring-2 transition-[box-shadow,opacity]",
+                active ? "ring-selected-indicator": "ring-panel",
+                dim && !active && "opacity-50 hover:opacity-100"
+              )}
             >
               <Avatar
                 name={name}
@@ -594,7 +595,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
 
         {/* Content-local controls float over the Board; list padding keeps the final row reachable. */}
         <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/floating-panel:opacity-100 group-focus-within/floating-panel:opacity-100 max-md:opacity-100">
-          <div className="floating-control-surface pointer-events-auto flex items-center gap-1 rounded-concentric p-1">
+          <div role="tablist" aria-label="Activity views" className="pointer-events-auto flex items-center gap-1 border-b border-control/80 px-1 py-1">
             {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <UiButton variant="plain" role="tab" aria-selected={lens === l} selected={lens === l}
@@ -602,7 +603,12 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 type="button"
                 onClick={() => setLens(l)}
                 controlSize={FLOATING_CHROME_CONTROL_SIZE}
-                className="rounded-sm capitalize text-content-primary transition-colors hover:text-content-strong"
+                className={cn(
+                  "rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 capitalize transition-colors hover:bg-transparent -mb-[3px]",
+                  lens === l
+                    ? "border-content-strong text-content-strong font-semibold"
+                    : "border-transparent text-content-primary hover:text-content-strong",
+                )}
               >
                 {l}
               </UiButton>
@@ -610,7 +616,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
           </div>
           <div className="flex-1" />
           {members.length > 0 && (
-            <div className="floating-control-surface pointer-events-auto rounded-concentric p-1">
+            <div className="pointer-events-auto">
               <MemberFilter
                 members={members}
                 memberOf={memberOf}
@@ -725,14 +731,7 @@ function MemberFilter({
                     onClick={() => onToggle(mem.member_id)}
                     controlSize="regular" className="flex items-center gap-2 text-left hover:bg-control/70 transition-colors"
                   >
-                    <span
-                      className={cn(
-                        "flex items-center justify-center w-3.5 h-3.5 rounded-sm  flex-shrink-0",
-                        on ? "border-indigo-400 bg-indigo-500/80" : "border-zinc-600"
-                      )}
-                    >
-                      {on && <Check className="h-3.5 w-3.5 text-content-on-accent" />}
-                    </span>
+                    <BallotCheckbox checked={on} size="compact" />
                     <Avatar
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}
                       src={mem.avatar_url ?? undefined}

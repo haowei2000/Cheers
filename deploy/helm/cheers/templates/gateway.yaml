@@ -155,6 +155,10 @@ spec:
             - name: MCP_AUTHORIZATION_SERVER_ISSUER
               value: {{ .Values.gateway.mcpAuthorizationServerIssuer | quote }}
             {{- end }}
+            {{- if .Values.gateway.mcpChannelScope }}
+            - name: MCP_CHANNEL_SCOPE
+              value: {{ .Values.gateway.mcpChannelScope | quote }}
+            {{- end }}
             - name: TRUST_PROXY_HEADERS
               value: {{ .Values.gateway.trustProxyHeaders | quote }}
             - name: ADMIN_USERNAME

@@ -7,7 +7,8 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::{
-    authorize_channel_read, authorize_channel_write, not_found, Principal, ResourceResult,
+    authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, not_found,
+    Principal, ResourceResult,
 };
 
 /// Largest chat-file content returned inline as decoded text (matches the workspace cap).
@@ -305,8 +306,14 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let idempotency = IdempotencyKey::from_params(principal, "channel.files.create", params)?;
 
     authorize_channel_write(db, principal, channel_id).await?;
+    if let Some(key) = &idempotency {
+        if let Some(replayed) = key.replay(db).await? {
+            return Ok(replayed);
+        }
+    }
 
     let filename = params
         .get("filename")
@@ -367,6 +374,18 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             .await
             .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(super::db_err("files.create: begin tx"))?;
+    if let Some(key) = &idempotency {
+        if !key.claim(&mut tx).await? {
+            // A concurrent retry committed this key first. The object this attempt just
+            // uploaded is left unreferenced; the winner's record is the delivery.
+            drop(tx);
+            return key.replay_claimed(db).await;
+        }
+    }
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
     sqlx::query(
         "INSERT INTO file_records
@@ -385,18 +404,25 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(&content_type)
     .bind(size_bytes)
     .bind(expires_at)
-    .execute(db)
+    .execute(&mut *tx)
     .await
     .map_err(super::db_err("files.create: insert file record"))?;
 
-    Ok(json!({
+    let data = json!({
         "file_id": file_id,
         "filename": filename,
         "content_type": content_type,
         "size_bytes": size_bytes,
         "status": "uploaded",
         "download_url": format!("/api/v1/files/{file_id}/download"),
-    }))
+    });
+    if let Some(key) = &idempotency {
+        key.complete(&mut tx, &data).await?;
+    }
+    tx.commit()
+        .await
+        .map_err(super::db_err("files.create: commit tx"))?;
+    Ok(data)
 }
 
 #[cfg(test)]

@@ -201,6 +201,15 @@ be scanned as a table; underline *indicators* remain for tabs. Rings appear
 as field boundaries and **states**: neutral (`ring-zinc-600`), focus
 (`ring-indigo-500`), and error (`ring-red-500`).
 
+### Physical paper stacking & epistolary elements (E-Ink / Paper)
+
+- **Substrates & carbon ink**: Light mode uses warm uncoated bond paper (`#FAF8F4` canvas, `#FFFEFC` panel, `#F3F0E8` rail/substrate); dark mode uses carbon slate stone (`#161719` canvas, `#1E1F23` panel). Foreground copy uses the four-tier carbon ink ladder (`#0F1012` dense carbon ink, `#1C1D20` primary, `#403F3C` secondary, `#686660` muted) exceeding WCAG AAA standards.
+- **De-glassification (Solid Paper Stacking)**: Floating windows (`FloatingPanel`), diff headers, and floating action layers rely on physical paper stacking (`.floating-panel-surface`, `.elevation-raised`, `.elevation-overlay`), using opaque paper fills, 1px hairline perimeter rules, and controlled elevation shadows. Translucent glassmorphism (`backdrop-blur`) is avoided across all interactive surfaces.
+- **Dispatch chrome & typewriter cursor**: Channel headers feature an uppercase tracking `DISPATCH` label. Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
+- **Seal stamp authorizations**: Bot trace cards and permission requests render sign-off states as uppercase monospace seal stamps (`[✓ Approved]`, `[✕ Denied]`, `[Needs approval]`) using vermilion (`--tone-danger`) and seal wax amber (`--tone-warning`).
+- **Dispatch send action**: Primary message dispatch uses solid carbon ink (`bg-content-strong text-content-on-light`) with tactile active scale response.
+
+
 ### Typography
 
 All production text uses exactly four semantic size tokens: `text-minimal`
@@ -538,6 +547,14 @@ associated to its trigger via `aria-describedby`. The app-level `TitleTooltip`
 applies the same surface to existing native `title` hints without changing the
 trigger's layout or hover treatment.
 
+A bubble answers a question, and the pointer only asks one by **coming to rest**:
+every hover-opened tip waits out `TOOLTIP_REST_MS` (`src/lib/hoverIntent.ts`) of
+stillness on the trigger, and neither a cursor that content arrived under nor one
+crossing a toolbar on its way elsewhere opens anything. A press cancels the wait,
+so clicking a control never leaves its tooltip standing open. Keyboard focus asks
+outright and is answered at once. Never start a private `setTimeout` for a tip —
+use `whenPointerRests`, so every bubble in the app answers at the same speed.
+
 ```tsx
 <Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}
 <Tip content={`Current prompt: "${p}". Click to edit.`}>                    {/* wrap any control */}
@@ -766,6 +783,13 @@ sign-in history, and available login guidance. Lifecycle actions live in a named
 ButtonGroup inside the detail view and retain their existing confirmations. Failed
 reads keep the known summary visible and offer Refresh; closing returns focus to
 the invoking row, including when opened from the Bot dialog.
+
+The dialog's Cheers MCP section runs the host's MCP check only on request, through
+the registered settings `Check` action with the device name in its accessible
+label. Results group by layer (Gateway, Host, Agent) as `MetaRow` lines. Each line
+has a status glyph with a spoken verdict, then the finding, its evidence, and the
+fix. Verdicts are words, never raw status values. A failed check stays inline, and
+the same Check control retries it.
 
 ### Management page action proximity
 

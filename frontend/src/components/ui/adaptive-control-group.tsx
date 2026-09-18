@@ -3,12 +3,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type ReactNode,
 } from "react";
 import { Ellipsis, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ButtonGroup } from "./button-group";
-import { Button } from "./button";
+import { Button, type ButtonProps } from "./button";
 import { useControlSize, type ControlSize } from "./control-size";
 import { DropdownSelect } from "./dropdown-select";
 import { MenuOption } from "./menu-option";
@@ -19,11 +20,12 @@ export type AdaptiveControlPresentation = "iconText" | "text" | "icon" | "collap
 export interface AdaptiveControlItem {
   id: string;
   label: string;
-  icon?: LucideIcon;
+  icon?: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   badge?: ReactNode;
   selected?: boolean;
   disabled?: boolean;
   priority?: "primary" | "secondary";
+  variant?: ButtonProps["variant"];
   onSelect?: () => void;
   /** Compound controls may adapt their rich rendering to the chosen presentation. */
   control?: ReactNode | ((presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => ReactNode);
@@ -76,7 +78,7 @@ function AdaptiveItemControl({
   return (
     <Button
       type="button"
-      variant="plain"
+      variant={item.variant ?? "plain"}
       content={iconOnly ? "icon" : "text"}
       controlWidth="content"
       controlSize={controlSize}
@@ -88,7 +90,15 @@ function AdaptiveItemControl({
       disabled={item.disabled}
       onClick={item.onSelect}
       className={cn(
-        "gap-1 rounded-sm px-2 text-content-primary hover:text-content-strong",
+        "gap-1 px-2 text-content-primary hover:text-content-strong",
+        kind === "navigation"
+          ? [
+              "rounded-none border-b-2 bg-transparent ring-0 shadow-none hover:bg-transparent",
+              item.selected
+                ? "border-content-strong text-content-strong font-semibold"
+                : "border-transparent text-content-primary hover:text-content-strong",
+            ]
+          : "rounded-sm",
       )}
     >
       {showIcon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}

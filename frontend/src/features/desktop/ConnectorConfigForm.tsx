@@ -334,7 +334,7 @@ export function ConnectorConfigForm({
                 <UiSelect
                   value={f.on_timeout}
                   onChange={(e) => patch({ on_timeout: e.target.value })}
-                  controlSize="regular" className="rounded-sm bg-zinc-800 text-regular text-content-primary focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular"
                 >
                   <option value="cancel">cancel</option>
                   <option value="reject">reject</option>

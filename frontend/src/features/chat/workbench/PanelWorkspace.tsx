@@ -13,9 +13,10 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { ArrowLeft, Columns2, Rows2 } from "lucide-react";
+import { ArrowLeft, Columns2, PanelRightClose, Rows2 } from "lucide-react";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/cn";
 import {
   ManagedPanelProvider,
   type ManagedPanel,
@@ -99,6 +100,7 @@ export function PanelWorkspace({
     [],
   );
   const [dragging, setDragging] = useState(false);
+  const [isOverDock, setIsOverDock] = useState(false);
   const [restoredChannel, setRestoredChannel] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const previousOpen = useRef<SpawnKind[]>([]);
@@ -370,6 +372,7 @@ export function PanelWorkspace({
       window.removeEventListener("pointerup", onEnd);
       window.removeEventListener("pointercancel", onCancel);
       setDragging(false);
+      setIsOverDock(false);
     };
     const onEnd = (next: PointerEvent) => {
       if (next.pointerId === event.pointerId) {
@@ -384,15 +387,39 @@ export function PanelWorkspace({
     cleanupRef.current = cleanup;
   }, []);
   const dock = useCallback((id: SpawnKind) => {
-    setFloats((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-    remember(requestedWidth, split, ratio, id);
+    const next = { ...floatsRef.current };
+    delete next[id];
+    setFloats(next);
+    remember(requestedWidth, split, ratio, id, next);
     setActive(id);
     setShowWork(true);
   }, [ratio, remember, requestedWidth, setFloats, split]);
+  const isDockZone = useCallback((
+    clientX: number,
+    clientY: number,
+    panelRect?: { right: number; left: number; width: number },
+  ): boolean => {
+    const root = rootRef.current?.getBoundingClientRect();
+    if (!root) return false;
+
+    // Generous vertical tolerance covers full height of window
+    const isVerticalInRange =
+      clientY >= root.top - 80 && clientY <= root.bottom + 80;
+    if (!isVerticalInRange) return false;
+
+    // Case 1: Cursor is within 140px of root right (or even past root right on the edge)
+    const isCursorInDock =
+      clientX >= root.right - 140 && clientX <= root.right + 100;
+    if (isCursorInDock) return true;
+
+    // Case 2: Panel's right edge or center is in the dock zone
+    if (panelRect) {
+      if (panelRect.right >= root.right - 80) return true;
+      if (panelRect.left + panelRect.width / 2 >= root.right - 240) return true;
+    }
+
+    return false;
+  }, []);
   const initialGeometry = useCallback((): Geometry => {
     const rect = rootRef.current?.getBoundingClientRect();
     if (typeof window === "undefined") return { x: 8, y: 80, w: 420, h: 600 };
@@ -471,15 +498,16 @@ export function PanelWorkspace({
           if (
             !layout.sideBySide ||
             (event.target as HTMLElement).closest(
-              "button,input,select,textarea,a",
+              "button,input,select,textarea,a,[role='button'],[role='tab']",
             )
           )
             return;
           const startX = event.clientX;
           const startY = event.clientY;
-          const panelRect = (event.currentTarget as HTMLElement)
-            .closest("[data-floating-panel]")
-            ?.getBoundingClientRect();
+          const panelEl = (event.currentTarget as HTMLElement).closest(
+            "[data-floating-panel]",
+          ) as HTMLElement | null;
+          const panelRect = panelEl?.getBoundingClientRect();
           const origin = floating
             ? geometry!
             : panelRect
@@ -491,6 +519,8 @@ export function PanelWorkspace({
                 }
               : initialGeometry();
           let moved = false;
+          const lastPos = { x: origin.x, y: origin.y };
+          const lastDock = { current: false };
           trackPointer(
             event,
             (next) => {
@@ -502,28 +532,93 @@ export function PanelWorkspace({
               moved = true;
               setOverridden(true);
               setDragging(true);
+              if (panelEl) {
+                panelEl.dataset.dragging = "true";
+              }
+              const rawX = origin.x + next.clientX - startX;
+              const rawY = origin.y + next.clientY - startY;
+              const root = rootRef.current?.getBoundingClientRect();
+
+              // Check if cursor or panel is in dock zone
+              const inDock = isDockZone(next.clientX, next.clientY, {
+                right: rawX + origin.w,
+                left: rawX,
+                width: origin.w,
+              });
+              lastDock.current = inDock;
+              setIsOverDock(inDock);
+
+              // Sticky-note edge snapping
+              let nextX = rawX;
+              let nextY = rawY;
+              let isSnapped = inDock;
+              if (root) {
+                const margin = 8;
+                const snapThreshold = 24;
+                const minX = root.left + margin;
+                const maxX = root.right - origin.w - margin;
+                const minY = root.top + margin;
+                const maxY = root.bottom - origin.h - margin;
+
+                if (inDock) {
+                  // Magnetically snap into dock edge
+                  nextX = maxX;
+                  isSnapped = true;
+                } else if (Math.abs(rawX - minX) <= snapThreshold) {
+                  nextX = minX;
+                  isSnapped = true;
+                } else if (Math.abs(rawX - maxX) <= snapThreshold) {
+                  nextX = maxX;
+                  isSnapped = true;
+                }
+
+                if (Math.abs(rawY - minY) <= snapThreshold) {
+                  nextY = minY;
+                  isSnapped = true;
+                } else if (Math.abs(rawY - maxY) <= snapThreshold) {
+                  nextY = maxY;
+                  isSnapped = true;
+                }
+              }
+
+              lastPos.x = nextX;
+              lastPos.y = nextY;
+
+              if (panelEl) {
+                if (isSnapped) panelEl.dataset.snapped = "true";
+                else delete panelEl.dataset.snapped;
+              }
+
               setFloats((current) => ({
                 ...current,
                 [id]: {
                   ...origin,
-                  x: origin.x + next.clientX - startX,
-                  y: origin.y + next.clientY - startY,
+                  x: nextX,
+                  y: nextY,
                 },
               }));
             },
             (next) => {
+              if (panelEl) {
+                delete panelEl.dataset.dragging;
+                delete panelEl.dataset.snapped;
+              }
+              setIsOverDock(false);
               if (!moved) return;
-              const root = rootRef.current?.getBoundingClientRect();
-              if (
-                root &&
-                next.clientX > root.right - 96 &&
-                next.clientX <= root.right &&
-                next.clientY >= root.top &&
-                next.clientY <= root.bottom
-              )
+
+              const shouldDock =
+                lastDock.current ||
+                isDockZone(next.clientX, next.clientY, {
+                  right: lastPos.x + origin.w,
+                  left: lastPos.x,
+                  width: origin.w,
+                });
+
+              if (shouldDock) {
                 dock(id);
-              else
+              } else {
                 remember(requestedWidth, split);
+              }
             },
           );
         },
@@ -555,6 +650,7 @@ export function PanelWorkspace({
     floats,
     hasDock,
     initialGeometry,
+    isDockZone,
     layout.sideBySide,
     showWork,
     splitIds,
@@ -575,16 +671,34 @@ export function PanelWorkspace({
       >
         {!layout.sideBySide && hasDock && (
           <ButtonGroup
+            role="tablist"
             label="Conversation view"
             controlSize="regular"
-            className="shrink-0 px-3 py-1"
+            className="shrink-0 border-b border-control/80 px-3 py-1"
           >
-            <ControlTrigger selected={!showWork} onClick={showMessages}>
+            <ControlTrigger
+              role="tab"
+              selected={!showWork}
+              onClick={showMessages}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                !showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
+            >
               Messages
             </ControlTrigger>
             <ControlTrigger
+              role="tab"
               selected={showWork}
               onClick={() => setShowWork(true)}
+              className={cn(
+                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
+                showWork
+                  ? "border-content-strong text-content-strong font-semibold"
+                  : "border-transparent text-content-primary hover:text-content-strong",
+              )}
             >
               Workspace
             </ControlTrigger>
@@ -596,7 +710,7 @@ export function PanelWorkspace({
             onFocusCapture={(event) => {
               messageFocus.current = event.target as HTMLElement;
             }}
-            className="flex min-w-0 flex-1 flex-col"
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
             style={{
               display:
                 !layout.sideBySide && hasDock && showWork ? "none" : undefined,
@@ -654,7 +768,7 @@ export function PanelWorkspace({
           )}
           <aside
             data-workspace-dock=""
-            className="flex min-h-0 shrink-0 flex-col bg-panel/40"
+            className="flex min-h-0 shrink-0 flex-col border-l border-control/80 bg-panel"
             style={{
               width: hasDock
                 ? layout.sideBySide
@@ -669,7 +783,7 @@ export function PanelWorkspace({
               <ButtonGroup
                 label="Workspace panels"
                 controlSize="compact"
-                className="shrink-0 flex-wrap p-1"
+                className="shrink-0 flex-wrap border-b border-control/80 bg-panel px-2 py-1"
               >
                 {!layout.sideBySide && (
                   <IconButton label="Back to messages" onClick={showMessages}>
@@ -684,6 +798,13 @@ export function PanelWorkspace({
                       setActive(panel.id);
                       remember(requestedWidth, split, ratio, panel.id);
                     }}
+                    role="tab"
+                    className={cn(
+                      "rounded-none border-b-2 bg-transparent shadow-none ring-0",
+                      effectiveActive === panel.id
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
+                    )}
                   >
                     {panel.label}
                   </ControlTrigger>
@@ -755,8 +876,25 @@ export function PanelWorkspace({
           </aside>
         </div>
         {dragging && (
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-50 flex w-24 items-center justify-center rounded-sm bg-indigo-500/20 text-compact text-content-primary">
-            Dock here
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-y-0 right-0 z-50 flex w-28 items-center justify-center rounded-l-sm border-l-2 text-compact font-medium transition-all duration-150",
+              isOverDock
+                ? "border-content-strong bg-selected/80 text-content-strong shadow-md"
+                : "border-control/60 bg-panel/80 text-content-secondary",
+            )}
+          >
+            <div className="flex flex-col items-center gap-1 px-2 text-center">
+              <PanelRightClose
+                className={cn(
+                  "h-5 w-5 transition-transform duration-150",
+                  isOverDock && "scale-110 text-content-strong",
+                )}
+              />
+              <span className="font-semibold tracking-tight">
+                {isOverDock ? "Release to dock" : "Dock here"}
+              </span>
+            </div>
           </div>
         )}
       </div>

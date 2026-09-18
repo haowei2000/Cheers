@@ -107,6 +107,7 @@ export function AdminUsers() {
         addLabel="Add member"
         onAdd={() => setAdding(true)}
         addDisabled={adding}
+        searchDisabled={adding}
         headerAction={(
           <IconButton
             label="Refresh members"

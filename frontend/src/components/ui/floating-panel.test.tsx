@@ -189,6 +189,7 @@ describe("FloatingPanel window chrome", () => {
     expect(rootClasses(markup)).toContain("pointer-events-auto");
     expect(markup).toContain('data-floating-panel=""');
     expect(markup).toContain('data-floating-panel-handle=""');
+    expect(markup).toContain('data-floating-panel-drag-strip=""');
     expect(markup).toContain("cursor-grab");
   });
 

@@ -88,7 +88,6 @@ export function ComposerModelPopover({
         aria-label={`Model and bot settings: ${currentValue}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={cn(!open && "bg-zinc-800/60 text-content-muted hover:bg-zinc-800 hover:text-content-secondary")}
       >
         <SlidersHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
         <span>Model</span>

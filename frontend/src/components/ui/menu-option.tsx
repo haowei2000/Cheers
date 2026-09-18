@@ -39,12 +39,12 @@ export const MenuOption = forwardRef<HTMLButtonElement, MenuOptionProps>(
         role="menuitem"
         data-control-size={size}
         className={cn(
-          "flex w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left font-utility transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50",
+          "flex w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left font-utility transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-content-strong/50 disabled:pointer-events-none disabled:opacity-50",
           controlMinHeightClasses[size],
           controlTextClasses[size],
           selected
             ? "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover"
-            : "text-content-primary hover:bg-zinc-800/70 hover:text-content-strong",
+            : "text-content-primary hover:bg-control hover:text-content-strong",
           className
         )}
         {...props}

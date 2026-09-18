@@ -19,23 +19,26 @@ export function ReplyComposerBanner({
   return (
     <div className="mx-auto w-full max-w-[72rem] px-4 pt-2 max-md:px-3">
       <div
-        className="flex items-center gap-3 rounded-sm bg-indigo-500/10 px-3 py-2"
+        className="flex items-center gap-3 rounded-sm bg-panel border-l-2 border-l-content-strong/60 px-3 py-2 shadow-2xs"
         role="status"
         aria-label={`Replying to ${preview.sender}`}
       >
-        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
+        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-strong">
           <Reply className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-compact font-medium text-accent-300">
+          <p className="text-compact font-medium font-utility text-content-strong">
             Replying to {preview.sender}
           </p>
-          <p className="truncate text-compact text-content-muted">{preview.excerpt}</p>
+          <p className="truncate font-reading text-compact italic text-content-muted">{preview.excerpt}</p>
         </div>
-        <UiButton variant="plain"
+        <UiButton
+          variant="plain"
           type="button"
           onClick={onCancel}
-          content="icon" controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-content-primary transition-colors hover:bg-zinc-800/70 hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          content="icon"
+          controlSize="regular"
+          className="flex flex-shrink-0 items-center justify-center rounded-sm text-content-primary transition-colors hover:bg-control hover:text-content-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-content-strong/50"
           aria-label="Cancel reply"
           title="Cancel reply (Esc)"
         >

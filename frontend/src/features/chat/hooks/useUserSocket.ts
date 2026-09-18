@@ -90,7 +90,13 @@ export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
   useEffect(() => {
     mountedRef.current = true;
     authFailedRef.current = false; // fresh token → the ban no longer applies
-    connect();
+    // Defer the initial dial by one task. React StrictMode mounts, cleans up, and
+    // mounts effects again in development; opening synchronously made Firefox
+    // report the deliberately-aborted first socket as a connection failure.
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      connect();
+    }, 0);
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);

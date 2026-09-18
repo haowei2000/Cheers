@@ -61,6 +61,17 @@ the RFC 9728 path-derived alias:
 - `/.well-known/oauth-protected-resource`
 - `/.well-known/oauth-protected-resource/mcp`
 
+`MCP_CHANNEL_SCOPE` (`off` | `warn` | `enforce`, default `warn`) decides how
+strictly a call must stay inside the channel its token was minted for. The
+`client_credentials` grant accepts an optional `cheers_channel` parameter; the
+Gateway refuses to mint a token naming a channel the bot is not a member of, and
+records the channel as the token's `chan` claim. The claim only ever **narrows**
+— the bot's channel role is still checked for every operation — so a token that
+reaches the wrong channel's connection costs its holder access and can never buy
+any. Connectors that predate the parameter send no channel and are classified
+`unnarrowed`: allowed under `warn`, refused under `enforce`. Move a deployment to
+`enforce` only once every connector reaching it mints channel-scoped tokens.
+
 `MCP_PUBLIC_URL` is the sole production source of the returned `resource`, token
 audience, and challenge metadata URL. It must be an externally visible HTTPS URL
 ending in `/mcp`; request `Host` and forwarded headers are never trusted for this
@@ -133,8 +144,15 @@ Connector. It never falls back to the gateway's filesystem.
   channel sequence allocation, fan-out, Agent triggering and audit behavior are
   identical to Agent Bridge writes.
 - Request arguments are size-limited and validated by both the MCP adapter and
-  the existing resource handler. Idempotency keys will be added before exposing
-  retryable non-idempotent writes to general third-party clients.
+  the existing resource handler.
+- `post_message`, `inbox_deliver` and `desk_append` accept an optional
+  `idempotency_key`. 2026-07-28 clients must re-issue a call whose response
+  stream broke. A retry that reuses the key gets the first result back with
+  `idempotent_replay: true`, and nothing is written or triggered again. A key is
+  scoped to the calling principal and tool, and bound to the call's arguments:
+  reusing it with different arguments fails with `E_IDEMPOTENCY_KEY_REUSED`.
+  Keys are retained for 24 hours. `desk_write` and `desk_edit` are already
+  retry-safe through `if_version`.
 
 ## 6. Approval boundary
 
@@ -162,3 +180,41 @@ is a required CI gate with `--suite all --spec-version 2026-07-28`. It
 bootstraps a real connector host, obtains its OAuth token, executes the
 full suite, revokes the host, and verifies the already-issued access
 token immediately returns HTTP 401.
+
+## 8. Initialization-based clients
+
+Agent runtimes still ship MCP clients that predate 2026-07-28. As of
+2026-09-15, Codex CLI 0.145 (used by codex-acp 1.1.9) sends `initialize` at
+2025-06-18, and opencode 1.18 sends it at 2025-11-25. The endpoint therefore
+also serves the 2025-06-18 and 2025-11-25 revisions, **without sessions**. Any
+gateway replica can serve any request, so no session affinity is required.
+
+The era is selected per request:
+
+1. `params._meta["io.modelcontextprotocol/protocolVersion"]` is present →
+   2026-07-28 rules (sections 2–5).
+2. `initialize` → legacy lifecycle. A supported requested version is echoed;
+   any other version is answered with 2025-11-25.
+3. `MCP-Protocol-Version: 2025-06-18` or `2025-11-25` without modern `_meta` →
+   legacy request. Both revisions send this header after initialization.
+4. Anything else is validated, and rejected, as 2026-07-28.
+
+Legacy behavior:
+
+- No `Mcp-Session-Id` is minted or read. GET and DELETE on `/mcp` return 405.
+- Notifications such as `notifications/initialized` return 202 and are ignored.
+- `ping` is answered. `server/discover` is 2026-07-28 only.
+- Results omit `resultType`, `ttlMs`, `cacheScope` and the `_meta` server
+  identity. `structuredContent` is sent only when it is a JSON object; the text
+  content block always carries the full JSON.
+- JSON-RPC errors raised by method handling use HTTP 200, and
+  resource-not-found uses `-32002`. OAuth challenges (401/403), scopes, the tool
+  catalog and Cheers authorization are identical to 2026-07-28.
+- `Mcp-Method`/`Mcp-Name` are optional, but must match the body when sent.
+- Not supported: server-initiated requests (sampling, elicitation, roots),
+  subscriptions, SSE resumability, 2025-03-26 and earlier (no version header;
+  JSON-RPC batching), and the HTTP+SSE transport.
+
+This is a compatibility window, not a second contract. Remove the legacy era
+once the supported agent runtimes ship 2026-07-28 clients, together with the
+legacy smoke check in `scripts/run-mcp-conformance.sh`.

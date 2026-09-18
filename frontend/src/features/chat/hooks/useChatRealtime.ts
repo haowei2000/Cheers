@@ -21,7 +21,7 @@ export interface PresenceFocus {
 
 interface Callbacks {
   onMessage: (msg: Message) => void;
-  onStreamDelta: (msgId: string, delta: string) => void;
+  onStreamDelta: (msgId: string, delta: string, senderId?: string) => void;
   onStreamDone: (msg: Partial<Message> & { msg_id: string }) => void;
   onMessageDeleted: (msgId: string) => void;
   onBotProcessing?: (botId: string) => void;
@@ -250,10 +250,16 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
       pendingReqs.delete(res.req_id);
       clearTimeout(pending.timer);
       if (res.ok) pending.resolve(res.data);
-      else
+      else {
+        const errorMsg = typeof res.error === "string"
+          ? res.error
+          : res.error && typeof res.error === "object"
+            ? (res.error as { message?: string }).message || JSON.stringify(res.error)
+            : "resource error";
         pending.reject(
-          new ResourceError(res.code ?? "ERROR", res.error ?? "resource error")
+          new ResourceError(res.code ?? "ERROR", errorMsg)
         );
+      }
     }
     return;
   }
@@ -303,8 +309,8 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     // A new message advances the channel's activity stream → nudge the board.
     cbs.onBoardSignal?.("activity");
   } else if (type === "message_stream") {
-    const d = data as { msg_id: string; delta: string };
-    cbs.onStreamDelta(d.msg_id, d.delta ?? "");
+    const d = data as { msg_id: string; delta: string; sender_id?: string };
+    cbs.onStreamDelta(d.msg_id, d.delta ?? "", d.sender_id);
   } else if (type === "message_done") {
     cbs.onStreamDone(data as unknown as Partial<Message> & { msg_id: string });
   } else if (type === "message_deleted") {

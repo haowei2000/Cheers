@@ -90,6 +90,7 @@ const traceGalleryEvents: TraceEvent[] = [
 ];
 
 const iconLabels: Record<EditorialIconName, string> = {
+  annotation: "Annotation",
   correspondence: "Correspondence",
   reply: "Reply",
   thread: "Thread",
@@ -106,6 +107,8 @@ const iconLabels: Record<EditorialIconName, string> = {
   session: "Session",
   taskDocket: "Task docket",
   diffProof: "Diff proof",
+  collection: "Collection folio",
+  tab: "Tab sheet",
 };
 
 /** Development/visual-test gallery. It is intentionally not exposed as a product route. */

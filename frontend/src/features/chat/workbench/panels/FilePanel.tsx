@@ -224,9 +224,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     },
     [selected, showRaw]
   );
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   // A pending note belongs to the file it was started on; changing files abandons it
   // rather than silently re-aiming it at a row in a different document.
-  useEffect(() => setPendingNote(null), [selected]);
+  useEffect(() => {
+    setPendingNote(null);
+    setActiveAnnotationId(null);
+  }, [selected]);
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -475,7 +479,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <Check className="w-3.5 h-3.5 text-danger-400 hover:text-danger-300" />
         </UiButton>
@@ -485,7 +489,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           aria-label="Cancel delete"
           title="Cancel"
           onClick={() => setConfirmDel(null)}
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <X className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -497,7 +501,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
         onClick={() => setConfirmDel(path)}
-        className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
       >
         <Trash2 className="w-3.5 h-3.5 text-content-muted hover:text-danger-400" />
       </UiButton>
@@ -532,7 +536,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   if (isCollapsed) toggleCollapse(node.path);
                   beginCreate(node.path);
                 }}
-                className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
               >
                 <Plus className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
               </UiButton>
@@ -586,7 +590,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => void refresh()}
           aria-label="Refresh file tree"
           title="Refresh"
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <RefreshCw className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -596,7 +600,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(false)}
           aria-label="Hide file tree"
           title="Hide file tree"
-          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftClose className="w-3.5 h-3.5 text-content-muted hover:text-content-secondary" />
         </UiButton>
@@ -622,7 +626,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -704,7 +708,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         : "Showing raw text — switch to the preview",
                     priority: "primary",
                     icon: effMode === "preview" ? Eye : EyeOff,
-                    selected: effMode === "preview",
+                    selected: false,
                     disabled: !previewRenderer,
                     onSelect: () => {
                       setFailedRenderers((current) => ({ ...current, [selected]: [] }));
@@ -825,19 +829,30 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <FloatingPanelActionPortal
                     action={{
                       id: "annotations",
-                      label: `Notes on ${selected}`,
-                      priority: "secondary",
+                      label: annotations.notes.length === 0
+                        ? (selected ? `Notes on ${selected}` : "Annotations")
+                        : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selected}`,
+                      priority: "primary",
                       icon: MessageSquare,
                       control: (
                         <AnnotationsButton
                           notes={annotations.notes}
+                          allNotes={annotations.doc.notes}
+                          currentPath={selected ?? undefined}
                           text={session.parsedText}
+                          activeAnnotationId={activeAnnotationId}
+                          onSelectAnnotation={setActiveAnnotationId}
                           onRemove={onRemoveNote}
                           onReveal={onRevealNote}
+                          onSelectFile={(path) => {
+                            setSelected(path);
+                            showRaw(path, true);
+                          }}
+                          onAddNote={(entry) => void annotations.add(entry)}
                         />
                       ),
                     }}
-                    active={annotations.notes.length > 0}
+                    active={Boolean(selected || annotations.doc.notes.length > 0)}
                   />
                   <FloatingPanelActionPortal
                     action={{
@@ -870,6 +885,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       config={configs[selected]}
                       session={session}
                       annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                      activeAnnotationId={activeAnnotationId}
+                      onSelectAnnotation={setActiveAnnotationId}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
@@ -890,6 +907,9 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       onChange={session.editText}
                       path={selected}
                       scrollToLine={revealLine}
+                      notes={annotations.notes}
+                      activeAnnotationId={activeAnnotationId}
+                      onSelectAnnotation={setActiveAnnotationId}
                       className="flex-1 min-h-0 overflow-hidden"
                     />
                   </Suspense>

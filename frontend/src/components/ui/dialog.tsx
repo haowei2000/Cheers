@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ActionButton } from "./action-button";
+import { disarmHover } from "@/lib/hoverIntent";
 
 // A centered modal shell: backdrop (click-to-close) + card (click-stop) + optional titled
 // header with a close button. Reused by NewDmDialog, the bot-token modal, etc.
@@ -52,9 +53,12 @@ export function Dialog({
   // Capture the element that opened us at RENDER time — before commit applies any
   // autoFocus inside the dialog. A useEffect would run too late and capture the
   // dialog's own autoFocus'd input, so closing would refocus a removed node (→ body).
-  const [previouslyFocused] = useState(() => document.activeElement as HTMLElement | null);
+  const [previouslyFocused] = useState(() =>
+    typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null
+  );
 
   useEffect(() => {
+    disarmHover();
     const card = cardRef.current;
     if (!card) return;
 
@@ -98,6 +102,7 @@ export function Dialog({
 
     card.addEventListener("keydown", onKeyDown);
     return () => {
+      disarmHover();
       card.removeEventListener("keydown", onKeyDown);
       // Return focus to whatever opened the dialog, so keyboard users resume in place.
       // Guard isConnected so a since-unmounted trigger doesn't throw / strand focus.
@@ -105,7 +110,7 @@ export function Dialog({
     };
   }, [previouslyFocused]);
 
-  return createPortal(
+  const content = (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-24 max-md:items-end max-md:pt-0"
       onClick={onClose}
@@ -119,35 +124,48 @@ export function Dialog({
         tabIndex={-1}
         className={cn(
           // Borderless (DESIGN.md §2.4): the dimmed backdrop provides the separation.
-          `w-full ${maxWidth} rounded-concentric [--concentric-inset:1rem] bg-zinc-900 p-4 space-y-3 outline-none`,
-          "max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain",
-          "max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
+          `w-full ${maxWidth} rounded-concentric [--concentric-inset:1rem] bg-zinc-900 outline-none flex flex-col`,
+          "max-h-[calc(100dvh-7rem)] overflow-hidden",
+          "max-md:max-w-none max-md:rounded-b-none",
           fullScreenOnMobile
-            ? "max-md:h-full max-md:max-h-none max-md:rounded-none max-md:flex max-md:flex-col max-md:overflow-hidden max-md:pt-[max(1rem,env(safe-area-inset-top))]"
+            ? "max-md:h-full max-md:max-h-none max-md:rounded-none max-md:pt-[max(1rem,env(safe-area-inset-top))]"
             : "max-md:max-h-[92dvh]"
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {title !== undefined && (
-          <div className="flex items-center gap-2 max-md:flex-shrink-0">
-            <h2 id={titleId} className="text-regular font-semibold text-content-primary">
+          <div className="flex items-center gap-2 shrink-0 px-4 pt-4 pb-3 max-md:flex-shrink-0">
+            <h2 id={titleId} className="min-w-0 flex-1 text-regular font-semibold text-content-primary">
               {title}
             </h2>
-            <ButtonGroup label="Dialog controls" className="ml-auto">
-            <ActionButton
-              action="close"
-              context="windowChrome"
-              onClick={onClose}
-              accessibleLabel="Close dialog"
-              controlSize="compact"
-              className="text-content-primary hover:text-content-strong"
-            />
+            <ButtonGroup label="Dialog controls" className="ml-auto shrink-0">
+              <ActionButton
+                action="close"
+                context="windowChrome"
+                onClick={onClose}
+                accessibleLabel="Close dialog"
+                controlSize="compact"
+                className="text-content-primary hover:text-content-strong"
+              />
             </ButtonGroup>
           </div>
         )}
-        {children}
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 space-y-3",
+            title === undefined && "pt-4",
+            "max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
+          )}
+        >
+          {children}
+        </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  if (typeof document === "undefined") {
+    return content;
+  }
+
+  return createPortal(content, document.body);
 }

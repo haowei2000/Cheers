@@ -514,7 +514,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Send or reply to a channel message.",
+    "description": "Send or reply to a channel message. Reuse one idempotency_key when retrying so it posts once.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -526,6 +526,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "idempotency_key": {
+          "type": "string"
         },
         "mention_ids": {
           "items": {
@@ -633,7 +636,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Upload a base64-encoded attachment.",
+    "description": "Upload a base64-encoded attachment. Reuse one idempotency_key when retrying so it uploads once.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -647,6 +650,9 @@
           "type": "string"
         },
         "filename": {
+          "type": "string"
+        },
+        "idempotency_key": {
           "type": "string"
         }
       },
@@ -810,7 +816,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Append text to a Desk file.",
+    "description": "Append text to a Desk file. Reuse one idempotency_key when retrying so it appends once.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -818,6 +824,9 @@
           "type": "string"
         },
         "content": {
+          "type": "string"
+        },
+        "idempotency_key": {
           "type": "string"
         },
         "path": {

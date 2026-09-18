@@ -157,7 +157,7 @@ describe("BotTracePanel disclosure labels", () => {
       trace_seq: 1,
       kind: "trace",
       phase: "tool_call",
-      tool_call_id: "mcp_startup.cheers",
+      tool_call_id: "mcp_startup.cheers-channel1",
       status: "failed",
       is_terminal: true,
       created_at: "2026-08-17T03:39:46Z",
@@ -165,7 +165,7 @@ describe("BotTracePanel disclosure labels", () => {
         content: [
           {
             content: {
-              text: "[codex-acp forwarded startup error] MCP server `cheers` failed to start: MCP client for `cheers` failed to start",
+              text: "[codex-acp forwarded startup error] MCP server `cheers-channel1` failed to start: MCP client for `cheers-channel1` failed to start",
             },
           },
         ],
@@ -183,11 +183,46 @@ describe("BotTracePanel disclosure labels", () => {
     );
 
     expect(markup).toContain("MCP login required");
-    expect(markup).toContain("mcp login cheers");
+    expect(markup).toContain("mcp login cheers-channel1");
     // A bot may be running Claude Code, Gemini or any other ACP agent, so the
     // row must not prescribe one vendor's CLI.
     expect(markup).not.toContain("codex mcp login");
     expect(markup).not.toContain("rmcp::transport");
+  });
+
+  it("omits the server name when the trace does not carry one", () => {
+    // Each channel gets its own Cheers MCP server name, so there is no fixed
+    // name to fall back on — printing a guessed one would hand the operator a
+    // login command for a server their agent does not have.
+    const unnamed: TraceEvent = {
+      v: 1,
+      id: "mcp-err-2",
+      event_id: "mcp-err-2",
+      msg_id: "message-1",
+      channel_id: "channel-1",
+      trace_seq: 1,
+      kind: "trace",
+      phase: "tool_call",
+      status: "failed",
+      is_terminal: true,
+      created_at: "2026-08-17T03:39:46Z",
+      data: { content: [{ content: { text: "mcp_startup failure with no server named" } }] },
+    };
+
+    const markup = renderToStaticMarkup(
+      <BotTracePanel
+        channelId="channel-1"
+        msgId="message-1"
+        liveEvents={[unnamed]}
+        expanded
+        showToggle={false}
+      />,
+    );
+
+    expect(markup).toContain("MCP login required");
+    // The row still tells the operator what to do, without inventing a name.
+    expect(markup).toContain("Log in to the Cheers MCP server");
+    expect(markup).not.toContain("mcp login cheers");
   });
 });
 

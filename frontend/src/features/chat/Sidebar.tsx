@@ -1,15 +1,14 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useRef, useState } from "react";
-import { FolderOpen, LogOut, Plus, Menu, Radio, Settings } from "lucide-react";
+import { FolderOpen, Hash, Lock, LogOut, Mail, Menu, Plus, Radio, Settings } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
-import { EntityItem, ItemGroup, ItemRow, ItemSection } from "@/components/ui/item";
+import { EntityItem, ItemGroup, ItemRow } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
-import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { NewDmDialog } from "./NewDmDialog";
@@ -20,38 +19,6 @@ import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { leaveChannel } from "@/api/channels";
-
-interface SectionProps {
-  label: string;
-  children: React.ReactNode;
-  onAdd?: () => void;
-  /** Accessible name for the add (+) control, e.g. "New channel". */
-  addLabel?: string;
-}
-
-function Section({ label, children, onAdd, addLabel }: SectionProps) {
-  return (
-    <ItemSection
-      label={label}
-      presentationLevel="medium"
-      controlSize="regular"
-      headerControlSize="compact"
-      action={onAdd ? (
-          <IconButton
-            controlSize="compact"
-            onClick={onAdd}
-            label={addLabel ?? "Add"}
-            title={addLabel ?? "Add"}
-            className="text-content-primary hover:bg-zinc-700 hover:text-content-strong"
-          >
-            <Plus className={controlIconClasses.compact} />
-          </IconButton>
-      ) : undefined}
-    >
-      {children}
-    </ItemSection>
-  );
-}
 
 interface ChannelItemProps {
   channel: Channel;
@@ -108,16 +75,26 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
         kind="navigation"
         onClick={onClick}
         selected={selected}
-        title={<span className={cn(channel.is_member === false && "opacity-50")}>{channel.name}</span>}
-        leading={channel.avatar_url ? (
-          <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
-        ) : (
-          <EditorialIcon
-            name={channel.type === "dm" ? "correspondence" : "section"}
-            contentSize="regular"
-            className="flex-shrink-0 opacity-70"
-          />
-        )}
+        title={
+          <span className={cn("truncate", channel.is_member === false && "opacity-50", selected && "font-semibold text-content-strong")}>
+            {channel.name}
+          </span>
+        }
+        leading={
+          channel.avatar_url ? (
+            <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
+          ) : channel.type === "dm" ? (
+            <Avatar name={channel.name} id={channel.channel_id} size="small" />
+          ) : channel.type === "private" ? (
+            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+              <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          ) : (
+            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+              <Hash className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          )
+        }
         status={voiceEnabled ? (
           <span className={cn(controlTextClasses.compact, "inline-flex items-center gap-1 tabular-nums", participants.length > 0 ? "text-success-400" : "text-content-muted")}>
             <Radio className="h-3.5 w-3.5" />
@@ -125,7 +102,12 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
           </span>
         ) : undefined}
         criticalStatus={unread}
-        className="rounded-sm border-0"
+        className={cn(
+          "rounded-none border-b-0 transition-all duration-100",
+          selected
+            ? "border-l-content-strong bg-control/40 font-semibold text-content-strong"
+            : "border-l-transparent text-content-primary hover:bg-control/30 hover:text-content-strong"
+        )}
       />
       {voiceEnabled && participants.length > 0 && (
         <div className="space-y-1 pb-1 pl-7 pr-1">
@@ -225,39 +207,51 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   };
 
   return (
-    <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar flex flex-col flex-shrink-0">
-      {/* Workspace header. No rule under it: the `mb-1` moat sits outside the
-          scrolling list, so the gap persists at any scroll offset. */}
-      <div className="flex h-11 flex-shrink-0 items-center px-3">
+    <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar border-r border-control/80 flex flex-col flex-shrink-0">
+      {/* Workspace header with editorial typography and channel action */}
+      <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-control/80 px-3">
         {onOpenNav && (
-          <UiButton variant="plain"
+          <UiButton
+            variant="plain"
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            content="icon" controlSize="comfortable" className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            content="icon"
+            controlSize="comfortable"
+            className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-control-hover transition-colors flex-shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
         )}
-        <ControlTrigger controlWidth="fill"
+        <ControlTrigger
+          controlWidth="fill"
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
-          controlSize="regular" className="group flex items-center gap-2 rounded-sm transition-colors hover:bg-zinc-800/60"
+          controlSize="regular"
+          className="group flex min-w-0 flex-1 items-center justify-start gap-2 rounded-sm text-left transition-colors hover:bg-control-hover"
         >
-          <span className="font-utility flex-1 truncate text-left text-regular font-semibold text-content-primary">
+          <span className="font-serif font-bold tracking-tight truncate text-left text-regular text-content-strong">
             {workspace?.name ?? "Workspace"}
           </span>
           {canOpenSettings && (
-            // Gear, not a down-chevron: this opens the settings modal rather than
-            // expanding a dropdown beneath the header, so a chevron would lie.
-            <Settings className={cn(controlIconClasses.regular, "text-content-muted flex-shrink-0")} />
+            <Settings className={cn(controlIconClasses.regular, "text-content-muted/70 group-hover:text-content-strong flex-shrink-0 transition-colors")} />
           )}
         </ControlTrigger>
+        <IconButton
+          controlSize="compact"
+          onClick={() => setChannelOpen(true)}
+          label="New channel"
+          title="New channel"
+          className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover flex-shrink-0"
+        >
+          <Plus className={controlIconClasses.compact} />
+        </IconButton>
       </div>
 
-      {/* Channel list */}
-      <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-2 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Section label="Channels" addLabel="New channel" onAdd={() => setChannelOpen(true)}>
+      {/* Channel and DM list */}
+      <div className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-2 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {/* Public channels */}
+        <div className="space-y-1">
           {publicChannels.map((ch) => (
             <ChannelItem
               key={ch.channel_id}
@@ -269,10 +263,11 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
               onLeave={ch.is_member === false ? undefined : () => setLeaveTarget(ch)}
             />
           ))}
-        </Section>
+        </div>
 
+        {/* Private channels */}
         {privateChannels.length > 0 && (
-          <Section label="Private">
+          <div className="space-y-1 pt-1">
             {privateChannels.map((ch) => (
               <ChannelItem
                 key={ch.channel_id}
@@ -284,22 +279,44 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 onLeave={() => setLeaveTarget(ch)}
               />
             ))}
-          </Section>
+          </div>
         )}
 
-        {/* Direct messages live only in the personal workspace (the DM home), so
-            they aren't duplicated across every team workspace's sidebar. */}
+        {/* Direct messages: divided by a graphic hairline divider with mail icon and add action */}
         {isPersonal && (
-          <Section label="Direct Messages" addLabel="New direct message" onAdd={() => setDmOpen(true)}>
-            {dms.map((ch) => (
-              <ChannelItem
-                key={ch.channel_id}
-                channel={{ ...ch, name: ch.peer_name || ch.name || "Direct Message" }}
-                selected={selectedChannelId === ch.channel_id}
-                onClick={() => pick(ch.channel_id)}
-              />
-            ))}
-          </Section>
+          <>
+            <div
+              className="relative my-2 flex items-center justify-between px-1 py-1"
+              role="separator"
+              aria-label="Direct messages"
+            >
+              <div className="flex-1 border-t border-control/80" />
+              <span className="mx-2 flex items-center text-content-muted/60" title="Direct messages">
+                <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+              <div className="flex-1 border-t border-control/80" />
+              <IconButton
+                controlSize="compact"
+                label="New direct message"
+                title="New direct message"
+                onClick={() => setDmOpen(true)}
+                className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active flex-shrink-0"
+              >
+                <Plus className={controlIconClasses.compact} />
+              </IconButton>
+            </div>
+
+            <div className="space-y-1">
+              {dms.map((ch) => (
+                <ChannelItem
+                  key={ch.channel_id}
+                  channel={{ ...ch, name: ch.peer_name || ch.name || "Direct Message" }}
+                  selected={selectedChannelId === ch.channel_id}
+                  onClick={() => pick(ch.channel_id)}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
       {dmOpen && (

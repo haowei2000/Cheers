@@ -11,7 +11,7 @@ type Severity = "error" | "warning" | "info" | "success";
 const severityCls: Record<Severity, string> = {
   error: "bg-red-950/45 text-danger-300",
   warning: "bg-amber-900/40 text-warning-200",
-  info: "bg-indigo-600/15 text-accent-200",
+  info: "bg-accent-600/15 text-accent-200",
   success: "bg-emerald-500/10 text-success-400",
 };
 
@@ -20,7 +20,7 @@ const severityCls: Record<Severity, string> = {
 const actionCls: Record<Severity, string> = {
   error: "bg-red-900/60 text-danger-100 hover:bg-red-900/90",
   warning: "bg-amber-900/70 text-warning-100 hover:bg-amber-900",
-  info: "bg-indigo-600/25 text-accent-100 hover:bg-indigo-600/40",
+  info: "bg-accent-600/25 text-accent-100 hover:bg-accent-600/40",
   success: "bg-emerald-900/60 text-success-100 hover:bg-emerald-900/90",
 };
 
@@ -62,7 +62,7 @@ export function Banner({
           onClick={action.onClick}
           className={cn(
             "flex-shrink-0 px-3 font-semibold",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-content-strong/50",
             actionCls[severity]
           )}
         >

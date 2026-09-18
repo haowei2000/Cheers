@@ -23,6 +23,7 @@ pub mod dms;
 pub mod fleet;
 pub mod integrations;
 pub mod invitable;
+pub mod mcp_check;
 pub mod mentions;
 pub mod messages;
 pub mod plan_store;

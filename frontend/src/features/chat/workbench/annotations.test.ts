@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyPatchOps } from "./patchOps";
 import {
   addAnnotationOps,
+  anchorKey,
   annotationId,
   annotationsFor,
   notesOnTarget,
@@ -9,6 +10,7 @@ import {
   removeAnnotationOps,
   resolveAnnotation,
   seedAnnotations,
+  sourcePathKey,
   type AnnotationDoc,
 } from "./annotations";
 
@@ -131,5 +133,15 @@ describe("writing", () => {
   it("disambiguates ids without making them unreadable", () => {
     expect(annotationId(parsed(), "dev/issues.yaml")).toBe("issues-note");
     expect(annotationId(parsed(), "dev/plan.yaml")).toBe("plan-note-3");
+  });
+});
+
+describe("anchor serialization", () => {
+  it("serializes sourcePath and anchors canonically for DOM matching", () => {
+    expect(sourcePathKey([0])).toBe("[0]");
+    expect(sourcePathKey(["columns", 0, "items", 1])).toBe('["columns",0,"items",1]');
+    expect(anchorKey({ kind: "path", sourcePath: [0] })).toBe("[0]");
+    expect(anchorKey({ kind: "text", sourceText: "hello" })).toBe("text:hello");
+    expect(anchorKey({ kind: "file" })).toBe("file");
   });
 });

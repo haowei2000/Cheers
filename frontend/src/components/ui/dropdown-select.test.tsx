@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DropdownSelect } from "./dropdown-select";
+import { DropdownSelect, withGroups } from "./dropdown-select";
 
 describe("DropdownSelect", () => {
   it("uses the shared selector trigger instead of a native select", () => {
@@ -84,5 +84,41 @@ describe("DropdownSelect", () => {
 
     expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).not.toContain('aria-haspopup="listbox"');
+  });
+
+  it("keeps text dropdown select resting unboxed and reveals outline on hover", () => {
+    const markup = renderToStaticMarkup(
+      <DropdownSelect
+        label="Chat"
+        ariaLabel="Channel type"
+        options={[{ value: "chat", label: "Chat" }]}
+        onSelect={() => undefined}
+      />,
+    );
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("ring-transparent");
+    expect(markup).toContain("hover:ring-zinc-300/80");
+  });
+});
+
+describe("DropdownSelect groups", () => {
+  // The workspace-root picker was a native <select> whose <optgroup>s said whether a
+  // path was a session's workdir or one of the connector's own allowed roots. Moving
+  // to this control must not drop that: a list of bare absolute paths is unreadable
+  // without it. The visible header is decorative, so the grouping has to reach every
+  // entry under it — not just the one that opens the group.
+  it("carries a group name down to every entry under it", () => {
+    const grouped = withGroups([
+      { value: "", label: "Auto" },
+      { value: "/w/a", label: "/w/a", groupLabel: "Session workdirs" },
+      { value: "/w/b", label: "/w/b" },
+      { value: "/r", label: "/r", groupLabel: "Allowed roots" },
+    ]);
+    expect(grouped.map((entry) => entry.group)).toEqual([
+      undefined,
+      "Session workdirs",
+      "Session workdirs",
+      "Allowed roots",
+    ]);
   });
 });

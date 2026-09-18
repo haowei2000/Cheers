@@ -436,21 +436,59 @@ pub(super) fn mcp_server_supported(
     }
 }
 
-/// Build the single authoritative Cheers MCP entry.
+/// Prefix every Cheers-owned MCP server name carries.
+pub(super) const CHEERS_MCP_SERVER_PREFIX: &str = "cheers";
+
+/// The MCP server name this bot uses for one channel.
+///
+/// One name per channel, rather than a single "cheers" for the whole daemon.
+/// An Agent that keys its MCP clients by server name — a common and entirely
+/// reasonable implementation — would otherwise hand every concurrent session
+/// the same client, so the last `session/new` to arrive would re-scope the
+/// connection out from under turns already in flight. Distinct names make that
+/// collision impossible rather than merely unlikely, which is what lets later
+/// per-channel credentials be safe to put on this connection at all.
+///
+/// The full channel id is used, not a prefix of it: a truncated id trades a
+/// certainty for a birthday-problem chance of two of a bot's channels sharing a
+/// name, and sharing a name is exactly the failure being designed out. Dashes
+/// go because some Agents render the name into tool identifiers.
+pub(super) fn cheers_mcp_server_name(channel_id: &str) -> String {
+    let channel: String = channel_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    format!("{CHEERS_MCP_SERVER_PREFIX}-{channel}")
+}
+
+/// Whether a name belongs to the Cheers-owned namespace, and so may not be
+/// taken by a locally configured server.
+pub(super) fn is_cheers_mcp_server_name(name: &str) -> bool {
+    name == CHEERS_MCP_SERVER_PREFIX
+        || name
+            .strip_prefix(CHEERS_MCP_SERVER_PREFIX)
+            .is_some_and(|rest| rest.starts_with('-'))
+}
+
+/// Build the authoritative Cheers MCP entry for one channel.
 ///
 /// `bearer` is a host-bound access token the Connector minted for this
 /// session (see [`crate::mcp_token`]). Supplying it means the Agent only has to
 /// speak HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
 /// Document, and no consent round-trip. `None` falls back to the headerless
 /// entry, leaving an OAuth-capable Agent to run native discovery itself.
-pub(super) fn native_cheers_mcp_server(mcp_url: &str, bearer: Option<&str>) -> Value {
+pub(super) fn native_cheers_mcp_server(
+    channel_id: &str,
+    mcp_url: &str,
+    bearer: Option<&str>,
+) -> Value {
     let headers = match bearer {
         Some(token) => json!([{ "name": "Authorization", "value": format!("Bearer {token}") }]),
         None => json!([]),
     };
     json!({
         "type": "http",
-        "name": "cheers",
+        "name": cheers_mcp_server_name(channel_id),
         "url": mcp_url,
         "headers": headers
     })
@@ -1610,10 +1648,14 @@ mod tests {
     #[test]
     fn native_cheers_mcp_carries_the_connector_minted_bearer() {
         assert_eq!(
-            native_cheers_mcp_server("https://cheers.example/mcp", Some("tok-123")),
+            native_cheers_mcp_server(
+                "4f1d9c2e-0000-4000-8000-000000000001",
+                "https://cheers.example/mcp",
+                Some("tok-123")
+            ),
             json!({
                 "type": "http",
-                "name": "cheers",
+                "name": "cheers-4f1d9c2e000040008000000000000001",
                 "url": "https://cheers.example/mcp",
                 "headers": [{"name": "Authorization", "value": "Bearer tok-123"}]
             })
@@ -1623,14 +1665,39 @@ mod tests {
     #[test]
     fn native_cheers_mcp_falls_back_to_headerless_for_native_agent_oauth() {
         assert_eq!(
-            native_cheers_mcp_server("https://cheers.example/mcp", None),
+            native_cheers_mcp_server("channel-a", "https://cheers.example/mcp", None),
             json!({
                 "type": "http",
-                "name": "cheers",
+                "name": "cheers-channela",
                 "url": "https://cheers.example/mcp",
                 "headers": []
             })
         );
+    }
+
+    /// 两个频道必须拿到不同的 server 名——按名字复用 MCP client 的 agent 正是
+    /// 靠这一点无法把两个并发回合合并到同一个连接上。
+    #[test]
+    fn cheers_mcp_server_names_differ_per_channel() {
+        let a = cheers_mcp_server_name("4f1d9c2e-0000-4000-8000-000000000001");
+        let b = cheers_mcp_server_name("4f1d9c2e-0000-4000-8000-000000000002");
+        assert_ne!(a, b);
+        // 同一频道必须稳定：session/load 要原样重放同一份配置。
+        assert_eq!(
+            a,
+            cheers_mcp_server_name("4f1d9c2e-0000-4000-8000-000000000001")
+        );
+    }
+
+    /// 本地配置不得占用 Cheers 命名空间——无论是旧的裸名还是任何频道名。
+    #[test]
+    fn cheers_namespace_covers_the_bare_name_and_every_channel_name() {
+        assert!(is_cheers_mcp_server_name("cheers"));
+        assert!(is_cheers_mcp_server_name("cheers-channela"));
+        assert!(is_cheers_mcp_server_name(&cheers_mcp_server_name("any")));
+        // 只是碰巧以 cheers 开头的名字不属于该命名空间。
+        assert!(!is_cheers_mcp_server_name("cheersearch"));
+        assert!(!is_cheers_mcp_server_name("my-cheers"));
     }
 
     #[test]

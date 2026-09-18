@@ -146,14 +146,18 @@ describe("official built-in lens context contract", () => {
     for (const id of lensIds()) expect(getLens(id)?.contextPick).toBe("granular");
   });
 
-  it("marks every built-in semantic item as a context target", () => {
+  it("marks every built-in semantic item as a context target with an anchor key", () => {
     const render = (id: string, data: unknown) => renderToStaticMarkup(
       <>{getLens(id)!.render({ data, config: undefined, onChange: () => {}, requestContextPick: () => {} })}</>,
     );
     expect(render("table", [{ run: "baseline" }])).toContain('data-workbench-context-target="row"');
+    expect(render("table", [{ run: "baseline" }])).toContain('data-workbench-anchor="[0]"');
     expect(render("kanban", { columns: [{ name: "Todo", items: ["ship"] }] })).toContain('data-workbench-context-target="card"');
+    expect(render("kanban", { columns: [{ name: "Todo", items: ["ship"] }] })).toContain('data-workbench-anchor="[&quot;columns&quot;,0,&quot;items&quot;,0]"');
     expect(render("markdown", "# Notes")).toContain('data-workbench-context-target="markdown"');
     expect(render("chart", { series: [{ name: "loss", points: [[1, 0.5]] }] })).toContain('data-workbench-context-target="chart-point"');
+    expect(render("chart", { series: [{ name: "loss", points: [[1, 0.5]] }] })).toContain('data-workbench-anchor="[&quot;series&quot;,0,&quot;points&quot;,0]"');
     expect(render("codemap", { codemap: 1, nodes: { api: { label: "API" } }, edges: [] })).toContain('data-workbench-context-target="codemap-node"');
+    expect(render("codemap", { codemap: 1, nodes: { api: { label: "API" } }, edges: [] })).toContain('data-workbench-anchor="[&quot;nodes&quot;,&quot;api&quot;]"');
   });
 });

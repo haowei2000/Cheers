@@ -18,9 +18,9 @@ import {
   ChevronRight,
   Loader2,
   MessageCircle,
-  Plus,
   Users,
 } from "lucide-react";
+import { ActionButton } from "@/components/ui/action-button";
 import { useContextSurface } from "@/components/ui/context-actions";
 import {
   getDiscussion,
@@ -149,7 +149,12 @@ function DiscussionTopicRow({
             <ChevronRight className={cn(controlIconClasses.regular, "text-content-muted transition-transform group-hover/item:translate-x-0.5")} />
           </span>
         )}
-        className={cn("border-b-0", !selected && "bg-zinc-900/45 hover:bg-zinc-900/80")}
+        className={cn(
+          "rounded-none border-b border-b-control/40 transition-colors",
+          selected
+            ? "border-l-content-strong bg-selected/50 font-medium text-content-strong"
+            : "border-l-transparent bg-transparent hover:bg-control/30 text-content-primary"
+        )}
       />
     </div>
   );
@@ -378,25 +383,38 @@ export function DiscussionView({
       )}
       style={isWide ? { width: topicWidth } : undefined}
     >
-      <div className="border-b border-zinc-800/80 p-3">
-        <div className="flex items-center gap-2">
+      <div className="border-b border-zinc-300/40 bg-panel px-3 py-3 dark:border-zinc-800/60">
+        <div className="flex h-7 items-center gap-2">
           <SearchInput
             containerClassName="flex-1"
             aria-label="Search discussions"
+            controlSize="compact"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search discussions"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setQuery("");
+              }
+            }}
+            placeholder="Search discussions…"
             className="bg-zinc-900/70 placeholder:text-content-muted"
           />
-          <UiButton content="iconText" action="create" variant="plain"
-            type="button"
+          {query ? (
+            <ActionButton
+              action="close"
+              context="windowChrome"
+              controlSize="compact"
+              accessibleLabel="Clear search"
+              onClick={() => setQuery("")}
+            />
+          ) : null}
+          <ActionButton
+            action="add"
+            context="toolbar"
+            controlSize="compact"
+            accessibleLabel="New discussion"
             onClick={startDiscussion}
-            aria-label="Create a new discussion"
-            controlSize="regular"
-            className="shrink-0 bg-indigo-500 text-content-on-accent hover:bg-indigo-400 focus-visible:ring-indigo-400"
-          >
-            <Plus className="h-4 w-4" />
-          </UiButton>
+          />
         </div>
       </div>
       <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
@@ -411,7 +429,7 @@ export function DiscussionView({
             <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-accent-300 hover:text-accent-200">Start the first discussion</UiButton>
           </div>
         ) : (
-          <ItemList presentationLevel="medium" controlSize="regular" className="space-y-2">
+          <ItemList presentationLevel="medium" controlSize="regular">
             {topics.map((topic) => {
               const selected = selectedId === topic.root.msg_id && !creating;
               return (
@@ -424,7 +442,7 @@ export function DiscussionView({
               );
             })}
             {nextCursor && (
-              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className=" text-content-primary hover:bg-zinc-900 hover:text-content-strong">
+              <UiButton action="more" controlWidth="fill" variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className="mt-2 text-content-primary hover:bg-control hover:text-content-strong">
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
               </UiButton>
             )}
@@ -452,16 +470,29 @@ export function DiscussionView({
         <ErrorState className="flex-1" title="Couldn't open discussion" description={detailError} action={{ label: "Retry", onClick: () => void refreshDetail() }} />
       ) : detail ? (
         <>
-          <header className="z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur">
+          <header className="z-10 border-b border-zinc-300/40 bg-panel px-4 py-3 dark:border-zinc-800/60">
             <div className="mx-auto max-w-[52rem]">
-              <div className="flex items-start gap-3">
-                <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />
-                <div className="min-w-0 flex-1">
-                  <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-display text-content-primary">{titleAndPreview(detail.root).title}</h2>
-                  <p className="mt-1 font-utility text-compact text-content-muted">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
-                  {titleAndPreview(detail.root).preview && (
-                    <p className="mt-2 line-clamp-3 font-reading text-regular leading-6 text-content-muted">{titleAndPreview(detail.root).preview}</p>
-                  )}
+              <div className="flex items-center gap-3">
+                <Avatar
+                  name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                  id={detail.root.sender_id}
+                  size="regular"
+                />
+                <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <h2
+                    className="truncate font-display text-comfortable font-semibold leading-7 tracking-display text-content-primary"
+                    title={[titleAndPreview(detail.root).title, titleAndPreview(detail.root).preview].filter(Boolean).join("\n")}
+                  >
+                    {titleAndPreview(detail.root).title}
+                    {titleAndPreview(detail.root).preview && (
+                      <span className="ml-2 font-reading text-regular font-normal text-content-muted">
+                        — {titleAndPreview(detail.root).preview}
+                      </span>
+                    )}
+                  </h2>
+                  <span className="shrink-0 font-utility text-compact text-content-muted">
+                    {detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                  </span>
                 </div>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { Lock } from "lucide-react";
 import toast from "react-hot-toast";
 import { Spinner as LoadingIcon } from "@/components/ui/spinner";
@@ -13,6 +13,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { useAuthStore } from "@/stores/authStore";
 import { initPushBridge } from "@/lib/push";
 import { initDeepLinks } from "@/lib/deepLink";
+import { disarmHover } from "@/lib/hoverIntent";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { ServerPicker } from "@/features/desktop/ServerPicker";
 import { StepUpDialog } from "@/features/auth/StepUpDialog";
@@ -104,6 +105,20 @@ function SessionExpiredTakeover() {
   );
 }
 
+/** Re-disarms hover on navigation: the pointer has not moved, but everything under
+ *  it just did. Renders nothing. */
+function HoverIntent() {
+  const location = useLocation();
+  // Layout effect, not passive: the browser recomputes what is under the cursor
+  // from the new layout and fires `pointerover` off the back of that same frame,
+  // so a disarm that waits for paint can arrive after the hover it was meant to
+  // hold back.
+  useLayoutEffect(() => {
+    disarmHover();
+  }, [location.pathname, location.search, location.hash]);
+  return null;
+}
+
 export default function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const authInitialized = useAuthStore((s) => s.initialized);
@@ -155,6 +170,7 @@ export default function App() {
   }
   return (
     <DesktopWindowFrame>
+      <HoverIntent />
       <Suspense fallback={<DesktopPageFrame><Spinner /></DesktopPageFrame>}>
         <Routes>
         <Route path="/login" element={<DesktopPageFrame><LoginPage /></DesktopPageFrame>} />

@@ -21,6 +21,8 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
+import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
+import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
@@ -47,6 +49,7 @@ import {
   type ContextAction,
   useContextSurface,
 } from "@/components/ui/context-actions";
+import { whenPointerMeans } from "@/lib/hoverIntent";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -167,7 +170,7 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-1 rounded-sm  border-zinc-700/70 bg-zinc-800/95 p-1 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
+        "flex items-center gap-1 rounded-sm bg-panel elevation-raised p-1 transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
@@ -267,12 +270,14 @@ function ReplyPreview({
     ? (repliedTo.content ?? "").replace(FILE_TOKEN_RE, "").trim().slice(0, 120) ||
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
-  const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  const who = repliedTo
+    ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id?.slice(0, 8) ?? "Unknown"
+    : "";
   const connector = (
     <span
       aria-hidden
       className={cn(
-        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-700/80",
+        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-300/60 dark:border-zinc-700/80",
         reversed
           ? "ml-2 rounded-tr-sm border-r"
           : "mr-2 rounded-tl-sm border-l",
@@ -293,7 +298,7 @@ function ReplyPreview({
           <span className="truncate font-semibold">@{who}</span>
         </span>
       )}
-      <span className="truncate text-content-muted group-hover/reply:text-content-muted">
+      <span className="truncate font-reading italic text-content-muted group-hover/reply:text-content-secondary">
         {excerpt}
       </span>
     </span>
@@ -344,17 +349,7 @@ function ReplyPreview({
  *  `className` lets the own-message (flex-row-reverse) row pin it visually
  *  left via `order-last` so the selection column never flips sides. */
 function SelectBox({ selected, className }: { selected: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "flex items-center justify-center w-4 h-4 mt-2 rounded-sm  flex-shrink-0",
-        selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
-        className
-      )}
-    >
-      {selected && <Check className="w-3.5 h-3.5 text-content-on-accent" />}
-    </span>
-  );
+  return <BallotCheckbox checked={selected} className={cn("mt-2", className)} />;
 }
 
 export const MessageItem = memo(function MessageItem(props: Props) {
@@ -366,7 +361,7 @@ export const MessageItem = memo(function MessageItem(props: Props) {
       <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-content-muted italic text-regular">
+        <span className="text-content-muted font-reading italic text-regular">
           This message was deleted
         </span>
       </div>
@@ -432,7 +427,10 @@ function RegularMessageItem({
   const isOwn = message.sender_id === currentUserId;
   const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
   const name =
-    message.sender_name || senderName || message.sender_id.slice(0, 8);
+    message.sender_name ||
+    senderName ||
+    message.sender_id?.slice(0, 8) ||
+    (message.sender_type === "bot" ? "Bot" : "Unknown");
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
   const actionableApprovalCount = (pendingApprovals ?? []).filter(
@@ -940,7 +938,7 @@ function RegularMessageItem({
         onPointerCancel={contextSurface.onPointerCancel}
         onPointerLeave={contextSurface.onPointerLeave}
         onClickCapture={contextSurface.onClickCapture}
-        onMouseEnter={showActionBar}
+        onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showActionBar)}
         onMouseLeave={hideActionBar}
       >
         {selectable && (
@@ -1016,7 +1014,7 @@ function RegularMessageItem({
       onPointerCancel={contextSurface.onPointerCancel}
       onPointerLeave={contextSurface.onPointerLeave}
       onClickCapture={contextSurface.onClickCapture}
-      onMouseEnter={showActionBar}
+      onMouseEnter={(event) => whenPointerMeans(event.currentTarget, showActionBar)}
       onMouseLeave={hideActionBar}
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
@@ -1084,7 +1082,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
   return (
     <UiButton action="stop" content="iconText" variant="plain"
       type="button"
-      disabled={stopping}
+      loading={stopping}
       onClick={async () => {
         setStopping(true);
         // On success leave it disabled: the turn finalizes via the stream and
@@ -1092,11 +1090,10 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80  text-content-primary transition-colors hover:bg-zinc-700 hover:text-content-strong disabled:opacity-50"
+      controlSize="regular" className="bg-zinc-800/80 text-content-primary hover:bg-zinc-700 hover:text-content-strong"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3.5 h-3.5" fill="currentColor" />
-      {stopping ? "Stopping…" : "Stop"}
     </UiButton>
   );
 }
@@ -1129,11 +1126,7 @@ function MessageBody({
   if (active && !content && files.length === 0) {
     return (
       <div className="flex items-center gap-2 py-1">
-        <div className="flex items-center gap-1">
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
-          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
-        </div>
+        <TypewriterCursor label="Agent thinking" />
         {message._trace && (
           <span className="text-caption-italic truncate">
             {message._trace}
@@ -1181,7 +1174,7 @@ function MessageBody({
           </p>
         ))}
       {message._streaming && (
-        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-1 align-text-bottom" />
+        <TypewriterCursor className="ml-1" />
       )}
       {active && message._trace && (
         <p className="text-caption-italic mt-1">{message._trace}</p>
