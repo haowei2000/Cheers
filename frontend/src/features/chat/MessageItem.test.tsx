@@ -82,4 +82,29 @@ describe("MessageItem identity anatomy", () => {
     // … but the sender is still announced and still shown on hover.
     expect(markup).toContain('aria-label="View profile for System Administrator"');
   });
+
+  it("renders the standard channel ReplyPreview when replying to another reply in a sub-thread", () => {
+    const subReply: Message = {
+      msg_id: "sub-1",
+      sender_id: "user-2",
+      sender_type: "user",
+      sender_name: "Alice",
+      content: "I agree with this proposal.",
+      reply_to_msg_id: source.msg_id,
+    };
+
+    const markup = renderToStaticMarkup(
+      <MessageItem
+        message={subReply}
+        nested
+        identityLayout="avatar"
+        hideReplyQuote={false}
+        repliedTo={source}
+        nameOf={() => "System Administrator"}
+      />,
+    );
+
+    expect(markup).toContain("@System Administrator");
+    expect(markup).toContain("Please prepare the document and attach it here.");
+  });
 });

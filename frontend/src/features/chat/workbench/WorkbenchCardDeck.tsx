@@ -86,20 +86,28 @@ export function WorkbenchCardDeck({
   selectedPathRef.current = selectedPath;
 
   const triggerShake = useCallback(() => {
+    if (!isLocked) return;
     if (shakeTimeoutRef.current !== null) clearTimeout(shakeTimeoutRef.current);
     setIsShaking(true);
-    onLockedAttempt?.();
     shakeTimeoutRef.current = window.setTimeout(() => {
       setIsShaking(false);
       shakeTimeoutRef.current = null;
     }, 380);
-  }, [onLockedAttempt]);
+  }, [isLocked]);
 
   useEffect(() => {
+    if (!isLocked) {
+      setIsShaking(false);
+      if (shakeTimeoutRef.current !== null) {
+        clearTimeout(shakeTimeoutRef.current);
+        shakeTimeoutRef.current = null;
+      }
+      return;
+    }
     if (shakeNonce && shakeNonce > 0) {
       triggerShake();
     }
-  }, [shakeNonce, triggerShake]);
+  }, [isLocked, shakeNonce, triggerShake]);
 
   // Listen to wheel events on container when locked to trigger shake without scrolling
   useEffect(() => {
@@ -111,12 +119,13 @@ export function WorkbenchCardDeck({
         e.preventDefault();
         e.stopPropagation();
         triggerShake();
+        onLockedAttempt?.();
       }
     };
 
     container.addEventListener("wheel", onWheel, { passive: false });
     return () => container.removeEventListener("wheel", onWheel);
-  }, [isLocked, triggerShake]);
+  }, [isLocked, onLockedAttempt, triggerShake]);
 
   const calculateTransforms = useCallback(() => {
     const container = containerRef.current;
@@ -217,6 +226,7 @@ export function WorkbenchCardDeck({
       if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(e.key)) {
         e.preventDefault();
         triggerShake();
+        onLockedAttempt?.();
         return;
       }
     }
@@ -259,7 +269,7 @@ export function WorkbenchCardDeck({
         scrollSnapType: isLocked ? "none" : "y proximity",
       }}
       className={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col items-center gap-8 overscroll-contain px-4 py-16 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-content-strong/30 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "relative flex h-full min-h-0 flex-1 flex-col items-center gap-8 overscroll-contain px-4 py-16 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-content-strong/30",
         isLocked ? "overflow-y-hidden" : "overflow-y-auto",
         className,
       )}
@@ -298,6 +308,7 @@ export function WorkbenchCardDeck({
                   e.preventDefault();
                   if (isLocked) {
                     triggerShake();
+                    onLockedAttempt?.();
                     return;
                   }
                   onSelectTab(tab.path);
@@ -308,11 +319,12 @@ export function WorkbenchCardDeck({
                 isSelected
                   ? "ring-control/60 shadow-md elevation-raised"
                   : "ring-control/30 shadow-sm opacity-60 hover:opacity-90 hover:ring-control/40 cursor-pointer",
-                isSelected && isShaking && "animate-paper-shake",
+                isSelected && isLocked && isShaking && "animate-paper-shake",
               )}
               onClick={() => {
                 if (isLocked && !isSelected) {
                   triggerShake();
+                  onLockedAttempt?.();
                   return;
                 }
                 if (!isSelected) onSelectTab(tab.path);

@@ -9,7 +9,7 @@ import {
 import { Ellipsis, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ButtonGroup } from "./button-group";
-import { Button } from "./button";
+import { Button, type ButtonProps } from "./button";
 import { useControlSize, type ControlSize } from "./control-size";
 import { DropdownSelect } from "./dropdown-select";
 import { MenuOption } from "./menu-option";
@@ -25,6 +25,7 @@ export interface AdaptiveControlItem {
   selected?: boolean;
   disabled?: boolean;
   priority?: "primary" | "secondary";
+  variant?: ButtonProps["variant"];
   onSelect?: () => void;
   /** Compound controls may adapt their rich rendering to the chosen presentation. */
   control?: ReactNode | ((presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => ReactNode);
@@ -77,7 +78,7 @@ function AdaptiveItemControl({
   return (
     <Button
       type="button"
-      variant={item.priority === "primary" ? "primary" : "plain"}
+      variant={item.variant ?? "plain"}
       content={iconOnly ? "icon" : "text"}
       controlWidth="content"
       controlSize={controlSize}

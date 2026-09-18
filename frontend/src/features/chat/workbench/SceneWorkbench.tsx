@@ -20,8 +20,8 @@ import {
   Paperclip,
   Save,
   Server,
-  Unlock,
 } from "lucide-react";
+import { LockOff } from "@/components/ui/slashed-icon";
 import { cn } from "@/lib/cn";
 import {
   pointRect,
@@ -958,9 +958,17 @@ export function SceneWorkbench({
               id: "lock-tab",
               label: isTabLocked ? "Unlock tab scrolling" : "Lock tab in place",
               priority: "primary",
-              icon: isTabLocked ? Lock : Unlock,
-              selected: isTabLocked,
-              onSelect: () => setIsTabLocked((prev) => !prev),
+              icon: isTabLocked ? Lock : LockOff,
+              selected: false,
+              onSelect: () => {
+                setIsTabLocked((prev) => {
+                  const next = !prev;
+                  if (!next) {
+                    setShakeNonce(0);
+                  }
+                  return next;
+                });
+              },
             }}
           />
           <FloatingPanelActionPortal
@@ -973,7 +981,7 @@ export function SceneWorkbench({
                   : "Showing raw text — switch to the preview",
               priority: "primary",
               icon: (!rawPaths.has(selectedPath) && renderers[selectedPath]) ? Eye : EyeOff,
-              selected: !rawPaths.has(selectedPath) && Boolean(renderers[selectedPath]),
+              selected: false,
               disabled: !renderers[selectedPath],
               onSelect: () => showRaw(selectedPath, !rawPaths.has(selectedPath)),
             }}

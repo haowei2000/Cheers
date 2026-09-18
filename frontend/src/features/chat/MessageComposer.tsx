@@ -902,7 +902,7 @@ function MessageComposerImpl({
           )}
 
           {toolbar && (
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto no-scrollbar">
               {toolbar}
             </div>
           )}

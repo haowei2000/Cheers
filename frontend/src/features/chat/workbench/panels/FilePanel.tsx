@@ -708,7 +708,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         : "Showing raw text — switch to the preview",
                     priority: "primary",
                     icon: effMode === "preview" ? Eye : EyeOff,
-                    selected: effMode === "preview",
+                    selected: false,
                     disabled: !previewRenderer,
                     onSelect: () => {
                       setFailedRenderers((current) => ({ ...current, [selected]: [] }));

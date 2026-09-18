@@ -10,7 +10,7 @@ export interface TabLocatorItem {
   hasContext?: boolean;
 }
 
-const GUIDE_COUNT = 4;
+export const MAX_LOCATOR_TICKS = 20;
 const SLOT_HEIGHT = 18;
 
 interface Props {
@@ -36,6 +36,14 @@ export function WorkbenchTabLocator({
   const shakeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!isLocked) {
+      setIsShaking(false);
+      if (shakeTimeoutRef.current !== null) {
+        clearTimeout(shakeTimeoutRef.current);
+        shakeTimeoutRef.current = null;
+      }
+      return;
+    }
     if (shakeNonce && shakeNonce > 0) {
       setIsShaking(true);
       if (shakeTimeoutRef.current !== null) {
@@ -43,9 +51,10 @@ export function WorkbenchTabLocator({
       }
       shakeTimeoutRef.current = window.setTimeout(() => {
         setIsShaking(false);
+        shakeTimeoutRef.current = null;
       }, 350);
     }
-  }, [shakeNonce]);
+  }, [isLocked, shakeNonce]);
 
   useEffect(() => {
     return () => {
@@ -57,14 +66,25 @@ export function WorkbenchTabLocator({
 
   if (tabs.length === 0) return null;
 
-  const trackOffset = (GUIDE_COUNT + selectedIndex + 0.5) * SLOT_HEIGHT;
+  const totalTabs = tabs.length;
+  const tickCount = Math.min(totalTabs, MAX_LOCATOR_TICKS);
+
+  let startIndex = 0;
+  if (totalTabs > MAX_LOCATOR_TICKS) {
+    const half = Math.floor(MAX_LOCATOR_TICKS / 2);
+    startIndex = Math.max(0, Math.min(selectedIndex - half, totalTabs - MAX_LOCATOR_TICKS));
+  }
+
+  const visibleTabs = tabs.slice(startIndex, startIndex + tickCount);
+  const relativeSelectedIndex = selectedIndex - startIndex;
+  const trackOffset = (relativeSelectedIndex + 0.5) * SLOT_HEIGHT;
 
   return (
     <nav
       aria-label="Tab locator"
       className={cn(
         "relative flex w-6 flex-shrink-0 flex-col items-center justify-center overflow-hidden select-none",
-        isShaking && "animate-paper-shake",
+        isLocked && isShaking && "animate-paper-shake",
         className,
       )}
     >
@@ -78,23 +98,12 @@ export function WorkbenchTabLocator({
           transform: `translateY(-${trackOffset}px)`,
         }}
       >
-        {/* Top guide ticks */}
-        {/* design-system-exempt: step-indicator — ruler guide marks */}
-        {Array.from({ length: GUIDE_COUNT }).map((_, i) => (
-          <div
-            key={`guide-top-${i}`}
-            aria-hidden="true"
-            className="flex h-[18px] items-center"
-          >
-            <div className="h-[1px] w-1 rounded-none bg-content-muted/20" />
-          </div>
-        ))}
-
-        {/* Tab ruler ticks */}
+        {/* Tab ruler ticks: 1:1 with tabs up to MAX_LOCATOR_TICKS, no fake guide marks */}
         {/* design-system-exempt: step-indicator — tab locator ticks */}
-        {tabs.map((tab, idx) => {
-          const isSelected = idx === selectedIndex;
-          const diff = Math.abs(idx - selectedIndex);
+        {visibleTabs.map((tab, idx) => {
+          const actualIndex = startIndex + idx;
+          const isSelected = actualIndex === selectedIndex;
+          const diff = Math.abs(actualIndex - selectedIndex);
 
           // Scaled widths: active 16px (w-4), diff=1 10px (w-2.5), diff=2 6px (w-1.5), diff>=3 4px (w-1)
           const tickWidth = isSelected
@@ -123,18 +132,18 @@ export function WorkbenchTabLocator({
               role="tab"
               tabIndex={0}
               aria-selected={isSelected}
-              aria-label={`${tab.label} (${idx + 1} of ${tabs.length})`}
+              aria-label={`${tab.label} (${actualIndex + 1} of ${totalTabs})`}
               title={
                 isLocked && !isSelected
                   ? `${tab.label} (locked)`
-                  : `${tab.label} (${idx + 1}/${tabs.length})`
+                  : `${tab.label} (${actualIndex + 1}/${totalTabs})`
               }
               onClick={() => {
                 if (isLocked && !isSelected) {
                   onLockedActionAttempt?.();
                   return;
                 }
-                onSelectTab(tab.path, idx);
+                onSelectTab(tab.path, actualIndex);
               }}
               onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -143,14 +152,14 @@ export function WorkbenchTabLocator({
                     onLockedActionAttempt?.();
                     return;
                   }
-                  onSelectTab(tab.path, idx);
+                  onSelectTab(tab.path, actualIndex);
                 } else if (e.key === "ArrowDown") {
                   e.preventDefault();
                   if (isLocked) {
                     onLockedActionAttempt?.();
                     return;
                   }
-                  const next = Math.min(tabs.length - 1, idx + 1);
+                  const next = Math.min(totalTabs - 1, actualIndex + 1);
                   onSelectTab(tabs[next].path, next);
                 } else if (e.key === "ArrowUp") {
                   e.preventDefault();
@@ -158,7 +167,7 @@ export function WorkbenchTabLocator({
                     onLockedActionAttempt?.();
                     return;
                   }
-                  const prev = Math.max(0, idx - 1);
+                  const prev = Math.max(0, actualIndex - 1);
                   onSelectTab(tabs[prev].path, prev);
                 }
               }}
@@ -185,18 +194,6 @@ export function WorkbenchTabLocator({
             </div>
           );
         })}
-
-        {/* Bottom guide ticks */}
-        {/* design-system-exempt: step-indicator — ruler guide marks */}
-        {Array.from({ length: GUIDE_COUNT }).map((_, i) => (
-          <div
-            key={`guide-bottom-${i}`}
-            aria-hidden="true"
-            className="flex h-[18px] items-center"
-          >
-            <div className="h-[1px] w-1 rounded-none bg-content-muted/20" />
-          </div>
-        ))}
       </div>
     </nav>
   );

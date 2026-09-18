@@ -500,6 +500,13 @@ textarea::selection,
   /* One Web shape system: 10px ordinary corners; nested surfaces add their
      actual inset so parent and child arcs remain concentric. */
   --radius-control: 10px;
+
+  /* Epistolary scrollbar: faint carbon dust / graphite wash on dark slate. */
+  --scrollbar-thumb: rgba(232, 231, 228, 0.22);
+  --scrollbar-thumb-hover: rgba(232, 231, 228, 0.42);
+  --scrollbar-thumb-active: rgba(232, 231, 228, 0.65);
+  --scrollbar-track: rgba(232, 231, 228, 0.04);
+  --scrollbar-track-hover: rgba(232, 231, 228, 0.08);
 }
 
 :root[data-theme="light"] {
@@ -616,6 +623,13 @@ textarea::selection,
   --syntax-link: 30 58 95;
   --syntax-code: 127 29 29;
   --syntax-invalid: 185 28 28;
+
+  /* Epistolary scrollbar: warm carbon ink wash on uncoated bond paper. */
+  --scrollbar-thumb: rgba(28, 29, 32, 0.22);
+  --scrollbar-thumb-hover: rgba(28, 29, 32, 0.45);
+  --scrollbar-thumb-active: rgba(28, 29, 32, 0.68);
+  --scrollbar-track: rgba(28, 29, 32, 0.04);
+  --scrollbar-track-hover: rgba(28, 29, 32, 0.08);
 }
 
 /* Increased contrast strengthens boundaries and state markers without adding
@@ -627,6 +641,11 @@ textarea::selection,
     --surface-selected-hover: 80 82 90;
     --surface-selected-active: 92 94 102;
     --selection-indicator: 244 243 240;
+    --scrollbar-thumb: rgba(244, 243, 240, 0.50);
+    --scrollbar-thumb-hover: rgba(244, 243, 240, 0.75);
+    --scrollbar-thumb-active: rgba(244, 243, 240, 0.90);
+    --scrollbar-track: rgba(244, 243, 240, 0.12);
+    --scrollbar-track-hover: rgba(244, 243, 240, 0.20);
   }
 
   :root[data-theme="light"] {
@@ -634,6 +653,11 @@ textarea::selection,
     --surface-selected-hover: 190 184 172;
     --surface-selected-active: 178 172 160;
     --selection-indicator: 28 29 32;
+    --scrollbar-thumb: rgba(15, 16, 18, 0.50);
+    --scrollbar-thumb-hover: rgba(15, 16, 18, 0.75);
+    --scrollbar-thumb-active: rgba(15, 16, 18, 0.90);
+    --scrollbar-track: rgba(15, 16, 18, 0.12);
+    --scrollbar-track-hover: rgba(15, 16, 18, 0.20);
   }
 }
 
@@ -682,11 +706,15 @@ body,
   padding-right: env(safe-area-inset-right);
 }
 
-/* Momentum scrolling for every in-app scroll container (Tailwind utility classes). */
+/* Scrollbar properties for every in-app scroll container (Tailwind utility classes). */
 .overflow-y-auto,
 .overflow-x-auto,
-.overflow-auto {
-  -webkit-overflow-scrolling: touch;
+.overflow-auto,
+.overflow-y-scroll,
+.overflow-x-scroll,
+.overflow-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 body {
@@ -696,20 +724,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar */
+/* Scrollbar — Editorial Correspondence Paper & Marginal Guide
+   Slender 6px track, 2px paper-edge corner, floating ribbon inset (padding-box border),
+   and warm carbon ink wash responding to reading and scroll interactions. */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background-color: var(--scrollbar-track);
+  transition: background-color 150ms ease-out;
+}
+::-webkit-scrollbar-track:hover {
+  background-color: var(--scrollbar-track-hover);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--tone-zinc-700));
-  border-radius: 3px;
+  background-color: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--tone-zinc-600));
+  background-color: var(--scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Cross-platform standard CSS scrollbars (Firefox, modern Safari, modern Chromium) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* The message timeline is content, not a scroll control. Preserve wheel, touch,
@@ -720,6 +769,17 @@ body {
 .chat-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+/* Cross-platform utility to cleanly suppress scrollbars without leaking OS native pills */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* Textarea reset */

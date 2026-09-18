@@ -206,7 +206,7 @@ export function ContextPickBar({
   if (!items.length && !suggestions.length) return null;
 
   return (
-    <div className="flex min-h-9 min-w-0 items-center gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex min-h-9 min-w-0 items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
       {/* Suggested context (F3): one-click to add, one-click to dismiss; never
           auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
       {suggestions.map((sg) => {

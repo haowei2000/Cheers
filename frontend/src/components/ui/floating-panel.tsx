@@ -1,6 +1,6 @@
 import { useManagedPanel } from "./managed-panel";
 import { IconButton } from "./icon-button";
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type ComponentType, type DragEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { GripHorizontal, Minimize2, PanelRightOpen, PanelRightClose, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,7 @@ import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { ButtonGroup } from "@/components/ui/button-group";
+import type { ButtonProps } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { ControlSizeProvider, FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
@@ -18,10 +19,13 @@ import type { AnchorPlacement } from "@/components/ui/floating-layer";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
 export interface FloatingPanelNavigation {
+  /** Visual primary navigation items (tabs, sections). */
   items: AdaptiveControlItem[];
   ariaLabel: string;
+  /** Presentation order when adapting to available chrome space. */
   presentationOrder?: AdaptiveControlPresentation[];
-  /** Collapsed-dropdown trigger form; "icon" suits a panel whose body already
+  /** Trigger form for the collapsed navigation dropdown: "icon" shows only the
+   *  selected glyph (suits corner-island layouts with little width); default "text"
    *  names the selected section. */
   collapsedContent?: "text" | "icon";
 }
@@ -30,7 +34,8 @@ export interface FloatingPanelAction {
   id: string;
   label: string;
   priority?: "primary" | "secondary";
-  icon?: LucideIcon;
+  variant?: ButtonProps["variant"];
+  icon?: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   selected?: boolean;
   disabled?: boolean;
   onSelect?: () => void;

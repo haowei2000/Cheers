@@ -185,7 +185,6 @@ export function DiscussionView({
   });
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [topics, setTopics] = useState<DiscussionSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -384,65 +383,39 @@ export function DiscussionView({
       )}
       style={isWide ? { width: topicWidth } : undefined}
     >
-      <div className="border-b border-zinc-300/40 p-3 dark:border-zinc-800/80">
-        {searchOpen || query ? (
-          <div className="flex h-9 items-center gap-2">
-            <SearchInput
-              autoFocus
-              containerClassName="flex-1"
-              aria-label="Search discussions"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setQuery("");
-                  setSearchOpen(false);
-                }
-              }}
-              placeholder="Search discussions"
-              className="bg-zinc-900/70 placeholder:text-content-muted"
-            />
+      <div className="border-b border-zinc-300/40 bg-panel px-3 py-3 dark:border-zinc-800/60">
+        <div className="flex h-7 items-center gap-2">
+          <SearchInput
+            containerClassName="flex-1"
+            aria-label="Search discussions"
+            controlSize="compact"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setQuery("");
+              }
+            }}
+            placeholder="Search discussions…"
+            className="bg-zinc-900/70 placeholder:text-content-muted"
+          />
+          {query ? (
             <ActionButton
               action="close"
               context="windowChrome"
-              controlSize="regular"
-              accessibleLabel="Close search"
-              onClick={() => {
-                setQuery("");
-                setSearchOpen(false);
-              }}
+              controlSize="compact"
+              accessibleLabel="Clear search"
+              onClick={() => setQuery("")}
             />
-            <ActionButton
-              action="add"
-              context="toolbar"
-              controlSize="regular"
-              accessibleLabel="New discussion"
-              onClick={startDiscussion}
-            />
-          </div>
-        ) : (
-          <div className="flex h-9 items-center justify-between gap-2">
-            <span className="font-serif text-regular font-bold tracking-tight text-content-strong select-none">
-              Discussions
-            </span>
-            <div className="flex items-center gap-1">
-              <ActionButton
-                action="search"
-                context="toolbar"
-                controlSize="regular"
-                accessibleLabel="Search discussions"
-                onClick={() => setSearchOpen(true)}
-              />
-              <ActionButton
-                action="add"
-                context="toolbar"
-                controlSize="regular"
-                accessibleLabel="New discussion"
-                onClick={startDiscussion}
-              />
-            </div>
-          </div>
-        )}
+          ) : null}
+          <ActionButton
+            action="add"
+            context="toolbar"
+            controlSize="compact"
+            accessibleLabel="New discussion"
+            onClick={startDiscussion}
+          />
+        </div>
       </div>
       <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
         {loadingTopics && topics.length === 0 ? (
@@ -499,14 +472,27 @@ export function DiscussionView({
         <>
           <header className="z-10 border-b border-zinc-300/40 bg-panel px-4 py-3 dark:border-zinc-800/60">
             <div className="mx-auto max-w-[52rem]">
-              <div className="flex items-start gap-3">
-                <Avatar name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"} id={detail.root.sender_id} size="regular" />
-                <div className="min-w-0 flex-1">
-                  <h2 className="line-clamp-2 font-display text-comfortable font-semibold leading-6 tracking-display text-content-primary">{titleAndPreview(detail.root).title}</h2>
-                  <p className="mt-1 font-utility text-compact text-content-muted">{detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}</p>
-                  {titleAndPreview(detail.root).preview && (
-                    <p className="mt-2 line-clamp-3 font-reading text-regular leading-6 text-content-muted">{titleAndPreview(detail.root).preview}</p>
-                  )}
+              <div className="flex items-center gap-3">
+                <Avatar
+                  name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                  id={detail.root.sender_id}
+                  size="regular"
+                />
+                <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <h2
+                    className="truncate font-display text-comfortable font-semibold leading-7 tracking-display text-content-primary"
+                    title={[titleAndPreview(detail.root).title, titleAndPreview(detail.root).preview].filter(Boolean).join("\n")}
+                  >
+                    {titleAndPreview(detail.root).title}
+                    {titleAndPreview(detail.root).preview && (
+                      <span className="ml-2 font-reading text-regular font-normal text-content-muted">
+                        — {titleAndPreview(detail.root).preview}
+                      </span>
+                    )}
+                  </h2>
+                  <span className="shrink-0 font-utility text-compact text-content-muted">
+                    {detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                  </span>
                 </div>
               </div>
             </div>
