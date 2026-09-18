@@ -1,8 +1,7 @@
-import { useNearbyContentActions } from "./content-action-scope";
-import { ButtonGroup } from "./button-group";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "./button";
+import { ButtonGroup } from "./button-group";
 import { ActionButton } from "./action-button";
 import { controlMinHeightClasses } from "./control-size";
 import { SearchInput } from "./search-input";
@@ -32,6 +31,8 @@ export function CollectionManager({
   onAdd,
   addDisabled,
   showAdd = true,
+  showSearch = true,
+  searchDisabled,
   headerAction,
   presentationLevel = "medium",
   controlSize = "regular",
@@ -47,44 +48,104 @@ export function CollectionManager({
   onAdd: () => void;
   addDisabled?: boolean;
   showAdd?: boolean;
+  showSearch?: boolean;
+  searchDisabled?: boolean;
   headerAction?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   children: ReactNode;
   className?: string;
 }) {
-  const nearbyActions = useNearbyContentActions();
-  const addControl = showAdd ? <ActionButton action="add" context="toolbar" type="button" accessibleLabel={addLabel} controlSize={controlSize} disabled={addDisabled} onClick={onAdd} className="shrink-0" /> : null;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const isSearching = showSearch && (searchOpen || Boolean(query));
+
+  const addControl = showAdd ? (
+    <ActionButton
+      action="add"
+      context="toolbar"
+      type="button"
+      accessibleLabel={addLabel}
+      controlSize={controlSize}
+      disabled={addDisabled}
+      onClick={onAdd}
+      className="shrink-0"
+    />
+  ) : null;
+
   return (
     <section className={cn("min-w-0", className)}>
-      <header
-        className={cn(
-          "flex items-center gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted",
-          controlMinHeightClasses[controlSize],
-          nearbyActions && "flex-wrap",
-        )}
-      >
-        <span className={cn("min-w-0 truncate", !nearbyActions && "flex-1")}>{label}</span>
-        {!nearbyActions && headerAction}
-        {typeof count === "number" && (
-          <span className="font-normal tabular-nums text-content-muted">{count}</span>
-        )}
-        {nearbyActions && (headerAction || addControl) && <ButtonGroup label="Collection actions" controlSize={controlSize}>{addControl}{headerAction}</ButtonGroup>}
-      </header>
+      {isSearching ? (
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-2 px-1 pb-2",
+            controlMinHeightClasses[controlSize],
+          )}
+        >
+          <SearchInput
+            autoFocus
+            containerClassName="flex-1"
+            aria-label={searchPlaceholder}
+            controlSize={controlSize}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                onQueryChange("");
+                setSearchOpen(false);
+              }
+            }}
+            placeholder={searchPlaceholder}
+          />
+          <ButtonGroup label="Search actions" controlSize={controlSize}>
+            <ActionButton
+              action="close"
+              context="windowChrome"
+              type="button"
+              controlSize={controlSize}
+              accessibleLabel="Close search"
+              onClick={() => {
+                onQueryChange("");
+                setSearchOpen(false);
+              }}
+            />
+            {headerAction}
+            {addControl}
+          </ButtonGroup>
+        </div>
+      ) : (
+        <header
+          className={cn(
+            "flex items-center justify-between gap-2 px-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted pb-2",
+            controlMinHeightClasses[controlSize],
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate">{label}</span>
+            {typeof count === "number" && (
+              <span className="font-normal tabular-nums text-content-muted">{count}</span>
+            )}
+          </div>
+          <ButtonGroup label="Collection actions" controlSize={controlSize}>
+            {headerAction}
+            {showSearch && (
+              <ActionButton
+                action="search"
+                context="toolbar"
+                type="button"
+                accessibleLabel={searchPlaceholder}
+                controlSize={controlSize}
+                disabled={searchDisabled}
+                onClick={() => setSearchOpen(true)}
+              />
+            )}
+            {addControl}
+          </ButtonGroup>
+        </header>
+      )}
 
-      <div className="flex min-w-0 items-center gap-2 px-1 pb-2">
-        <SearchInput
-          containerClassName="flex-1"
-          aria-label={searchPlaceholder}
-          controlSize={controlSize}
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={searchPlaceholder}
-        />
-        {!nearbyActions && addControl}
-      </div>
-
-      <ItemList presentationLevel={presentationLevel} controlSize={controlSize}>{children}</ItemList>
+      <ItemList presentationLevel={presentationLevel} controlSize={controlSize}>
+        {children}
+      </ItemList>
     </section>
   );
 }

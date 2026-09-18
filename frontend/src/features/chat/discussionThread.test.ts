@@ -4,6 +4,7 @@ import {
   inDiscussionThread,
   mergeDiscussionMessages,
 } from "./discussionThread";
+import { collectThreadDescendants } from "./MessageList";
 
 function message(input: Partial<Message> & Pick<Message, "msg_id">): Message {
   return {
@@ -99,5 +100,52 @@ describe("discussionThread", () => {
     });
     const merged = mergeDiscussionMessages(root, [restReply], [live]);
     expect(merged.find((item) => item.msg_id === "human")?.content).toBe("Hello edited");
+  });
+});
+
+describe("collectThreadDescendants", () => {
+  it("flattens multi-level deeply nested replies (5 levels) into a single chronological array", () => {
+    // Level 1: m1
+    // Level 2: m2 replies to m1
+    // Level 3: m3 replies to m2
+    // Level 4: m4 replies to m3
+    // Level 5: m5 replies to m4
+    const m2 = message({ msg_id: "m2", sender_id: "u2", reply_to_msg_id: "m1", channel_seq: 2 });
+    const m3 = message({ msg_id: "m3", sender_id: "u3", reply_to_msg_id: "m2", channel_seq: 3 });
+    const m4 = message({ msg_id: "m4", sender_id: "u4", reply_to_msg_id: "m3", channel_seq: 4 });
+    const m5 = message({ msg_id: "m5", sender_id: "u5", reply_to_msg_id: "m4", channel_seq: 5 });
+
+    const childrenByParent = new Map<string, Message[]>();
+    childrenByParent.set("m1", [m2]);
+    childrenByParent.set("m2", [m3]);
+    childrenByParent.set("m3", [m4]);
+    childrenByParent.set("m4", [m5]);
+
+    const descendants = collectThreadDescendants("m1", childrenByParent);
+    expect(descendants.map((m) => m.msg_id)).toEqual(["m2", "m3", "m4", "m5"]);
+  });
+
+  it("gathers all branch descendants and keeps them chronologically ordered", () => {
+    // Level 1: m1
+    //   Level 2: m2 (seq 2), m4 (seq 4)
+    //     Level 3: m3 (replies to m2, seq 3), m5 (replies to m4, seq 5)
+    const m2 = message({ msg_id: "m2", sender_id: "u2", reply_to_msg_id: "m1", channel_seq: 2 });
+    const m3 = message({ msg_id: "m3", sender_id: "u3", reply_to_msg_id: "m2", channel_seq: 3 });
+    const m4 = message({ msg_id: "m4", sender_id: "u2", reply_to_msg_id: "m1", channel_seq: 4 });
+    const m5 = message({ msg_id: "m5", sender_id: "u4", reply_to_msg_id: "m4", channel_seq: 5 });
+
+    const childrenByParent = new Map<string, Message[]>();
+    childrenByParent.set("m1", [m2, m4]);
+    childrenByParent.set("m2", [m3]);
+    childrenByParent.set("m4", [m5]);
+
+    const descendants = collectThreadDescendants("m1", childrenByParent);
+    expect(descendants.map((m) => m.msg_id)).toEqual(["m2", "m3", "m4", "m5"]);
+  });
+
+  it("returns empty array when parent has no replies", () => {
+    const childrenByParent = new Map<string, Message[]>();
+    const descendants = collectThreadDescendants("empty", childrenByParent);
+    expect(descendants).toEqual([]);
   });
 });

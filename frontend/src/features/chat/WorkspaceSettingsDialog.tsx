@@ -270,6 +270,7 @@ export function WorkspaceSettingsDialog({
                 setMemberMode({ kind: "add" });
               }}
               addDisabled={memberMode.kind !== "browse"}
+              searchDisabled={memberMode.kind !== "browse"}
               presentationLevel="medium"
               controlSize="regular"
               className="border-t border-zinc-800 pt-3"

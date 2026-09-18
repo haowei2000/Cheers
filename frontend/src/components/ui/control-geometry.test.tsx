@@ -5,6 +5,7 @@ import { slotActionLabels } from "./action-labels";
 import { Input } from "./input";
 import { InputWithLeadingIcon } from "./input-with-leading-icon";
 import { Select } from "./select";
+import { ControlTrigger } from "./control-trigger";
 
 describe("shared control geometry", () => {
   it("maps icon, text, and icon+text buttons to the three registered widths", () => {
@@ -98,5 +99,34 @@ describe("shared control geometry", () => {
     expect(markup).toContain("h-9");
     expect(markup).toContain("w-9");
     expect(markup).not.toContain("w-32");
+  });
+
+  it("keeps resting selects unboxed and reveals outline on hover and focus", () => {
+    const markup = renderToStaticMarkup(
+      <Select aria-label="Role"><option>Member</option></Select>,
+    );
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("ring-transparent");
+    expect(markup).toContain("hover:ring-zinc-300/80");
+    expect(markup).toContain("focus:ring-1");
+  });
+
+  it("supports compact content-width control triggers with matching typography and height", () => {
+    const defaultTrigger = renderToStaticMarkup(<ControlTrigger>Default</ControlTrigger>);
+    const compactContent = renderToStaticMarkup(
+      <ControlTrigger controlSize="compact" controlWidth="content">
+        2
+      </ControlTrigger>,
+    );
+
+    expect(defaultTrigger).toContain("w-24");
+    expect(defaultTrigger).toContain("h-9");
+    expect(defaultTrigger).toContain("text-regular");
+
+    expect(compactContent).toContain("w-auto");
+    expect(compactContent).toContain("px-2");
+    expect(compactContent).toContain("h-7");
+    expect(compactContent).toContain("text-compact");
+    expect(compactContent).not.toContain("w-24");
   });
 });

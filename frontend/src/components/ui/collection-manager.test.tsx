@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CollectionManagerDemo } from "./CollectionManagerDemo";
-import { CollectionConfirmationItem, CollectionDeleteItem, CollectionEmptyItem } from "./collection-manager";
+import {
+  CollectionConfirmationItem,
+  CollectionDeleteItem,
+  CollectionEmptyItem,
+  CollectionManager,
+} from "./collection-manager";
 
 describe("CollectionManager pattern", () => {
   it("renders one toolbar and semantic operations rows", () => {
@@ -47,5 +52,46 @@ describe("CollectionManager pattern", () => {
     const markup = renderToStaticMarkup(<CollectionEmptyItem />);
     expect(markup).toContain("No items yet");
     expect(markup).not.toContain("<button");
+  });
+
+  it("renders resting state with icon buttons and without input field", () => {
+    const markup = renderToStaticMarkup(
+      <CollectionManager
+        label="Members"
+        count={3}
+        query=""
+        onQueryChange={() => undefined}
+        searchPlaceholder="Search members"
+        addLabel="Add member"
+        onAdd={() => undefined}
+      >
+        <div>Item</div>
+      </CollectionManager>,
+    );
+    expect(markup).toContain("Members");
+    expect(markup).toContain("3");
+    expect(markup).toContain("Search members");
+    expect(markup).toContain("Add member");
+    expect(markup).not.toContain("<input");
+  });
+
+  it("renders active search row with input field and close button when query is present", () => {
+    const markup = renderToStaticMarkup(
+      <CollectionManager
+        label="Members"
+        count={3}
+        query="Alice"
+        onQueryChange={() => undefined}
+        searchPlaceholder="Search members"
+        addLabel="Add member"
+        onAdd={() => undefined}
+      >
+        <div>Item</div>
+      </CollectionManager>,
+    );
+    expect(markup).toContain("<input");
+    expect(markup).toContain('value="Alice"');
+    expect(markup).toContain("Close search");
+    expect(markup).toContain("Add member");
   });
 });

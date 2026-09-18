@@ -1,16 +1,17 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, LogOut } from "lucide-react";
+import { Trash2, LogOut, Mic, MicOff, Loader2 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { controlIconClasses } from "@/components/ui/control-size";
+import { cn } from "@/lib/cn";
 import {
   CollectionDeleteItem,
   CollectionEmptyItem,
@@ -33,7 +34,6 @@ import {
   enableChannelFeature,
   disableChannelFeature,
 } from "@/api/channels";
-import { CheckboxField } from "@/components/ui/checkbox-field";
 
 const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
 // Bots can never own/administer a channel — the backend rejects those roles.
@@ -51,10 +51,7 @@ import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { InviteLinksSection } from "./InviteLinksSection";
 import type { Channel, MemberItem } from "@/types";
 import { TaskClaimSettings } from "./TaskClaimSettings";
-import {
-  ConversationModePicker,
-  type ConversationMode,
-} from "./ConversationModePicker";
+import type { ConversationMode } from "./ConversationModePicker";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
@@ -85,7 +82,7 @@ export function ChannelSettingsDialog({
     purpose: channel.purpose ?? "",
     conversationMode: channel.conversation_mode ?? "chat" as ConversationMode,
   });
-  const [editingMeta, setEditingMeta] = useState<"name" | "purpose" | "layout" | null>(null);
+  const [editingMeta, setEditingMeta] = useState<"name" | "purpose" | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
   const [savingVoice, setSavingVoice] = useState(false);
@@ -103,6 +100,7 @@ export function ChannelSettingsDialog({
     (m) => m.member_type === "user" && m.member_id === me?.user_id
   )?.role;
   const canManage = globalAdmin || myRole === "owner" || myRole === "admin";
+  const hasVoice = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
   const visibleMembers = useMemo(() => {
     const normalized = memberQuery.trim().toLocaleLowerCase();
     if (!normalized) return members;
@@ -160,7 +158,7 @@ export function ChannelSettingsDialog({
     setConversationMode(savedMeta.conversationMode);
   }
 
-  function beginMetaEdit(field: "name" | "purpose" | "layout") {
+  function beginMetaEdit(field: "name" | "purpose") {
     resetMetaDrafts();
     setEditingMeta(field);
   }
@@ -170,22 +168,69 @@ export function ChannelSettingsDialog({
     setEditingMeta(null);
   }
 
-  async function saveMeta() {
+  async function saveName() {
     const trimmed = name.trim();
-    if (!trimmed || savingMeta) return;
+    if (!trimmed) {
+      toast.error("Channel name cannot be empty");
+      return;
+    }
+    if (trimmed === savedMeta.name) {
+      setEditingMeta(null);
+      return;
+    }
+    if (savingMeta) return;
     setSavingMeta(true);
     try {
       const updated = await updateChannel(channel.channel_id, {
         name: trimmed,
-        purpose: purpose.trim() || null,
-        conversation_mode: conversationMode,
       });
       patchChannel(channel.channel_id, updated);
-      setSavedMeta({ name: trimmed, purpose: purpose.trim(), conversationMode });
+      setSavedMeta((prev) => ({ ...prev, name: trimmed }));
       setEditingMeta(null);
-      toast.success("Saved");
+      toast.success("Channel name updated");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : "Failed to update channel name");
+    } finally {
+      setSavingMeta(false);
+    }
+  }
+
+  async function savePurpose() {
+    const trimmed = purpose.trim();
+    if (trimmed === savedMeta.purpose) {
+      setEditingMeta(null);
+      return;
+    }
+    if (savingMeta) return;
+    setSavingMeta(true);
+    try {
+      const updated = await updateChannel(channel.channel_id, {
+        purpose: trimmed || null,
+      });
+      patchChannel(channel.channel_id, updated);
+      setSavedMeta((prev) => ({ ...prev, purpose: trimmed }));
+      setEditingMeta(null);
+      toast.success("Purpose updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update purpose");
+    } finally {
+      setSavingMeta(false);
+    }
+  }
+
+  async function handleModeChange(newMode: ConversationMode) {
+    if (newMode === conversationMode || savingMeta) return;
+    setSavingMeta(true);
+    try {
+      const updated = await updateChannel(channel.channel_id, {
+        conversation_mode: newMode,
+      });
+      patchChannel(channel.channel_id, updated);
+      setConversationMode(newMode);
+      setSavedMeta((prev) => ({ ...prev, conversationMode: newMode }));
+      toast.success("Conversation layout updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update layout");
     } finally {
       setSavingMeta(false);
     }
@@ -287,114 +332,199 @@ export function ChannelSettingsDialog({
   return (
     <Dialog title={`Channel settings · ${channel.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
-        {/* Meta */}
-        <div className="space-y-2">
-          {channel.type !== "dm" && canManage && (
-            <div className="flex items-center gap-3 pb-2">
-              <AvatarUpload
-                name={channel.name}
-                id={channel.channel_id}
-                src={channel.avatar_url}
-                onUpload={uploadAvatar}
-              />
-              <span className="text-regular text-content-muted">Channel avatar</span>
+        {/* Channel Info Card */}
+        <div className="rounded-sm bg-zinc-900/60 p-3">
+          <div className="flex items-start gap-3">
+            {/* Avatar / Icon: click to edit */}
+            <div className="flex-shrink-0">
+              {channel.type !== "dm" && canManage ? (
+                <AvatarUpload
+                  name={savedMeta.name}
+                  id={channel.channel_id}
+                  src={channel.avatar_url}
+                  size="large"
+                  onUpload={uploadAvatar}
+                />
+              ) : (
+                <Avatar
+                  name={savedMeta.name}
+                  id={channel.channel_id}
+                  src={channel.avatar_url}
+                  size="large"
+                />
+              )}
             </div>
-          )}
-          <div className="flex items-center gap-2">
-            <label htmlFor="channel-settings-name" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">
-              Name
-            </label>
-            {canManage && (
-              <InlineEditActions
-                label="channel name"
-                editing={editingMeta === "name"}
-                saving={savingMeta}
-                disabled={!name.trim()}
-                onEdit={() => beginMetaEdit("name")}
-                onSave={() => void saveMeta()}
-                onCancel={cancelMetaEdit}
-              />
-            )}
-          </div>
-          {editingMeta === "name" ? (
-            <UiInput
-              id="channel-settings-name"
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              controlSize="regular"
-            />
-          ) : (
-            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-secondary">
-              <span className="truncate">{savedMeta.name}</span>
-            </p>
-          )}
-          {channel.type !== "dm" && (
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 text-compact font-medium uppercase tracking-label text-content-muted">
-                  Conversation layout
-                </span>
-                {canManage && (
-                  <InlineEditActions
-                    label="conversation layout"
-                    editing={editingMeta === "layout"}
-                    saving={savingMeta}
-                    onEdit={() => beginMetaEdit("layout")}
-                    onSave={() => void saveMeta()}
-                    onCancel={cancelMetaEdit}
-                  />
+
+            {/* Details */}
+            <div className="min-w-0 flex-1 space-y-2">
+              {/* Header row: Name (left) & Channel Type + Voice (right) */}
+              <div className="flex items-center justify-between gap-2">
+                {editingMeta === "name" ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <UiInput
+                      id="channel-settings-name"
+                      autoFocus
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveName();
+                        if (e.key === "Escape") cancelMetaEdit();
+                      }}
+                      controlSize="compact"
+                      className="min-w-0 flex-1"
+                    />
+                    <InlineEditActions
+                      label="channel name"
+                      editing
+                      saving={savingMeta}
+                      disabled={!name.trim()}
+                      controlSize="compact"
+                      onEdit={() => beginMetaEdit("name")}
+                      onSave={() => void saveName()}
+                      onCancel={cancelMetaEdit}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span
+                      role="button"
+                      tabIndex={canManage ? 0 : undefined}
+                      onClick={() => canManage && beginMetaEdit("name")}
+                      onKeyDown={(e) => {
+                        if (canManage && (e.key === "Enter" || e.key === " ")) {
+                          e.preventDefault();
+                          beginMetaEdit("name");
+                        }
+                      }}
+                      className={cn(
+                        "flex min-w-0 items-center font-serif text-regular font-bold text-content-primary",
+                        canManage && "cursor-pointer hover:text-content-strong transition-colors",
+                      )}
+                      title={canManage ? "Click to edit name" : undefined}
+                    >
+                      {channel.type !== "dm" && <span className="text-content-muted select-none">#</span>}
+                      <span className="truncate">{savedMeta.name}</span>
+                    </span>
+                    {canManage && (
+                      <InlineEditActions
+                        label="channel name"
+                        editing={false}
+                        controlSize="compact"
+                        onEdit={() => beginMetaEdit("name")}
+                        onSave={() => void saveName()}
+                        onCancel={cancelMetaEdit}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Right controls: Channel type + Voice (non-DM) */}
+                {channel.type !== "dm" && (
+                  <div className="flex flex-shrink-0 items-center gap-1">
+                    <UiSelect
+                      value={conversationMode}
+                      disabled={!canManage || savingMeta}
+                      onChange={(e) => void handleModeChange(e.target.value as ConversationMode)}
+                      controlSize="compact"
+                      aria-label="Channel type"
+                      title="Channel type"
+                    >
+                      <option value="chat">Chat</option>
+                      <option value="discuss">Discuss</option>
+                    </UiSelect>
+
+                    <IconButton
+                      label={
+                        hasVoice
+                          ? "Voice enabled (click to disable)"
+                          : "Voice disabled (click to enable)"
+                      }
+                      title={
+                        hasVoice
+                          ? "Voice enabled (click to disable)"
+                          : "Voice disabled (click to enable)"
+                      }
+                      controlSize="compact"
+                      tone={hasVoice ? "success" : "neutral"}
+                      disabled={!canManage || savingVoice}
+                      onClick={() => void setVoiceEnabled(!hasVoice)}
+                    >
+                      {savingVoice ? (
+                        <Loader2 className={cn("animate-spin", controlIconClasses.compact)} />
+                      ) : hasVoice ? (
+                        <Mic className={controlIconClasses.compact} />
+                      ) : (
+                        <MicOff className={cn(controlIconClasses.compact, "text-content-muted/60")} />
+                      )}
+                    </IconButton>
+                  </div>
                 )}
               </div>
-              <ConversationModePicker
-                value={conversationMode}
-                onChange={setConversationMode}
-                disabled={editingMeta !== "layout"}
-              />
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <label htmlFor="channel-settings-purpose" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">
-              Purpose
-            </label>
-            {canManage && (
-              <InlineEditActions
-                label="channel purpose"
-                editing={editingMeta === "purpose"}
-                saving={savingMeta}
-                onEdit={() => beginMetaEdit("purpose")}
-                onSave={() => void saveMeta()}
-                onCancel={cancelMetaEdit}
-              />
-            )}
-          </div>
-          {editingMeta === "purpose" ? (
-            <UiInput
-              id="channel-settings-purpose"
-              autoFocus
-              value={purpose}
-              placeholder="(Optional) what this channel is for…"
-              onChange={(e) => setPurpose(e.target.value)}
-              controlSize="regular"
-            />
-          ) : (
-            <p className="flex min-h-9 min-w-0 items-center rounded-sm bg-zinc-900/60 px-3 font-utility text-regular text-content-muted">
-              <span className="truncate">{savedMeta.purpose || "No purpose set"}</span>
-            </p>
-          )}
-        </div>
 
-        {channel.type !== "dm" && (
-          <div className="border-t border-zinc-800 pt-3">
-            <CheckboxField
-              label="Voice"
-              hint="Add a voice room above this channel's normal chat timeline."
-              checked={hasChannelFeature(channel, CHANNEL_FEATURE_VOICE)}
-              disabled={!canManage || savingVoice}
-              onChange={(event) => void setVoiceEnabled(event.target.checked)}
-            />
+              {/* Purpose row */}
+              {editingMeta === "purpose" ? (
+                <div className="flex min-w-0 items-center gap-1">
+                  <UiInput
+                    id="channel-settings-purpose"
+                    autoFocus
+                    value={purpose}
+                    placeholder="(Optional) what this channel is for…"
+                    onChange={(e) => setPurpose(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void savePurpose();
+                      if (e.key === "Escape") cancelMetaEdit();
+                    }}
+                    controlSize="compact"
+                    className="min-w-0 flex-1"
+                  />
+                  <InlineEditActions
+                    label="channel purpose"
+                    editing
+                    saving={savingMeta}
+                    controlSize="compact"
+                    onEdit={() => beginMetaEdit("purpose")}
+                    onSave={() => void savePurpose()}
+                    onCancel={cancelMetaEdit}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-w-0 items-center gap-1">
+                  <span
+                    role="button"
+                    tabIndex={canManage ? 0 : undefined}
+                    onClick={() => canManage && beginMetaEdit("purpose")}
+                    onKeyDown={(e) => {
+                      if (canManage && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        beginMetaEdit("purpose");
+                      }
+                    }}
+                    className={cn(
+                      "flex min-w-0 items-center font-reading text-compact italic",
+                      savedMeta.purpose ? "text-content-secondary" : "text-content-muted",
+                      canManage && "cursor-pointer hover:text-content-primary transition-colors",
+                    )}
+                    title={canManage ? "Click to edit purpose" : undefined}
+                  >
+                    <span className="truncate">
+                      {savedMeta.purpose || (canManage ? "Add a purpose…" : "No purpose set")}
+                    </span>
+                  </span>
+                  {canManage && (
+                    <InlineEditActions
+                      label="channel purpose"
+                      editing={false}
+                      controlSize="compact"
+                      onEdit={() => beginMetaEdit("purpose")}
+                      onSave={() => void savePurpose()}
+                      onCancel={cancelMetaEdit}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
 
         {/* Members use the same browse/add/delete collection anatomy as Claims and Links. */}
         <CollectionManager
@@ -411,6 +541,7 @@ export function ChannelSettingsDialog({
           }}
           showAdd={canManage}
           addDisabled={memberMode.kind !== "browse"}
+          searchDisabled={memberMode.kind !== "browse"}
           presentationLevel="medium"
           controlSize="regular"
           className="border-t border-zinc-800 pt-3"

@@ -29,6 +29,8 @@ export function RendererHost({
   config,
   session,
   annotations,
+  activeAnnotationId,
+  onSelectAnnotation,
   onFailure,
 }: {
   ctx: WorkbenchContext;
@@ -47,6 +49,8 @@ export function RendererHost({
     onAnnotate: (target: LensContextTarget, at: { x: number; y: number }) => void;
     onRemove: (id: string) => void;
   };
+  activeAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string) => void;
   onFailure?: (rendererId: string, reason: string) => void;
 }) {
   if (renderer.source === "extension") {
@@ -91,6 +95,8 @@ export function RendererHost({
         config={config}
         channelId={ctx.channelId}
         annotations={annotations}
+        activeAnnotationId={activeAnnotationId}
+        onSelectAnnotation={onSelectAnnotation}
         openLocator={ctx.openLocator}
       />
     );

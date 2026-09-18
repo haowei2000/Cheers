@@ -277,7 +277,7 @@ function ReplyPreview({
     <span
       aria-hidden
       className={cn(
-        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-700/80",
+        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-300/60 dark:border-zinc-700/80",
         reversed
           ? "ml-2 rounded-tr-sm border-r"
           : "mr-2 rounded-tl-sm border-l",
@@ -298,7 +298,7 @@ function ReplyPreview({
           <span className="truncate font-semibold">@{who}</span>
         </span>
       )}
-      <span className="truncate text-content-muted group-hover/reply:text-content-muted">
+      <span className="truncate font-reading italic text-content-muted group-hover/reply:text-content-secondary">
         {excerpt}
       </span>
     </span>
@@ -361,7 +361,7 @@ export const MessageItem = memo(function MessageItem(props: Props) {
       <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-content-muted italic text-regular">
+        <span className="text-content-muted font-reading italic text-regular">
           This message was deleted
         </span>
       </div>

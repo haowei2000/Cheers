@@ -84,6 +84,106 @@ function clampPos(pos: Pos, width: number, height: number, bounds: DOMRect | nul
   };
 }
 
+export interface SnappedEdges {
+  left?: boolean;
+  right?: boolean;
+  top?: boolean;
+  bottom?: boolean;
+}
+
+export interface StickySnapResult {
+  pos: Pos;
+  snapped: SnappedEdges;
+  isSnapped: boolean;
+}
+
+export const STICKY_SNAP_THRESHOLD = 20;
+export const STICKY_SNAP_MARGIN = 8;
+
+export function calculateStickySnap(
+  rawPos: Pos,
+  width: number,
+  height: number,
+  bounds: DOMRect | null,
+  occupants?: Rect[]
+): StickySnapResult {
+  let x = rawPos.x;
+  let y = rawPos.y;
+  const snapped: SnappedEdges = {};
+
+  const containerW = bounds ? bounds.width : (typeof window !== "undefined" ? window.innerWidth : 1024);
+  const containerH = bounds ? bounds.height : (typeof window !== "undefined" ? window.innerHeight : 768);
+  const margin = bounds ? STICKY_SNAP_MARGIN : 16;
+
+  // Potential snap targets for X (dock to left or right margin)
+  const snapTargetsX: Array<{ target: number; edge: "left" | "right" }> = [
+    { target: margin, edge: "left" },
+    { target: Math.max(margin, containerW - width - margin), edge: "right" },
+  ];
+
+  // Potential snap targets for Y (dock to top or bottom margin)
+  const snapTargetsY: Array<{ target: number; edge: "top" | "bottom" }> = [
+    { target: margin, edge: "top" },
+    { target: Math.max(margin, containerH - height - margin), edge: "bottom" },
+  ];
+
+  if (occupants) {
+    for (const occ of occupants) {
+      if (occ.w <= 0 || occ.h <= 0) continue;
+      // Snap beside neighbor
+      snapTargetsX.push({ target: occ.x + occ.w + margin, edge: "left" });
+      snapTargetsX.push({ target: occ.x - width - margin, edge: "right" });
+      // Align with neighbor edges
+      snapTargetsX.push({ target: occ.x, edge: "left" });
+      snapTargetsX.push({ target: occ.x + occ.w - width, edge: "right" });
+
+      // Snap above/below neighbor
+      snapTargetsY.push({ target: occ.y + occ.h + margin, edge: "top" });
+      snapTargetsY.push({ target: occ.y - height - margin, edge: "bottom" });
+      // Align with neighbor top
+      snapTargetsY.push({ target: occ.y, edge: "top" });
+    }
+  }
+
+  let bestDistX = STICKY_SNAP_THRESHOLD + 1;
+  let bestTargetX: { target: number; edge: "left" | "right" } | null = null;
+  for (const t of snapTargetsX) {
+    const dist = Math.abs(x - t.target);
+    if (dist <= STICKY_SNAP_THRESHOLD && dist < bestDistX) {
+      bestDistX = dist;
+      bestTargetX = t;
+    }
+  }
+
+  if (bestTargetX) {
+    x = bestTargetX.target;
+    snapped[bestTargetX.edge] = true;
+  }
+
+  let bestDistY = STICKY_SNAP_THRESHOLD + 1;
+  let bestTargetY: { target: number; edge: "top" | "bottom" } | null = null;
+  for (const t of snapTargetsY) {
+    const dist = Math.abs(y - t.target);
+    if (dist <= STICKY_SNAP_THRESHOLD && dist < bestDistY) {
+      bestDistY = dist;
+      bestTargetY = t;
+    }
+  }
+
+  if (bestTargetY) {
+    y = bestTargetY.target;
+    snapped[bestTargetY.edge] = true;
+  }
+
+  const isSnapped = Boolean(snapped.left || snapped.right || snapped.top || snapped.bottom);
+
+  return {
+    pos: { x, y },
+    snapped,
+    isSnapped,
+  };
+}
+
 export interface WindowDrag {
   /** Attach to the window's root element (measured on drag/resize start). */
   ref: (el: HTMLElement | null) => void;
@@ -114,6 +214,12 @@ export interface WindowDrag {
   toFront: () => void;
   /** Forget the dragged/resized geometry (window snaps back to its defaults). */
   reset: () => void;
+  /** True while this window is actively being dragged. */
+  isDragging: boolean;
+  /** True when magnetically snapped to a container edge or neighboring panel. */
+  isSnapped: boolean;
+  /** Current snapped edges. */
+  snappedEdges: SnappedEdges;
 }
 
 export interface WindowDragOptions {
@@ -121,6 +227,8 @@ export interface WindowDragOptions {
    *  store (drives the LaneZones overlay) and, on drop, snap position+size to the
    *  resolved zone. No-op when there's no bounds (free viewport float). */
   snap?: boolean;
+  /** Sticky-note style magnetic snapping to edges and neighbor panels. Defaults to true. */
+  stickySnap?: boolean;
   /** When set, a first open with no persisted geometry picks a free lane zone
    *  (or fills the lane alone) instead of stacking every panel at top-left. */
   spawnKind?: SpawnKind;
@@ -162,6 +270,7 @@ export function useWindowDrag(
   const opts: WindowDragOptions =
     typeof snapOrOptions === "boolean" ? { snap: snapOrOptions } : snapOrOptions;
   const snap = opts.snap ?? false;
+  const stickySnap = opts.stickySnap ?? true;
   const spawnKind = opts.spawnKind;
   const panelOpen = opts.open ?? true;
   const anchorRef = opts.anchorRef;
@@ -174,6 +283,11 @@ export function useWindowDrag(
   // means the viewer has dragged or been spawn-placed here and the channel's shared
   // layout must not move them.
   const hasLocalGeomRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [snappedEdges, setSnappedEdges] = useState<SnappedEdges>({});
+  const isSnapped = Boolean(
+    snappedEdges.left || snappedEdges.right || snappedEdges.top || snappedEdges.bottom
+  );
   const [geom, setGeom] = useState<Geom>(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -280,7 +394,12 @@ export function useWindowDrag(
       toFront();
       if (!enabled) return;
       // Buttons/inputs in the title bar keep their click; only bare header space drags.
-      if ((e.target as HTMLElement).closest("button, select, input, a, textarea")) return;
+      if (
+        (e.target as HTMLElement).closest(
+          "button, select, input, a, textarea, [role='button'], [role='tab']"
+        )
+      )
+        return;
       const panel = elRef.current;
       if (!panel) return;
       const handle = e.currentTarget as HTMLElement;
@@ -292,6 +411,8 @@ export function useWindowDrag(
         /* capture unsupported — window listeners still cover the drag */
       }
       e.preventDefault(); // no text selection while dragging
+      setIsDragging(true);
+      panel.dataset.dragging = "true";
 
       const pointerId = e.pointerId;
       const cleanup = () => {
@@ -299,6 +420,13 @@ export function useWindowDrag(
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
         dragCleanupRef.current = null;
+        setIsDragging(false);
+        setSnappedEdges({});
+        const el = elRef.current;
+        if (el) {
+          delete el.dataset.dragging;
+          delete el.dataset.snapped;
+        }
         try {
           if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
         } catch {
@@ -317,7 +445,21 @@ export function useWindowDrag(
         // In bounded mode the pointer (viewport coords) maps to lane-local coords.
         const x = ev.clientX - drag.dx - (b ? b.left : 0);
         const y = ev.clientY - drag.dy - (b ? b.top : 0);
-        const p = clampPos({ x, y }, el.offsetWidth, el.offsetHeight, b);
+        const clamped = clampPos({ x, y }, el.offsetWidth, el.offsetHeight, b);
+
+        let p = clamped;
+        if (stickySnap) {
+          const occupants = getOccupants(storageKey);
+          const snapResult = calculateStickySnap(clamped, el.offsetWidth, el.offsetHeight, b, occupants);
+          p = clampPos(snapResult.pos, el.offsetWidth, el.offsetHeight, b);
+          setSnappedEdges(snapResult.snapped);
+          if (snapResult.isSnapped) {
+            el.dataset.snapped = "true";
+          } else {
+            delete el.dataset.snapped;
+          }
+        }
+
         setGeom((g) => ({ ...g, ...p }));
         // Feed the cursor (lane-local) to the snap overlay so it can highlight the
         // zone the window will land in. Start the overlay on the first real move
@@ -378,7 +520,7 @@ export function useWindowDrag(
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
     },
-    [enabled, toFront, getBounds, snap, persist, storageKey]
+    [enabled, toFront, getBounds, snap, stickySnap, persist, storageKey]
   );
 
   // ── resizing (bottom-right grip) ──
@@ -695,11 +837,14 @@ export function useWindowDrag(
     size,
     z,
     bounded,
+    isDragging,
+    isSnapped,
+    snappedEdges,
     handleProps: {
       onPointerDown: onDragDown,
       style: enabled
         ? ({
-            cursor: dragRef.current ? "grabbing" : "grab",
+            cursor: isDragging ? "grabbing" : "grab",
             touchAction: "none",
             // Stop WKWebView from promoting Lucide SVGs into a native image drag.
             WebkitUserDrag: "none",

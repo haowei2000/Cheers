@@ -12,16 +12,16 @@ import {
   Code2,
   Eye,
   EyeOff,
-  MessageSquare,
   FileQuestion,
   Folder,
-  FolderPlus,
   Frame,
-  LayoutGrid,
+  Lock,
+  MessageSquare,
   Paperclip,
   Save,
   Server,
 } from "lucide-react";
+import { LockOff } from "@/components/ui/slashed-icon";
 import { cn } from "@/lib/cn";
 import {
   pointRect,
@@ -52,6 +52,8 @@ import {
   FloatingPanelActionPortal,
   FloatingPanelNavigationPortal,
 } from "@/components/ui/floating-panel";
+import { WorkbenchTabLocator } from "./WorkbenchTabLocator";
+import { WorkbenchCardDeck } from "./WorkbenchCardDeck";
 
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
@@ -272,16 +274,10 @@ function WorkbenchHierarchyNavigation({
   activeCollection,
   collectionTitle,
   collectionIcon,
-  tabs,
-  selectedPath,
   availableTemplates,
-  tabCandidates,
-  canAddTab,
   onSelectCollection,
-  onSelectTab,
   onAddCollection,
   onLoadCollection,
-  onAddTab,
   onShowRaw,
 }: {
   availableWidth: number;
@@ -289,16 +285,10 @@ function WorkbenchHierarchyNavigation({
   activeCollection: string;
   collectionTitle: string;
   collectionIcon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-  tabs: Array<{ path: string; label: string }>;
-  selectedPath: string | null;
   availableTemplates: TemplateManifest[];
-  tabCandidates: string[];
-  canAddTab: boolean;
   onSelectCollection: (id: string) => void;
-  onSelectTab: (path: string) => void;
   onAddCollection: (manifest: TemplateManifest) => void;
   onLoadCollection: () => void;
-  onAddTab: (path: string) => void;
   onShowRaw: () => void;
 }) {
   const textProbe = useRef<HTMLDivElement>(null);
@@ -309,7 +299,7 @@ function WorkbenchHierarchyNavigation({
     const observer = new ResizeObserver(measure);
     if (textProbe.current) observer.observe(textProbe.current);
     return () => observer.disconnect();
-  }, [collections.length, tabs.length, collectionTitle, selectedPath]);
+  }, [collections.length, collectionTitle]);
   const iconOnly = availableWidth < requiredTextWidth;
   const CollectionIcon = collectionIcon;
 
@@ -329,20 +319,6 @@ function WorkbenchHierarchyNavigation({
     })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
-  const tabActions: DropdownSelectOption[] = canAddTab
-    ? tabCandidates.map((path) => ({
-        value: `add:${path}`,
-        label: `Add ${basename(path)}`,
-        leading: <TabIcon className="h-4 w-4" aria-hidden="true" />,
-      }))
-    : [];
-  const tabOptions: DropdownSelectOption[] = [
-    ...tabs.map(({ path, label }) => ({
-      value: `tab:${path}`,
-      label,
-      leading: <TabIcon className="h-4 w-4" aria-hidden="true" />,
-    })),
-  ];
   const chooseCollection = (value: string) => {
     if (value === "raw") return onShowRaw();
     onSelectCollection(value.slice("collection:".length));
@@ -354,8 +330,6 @@ function WorkbenchHierarchyNavigation({
       if (manifest) onAddCollection(manifest);
     }
   };
-  const chooseTab = (value: string) => onSelectTab(value.slice("tab:".length));
-  const runTabAction = (value: string) => onAddTab(value.slice(4));
   const controls = (probe = false, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
       <DropdownSelect
@@ -369,27 +343,9 @@ function WorkbenchHierarchyNavigation({
         actions={collectionActions}
         onAction={runCollectionAction}
         placement="up"
-        // Density is inherited from the chrome band these are portaled into, not
-        // chosen here: the tab strip's own size belongs to the in-content strip.
         controlWidth="slot"
-        className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
+        className="max-w-64 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
       />
-      {(tabs.length > 0 || (canAddTab && tabCandidates.length > 0)) && (
-        <DropdownSelect
-          ariaLabel={`Tab: ${tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}`}
-          label={tabs.find((tab) => tab.path === selectedPath)?.label ?? "Choose Tab"}
-          leading={<TabIcon className="h-4 w-4" aria-hidden="true" />}
-          content={icons ? "icon" : "text"}
-          value={selectedPath ? `tab:${selectedPath}` : null}
-          options={tabOptions}
-          onSelect={chooseTab}
-          actions={tabActions}
-          onAction={runTabAction}
-          placement="up"
-          controlWidth="slot"
-          className="max-w-40 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
-        />
-      )}
     </div>
   );
 
@@ -721,6 +677,10 @@ export function SceneWorkbench({
     localStorage.setItem(`${storagePrefix}.scene`, activeScene);
   }, [activeScene, storagePrefix]);
 
+  const [isTabLocked, setIsTabLocked] = useState(false);
+  const [shakeNonce, setShakeNonce] = useState(0);
+  const triggerLockedShake = useCallback(() => setShakeNonce((n) => n + 1), []);
+
   const activePaths = useMemo(() => {
     const canvas = canvasScenePath(activeScene);
     if (canvas) return existing.has(canvas) ? [canvas] : [];
@@ -771,7 +731,11 @@ export function SceneWorkbench({
     setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
   }, [selectedPath, session.path, session.version, session.parsedText]);
 
-  useEffect(() => setPendingNote(null), [selectedPath]);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  useEffect(() => {
+    setPendingNote(null);
+    setActiveAnnotationId(null);
+  }, [selectedPath]);
 
   const selectPath = useCallback((path: string, sceneId = activeScene) => {
     setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));
@@ -972,16 +936,10 @@ export function SceneWorkbench({
             activeCollection={activeScene}
             collectionTitle={title}
             collectionIcon={activeCollectionIcon}
-            tabs={itemNavigationItems.map((item) => ({ path: item.id, label: item.label }))}
-            selectedPath={selectedPath}
             availableTemplates={available}
-            tabCandidates={tabCandidates}
-            canAddTab={canAddTab}
             onSelectCollection={setActiveScene}
-            onSelectTab={selectPath}
             onAddCollection={(manifest) => void onAddScene(manifest)}
             onLoadCollection={onLoadCollection}
-            onAddTab={addTabAndSelect}
             onShowRaw={onShowRaw}
           />
         )}
@@ -992,77 +950,134 @@ export function SceneWorkbench({
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
         </div>
       )}
-      <div className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {selectedPath ? (
-              (() => {
-                const renderer = renderers[selectedPath];
-                // Same rule as the file browser: a path the user forced to Raw, or one no
-                // renderer accepts, shows its text. Everything else previews.
-                const effMode = rawPaths.has(selectedPath) || !renderer ? "raw" : "preview";
+      {/* Floating Panel Action Portals for Chrome Header */}
+      {selectedPath && (
+        <>
+          <FloatingPanelActionPortal
+            action={{
+              id: "lock-tab",
+              label: isTabLocked ? "Unlock tab scrolling" : "Lock tab in place",
+              priority: "primary",
+              icon: isTabLocked ? Lock : LockOff,
+              selected: false,
+              onSelect: () => {
+                setIsTabLocked((prev) => {
+                  const next = !prev;
+                  if (!next) {
+                    setShakeNonce(0);
+                  }
+                  return next;
+                });
+              },
+            }}
+          />
+          <FloatingPanelActionPortal
+            action={{
+              id: "view-mode",
+              label: !renderers[selectedPath]
+                ? "No matching renderer — raw only"
+                : (!rawPaths.has(selectedPath) && renderers[selectedPath])
+                  ? `Showing the ${renderers[selectedPath].title} preview — switch to raw`
+                  : "Showing raw text — switch to the preview",
+              priority: "primary",
+              icon: (!rawPaths.has(selectedPath) && renderers[selectedPath]) ? Eye : EyeOff,
+              selected: false,
+              disabled: !renderers[selectedPath],
+              onSelect: () => showRaw(selectedPath, !rawPaths.has(selectedPath)),
+            }}
+          />
+          <FloatingPanelActionPortal
+            action={{
+              id: "annotations",
+              label: annotations.notes.length === 0
+                ? `Notes on ${selectedPath}`
+                : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
+              priority: "primary",
+              icon: MessageSquare,
+              control: (
+                <AnnotationsButton
+                  notes={annotations.notes}
+                  allNotes={annotations.doc.notes}
+                  currentPath={selectedPath}
+                  text={session.parsedText}
+                  activeAnnotationId={activeAnnotationId}
+                  onSelectAnnotation={setActiveAnnotationId}
+                  onRemove={onRemoveNote}
+                  onReveal={(range) => {
+                    showRaw(selectedPath, true);
+                    setRevealLine(range.start);
+                  }}
+                  onSelectFile={onSelectAnnotationFile}
+                  onAddNote={(entry) => void annotations.add(entry)}
+                />
+              ),
+            }}
+            active={Boolean(selectedPath || annotations.doc.notes.length > 0)}
+          />
+          <FloatingPanelActionPortal
+            action={{
+              id: "save-file",
+              label: session.parseError
+                ? `Save ${selectedPath} — the text does not parse`
+                : `Save ${selectedPath}`,
+              priority: "primary",
+              icon: Save,
+              disabled: !session.dirty,
+              onSelect: () => void session.save(),
+            }}
+            active={session.dirty || Boolean(session.parseError)}
+          />
+        </>
+      )}
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {activePaths.length === 0 ? (
+          <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
+            <FileQuestion className="h-5 w-5 text-content-muted" />
+            <span>No native Tabs in this Collection.</span>
+            <span className="max-w-xs text-compact leading-4 text-content-muted">
+              Unsupported files stay hidden here and remain available from Raw.
+            </span>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-0 flex-1 overflow-hidden">
+            {/* The Minimal Tick-Ruler Locator on the left */}
+            <WorkbenchTabLocator
+              tabs={activePaths.map((path) => ({
+                path,
+                label: itemTitle(activeScene, path, templates),
+                isDirty: selectedPath === path && session.dirty,
+                hasError: selectedPath === path && Boolean(session.parseError),
+                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
+              }))}
+              selectedIndex={Math.max(0, activePaths.indexOf(selectedPath ?? ""))}
+              onSelectTab={(path) => selectPath(path)}
+              isLocked={isTabLocked}
+              shakeNonce={shakeNonce}
+              onLockedActionAttempt={triggerLockedShake}
+              className="hidden md:flex"
+            />
+
+            {/* The Vertical Card-Deck Stream */}
+            <WorkbenchCardDeck
+              tabs={activePaths.map((path) => ({
+                path,
+                label: itemTitle(activeScene, path, templates),
+                isDirty: selectedPath === path && session.dirty,
+                hasError: selectedPath === path && Boolean(session.parseError),
+                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
+                noteCount: selectedPath === path ? annotations.notes.length : undefined,
+                rendererId: renderers[path]?.id,
+                rendererTitle: renderers[path]?.title,
+                previewSnippet: selectedPath === path ? session.text : contents[path],
+              }))}
+              selectedPath={selectedPath}
+              onSelectTab={selectPath}
+              renderActiveCardContent={(path) => {
+                const renderer = renderers[path];
+                const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";
                 return (
                   <div className="flex h-full min-h-0 flex-col">
-                    {/* The file's controls are CHROME, so they live in the panel's
-                        top-right corner with the rest of it — not in a body row beneath
-                        it. A row here is drawn under the floating islands and its buttons
-                        stop being clickable the moment the chrome fades in, which is
-                        exactly when the pointer is over the panel. What is left in the
-                        body is content; what names and acts on the file is in a corner. */}
-                    <FloatingPanelActionPortal
-                      action={{
-                        id: "view-mode",
-                        label: !renderer
-                          ? "No matching renderer — raw only"
-                          : effMode === "preview"
-                            ? `Showing the ${renderer.title} preview — switch to raw`
-                            : "Showing raw text — switch to the preview",
-                        priority: "primary",
-                        icon: effMode === "preview" ? Eye : EyeOff,
-                        selected: effMode === "preview",
-                        disabled: !renderer,
-                        onSelect: () => showRaw(selectedPath, effMode === "preview"),
-                      }}
-                    />
-                    <FloatingPanelActionPortal
-                      action={{
-                        id: "annotations",
-                        label: annotations.notes.length === 0
-                          ? (selectedPath ? `Notes on ${selectedPath}` : "Annotations")
-                          : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
-                        priority: "primary",
-                        icon: MessageSquare,
-                        control: (
-                          <AnnotationsButton
-                            notes={annotations.notes}
-                            allNotes={annotations.doc.notes}
-                            currentPath={selectedPath}
-                            text={session.parsedText}
-                            onRemove={onRemoveNote}
-                            onReveal={(range) => {
-                              showRaw(selectedPath, true);
-                              setRevealLine(range.start);
-                            }}
-                            onSelectFile={onSelectAnnotationFile}
-                            onAddNote={(entry) => void annotations.add(entry)}
-                          />
-                        ),
-                      }}
-                      active={Boolean(selectedPath || annotations.doc.notes.length > 0)}
-                    />
-                    <FloatingPanelActionPortal
-                      action={{
-                        id: "save-file",
-                        label: session.parseError
-                          ? `Save ${selectedPath} — the text does not parse`
-                          : `Save ${selectedPath}`,
-                        priority: "primary",
-                        icon: Save,
-                        disabled: !session.dirty,
-                        onSelect: () => void session.save(),
-                      }}
-                      active={session.dirty || Boolean(session.parseError)}
-                    />
                     {pendingNote && (
                       <AnnotationComposer
                         pending={pendingNote}
@@ -1076,22 +1091,24 @@ export function SceneWorkbench({
                     <div className="min-h-0 flex-1">
                       <ContextPickSurface
                         channelId={ctx.channelId}
-                        path={selectedPath}
+                        path={path}
                         content={session.text}
                         onAdded={(label) => setStatus(`Added ${label} to context`)}
                       >
                         {effMode === "preview" && renderer ? (
                           <RendererHost
                             ctx={ctx}
-                            path={selectedPath}
+                            path={path}
                             renderer={renderer}
-                            config={ctx.configs[selectedPath]}
+                            config={ctx.configs[path]}
                             session={session}
                             annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                            activeAnnotationId={activeAnnotationId}
+                            onSelectAnnotation={setActiveAnnotationId}
                             onFailure={(rendererId, reason) => {
                               setFailedRenderers((current) => ({
                                 ...current,
-                                [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                                [path]: [...new Set([...(current[path] ?? []), rendererId])],
                               }));
                               setStatus(`${renderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
                             }}
@@ -1101,8 +1118,11 @@ export function SceneWorkbench({
                             <CodeEditor
                               value={session.text}
                               onChange={session.editText}
-                              path={selectedPath}
+                              path={path}
                               scrollToLine={revealLine}
+                              notes={annotations.notes}
+                              activeAnnotationId={activeAnnotationId}
+                              onSelectAnnotation={setActiveAnnotationId}
                               className="h-full min-h-0 overflow-hidden"
                             />
                           </Suspense>
@@ -1111,38 +1131,36 @@ export function SceneWorkbench({
                     </div>
                   </div>
                 );
-              })()
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
-                <FileQuestion className="h-5 w-5 text-content-muted" />
-                <span>No native Tabs in this Collection.</span>
-                <span className="max-w-xs text-compact leading-4 text-content-muted">Unsupported files stay hidden here and remain available from Raw.</span>
-              </div>
-            )}
+              }}
+              onAddToContext={addPathToContext}
+              isLocked={isTabLocked}
+              shakeNonce={shakeNonce}
+              onLockedAttempt={triggerLockedShake}
+            />
           </div>
-          {/* Bottom strip: the one place nothing floats over. Carries what the file is
-              and what state it is in, so neither has to sit under the chrome. */}
-          {(selectedPath || status || session.status || annotations.status) && (
-            <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
-              {selectedPath && (
-                <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
-              )}
-              {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
-              {session.parseError && (
-                <span
-                  className="flex-shrink-0 text-minimal text-warning-400"
-                  title={`${session.parseError} — the preview is showing the last version that parsed`}
-                >
-                  syntax error
-                </span>
-              )}
-              <span className="min-w-0 flex-1 truncate text-right text-warning-300">
-                {status || session.status || annotations.status}
-              </span>
-            </div>
-          )}
-        </section>
+        )}
       </div>
+
+      {/* Bottom strip: carries what the file is and what state it is in */}
+      {(selectedPath || status || session.status || annotations.status) && (
+        <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
+          {selectedPath && (
+            <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
+          )}
+          {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+          {session.parseError && (
+            <span
+              className="flex-shrink-0 text-minimal text-warning-400"
+              title={`${session.parseError} — the preview is showing the last version that parsed`}
+            >
+              syntax error
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-right text-warning-300">
+            {status || session.status || annotations.status}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

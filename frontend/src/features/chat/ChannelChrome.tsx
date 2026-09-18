@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, Hash, MessageSquare } from "lucide-react";
+import { ArrowLeft, Hash, Mail } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
 import { WindowChromeActions } from "@/features/desktop/WindowChromeActions";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
@@ -45,21 +45,23 @@ export function ChannelChrome({
         </UiButton>
       )}
       {isDm ? (
-        <MessageSquare className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
+        <Mail className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       ) : (
         <Hash className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       )}
       <div className="flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate text-regular font-semibold text-content-primary max-md:pl-1">
+        <span className="min-w-0 truncate font-serif text-regular font-bold tracking-tight text-content-strong max-md:pl-1">
           {title}
         </span>
-        <span className="hidden font-code text-minimal uppercase tracking-overline text-content-muted/75 lg:inline-block">
+        <span className="hidden items-center gap-1 font-code text-minimal uppercase tracking-overline text-content-muted/75 lg:inline-flex" aria-label="Dispatch channel">
+          <span className="select-none text-content-muted/40" aria-hidden="true">·</span>
           DISPATCH
         </span>
       </div>
       {purpose && (
-        <div className="hidden min-w-0 items-center gap-3 pl-1 md:flex">
-          <span className="truncate text-compact text-content-muted">{purpose}</span>
+        <div className="hidden min-w-0 items-center gap-2 pl-1 md:flex">
+          <span className="select-none font-serif text-content-muted/40" aria-hidden="true">—</span>
+          <span className="truncate font-reading text-compact italic text-content-muted">{purpose}</span>
         </div>
       )}
       {channelId && <ChannelHeaderSlot channelId={channelId} />}

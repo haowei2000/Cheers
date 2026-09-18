@@ -2,14 +2,15 @@ import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
 import { MessageSquarePlus, Paperclip, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
 import { canEditData, canPatch, useFileSession, type FileSession } from "../jsonFile";
-import { notesOnTarget, type AnnotationDoc } from "../annotations";
+import { annotationsFor, notesOnTarget, type AnnotationDoc } from "../annotations";
 import type { LensContextTarget } from "./registry";
 import { getLens } from "./registry";
 import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
+import { LensAnnotationOverlay } from "./LensAnnotationOverlay";
 
 // One built-in lens over one file SESSION. The session is owned by the host, because the
 // host is what shows the file's other view: Raw and Preview must be the same buffer, the
@@ -22,6 +23,8 @@ export function LensView({
   channelId,
   standalone,
   annotations,
+  activeAnnotationId,
+  onSelectAnnotation,
   openLocator,
 }: {
   session: FileSession;
@@ -35,6 +38,8 @@ export function LensView({
     onAnnotate: (target: LensContextTarget, at: { x: number; y: number }) => void;
     onRemove: (id: string) => void;
   };
+  activeAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string) => void;
   /** This lens is the file's whole UI, so it renders the session's own chrome (Save,
    *  status). False when the host has a Raw view over the same session and its own
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
@@ -106,15 +111,27 @@ export function LensView({
     });
   };
 
+  const lensContainerRef = useRef<HTMLDivElement>(null);
+  const fileNotes = useMemo(
+    () => (annotations ? annotationsFor(annotations.doc, path) : []),
+    [annotations, path]
+  );
+
   const saveable = standalone && !lens?.viewOnly && !lens?.savesItself;
   return (
     <div className="flex flex-col h-full text-compact">
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div ref={lensContainerRef} className="relative flex-1 min-h-0 overflow-hidden">
         {lens ? (
           lens.render({ data, config, onChange: session.setData, onOps, readOnly: !writable, requestContextPick, openLocator })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
+        <LensAnnotationOverlay
+          containerRef={lensContainerRef}
+          notes={fileNotes}
+          activeAnnotationId={activeAnnotationId}
+          onSelectAnnotation={onSelectAnnotation}
+        />
       </div>
       {standalone && (session.status || saveable) && (
         <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-panel/50 px-3 py-2">

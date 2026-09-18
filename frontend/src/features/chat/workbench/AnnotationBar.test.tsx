@@ -133,6 +133,19 @@ describe("AnnotationListContent", () => {
 
     expect(markup).toContain("stale");
   });
+
+  it("highlights active annotation item when activeAnnotationId matches", () => {
+    const markup = renderToStaticMarkup(
+      <AnnotationListContent
+        notes={[mockNotes[0]]}
+        currentPath="tasks/backlog.yaml"
+        activeAnnotationId="note-1"
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain("ring-accent-400/40");
+  });
 });
 
 describe("AnnotationListContent density", () => {

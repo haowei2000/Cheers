@@ -14,4 +14,23 @@ describe("ComposerToolbarButton", () => {
     expect(markup).toContain("w-32");
     expect(markup).toContain("rounded-sm");
   });
+
+  it("renders unboxed at rest and reveals outline on hover", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerToolbarButton><span aria-hidden>+</span><span>Model</span></ComposerToolbarButton>,
+    );
+
+    expect(markup).toContain("bg-transparent");
+    expect(markup).toContain("ring-transparent");
+    expect(markup).toContain("hover:ring-zinc-300/80");
+  });
+
+  it("shows active ring and selected styling when selected", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerToolbarButton selected><span aria-hidden>+</span><span>Model</span></ComposerToolbarButton>,
+    );
+
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain("ring-selected-indicator/70");
+  });
 });

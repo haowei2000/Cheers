@@ -161,7 +161,10 @@ export function DropdownSelect({
         }}
         className={cn(
           "text-content-primary",
-          !(open || active) && "bg-zinc-900 hover:bg-zinc-800",
+          !(open || active) &&
+            (iconOnly
+              ? "bg-zinc-900 hover:bg-zinc-800"
+              : "bg-transparent ring-1 ring-inset ring-transparent hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong"),
           iconOnly ? "justify-center" : "justify-start",
           className,
         )}

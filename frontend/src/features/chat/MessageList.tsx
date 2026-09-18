@@ -1,6 +1,8 @@
 import { useReadingPosition } from "@/hooks/useReadingPosition";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Spinner } from "@/components/ui/spinner";
+import { Button as UiButton } from "@/components/ui/button";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import toast from "react-hot-toast";
 import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
@@ -12,6 +14,7 @@ import {
   permissionSourceId,
 } from "./messageTree";
 import { layoutMessages, type ConversationMode } from "./conversationMode";
+import { inDiscussionThread } from "./discussionThread";
 
 // Chat timeline spacing (3 levels):
 //   tight  — within one message (body ↔ files ↔ Agent steps): gap-1
@@ -26,6 +29,20 @@ const ROW_CONTENT_VISIBILITY: CSSProperties = {
   contentVisibility: "auto",
   containIntrinsicSize: "auto 80px",
 };
+
+/** Collect all nested descendants of a discussion message in chronological sequence. */
+export function collectThreadDescendants(
+  parentId: string,
+  childrenByParent: Map<string, Message[]>,
+): Message[] {
+  const direct = childrenByParent.get(parentId) ?? [];
+  const all: Message[] = [];
+  for (const child of direct) {
+    all.push(child);
+    all.push(...collectThreadDescendants(child.msg_id, childrenByParent));
+  }
+  return all.sort((a, b) => (a.channel_seq ?? 0) - (b.channel_seq ?? 0));
+}
 
 interface Props {
   messages: Message[];
@@ -93,6 +110,57 @@ export function MessageList({
     () => layoutMessages(messages, conversationMode),
     [conversationMode, messages],
   );
+
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+
+  const toggleSubthread = useCallback((threadId: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(threadId)) next.delete(threadId);
+      else next.add(threadId);
+      return next;
+    });
+  }, []);
+
+  const level1Replies = useMemo(() => {
+    if (!threadRootId) return [];
+    const direct = childrenByParent.get(threadRootId) ?? [];
+    const orphans = roots.filter(
+      (m) =>
+        m.msg_id !== threadRootId &&
+        (m.thread_root_msg_id === threadRootId || (!m.reply_to_msg_id && inDiscussionThread(m, threadRootId))),
+    );
+    const merged = [...direct];
+    for (const orphan of orphans) {
+      if (!merged.some((m) => m.msg_id === orphan.msg_id)) {
+        merged.push(orphan);
+      }
+    }
+    return merged.sort((a, b) => (a.channel_seq ?? 0) - (b.channel_seq ?? 0));
+  }, [childrenByParent, roots, threadRootId]);
+
+  // Auto-expand sub-thread if an active jump or reply target is inside it
+  useEffect(() => {
+    const targetId = focusMsg?.msgId || highlightId || replyToId;
+    if (!targetId) return;
+
+    const candidateParents = threadRootId
+      ? level1Replies
+      : roots.flatMap((r) => childrenByParent.get(r.msg_id) ?? []);
+
+    for (const parent of candidateParents) {
+      const subs = collectThreadDescendants(parent.msg_id, childrenByParent);
+      if (subs.some((s) => s.msg_id === targetId)) {
+        setExpandedThreads((prev) => {
+          if (prev.has(parent.msg_id)) return prev;
+          const next = new Set(prev);
+          next.add(parent.msg_id);
+          return next;
+        });
+        break;
+      }
+    }
+  }, [focusMsg, highlightId, replyToId, threadRootId, level1Replies, childrenByParent, roots]);
 
   // External jump (ViewBoard history rows): scroll to the anchored row + flash.
   // ChannelView backfills older pages before focusing, so by the time focusMsg
@@ -199,7 +267,7 @@ export function MessageList({
 
   if (!loading && topLevel.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-content-muted text-regular">
+      <div className="flex-1 flex items-center justify-center font-reading italic text-content-muted text-regular">
         No messages yet. Start the conversation!
       </div>
     );
@@ -218,11 +286,11 @@ export function MessageList({
   function renderDayLabel(msg: Message) {
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
-        <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-sm bg-zinc-950 px-3 py-1 text-compact font-medium text-content-muted">
+        <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+        <span className="px-2 font-serif text-compact italic tracking-wide text-content-muted select-none">
           {formatDayLabel(msg.created_at)}
         </span>
-        <span className="h-px flex-1 bg-zinc-800/80" />
+        <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
       </div>
     );
   }
@@ -267,90 +335,70 @@ export function MessageList({
     );
   }
 
-  function renderNode(msg: Message, depth: number, prevRoot: Message | null) {
-    const kids = childrenByParent.get(msg.msg_id) ?? [];
-    const showDayLabel =
-      depth === 0 &&
-      (!prevRoot || !sameDay(prevRoot.created_at, msg.created_at));
-    const isConsecutive = depth === 0
-      ? !showDayLabel && !!prevRoot && isVisuallyConsecutive(prevRoot, msg)
-      : !!prevRoot && isDiscussionConsecutive(prevRoot, msg);
-    const parentInView = !!(
-      msg.reply_to_msg_id && byId.has(msg.reply_to_msg_id)
-    );
+  function renderSubthread(parentMsg: Message, subReplies: Message[]) {
+    const isExpanded = expandedThreads.has(parentMsg.msg_id);
+    const needsCollapse = subReplies.length > 3;
+    const visibleReplies = needsCollapse && !isExpanded ? subReplies.slice(0, 2) : subReplies;
 
     return (
-      <div key={msg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
-        {showDayLabel && renderDayLabel(msg)}
-        <div
-          data-msg-id={msg.msg_id}
-          style={ROW_CONTENT_VISIBILITY}
-          className={rowHighlightClass(msg)}
-        >
-          <MessageItem
-            message={msg}
-            isConsecutive={!!isConsecutive}
-            nested={depth > 0}
-            alignOwnMessages={false}
-            // renderNode is the Discussion path only (thread replies and discuss
-            // roots); renderChatMessage keeps the 96px name rail.
-            identityLayout="avatar"
-            hideReplyQuote={parentInView}
-            currentUserId={currentUserId}
-            channelId={channelId}
-            senderName={senderNames?.get(msg.sender_id)}
-            actions={actions}
-            selectMode={selectMode}
-            selected={selectedIds?.has(msg.msg_id) ?? false}
-            repliedTo={
-              msg.reply_to_msg_id
-                ? byId.get(msg.reply_to_msg_id) ?? null
-                : null
-            }
-            nameOf={nameOf}
-            pendingApprovals={approvalsBySource.get(msg.msg_id)}
-            focusRequestId={focusRequestIdFor(msg)}
-          />
-          {kids.length > 0 && (
-            // Medium gap: parent ↔ replies, and sibling replies.
+      <div className="ml-10 mt-2 flex flex-col gap-2 rounded-sm border-l-2 border-zinc-800/80 bg-zinc-900/40 p-2 md:ml-12">
+        {visibleReplies.map((sub, j) => {
+          const targetMsg = sub.reply_to_msg_id ? byId.get(sub.reply_to_msg_id) ?? null : null;
+          const isReplyToReply = targetMsg && targetMsg.msg_id !== parentMsg.msg_id;
+          const subConsecutive = j > 0 && isDiscussionConsecutive(visibleReplies[j - 1]!, sub);
+
+          return (
             <div
-              className={
-                depth === 0
-                  ? "relative ml-10 mr-3 mt-3 flex flex-col gap-2 md:ml-14 md:mr-5"
-                  : "relative ml-3 mt-2 flex flex-col gap-2"
-              }
+              key={sub.msg_id}
+              data-msg-id={sub.msg_id}
+              style={ROW_CONTENT_VISIBILITY}
+              className={rowHighlightClass(sub)}
             >
-              {kids.map((child, i) => {
-                const isLast = i === kids.length - 1;
-                return (
-                  <div key={child.msg_id} className="relative pl-4">
-                    {/* Thread rail: full height between siblings; stops at the elbow on the last. */}
-                    <span
-                      aria-hidden
-                      className={
-                        isLast
-                          ? "pointer-events-none absolute left-0 top-0 h-4 w-px bg-zinc-700/70"
-                          : "pointer-events-none absolute bottom-0 left-0 top-0 w-px bg-zinc-700/70"
-                      }
-                    />
-                    {/* Horizontal stub → L-corner into the nested row (no ↳ glyph). */}
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute left-0 top-4 w-3 border-t border-zinc-700/70"
-                    />
-                    {renderNode(
-                      child,
-                      depth + 1,
-                      i > 0 && isDiscussionConsecutive(kids[i - 1], child)
-                        ? kids[i - 1]
-                        : null,
-                    )}
-                  </div>
-                );
-              })}
+              <MessageItem
+                message={sub}
+                isConsecutive={subConsecutive}
+                nested={true}
+                alignOwnMessages={false}
+                identityLayout="avatar"
+                hideReplyQuote={!isReplyToReply}
+                currentUserId={currentUserId}
+                channelId={channelId}
+                senderName={senderNames?.get(sub.sender_id)}
+                actions={actions}
+                selectMode={selectMode}
+                selected={selectedIds?.has(sub.msg_id) ?? false}
+                repliedTo={isReplyToReply ? targetMsg : null}
+                nameOf={nameOf}
+                pendingApprovals={approvalsBySource.get(sub.msg_id)}
+                focusRequestId={focusRequestIdFor(sub)}
+              />
             </div>
-          )}
-        </div>
+          );
+        })}
+
+        {needsCollapse && (
+          <div className="flex items-center gap-2 py-1 text-content-muted" role="separator">
+            <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+            <UiButton
+              action={isExpanded ? "collapse" : "expand"}
+              content="icon"
+              variant="plain"
+              controlSize="compact"
+              type="button"
+              onClick={() => toggleSubthread(parentMsg.msg_id)}
+              aria-label={isExpanded ? "Collapse replies" : "Expand replies"}
+              aria-expanded={isExpanded}
+              title={isExpanded ? "Collapse" : "Expand"}
+            >
+              {isExpanded ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </UiButton>
+            <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+          </div>
+        )}
       </div>
     );
   }
@@ -370,23 +418,121 @@ export function MessageList({
 
         {/* Chat stays chronological. Discuss groups replies directly below roots. */}
         <div className="flex flex-col gap-4">
-          {threadRootId
-            ? (childrenByParent.get(threadRootId) ?? []).map((msg, i, siblings) =>
-                renderNode(
-                  msg,
-                  1,
-                  i > 0 && isDiscussionConsecutive(siblings[i - 1]!, msg)
-                    ? siblings[i - 1]!
-                    : null,
-                ),
-              )
-            : conversationMode === "discuss"
-              ? roots.map((msg, i) =>
-                  renderNode(msg, 0, i > 0 ? roots[i - 1]! : null),
-                )
-              : topLevel.map((msg, i) =>
-                  renderChatMessage(msg, i > 0 ? topLevel[i - 1]! : null),
-                )}
+          {threadRootId ? (
+            level1Replies.map((level1, i, siblings) => {
+              const isConsecutive = i > 0 && isDiscussionConsecutive(siblings[i - 1]!, level1);
+              const subReplies = collectThreadDescendants(level1.msg_id, childrenByParent);
+              return (
+                <div key={level1.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
+                  <div
+                    data-msg-id={level1.msg_id}
+                    style={ROW_CONTENT_VISIBILITY}
+                    className={rowHighlightClass(level1)}
+                  >
+                    <MessageItem
+                      message={level1}
+                      isConsecutive={isConsecutive}
+                      nested={false}
+                      alignOwnMessages={false}
+                      identityLayout="avatar"
+                      hideReplyQuote={true}
+                      currentUserId={currentUserId}
+                      channelId={channelId}
+                      senderName={senderNames?.get(level1.sender_id)}
+                      actions={actions}
+                      selectMode={selectMode}
+                      selected={selectedIds?.has(level1.msg_id) ?? false}
+                      repliedTo={
+                        level1.reply_to_msg_id
+                          ? byId.get(level1.reply_to_msg_id) ?? null
+                          : null
+                      }
+                      nameOf={nameOf}
+                      pendingApprovals={approvalsBySource.get(level1.msg_id)}
+                      focusRequestId={focusRequestIdFor(level1)}
+                    />
+                  </div>
+                  {subReplies.length > 0 && renderSubthread(level1, subReplies)}
+                </div>
+              );
+            })
+          ) : conversationMode === "discuss" ? (
+            roots.map((rootMsg, i) => {
+              const showDayLabel = !i || !sameDay(roots[i - 1]!.created_at, rootMsg.created_at);
+              const isConsecutive = !showDayLabel && i > 0 && isVisuallyConsecutive(roots[i - 1]!, rootMsg);
+              const level1Kids = childrenByParent.get(rootMsg.msg_id) ?? [];
+              return (
+                <div key={rootMsg.msg_id} className={isConsecutive ? "-mt-3" : undefined}>
+                  {showDayLabel && renderDayLabel(rootMsg)}
+                  <div
+                    data-msg-id={rootMsg.msg_id}
+                    style={ROW_CONTENT_VISIBILITY}
+                    className={rowHighlightClass(rootMsg)}
+                  >
+                    <MessageItem
+                      message={rootMsg}
+                      isConsecutive={isConsecutive}
+                      nested={false}
+                      alignOwnMessages={false}
+                      identityLayout="avatar"
+                      hideReplyQuote={true}
+                      currentUserId={currentUserId}
+                      channelId={channelId}
+                      senderName={senderNames?.get(rootMsg.sender_id)}
+                      actions={actions}
+                      selectMode={selectMode}
+                      selected={selectedIds?.has(rootMsg.msg_id) ?? false}
+                      repliedTo={null}
+                      nameOf={nameOf}
+                      pendingApprovals={approvalsBySource.get(rootMsg.msg_id)}
+                      focusRequestId={focusRequestIdFor(rootMsg)}
+                    />
+                  </div>
+                  {level1Kids.length > 0 && (
+                    <div className="ml-10 mr-3 mt-3 flex flex-col gap-3 md:ml-14 md:mr-5">
+                      {level1Kids.map((level1, j, siblings) => {
+                        const level1Consecutive = j > 0 && isDiscussionConsecutive(siblings[j - 1]!, level1);
+                        const subReplies = collectThreadDescendants(level1.msg_id, childrenByParent);
+                        return (
+                          <div key={level1.msg_id} className={level1Consecutive ? "-mt-3" : undefined}>
+                            <div
+                              data-msg-id={level1.msg_id}
+                              style={ROW_CONTENT_VISIBILITY}
+                              className={rowHighlightClass(level1)}
+                            >
+                              <MessageItem
+                                message={level1}
+                                isConsecutive={level1Consecutive}
+                                nested={true}
+                                alignOwnMessages={false}
+                                identityLayout="avatar"
+                                hideReplyQuote={true}
+                                currentUserId={currentUserId}
+                                channelId={channelId}
+                                senderName={senderNames?.get(level1.sender_id)}
+                                actions={actions}
+                                selectMode={selectMode}
+                                selected={selectedIds?.has(level1.msg_id) ?? false}
+                                repliedTo={rootMsg}
+                                nameOf={nameOf}
+                                pendingApprovals={approvalsBySource.get(level1.msg_id)}
+                                focusRequestId={focusRequestIdFor(level1)}
+                              />
+                            </div>
+                            {subReplies.length > 0 && renderSubthread(level1, subReplies)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            topLevel.map((msg, i) =>
+              renderChatMessage(msg, i > 0 ? topLevel[i - 1]! : null),
+            )
+          )}
         </div>
         <div ref={bottomRef} />
       </div>

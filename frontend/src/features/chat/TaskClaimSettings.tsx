@@ -221,6 +221,7 @@ export function TaskClaimSettings({
         addLabel="Add claim"
         onAdd={beginAdd}
         addDisabled={loading || mode.kind !== "browse" || availableBots.length === 0}
+        searchDisabled={loading || mode.kind !== "browse"}
       >
         {mode.kind === "add" && editor("add")}
         {loading ? (

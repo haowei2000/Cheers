@@ -386,6 +386,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
         addLabel="Add grant"
         onAdd={beginAdd}
         addDisabled={mode.kind !== "browse"}
+        searchDisabled={mode.kind !== "browse"}
         presentationLevel="medium"
         controlSize="regular"
       >

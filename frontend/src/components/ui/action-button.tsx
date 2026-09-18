@@ -21,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   ShieldCheck,
   ShieldOff,
   ToggleLeft,
@@ -79,6 +80,7 @@ export type CommonActionKey = Extract<
   | "remove"
   | "revoke"
   | "save"
+  | "search"
   | "setup"
   | "signOut"
   | "stop"
@@ -108,6 +110,7 @@ const commonActionPresentations = {
   },
   toolbar: {
     add: { content: "icon", icon: Plus, variant: "plain" },
+    search: { content: "icon", icon: Search, variant: "plain" },
     collapse: { content: "icon", icon: Minimize2, variant: "plain" },
     delete: { content: "icon", icon: Trash2, variant: "danger" },
     expand: { content: "icon", icon: Maximize2, variant: "plain" },

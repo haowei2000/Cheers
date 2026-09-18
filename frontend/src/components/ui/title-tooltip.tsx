@@ -1,9 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { FloatingLayer } from "./floating-layer";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
-import { whenPointerMeans } from "@/lib/hoverIntent";
+import {
+  clearPointerInteraction,
+  isPointerFocus,
+  markPointerInteraction,
+  onDisarmHover,
+  whenPointerRests,
+} from "@/lib/hoverIntent";
 
-const SHOW_DELAY_MS = 350;
 const EDGE_ZONE_PX = 180;
 
 type TooltipAlign = "start" | "center" | "end";
@@ -77,84 +82,152 @@ export function TitleTooltip() {
     let hovered: HTMLElement | null = null;
     let focused: HTMLElement | null = null;
     let active: CapturedTitle | null = null;
-    let showTimer: number | undefined;
+    let cancelRest: (() => void) | null = null;
 
-    const switchTo = (next: HTMLElement | null) => {
+    const switchTo = (next: HTMLElement | null, immediate: boolean) => {
       if (active?.anchor === next) return;
-      window.clearTimeout(showTimer);
-      showTimer = undefined;
+      cancelRest?.();
+      cancelRest = null;
       setVisible(null);
       if (active) restoreTitle(active, tooltipId);
       active = null;
       anchorRef.current = null;
 
       if (!next) return;
+      // The title is taken the moment the pointer arrives, so the native bubble
+      // never gets its chance — the decision still pending is only ours.
       const captured = captureTitle(next, tooltipId);
       if (!captured) return;
       active = captured;
       anchorRef.current = next;
-      const rect = next.getBoundingClientRect();
-      const align = resolveTitleTooltipAlign(rect.left, rect.right, window.innerWidth);
-      showTimer = window.setTimeout(() => {
-        if (active?.anchor === next) setVisible({ text: captured.text, align });
-      }, SHOW_DELAY_MS);
+      const show = () => {
+        if (active?.anchor !== next) return;
+        if (!next.isConnected) {
+          close();
+          return;
+        }
+        const rect = next.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+          close();
+          return;
+        }
+        setVisible({
+          text: captured.text,
+          align: resolveTitleTooltipAlign(rect.left, rect.right, window.innerWidth),
+        });
+      };
+      // Focus asks outright; a pointer asks by coming to rest on the control.
+      if (immediate) show();
+      else cancelRest = whenPointerRests(next, show);
     };
 
-    const sync = () => switchTo(hovered ?? focused);
     const close = () => {
       hovered = null;
       focused = null;
-      switchTo(null);
+      switchTo(null, false);
+    };
+
+    const onPointerDown = () => {
+      markPointerInteraction();
+      close();
+    };
+
+    const onPointerUp = () => {
+      clearPointerInteraction();
+    };
+
+    const onClick = () => {
+      markPointerInteraction();
+      close();
+    };
+
+    const onPointerMove = () => {
+      // If a tooltip was opened by keyboard focus and the user moves the mouse,
+      // dismiss the keyboard tooltip so it doesn't linger or confuse the user.
+      if (focused && !hovered) {
+        focused = null;
+        switchTo(null, false);
+      }
     };
 
     const onPointerOver = (event: PointerEvent) => {
+      // Ignore pointerover while dragging or pressing buttons
+      if (event.buttons !== 0) return;
       const next = titleAnchor(event.target);
       if (!next) return;
-      // Opening a page whose button lands under the pointer raises this event just
-      // as approaching the button does. Only the second one is a question worth
-      // answering with a tooltip.
-      whenPointerMeans(next, () => {
-        hovered = next;
-        sync();
-      });
+      hovered = next;
+      switchTo(hovered, false);
     };
+
     const onPointerOut = (event: PointerEvent) => {
       if (!hovered || remainsInside(hovered, event.relatedTarget)) return;
       hovered = null;
-      sync();
+      // Mouse left the element: always close tooltip, never fall back to focused!
+      switchTo(null, false);
     };
+
     const onFocusIn = (event: FocusEvent) => {
-      const next = titleAnchor(event.target);
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      // Clicks/pointer taps or non-visible focus should never pop up tooltips
+      if (isPointerFocus(event)) {
+        focused = null;
+        return;
+      }
+
+      const next = titleAnchor(target);
       if (!next) return;
       focused = next;
-      sync();
+      switchTo(focused, true);
     };
+
     const onFocusOut = (event: FocusEvent) => {
       if (!focused || remainsInside(focused, event.relatedTarget)) return;
       focused = null;
-      sync();
+      if (!hovered) {
+        switchTo(null, false);
+      }
     };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
 
+    const unsubDisarm = onDisarmHover(close);
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("pointermove", onPointerMove, { passive: true });
     document.addEventListener("pointerover", onPointerOver);
     document.addEventListener("pointerout", onPointerOut);
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut);
-    document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("scroll", close, true);
+    window.addEventListener("blur", close);
+    const onVisibilityChange = () => {
+      if (document.hidden) close();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
-      window.clearTimeout(showTimer);
+      unsubDisarm();
+      cancelRest?.();
       if (active) restoreTitle(active, tooltipId);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerover", onPointerOver);
       document.removeEventListener("pointerout", onPointerOut);
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
-      document.removeEventListener("pointerdown", close);
       document.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("scroll", close, true);
+      window.removeEventListener("blur", close);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [tooltipId]);
 

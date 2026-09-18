@@ -19,4 +19,21 @@ describe("PanelWorkspace", () => {
       'data-workspace-messages="" class="flex min-h-0 min-w-0 flex-1 flex-col"',
     );
   });
+
+  it("renders dock container when open panels are provided", () => {
+    const markup = renderToStaticMarkup(
+      <PanelWorkspace
+        channelId="channel-1"
+        openPanels={[{ id: "workbench", label: "Workbench" }]}
+        panels={<div data-testid="panel-content">Workbench Content</div>}
+        onLaneElement={() => {}}
+      >
+        <div>Conversation</div>
+      </PanelWorkspace>,
+    );
+
+    expect(markup).toContain('data-workspace-dock=""');
+    expect(markup).toContain("Workbench Content");
+  });
 });
+

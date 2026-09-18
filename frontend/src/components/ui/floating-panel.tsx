@@ -1,6 +1,6 @@
 import { useManagedPanel } from "./managed-panel";
 import { IconButton } from "./icon-button";
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useState, type CSSProperties, type ComponentType, type DragEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { GripHorizontal, Minimize2, PanelRightOpen, PanelRightClose, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,7 @@ import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { ButtonGroup } from "@/components/ui/button-group";
+import type { ButtonProps } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { ControlSizeProvider, FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
@@ -18,10 +19,13 @@ import type { AnchorPlacement } from "@/components/ui/floating-layer";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
 export interface FloatingPanelNavigation {
+  /** Visual primary navigation items (tabs, sections). */
   items: AdaptiveControlItem[];
   ariaLabel: string;
+  /** Presentation order when adapting to available chrome space. */
   presentationOrder?: AdaptiveControlPresentation[];
-  /** Collapsed-dropdown trigger form; "icon" suits a panel whose body already
+  /** Trigger form for the collapsed navigation dropdown: "icon" shows only the
+   *  selected glyph (suits corner-island layouts with little width); default "text"
    *  names the selected section. */
   collapsedContent?: "text" | "icon";
 }
@@ -30,7 +34,8 @@ export interface FloatingPanelAction {
   id: string;
   label: string;
   priority?: "primary" | "secondary";
-  icon?: LucideIcon;
+  variant?: ButtonProps["variant"];
+  icon?: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   selected?: boolean;
   disabled?: boolean;
   onSelect?: () => void;
@@ -481,6 +486,8 @@ export function FloatingPanel({
       ref={panelRef}
       data-floating-panel=""
       data-floating-panel-bounded={drag.bounded ? "true" : "false"}
+      data-dragging={drag.isDragging ? "true" : undefined}
+      data-snapped={drag.isSnapped ? "true" : undefined}
       onPointerDownCapture={managed?.toFront ?? drag.toFront}
       onDrop={dropTarget?.onDrop}
       onDragOver={dropTarget?.onDragOver}
@@ -544,6 +551,14 @@ export function FloatingPanel({
       ) : (
         <PanelNavigationContext.Provider value={navigationHost}>
           <PanelContextContext.Provider value={contextHost}>
+          {/* Underlay drag strip spanning the full width of the chrome header */}
+          <div
+            {...(managed?.dragProps ?? drag.handleProps)}
+            data-floating-panel-drag-strip=""
+            className="pointer-events-auto absolute inset-x-0 top-0 z-20 hidden cursor-grab select-none active:cursor-grabbing md:block"
+            style={{ height: "var(--floating-panel-chrome-top, 3.5rem)" }}
+            aria-hidden="true"
+          />
           {/* Navigation and actions are two single-line islands. The measured action
               island determines the exact width available to navigation. */}
           <div ref={setChromeElement} className="pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden md:flex">
@@ -554,7 +569,8 @@ export function FloatingPanel({
               // feature portaling navigation in must not pick its own control size:
               // the two sides then differ by 8px and the band reads as ragged.
               controlSize={FLOATING_CHROME_CONTROL_SIZE}
-              className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden"
+              className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden cursor-grab active:cursor-grabbing"
+              {...(managed?.dragProps ?? drag.handleProps)}
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
                 separate pill beside it. Two surfaces read as two groups and cost the gap

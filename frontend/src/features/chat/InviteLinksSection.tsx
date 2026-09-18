@@ -145,6 +145,7 @@ export function InviteLinksSection({
         addLabel="Add link"
         onAdd={beginAdd}
         addDisabled={mode.kind !== "browse"}
+        searchDisabled={mode.kind !== "browse"}
       >
         {mode.kind === "add" && (
           <CollectionEditorItem
