@@ -76,6 +76,7 @@
     "identity",
     "presence",
     "unread",
+    "status-indicator",
     "progress",
     "drag-handle"
   ]

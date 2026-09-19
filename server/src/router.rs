@@ -184,6 +184,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::auth::set_email_two_factor),
         )
         .route(
+            "/api/v1/auth/2fa/methods/email/send-code",
+            post(api::auth::send_email_2fa_enroll_code),
+        )
+        .route(
             "/api/v1/auth/2fa/methods/password",
             post(api::auth::set_password_two_factor),
         )
@@ -825,6 +829,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/auth/change-password",
             post(api::auth::change_password),
         )
+        .route("/api/v1/auth/set-password", post(api::auth::set_password))
+        .route(
+            "/api/v1/auth/email/request-code",
+            post(api::auth::request_email_update_code),
+        )
+        .route("/api/v1/auth/email/update", post(api::auth::update_email))
         .route("/api/v1/auth/logout", post(api::auth::logout))
         .route(
             "/api/v1/auth/logout-current",

@@ -1,0 +1,22 @@
+/* Button group — attached groups collapse the shared edge and flatten interior
+   corners. Written once here so no caller ever hand-tunes a radius. */
+.ui-button-group { display: inline-flex; align-items: center; gap: var(--ui-space-2); }
+.ui-button-group--attached { gap: 0; }
+.ui-button-group--attached > .ui-button { border-radius: 0; }
+.ui-button-group--attached > .ui-button:first-child { border-start-start-radius: var(--ui-radius-sm); border-end-start-radius: var(--ui-radius-sm); }
+.ui-button-group--attached > .ui-button:last-child { border-start-end-radius: var(--ui-radius-sm); border-end-end-radius: var(--ui-radius-sm); }
+.ui-button-group--attached > .ui-button + .ui-button { margin-inline-start: 1px; }
+.ui-button-group--attached > .ui-button { min-inline-size: 0; }
+.ui-button-group--vertical { flex-direction: column; align-items: stretch; }
+.ui-button-group--vertical.ui-button-group--attached > .ui-button:first-child { border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0; }
+.ui-button-group--vertical.ui-button-group--attached > .ui-button:last-child { border-radius: 0 0 var(--ui-radius-sm) var(--ui-radius-sm); }
+.ui-button-group--vertical.ui-button-group--attached > .ui-button + .ui-button { margin-inline-start: 0; margin-block-start: 1px; }
+/* Split button: the primary action and its menu trigger share one silhouette. */
+.ui-button-group--split > .ui-button:last-child { inline-size: var(--ui-control-h-md); min-inline-size: 0; padding-inline: 0; }
+.ui-toolbar {
+  display: inline-flex; align-items: center; gap: var(--ui-space-1);
+  padding: var(--ui-space-1); border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-inset);
+}
+.ui-toolbar .ui-button { min-inline-size: 0; }
+.ui-toolbar .ui-separator--vertical { block-size: 20px; margin-inline: var(--ui-space-1); }

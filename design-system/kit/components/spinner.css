@@ -1,0 +1,12 @@
+/* Spinner — drawn on the icon scale so it drops into any control slot. */
+.ui-spinner {
+  display: inline-block; flex: none;
+  inline-size: var(--ui-icon-md); block-size: var(--ui-icon-md);
+  border: 2px solid currentColor; border-block-start-color: transparent;
+  border-radius: var(--ui-radius-full);
+  animation: ui-spin 700ms linear infinite;
+}
+.ui-spinner--sm { inline-size: var(--ui-icon-sm); block-size: var(--ui-icon-sm); border-width: 1.5px; }
+.ui-spinner--lg { inline-size: var(--ui-icon-lg); block-size: var(--ui-icon-lg); }
+@keyframes ui-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .ui-spinner { animation-duration: 2.4s; } }

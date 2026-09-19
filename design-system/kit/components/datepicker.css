@@ -1,0 +1,28 @@
+/* Datepicker — always paired with a typed date input. A calendar grid is a
+   grid: arrows move by day, PageUp/PageDown by month. */
+.ui-calendar { display: flex; flex-direction: column; gap: var(--ui-space-2); }
+.ui-calendar__header { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-space-2); }
+.ui-calendar__month { font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong); font-size: var(--ui-text-md); }
+.ui-calendar__grid { border-collapse: collapse; }
+.ui-calendar__grid th {
+  padding: var(--ui-space-1); inline-size: 32px;
+  font-size: var(--ui-text-xs); font-weight: var(--ui-weight-normal);
+  color: var(--ui-fg-subtle); letter-spacing: var(--ui-tracking-label);
+}
+.ui-calendar__day {
+  all: unset; box-sizing: border-box; display: grid; place-items: center;
+  inline-size: 32px; block-size: 30px; cursor: pointer;
+  border-radius: var(--ui-radius-sm); color: var(--ui-fg);
+  font-size: var(--ui-text-sm); font-variant-numeric: tabular-nums;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-calendar__day:hover { background: var(--ui-bg-hover); }
+.ui-calendar__day:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-calendar__day[aria-selected="true"] { background: var(--ui-accent); color: var(--ui-fg-on-accent); font-weight: var(--ui-weight-semibold); }
+.ui-calendar__day[data-state="today"] { box-shadow: inset 0 0 0 1px var(--ui-border-strong); }
+.ui-calendar__day[data-state="in-range"] { background: var(--ui-bg-selected); border-radius: 0; }
+.ui-calendar__day[data-state="outside"] { color: var(--ui-fg-subtle); opacity: 0.6; }
+.ui-calendar__day[aria-disabled="true"] { opacity: 0.35; pointer-events: none; text-decoration: line-through; }
+.ui-calendar__presets { display: flex; flex-direction: column; gap: 1px; padding-inline-end: var(--ui-space-2); box-shadow: inset -1px 0 0 0 var(--ui-hairline); }
+.ui-calendar--with-presets { flex-direction: row; gap: var(--ui-space-3); }
+.ui-calendar__time { display: flex; align-items: center; gap: var(--ui-space-2); padding-block-start: var(--ui-space-2); box-shadow: inset 0 1px 0 0 var(--ui-hairline); }

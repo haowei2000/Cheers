@@ -4,6 +4,7 @@ import {
   Bell,
   Building2,
   Hash,
+  Mail,
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
@@ -234,7 +235,14 @@ export function DesktopTitlebar({
     friends: Users,
     settings: Settings,
   };
-  const ContextIcon = section === "chat" ? (channel ? Hash : Building2) : (contextIcons[section] ?? Building2);
+  const ContextIcon =
+    section === "chat"
+      ? channel
+        ? channel.type === "dm"
+          ? Mail
+          : Hash
+        : Building2
+      : contextIcons[section] ?? Building2;
   const parentPath = resolveDesktopParentPath(location.pathname);
 
   useEffect(() => {
@@ -319,7 +327,7 @@ export function DesktopTitlebarChrome({
 
   return (
     <header
-      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center bg-zinc-950 text-content-primary"
+      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center border-b border-zinc-300/40 bg-panel text-content-primary dark:border-zinc-800/60"
       data-window-chrome={variant}
       data-window-active={resolvedWindowState.active ? "true" : "false"}
       data-window-fullscreen={resolvedWindowState.fullscreen ? "true" : "false"}
@@ -327,7 +335,7 @@ export function DesktopTitlebarChrome({
     >
       {resolvedPanes?.sidebarOpen && (
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 bg-sidebar"
+          className="pointer-events-none absolute inset-y-0 left-0 border-r border-control/80 bg-sidebar"
           style={{ width: resolvedPanes.railWidth + resolvedPanes.sidebarWidth }}
           data-window-sidebar-surface="true"
           aria-hidden="true"
@@ -361,11 +369,17 @@ export function DesktopTitlebarChrome({
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">
           <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
-          <span {...dragRegion} className="truncate font-semibold">{context.title}</span>
+          <span {...dragRegion} className="truncate font-serif text-regular font-bold tracking-tight text-content-strong">
+            {context.title}
+          </span>
           {context.subtitle && (
             <>
-              <span {...dragRegion} className="text-content-muted" aria-hidden="true">/</span>
-              <span {...dragRegion} className="truncate text-content-muted">{context.subtitle}</span>
+              <span {...dragRegion} className="select-none font-serif text-content-muted/40" aria-hidden="true">
+                /
+              </span>
+              <span {...dragRegion} className="truncate font-serif text-regular font-bold tracking-tight text-content-strong">
+                {context.subtitle}
+              </span>
             </>
           )}
         </div>
@@ -383,7 +397,7 @@ export function DesktopTitlebarChrome({
 export function DesktopWindowFrame({ children }: { children: ReactNode }) {
   if (resolveDesktopPlatform() === "web") return <>{children}</>;
   return (
-    <div className="h-full min-h-0 bg-zinc-950">{children}</div>
+    <div className="h-full min-h-0 bg-canvas text-content-primary">{children}</div>
   );
 }
 
@@ -401,7 +415,7 @@ export function DesktopPageFrame({ children }: { children: ReactNode }) {
       variant={variant}
       windowState={windowState}
     >
-      <div className="flex h-full min-h-0 flex-col bg-zinc-950">
+      <div className="flex h-full min-h-0 flex-col bg-canvas text-content-primary">
         <DesktopTitlebar
           platform={platform}
           variant={variant}
@@ -438,7 +452,7 @@ export function DesktopChatFrame({
       windowState={windowState}
       panes={panes}
     >
-      <div className="flex h-full min-h-0 flex-col bg-zinc-950">
+      <div className="flex h-full min-h-0 flex-col bg-canvas text-content-primary">
         <DesktopTitlebar
           platform={platform}
           variant={variant}

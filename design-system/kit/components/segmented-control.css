@@ -1,0 +1,33 @@
+/* Segmented control — radio semantics when it sets a value, tabs when it swaps
+   panels. Pick one; the gallery says which. The indicator derives its radius
+   from the track inset, so it can never drift out of concentricity. */
+.ui-segmented {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border: 0; margin: 0;
+  --ui-concentric-inset: -2px;
+  border-radius: var(--ui-radius-md); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); box-shadow: var(--ui-ring-inset);
+}
+.ui-segmented__option { position: relative; display: flex; }
+.ui-segmented__option input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ui-segmented__label {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--ui-space-2);
+  block-size: calc(var(--ui-control-h-md) - 8px);
+  padding-inline: var(--ui-space-3);
+  border-radius: var(--ui-radius-concentric);
+  color: var(--ui-fg-muted); font-size: var(--ui-text-md);
+  font-weight: var(--ui-weight-medium); white-space: nowrap; cursor: pointer;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease), color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-segmented__option:hover .ui-segmented__label { color: var(--ui-fg-strong); }
+.ui-segmented__option input:checked + .ui-segmented__label {
+  background: var(--ui-bg-raised); color: var(--ui-fg-strong);
+  font-weight: var(--ui-weight-semibold); box-shadow: var(--ui-shadow-button);
+}
+.ui-segmented__option input:focus-visible + .ui-segmented__label { box-shadow: var(--ui-focus-ring); }
+.ui-segmented__option input:disabled + .ui-segmented__label { opacity: 0.45; cursor: not-allowed; }
+.ui-segmented--full { display: flex; inline-size: 100%; }
+.ui-segmented--full .ui-segmented__option { flex: 1; }
+.ui-segmented--full .ui-segmented__label { inline-size: 100%; }
+.ui-segmented--sm .ui-segmented__label { block-size: calc(var(--ui-control-h-sm) - 4px); font-size: var(--ui-text-sm); padding-inline: var(--ui-space-2); }
+.ui-segmented--icon .ui-segmented__label { inline-size: calc(var(--ui-control-h-md) - 8px); padding-inline: 0; }

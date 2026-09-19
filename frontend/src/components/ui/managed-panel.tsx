@@ -3,10 +3,13 @@ import { createContext, useContext, type CSSProperties, type PointerEvent as Rea
 export interface ManagedPanel {
   floating: boolean;
   canFloat: boolean;
+  expanded: boolean;
+  canExpand: boolean;
   toFront: () => void;
   visible: boolean;
   style: CSSProperties;
   toggleFloating: () => void;
+  toggleExpanded: () => void;
   dragProps: {
     onPointerDown: (event: ReactPointerEvent) => void;
     style: CSSProperties;

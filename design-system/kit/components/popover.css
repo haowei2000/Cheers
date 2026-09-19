@@ -1,0 +1,25 @@
+/* Popover — the foundation for dropdown menu, select, combobox, datepicker and
+   colour picker. Built on the Popover API: the top layer, light dismiss and
+   Escape come from the platform; only placement is ours. */
+.ui-popover {
+  margin: 0; padding: var(--ui-space-3); inset: auto; border: 0;
+  --ui-concentric-inset: 3px;
+  border-radius: var(--ui-radius-concentric); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-raised); color: var(--ui-fg);
+  font-size: var(--ui-text-md); box-shadow: var(--ui-shadow-2);
+  max-inline-size: min(360px, calc(100vw - 16px));
+  z-index: var(--ui-z-popover);
+}
+.ui-popover:popover-open { display: flex; flex-direction: column; gap: var(--ui-space-2); }
+.ui-popover__header {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong);
+}
+.ui-popover__footer { display: flex; justify-content: flex-end; gap: var(--ui-space-2); }
+.ui-popover--flush { padding: var(--ui-space-1); }
+.ui-popover--wide { max-inline-size: min(480px, calc(100vw - 16px)); }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-popover { transition: opacity var(--ui-duration-fast) var(--ui-ease), display var(--ui-duration-fast) allow-discrete; opacity: 0; }
+  .ui-popover:popover-open { opacity: 1; }
+  @starting-style { .ui-popover:popover-open { opacity: 0; } }
+}

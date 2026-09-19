@@ -15,12 +15,14 @@ import {
 } from "@/api/scheduledMessages";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, SectionHead } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
 import { InlineEditActions } from "@/components/ui/inline-edit-actions";
 import { Input as UiInput } from "@/components/ui/input";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CollectionConfirmationItem } from "@/components/ui/collection-manager";
+import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
 import { listExtensions, type ExtensionSummary } from "@/features/chat/workbench/extensions/api";
 import type { AutomationContribution } from "@/features/chat/workbench/extensions/package";
 import { parsePersonalExtension } from "@/features/chat/workbench/extensions/parseOffThread";
@@ -129,6 +131,7 @@ export function ScheduledMessagesManager() {
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [history, setHistory] = useState<{ task: ScheduledMessage; runs: ScheduledMessageRun[] } | null>(null);
 
   const reload = useCallback(async () => {
@@ -214,16 +217,28 @@ export function ScheduledMessagesManager() {
   };
 
   return (
-    <section>
-      <SectionHead icon={CalendarClock} className="mb-4">Scheduled tasks</SectionHead>
+    <SettingsSection title="Scheduled tasks" icon={CalendarClock}>
+      <SettingsCard
+        title="Channel messages"
+        description="Create, pause, and inspect recurring or one-time channel messages."
+      >
       <ItemSection
-        label="Channel messages"
+        label="Tasks"
         presentationLevel="max"
         controlSize="regular"
-        className="border-t border-zinc-800 pt-2"
         action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => setForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
       >
-        {tasks.map((task) => (
+        {tasks.map((task) => deletingId === task.id ? (
+          <CollectionConfirmationItem
+            key={task.id}
+            title={task.title}
+            description="This scheduled task and its future runs will be removed."
+            action="delete"
+            prompt="Delete?"
+            onCancel={() => setDeletingId(null)}
+            onConfirm={() => void deleteScheduledMessage(task.id).then(async () => { setDeletingId(null); await reload(); })}
+          />
+        ) : (
           <WorkbenchItem
             key={task.id}
             title={task.title}
@@ -242,12 +257,13 @@ export function ScheduledMessagesManager() {
                 onSave={() => undefined}
                 onCancel={() => undefined}
               />
-              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-danger-400" onClick={async () => { if (!window.confirm(`Delete "${task.title}"?`)) return; await deleteScheduledMessage(task.id); await reload(); }}><Trash2 className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-danger-400" onClick={() => setDeletingId(task.id)}><Trash2 className="h-3.5 w-3.5" /></UiButton>
             </>}
           />
         ))}
         {tasks.length === 0 && <WorkbenchItem title="No scheduled tasks" />}
       </ItemSection>
+      </SettingsCard>
 
       {form && <Dialog title={form.id ? "Edit scheduled task" : "New scheduled task"} onClose={() => setForm(null)} maxWidth="max-w-lg">
         <div className="space-y-4 p-5">
@@ -312,6 +328,6 @@ export function ScheduledMessagesManager() {
           </ItemSection>
         </div>
       </Dialog>}
-    </section>
+    </SettingsSection>
   );
 }

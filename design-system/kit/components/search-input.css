@@ -1,0 +1,32 @@
+/* Search — the clear control is a real button with a name, and result counts
+   go to a polite live region rather than only appearing on screen. */
+.ui-search { position: relative; display: flex; align-items: center; gap: var(--ui-space-2); }
+.ui-search__field { position: relative; flex: 1; min-inline-size: 0; }
+.ui-search__field > .ui-icon {
+  position: absolute; inset-inline-start: var(--ui-space-3); inset-block: 0; margin-block: auto;
+  color: var(--ui-fg-subtle); pointer-events: none;
+}
+.ui-search__input {
+  inline-size: 100%; block-size: var(--ui-control-h-md);
+  padding-inline: calc(var(--ui-space-3) * 2 + var(--ui-icon-md)) var(--ui-control-px-md);
+  border: 0; border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  font-family: var(--ui-font-sans); font-size: var(--ui-text-md);
+  box-shadow: var(--ui-ring-inset);
+  transition: box-shadow var(--ui-duration-base) var(--ui-ease);
+}
+.ui-search__input::placeholder { color: var(--ui-fg-subtle); }
+.ui-search__input::-webkit-search-cancel-button { display: none; }
+.ui-search__input:focus-visible { outline: none; box-shadow: var(--ui-focus-ring-inset); }
+.ui-search--has-clear .ui-search__input { padding-inline-end: calc(var(--ui-space-3) * 2 + var(--ui-icon-md)); }
+.ui-search__clear {
+  all: unset; position: absolute; inset-inline-end: var(--ui-space-2); inset-block: 0;
+  margin-block: auto; block-size: 20px; inline-size: 20px;
+  display: grid; place-items: center; cursor: pointer;
+  border-radius: var(--ui-radius-full); color: var(--ui-fg-subtle);
+  transition: color var(--ui-duration-fast) var(--ui-ease), background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-search__clear:hover { color: var(--ui-fg-strong); background: var(--ui-bg-hover); }
+.ui-search__clear:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-search__status { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); }
+.ui-search[data-state="loading"] .ui-search__spinner { color: var(--ui-fg-subtle); }

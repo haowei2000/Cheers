@@ -1,0 +1,21 @@
+/* Link — links navigate, buttons act. The underline stays in body copy so the
+   affordance does not depend on colour, which here is barely a colour at all. */
+.ui-link {
+  color: var(--ui-fg-strong); text-decoration: underline;
+  text-underline-offset: 3px; text-decoration-thickness: 1px;
+  text-decoration-color: var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  transition: color var(--ui-duration-fast) var(--ui-ease),
+              text-decoration-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-link:hover { text-decoration-color: currentColor; }
+.ui-link:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-link--standalone {
+  display: inline-flex; align-items: center; gap: var(--ui-space-1);
+  text-decoration: none; font-weight: var(--ui-weight-medium);
+  font-size: var(--ui-text-md);
+}
+.ui-link--standalone:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ui-link--quiet { color: var(--ui-fg-muted); text-decoration: none; }
+.ui-link--quiet:hover { color: var(--ui-fg-strong); }
+.ui-link--external .ui-icon { color: var(--ui-fg-subtle); }

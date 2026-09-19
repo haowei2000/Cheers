@@ -378,7 +378,8 @@ export function MessageList({
 
         {needsCollapse && (
           <div className="flex items-center gap-2 py-1 text-content-muted" role="separator">
-            <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+            {/* The chevron is the whole control; the spacers only keep it centred. */}
+            <span className="h-px flex-1" />
             <UiButton
               action={isExpanded ? "collapse" : "expand"}
               content="icon"
@@ -396,7 +397,7 @@ export function MessageList({
                 <ChevronDown className="h-3.5 w-3.5" />
               )}
             </UiButton>
-            <span className="h-px flex-1 bg-zinc-300/40 dark:bg-zinc-800/60" />
+            <span className="h-px flex-1" />
           </div>
         )}
       </div>

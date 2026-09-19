@@ -55,6 +55,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ["var(--font-ui)"],
+        serif: ["var(--font-serif)"],
         display: ["var(--font-serif)"],
         masthead: ["var(--font-serif)"],
         reading: ["var(--font-serif)"],

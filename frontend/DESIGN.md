@@ -186,7 +186,9 @@ color.
 | Hover on soft surfaces | `bg-zinc-700` |
 
 Settings screens compose `<SettingsSection>` and `<SettingsCard>` rather than
-repeating card padding, title, description, and action anatomy. Compact KPI
+repeating card padding, title, description, and action anatomy. Related regions
+inside one card use `<SettingsCardSection>`; it owns the directional hairline,
+section heading, description, icon, action slot, and vertical rhythm. Compact KPI
 summaries use `<MetricCard>` with a registered semantic `tone`; callers do not
 pass arbitrary foreground classes. All three live in `src/components/ui/` and
 are demonstrated in the Item Gallery.
@@ -349,6 +351,12 @@ wrap an Input in another `focus-within:ring-*` field, manually position a Search
 icon, or add `pl-9`; use `containerClassName` only for layout and `className`
 only for approved surface/tone overrides.
 
+Use `<Combobox>` when a value set is large enough to require typing and
+filtering. It owns `combobox` / `listbox` semantics, active-descendant keyboard
+navigation, disabled options, loading, no-results, selection checkmarks, Escape
+dismissal, and focus restoration. Keep `<Select>` for short predictable form
+choices and `<DropdownSelect>` for compact selectors that do not need filtering.
+
 ### 2.3 Text fields
 
 Use `<Input>` for single-line text. Fields are **filled boxes with a neutral
@@ -420,6 +428,12 @@ is the canonical borderless field with the shared 10px Web radius and
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 
 ### 2.6 Badges & counters
+
+Use `<Badge>` for compact, non-interactive status and identity labels. Its
+semantic tones are neutral, accent, success, warning, danger, info, and mention;
+pass `indicator` when a state needs a redundant dot in addition to its word.
+Counts and unread state remain circular through `<UnreadBadge>`. A Badge never
+contains an action; removal belongs to the owning Item or chip action slot.
 
 | Badge | Recipe |
 |---|---|
@@ -516,6 +530,12 @@ Selectable rows use the shared Item geometry and hover fill. Selected
 NavigationItems use `bg-zinc-800 text-content-primary` plus `aria-current="page"`;
 the fill remains visible even when a borderless placement suppresses the
 ordinary left marker. Every interactive row needs a hover state.
+
+Use `<DataTable>` only for genuine two-dimensional data whose columns need a
+shared scan order. It owns caption, column scopes, keyboard sorting, loading
+skeletons, empty state, alignment, stable sorting, and an optional row-actions
+column. Entity and management collections remain `ItemList` / `CollectionManager`;
+editable file/YAML tables remain specialized workbench structures.
 
 ### 2.13 Field (label + control + hint)
 
@@ -684,16 +704,11 @@ same 36px desktop / 44px touch row.
 
 ## 3. Known gaps (extraction roadmap)
 
-Patterns that should graduate into `src/components/ui/` — until then, copy
-the recipes above:
-
-1. `SearchInput` (forms A & B of §2.2)
-2. `Badge` (§2.6)
-
 Extracted (were gaps, now shared components): `Select` / `Textarea`
 (mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
-`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsSection`, and
-`MetricCard`.
+`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsCardSection` /
+`SettingsSection`, and
+`MetricCard`, `SearchInput`, `Badge`, `Combobox`, and `DataTable`.
 
 The full audit that produced this doc: visual-consistency reports
 2026-07-10 (static sweep + live review, see PR #134 context).
@@ -727,7 +742,7 @@ Panel chrome uses `ButtonGroup` as its layout and surface boundary. Place action
 buttons, choice groups, selectors, and switches inside it; each child retains its
 own role and state. Floating panel chrome is one non-wrapping row with two islands:
 navigation at the left and actions at the right. The right island is measured first;
-navigation receives the exact remaining width and adapts within it. Dock/Float and
+navigation receives the exact remaining width and adapts within it. Expand/Restore, Dock/Float, and
 Close stay fixed; state actions stay visible while secondary actions, including
 Minimize, enter More. Do not split groups into percentage slots, wrap action groups,
 or let chrome overlap the body. Reserve the measured chrome height above content.
@@ -737,7 +752,7 @@ drag handle, Collection selector/add control, and Tab selector/open control. At 
 first measured overflow, add controls move into their corresponding selector menus;
 at the next, selectors become icon controls with accessible names and tooltips. Raw
 workspace files is a special Collection navigation destination. The right island is
-reserved for actions on the current content plus More, Dock/Float, and Close. Product
+reserved for actions on the current content plus More, Expand/Restore, Dock/Float, and Close. Product
 copy says Collection/Tab; persisted `scene_state` and extension `scenes` remain protocol
 names and must not be migrated for this presentation change.
 
@@ -755,6 +770,10 @@ instrument; each gets at least 240px, otherwise the workspace returns to tabs.
 Float/Dock controls and dragging the panel grip out/back to the right edge offer
 explicit floating placement. Only user-floated instruments overlap messages.
 Message-specific inspectors remain contextual floating surfaces.
+
+The docked workspace exposes Expand/Restore in the same panel action island. Expand
+hides the conversation column and lets the workspace fill the channel content area;
+Restore returns to the remembered split width without remounting either content tree.
 
 Below the allocation threshold, Messages/Workspace switches replace overlapping
 sheets; both content trees stay mounted. Returning to messages restores composer

@@ -1,0 +1,24 @@
+/* Tooltip — describes, never names, and holds nothing interactive. It must
+   appear on keyboard focus too, so the trigger wraps rather than listens. */
+.ui-tooltip { position: relative; display: inline-flex; }
+.ui-tooltip__bubble {
+  position: absolute; inset-block-end: calc(100% + 6px); inset-inline-start: 50%;
+  transform: translateX(-50%); z-index: var(--ui-z-popover);
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-emphasis); color: var(--ui-fg-strong);
+  font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm);
+  white-space: nowrap; pointer-events: none; opacity: 0;
+  box-shadow: var(--ui-shadow-1);
+  transition: opacity var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-tooltip:hover .ui-tooltip__bubble,
+.ui-tooltip:focus-within .ui-tooltip__bubble { opacity: 1; }
+.ui-tooltip__bubble--below { inset-block: calc(100% + 6px) auto; }
+.ui-tooltip__bubble--multiline { white-space: normal; inline-size: 220px; text-align: start; }
+/* A keyboard shortcut reads as a key, not as prose. */
+.ui-tooltip__key {
+  margin-inline-start: var(--ui-space-2); padding-inline: 4px;
+  border-radius: 3px; background: var(--ui-bg-hover);
+  font-family: var(--ui-font-mono); font-size: var(--ui-text-xs); color: var(--ui-fg-muted);
+}

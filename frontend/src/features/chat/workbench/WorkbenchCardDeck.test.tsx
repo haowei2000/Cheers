@@ -40,6 +40,8 @@ describe("WorkbenchCardDeck", () => {
     expect(markup).toContain('title="Unsaved changes"');
     expect(markup).toContain('aria-label="Added to context"');
     expect(markup).toContain("2 notes");
+    expect(markup).toContain("bg-canvas");
+    expect(markup).not.toContain("bg-panel");
   });
 
   it("renders locked state badge and keeps card header free of action buttons", () => {

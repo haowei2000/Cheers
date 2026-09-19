@@ -1,5 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { Input as UiInput } from "@/components/ui/input";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,14 +18,11 @@ import {
   Save,
   Trash2,
   X,
-  TextQuote,
   Copy,
   Eye,
   EyeOff,
   Layers,
-  MessageSquare,
   Pin,
-  Paperclip,
   Link as LinkIcon,
 } from "lucide-react";
 import type { WorkbenchContext } from "../context";
@@ -252,7 +250,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {
           id: "add-context",
           label: pinned.includes(selected) ? "Already pinned" : "Add file to context",
-          icon: <Paperclip className="h-4 w-4" />,
+          icon: <AddContextIcon className="h-4 w-4" />,
           disabled: pinned.includes(selected),
           group: "secondary",
           run: () => addContext(ctx.channelId, {
@@ -292,7 +290,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {
           id: "add-lines",
           label: "Add selected lines to context",
-          icon: <TextQuote className="h-4 w-4" />,
+          icon: <AddContextIcon className="h-4 w-4" />,
           disabled: !range || pinned.includes(selected),
           run: () => {
             if (!range) throw new Error("The selected text could not be mapped to file lines");
@@ -786,7 +784,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       ? "Already pinned — sent in every prompt"
                       : addToContextTitle("this file"),
                     priority: "secondary",
-                    icon: Paperclip,
+                    icon: AddContextIcon,
                     disabled: pinned.includes(selected),
                     control: (
                       <AttachContextButton
@@ -812,7 +810,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       ? "Already pinned — sent in every prompt"
                       : `${addToContextTitle("the selected lines")} (select text first)`,
                     priority: "secondary",
-                    icon: TextQuote,
+                    icon: AddContextIcon,
                     disabled: pinned.includes(selected),
                     onSelect: () => {
                       const selection = window.getSelection()?.toString() ?? "";
@@ -833,7 +831,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         ? (selected ? `Notes on ${selected}` : "Annotations")
                         : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selected}`,
                       priority: "primary",
-                      icon: MessageSquare,
+                      icon: AnnotationIcon,
                       control: (
                         <AnnotationsButton
                           notes={annotations.notes}

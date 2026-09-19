@@ -1,5 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { CollectionIcon, TabIcon } from "@/components/ui/editorial-icons";
+import {
+  AddContextIcon,
+  AnnotationIcon,
+  CollectionIcon,
+  TabIcon,
+} from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
@@ -16,8 +21,6 @@ import {
   Folder,
   Frame,
   Lock,
-  MessageSquare,
-  Paperclip,
   Save,
   Server,
 } from "lucide-react";
@@ -114,7 +117,7 @@ export function sceneTabContextActions(
         : contextAdded
           ? "Already added to context"
           : "Add Collection to context",
-      icon: <Paperclip className="h-4 w-4" />,
+      icon: <AddContextIcon className="h-4 w-4" />,
       disabled: !contextAvailable || contextAdded,
       group: "secondary",
       run: onAddToContext,
@@ -388,7 +391,7 @@ function ItemTab({
     actions: () => [{
       id: "add-context",
       label: contextAdded ? "Already added to context" : "Add to context",
-      icon: <Paperclip className="h-4 w-4" />,
+      icon: <AddContextIcon className="h-4 w-4" />,
       disabled: contextAdded,
       run: onAddToContext,
     }],
@@ -450,7 +453,7 @@ function ContextPickSurface({
   const actions = () => [{
     id: "add-context",
     label: added ? "Already added to context" : "Add to context",
-    icon: <Paperclip className="h-4 w-4" />,
+    icon: <AddContextIcon className="h-4 w-4" />,
     disabled: added,
     run: () => {
       addContext(channelId, item);
@@ -465,7 +468,7 @@ function ContextPickSurface({
       return [{
         id: "add-lines",
         label: "Add selected lines to context",
-        icon: <Paperclip className="h-4 w-4" />,
+        icon: <AddContextIcon className="h-4 w-4" />,
         disabled: !range,
         run: () => {
           if (!range) throw new Error("The selected text could not be mapped to file lines");
@@ -993,7 +996,7 @@ export function SceneWorkbench({
                 ? `Notes on ${selectedPath}`
                 : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
               priority: "primary",
-              icon: MessageSquare,
+              icon: AnnotationIcon,
               control: (
                 <AnnotationsButton
                   notes={annotations.notes}

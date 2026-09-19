@@ -544,7 +544,9 @@ pub async fn install_script(
         }
     }
     let api_base = resolve_api_base(&state, &headers);
-    let body = INSTALL_SCRIPT.replace("__CHEERS_API_BASE__", &api_base);
+    let body = INSTALL_SCRIPT
+        .replace("__CHEERS_API_BASE__", &api_base)
+        .replace("__CHEERS_MIN_CONNECTOR_VERSION__", MIN_CONNECTOR_VERSION);
     Ok((
         [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
         body,
@@ -609,6 +611,40 @@ mod connector_asset_tests {
             assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
             assert!(!connector_version_below_floor("0.1.42"));
             assert!(!connector_version_below_floor("v0.1.41"));
+        }
+
+        /// Every placeholder the serve-time substitution rewrites must exist in
+        /// the script, and every one in the script must be rewritten. A
+        /// `.replace()` for a token install.sh never mentions is a silent
+        /// no-op; a token the script reads but the handler forgets ships an
+        /// installer that configures itself with a literal sentinel.
+        #[test]
+        fn install_script_placeholders_round_trip() {
+            use crate::api::pairing::{INSTALL_SCRIPT, MIN_CONNECTOR_VERSION};
+
+            // Assignments the handler substitutes. Built without writing the
+            // contiguous token, so this test cannot match its own source.
+            let api_base = concat!("__CHEERS", "_API_BASE__");
+            let floor = concat!("__CHEERS", "_MIN_CONNECTOR_VERSION__");
+
+            for token in [api_base, floor] {
+                assert!(
+                    INSTALL_SCRIPT.contains(token),
+                    "install.sh never uses {token}: the handler's replace() is a no-op"
+                );
+            }
+
+            let served = INSTALL_SCRIPT
+                .replace(api_base, "https://example.test/api/v1")
+                .replace(floor, MIN_CONNECTOR_VERSION);
+
+            // The un-substituted sentinels are split literals, so a served
+            // script must carry no contiguous placeholder at all.
+            assert!(
+                !served.contains(concat!("__CHEERS", "_")),
+                "served install.sh still contains an un-substituted placeholder"
+            );
+            assert!(served.contains(MIN_CONNECTOR_VERSION));
         }
     }
 }

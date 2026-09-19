@@ -1,8 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { Paperclip } from "lucide-react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
 import { formatOf } from "../renderers/registry";
@@ -293,7 +293,7 @@ export function SandboxRenderer({
           actions: [{
             id: "add-context",
             label: `Add ${label} to context`,
-            icon: <Paperclip className="h-4 w-4" />,
+            icon: <AddContextIcon className="h-4 w-4" />,
             run: () => {
               const item = rangedFileContextItem(path, range.start, range.end);
               addContext(channelId, { ...item, label });

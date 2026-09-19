@@ -1,0 +1,26 @@
+/* Tree view — roving tabindex, one tab stop for the whole tree; arrow keys move
+   and expand. Indentation comes from the space scale, not from magic numbers. */
+.ui-tree { list-style: none; margin: 0; padding: 0; font-size: var(--ui-text-md); }
+.ui-tree ul { list-style: none; margin: 0; padding-inline-start: var(--ui-space-4); }
+.ui-tree__row {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  block-size: var(--ui-control-h-sm); padding-inline: var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); color: var(--ui-fg-muted); cursor: pointer;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease), color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-tree__row:hover { background: var(--ui-bg-hover); color: var(--ui-fg-strong); }
+.ui-tree__row:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-tree__item[aria-selected="true"] > .ui-tree__row {
+  background: var(--ui-bg-selected); color: var(--ui-fg-strong);
+  box-shadow: inset 2px 0 0 0 var(--ui-selected-indicator);
+}
+.ui-tree__twisty {
+  flex: none; inline-size: var(--ui-icon-md); color: var(--ui-fg-subtle);
+  transition: transform var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-tree__item[aria-expanded="true"] > .ui-tree__row .ui-tree__twisty { transform: rotate(90deg); }
+.ui-tree__item[aria-expanded="false"] > ul { display: none; }
+.ui-tree__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-tree__item[aria-disabled="true"] > .ui-tree__row { opacity: 0.45; pointer-events: none; }
+.ui-tree--guides ul { box-shadow: inset 1px 0 0 0 var(--ui-hairline); }
+.ui-tree .ui-icon { color: var(--ui-fg-subtle); flex: none; }

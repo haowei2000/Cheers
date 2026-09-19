@@ -1,5 +1,6 @@
 import { useManagedPanel } from "@/components/ui/managed-panel";
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { cn } from "@/lib/cn";
 import { workbenchControlSize } from "./workbench-control";
@@ -9,7 +10,7 @@ import { workbenchControlSize } from "./workbench-control";
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
-import { LayoutDashboard, ListFilter, Plus } from "lucide-react";
+import { LayoutDashboard, ListFilter } from "lucide-react";
 import {
   useContextPickStore,
   type ContextItem,
@@ -293,7 +294,7 @@ function ViewBoardDrawerImpl({
         id: "add-context",
         label: "Add board to context",
         priority: "secondary",
-        icon: Plus,
+        icon: AddContextIcon,
         onSelect: addActiveBoardToContext,
         control: (
           <UiButton
@@ -304,7 +305,7 @@ function ViewBoardDrawerImpl({
             title={addToContextTitle("this board")}
             className="rounded-sm text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <AddContextIcon className="w-3.5 h-3.5" />
           </UiButton>
         ),
       }] : []}

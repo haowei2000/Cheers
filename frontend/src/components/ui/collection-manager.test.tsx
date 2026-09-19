@@ -33,6 +33,23 @@ describe("CollectionManager pattern", () => {
     expect(markup.match(/<button/g)).toHaveLength(2);
   });
 
+  it("keeps unlink inside the same explicit confirmation row", () => {
+    const markup = renderToStaticMarkup(
+      <CollectionConfirmationItem
+        title="GitHub"
+        description="Other devices will be signed out."
+        action="unlink"
+        prompt="Unlink?"
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("Unlink?");
+    expect(markup).toContain(">Unlink</span>");
+    expect(markup.match(/<button/g)).toHaveLength(2);
+  });
+
   it("keeps destructive confirmation as a composite row without nested buttons", () => {
     const markup = renderToStaticMarkup(
       <CollectionDeleteItem

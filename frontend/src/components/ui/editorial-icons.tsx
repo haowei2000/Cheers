@@ -21,23 +21,32 @@ export const editorialIconNames = [
   "diffProof",
   "collection",
   "tab",
+  "addContext",
   "annotation",
 ] as const;
 
 export type EditorialIconName = (typeof editorialIconNames)[number];
 
 const iconArtwork: Record<EditorialIconName, ReactNode> = {
+  addContext: (
+    <>
+      {/* The shared context/annotation silhouette comes from the product mark:
+          a primary correspondence bubble with a smaller card connected at its
+          upper-right corner. The plus makes this the transient "attach to the
+          next prompt" action rather than a durable margin note. */}
+      <path d="M3.5 8h11v8.5H8.25L5 19v-2.5H3.5z" />
+      <path d="M6.75 11.25h4.5M6.75 14h3" />
+      <path d="M13 4.5h7.5v7H18l-1.75 1.75V11.5H13z" />
+      <path d="M16.75 6.5v3M15.25 8h3" />
+    </>
+  ),
   annotation: (
     <>
-      {/* The slip a remark is written on, dog-eared where the corner was turned
-          back. Its own silhouette on purpose: `correspondence` is the envelope a
-          message travels in, `tab` the ruled index card, `excerpt` the passage
-          being quoted — this is the note somebody left in the margin. */}
-      <path d="M5.5 4.5h8L18.5 9.5v10H5.5z" />
-      <path d="M13.5 4.5v5h5" />
-      {/* The remark itself: two ruled lines, the second run short the way a hand
-          -written note trails off rather than filling the measure. */}
-      <path d="M8.75 13h6.5M8.75 16.25h4" />
+      {/* A durable note uses one uninterrupted silhouette. The previous
+          double-card drawing broke into several short strokes at toolbar size
+          and read as visual noise rather than a saved annotation. */}
+      <path d="M4 5.5h16v11H9l-4 3v-3H4z" />
+      <path d="M8 9h8M8 12.5h6" />
     </>
   ),
   correspondence: (
@@ -175,4 +184,12 @@ export function CollectionIcon({ contentSize, className, ...props }: Omit<Editor
 
 export function TabIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
   return <EditorialIcon name="tab" contentSize={contentSize} className={className} {...props} />;
+}
+
+export function AddContextIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="addContext" contentSize={contentSize} className={className} {...props} />;
+}
+
+export function AnnotationIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="annotation" contentSize={contentSize} className={className} {...props} />;
 }

@@ -1,9 +1,9 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { messageContextItem, useContextPickStore } from "./context/contextPick";
 import {
   Square,
-  Paperclip,
   MessageCircleMore,
   Copy,
   Forward,
@@ -832,7 +832,7 @@ function RegularMessageItem({
       next.push({
         id: "add-context",
         label: "Add message to context",
-        icon: <Paperclip className="h-4 w-4" />,
+        icon: <AddContextIcon className="h-4 w-4" />,
         group: "secondary",
         run: () => useContextPickStore.getState().add(channelId, contextRef),
       });

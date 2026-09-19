@@ -14,11 +14,10 @@ import {
   LayoutGrid,
   ListTree,
   Lock,
-  Paperclip,
   Table,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { TabIcon } from "@/components/ui/editorial-icons";
+import { AddContextIcon, TabIcon } from "@/components/ui/editorial-icons";
 import { PresenceDot } from "@/components/ui/presence-dot";
 
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -315,7 +314,7 @@ export function WorkbenchCardDeck({
                 }
               }}
               className={cn(
-                "group relative flex min-h-[60vh] max-h-[78vh] h-[72vh] flex-col rounded-sm bg-panel ring-1 ring-inset transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-content-strong/50",
+                "group relative flex min-h-[60vh] max-h-[78vh] h-[72vh] flex-col rounded-sm bg-canvas ring-1 ring-inset transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-content-strong/50",
                 isSelected
                   ? "ring-control/60 shadow-md elevation-raised"
                   : "ring-control/30 shadow-sm opacity-60 hover:opacity-90 hover:ring-control/40 cursor-pointer",
@@ -341,7 +340,7 @@ export function WorkbenchCardDeck({
                     {tab.rendererTitle || ext || "tab"}
                   </span>
                   {tab.hasContext && (
-                    <Paperclip className="h-3.5 w-3.5 text-accent-400 flex-shrink-0" aria-label="Added to context" />
+                    <AddContextIcon className="h-3.5 w-3.5 text-accent-400 flex-shrink-0" aria-label="Added to context" />
                   )}
                   {tab.isDirty && (
                     <PresenceDot

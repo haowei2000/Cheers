@@ -1,0 +1,30 @@
+/* Accordion — built on <details>/<summary>, so the disclosure semantics,
+   keyboard handling and find-in-page behaviour come from the platform. */
+.ui-accordion { display: flex; flex-direction: column; }
+.ui-accordion__item { border-radius: var(--ui-radius-md); overflow: hidden; }
+.ui-accordion__item + .ui-accordion__item { margin-block-start: 1px; }
+.ui-accordion__trigger {
+  display: flex; align-items: center; gap: var(--ui-space-3);
+  padding: var(--ui-space-3); cursor: pointer; list-style: none;
+  color: var(--ui-fg-strong); font-size: var(--ui-text-md);
+  font-weight: var(--ui-weight-medium);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-accordion__trigger::-webkit-details-marker { display: none; }
+.ui-accordion__trigger:hover { background: var(--ui-bg-hover); }
+.ui-accordion__trigger:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-accordion__chevron { flex: none; color: var(--ui-fg-subtle); margin-inline-start: auto; transition: transform var(--ui-duration-base) var(--ui-ease); }
+.ui-accordion__item[open] > .ui-accordion__trigger .ui-accordion__chevron { transform: rotate(90deg); }
+.ui-accordion--leading .ui-accordion__chevron { margin-inline-start: 0; order: -1; }
+.ui-accordion__panel {
+  padding: 0 var(--ui-space-3) var(--ui-space-3);
+  font-size: var(--ui-text-md); line-height: var(--ui-leading-md); color: var(--ui-fg-muted);
+}
+.ui-accordion--bordered .ui-accordion__item { background: var(--ui-bg-inset); }
+.ui-accordion--flush .ui-accordion__item { border-radius: 0; }
+.ui-accordion--flush .ui-accordion__item + .ui-accordion__item { margin-block-start: 0; box-shadow: inset 0 1px 0 0 var(--ui-hairline); }
+.ui-accordion__item[data-state="disabled"] { opacity: 0.5; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-accordion__item::details-content { transition: block-size var(--ui-duration-base) var(--ui-ease), content-visibility var(--ui-duration-base) allow-discrete; block-size: 0; overflow: hidden; }
+  .ui-accordion__item[open]::details-content { block-size: auto; }
+}
