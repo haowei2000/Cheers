@@ -1,0 +1,31 @@
+/* Hero — where the display serif and the type scale get to be loud. Everything
+   around it stays quiet; that is the whole trade. */
+.ui-hero {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: var(--ui-space-4); padding: var(--ui-space-7) var(--ui-space-4);
+}
+.ui-hero__eyebrow { font-size: var(--ui-text-xs); letter-spacing: var(--ui-tracking-wide); color: var(--ui-fg-subtle); margin: 0; }
+.ui-hero__title {
+  margin: 0; font-family: var(--ui-font-display);
+  font-size: var(--ui-text-3xl); line-height: var(--ui-leading-3xl);
+  letter-spacing: var(--ui-tracking-tight); color: var(--ui-fg-strong);
+  text-wrap: balance; max-inline-size: 18ch;
+}
+.ui-hero__lede { margin: 0; max-inline-size: 52ch; font-size: var(--ui-text-lg); line-height: var(--ui-leading-md); color: var(--ui-fg-muted); }
+.ui-hero__actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); }
+.ui-hero--center { align-items: center; text-align: center; }
+.ui-hero--center .ui-hero__title, .ui-hero--center .ui-hero__lede { max-inline-size: 26ch; }
+.ui-hero--center .ui-hero__lede { max-inline-size: 52ch; }
+.ui-hero--split { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: var(--ui-space-6); }
+.ui-hero--split .ui-hero__media { border-radius: var(--ui-radius-md); overflow: hidden; }
+/* A scrim, not a hope: text over an image needs its own contrast. */
+.ui-hero--image { position: relative; overflow: hidden; border-radius: var(--ui-radius-md); color: var(--ui-fg-strong); }
+.ui-hero--image > * { position: relative; }
+.ui-hero--image::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to top, var(--ui-bg), transparent);
+}
+.ui-hero--image img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.ui-hero--compact { padding: var(--ui-space-5) var(--ui-space-4); gap: var(--ui-space-2); }
+.ui-hero--compact .ui-hero__title { font-size: var(--ui-text-2xl); line-height: var(--ui-leading-2xl); }
+@media (max-width: 720px) { .ui-hero--split { grid-template-columns: 1fr; } .ui-hero__title { font-size: var(--ui-text-2xl); line-height: var(--ui-leading-2xl); } }

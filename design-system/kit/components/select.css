@@ -1,0 +1,29 @@
+/* Select — native first. It holds a value and belongs to a form; a menu of
+   actions is a dropdown menu and takes different roles entirely. */
+.ui-select {
+  appearance: none; inline-size: 100%;
+  block-size: var(--ui-control-h-md);
+  padding-inline: var(--ui-control-px-md);
+  padding-inline-end: calc(var(--ui-space-3) * 2 + var(--ui-icon-md));
+  border: 0; border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  font-family: var(--ui-font-sans); font-size: var(--ui-text-md);
+  box-shadow: var(--ui-ring-inset); cursor: pointer;
+  transition: box-shadow var(--ui-duration-base) var(--ui-ease),
+              background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-select:hover:not(:disabled) { background: var(--ui-bg-control); }
+.ui-select:focus-visible { outline: none; box-shadow: var(--ui-focus-ring-inset); }
+.ui-select:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-select[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--ui-danger); }
+.ui-select[data-state="placeholder"] { color: var(--ui-fg-subtle); }
+.ui-select--sm { block-size: var(--ui-control-h-sm); font-size: var(--ui-text-sm); padding-inline: var(--ui-control-px-sm); padding-inline-end: calc(var(--ui-space-2) * 2 + var(--ui-icon-sm)); }
+.ui-select--lg { block-size: var(--ui-control-h-lg); }
+.ui-select[multiple] { block-size: auto; padding-block: var(--ui-space-2); padding-inline-end: var(--ui-control-px-md); }
+.ui-select-wrap { position: relative; display: block; }
+.ui-select-wrap > .ui-icon {
+  position: absolute; inset-inline-end: var(--ui-space-3); inset-block: 0; margin-block: auto;
+  color: var(--ui-fg-subtle); pointer-events: none;
+}
+.ui-select optgroup { background: var(--ui-bg-raised); color: var(--ui-fg-subtle); }
+.ui-select option { background: var(--ui-bg-raised); color: var(--ui-fg); }

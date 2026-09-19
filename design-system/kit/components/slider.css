@@ -1,0 +1,35 @@
+/* Slider — native range so the keyboard contract (arrows, Home/End, PageUp)
+   comes for free. Track and thumb are the only parts restyled. */
+.ui-slider { inline-size: 100%; appearance: none; background: transparent; cursor: pointer; block-size: 20px; }
+.ui-slider:focus-visible { outline: none; }
+.ui-slider::-webkit-slider-runnable-track {
+  block-size: 4px; border-radius: var(--ui-radius-full); background: var(--ui-bg-control);
+}
+.ui-slider::-moz-range-track {
+  block-size: 4px; border-radius: var(--ui-radius-full); background: var(--ui-bg-control);
+}
+.ui-slider::-moz-range-progress { block-size: 4px; border-radius: var(--ui-radius-full); background: var(--ui-accent); }
+.ui-slider::-webkit-slider-thumb {
+  appearance: none; inline-size: 14px; block-size: 14px; margin-block-start: -5px;
+  border: 0; border-radius: var(--ui-radius-full); background: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-bg);
+  transition: transform var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-slider::-moz-range-thumb {
+  inline-size: 14px; block-size: 14px; border: 0; border-radius: var(--ui-radius-full);
+  background: var(--ui-accent); box-shadow: 0 0 0 2px var(--ui-bg);
+}
+.ui-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--ui-bg), var(--ui-focus-ring); }
+.ui-slider:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--ui-bg), var(--ui-focus-ring); }
+.ui-slider:active::-webkit-slider-thumb { transform: scale(1.15); }
+.ui-slider:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-slider-row { display: flex; align-items: center; gap: var(--ui-space-3); }
+.ui-slider-row__value {
+  flex: none; min-inline-size: 3ch; text-align: end;
+  font-size: var(--ui-text-sm); color: var(--ui-fg-muted); font-variant-numeric: tabular-nums;
+}
+.ui-slider-ticks {
+  display: flex; justify-content: space-between;
+  font-size: var(--ui-text-xs); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums;
+}
+.ui-slider--vertical { writing-mode: vertical-lr; direction: rtl; inline-size: 20px; block-size: 120px; }

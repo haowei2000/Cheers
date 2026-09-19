@@ -1,0 +1,37 @@
+/* Drawer — the same dialog contract as Modal, different geometry and motion.
+   It shares the implementation rather than duplicating the focus handling. */
+.ui-drawer {
+  padding: 0; border: 0; margin: 0;
+  max-block-size: 100vh; max-inline-size: 100vw;
+  background: var(--ui-bg-raised); color: var(--ui-fg);
+  box-shadow: var(--ui-shadow-3);
+}
+.ui-drawer::backdrop { background: var(--ui-overlay); }
+.ui-drawer--end, .ui-drawer--start {
+  block-size: 100vh; inline-size: min(420px, calc(100vw - 48px));
+  inset-block: 0;
+}
+.ui-drawer--end { inset-inline: auto 0; border-start-start-radius: var(--ui-radius-md); border-end-start-radius: var(--ui-radius-md); }
+.ui-drawer--start { inset-inline: 0 auto; border-start-end-radius: var(--ui-radius-md); border-end-end-radius: var(--ui-radius-md); }
+.ui-drawer--bottom {
+  inline-size: 100vw; inset-block: auto 0; inset-inline: 0;
+  max-block-size: 80vh; border-start-start-radius: var(--ui-radius-md); border-start-end-radius: var(--ui-radius-md);
+}
+.ui-drawer--top { inline-size: 100vw; inset-block: 0 auto; inset-inline: 0; max-block-size: 80vh; border-end-start-radius: var(--ui-radius-md); border-end-end-radius: var(--ui-radius-md); }
+.ui-drawer__inner { display: flex; flex-direction: column; block-size: 100%; }
+.ui-drawer__header { display: flex; align-items: center; gap: var(--ui-space-3); padding: var(--ui-space-4); box-shadow: 0 1px 0 0 var(--ui-hairline); }
+.ui-drawer__title { margin: 0; font-size: var(--ui-text-lg); font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong); flex: 1; }
+.ui-drawer__body { flex: 1; overflow-y: auto; padding: var(--ui-space-4); color: var(--ui-fg-muted); font-size: var(--ui-text-md); line-height: var(--ui-leading-md); }
+.ui-drawer__footer { display: flex; justify-content: flex-end; gap: var(--ui-space-2); padding: var(--ui-space-4); box-shadow: 0 -1px 0 0 var(--ui-hairline); }
+/* The grab handle is the affordance a bottom sheet needs; it is decorative. */
+.ui-drawer__handle { inline-size: 36px; block-size: 4px; border-radius: var(--ui-radius-full); background: var(--ui-border); margin: var(--ui-space-2) auto 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-drawer { transition: translate var(--ui-duration-base) var(--ui-ease), overlay var(--ui-duration-base) allow-discrete, display var(--ui-duration-base) allow-discrete; }
+  .ui-drawer--end { translate: 100% 0; } .ui-drawer--start { translate: -100% 0; }
+  .ui-drawer--bottom { translate: 0 100%; } .ui-drawer--top { translate: 0 -100%; }
+  .ui-drawer[open] { translate: 0 0; }
+  @starting-style {
+    .ui-drawer--end[open] { translate: 100% 0; } .ui-drawer--start[open] { translate: -100% 0; }
+    .ui-drawer--bottom[open] { translate: 0 100%; } .ui-drawer--top[open] { translate: 0 -100%; }
+  }
+}

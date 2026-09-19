@@ -1,0 +1,28 @@
+/* Progress bar — full radius, because the shape says "fill", not "surface". */
+.ui-progress {
+  display: block; inline-size: 100%; block-size: 6px;
+  background: var(--ui-bg-control); border-radius: var(--ui-radius-full);
+  overflow: hidden;
+}
+.ui-progress--sm { block-size: 4px; }
+.ui-progress--lg { block-size: 10px; }
+.ui-progress__fill {
+  display: block; block-size: 100%; inline-size: 0;
+  background: var(--ui-accent); border-radius: inherit;
+  transition: inline-size var(--ui-duration-slow) var(--ui-ease);
+}
+.ui-progress[data-state="error"] .ui-progress__fill { background: var(--ui-danger); }
+.ui-progress--indeterminate .ui-progress__fill {
+  inline-size: 35%; animation: ui-progress-slide 1.4s var(--ui-ease) infinite;
+}
+.ui-progress-row { display: flex; align-items: center; gap: var(--ui-space-3); }
+.ui-progress-row__value {
+  font-size: var(--ui-text-xs); color: var(--ui-fg-subtle);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+@keyframes ui-progress-slide {
+  0% { transform: translateX(-100%); } 100% { transform: translateX(300%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress--indeterminate .ui-progress__fill { animation-duration: 3s; }
+}

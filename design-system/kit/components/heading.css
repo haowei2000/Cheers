@@ -1,0 +1,30 @@
+/* Heading — serif for display, UI sans for section headings. Visual size and
+   document level are independent: restyle, never skip a level. */
+.ui-heading { margin: 0; color: var(--ui-fg-strong); text-wrap: balance; }
+.ui-heading--display {
+  font-family: var(--ui-font-display); font-weight: var(--ui-weight-semibold);
+  font-size: var(--ui-text-3xl); line-height: var(--ui-leading-3xl);
+  letter-spacing: var(--ui-tracking-tight);
+}
+.ui-heading--1 {
+  font-family: var(--ui-font-display); font-weight: var(--ui-weight-semibold);
+  font-size: var(--ui-text-2xl); line-height: var(--ui-leading-2xl);
+  letter-spacing: var(--ui-tracking-tight);
+}
+.ui-heading--2 {
+  font-family: var(--ui-font-display); font-weight: var(--ui-weight-semibold);
+  font-size: var(--ui-text-xl); line-height: var(--ui-leading-xl);
+}
+.ui-heading--3 {
+  font-size: var(--ui-text-lg); line-height: var(--ui-leading-lg);
+  font-weight: var(--ui-weight-semibold);
+}
+.ui-heading--4 { font-size: var(--ui-text-md); line-height: var(--ui-leading-md); font-weight: var(--ui-weight-semibold); }
+.ui-heading--5 { font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm); font-weight: var(--ui-weight-semibold); }
+.ui-heading--6 { font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm); font-weight: var(--ui-weight-medium); color: var(--ui-fg-muted); }
+/* Eyebrow: the tracking ladder doing the work uppercase would otherwise do. */
+.ui-heading--eyebrow {
+  font-size: var(--ui-text-xs); line-height: var(--ui-leading-xs);
+  letter-spacing: var(--ui-tracking-wide); color: var(--ui-fg-subtle);
+  font-weight: var(--ui-weight-medium);
+}

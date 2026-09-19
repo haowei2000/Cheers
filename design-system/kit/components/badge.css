@@ -1,0 +1,29 @@
+/* Badge — the first component to exercise the whole status palette. Hue is
+   spent here and in alert/toast, and nowhere near interactive chrome. */
+.ui-badge {
+  display: inline-flex; align-items: center; gap: var(--ui-space-1);
+  block-size: 20px; padding-inline: var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-control); color: var(--ui-fg-muted);
+  font-size: var(--ui-text-xs); line-height: 1;
+  font-weight: var(--ui-weight-medium); letter-spacing: var(--ui-tracking-label);
+  white-space: nowrap;
+}
+.ui-badge--accent  { background: var(--ui-bg-selected); color: var(--ui-fg-strong); }
+.ui-badge--success { background: var(--ui-success-bg); color: var(--ui-success); }
+.ui-badge--warning { background: var(--ui-warning-bg); color: var(--ui-warning); }
+.ui-badge--danger  { background: var(--ui-danger-bg);  color: var(--ui-danger); }
+.ui-badge--info    { background: var(--ui-info-bg);    color: var(--ui-info); }
+.ui-badge--mention { background: var(--ui-mention); color: var(--ui-fg-on-accent); }
+.ui-badge--outline { background: transparent; box-shadow: var(--ui-ring-inset); color: var(--ui-fg-muted); }
+/* The dot is a second cue, never the only one — the word carries the status. */
+.ui-badge__dot { inline-size: 6px; block-size: 6px; border-radius: var(--ui-radius-full); background: currentColor; flex: none; }
+.ui-badge__remove {
+  all: unset; display: inline-grid; place-items: center; cursor: pointer;
+  inline-size: 14px; block-size: 14px; margin-inline-end: -2px;
+  border-radius: var(--ui-radius-full); color: inherit; opacity: 0.65;
+  transition: opacity var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-badge__remove:hover { opacity: 1; }
+.ui-badge__remove:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-badge[aria-disabled="true"] { opacity: 0.5; }

@@ -1,0 +1,32 @@
+/* Video — captions, keyboard-operable controls, and never autoplay with sound.
+   Background loops are muted and respect prefers-reduced-motion. */
+.ui-video { position: relative; display: block; inline-size: 100%; }
+.ui-video__frame {
+  inline-size: 100%; aspect-ratio: 16 / 9; display: block;
+  border-radius: var(--ui-radius-md); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-control); object-fit: cover;
+}
+.ui-video__controls {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  padding: var(--ui-space-2); margin-block-start: var(--ui-space-2);
+  border-radius: var(--ui-radius-md); background: var(--ui-bg-inset);
+}
+.ui-video__controls--overlay {
+  position: absolute; inset-block-end: var(--ui-space-2); inset-inline: var(--ui-space-2);
+  margin: 0; background: var(--ui-bg-raised); box-shadow: var(--ui-shadow-1);
+}
+.ui-video__time { font-size: var(--ui-text-xs); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums; }
+.ui-video__scrub { flex: 1; }
+.ui-video__poster-play {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  border: 0; background: none; cursor: pointer; color: var(--ui-fg-strong);
+}
+.ui-video__poster-play:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); border-radius: var(--ui-radius-md); }
+.ui-video__poster-play span {
+  display: grid; place-items: center; inline-size: 52px; block-size: 52px;
+  border-radius: var(--ui-radius-full); background: var(--ui-bg-raised);
+  box-shadow: var(--ui-shadow-2);
+}
+.ui-video--background .ui-video__frame { border-radius: 0; }
+.ui-video[data-state="buffering"] .ui-video__frame { opacity: 0.6; }
+@media (prefers-reduced-motion: reduce) { .ui-video--background .ui-video__frame { display: none; } }

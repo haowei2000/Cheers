@@ -1,0 +1,48 @@
+/* Table — the heaviest component in the set, and the one place hairline rules
+   are the point: adjacent rows have to scan as a register. Sortable headers are
+   buttons carrying aria-sort, never clickable text. */
+.ui-table-wrap { overflow-x: auto; border-radius: var(--ui-radius-md); background: var(--ui-bg-raised); }
+.ui-table {
+  inline-size: 100%; border-collapse: collapse;
+  font-size: var(--ui-text-md); color: var(--ui-fg);
+}
+.ui-table caption { text-align: start; padding: var(--ui-space-3); color: var(--ui-fg-subtle); font-size: var(--ui-text-sm); }
+.ui-table th, .ui-table td {
+  padding: var(--ui-space-2) var(--ui-space-3); text-align: start;
+  box-shadow: inset 0 -1px 0 0 var(--ui-hairline);
+}
+.ui-table thead th {
+  font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium);
+  letter-spacing: var(--ui-tracking-label); color: var(--ui-fg-subtle);
+  white-space: nowrap;
+}
+.ui-table tbody tr { transition: background-color var(--ui-duration-fast) var(--ui-ease); }
+.ui-table tbody tr:hover { background: var(--ui-bg-hover); }
+.ui-table tbody tr[data-state="selected"] { background: var(--ui-bg-selected); box-shadow: inset 2px 0 0 0 var(--ui-selected-indicator); }
+.ui-table tbody tr:last-child td { box-shadow: none; }
+.ui-table__sort {
+  all: unset; display: inline-flex; align-items: center; gap: var(--ui-space-1);
+  cursor: pointer; border-radius: var(--ui-radius-sm); color: inherit;
+}
+.ui-table__sort:hover { color: var(--ui-fg-strong); }
+.ui-table__sort:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-table__sort .ui-icon { opacity: 0; transition: opacity var(--ui-duration-fast) var(--ui-ease); }
+.ui-table__sort:hover .ui-icon { opacity: 0.5; }
+.ui-table th[aria-sort] .ui-table__sort { color: var(--ui-fg-strong); }
+.ui-table th[aria-sort] .ui-icon { opacity: 1; }
+.ui-table th[aria-sort="descending"] .ui-icon { transform: rotate(180deg); }
+.ui-table__num { text-align: end; font-variant-numeric: tabular-nums; }
+.ui-table__actions { inline-size: 1%; white-space: nowrap; }
+.ui-table--striped tbody tr:nth-child(even) { background: var(--ui-bg-inset); }
+.ui-table--striped tbody tr:nth-child(even):hover { background: var(--ui-bg-hover); }
+.ui-table--bordered th, .ui-table--bordered td { box-shadow: inset -1px -1px 0 0 var(--ui-hairline); }
+.ui-table--compact th, .ui-table--compact td { padding: var(--ui-space-1) var(--ui-space-2); font-size: var(--ui-text-sm); }
+.ui-table--comfortable th, .ui-table--comfortable td { padding: var(--ui-space-3) var(--ui-space-4); }
+.ui-table--sticky thead th { position: sticky; inset-block-start: 0; z-index: 1; background: var(--ui-bg-raised); }
+/* Below the breakpoint each row becomes its own labelled block. */
+@media (max-width: 640px) {
+  .ui-table--responsive thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ui-table--responsive tr { display: block; padding-block: var(--ui-space-2); box-shadow: inset 0 -1px 0 0 var(--ui-hairline); }
+  .ui-table--responsive td { display: flex; justify-content: space-between; gap: var(--ui-space-4); box-shadow: none; }
+  .ui-table--responsive td::before { content: attr(data-label); color: var(--ui-fg-subtle); font-size: var(--ui-text-sm); }
+}

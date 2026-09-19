@@ -1,0 +1,40 @@
+/* Tabs — swap panels inside a page. If the URL changes it is navigation and
+   needs links. The house style is the underline; pill is the only alternative. */
+.ui-tabs { display: flex; flex-direction: column; gap: var(--ui-space-4); }
+.ui-tablist {
+  display: flex; align-items: center; gap: var(--ui-space-1);
+  box-shadow: inset 0 -1px 0 0 var(--ui-hairline);
+  overflow-x: auto; scrollbar-width: none;
+}
+.ui-tablist::-webkit-scrollbar { display: none; }
+.ui-tab {
+  all: unset; display: inline-flex; align-items: center; gap: var(--ui-space-2);
+  box-sizing: border-box; block-size: var(--ui-control-h-lg);
+  padding-inline: var(--ui-space-3); cursor: pointer; white-space: nowrap;
+  color: var(--ui-fg-muted); font-size: var(--ui-text-md);
+  border-block-end: 2px solid transparent; margin-block-end: -1px;
+  transition: color var(--ui-duration-fast) var(--ui-ease), border-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-tab:hover { color: var(--ui-fg-strong); }
+.ui-tab:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); border-radius: var(--ui-radius-sm); }
+.ui-tab[aria-selected="true"] {
+  color: var(--ui-fg-strong); font-weight: var(--ui-weight-semibold);
+  border-block-end-color: var(--ui-fg-strong);
+}
+.ui-tab[aria-disabled="true"], .ui-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+.ui-tab__count {
+  font-size: var(--ui-text-xs); color: var(--ui-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+/* Pill: the second registered style, for tabs inside a panel or card. */
+.ui-tablist--pill { box-shadow: none; gap: 2px; padding: 2px; background: var(--ui-bg-inset); border-radius: var(--ui-radius-md); --ui-concentric-inset: -2px; }
+.ui-tablist--pill .ui-tab {
+  block-size: calc(var(--ui-control-h-md) - 4px); border-block-end: 0; margin-block-end: 0;
+  border-radius: var(--ui-radius-concentric);
+}
+.ui-tablist--pill .ui-tab[aria-selected="true"] { background: var(--ui-bg-raised); box-shadow: var(--ui-shadow-button); }
+.ui-tabs--vertical { flex-direction: row; gap: var(--ui-space-5); }
+.ui-tabs--vertical .ui-tablist { flex-direction: column; align-items: stretch; box-shadow: inset -1px 0 0 0 var(--ui-hairline); }
+.ui-tabs--vertical .ui-tab { border-block-end: 0; border-inline-end: 2px solid transparent; margin: 0 -1px 0 0; justify-content: flex-start; }
+.ui-tabs--vertical .ui-tab[aria-selected="true"] { border-inline-end-color: var(--ui-fg-strong); }
+.ui-tabpanel:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); border-radius: var(--ui-radius-sm); }

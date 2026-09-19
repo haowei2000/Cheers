@@ -1,0 +1,10 @@
+/* Stack — the only sanctioned way to space siblings. Gaps come from the scale,
+   so no component ever carries a margin that another component has to cancel. */
+.ui-stack { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.ui-stack--row { flex-direction: row; align-items: center; }
+.ui-stack--wrap { flex-wrap: wrap; }
+.ui-stack--split { justify-content: space-between; }
+.ui-stack[data-gap="1"] { gap: var(--ui-space-1); }
+.ui-stack[data-gap="2"] { gap: var(--ui-space-2); }
+.ui-stack[data-gap="4"] { gap: var(--ui-space-4); }
+.ui-stack[data-gap="6"] { gap: var(--ui-space-6); }

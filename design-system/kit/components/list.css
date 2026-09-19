@@ -1,0 +1,11 @@
+/* List — real ul/ol/dl so assistive tech announces the item count. */
+.ui-list { margin: 0; padding-inline-start: var(--ui-space-5); color: var(--ui-fg); font-size: var(--ui-text-md); line-height: var(--ui-leading-md); }
+.ui-list > li + li { margin-block-start: var(--ui-space-1); }
+.ui-list::marker, .ui-list > li::marker { color: var(--ui-fg-subtle); }
+.ui-list--unstyled { list-style: none; padding-inline-start: 0; }
+.ui-list--inline { list-style: none; padding-inline-start: 0; display: flex; flex-wrap: wrap; gap: var(--ui-space-3); }
+/* Description list: the register layout this product uses for metadata rows. */
+.ui-list--description { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: var(--ui-space-1) var(--ui-space-4); padding-inline-start: 0; }
+.ui-list--description dt { color: var(--ui-fg-subtle); font-size: var(--ui-text-sm); }
+.ui-list--description dd { margin: 0; color: var(--ui-fg); font-size: var(--ui-text-md); }
+@media (max-width: 480px) { .ui-list--description { grid-template-columns: 1fr; } }

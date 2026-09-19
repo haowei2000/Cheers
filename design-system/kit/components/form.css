@@ -1,0 +1,28 @@
+/* Form — one vertical rhythm for every field, and an error summary that takes
+   focus on a failed submit. Without the summary, a keyboard user has to hunt. */
+.ui-form { display: flex; flex-direction: column; gap: var(--ui-space-4); }
+.ui-form__row { display: grid; gap: var(--ui-space-4); }
+.ui-form--two-column .ui-form__row { grid-template-columns: 1fr 1fr; }
+.ui-form--inline { flex-direction: row; align-items: flex-end; flex-wrap: wrap; gap: var(--ui-space-3); }
+.ui-form--inline .ui-field { flex: 1; min-inline-size: 160px; }
+.ui-form__actions {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  justify-content: flex-end; padding-block-start: var(--ui-space-2);
+}
+.ui-form__actions--split { justify-content: space-between; }
+.ui-form__actions--sticky {
+  position: sticky; inset-block-end: 0; margin-block-start: var(--ui-space-2);
+  padding: var(--ui-space-3) 0; background: var(--ui-bg);
+  box-shadow: 0 -1px 0 0 var(--ui-hairline);
+}
+.ui-form__summary {
+  display: flex; flex-direction: column; gap: var(--ui-space-2);
+  padding: var(--ui-space-3); border-radius: var(--ui-radius-md);
+  background: var(--ui-danger-bg); color: var(--ui-danger);
+  font-size: var(--ui-text-md);
+}
+.ui-form__summary:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-form__summary ul { margin: 0; padding-inline-start: var(--ui-space-4); }
+.ui-form__summary a { color: inherit; }
+.ui-form[data-state="submitting"] .ui-form__actions { opacity: 0.7; pointer-events: none; }
+@media (max-width: 640px) { .ui-form--two-column .ui-form__row { grid-template-columns: 1fr; } }

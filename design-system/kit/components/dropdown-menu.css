@@ -1,0 +1,32 @@
+/* Dropdown menu — actions and navigation, never values. Menu roles on a form
+   control break screen readers; if the items are values, use Select. */
+.ui-menu {
+  display: flex; flex-direction: column; gap: 1px;
+  min-inline-size: 200px; padding: var(--ui-space-1);
+}
+.ui-menu__item {
+  all: unset; box-sizing: border-box;
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  block-size: var(--ui-control-h-md); padding-inline: var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); cursor: pointer;
+  color: var(--ui-fg); font-size: var(--ui-text-md);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-menu__item:hover { background: var(--ui-bg-hover); color: var(--ui-fg-strong); }
+.ui-menu__item:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-menu__item .ui-icon { color: var(--ui-fg-subtle); flex: none; }
+.ui-menu__item[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+.ui-menu__item--danger { color: var(--ui-danger); }
+.ui-menu__item--danger:hover { background: var(--ui-danger-bg); color: var(--ui-danger); }
+.ui-menu__item[aria-checked="true"] .ui-menu__check { opacity: 1; }
+.ui-menu__check { opacity: 0; flex: none; }
+.ui-menu__shortcut {
+  margin-inline-start: auto; font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs); color: var(--ui-fg-subtle);
+}
+.ui-menu__section {
+  padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-1);
+  font-size: var(--ui-text-xs); letter-spacing: var(--ui-tracking-wide); color: var(--ui-fg-subtle);
+}
+.ui-menu .ui-separator { margin-block: var(--ui-space-1); }
+.ui-menu__item--submenu .ui-menu__chevron { margin-inline-start: auto; color: var(--ui-fg-subtle); }

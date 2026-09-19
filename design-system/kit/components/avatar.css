@@ -1,0 +1,27 @@
+/* Avatar — round is meaning here, not decoration, so it keeps the full radius
+   while everything else stays on the 10px rectangle. */
+.ui-avatar {
+  position: relative; display: inline-grid; place-items: center; flex: none;
+  inline-size: var(--ui-control-h-md); block-size: var(--ui-control-h-md);
+  border-radius: var(--ui-radius-full); overflow: hidden;
+  background: var(--ui-bg-control); color: var(--ui-fg-muted);
+  font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium);
+  line-height: 1; user-select: none;
+}
+.ui-avatar > img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.ui-avatar--xs { inline-size: 20px; block-size: 20px; font-size: var(--ui-text-xs); }
+.ui-avatar--sm { inline-size: var(--ui-control-h-sm); block-size: var(--ui-control-h-sm); font-size: var(--ui-text-xs); }
+.ui-avatar--lg { inline-size: var(--ui-control-h-lg); block-size: var(--ui-control-h-lg); font-size: var(--ui-text-md); }
+.ui-avatar--xl { inline-size: 64px; block-size: 64px; font-size: var(--ui-text-lg); }
+/* Presence sits outside the clip so the ring reads against the page. */
+.ui-avatar-wrap { position: relative; display: inline-flex; }
+.ui-avatar-wrap__presence {
+  position: absolute; inset-block-end: 0; inset-inline-end: 0;
+  inline-size: 10px; block-size: 10px; border-radius: var(--ui-radius-full);
+  background: var(--ui-success); box-shadow: 0 0 0 2px var(--ui-bg);
+}
+.ui-avatar-wrap__presence[data-state="away"] { background: var(--ui-warning); }
+.ui-avatar-wrap__presence[data-state="offline"] { background: var(--ui-fg-subtle); }
+.ui-avatar-group { display: inline-flex; }
+.ui-avatar-group > * + * { margin-inline-start: -8px; }
+.ui-avatar-group .ui-avatar { box-shadow: 0 0 0 2px var(--ui-bg); }

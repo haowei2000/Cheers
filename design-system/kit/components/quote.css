@@ -1,0 +1,18 @@
+/* Quote — serif, and the one place the display face is allowed to be large. */
+.ui-quote {
+  margin: 0; padding-inline-start: var(--ui-space-4);
+  box-shadow: inset 2px 0 0 0 var(--ui-border-strong);
+  font-family: var(--ui-font-display); font-size: var(--ui-text-lg);
+  line-height: var(--ui-leading-lg); color: var(--ui-fg);
+}
+.ui-quote--pull {
+  padding: var(--ui-space-4) 0; box-shadow: none; border: 0;
+  font-size: var(--ui-text-2xl); line-height: var(--ui-leading-2xl);
+  letter-spacing: var(--ui-tracking-tight); color: var(--ui-fg-strong);
+  text-wrap: balance;
+}
+.ui-quote__attribution {
+  display: block; margin-block-start: var(--ui-space-2);
+  font-family: var(--ui-font-sans); font-size: var(--ui-text-sm);
+  font-style: normal; color: var(--ui-fg-subtle);
+}
