@@ -510,6 +510,7 @@ export function FloatingPanel({
         "max-md:inset-0 max-md:max-w-none max-md:max-h-none max-md:w-auto max-md:h-auto max-md:rounded-none max-md:translate-x-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]",
         !drag.pos && defaultPosClassName,
         collapsed && !isMobile ? collapsedWidth : className,
+        managed?.expanded && "max-w-none max-h-none rounded-none",
         dropTarget?.active && "ring-2 ring-amber-500/60",
         // Closed but mounted. `hidden` must come AFTER the hardcoded `flex` above:
         // cn() is tailwind-merge and the display group is last-wins, so placed earlier
@@ -643,6 +644,14 @@ export function FloatingPanel({
                   items={desktopPanelActions}
                   availableWidth={Math.max(36, panelWidth - 96)}
                   presentationOrder={["collapsed"]}
+                />
+              )}
+              {managed?.canExpand && (
+                <ActionButton
+                  action={managed.expanded ? "collapse" : "expand"}
+                  context="toolbar"
+                  onClick={managed.toggleExpanded}
+                  accessibleLabel={managed.expanded ? "Exit full screen" : "Expand panel to full screen"}
                 />
               )}
               {managed?.canFloat && <IconButton label={managed.floating ? "Dock panel" : "Float panel"} onClick={managed.toggleFloating}>{managed.floating ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}</IconButton>}

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FloatingPanel, floatingPanelNavigationBudget } from "./floating-panel";
+import { ManagedPanelProvider, type ManagedPanel } from "./managed-panel";
 
 // FloatingPanel became the host for the Workbench and ViewBoard drawers, which used to
 // hand-roll their own shells. Those two need three things the other callers never did,
@@ -83,6 +84,42 @@ describe("FloatingPanel visibility", () => {
 
     expect(rootClasses(markup)).not.toContain("hidden");
     expect(markup).toContain("body");
+  });
+});
+
+describe("FloatingPanel managed full screen", () => {
+  const managed = (expanded: boolean): ManagedPanel => ({
+    floating: false,
+    canFloat: true,
+    expanded,
+    canExpand: true,
+    toFront: () => {},
+    visible: true,
+    style: {},
+    toggleFloating: () => {},
+    toggleExpanded: () => {},
+    dragProps: { onPointerDown: () => {}, style: {} },
+    resizeProps: { onPointerDown: () => {}, style: {} },
+  });
+
+  it("offers full-screen expansion and a reversible exit action", () => {
+    const collapsed = render(
+      <ManagedPanelProvider resolve={() => managed(false)}>
+        <FloatingPanel title="Workbench" spawnKind="workbench" onClose={() => {}} storageKey="t.fullscreen">
+          <p>workspace</p>
+        </FloatingPanel>
+      </ManagedPanelProvider>,
+    );
+    const expanded = render(
+      <ManagedPanelProvider resolve={() => managed(true)}>
+        <FloatingPanel title="Workbench" spawnKind="workbench" onClose={() => {}} storageKey="t.fullscreen-expanded">
+          <p>workspace</p>
+        </FloatingPanel>
+      </ManagedPanelProvider>,
+    );
+
+    expect(collapsed).toContain('aria-label="Expand panel to full screen"');
+    expect(expanded).toContain('aria-label="Exit full screen"');
   });
 });
 

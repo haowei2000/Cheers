@@ -727,7 +727,7 @@ Panel chrome uses `ButtonGroup` as its layout and surface boundary. Place action
 buttons, choice groups, selectors, and switches inside it; each child retains its
 own role and state. Floating panel chrome is one non-wrapping row with two islands:
 navigation at the left and actions at the right. The right island is measured first;
-navigation receives the exact remaining width and adapts within it. Dock/Float and
+navigation receives the exact remaining width and adapts within it. Expand/Restore, Dock/Float, and
 Close stay fixed; state actions stay visible while secondary actions, including
 Minimize, enter More. Do not split groups into percentage slots, wrap action groups,
 or let chrome overlap the body. Reserve the measured chrome height above content.
@@ -737,7 +737,7 @@ drag handle, Collection selector/add control, and Tab selector/open control. At 
 first measured overflow, add controls move into their corresponding selector menus;
 at the next, selectors become icon controls with accessible names and tooltips. Raw
 workspace files is a special Collection navigation destination. The right island is
-reserved for actions on the current content plus More, Dock/Float, and Close. Product
+reserved for actions on the current content plus More, Expand/Restore, Dock/Float, and Close. Product
 copy says Collection/Tab; persisted `scene_state` and extension `scenes` remain protocol
 names and must not be migrated for this presentation change.
 
@@ -755,6 +755,10 @@ instrument; each gets at least 240px, otherwise the workspace returns to tabs.
 Float/Dock controls and dragging the panel grip out/back to the right edge offer
 explicit floating placement. Only user-floated instruments overlap messages.
 Message-specific inspectors remain contextual floating surfaces.
+
+The docked workspace exposes Expand/Restore in the same panel action island. Expand
+hides the conversation column and lets the workspace fill the channel content area;
+Restore returns to the remembered split width without remounting either content tree.
 
 Below the allocation threshold, Messages/Workspace switches replace overlapping
 sheets; both content trees stay mounted. Returning to messages restores composer

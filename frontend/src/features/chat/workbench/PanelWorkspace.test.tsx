@@ -33,7 +33,7 @@ describe("PanelWorkspace", () => {
     );
 
     expect(markup).toContain('data-workspace-dock=""');
+    expect(markup).not.toContain('data-workspace-expanded="true"');
     expect(markup).toContain("Workbench Content");
   });
 });
-
