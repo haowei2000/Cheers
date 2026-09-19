@@ -21,6 +21,8 @@ import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Combobox } from "@/components/ui/combobox";
 
 export function BotToBotGrantsSection({ botId }: { botId: string }) {
   const [data, setData] = useState<BotGrants | null>(null);
@@ -140,11 +142,22 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
         </Select>
       </Field>
       <Field label="Bot">
-        <Select controlSize="regular" value={subjectId} disabled={editorMode === "edit"} onChange={(event) => setSubjectId(event.target.value)}>
-          <option value="">Choose a bot…</option>
-          <option value="*">∗ any bot</option>
-          {data.subjects.map((subject) => <option key={subject.bot_id} value={subject.bot_id}>{subject.label}</option>)}
-        </Select>
+        <Combobox
+          ariaLabel="Choose a bot"
+          placeholder="Search bots…"
+          controlSize="regular"
+          value={subjectId}
+          disabled={editorMode === "edit"}
+          options={[
+            { value: "*", label: "Any bot", searchText: "all wildcard" },
+            ...data.subjects.map((subject) => ({
+              value: subject.bot_id,
+              label: subject.label,
+              searchText: subject.bot_id,
+            })),
+          ]}
+          onValueChange={(value) => setSubjectId(value ?? "")}
+        />
       </Field>
       <Field label="Decision">
         <Select controlSize="regular" value={decision} onChange={(event) => setDecision(event.target.value as "allow" | "deny")}>
@@ -203,8 +216,8 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               key={id}
               leading={<ShieldCheck className={controlIconClasses.regular} />}
               title={`${kindLabel[rule.grant] ?? rule.grant} → ${rule.subject_id === "*" ? "any bot" : subjectLabel[rule.subject_id] || `${rule.subject_id.slice(0, 8)}…`}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300" : "font-utility text-compact uppercase text-danger-300"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
+              status={<Badge tone={rule.decision === "allow" ? "success" : "danger"} indicator>{rule.decision}</Badge>}
+              criticalStatus={rule.expired ? <Badge tone="warning" indicator>Expired</Badge> : undefined}
               actions={(
                 <>
                   <IconButton label="Edit bot grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>

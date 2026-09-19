@@ -33,6 +33,9 @@ import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { ChoiceGroup } from "@/components/ui/choice-button";
 import { ThemeSelector } from "@/components/ui/theme-selector";
+import { Badge } from "@/components/ui/badge";
+import { Combobox } from "@/components/ui/combobox";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
 import { Banner } from "@/components/ui/banner";
@@ -113,6 +116,16 @@ const iconLabels: Record<EditorialIconName, string> = {
 
 /** Development/visual-test gallery. It is intentionally not exposed as a product route. */
 export function ItemGallery() {
+  const [comboboxValue, setComboboxValue] = useState<string | null>("ada");
+  const tableRows = [
+    { id: "gateway", service: "Gateway", state: "Healthy", latency: 42 },
+    { id: "connector", service: "Connector", state: "Attention", latency: 128 },
+  ];
+  const tableColumns: DataTableColumn<(typeof tableRows)[number]>[] = [
+    { id: "service", header: "Service", cell: (row) => row.service, sortValue: (row) => row.service },
+    { id: "state", header: "State", cell: (row) => <Badge tone={row.state === "Healthy" ? "success" : "warning"} indicator>{row.state}</Badge>, sortValue: (row) => row.state },
+    { id: "latency", header: "Latency", align: "right", cell: (row) => `${row.latency} ms`, sortValue: (row) => row.latency },
+  ];
   return (
     <main className="h-full overflow-y-auto bg-zinc-950 px-4 py-3 text-content-primary sm:px-5">
       <header className="mb-3 border-y-4 border-double border-zinc-500 py-2">
@@ -319,6 +332,38 @@ export function ItemGallery() {
             <MetricCard label="Online" value={4} tone="success" />
             <MetricCard label="Waiting" value={2} tone="warning" />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="structured-control-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="structured-control-register" className="mb-2 text-section-label">Badge · Combobox · Data table</h2>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-3 bg-zinc-900 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge>Neutral</Badge>
+              <Badge tone="success" indicator>Healthy</Badge>
+              <Badge tone="warning" indicator>Attention</Badge>
+              <Badge tone="danger" indicator>Failed</Badge>
+              <Badge tone="info">Information</Badge>
+            </div>
+            <Combobox
+              ariaLabel="Choose an engineer"
+              value={comboboxValue}
+              onValueChange={setComboboxValue}
+              options={[
+                { value: "ada", label: "Ada Lovelace", searchText: "analytical engine" },
+                { value: "grace", label: "Grace Hopper", searchText: "compiler" },
+                { value: "margaret", label: "Margaret Hamilton", searchText: "apollo" },
+              ]}
+            />
+          </div>
+          <DataTable
+            label="Service health"
+            columns={tableColumns}
+            rows={tableRows}
+            getRowKey={(row) => row.id}
+            initialSort={{ columnId: "latency", direction: "descending" }}
+          />
         </div>
       </section>
 

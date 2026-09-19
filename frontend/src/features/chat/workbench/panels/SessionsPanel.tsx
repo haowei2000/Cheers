@@ -39,6 +39,7 @@ import { statusColor } from "@/features/chat/sessionLabel";
 import { bustBotControls } from "@/features/chat/sessionControlsCache";
 import { cn } from "@/lib/cn";
 import { OperationsItem } from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
 import { type PanelContext } from "@/features/chat/panels/registry";
 import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 
@@ -198,9 +199,7 @@ function SessionCard({
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>}
         criticalStatus={s.is_primary ? (
-          <span className="shrink-0 rounded-sm bg-selected px-1 py-1 text-minimal font-semibold text-content-strong ring-1 ring-inset ring-selected-indicator/80">
-            primary
-          </span>
+          <Badge tone="accent">Primary</Badge>
         ) : undefined}
         status={<span className="inline-flex shrink-0 items-center gap-1 text-content-muted">
           <CircleDot className={`w-3.5 h-3.5 ${statusColor(s.status)}`} />

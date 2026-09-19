@@ -349,6 +349,12 @@ wrap an Input in another `focus-within:ring-*` field, manually position a Search
 icon, or add `pl-9`; use `containerClassName` only for layout and `className`
 only for approved surface/tone overrides.
 
+Use `<Combobox>` when a value set is large enough to require typing and
+filtering. It owns `combobox` / `listbox` semantics, active-descendant keyboard
+navigation, disabled options, loading, no-results, selection checkmarks, Escape
+dismissal, and focus restoration. Keep `<Select>` for short predictable form
+choices and `<DropdownSelect>` for compact selectors that do not need filtering.
+
 ### 2.3 Text fields
 
 Use `<Input>` for single-line text. Fields are **filled boxes with a neutral
@@ -420,6 +426,12 @@ is the canonical borderless field with the shared 10px Web radius and
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 
 ### 2.6 Badges & counters
+
+Use `<Badge>` for compact, non-interactive status and identity labels. Its
+semantic tones are neutral, accent, success, warning, danger, info, and mention;
+pass `indicator` when a state needs a redundant dot in addition to its word.
+Counts and unread state remain circular through `<UnreadBadge>`. A Badge never
+contains an action; removal belongs to the owning Item or chip action slot.
 
 | Badge | Recipe |
 |---|---|
@@ -516,6 +528,12 @@ Selectable rows use the shared Item geometry and hover fill. Selected
 NavigationItems use `bg-zinc-800 text-content-primary` plus `aria-current="page"`;
 the fill remains visible even when a borderless placement suppresses the
 ordinary left marker. Every interactive row needs a hover state.
+
+Use `<DataTable>` only for genuine two-dimensional data whose columns need a
+shared scan order. It owns caption, column scopes, keyboard sorting, loading
+skeletons, empty state, alignment, stable sorting, and an optional row-actions
+column. Entity and management collections remain `ItemList` / `CollectionManager`;
+editable file/YAML tables remain specialized workbench structures.
 
 ### 2.13 Field (label + control + hint)
 
@@ -684,16 +702,10 @@ same 36px desktop / 44px touch row.
 
 ## 3. Known gaps (extraction roadmap)
 
-Patterns that should graduate into `src/components/ui/` — until then, copy
-the recipes above:
-
-1. `SearchInput` (forms A & B of §2.2)
-2. `Badge` (§2.6)
-
 Extracted (were gaps, now shared components): `Select` / `Textarea`
 (mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
 `SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsSection`, and
-`MetricCard`.
+`MetricCard`, `SearchInput`, `Badge`, `Combobox`, and `DataTable`.
 
 The full audit that produced this doc: visual-consistency reports
 2026-07-10 (static sweep + live review, see PR #134 context).
