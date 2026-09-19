@@ -186,7 +186,9 @@ color.
 | Hover on soft surfaces | `bg-zinc-700` |
 
 Settings screens compose `<SettingsSection>` and `<SettingsCard>` rather than
-repeating card padding, title, description, and action anatomy. Compact KPI
+repeating card padding, title, description, and action anatomy. Related regions
+inside one card use `<SettingsCardSection>`; it owns the directional hairline,
+section heading, description, icon, action slot, and vertical rhythm. Compact KPI
 summaries use `<MetricCard>` with a registered semantic `tone`; callers do not
 pass arbitrary foreground classes. All three live in `src/components/ui/` and
 are demonstrated in the Item Gallery.
@@ -704,7 +706,8 @@ same 36px desktop / 44px touch row.
 
 Extracted (were gaps, now shared components): `Select` / `Textarea`
 (mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
-`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsSection`, and
+`SectionHead` (§2.13), `Tip` (§2.14), `SettingsCard` / `SettingsCardSection` /
+`SettingsSection`, and
 `MetricCard`, `SearchInput`, `Badge`, `Combobox`, and `DataTable`.
 
 The full audit that produced this doc: visual-consistency reports

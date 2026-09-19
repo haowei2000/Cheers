@@ -1,5 +1,4 @@
 import { ContentActionScope } from "@/components/ui/content-action-scope";
-import { cn } from "@/lib/cn";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   User,
@@ -48,6 +47,7 @@ import {
   SignOutAction,
 } from "./AccountSettings";
 import { ItemList, NavigationItem } from "@/components/ui/item";
+import { SettingsCard, SettingsCardSection, SettingsSection } from "@/components/ui/settings-card";
 
 type SectionId =
   | "profile"
@@ -86,16 +86,13 @@ const NAV: {
 function BotsMovedCard() {
   const navigate = useNavigate();
   return (
-    <div className="bg-zinc-900 rounded-sm p-6">
-      <div className="flex items-center gap-2 mb-2">
-        <Bot className="w-4 h-4 text-accent-300" />
-        <p className="text-regular font-semibold text-content-primary">Bots live in Fleet</p>
-      </div>
-      <p className="text-compact text-content-muted mb-4">
-        Create and manage bots from Fleet — the primary home for your agent roster.
-      </p>
-      <ActionButton action="open" context="settings" accessibleLabel="Open Fleet" onClick={() => navigate("/fleet")} />
-    </div>
+    <SettingsSection title="Bots" icon={Bot}>
+      <SettingsCard
+        title="Bots live in Fleet"
+        description="Create and manage bots from Fleet — the primary home for your agent roster."
+        actions={<ActionButton action="open" context="settings" accessibleLabel="Open Fleet" onClick={() => navigate("/fleet")} />}
+      />
+    </SettingsSection>
   );
 }
 
@@ -169,14 +166,14 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           <ContentActionScope>
           {section === "profile" && (
-            <section>
-              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
-                <User className="w-3.5 h-3.5" />
-                Profile
-              </h2>
-
-              <ProfileEditCard />
-            </section>
+            <SettingsSection title="Profile" icon={User}>
+              <SettingsCard
+                title="Public profile"
+                description="Choose how you appear to other people in Cheers."
+              >
+                <ProfileEditCard />
+              </SettingsCard>
+            </SettingsSection>
           )}
 
           {section === "appearance" && <AppearanceCard />}
@@ -184,23 +181,17 @@ export default function SettingsPage() {
           {section === "bots" && <BotsMovedCard />}
 
           {section === "server" && (
-            <section>
-              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4">
-                Server
-              </h2>
+            <SettingsSection title="Server" icon={Server}>
               <ServerCard />
-            </section>
+            </SettingsSection>
           )}
 
           {section === "about" && (
-            <section>
-              <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4">
-                About
-              </h2>
+            <SettingsSection title="About" icon={Info}>
               <AppUpdateCard />
               <LaunchAtLoginCard />
               <LegalLinks />
-            </section>
+            </SettingsSection>
           )}
 
           {/* Admin-only; each self-gates (renders null for non-admins). */}
@@ -211,41 +202,33 @@ export default function SettingsPage() {
           {section === "speech" && <AdminSttSettings />}
 
           {section === "account" && (
-            <section>
-              <h2 className="mb-5 text-compact font-semibold uppercase tracking-section text-content-muted">
-                Account
-              </h2>
-
-              <div className="bg-zinc-900 px-6 max-md:px-4">
-                <section className="py-5 first:pt-0">
-                  <p className="text-title">Sign-in and security</p>
-                  <p className="mb-4 mt-1 text-caption">
-                    Manage how you sign in and verify sensitive actions.
-                  </p>
+            <SettingsSection title="Account" icon={LogOut}>
+              <SettingsCard
+                title="Sign-in and security"
+                description="Manage how you sign in and verify sensitive actions."
+              >
                   <ItemList presentationLevel="max" controlSize="regular">
                     <EmailAction />
                     <ChangePasswordAction onRotated={(token) => setToken(token)} />
                     <TwoFactorCard />
                   </ItemList>
-                </section>
 
-                <PasskeyCard />
+                  <PasskeyCard />
 
-                <ExternalIdentitiesCard />
+                  <ExternalIdentitiesCard />
 
-                <TrustedDevicesCard />
+                  <TrustedDevicesCard />
 
-                <DevicesSessionsCard />
+                  <DevicesSessionsCard />
 
-                <ExternalAIPermissionsCard />
+                  <ExternalAIPermissionsCard />
 
-                <PushNotificationsCard />
+                  <PushNotificationsCard />
 
-                <section className="border-t border-zinc-600/70 py-5">
-                  <p className="text-title">Account access</p>
-                  <p className="mb-4 mt-1 text-caption">
-                    End this session or permanently remove your account.
-                  </p>
+                  <SettingsCardSection
+                    title="Account access"
+                    description="End this session or permanently remove your account."
+                  >
                   <ItemList presentationLevel="max" controlSize="regular">
                     <SignOutAction
                       onSignOut={async () => {
@@ -264,11 +247,11 @@ export default function SettingsPage() {
                       }}
                     />
                   </ItemList>
-                </section>
-              </div>
+                  </SettingsCardSection>
+              </SettingsCard>
 
               <LegalLinks />
-            </section>
+            </SettingsSection>
           )}
           </ContentActionScope>
         </div>

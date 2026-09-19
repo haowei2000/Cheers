@@ -41,7 +41,7 @@ import { InlineReference } from "@/components/ui/inline-reference";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
-import { SettingsCard } from "@/components/ui/settings-card";
+import { SettingsCard, SettingsCardSection } from "@/components/ui/settings-card";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
 import type { TraceEvent } from "@/types";
 
@@ -327,6 +327,11 @@ export function ItemGallery() {
         <div className="grid gap-3 lg:grid-cols-2">
           <SettingsCard title="Color theme" description="Shared settings anatomy keeps titles, descriptions, actions, and content aligned.">
             <ThemeSelector showStatus={false} />
+            <SettingsCardSection title="Account security" description="Nested settings regions share one directional-divider rhythm.">
+              <ItemList presentationLevel="medium" controlSize="regular">
+                <OperationsItem title="Two-step verification" status={<Badge tone="success" indicator>On</Badge>} />
+              </ItemList>
+            </SettingsCardSection>
           </SettingsCard>
           <div className="grid grid-cols-2 gap-2">
             <MetricCard label="Online" value={4} tone="success" />

@@ -1,4 +1,3 @@
-import { ButtonGroup } from "@/components/ui/button-group";
 import { useCallback, useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -43,9 +42,8 @@ import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { CollectionConfirmationItem } from "@/components/ui/collection-manager";
-
-const inputCls =
-  "bg-zinc-800 text-content-primary";
+import { Badge } from "@/components/ui/badge";
+import { SettingsCardSection } from "@/components/ui/settings-card";
 
 export function authenticatorQrDataUrl(provisioningUri: string): Promise<string> {
   if (!provisioningUri.startsWith("otpauth://totp/")) {
@@ -75,11 +73,7 @@ export function twoFactorSummary(methods: TwoFactorMethods | undefined): string 
 
 /** On/Off marker for one second factor, matching the card's own status voice. */
 function MethodState({ on }: { on: boolean }) {
-  return (
-    <span className={on ? "text-success-400" : "text-content-muted"}>
-      {on ? "On" : "Off"}
-    </span>
-  );
+  return <Badge tone={on ? "success" : "neutral"} indicator={on}>{on ? "On" : "Off"}</Badge>;
 }
 
 /** Two-step verification. Any armed method — authenticator app, passkey, or
@@ -506,7 +500,6 @@ export function TwoFactorCard() {
               onChange={(e) => setCode(e.target.value)}
               placeholder="123456"
               autoComplete="one-time-code"
-              className={inputCls}
             />
           </Field>
           <div className="flex gap-2">
@@ -557,7 +550,6 @@ export function TwoFactorCard() {
             onChange={(e) => setCode(e.target.value)}
             placeholder="Authenticator or recovery code"
             autoComplete="one-time-code"
-            className={inputCls}
           />
           <div className="flex gap-2">
             <ActionButton
@@ -598,7 +590,6 @@ export function TwoFactorCard() {
                   onChange={(e) => setEmailEnrollCode(e.target.value)}
                   placeholder="123456"
                   autoComplete="one-time-code"
-                  className={inputCls}
                   onKeyDown={(e) => e.key === "Enter" && void confirmEnableEmail()}
                 />
               </Field>
@@ -655,7 +646,6 @@ export function TwoFactorCard() {
                   onChange={(e) => setPassword2FaInput(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className={inputCls}
                   onKeyDown={(e) => e.key === "Enter" && void confirmEnablePassword()}
                 />
               </Field>
@@ -738,37 +728,25 @@ export function TrustedDevicesCard() {
   }
 
   return (
-    <section className="border-t border-zinc-600/70 py-5">
-      <div className="mb-4 min-w-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="flex items-center gap-2 text-regular font-medium text-content-secondary">
-            <Laptop className="h-4 w-4 text-content-muted" /> Remembered devices
-            {devices != null && devices.length > 0 && (
-              <span className="text-compact font-normal text-content-muted">
-                {devices.length} remembered
-              </span>
-            )}
-          </p>
-          {devices != null && devices.length > 0 && (
-            <ButtonGroup label="Remembered device actions">
-              <ActionButton
-                action="revoke"
-                context="security"
-                accessibleLabel="Ask every device to verify again"
-                loading={busy}
-                disabled={busy || revokeTarget !== null}
-                onClick={() => setRevokeTarget("all")}
-              />
-            </ButtonGroup>
-          )}
-        </div>
-        <p className="mt-1 text-compact text-content-muted">
-          These devices skip the second step for 30 days. Turning on a new verification method clears the list.
-        </p>
-      </div>
-
-      {loadError ? (
-        <ItemList presentationLevel="medium" controlSize="regular">
+    <SettingsCardSection
+      title="Remembered devices"
+      description={devices != null && devices.length > 0
+        ? `${devices.length} remembered. These devices skip the second step for 30 days.`
+        : "These devices skip the second step for 30 days. Turning on a new verification method clears the list."}
+      icon={Laptop}
+      actions={devices != null && devices.length > 0 ? (
+        <ActionButton
+          action="revoke"
+          context="security"
+          accessibleLabel="Ask every device to verify again"
+          loading={busy}
+          disabled={busy || revokeTarget !== null}
+          onClick={() => setRevokeTarget("all")}
+        />
+      ) : undefined}
+    >
+      <ItemList presentationLevel="medium" controlSize="regular">
+        {loadError ? (
           <OperationsItem
             title="Couldn't load remembered devices"
             subtitle="The current remembered-device status is unavailable."
@@ -781,13 +759,12 @@ export function TrustedDevicesCard() {
               />
             }
           />
-        </ItemList>
-      ) : devices == null ? (
-        <p className="text-compact text-content-muted">Loading…</p>
-      ) : devices.length === 0 ? (
-        <p className="text-compact text-content-muted">No remembered devices.</p>
-      ) : (
-        <ItemList presentationLevel="medium" controlSize="regular">
+        ) : devices == null ? (
+          <OperationsItem title="Loading remembered devices…" disabled />
+        ) : devices.length === 0 ? (
+          <OperationsItem title="No remembered devices" />
+        ) : (
+          <>
           {revokeTarget === "all" && (
             <CollectionConfirmationItem
               title="Every remembered device"
@@ -835,9 +812,10 @@ export function TrustedDevicesCard() {
               />
             )
           ))}
-        </ItemList>
-      )}
-    </section>
+          </>
+        )}
+      </ItemList>
+    </SettingsCardSection>
   );
 }
 
@@ -850,6 +828,7 @@ export function PasskeyCard() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [newRecoveryCodes, setNewRecoveryCodes] = useState<string[]>([]);
 
   async function copyNewRecoveryCodes() {
@@ -918,65 +897,67 @@ export function PasskeyCard() {
   }
 
   async function remove(pk: string) {
-    if (!window.confirm("Delete this passkey?")) return;
+    setBusy(true);
     try {
       await deletePasskey(pk);
       toast.success("Passkey deleted");
+      setDeleteTarget(null);
       await reload();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't delete passkey");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <section className="border-t border-zinc-600/70 py-5">
-      <div className="mb-4 min-w-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="flex items-center gap-2 text-regular font-semibold text-content-primary">
-            <Fingerprint className="h-4 w-4 text-accent-400" /> Passkeys
-            {!loading && available && (
-              <span className="text-compact font-normal text-content-muted">
-                {credentials.length} added
-              </span>
-            )}
-          </p>
-          {available && (
-            <ButtonGroup label="Passkey actions">
-              <ActionButton
-                action="add"
-                context="security"
-                accessibleLabel="Add passkey"
-                onClick={() => setAddOpen(true)}
+    <SettingsCardSection
+      title="Passkeys"
+      description={loading
+        ? "Loading passkeys…"
+        : available
+          ? <>Use Face ID, Touch ID, or your device lock for verification.{rpId && <span className="ml-2 font-code">{rpId}</span>}</>
+          : "Passkeys are not configured on this server."}
+      icon={Fingerprint}
+      actions={available ? (
+        <ActionButton
+          action="add"
+          context="security"
+          accessibleLabel="Add passkey"
+          disabled={busy || deleteTarget !== null}
+          onClick={() => setAddOpen(true)}
+        />
+      ) : undefined}
+    >
+      <ItemList presentationLevel="medium" controlSize="regular">
+        {loading ? (
+          <OperationsItem title="Loading passkeys…" disabled />
+        ) : credentials.length === 0 ? (
+          available ? <OperationsItem title="No passkeys added" /> : <OperationsItem title="Passkeys unavailable" disabled />
+        ) : (
+          credentials.map((c) => (
+            deleteTarget === c.credential_pk ? (
+              <CollectionConfirmationItem
+                key={c.credential_pk}
+                title={c.name}
+                description="This passkey will no longer sign in to or verify this account."
+                action="delete"
+                prompt="Delete?"
+                busy={busy}
+                onCancel={() => setDeleteTarget(null)}
+                onConfirm={() => void remove(c.credential_pk)}
               />
-            </ButtonGroup>
-          )}
-        </div>
-        <p className="mt-1 text-compact text-content-muted">
-          {loading
-            ? "Loading passkeys…"
-            : available
-              ? "Use Face ID, Touch ID, or your device lock for verification."
-              : "Passkeys are not configured on this server."}
-          {rpId && <span className="ml-2 font-code">{rpId}</span>}
-        </p>
-      </div>
-
-      {loading ? (
-        null
-      ) : credentials.length === 0 ? (
-        available ? <p className="text-compact text-content-muted">No passkeys added.</p> : null
-      ) : (
-        <ItemList presentationLevel="medium" controlSize="regular">
-          {credentials.map((c) => (
-            <OperationsItem
-              key={c.credential_pk}
-              title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
-              trailing={c.last_used_at ? <span className="text-compact text-content-muted">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
-              actions={<ActionButton action="delete" context="toolbar" accessibleLabel={`Delete passkey ${c.name}`} onClick={() => void remove(c.credential_pk)} />}
-            />
-          ))}
-        </ItemList>
-      )}
+            ) : (
+              <OperationsItem
+                key={c.credential_pk}
+                title={`${c.name} · added ${c.created_at.slice(0, 10)}`}
+                trailing={c.last_used_at ? <span className="text-compact text-content-muted">Used {c.last_used_at.slice(0, 10)}</span> : undefined}
+                actions={<ActionButton action="delete" context="toolbar" accessibleLabel={`Delete passkey ${c.name}`} disabled={deleteTarget !== null} onClick={() => setDeleteTarget(c.credential_pk)} />}
+              />
+            )
+          ))
+        )}
+      </ItemList>
 
       {addOpen && (
         <Dialog title="Add passkey" onClose={closeAddDialog}>
@@ -1010,6 +991,6 @@ export function PasskeyCard() {
           </div>
         </Dialog>
       )}
-    </section>
+    </SettingsCardSection>
   );
 }
