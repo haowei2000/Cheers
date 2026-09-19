@@ -7,6 +7,7 @@ import {
   Laptop,
   Link2,
   LogOut,
+  Mail,
   Shield,
   Trash2,
 } from "lucide-react";
@@ -16,10 +17,14 @@ import {
   changePassword,
   deleteAccount,
   getExternalIdentity,
-  unlinkExternalIdentity,
+  requestEmailUpdateCode,
+  setPassword,
   startExternalIdentityOAuthLink,
+  unlinkExternalIdentity,
+  updateEmail,
   type ExternalIdentityStatus,
 } from "@/api/auth";
+import { getMe } from "@/api/users";
 import {
   listAuthSessions,
   revokeAuthSession,
@@ -30,6 +35,7 @@ import {
 } from "@/api/accountSecurity";
 import { ActionButton } from "@/components/ui/action-button";
 import { Banner } from "@/components/ui/banner";
+import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input as UiInput } from "@/components/ui/input";
@@ -38,7 +44,163 @@ import { isTauri } from "@/lib/serverConfig";
 import { queryKeys } from "@/lib/queryClient";
 import { onOAuthLinked } from "@/lib/oauthCallback";
 
+export function EmailAction() {
+  const queryClient = useQueryClient();
+  const profile = useQuery({ queryKey: queryKeys.currentUser, queryFn: getMe });
+  const email = profile.data?.email;
+
+  const [open, setOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  function closeDialog() {
+    if (busy) return;
+    setOpen(false);
+    setNewEmail("");
+    setCode("");
+    setCodeSent(false);
+  }
+
+  async function handleSendCode() {
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes("@")) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+    setSendingCode(true);
+    try {
+      await requestEmailUpdateCode(trimmed);
+      setCodeSent(true);
+      setCooldown(60);
+      toast.success("Verification code sent");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send verification code");
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function handleSubmit() {
+    const trimmedEmail = newEmail.trim().toLowerCase();
+    const trimmedCode = code.trim().toUpperCase();
+    if (!trimmedEmail) {
+      toast.error("Please enter an email address");
+      return;
+    }
+    if (!trimmedCode) {
+      toast.error("Please enter the verification code");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateEmail({ email: trimmedEmail, code: trimmedCode });
+      toast.success("Email address updated");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.currentUser });
+      closeDialog();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update email address");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <OperationsItem
+        leading={<Mail className="h-4 w-4 text-content-muted" />}
+        title="Email"
+        subtitle={email || "No email address linked"}
+        trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
+        aria-label="Manage email address"
+        onClick={() => {
+          setNewEmail(email || "");
+          setCode("");
+          setCodeSent(false);
+          setOpen(true);
+        }}
+      />
+      {open && (
+        <Dialog
+          title={email ? "Change email address" : "Set email address"}
+          onClose={closeDialog}
+          maxWidth="max-w-md"
+        >
+          <p className="text-caption">
+            We will send a 6-digit verification code to confirm ownership of the email address.
+          </p>
+          <div className="space-y-3">
+            <Field label="Email address" htmlFor="email-input">
+              <div className="flex gap-2">
+                <UiInput
+                  id="email-input"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  autoComplete="email"
+                  disabled={busy}
+                  className="flex-1"
+                />
+                <Button
+                  action="send"
+                  variant="secondary"
+                  controlWidth="content"
+                  controlSize="regular"
+                  disabled={sendingCode || cooldown > 0 || !newEmail.trim()}
+                  onClick={() => void handleSendCode()}
+                >
+                  {cooldown > 0 ? `${cooldown}s` : codeSent ? "Resend" : "Send code"}
+                </Button>
+              </div>
+            </Field>
+            {codeSent && (
+              <Field label="Verification code" htmlFor="email-code-input">
+                <UiInput
+                  id="email-code-input"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                  disabled={busy}
+                  onKeyDown={(e) => e.key === "Enter" && void handleSubmit()}
+                />
+              </Field>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
+            <ActionButton
+              action="save"
+              context="settings"
+              accessibleLabel="Save email address"
+              loading={busy}
+              onClick={() => void handleSubmit()}
+              disabled={!newEmail.trim() || !code.trim()}
+            />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 export function ChangePasswordAction({ onRotated }: { onRotated: (token: string) => void }) {
+  const queryClient = useQueryClient();
+  const profile = useQuery({ queryKey: queryKeys.currentUser, queryFn: getMe });
+  const hasPassword = profile.data?.has_password ?? true;
+
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -66,20 +228,29 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
     }
     setBusy(true);
     try {
-      const res = await changePassword({
-        current_password: current,
-        new_password: next,
-        two_factor_code: twoFactorCode.trim() || undefined,
-      });
-      onRotated(res.access_token); // keep this session alive on the fresh token
+      if (hasPassword) {
+        const res = await changePassword({
+          current_password: current,
+          new_password: next,
+          two_factor_code: twoFactorCode.trim() || undefined,
+        });
+        onRotated(res.access_token); // keep this session alive on the fresh token
+        toast.success("Password changed — other sessions were signed out");
+      } else {
+        const res = await setPassword({
+          new_password: next,
+        });
+        onRotated(res.access_token);
+        toast.success("Password set successfully");
+      }
       setCurrent("");
       setNext("");
       setConfirm("");
       setTwoFactorCode("");
-      toast.success("Password changed — other sessions were signed out");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.currentUser });
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to change password");
+      toast.error(e instanceof Error ? e.message : "Failed to update password");
     } finally {
       setBusy(false);
     }
@@ -89,38 +260,80 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
     <>
       <OperationsItem
         leading={<KeyRound className="h-4 w-4 text-content-muted" />}
-        title="Password"
-        subtitle="Change your password and sign out other devices"
+        title={hasPassword ? "Password" : "Set password"}
+        subtitle={
+          hasPassword
+            ? "Change your password and sign out other devices"
+            : "Add a password to sign in without an external provider"
+        }
         trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
-        aria-label="Change password"
+        aria-label={hasPassword ? "Change password" : "Set password"}
         onClick={() => setOpen(true)}
       />
       {open && (
-        <Dialog title="Change password" onClose={closeDialog} maxWidth="max-w-lg">
-          <p className="text-caption">Updating your password signs out every other device.</p>
-          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
-            <Field label="Current password" htmlFor="cp-current">
-              <UiInput id="cp-current" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-            </Field>
+        <Dialog
+          title={hasPassword ? "Change password" : "Set password"}
+          onClose={closeDialog}
+          maxWidth="max-w-lg"
+        >
+          <p className="text-caption">
+            {hasPassword
+              ? "Updating your password signs out every other device."
+              : "Create a password to sign in to Cheers with your username or email."}
+          </p>
+          <div className={hasPassword ? "grid grid-cols-2 gap-3 max-md:grid-cols-1" : "space-y-3"}>
+            {hasPassword && (
+              <Field label="Current password" htmlFor="cp-current">
+                <UiInput
+                  id="cp-current"
+                  type="password"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </Field>
+            )}
             <Field label="New password" htmlFor="cp-new">
-              <UiInput id="cp-new" type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="At least 12 characters" autoComplete="new-password" />
+              <UiInput
+                id="cp-new"
+                type="password"
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                placeholder="At least 12 characters"
+                autoComplete="new-password"
+              />
             </Field>
             <Field label="Confirm password" htmlFor="cp-confirm">
-              <UiInput id="cp-confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void submit()} autoComplete="new-password" />
+              <UiInput
+                id="cp-confirm"
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void submit()}
+                autoComplete="new-password"
+              />
             </Field>
-            <Field label="Verification code" htmlFor="cp-two-factor">
-              <UiInput id="cp-two-factor" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="Authenticator or recovery code" autoComplete="one-time-code" />
-            </Field>
+            {hasPassword && (
+              <Field label="Verification code" htmlFor="cp-two-factor">
+                <UiInput
+                  id="cp-two-factor"
+                  value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value)}
+                  placeholder="Authenticator or recovery code"
+                  autoComplete="one-time-code"
+                />
+              </Field>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
             <ActionButton
               action="update"
               context="security"
-              accessibleLabel="Update account password"
+              accessibleLabel={hasPassword ? "Update account password" : "Set account password"}
               loading={busy}
               onClick={() => void submit()}
-              disabled={!current || !next}
+              disabled={(hasPassword && !current) || !next || !confirm}
             />
           </div>
         </Dialog>

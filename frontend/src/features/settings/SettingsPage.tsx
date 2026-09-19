@@ -1,5 +1,4 @@
 import { ContentActionScope } from "@/components/ui/content-action-scope";
-import { Button as UiButton } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -14,12 +13,15 @@ import {
   Server,
   CalendarClock,
   Palette,
+  ArrowLeft,
+  Sliders,
 } from "lucide-react";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { logout as logoutApi } from "@/api/auth";
 import { disablePush } from "@/lib/push";
 import { isTauri } from "@/lib/serverConfig";
 import { ActionButton } from "@/components/ui/action-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessagesManager";
 import { AdminUsers } from "./AdminUsers";
@@ -39,12 +41,13 @@ import {
   ChangePasswordAction,
   DeleteAccountAction,
   DevicesSessionsCard,
+  EmailAction,
   ExternalAIPermissionsCard,
   ExternalIdentitiesCard,
   LegalLinks,
   SignOutAction,
 } from "./AccountSettings";
-import { ItemList } from "@/components/ui/item";
+import { ItemList, NavigationItem } from "@/components/ui/item";
 
 type SectionId =
   | "profile"
@@ -121,42 +124,45 @@ export default function SettingsPage() {
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
     <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
-        <header className="sticky top-0 z-10 bg-canvas/95 backdrop-blur-sm border-b border-control/30">
-          <div className="mx-auto w-full max-w-5xl px-6 max-md:px-4 py-4 flex items-center gap-4">
-            <ActionButton
-              action="back"
-              context="windowChrome"
-              onClick={() => navigate("/chat")}
-              accessibleLabel="Back to chat"
-              controlSize="regular"
-              className="text-content-primary hover:text-content-strong transition-colors rounded-sm"
-            />
-            <h1 className="text-comfortable font-semibold">Settings</h1>
+        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
+          <IconButton
+            label="Back to chat"
+            onClick={() => navigate("/chat")}
+            controlSize="regular"
+            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </IconButton>
+          <Sliders className="h-4 w-4 text-accent-400" aria-hidden="true" />
+          <div>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Settings</h1>
+            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Preferences and workspace configuration</p>
           </div>
         </header>
       </RouteChromeHeader>
 
       <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
         {/* Nav rail */}
-        <nav className="flex sm:flex-col gap-1 sm:w-48 sm:shrink-0 overflow-x-auto">
-          {items.map(({ id, label, icon: Icon }) => {
-            const active = section === id;
-            return (
-              <UiButton content="iconText" variant="plain" selected={active} role="tab" aria-selected={active}
-                key={id}
-                type="button"
-                onClick={() => navigate(`/settings/${id}`)}
-                aria-current={active ? "page" : undefined}
-                controlSize="regular" className={cn(
-                  "flex items-center gap-3 rounded-sm shrink-0 font-medium whitespace-nowrap transition-colors",
-                  !active && "text-content-primary hover:bg-control hover:text-content-strong",
-                )}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {label}
-              </UiButton>
-            );
-          })}
+        <nav aria-label="Settings sections" className="sm:w-48 sm:shrink-0">
+          <ItemList
+            presentationLevel="minimal"
+            controlSize="regular"
+            className="flex gap-1 overflow-x-auto sm:flex-col"
+          >
+            {items.map(({ id, label, icon: Icon }) => {
+              const active = section === id;
+              return (
+                <NavigationItem
+                  key={id}
+                  title={label}
+                  leading={<Icon className="h-4 w-4" aria-hidden="true" />}
+                  selected={active}
+                  onClick={() => navigate(`/settings/${id}`)}
+                  className="shrink-0 max-sm:w-auto"
+                />
+              );
+            })}
+          </ItemList>
         </nav>
 
         {/* Active section */}
@@ -217,6 +223,7 @@ export default function SettingsPage() {
                     Manage how you sign in and verify sensitive actions.
                   </p>
                   <ItemList presentationLevel="max" controlSize="regular">
+                    <EmailAction />
                     <ChangePasswordAction onRotated={(token) => setToken(token)} />
                     <TwoFactorCard />
                   </ItemList>

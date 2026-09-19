@@ -25,6 +25,7 @@ import {
   regenerateRecoveryCodes,
   revokeAllTrustedDevices,
   revokeTrustedDevice,
+  sendEmail2FaEnrollCode,
   setEmailTwoFactor,
   setPasswordTwoFactor,
   setupTwoFactor,
@@ -36,6 +37,7 @@ import {
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { ActionButton } from "@/components/ui/action-button";
+import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
@@ -86,14 +88,29 @@ function MethodState({ on }: { on: boolean }) {
 export function TwoFactorCard() {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
-  const [phase, setPhase] = useState<"overview" | "setup" | "backup" | "disable">("overview");
+  const [phase, setPhase] = useState<
+    "overview" | "setup" | "backup" | "disable" | "email-setup" | "password-setup"
+  >("overview");
   const [secret, setSecret] = useState("");
   const [provisioningUri, setProvisioningUri] = useState("");
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [qrCodeFailed, setQrCodeFailed] = useState(false);
   const [code, setCode] = useState("");
+  const [emailHint, setEmailHint] = useState("");
+  const [emailEnrollCode, setEmailEnrollCode] = useState("");
+  const [emailCooldown, setEmailCooldown] = useState(0);
+  const [sendingEmailCode, setSendingEmailCode] = useState(false);
+  const [password2FaInput, setPassword2FaInput] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (emailCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setEmailCooldown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [emailCooldown]);
 
   const reload = useCallback(() => {
     twoFactorStatus()
@@ -137,6 +154,9 @@ export function TwoFactorCard() {
     setQrCodeDataUrl(null);
     setQrCodeFailed(false);
     setCode("");
+    setEmailHint("");
+    setEmailEnrollCode("");
+    setPassword2FaInput("");
     setBackupCodes([]);
     setOpen(false);
   }
@@ -198,29 +218,88 @@ export function TwoFactorCard() {
     }
   }
 
+  async function sendEmailCode() {
+    setSendingEmailCode(true);
+    try {
+      const res = await sendEmail2FaEnrollCode();
+      setEmailHint(res.email_hint);
+      setEmailCooldown(60);
+      toast.success("Verification code sent to your email");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send verification code");
+    } finally {
+      setSendingEmailCode(false);
+    }
+  }
+
   async function toggleEmail() {
-    if (!methods) return;
-    const next = !methods.email;
+    if (!methods || !status) return;
+    if (methods.email) {
+      setBusy(true);
+      try {
+        const res = await setEmailTwoFactor(false);
+        afterArming(res.backup_codes, "Email codes are off");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't update email codes");
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      if (!status.email_available) {
+        toast.error("Add an email address and a password or passkey first");
+        return;
+      }
+      setEmailEnrollCode("");
+      setPhase("email-setup");
+      void sendEmailCode();
+    }
+  }
+
+  async function confirmEnableEmail() {
+    if (!emailEnrollCode.trim()) return;
     setBusy(true);
     try {
-      const res = await setEmailTwoFactor(next);
-      afterArming(res.backup_codes, next ? "Email codes are on" : "Email codes are off");
+      const res = await setEmailTwoFactor(true, emailEnrollCode.trim());
+      setEmailEnrollCode("");
+      afterArming(res.backup_codes, "Email codes are on");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't update email codes");
+      toast.error(e instanceof Error ? e.message : "Invalid or expired verification code");
     } finally {
       setBusy(false);
     }
   }
 
   async function togglePassword() {
-    if (!methods) return;
-    const next = !methods.password;
+    if (!methods || !status) return;
+    if (methods.password) {
+      setBusy(true);
+      try {
+        const res = await setPasswordTwoFactor(false);
+        afterArming(res.backup_codes, "Password step is off");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't update the password step");
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      if (!status.password_available) {
+        toast.error("Needs a password plus a passkey or linked provider to sign in with first");
+        return;
+      }
+      setPassword2FaInput("");
+      setPhase("password-setup");
+    }
+  }
+
+  async function confirmEnablePassword() {
+    if (!password2FaInput) return;
     setBusy(true);
     try {
-      const res = await setPasswordTwoFactor(next);
-      afterArming(res.backup_codes, next ? "Password step is on" : "Password step is off");
+      const res = await setPasswordTwoFactor(true, password2FaInput);
+      setPassword2FaInput("");
+      afterArming(res.backup_codes, "Password step is on");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't update the password step");
+      toast.error(e instanceof Error ? e.message : "Incorrect password");
     } finally {
       setBusy(false);
     }
@@ -499,6 +578,106 @@ export function TwoFactorCard() {
               accessibleLabel="Back to two-step verification methods"
             />
           </div>
+            </div>
+          )}
+
+          {phase === "email-setup" && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-regular font-semibold text-content-primary">Email code</p>
+                <p className="mt-1 text-compact text-content-muted">
+                  {emailHint
+                    ? `Enter the 6-digit verification code sent to ${emailHint}.`
+                    : "Enter the 6-digit verification code sent to your email address."}
+                </p>
+              </div>
+              <Field label="Verification code" htmlFor="email-2fa-code">
+                <Input
+                  id="email-2fa-code"
+                  value={emailEnrollCode}
+                  onChange={(e) => setEmailEnrollCode(e.target.value)}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                  className={inputCls}
+                  onKeyDown={(e) => e.key === "Enter" && void confirmEnableEmail()}
+                />
+              </Field>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex gap-2">
+                  <ActionButton
+                    action="enable"
+                    context="security"
+                    accessibleLabel="Turn on email verification"
+                    loading={busy}
+                    disabled={busy || !emailEnrollCode.trim()}
+                    onClick={() => void confirmEnableEmail()}
+                  />
+                  <ActionButton
+                    action="back"
+                    context="dialog"
+                    onClick={() => {
+                      setEmailEnrollCode("");
+                      setPhase("overview");
+                    }}
+                    accessibleLabel="Back to two-step verification methods"
+                  />
+                </div>
+                <Button
+                  action="retry"
+                  variant="ghost"
+                  controlWidth="content"
+                  controlSize="compact"
+                  disabled={emailCooldown > 0 || sendingEmailCode}
+                  onClick={() => void sendEmailCode()}
+                >
+                  {emailCooldown > 0 ? `Resend in ${emailCooldown}s` : "Resend code"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {phase === "password-setup" && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-regular font-semibold text-content-primary">
+                  Password verification
+                </p>
+                <p className="mt-1 text-compact text-content-muted">
+                  Enter your account password to verify and turn on password verification as a
+                  second sign-in step.
+                </p>
+              </div>
+              <Field label="Account password" htmlFor="password-2fa-input">
+                <Input
+                  id="password-2fa-input"
+                  type="password"
+                  value={password2FaInput}
+                  onChange={(e) => setPassword2FaInput(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  className={inputCls}
+                  onKeyDown={(e) => e.key === "Enter" && void confirmEnablePassword()}
+                />
+              </Field>
+              <div className="flex gap-2">
+                <ActionButton
+                  action="enable"
+                  context="security"
+                  accessibleLabel="Turn on password verification"
+                  loading={busy}
+                  disabled={busy || !password2FaInput}
+                  onClick={() => void confirmEnablePassword()}
+                />
+                <ActionButton
+                  action="back"
+                  context="dialog"
+                  onClick={() => {
+                    setPassword2FaInput("");
+                    setPhase("overview");
+                  }}
+                  accessibleLabel="Back to two-step verification methods"
+                />
+              </div>
             </div>
           )}
         </Dialog>
