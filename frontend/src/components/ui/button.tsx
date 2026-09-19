@@ -140,7 +140,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const resolvedSize = inheritedSize;
     // Fill-only labels exceed the 128px slot budget on purpose; rendering one
     // in a slot-width button would truncate it.
-    if (DEV && action && isFillActionKey(action) && controlWidth !== "fill") {
+    if (DEV && content !== "icon" && action && isFillActionKey(action) && controlWidth !== "fill") {
       throw new Error(
         `Button action="${action}" carries an unabbreviated label and requires controlWidth="fill".`
       );
