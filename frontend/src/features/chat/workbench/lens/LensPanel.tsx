@@ -1,7 +1,8 @@
 import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
+import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { MessageSquarePlus, Paperclip, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
@@ -80,8 +81,8 @@ export function LensView({
       actions: [
         {
           id: "add-context",
-          label: range ? `Add ${target.label} to context` : "Source row unavailable",
-          icon: <Paperclip className="h-4 w-4" />,
+          label: range ? `Add to context` : "Source row unavailable",
+          icon: <AddContextIcon className="h-4 w-4" />,
           disabled: !range,
           run: () => {
             if (!range) return;
@@ -92,8 +93,8 @@ export function LensView({
         },
         ...(annotations ? [{
           id: "annotate",
-          label: `Annotate ${target.label}`,
-          icon: <MessageSquarePlus className="h-4 w-4" />,
+          label: `Annotate`,
+          icon: <AnnotationIcon className="h-4 w-4" />,
           // The click point travels with the target: the composer opens on the row you
           // right-clicked, not in a chrome slot somewhere else in the panel.
           run: () => annotations.onAnnotate(target, { x: event.clientX, y: event.clientY }),

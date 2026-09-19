@@ -544,7 +544,9 @@ pub async fn install_script(
         }
     }
     let api_base = resolve_api_base(&state, &headers);
-    let body = INSTALL_SCRIPT.replace("__CHEERS_API_BASE__", &api_base);
+    let body = INSTALL_SCRIPT
+        .replace("__CHEERS_API_BASE__", &api_base)
+        .replace("__CHEERS_MIN_CONNECTOR_VERSION__", MIN_CONNECTOR_VERSION);
     Ok((
         [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
         body,

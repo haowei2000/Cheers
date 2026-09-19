@@ -93,6 +93,7 @@ const traceGalleryEvents: TraceEvent[] = [
 ];
 
 const iconLabels: Record<EditorialIconName, string> = {
+  addContext: "Add context",
   annotation: "Annotation",
   correspondence: "Correspondence",
   reply: "Reply",
@@ -585,7 +586,7 @@ export function ItemGallery() {
             Editorial Icon Register
           </h2>
           <span className="font-utility text-minimal font-medium uppercase tracking-overline text-content-muted">
-            24 grid · 1.75 stroke · issue 02
+            14 / 16 / 20px · 24 grid · 1.75 stroke
           </span>
         </div>
         <div className="grid grid-cols-2 border-l border-t border-zinc-700 sm:grid-cols-4 lg:grid-cols-8">
@@ -595,7 +596,11 @@ export function ItemGallery() {
               className="m-0 min-h-24 border-b border-r border-zinc-700 px-2 py-3"
             >
               <div className="mb-3 flex items-start justify-between text-content-secondary">
-                <EditorialIcon name={name} title={iconLabels[name]} contentSize="large" />
+                <div className="flex items-center gap-2" aria-label={`${iconLabels[name]} size variants`}>
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, small`} contentSize="small" />
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, regular`} contentSize="regular" />
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, large`} contentSize="large" />
+                </div>
                 <span className="font-utility text-minimal tabular-nums text-content-muted">
                   {String(index + 1).padStart(2, "0")}
                 </span>

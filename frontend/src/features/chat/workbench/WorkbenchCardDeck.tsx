@@ -14,11 +14,10 @@ import {
   LayoutGrid,
   ListTree,
   Lock,
-  Paperclip,
   Table,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { TabIcon } from "@/components/ui/editorial-icons";
+import { AddContextIcon, TabIcon } from "@/components/ui/editorial-icons";
 import { PresenceDot } from "@/components/ui/presence-dot";
 
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -341,7 +340,7 @@ export function WorkbenchCardDeck({
                     {tab.rendererTitle || ext || "tab"}
                   </span>
                   {tab.hasContext && (
-                    <Paperclip className="h-3.5 w-3.5 text-accent-400 flex-shrink-0" aria-label="Added to context" />
+                    <AddContextIcon className="h-3.5 w-3.5 text-accent-400 flex-shrink-0" aria-label="Added to context" />
                   )}
                   {tab.isDirty && (
                     <PresenceDot

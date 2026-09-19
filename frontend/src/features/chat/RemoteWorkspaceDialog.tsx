@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
@@ -26,7 +27,6 @@ import {
   GitCompare,
   History,
   Loader2,
-  Paperclip,
   RefreshCw,
   Save,
   X,
@@ -1153,7 +1153,7 @@ export function RemoteWorkspaceDialog({
     return {
       id: "add-context",
       label: added ? "Already added to context" : "Add to context",
-      icon: <Paperclip className="h-4 w-4" />,
+      icon: <AddContextIcon className="h-4 w-4" />,
       disabled: added,
       run: () => addContext(channelId, item),
     };

@@ -88,39 +88,129 @@ export default function ActivityPage() {
     <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
   </IconButton>;
 
-  return <div className="flex h-full flex-col bg-zinc-950 text-content-primary">
-    <RouteChromeHeader actions={headerActions}>
-      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-        <IconButton label="Back to chat" onClick={() => navigate("/chat")}><ArrowLeft className="h-4 w-4" aria-hidden="true" /></IconButton>
-        <Bell className="h-4 w-4 text-accent-400" aria-hidden="true" />
-        <h1 className="text-comfortable font-semibold">Activity</h1>
-        <div className="ml-auto">{headerActions}</div>
-      </header>
-    </RouteChromeHeader>
-    <main className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-7 px-4 py-6">
-        {loading ? <SurfaceSpinner /> : approvals.length === 0 && invites.length === 0 && recent.length === 0 ?
-          <EmptyState icon={Bell} title="Nothing waiting" hint="Approvals and invitations across all workspaces appear here." /> : <>
-          {approvals.length > 0 && <ItemSection label={<span className="flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-warning-400" />Needs approval</span>} presentationLevel="medium" controlSize="regular">
-            {approvals.map((approval) => <div role="listitem" key={approval.message_id} className="space-y-1 py-1">
-              <p className="px-2 text-minimal uppercase tracking-label text-content-muted">{approval.channel_name ? `#${approval.channel_name}` : "Direct message"}</p>
-              <PermissionCard message={approvalMessage(approval)} channelId={approval.channel_id} currentUserId={userId} approverOverride onResolved={() => setApprovals((items) => items.filter((item) => item.message_id !== approval.message_id))} />
-            </div>)}
-          </ItemSection>}
-          {invites.length > 0 && <ItemSection label="Invitations" presentationLevel="medium" controlSize="regular">
-            {invites.map((item) => {
-              const key = notificationKey(item);
-              return <OperationsItem key={key} title={inviteTitle(item)} subtitle={item.role ? `Role ${item.role}` : "Response required"} actions={<>
-                <Button action="accept" controlSize="compact" loading={busy === key} onClick={() => void act(item, true)}>Accept</Button>
-                <Button action="decline" variant="ghost" controlSize="compact" disabled={busy === key} onClick={() => void act(item, false)}>Decline</Button>
-              </>} />;
-            })}
-          </ItemSection>}
-          {recent.length > 0 && <ItemSection label={<span className="flex items-center gap-2"><History className="h-3.5 w-3.5" />Recent</span>} presentationLevel="medium" controlSize="regular">
-            {recent.map((event) => <OperationsItem key={`${event.source}:${event.id}`} title={event.event_type.replaceAll("_", " ")} subtitle={new Date(event.created_at).toLocaleString()} status={<span className="text-compact text-content-muted">Resolved</span>} />)}
-          </ItemSection>}
-        </>}
-      </div>
-    </main>
-  </div>;
+  return (
+    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
+      <RouteChromeHeader actions={headerActions}>
+        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
+          <IconButton
+            label="Back to chat"
+            onClick={() => navigate("/chat")}
+            controlSize="regular"
+            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </IconButton>
+          <Bell className="h-4 w-4 text-accent-400" aria-hidden="true" />
+          <div>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Activity</h1>
+            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Approvals, invitations, and audit log</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">{headerActions}</div>
+        </header>
+      </RouteChromeHeader>
+      <main className="mx-auto w-full max-w-5xl px-6 py-6 max-md:px-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+        <div className="max-w-3xl space-y-7">
+          {loading ? (
+            <SurfaceSpinner />
+          ) : approvals.length === 0 && invites.length === 0 && recent.length === 0 ? (
+            <EmptyState
+              icon={Bell}
+              title="Nothing waiting"
+              hint="Approvals and invitations across all workspaces appear here."
+            />
+          ) : (
+            <>
+              {approvals.length > 0 && (
+                <ItemSection
+                  label={
+                    <span className="flex items-center gap-2">
+                      <Shield className="h-3.5 w-3.5 text-warning-400" />
+                      Needs approval
+                    </span>
+                  }
+                  presentationLevel="medium"
+                  controlSize="regular"
+                >
+                  {approvals.map((approval) => (
+                    <div role="listitem" key={approval.message_id} className="space-y-1 py-1">
+                      <p className="px-2 text-minimal uppercase tracking-label text-content-muted">
+                        {approval.channel_name ? `#${approval.channel_name}` : "Direct message"}
+                      </p>
+                      <PermissionCard
+                        message={approvalMessage(approval)}
+                        channelId={approval.channel_id}
+                        currentUserId={userId}
+                        approverOverride
+                        onResolved={() =>
+                          setApprovals((items) =>
+                            items.filter((item) => item.message_id !== approval.message_id)
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </ItemSection>
+              )}
+              {invites.length > 0 && (
+                <ItemSection label="Invitations" presentationLevel="medium" controlSize="regular">
+                  {invites.map((item) => {
+                    const key = notificationKey(item);
+                    return (
+                      <OperationsItem
+                        key={key}
+                        title={inviteTitle(item)}
+                        subtitle={item.role ? `Role ${item.role}` : "Response required"}
+                        actions={
+                          <>
+                            <Button
+                              action="accept"
+                              controlSize="compact"
+                              loading={busy === key}
+                              onClick={() => void act(item, true)}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              action="decline"
+                              variant="ghost"
+                              controlSize="compact"
+                              disabled={busy === key}
+                              onClick={() => void act(item, false)}
+                            >
+                              Decline
+                            </Button>
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </ItemSection>
+              )}
+              {recent.length > 0 && (
+                <ItemSection
+                  label={
+                    <span className="flex items-center gap-2">
+                      <History className="h-3.5 w-3.5" />
+                      Recent
+                    </span>
+                  }
+                  presentationLevel="medium"
+                  controlSize="regular"
+                >
+                  {recent.map((event) => (
+                    <OperationsItem
+                      key={`${event.source}:${event.id}`}
+                      title={event.event_type.replaceAll("_", " ")}
+                      subtitle={new Date(event.created_at).toLocaleString()}
+                      status={<span className="text-compact text-content-muted">Resolved</span>}
+                    />
+                  ))}
+                </ItemSection>
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  );
 }

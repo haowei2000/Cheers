@@ -161,7 +161,7 @@ export default function FleetPage() {
         </UiButton>
         <Radar className="h-4 w-4 text-accent-400" aria-hidden="true" />
         <div>
-          <h1 className="text-comfortable font-semibold leading-none">Fleet</h1>
+          <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Fleet</h1>
           <p className="mt-1 hidden text-minimal text-content-muted sm:block">Personal bot cockpit</p>
         </div>
       </header>

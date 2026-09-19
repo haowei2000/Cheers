@@ -1,6 +1,6 @@
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   UserPlus,
@@ -10,15 +10,15 @@ import {
   Fingerprint,
   Clock,
   Ban,
+  Users,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/avatar";
-import { ItemList, ItemRow, ItemSection } from "@/components/ui/item";
+import { ItemList, ItemRow, ItemSection, NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
-import { TabOption } from "@/components/ui/tab-option";
 import { isComposing } from "@/lib/ime";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
@@ -40,9 +40,16 @@ import {
 
 type Tab = "friends" | "requests" | "add" | "blocked";
 
+const TABS: Array<{ id: Tab; label: string; icon: typeof Users }> = [
+  { id: "friends", label: "Friends", icon: Users },
+  { id: "requests", label: "Requests", icon: Clock },
+  { id: "add", label: "Add", icon: UserPlus },
+  { id: "blocked", label: "Blocked", icon: Ban },
+];
+
 export default function FriendsPage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("friends");
+  const params = useParams();
   const [incomingCount, setIncomingCount] = useState(0);
 
   const refreshIncoming = useCallback(() => {
@@ -54,76 +61,72 @@ export default function FriendsPage() {
     refreshIncoming();
   }, [refreshIncoming]);
 
+  const requested = (params["*"] ?? "").split("/")[0];
+  const tab: Tab = TABS.some((t) => t.id === requested)
+    ? (requested as Tab)
+    : "friends";
+
   return (
-    <div className="h-full bg-zinc-950 text-content-primary flex flex-col">
+    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
-        <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
           <IconButton
             label="Back to chat"
             onClick={() => navigate("/chat")}
-            title="Back to chat"
             controlSize="regular"
-            className="max-md:-ml-2"
+            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
           >
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </IconButton>
-          <h1 className="text-comfortable font-semibold">Friends</h1>
+          <Users className="h-4 w-4 text-accent-400" aria-hidden="true" />
+          <div>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Friends</h1>
+            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Direct connections and member requests</p>
+          </div>
         </header>
       </RouteChromeHeader>
 
-      <div className="flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto max-w-2xl p-4 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div
-            aria-label="Friend management"
-            className="flex gap-1 mb-4 border-b border-zinc-800 overflow-x-auto"
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
+        {/* Nav rail */}
+        <nav aria-label="Friends sections" className="sm:w-48 sm:shrink-0">
+          <ItemList
+            presentationLevel="minimal"
+            controlSize="regular"
+            className="flex gap-1 overflow-x-auto sm:flex-col"
           >
-            <TabBtn active={tab === "friends"} onClick={() => setTab("friends")}>
-              Friends
-            </TabBtn>
-            <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
-              Requests
-              {incomingCount > 0 && (
-                <UnreadBadge tone="mention" contentSize="regular" className="ml-2" title={`${incomingCount} incoming requests`} aria-label={`${incomingCount} incoming requests`}>
-                  {incomingCount}
-                </UnreadBadge>
-              )}
-            </TabBtn>
-            <TabBtn active={tab === "add"} onClick={() => setTab("add")}>
-              Add
-            </TabBtn>
-            <TabBtn active={tab === "blocked"} onClick={() => setTab("blocked")}>
-              Blocked
-            </TabBtn>
-          </div>
+            {TABS.map((item) => {
+              const Icon = item.icon;
+              const active = tab === item.id;
+              return (
+                <NavigationItem
+                  key={item.id}
+                  title={item.label}
+                  leading={<Icon className="h-4 w-4" aria-hidden="true" />}
+                  selected={active}
+                  criticalStatus={
+                    item.id === "requests" && incomingCount > 0 ? (
+                      <UnreadBadge tone="mention" contentSize="small">
+                        {incomingCount}
+                      </UnreadBadge>
+                    ) : undefined
+                  }
+                  onClick={() => navigate(item.id === "friends" ? "/friends" : `/friends/${item.id}`)}
+                  className="shrink-0 max-sm:w-auto"
+                />
+              );
+            })}
+          </ItemList>
+        </nav>
 
+        {/* Active section */}
+        <main className="min-w-0 flex-1">
           {tab === "friends" && <FriendsTab />}
           {tab === "requests" && <RequestsTab onChange={refreshIncoming} />}
           {tab === "add" && <AddTab />}
           {tab === "blocked" && <BlockedTab />}
-        </div>
+        </main>
       </div>
     </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <TabOption
-      selected={active}
-      aria-controls={`friends-panel-${String(children)}`}
-      onClick={onClick}
-      controlSize="regular"
-      label={children}
-      className="flex shrink-0 items-center whitespace-nowrap"
-    />
   );
 }
 
