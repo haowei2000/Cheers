@@ -383,7 +383,7 @@ export function DiscussionView({
       )}
       style={isWide ? { width: topicWidth } : undefined}
     >
-      <div className="border-b border-zinc-300/40 bg-panel px-3 py-3 dark:border-zinc-800/60">
+      <div className="bg-panel px-3 py-3">
         <div className="flex h-7 items-center gap-2">
           <SearchInput
             containerClassName="flex-1"
@@ -470,7 +470,7 @@ export function DiscussionView({
         <ErrorState className="flex-1" title="Couldn't open discussion" description={detailError} action={{ label: "Retry", onClick: () => void refreshDetail() }} />
       ) : detail ? (
         <>
-          <header className="z-10 border-b border-zinc-300/40 bg-panel px-4 py-3 dark:border-zinc-800/60">
+          <header className="z-10 bg-panel px-4 py-3">
             <div className="mx-auto max-w-[52rem]">
               <div className="flex items-center gap-3">
                 <Avatar

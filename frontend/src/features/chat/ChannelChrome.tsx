@@ -29,7 +29,7 @@ export function ChannelChrome({
   }
 
   return (
-    <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-300/40 bg-panel px-4 dark:border-zinc-800/60 max-md:gap-1 max-md:px-2">
+    <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-panel px-4 max-md:gap-1 max-md:px-2">
       {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
       {onBack && (
         <UiButton
