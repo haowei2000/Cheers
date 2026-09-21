@@ -6,18 +6,20 @@ import {
   RefreshCw,
   ShieldBan,
   ShieldCheck,
-  Trash2,
   UserPlus,
   X,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { CollectionEmptyItem, CollectionManager } from "@/components/ui/collection-manager";
+import { ActionButton } from "@/components/ui/action-button";
+import { Badge } from "@/components/ui/badge";
+import { CollectionConfirmationItem, CollectionEmptyItem, CollectionManager } from "@/components/ui/collection-manager";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { EntityItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { OverflowText } from "@/components/ui/overflow-text";
 import { Select } from "@/components/ui/select";
+import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   listUsers,
@@ -97,9 +99,13 @@ export function AdminUsers() {
   }
 
   return (
-    <section>
+    <SettingsSection title="Members" icon={UserPlus}>
+      <SettingsCard
+        title="Workspace directory"
+        description="Create members, review access, and manage account availability."
+      >
       <CollectionManager
-        label="Members"
+        label="Directory"
         count={users.length}
         query={filter}
         onQueryChange={setFilter}
@@ -135,36 +141,29 @@ export function AdminUsers() {
         {users.map((user) => {
           const name = user.display_name || user.username;
           const deleting = deletingId === user.user_id;
+          if (deleting) {
+            return (
+              <CollectionConfirmationItem
+                key={user.user_id}
+                title={name}
+                description="Deleting this member permanently removes their account and revokes their sessions."
+                action="delete"
+                prompt="Delete?"
+                busy={busy === user.user_id}
+                onCancel={() => setDeletingId(null)}
+                onConfirm={() => void remove(user)}
+              />
+            );
+          }
           return (
             <EntityItem
               key={user.user_id}
               title={<OverflowText fullText={`${name} · @${user.username}`}>{name}</OverflowText>}
               subtitle={[`@${user.username}`, user.email].filter(Boolean).join(" · ")}
               leading={<Avatar name={name} id={user.user_id} size="regular" />}
-              status={user.role !== "member" ? <span className="text-content-muted">{roleLabel(user.role)}</span> : undefined}
-              criticalStatus={(
-                deleting ? (
-                  <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">Delete?</span>
-                ) : user.is_suspended ? (
-                  <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">Suspended</span>
-                ) : undefined
-              )}
-              actions={deleting ? (
-                <>
-                  <IconButton label={`Cancel deleting ${name}`} controlSize="regular" onClick={() => setDeletingId(null)}>
-                    <X className="h-4 w-4" />
-                  </IconButton>
-                  <IconButton
-                    label={`Delete ${name}`}
-                    tone="danger"
-                    controlSize="regular"
-                    disabled={busy === user.user_id}
-                    onClick={() => void remove(user)}
-                  >
-                    {busy === user.user_id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </IconButton>
-                </>
-              ) : (
+              status={user.role !== "member" ? <Badge tone="accent">{roleLabel(user.role)}</Badge> : undefined}
+              criticalStatus={user.is_suspended ? <Badge tone="danger" indicator>Suspended</Badge> : undefined}
+              actions={(
                 <>
                   <IconButton
                     label={user.is_suspended ? `Unsuspend ${name}` : `Suspend ${name}`}
@@ -181,15 +180,14 @@ export function AdminUsers() {
                       <ShieldBan className="h-4 w-4" />
                     )}
                   </IconButton>
-                  <IconButton
-                    label={`Delete ${name}`}
-                    tone="danger"
+                  <ActionButton
+                    action="delete"
+                    context="toolbar"
+                    accessibleLabel={`Delete ${name}`}
                     controlSize="regular"
                     disabled={busy === user.user_id}
                     onClick={() => setDeletingId(user.user_id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </IconButton>
+                  />
                 </>
               )}
             />
@@ -200,7 +198,8 @@ export function AdminUsers() {
           <CollectionEmptyItem query={filter} onClear={() => setFilter("")} />
         )}
       </CollectionManager>
-    </section>
+      </SettingsCard>
+    </SettingsSection>
   );
 }
 

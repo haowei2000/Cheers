@@ -1,0 +1,239 @@
+/* ============================================================================
+   Editorial Correspondence — token contract
+   Mirrored from frontend/src/index.css, frontend/tailwind.config.ts and
+   frontend/DESIGN.md. Channel triplets are copied verbatim so this file and the
+   product cannot drift apart; component files reference var(--ui-*) only.
+
+   Dark is the default, as in the product: :root carries the dark values and the
+   light theme is the override. Three states are honoured — an explicit
+   data-theme stamp wins in both directions, and an unstamped root follows the
+   system.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Private palette: exact channels from index.css --------------------- */
+  --_canvas: 22 23 25;              /* --surface-canvas */
+  --_rail: 20 21 23;                /* --surface-rail */
+  --_sidebar: 25 26 29;             /* --surface-sidebar */
+  --_panel: 30 31 34;               /* --surface-panel  (cards, dialogs, popovers) */
+  --_control: 44 45 49;             /* --surface-control */
+  --_control-hover: 58 60 66;
+  --_control-active: 70 72 80;
+  --_selected: 58 60 66;
+  --_selected-hover: 70 72 80;
+  --_selected-active: 80 82 90;
+  --_selected-indicator: 204 204 210;
+  --_emphasis: 70 72 80;
+  --_emphasis-hover: 80 82 90;
+
+  --_text-strong: 244 243 240;      /* also the primary-action fill — see note */
+  --_text-primary: 232 231 228;
+  --_text-secondary: 204 203 199;
+  --_text-muted: 156 156 162;
+  --_text-on-light: 15 16 18;       /* copy sitting on a strong-ink fill */
+  --_text-on-accent: 255 255 255;
+
+  --_ring: 132 132 138;             /* zinc-600 — field boundary, ≥3:1 both themes */
+  --_focus: 244 243 240;            /* content-strong; see STYLE.md axis 12 */
+
+  --_danger: 248 113 113;   --_danger-bg: 69 10 10;     /* red-400 / red-950 */
+  --_warning: 251 191 36;   --_warning-bg: 120 53 15;   /* amber-400 / amber-900 */
+  --_success: 52 211 153;   --_success-bg: 6 78 59;     /* emerald-400 / emerald-900 */
+  --_info: 56 189 248;      --_info-bg: 12 74 110;      /* sky-400 / sky-900 */
+  --_mention: 225 29 72;                                /* rose-600 — mentions only */
+
+  --_elev-shadow: 0 0 0;    --_elev-alpha: 0.52;
+  --_elev-edge: 0 0 0;      --_elev-edge-alpha: 0.36;
+  --_hairline: 255 255 255; --_hairline-alpha: 0.12;    /* --glass-edge */
+
+  /* --- Semantic surfaces (back to front) --------------------------------- */
+  --ui-bg:            rgb(var(--_canvas));
+  --ui-bg-subtle:     rgb(var(--_sidebar));
+  --ui-bg-rail:       rgb(var(--_rail));
+  --ui-bg-raised:     rgb(var(--_panel));
+  --ui-bg-inset:      rgb(var(--_control) / 0.6);   /* fields */
+  --ui-bg-control:    rgb(var(--_control));         /* chips, soft buttons */
+  --ui-bg-hover:      rgb(var(--_control-hover));
+  --ui-bg-active:     rgb(var(--_control-active));
+  --ui-bg-selected:   rgb(var(--_selected));
+  --ui-bg-selected-hover:  rgb(var(--_selected-hover));
+  --ui-bg-selected-active: rgb(var(--_selected-active));
+  --ui-bg-emphasis:   rgb(var(--_emphasis));
+  --ui-bg-emphasis-hover: rgb(var(--_emphasis-hover));
+  --ui-overlay:       rgb(0 0 0 / 0.5);
+
+  /* --- Four-level foreground hierarchy (non-negotiable) ------------------- */
+  --ui-fg-strong:     rgb(var(--_text-strong));
+  --ui-fg:            rgb(var(--_text-primary));
+  --ui-fg-muted:      rgb(var(--_text-secondary));
+  --ui-fg-subtle:     rgb(var(--_text-muted));
+  --ui-fg-on-accent:  rgb(var(--_text-on-light));
+
+  /* --- "Accent" is inverted ink, not a hue -------------------------------- */
+  --ui-accent:        rgb(var(--_text-strong));
+  --ui-accent-hover:  rgb(var(--_text-strong) / 0.9);
+  --ui-accent-active: rgb(var(--_text-strong) / 0.82);
+  --ui-accent-subtle: rgb(var(--_selected));
+  --ui-selected-indicator: rgb(var(--_selected-indicator));
+
+  /* --- Boundaries: rings, not borders ------------------------------------- */
+  --ui-border:        rgb(var(--_ring));                     /* inset field ring */
+  --ui-border-strong: rgb(var(--_selected-indicator) / 0.7); /* selected ring */
+  --ui-border-focus:  rgb(var(--_focus));
+  --ui-border-width:  1px;
+  --ui-border-width-strong: 2px;
+  --ui-hairline:      rgb(var(--_hairline) / var(--_hairline-alpha));
+
+  /* --- Status ------------------------------------------------------------- */
+  --ui-danger:  rgb(var(--_danger));   --ui-danger-bg:  rgb(var(--_danger-bg) / 0.4);
+  --ui-warning: rgb(var(--_warning));  --ui-warning-bg: rgb(var(--_warning-bg) / 0.4);
+  --ui-success: rgb(var(--_success));  --ui-success-bg: rgb(var(--_success-bg) / 0.4);
+  --ui-info:    rgb(var(--_info));     --ui-info-bg:    rgb(var(--_info-bg) / 0.4);
+  --ui-mention: rgb(var(--_mention));
+
+  /* --- Type: four registered UI tiers, serif reserved for display ---------- */
+  --ui-font-sans: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",
+                  system-ui, -apple-system, sans-serif;
+  --ui-font-display: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC",
+                  Georgia, serif;
+  --ui-font-mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+
+  --ui-text-xs:  0.625rem;  --ui-leading-xs:  1.4;   --ui-tracking-xs: 0.01em;  /* minimal */
+  --ui-text-sm:  0.75rem;   --ui-leading-sm:  1.45;  --ui-tracking-sm: 0;       /* compact */
+  --ui-text-md:  0.875rem;  --ui-leading-md:  1.55;  --ui-tracking-md: 0;       /* regular */
+  --ui-text-lg:  1rem;      --ui-leading-lg:  1.4;   --ui-tracking-lg: -0.005em;/* comfortable */
+  /* Display only — serif masthead, never UI chrome. */
+  --ui-text-xl:  1.25rem;   --ui-leading-xl:  1.3;
+  --ui-text-2xl: 1.75rem;   --ui-leading-2xl: 1.1;
+  --ui-text-3xl: 2.5rem;    --ui-leading-3xl: 0.98;
+
+  --ui-weight-normal: 400; --ui-weight-medium: 500;
+  --ui-weight-semibold: 600; --ui-weight-bold: 700;
+  --ui-tracking-tight: -0.015em;   /* display */
+  --ui-tracking-normal: 0;
+  --ui-tracking-label: 0.025em;
+  --ui-tracking-section: 0.05em;
+  --ui-tracking-wide: 0.1em;       /* overline */
+  --ui-label-transform: none;
+
+  /* --- Space -------------------------------------------------------------- */
+  --ui-space-1: 0.25rem; --ui-space-2: 0.5rem;  --ui-space-3: 0.75rem;
+  --ui-space-4: 1rem;    --ui-space-5: 1.5rem;  --ui-space-6: 2rem;
+  --ui-space-7: 3rem;    --ui-space-8: 4rem;
+
+  /* --- Shape: one 10px rectangle, concentric when nested ------------------ */
+  --ui-radius-sm: 10px; --ui-radius-md: 10px; --ui-radius-lg: 10px;
+  --ui-radius-full: 9999px;
+  --ui-concentric-inset: 0px;
+  --ui-radius-concentric: calc(10px + var(--ui-concentric-inset));
+
+  /* --- Elevation: solid paper stacking, never glass ----------------------- */
+  --ui-shadow-button: 0 1px 2px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 0.5));
+  --ui-shadow-1:
+    0 8px 14px -3px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 0.5)),
+    0 2px 4px -2px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 0.5)),
+    0 0 0 1px rgb(var(--_hairline) / var(--_hairline-alpha));
+  --ui-shadow-2:
+    0 20px 48px -8px rgb(var(--_elev-shadow) / var(--_elev-alpha)),
+    0 4px 12px -2px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 0.6)),
+    0 0 0 1px rgb(var(--_elev-edge) / var(--_elev-edge-alpha));
+  --ui-shadow-3:
+    0 28px 64px -12px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 1.3)),
+    0 8px 24px -4px rgb(var(--_elev-shadow) / calc(var(--_elev-alpha) * 0.8)),
+    0 0 0 1px rgb(var(--_elev-edge) / var(--_elev-edge-alpha));
+  --ui-focus-ring: 0 0 0 2px rgb(var(--_focus) / 0.5);
+  --ui-focus-ring-inset: inset 0 0 0 1px rgb(var(--_focus) / 0.5);
+  --ui-ring-inset: inset 0 0 0 1px var(--ui-border);
+  --ui-focus-offset: 0px;
+
+  /* --- Control geometry: three registered tiers, no fourth ---------------- */
+  --ui-control-h-sm: 28px;   /* compact */
+  --ui-control-h-md: 36px;   /* regular */
+  --ui-control-h-lg: 44px;   /* comfortable */
+  --ui-control-px-sm: var(--ui-space-2);
+  --ui-control-px-md: var(--ui-space-3);
+  --ui-control-px-lg: var(--ui-space-3);
+  --ui-control-slot-text: 96px;       /* text button owns this slot */
+  --ui-control-slot-icon-text: 128px; /* leading icon + label */
+  --ui-label-budget: 68px;            /* Latin label ceiling inside the slot */
+  --ui-icon-sm: 14px; --ui-icon-md: 16px; --ui-icon-lg: 20px;
+  --ui-icon-stroke: 2;
+
+  /* --- Motion: colour only, 100ms, one press scale ------------------------ */
+  --ui-duration-fast: 100ms; --ui-duration-base: 150ms; --ui-duration-slow: 350ms;
+  --ui-ease: ease;
+  --ui-press-scale: 0.98;
+
+  --ui-z-sticky: 100; --ui-z-dropdown: 200; --ui-z-overlay: 300;
+  --ui-z-modal: 400;  --ui-z-popover: 500;  --ui-z-toast: 600;
+}
+
+/* Touch floor: every control tier collapses to 44px below the md breakpoint,
+   exactly as controlHeightClasses does with `max-md:h-11`. */
+@media (max-width: 767px) {
+  :root { --ui-control-h-sm: 44px; --ui-control-h-md: 44px; }
+}
+
+/* --- Light theme: warm paper, inverted ink ------------------------------- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --_canvas: 243 240 232; --_rail: 238 234 226; --_sidebar: 247 245 240;
+    --_panel: 250 248 244;
+    --_control: 234 229 218; --_control-hover: 223 218 208; --_control-active: 213 207 195;
+    --_selected: 218 213 202; --_selected-hover: 208 203 192; --_selected-active: 198 193 182;
+    --_selected-indicator: 60 60 65;
+    --_emphasis: 36 37 40; --_emphasis-hover: 58 59 64;
+    --_text-strong: 15 16 18; --_text-primary: 28 29 32;
+    --_text-secondary: 68 68 74; --_text-muted: 92 92 98;
+    --_text-on-light: 255 255 255;
+    --_ring: 84 84 90; --_focus: 15 16 18;
+    --_danger: 186 42 38;  --_danger-bg: 254 244 243;
+    --_warning: 161 98 7;  --_warning-bg: 254 243 199;
+    --_success: 4 120 87;  --_success-bg: 209 250 229;
+    --_info: 2 132 199;    --_info-bg: 224 242 254;
+    --_mention: 190 18 60;
+    --_elev-shadow: 36 34 30; --_elev-alpha: 0.18;
+    --_elev-edge: 36 34 30;   --_elev-edge-alpha: 0.12;
+    --_hairline: 28 29 32;    --_hairline-alpha: 0.12;
+    --ui-danger-bg: rgb(var(--_danger-bg)); --ui-warning-bg: rgb(var(--_warning-bg));
+    --ui-success-bg: rgb(var(--_success-bg)); --ui-info-bg: rgb(var(--_info-bg));
+    --ui-overlay: rgb(36 34 30 / 0.35);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --_canvas: 243 240 232; --_rail: 238 234 226; --_sidebar: 247 245 240;
+  --_panel: 250 248 244;
+  --_control: 234 229 218; --_control-hover: 223 218 208; --_control-active: 213 207 195;
+  --_selected: 218 213 202; --_selected-hover: 208 203 192; --_selected-active: 198 193 182;
+  --_selected-indicator: 60 60 65;
+  --_emphasis: 36 37 40; --_emphasis-hover: 58 59 64;
+  --_text-strong: 15 16 18; --_text-primary: 28 29 32;
+  --_text-secondary: 68 68 74; --_text-muted: 92 92 98;
+  --_text-on-light: 255 255 255;
+  --_ring: 84 84 90; --_focus: 15 16 18;
+  --_danger: 186 42 38;  --_danger-bg: 254 244 243;
+  --_warning: 161 98 7;  --_warning-bg: 254 243 199;
+  --_success: 4 120 87;  --_success-bg: 209 250 229;
+  --_info: 2 132 199;    --_info-bg: 224 242 254;
+  --_mention: 190 18 60;
+  --_elev-shadow: 36 34 30; --_elev-alpha: 0.18;
+  --_elev-edge: 36 34 30;   --_elev-edge-alpha: 0.12;
+  --_hairline: 28 29 32;    --_hairline-alpha: 0.12;
+  --ui-danger-bg: rgb(var(--_danger-bg)); --ui-warning-bg: rgb(var(--_warning-bg));
+  --ui-success-bg: rgb(var(--_success-bg)); --ui-info-bg: rgb(var(--_info-bg));
+  --ui-overlay: rgb(36 34 30 / 0.35);
+}
+
+/* Squircle where supported; plain border-radius is the fallback. */
+@supports (corner-shape: squircle) {
+  :root { --ui-corner-shape: squircle; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ui-duration-fast: 1ms; --ui-duration-base: 1ms; --ui-duration-slow: 1ms;
+          --ui-press-scale: 1; }
+}

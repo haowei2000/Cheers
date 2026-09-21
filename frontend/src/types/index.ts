@@ -11,6 +11,7 @@ export interface User {
   status_text?: string | null;
   status_emoji?: string | null;
   status_updated_at?: string | null;
+  has_password?: boolean;
 }
 
 export interface Workspace {

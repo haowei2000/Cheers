@@ -787,7 +787,7 @@ function MessageComposerImpl({
         )}
       >
         {contextBar && (
-          <div className="min-w-0 border-b border-control/60 bg-control/20 px-2 py-1">
+          <div className="min-w-0 bg-control/20 px-2 py-1">
             {contextBar}
           </div>
         )}

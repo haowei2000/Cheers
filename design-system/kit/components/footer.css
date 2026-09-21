@@ -1,0 +1,25 @@
+/* Footer — the contentinfo landmark. Link groups get real headings, because
+   bold text is not a heading to anything that is not an eye. */
+.ui-footer {
+  display: flex; flex-direction: column; gap: var(--ui-space-5);
+  padding: var(--ui-space-6) var(--ui-space-4);
+  background: var(--ui-bg-subtle); color: var(--ui-fg-muted);
+  font-size: var(--ui-text-sm);
+}
+.ui-footer__columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--ui-space-5); }
+.ui-footer__heading {
+  margin: 0 0 var(--ui-space-2); font-size: var(--ui-text-xs);
+  letter-spacing: var(--ui-tracking-wide); color: var(--ui-fg-subtle);
+  font-weight: var(--ui-weight-medium);
+}
+.ui-footer__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ui-space-1); }
+.ui-footer__list a { color: var(--ui-fg-muted); text-decoration: none; border-radius: var(--ui-radius-sm); }
+.ui-footer__list a:hover { color: var(--ui-fg-strong); text-decoration: underline; text-underline-offset: 3px; }
+.ui-footer__list a:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-footer__bottom {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: var(--ui-space-3);
+  padding-block-start: var(--ui-space-4); box-shadow: inset 0 1px 0 0 var(--ui-hairline);
+}
+.ui-footer__legal { color: var(--ui-fg-subtle); }
+.ui-footer__newsletter { display: flex; gap: var(--ui-space-2); align-items: flex-end; flex-wrap: wrap; }

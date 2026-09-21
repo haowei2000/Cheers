@@ -1,8 +1,8 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
 import { useRef, useState } from "react";
 import {
-  MessageSquarePlus,
   Check,
   X,
   ListChecks,
@@ -32,6 +32,7 @@ import {
   type FileRef,
 } from "./contextPick";
 import {
+  ADD_CONTEXT_MENU,
   ADD_CONTEXT_MENU_TITLE,
   ADDED_TO_CONTEXT_TITLE,
 } from "./contextLabels";
@@ -178,7 +179,7 @@ export function AttachContextButton({
  className ??
  "rounded-sm text-content-primary hover:text-accent-300 disabled:opacity-50 disabled:hover:text-content-primary"}
     >
-      {added ? <Check className="w-3.5 h-3.5 text-success-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
+      {added ? <Check className="w-3.5 h-3.5 text-success-400" /> : <AddContextIcon className="w-3.5 h-3.5" />}
     </UiButton>
   );
 }
@@ -228,7 +229,7 @@ export function ContextPickBar({
                   controlSize="compact"
                   className="hover:text-accent-300"
                 >
-                  <MessageSquarePlus className="w-3.5 h-3.5" />
+                  <AddContextIcon className="w-3.5 h-3.5" />
                 </IconButton>
                 <IconButton
                   onClick={() => dismissSuggestion(channelId, sg.id)}
@@ -307,20 +308,20 @@ export function ContextPickerButton({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div ref={rootRef} className="relative inline-flex w-36 flex-shrink-0">
+    <div ref={rootRef} className="relative inline-flex flex-shrink-0">
       <UiButton
         action="addContext"
-        content="iconText"
+        content="icon"
         variant="plain"
-        controlWidth="fill"
         type="button"
+        aria-label={ADD_CONTEXT_MENU}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         title={ADD_CONTEXT_MENU_TITLE}
         controlSize="regular"
       >
-        <MessageSquarePlus className="h-4 w-4" />
+        <AddContextIcon className="h-4 w-4" />
       </UiButton>
       {open && (
         <PopoverPanel placement="up" align="start" className="w-56 p-1">

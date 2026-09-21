@@ -1,0 +1,36 @@
+/* Card — an opaque panel lifted off the canvas by surface contrast and shadow.
+   No border: a boxed card is explicitly out of the design language. */
+.ui-card {
+  display: flex; flex-direction: column; gap: var(--ui-space-3);
+  padding: var(--ui-space-4);
+  background: var(--ui-bg-raised); color: var(--ui-fg);
+  border-radius: var(--ui-radius-md); corner-shape: var(--ui-corner-shape, round);
+  box-shadow: var(--ui-shadow-1);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease),
+              box-shadow var(--ui-duration-base) var(--ui-ease);
+}
+.ui-card__media {
+  margin: calc(var(--ui-space-4) * -1) calc(var(--ui-space-4) * -1) 0;
+  /* Concentric: the inner arc is the outer arc minus the inset it sits in. */
+  border-start-start-radius: var(--ui-radius-md); border-start-end-radius: var(--ui-radius-md);
+  overflow: hidden;
+}
+.ui-card__footer {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  margin-block-start: var(--ui-space-1);
+}
+.ui-card__footer--split { justify-content: space-between; }
+.ui-card--horizontal { flex-direction: row; align-items: flex-start; gap: var(--ui-space-4); }
+.ui-card--horizontal .ui-card__media { margin: 0; inline-size: 96px; flex: none; border-radius: var(--ui-radius-sm); }
+/* One real link stretched over the card: never nest controls inside a link. */
+.ui-card--interactive { cursor: pointer; position: relative; }
+.ui-card--interactive:hover { background: var(--ui-bg-hover); }
+.ui-card--interactive:focus-within { box-shadow: var(--ui-shadow-1), var(--ui-focus-ring); }
+.ui-card--interactive .ui-card__link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.ui-card--interactive .ui-card__link { text-decoration: none; color: inherit; outline: none; }
+.ui-card[data-state="selected"] {
+  background: var(--ui-bg-selected);
+  box-shadow: var(--ui-shadow-1), inset 0 0 0 1px var(--ui-border-strong);
+}
+.ui-card[data-state="disabled"] { opacity: 0.5; pointer-events: none; }
+@media (max-width: 480px) { .ui-card--horizontal { flex-direction: column; } .ui-card--horizontal .ui-card__media { inline-size: 100%; } }

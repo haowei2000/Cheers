@@ -1,0 +1,21 @@
+/* Skeleton — shaped like the thing it stands in for, so nothing jumps when the
+   real content lands. The whole block is aria-hidden; one status line speaks. */
+.ui-skeleton {
+  display: block; background: var(--ui-bg-control);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  position: relative; overflow: hidden;
+}
+.ui-skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent,
+              color-mix(in srgb, var(--ui-fg) 7%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: ui-shimmer 1.4s var(--ui-ease) infinite;
+}
+.ui-skeleton--text { block-size: 0.75em; margin-block: 0.25em; }
+.ui-skeleton--text:last-child { inline-size: 62%; }
+.ui-skeleton--block { block-size: 96px; }
+.ui-skeleton--circle { border-radius: var(--ui-radius-full); inline-size: 36px; block-size: 36px; }
+.ui-skeleton--card { block-size: 132px; }
+@keyframes ui-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .ui-skeleton::after { animation: none; } }

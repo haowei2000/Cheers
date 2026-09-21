@@ -1,0 +1,1120 @@
+{
+  "style": "Editorial Correspondence",
+  "stack": "html",
+  "ext": "css",
+  "gallery": "gallery.html",
+  "components": [
+    {
+      "id": "icon",
+      "name": "Icon",
+      "tier": 0,
+      "variants": [
+        "size-sm",
+        "size-md",
+        "size-lg"
+      ],
+      "states": [
+        "decorative",
+        "meaningful"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "image",
+      "name": "Image",
+      "tier": 0,
+      "variants": [
+        "fixed ratio",
+        "fill",
+        "rounded",
+        "with-caption"
+      ],
+      "states": [
+        "loading",
+        "loaded",
+        "broken"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "avatar",
+      "name": "Avatar",
+      "tier": 0,
+      "variants": [
+        "image",
+        "initials",
+        "icon fallback",
+        "size-xs..xl",
+        "group/stack"
+      ],
+      "states": [
+        "default",
+        "with presence dot",
+        "loading"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "badge",
+      "name": "Badge",
+      "tier": 0,
+      "variants": [
+        "neutral",
+        "accent",
+        "success",
+        "warning",
+        "danger",
+        "info",
+        "outline",
+        "with-dot",
+        "removable"
+      ],
+      "states": [
+        "default",
+        "interactive hover",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "heading",
+      "name": "Heading",
+      "tier": 0,
+      "variants": [
+        "level 1-6",
+        "display",
+        "eyebrow/overline"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "label",
+      "name": "Label",
+      "tier": 0,
+      "variants": [
+        "default",
+        "required",
+        "optional",
+        "with-help-text"
+      ],
+      "states": [
+        "default",
+        "disabled",
+        "error"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "link",
+      "name": "Link",
+      "tier": 0,
+      "variants": [
+        "inline",
+        "standalone",
+        "external (with icon)",
+        "quiet"
+      ],
+      "states": [
+        "default",
+        "hover",
+        "focus-visible",
+        "visited",
+        "active"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "list",
+      "name": "List",
+      "tier": 0,
+      "variants": [
+        "unordered",
+        "ordered",
+        "description",
+        "unstyled",
+        "inline"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "progress-bar",
+      "name": "Progress bar",
+      "tier": 0,
+      "variants": [
+        "determinate",
+        "indeterminate",
+        "with value label",
+        "sizes"
+      ],
+      "states": [
+        "0%",
+        "partial",
+        "100%",
+        "error"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "quote",
+      "name": "Quote",
+      "tier": 0,
+      "variants": [
+        "blockquote",
+        "pull quote",
+        "with attribution"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "separator",
+      "name": "Separator",
+      "tier": 0,
+      "variants": [
+        "horizontal",
+        "vertical",
+        "with-label"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "skeleton",
+      "name": "Skeleton",
+      "tier": 0,
+      "variants": [
+        "text line",
+        "block",
+        "circle",
+        "card shape"
+      ],
+      "states": [
+        "shimmer",
+        "static"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "spinner",
+      "name": "Spinner",
+      "tier": 0,
+      "variants": [
+        "size-sm",
+        "size-md",
+        "size-lg",
+        "inline (inside a button)"
+      ],
+      "states": [
+        "spinning"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "stack",
+      "name": "Stack",
+      "tier": 0,
+      "variants": [
+        "vertical",
+        "horizontal",
+        "wrap",
+        "split (space-between)"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "visually-hidden",
+      "name": "Visually hidden",
+      "tier": 0,
+      "variants": [
+        "hidden",
+        "focusable (appears on focus)"
+      ],
+      "states": [
+        "hidden",
+        "focused"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "button",
+      "name": "Button",
+      "tier": 1,
+      "variants": [
+        "primary",
+        "secondary",
+        "ghost/quiet",
+        "danger",
+        "link-styled",
+        "icon-only",
+        "size-sm/md/lg",
+        "full-width"
+      ],
+      "states": [
+        "default",
+        "hover",
+        "active",
+        "focus-visible",
+        "disabled",
+        "loading"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "checkbox",
+      "name": "Checkbox",
+      "tier": 1,
+      "variants": [
+        "default",
+        "indeterminate",
+        "with description",
+        "card/tile style"
+      ],
+      "states": [
+        "unchecked",
+        "checked",
+        "indeterminate",
+        "disabled",
+        "invalid",
+        "focus-visible"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "fieldset",
+      "name": "Fieldset",
+      "tier": 1,
+      "variants": [
+        "bordered",
+        "flush",
+        "with description",
+        "collapsible"
+      ],
+      "states": [
+        "default",
+        "disabled",
+        "invalid"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "text-input",
+      "name": "Text input",
+      "tier": 1,
+      "variants": [
+        "default",
+        "with leading icon",
+        "with trailing affix",
+        "size-sm/md/lg",
+        "borderless"
+      ],
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "filled",
+        "disabled",
+        "readonly",
+        "invalid",
+        "with help text"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "date-input",
+      "name": "Date input",
+      "tier": 1,
+      "variants": [
+        "single field",
+        "segmented day/month/year",
+        "with format hint"
+      ],
+      "states": [
+        "empty",
+        "partial",
+        "complete",
+        "invalid",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "file",
+      "name": "File",
+      "tier": 1,
+      "variants": [
+        "row",
+        "card",
+        "image thumbnail",
+        "with progress",
+        "removable"
+      ],
+      "states": [
+        "default",
+        "uploading",
+        "error",
+        "hover"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "file-upload",
+      "name": "File upload",
+      "tier": 1,
+      "variants": [
+        "button only",
+        "dropzone",
+        "dropzone with list",
+        "avatar/image upload"
+      ],
+      "states": [
+        "idle",
+        "drag-over",
+        "uploading",
+        "success",
+        "error",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "progress-indicator",
+      "name": "Progress indicator",
+      "tier": 1,
+      "variants": [
+        "horizontal",
+        "vertical",
+        "numbered",
+        "with descriptions",
+        "timeline"
+      ],
+      "states": [
+        "complete",
+        "current",
+        "upcoming",
+        "error",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "radio-button",
+      "name": "Radio button",
+      "tier": 1,
+      "variants": [
+        "default",
+        "with description",
+        "card/tile style",
+        "inline group"
+      ],
+      "states": [
+        "unselected",
+        "selected",
+        "disabled",
+        "invalid",
+        "focus-visible"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "rating",
+      "name": "Rating",
+      "tier": 1,
+      "variants": [
+        "read-only",
+        "interactive",
+        "with count",
+        "half stars",
+        "size-sm/md"
+      ],
+      "states": [
+        "empty",
+        "hover preview",
+        "selected",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "search-input",
+      "name": "Search input",
+      "tier": 1,
+      "variants": [
+        "with icon",
+        "with clear button",
+        "with submit button",
+        "with scope selector"
+      ],
+      "states": [
+        "empty",
+        "typing",
+        "has value",
+        "loading",
+        "focus"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "select",
+      "name": "Select",
+      "tier": 1,
+      "variants": [
+        "native",
+        "custom listbox",
+        "with option groups",
+        "size-sm/md/lg",
+        "multiple"
+      ],
+      "states": [
+        "placeholder",
+        "selected",
+        "open",
+        "disabled",
+        "invalid",
+        "focus"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "skip-link",
+      "name": "Skip link",
+      "tier": 1,
+      "variants": [
+        "visible on focus",
+        "always visible"
+      ],
+      "states": [
+        "hidden",
+        "focused"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "slider",
+      "name": "Slider",
+      "tier": 1,
+      "variants": [
+        "single",
+        "range (two thumbs)",
+        "with ticks",
+        "with value bubble",
+        "vertical"
+      ],
+      "states": [
+        "default",
+        "dragging",
+        "focus-visible",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "stepper",
+      "name": "Stepper",
+      "tier": 1,
+      "variants": [
+        "horizontal",
+        "split (buttons on both ends)",
+        "size-sm/md"
+      ],
+      "states": [
+        "default",
+        "at min",
+        "at max",
+        "disabled",
+        "invalid"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "textarea",
+      "name": "Textarea",
+      "tier": 1,
+      "variants": [
+        "fixed rows",
+        "auto-grow",
+        "with character count",
+        "resizable"
+      ],
+      "states": [
+        "default",
+        "focus",
+        "disabled",
+        "readonly",
+        "invalid"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "toggle",
+      "name": "Toggle",
+      "tier": 1,
+      "variants": [
+        "default",
+        "with icons in track",
+        "label left/right",
+        "size-sm/md"
+      ],
+      "states": [
+        "off",
+        "on",
+        "disabled",
+        "focus-visible",
+        "pending"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "accordion",
+      "name": "Accordion",
+      "tier": 2,
+      "variants": [
+        "single-open",
+        "multi-open",
+        "bordered",
+        "flush",
+        "with icon/left chevron"
+      ],
+      "states": [
+        "collapsed",
+        "expanded",
+        "disabled item",
+        "focus-visible"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "alert",
+      "name": "Alert",
+      "tier": 2,
+      "variants": [
+        "info",
+        "success",
+        "warning",
+        "danger",
+        "neutral",
+        "with title",
+        "with actions",
+        "dismissible",
+        "page-level banner"
+      ],
+      "states": [
+        "default",
+        "dismissed"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "breadcrumbs",
+      "name": "Breadcrumbs",
+      "tier": 2,
+      "variants": [
+        "slash",
+        "chevron",
+        "with icon home",
+        "collapsed middle"
+      ],
+      "states": [
+        "default",
+        "current page",
+        "overflowing"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "button-group",
+      "name": "Button group",
+      "tier": 2,
+      "variants": [
+        "attached",
+        "spaced",
+        "vertical",
+        "with split button",
+        "toolbar"
+      ],
+      "states": [
+        "default",
+        "one disabled",
+        "focus within"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "card",
+      "name": "Card",
+      "tier": 2,
+      "variants": [
+        "basic",
+        "with media",
+        "horizontal",
+        "interactive/clickable",
+        "with footer actions",
+        "selected"
+      ],
+      "states": [
+        "default",
+        "hover",
+        "focus-within",
+        "selected",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "empty-state",
+      "name": "Empty state",
+      "tier": 2,
+      "variants": [
+        "first-run",
+        "no results",
+        "error",
+        "permission denied",
+        "compact inline"
+      ],
+      "states": [],
+      "status": "done"
+    },
+    {
+      "id": "form",
+      "name": "Form",
+      "tier": 2,
+      "variants": [
+        "stacked",
+        "two-column",
+        "inline",
+        "with sticky footer actions"
+      ],
+      "states": [
+        "pristine",
+        "submitting",
+        "submitted",
+        "with error summary"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "navigation",
+      "name": "Navigation",
+      "tier": 2,
+      "variants": [
+        "horizontal",
+        "sidebar",
+        "with sections",
+        "with nested items",
+        "mobile/collapsed",
+        "in-page table of contents"
+      ],
+      "states": [
+        "default",
+        "current item",
+        "hover",
+        "focus-visible",
+        "collapsed"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "pagination",
+      "name": "Pagination",
+      "tier": 2,
+      "variants": [
+        "numbered",
+        "prev/next only",
+        "with page size select",
+        "with result count",
+        "load more"
+      ],
+      "states": [
+        "first page",
+        "middle",
+        "last page",
+        "single page",
+        "loading"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "segmented-control",
+      "name": "Segmented control",
+      "tier": 2,
+      "variants": [
+        "text",
+        "icon",
+        "icon+text",
+        "full-width",
+        "size-sm/md"
+      ],
+      "states": [
+        "selected",
+        "unselected",
+        "disabled",
+        "focus-visible"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "table",
+      "name": "Table",
+      "tier": 2,
+      "variants": [
+        "basic",
+        "striped",
+        "bordered",
+        "compact/comfortable density",
+        "sticky header",
+        "selectable rows",
+        "sortable",
+        "with row actions",
+        "responsive stacked"
+      ],
+      "states": [
+        "default",
+        "hover row",
+        "selected row",
+        "sorted column",
+        "loading",
+        "empty"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "tabs",
+      "name": "Tabs",
+      "tier": 2,
+      "variants": [
+        "underline",
+        "pill",
+        "enclosed",
+        "vertical",
+        "with icons",
+        "with counts",
+        "scrollable/overflow"
+      ],
+      "states": [
+        "selected",
+        "unselected",
+        "disabled",
+        "focus-visible",
+        "overflowing"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "tree-view",
+      "name": "Tree view",
+      "tier": 2,
+      "variants": [
+        "basic",
+        "with icons",
+        "with checkboxes",
+        "with guides/indent lines",
+        "multi-select"
+      ],
+      "states": [
+        "expanded",
+        "collapsed",
+        "selected",
+        "focused",
+        "disabled",
+        "loading children"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "popover",
+      "name": "Popover",
+      "tier": 3,
+      "variants": [
+        "with arrow",
+        "without arrow",
+        "with header/footer",
+        "sizes",
+        "placements"
+      ],
+      "states": [
+        "closed",
+        "open",
+        "flipped/shifted"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "color-picker",
+      "name": "Color picker",
+      "tier": 3,
+      "variants": [
+        "swatch grid",
+        "saturation area + hue slider",
+        "with hex/rgb input",
+        "with alpha",
+        "native input[type=color]"
+      ],
+      "states": [
+        "closed",
+        "open",
+        "selected swatch",
+        "invalid value",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "combobox",
+      "name": "Combobox",
+      "tier": 3,
+      "variants": [
+        "single select",
+        "multi select with chips",
+        "async/loading",
+        "creatable",
+        "with grouped options"
+      ],
+      "states": [
+        "empty",
+        "typing",
+        "loading",
+        "no results",
+        "option focused",
+        "selected",
+        "open",
+        "disabled"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "datepicker",
+      "name": "Datepicker",
+      "tier": 3,
+      "variants": [
+        "single date",
+        "range",
+        "with time",
+        "inline calendar",
+        "with presets"
+      ],
+      "states": [
+        "today",
+        "selected",
+        "in range",
+        "disabled date",
+        "out of month",
+        "focused date"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "modal",
+      "name": "Modal",
+      "tier": 3,
+      "variants": [
+        "default",
+        "confirm/destructive",
+        "form",
+        "full-screen on mobile",
+        "sizes",
+        "scrollable body"
+      ],
+      "states": [
+        "closed",
+        "open",
+        "entering/exiting",
+        "loading"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "drawer",
+      "name": "Drawer",
+      "tier": 3,
+      "variants": [
+        "left",
+        "right",
+        "top",
+        "bottom sheet",
+        "sizes",
+        "modal vs non-modal"
+      ],
+      "states": [
+        "closed",
+        "open",
+        "dragging (sheet)"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "dropdown-menu",
+      "name": "Dropdown menu",
+      "tier": 3,
+      "variants": [
+        "actions",
+        "with icons",
+        "with sections and separators",
+        "with checkable items",
+        "submenu",
+        "context menu"
+      ],
+      "states": [
+        "closed",
+        "open",
+        "item hover",
+        "item focused",
+        "disabled item",
+        "destructive item"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "toast",
+      "name": "Toast",
+      "tier": 3,
+      "variants": [
+        "info",
+        "success",
+        "warning",
+        "danger",
+        "with action",
+        "with progress/auto-dismiss",
+        "stacked"
+      ],
+      "states": [
+        "entering",
+        "visible",
+        "exiting",
+        "paused on hover"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "tooltip",
+      "name": "Tooltip",
+      "tier": 3,
+      "variants": [
+        "placements",
+        "with arrow",
+        "keyboard shortcut style",
+        "multiline"
+      ],
+      "states": [
+        "hidden",
+        "visible",
+        "delayed"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "carousel",
+      "name": "Carousel",
+      "tier": 4,
+      "variants": [
+        "single slide",
+        "multi-item",
+        "with dots",
+        "with thumbnails",
+        "auto-play",
+        "scroll-snap"
+      ],
+      "states": [
+        "first",
+        "middle",
+        "last",
+        "auto-playing",
+        "paused",
+        "dragging"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "footer",
+      "name": "Footer",
+      "tier": 4,
+      "variants": [
+        "simple",
+        "multi-column",
+        "with newsletter form",
+        "with locale/theme switcher"
+      ],
+      "states": [
+        "default"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "header",
+      "name": "Header",
+      "tier": 4,
+      "variants": [
+        "marketing",
+        "app shell",
+        "with search",
+        "sticky",
+        "condensed on scroll",
+        "mobile with menu button"
+      ],
+      "states": [
+        "default",
+        "sticky/scrolled",
+        "mobile menu open"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "hero",
+      "name": "Hero",
+      "tier": 4,
+      "variants": [
+        "centered",
+        "split image",
+        "with background image + overlay",
+        "with form",
+        "compact page header"
+      ],
+      "states": [
+        "default"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "rich-text-editor",
+      "name": "Rich text editor",
+      "tier": 4,
+      "variants": [
+        "full toolbar",
+        "minimal/inline toolbar",
+        "bubble toolbar on selection",
+        "with markdown shortcuts",
+        "with character count"
+      ],
+      "states": [
+        "empty/placeholder",
+        "focused",
+        "selection active",
+        "disabled",
+        "readonly"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "video",
+      "name": "Video",
+      "tier": 4,
+      "variants": [
+        "native controls",
+        "custom controls",
+        "with poster",
+        "embedded/responsive ratio",
+        "background (muted loop)"
+      ],
+      "states": [
+        "idle/poster",
+        "playing",
+        "paused",
+        "buffering",
+        "fullscreen",
+        "muted"
+      ],
+      "status": "done"
+    }
+  ]
+}

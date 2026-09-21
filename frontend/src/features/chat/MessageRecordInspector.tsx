@@ -2,9 +2,8 @@
 
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, GripHorizontal, ListTree, X } from "lucide-react";
+import { GripHorizontal, ListTree, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { formatTime } from "@/lib/format";
 import { IconButton } from "@/components/ui/icon-button";
 import { DragHandle } from "@/components/ui/drag-handle";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -30,6 +29,8 @@ interface MessageRecordInspectorProps {
  * compact screens. Keeping this out of the timeline prevents completed trace
  * history from changing message rhythm while preserving one audited surface.
  */
+const FILE_TOKEN_RE = /<#file:[^>]+>/g;
+
 /** Present message metadata as an accessible dialog and restore focus on close. */
 export function MessageRecordInspector({
   message,
@@ -99,7 +100,11 @@ export function MessageRecordInspector({
   }, [isMobile, triggerRef]);
 
   const sender = message.sender_name || (message.sender_type === "bot" ? "Bot" : "Member");
-  const count = meta.contextCount + meta.traceCount;
+  const cleanContent = (message.content ?? "").replace(FILE_TOKEN_RE, "").trim();
+  const messageText =
+    cleanContent ||
+    (message.files?.length ? message.files[0].original_filename || "Attachment" : "") ||
+    sender;
 
   // Message records sit above non-modal instrument windows (z 40–43) but below
   // popovers and true dialogs (z 60+ / 100), so a floated panel cannot cover the
@@ -133,26 +138,23 @@ export function MessageRecordInspector({
           "md:bottom-auto md:right-auto md:left-2 md:top-2 md:w-[32rem] md:max-w-[calc(100vw-16px)] md:rounded-sm",
         )}
       >
-        <div className="shrink-0 px-5 pt-3 md:px-6 md:pt-5">
+        <div className="shrink-0 px-5 pt-3 md:px-6 md:pt-4">
           <DragHandle
             {...drag.handleProps}
-            className="mx-auto mb-3 cursor-grab select-none active:cursor-grabbing md:hidden"
+            className="mx-auto mb-2 cursor-grab select-none active:cursor-grabbing md:hidden"
           />
           <header
             {...drag.handleProps}
-            className="flex cursor-grab select-none items-start gap-4 border-b border-zinc-800/80 pb-4 active:cursor-grabbing"
+            className="flex cursor-grab select-none items-start gap-3 border-b border-zinc-800/80 pb-3 active:cursor-grabbing"
           >
             <GripHorizontal className="mt-1 hidden h-4 w-4 shrink-0 text-content-muted md:block" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p className="text-minimal font-semibold uppercase tracking-overline text-content-muted">
-                Message record · {String(count).padStart(2, "0")}
-              </p>
-              <h2 id={titleId} className="mt-1 text-comfortable font-semibold text-content-primary">
-                {sender}
+              <h2
+                id={titleId}
+                className="font-reading text-regular text-content-primary line-clamp-3 select-text break-words"
+              >
+                {messageText}
               </h2>
-              <p className="mt-1 text-compact tabular-nums text-content-muted">
-                {formatTime(message.created_at)} · {message.msg_id.slice(0, 8)}
-              </p>
             </div>
             <IconButton
               onClick={onClose}
@@ -164,13 +166,6 @@ export function MessageRecordInspector({
               <X className="h-4 w-4" />
             </IconButton>
           </header>
-
-          {meta.hasFailure && (
-            <div role="alert" className="flex min-h-11 items-center gap-2 border-b border-red-950/80 text-compact text-danger-300">
-              <AlertCircle className="h-3.5 w-3.5" />
-              One or more agent steps failed.
-            </div>
-          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:px-6 md:pb-6">

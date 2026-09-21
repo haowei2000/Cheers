@@ -25,6 +25,7 @@ fn looks_like_email(s: &str) -> bool {
     match (parts.next(), parts.next(), parts.next()) {
         (Some(local), Some(domain), None) => {
             !local.is_empty()
+                && !local.contains(' ')
                 && domain.len() >= 3
                 && domain.contains('.')
                 && !domain.starts_with('.')
@@ -627,6 +628,211 @@ pub async fn change_password(
     Ok(Json(
         json!({ "ok": true, "access_token": session.access_token, "expires_in": session.expires_in }),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct SetInitialPasswordRequest {
+    pub new_password: String,
+}
+
+/// POST /api/v1/auth/set-password — for users who authenticated via OAuth or passkey
+/// and have no initial password set yet (`password_hash IS NULL`).
+pub async fn set_password(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<SetInitialPasswordRequest>,
+) -> Result<Json<Value>, AppError> {
+    if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "password must be at least {MIN_PASSWORD_CHARS} characters"
+        )));
+    }
+    let row =
+        sqlx::query("SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+            .bind(&claims.sub)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?;
+
+    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    if hashed.is_some() {
+        return Err(AppError::BadRequest(
+            "account already has a password; use change-password instead".into(),
+        ));
+    }
+    let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
+        .await
+        .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
+
+    sqlx::query(
+        "UPDATE users SET password_hash = $2, token_version = token_version + 1
+         WHERE user_id = $1 AND password_hash IS NULL",
+    )
+    .bind(&claims.sub)
+    .bind(&new_hash)
+    .execute(&state.db)
+    .await?;
+
+    if let Ok(uid) = claims.sub.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
+    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
+    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
+
+    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
+    let session = auth_sessions::finalize_login(
+        &state.db,
+        &state.config,
+        &user,
+        auth_sessions::ClientType::Web,
+        None,
+    )
+    .await?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "access_token": session.access_token,
+        "expires_in": session.expires_in,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct RequestEmailUpdateCodeRequest {
+    pub email: String,
+}
+
+/// POST /api/v1/auth/email/request-code — request a verification code to link or update the account's email.
+pub async fn request_email_update_code(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<RequestEmailUpdateCodeRequest>,
+) -> Result<Json<Value>, AppError> {
+    let email = body.email.trim().to_lowercase();
+    if email.is_empty() {
+        return Err(AppError::BadRequest("email is required".into()));
+    }
+    if !looks_like_email(&email) {
+        return Err(AppError::BadRequest("a valid email is required".into()));
+    }
+    let taken =
+        sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1")
+            .bind(&email)
+            .bind(&claims.sub)
+            .fetch_optional(&state.db)
+            .await?;
+    if taken.is_some() {
+        return Err(AppError::Conflict("that email is already in use".into()));
+    }
+
+    let cooling_down: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM email_codes
+            WHERE email = $1 AND purpose = 'update_email' AND used = FALSE
+              AND created_at > NOW() - INTERVAL '60 seconds'
+              AND expires_at > NOW()
+         )",
+    )
+    .bind(&email)
+    .fetch_one(&state.db)
+    .await?;
+    if cooling_down {
+        return Ok(Json(json!({ "ok": true, "sent": false })));
+    }
+
+    sqlx::query(
+        "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = 'update_email' AND used = FALSE",
+    )
+    .bind(&email)
+    .execute(&state.db)
+    .await?;
+
+    let code = crate::infra::crypto::generate_email_code();
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &email,
+        "update_email",
+        &code,
+    );
+    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
+    sqlx::query(
+        "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
+         VALUES ($1, NULL, $2, 'update_email', $3)",
+    )
+    .bind(&email)
+    .bind(code_hash)
+    .bind(expires)
+    .execute(&state.db)
+    .await?;
+
+    crate::infra::email::send_email_verification_code(&state.config, &email, &code).await;
+
+    Ok(Json(json!({ "ok": true, "sent": true })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEmailRequest {
+    pub email: String,
+    pub code: String,
+}
+
+/// POST /api/v1/auth/email/update — confirm email link/update with verification code.
+pub async fn update_email(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<UpdateEmailRequest>,
+) -> Result<Json<Value>, AppError> {
+    let email = body.email.trim().to_lowercase();
+    if email.is_empty() {
+        return Err(AppError::BadRequest("email is required".into()));
+    }
+    if !looks_like_email(&email) {
+        return Err(AppError::BadRequest("a valid email is required".into()));
+    }
+    let code = body.code.trim().to_uppercase();
+    if code.is_empty() {
+        return Err(AppError::BadRequest("verification code is required".into()));
+    }
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &email,
+        "update_email",
+        &code,
+    );
+    let valid = sqlx::query(
+        "UPDATE email_codes SET used = TRUE
+         WHERE email = $1 AND code_hash = $2 AND purpose = 'update_email'
+           AND used = FALSE AND expires_at > NOW()",
+    )
+    .bind(&email)
+    .bind(code_hash)
+    .execute(&state.db)
+    .await?;
+    if valid.rows_affected() == 0 {
+        return Err(AppError::Unauthorized(
+            "invalid or expired verification code".into(),
+        ));
+    }
+
+    let taken =
+        sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1")
+            .bind(&email)
+            .bind(&claims.sub)
+            .fetch_optional(&state.db)
+            .await?;
+    if taken.is_some() {
+        return Err(AppError::Conflict("that email is already in use".into()));
+    }
+
+    sqlx::query("UPDATE users SET email = $2 WHERE user_id = $1 AND is_deleted = FALSE")
+        .bind(&claims.sub)
+        .bind(&email)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(json!({ "ok": true, "email": email })))
 }
 
 /// POST /api/v1/auth/logout — server-side revocation. Bumps the caller's
@@ -1297,6 +1503,15 @@ pub async fn send_two_factor_email(
 #[derive(Deserialize)]
 pub struct TwoFactorEmailMethodRequest {
     pub enabled: bool,
+    #[serde(default)]
+    pub code: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorPasswordMethodRequest {
+    pub enabled: bool,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1308,6 +1523,81 @@ pub struct TwoFactorMethodResponse {
     pub backup_codes: Vec<String>,
 }
 
+/// POST /api/v1/auth/2fa/methods/email/send-code — send verification code to enroll email in 2FA.
+pub async fn send_email_2fa_enroll_code(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Value>, AppError> {
+    let email: Option<String> =
+        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+            .bind(&claims.sub)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+
+    let Some(email) = email.filter(|e| !e.trim().is_empty()) else {
+        return Err(AppError::BadRequest(
+            "add and verify an email address before using email codes for two-step verification"
+                .into(),
+        ));
+    };
+    let normalized = email.trim().to_lowercase();
+
+    let cooling_down: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM email_codes
+            WHERE email = $1 AND purpose = 'enroll_email_2fa' AND used = FALSE
+              AND created_at > NOW() - INTERVAL '60 seconds'
+              AND expires_at > NOW()
+         )",
+    )
+    .bind(&normalized)
+    .fetch_one(&state.db)
+    .await?;
+
+    if cooling_down {
+        return Ok(Json(json!({
+            "ok": true,
+            "sent": false,
+            "email_hint": crate::domain::webauthn::mask_email(&email),
+        })));
+    }
+
+    sqlx::query(
+        "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = 'enroll_email_2fa' AND used = FALSE",
+    )
+    .bind(&normalized)
+    .execute(&state.db)
+    .await?;
+
+    let code = crate::infra::crypto::generate_email_code();
+    let code_hash = crate::infra::crypto::hash_email_code(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+        &normalized,
+        "enroll_email_2fa",
+        &code,
+    );
+    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
+    sqlx::query(
+        "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
+         VALUES ($1, NULL, $2, 'enroll_email_2fa', $3)",
+    )
+    .bind(&normalized)
+    .bind(code_hash)
+    .bind(expires)
+    .execute(&state.db)
+    .await?;
+
+    crate::infra::email::send_enroll_2fa_code(&state.config, &email, &code).await;
+
+    Ok(Json(json!({
+        "ok": true,
+        "sent": true,
+        "email_hint": crate::domain::webauthn::mask_email(&email),
+    })))
+}
+
 /// POST /api/v1/auth/2fa/methods/email — arm or disarm emailed one-time codes
 /// as a second factor. Step-up guarded: it changes how the account is protected.
 pub async fn set_email_two_factor(
@@ -1316,6 +1606,55 @@ pub async fn set_email_two_factor(
     Json(body): Json<TwoFactorEmailMethodRequest>,
 ) -> Result<Json<TwoFactorMethodResponse>, AppError> {
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    if body.enabled {
+        let code = body
+            .code
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest(
+                    "verification code is required to enable email two-step verification".into(),
+                )
+            })?;
+        let email: Option<String> =
+            sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+                .bind(&claims.sub)
+                .fetch_optional(&state.db)
+                .await?
+                .flatten();
+        let email = email
+            .filter(|e| !e.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest(
+                    "add and verify an email address before using email codes for two-step verification"
+                        .into(),
+                )
+            })?
+            .trim()
+            .to_lowercase();
+        let code_hash = crate::infra::crypto::hash_email_code(
+            state.config.secret_store_key.as_deref(),
+            &state.config.jwt_private_key_pem,
+            &email,
+            "enroll_email_2fa",
+            &code.to_uppercase(),
+        );
+        let valid = sqlx::query(
+            "UPDATE email_codes SET used = TRUE
+             WHERE email = $1 AND code_hash = $2 AND purpose = 'enroll_email_2fa'
+               AND used = FALSE AND expires_at > NOW()",
+        )
+        .bind(&email)
+        .bind(code_hash)
+        .execute(&state.db)
+        .await?;
+        if valid.rows_affected() == 0 {
+            return Err(AppError::Unauthorized(
+                "invalid or expired verification code".into(),
+            ));
+        }
+    }
     let backup_codes = two_factor::set_email_factor(&state.db, &claims.sub, body.enabled).await?;
     auth_sessions::record_direct_step_up(
         &state.db,
@@ -1342,9 +1681,36 @@ pub async fn set_email_two_factor(
 pub async fn set_password_two_factor(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Json(body): Json<TwoFactorEmailMethodRequest>,
+    Json(body): Json<TwoFactorPasswordMethodRequest>,
 ) -> Result<Json<TwoFactorMethodResponse>, AppError> {
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
+    if body.enabled {
+        let password = body
+            .password
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest(
+                    "account password is required to enable password two-step verification".into(),
+                )
+            })?;
+        let hash: Option<String> = sqlx::query_scalar(
+            "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db)
+        .await?
+        .flatten();
+        let hash = hash.ok_or_else(|| {
+            AppError::BadRequest("set a password before using it for two-step verification".into())
+        })?;
+        if !crate::infra::crypto::verify_password(password.to_string(), hash)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(AppError::Unauthorized("incorrect password".into()));
+        }
+    }
     let backup_codes =
         two_factor::set_password_factor(&state.db, &claims.sub, body.enabled).await?;
     auth_sessions::record_direct_step_up(
@@ -1414,4 +1780,45 @@ pub async fn regenerate_recovery_codes(
     }
     let backup_codes = two_factor::regenerate_recovery_codes(&state.db, &claims.sub).await?;
     Ok(Json(TwoFactorEnableResponse { backup_codes }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_looks_like_email() {
+        assert!(looks_like_email("user@example.com"));
+        assert!(looks_like_email("alice.bob@sub.domain.org"));
+        assert!(!looks_like_email("invalid"));
+        assert!(!looks_like_email("user@"));
+        assert!(!looks_like_email("@domain.com"));
+        assert!(!looks_like_email("user@domain"));
+        assert!(!looks_like_email("user with space@domain.com"));
+    }
+
+    #[test]
+    fn test_request_payload_deserialization() {
+        let set_pw: SetInitialPasswordRequest =
+            serde_json::from_str(r#"{"new_password":"my-secure-password"}"#).unwrap();
+        assert_eq!(set_pw.new_password, "my-secure-password");
+
+        let email_req: RequestEmailUpdateCodeRequest =
+            serde_json::from_str(r#"{"email":"user@example.com"}"#).unwrap();
+        assert_eq!(email_req.email, "user@example.com");
+
+        let email_up: UpdateEmailRequest =
+            serde_json::from_str(r#"{"email":"user@example.com","code":"123456"}"#).unwrap();
+        assert_eq!(email_up.code, "123456");
+
+        let tf_email: TwoFactorEmailMethodRequest =
+            serde_json::from_str(r#"{"enabled":true,"code":"654321"}"#).unwrap();
+        assert!(tf_email.enabled);
+        assert_eq!(tf_email.code.as_deref(), Some("654321"));
+
+        let tf_pw: TwoFactorPasswordMethodRequest =
+            serde_json::from_str(r#"{"enabled":true,"password":"secret"}"#).unwrap();
+        assert!(tf_pw.enabled);
+        assert_eq!(tf_pw.password.as_deref(), Some("secret"));
+    }
 }

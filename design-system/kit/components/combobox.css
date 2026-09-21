@@ -1,0 +1,32 @@
+/* Combobox — a select you can type into. Built on the field and the popover, so
+   the only new work is the listbox and the result announcement. */
+.ui-combobox { position: relative; display: block; }
+.ui-combobox__input { padding-inline-end: calc(var(--ui-space-3) * 2 + var(--ui-icon-md)); }
+.ui-combobox__toggle {
+  all: unset; position: absolute; inset-inline-end: var(--ui-space-2); inset-block: 0;
+  margin-block: auto; inline-size: 20px; block-size: 20px;
+  display: grid; place-items: center; cursor: pointer; color: var(--ui-fg-subtle);
+  border-radius: var(--ui-radius-full);
+}
+.ui-combobox__toggle:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-listbox { display: flex; flex-direction: column; gap: 1px; padding: var(--ui-space-1); max-block-size: 260px; overflow-y: auto; }
+.ui-listbox__option {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  block-size: var(--ui-control-h-md); padding-inline: var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); cursor: pointer;
+  color: var(--ui-fg); font-size: var(--ui-text-md);
+}
+.ui-listbox__option:hover, .ui-listbox__option[data-focused="true"] { background: var(--ui-bg-hover); color: var(--ui-fg-strong); }
+.ui-listbox__option[aria-selected="true"] { background: var(--ui-bg-selected); color: var(--ui-fg-strong); font-weight: var(--ui-weight-medium); }
+.ui-listbox__option .ui-icon { color: var(--ui-fg-subtle); flex: none; }
+.ui-listbox__group { padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-1); font-size: var(--ui-text-xs); letter-spacing: var(--ui-tracking-wide); color: var(--ui-fg-subtle); }
+.ui-listbox__empty { padding: var(--ui-space-3); color: var(--ui-fg-subtle); font-size: var(--ui-text-sm); text-align: center; }
+/* Multi-select renders chips inside the field rather than a second control. */
+.ui-combobox__chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1);
+  min-block-size: var(--ui-control-h-md); padding: var(--ui-space-1) var(--ui-space-2);
+  border-radius: var(--ui-radius-sm); background: var(--ui-bg-inset); box-shadow: var(--ui-ring-inset);
+}
+.ui-combobox__chips:focus-within { box-shadow: var(--ui-focus-ring-inset); }
+.ui-combobox__chips input { all: unset; flex: 1; min-inline-size: 80px; font-size: var(--ui-text-md); color: var(--ui-fg); }
+.ui-combobox__status { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); }

@@ -1,0 +1,23 @@
+/* Breadcrumbs — an ordered list inside a named nav; the separators are
+   decorative and stay out of the accessibility tree. */
+.ui-breadcrumbs { font-size: var(--ui-text-sm); }
+.ui-breadcrumbs__list {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--ui-space-1);
+  list-style: none; margin: 0; padding: 0;
+}
+.ui-breadcrumbs__item { display: inline-flex; align-items: center; gap: var(--ui-space-1); min-inline-size: 0; }
+.ui-breadcrumbs__item a { color: var(--ui-fg-muted); text-decoration: none; border-radius: var(--ui-radius-sm); }
+.ui-breadcrumbs__item a:hover { color: var(--ui-fg-strong); text-decoration: underline; text-underline-offset: 3px; }
+.ui-breadcrumbs__item a:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-breadcrumbs__item[aria-current="page"], .ui-breadcrumbs__current {
+  color: var(--ui-fg-strong); font-weight: var(--ui-weight-medium);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-breadcrumbs__sep { color: var(--ui-fg-subtle); user-select: none; flex: none; }
+.ui-breadcrumbs--slash .ui-breadcrumbs__sep::before { content: "/"; }
+.ui-breadcrumbs__more {
+  all: unset; cursor: pointer; padding-inline: var(--ui-space-1);
+  color: var(--ui-fg-subtle); border-radius: var(--ui-radius-sm);
+}
+.ui-breadcrumbs__more:hover { color: var(--ui-fg-strong); }
+.ui-breadcrumbs__more:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }

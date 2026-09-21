@@ -1,0 +1,28 @@
+/* Toggle — applies immediately. If the change needs a Save button, it is a
+   checkbox, not a switch. */
+.ui-toggle { display: inline-flex; align-items: center; gap: var(--ui-space-3); cursor: pointer; font-size: var(--ui-text-md); color: var(--ui-fg); }
+.ui-toggle--label-start { flex-direction: row-reverse; justify-content: space-between; }
+.ui-toggle__track {
+  appearance: none; margin: 0; flex: none; cursor: pointer; position: relative;
+  inline-size: 36px; block-size: 20px; border: 0;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-bg-control); box-shadow: var(--ui-ring-inset);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-toggle__track::after {
+  content: ""; position: absolute; inset-block-start: 3px; inset-inline-start: 3px;
+  inline-size: 14px; block-size: 14px; border-radius: var(--ui-radius-full);
+  background: var(--ui-fg-muted);
+  transition: transform var(--ui-duration-base) var(--ui-ease),
+              background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-toggle__track:checked { background: var(--ui-accent); box-shadow: none; }
+.ui-toggle__track:checked::after { transform: translateX(16px); background: var(--ui-fg-on-accent); }
+.ui-toggle__track:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-toggle__track:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-toggle--sm .ui-toggle__track { inline-size: 30px; block-size: 16px; }
+.ui-toggle--sm .ui-toggle__track::after { inline-size: 12px; block-size: 12px; inset-block-start: 2px; inset-inline-start: 2px; }
+.ui-toggle--sm .ui-toggle__track:checked::after { transform: translateX(14px); }
+.ui-toggle[data-state="pending"] .ui-toggle__track { opacity: 0.6; cursor: progress; }
+/* The state is spelled out next to the switch — never colour alone. */
+.ui-toggle__state { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums; }

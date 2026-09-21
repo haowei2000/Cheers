@@ -85,6 +85,19 @@ describe("AnnotationListContent", () => {
     expect(markup).toContain('aria-label="Add note"');
   });
 
+  it("renders close button when onClose is provided", () => {
+    const markup = renderToStaticMarkup(
+      <AnnotationListContent
+        notes={[]}
+        currentPath="tasks/backlog.yaml"
+        onRemove={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Close annotations"');
+  });
+
   it("renders scope tabs when notes exist across workspace", () => {
     const markup = renderToStaticMarkup(
       <AnnotationListContent
@@ -170,9 +183,9 @@ describe("AnnotationListContent density", () => {
       <AnnotationListContent notes={[]} currentPath="tasks/backlog.yaml" onRemove={vi.fn()} />,
     );
 
-    // The register carries its own mark for a note left in the margin; a speech
-    // bubble is what the chat surfaces use for a message.
+    // The register carries one continuous margin-note silhouette, rather than
+    // the fragmented double-card mark used by the add-context action.
     expect(markup).toContain('stroke-width="1.75"');
-    expect(markup).toContain("M13.5 4.5v5h5");
+    expect(markup).toContain("M4 5.5h16v11H9l-4 3v-3H4z");
   });
 });

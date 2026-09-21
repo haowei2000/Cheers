@@ -1,10 +1,12 @@
-import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { Banner } from "@/components/ui/banner";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
 import toast from "react-hot-toast";
-import { AudioLines, FlaskConical, Loader2 } from "lucide-react";
+import { AlertCircle, AudioLines, CircleCheck } from "lucide-react";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   getSttSettings,
@@ -26,7 +28,7 @@ export function AdminSttSettings() {
   const [apiKey, setApiKey] = useState(""); // empty = keep the stored key
   const [clearKey, setClearKey] = useState(false);
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -69,86 +71,81 @@ export function AdminSttSettings() {
     setTestResult(null);
     try {
       const r = await testSttSettings();
-      setTestResult(r.ok ? "✓ Connected (endpoint reachable)" : `✗ ${r.error ?? "Test failed"}`);
+      setTestResult({
+        ok: r.ok,
+        message: r.ok ? "Connected — the saved endpoint is reachable." : (r.error ?? "Connection test failed."),
+      });
     } catch (e) {
-      setTestResult(`✗ ${e instanceof Error ? e.message : "Test failed"}`);
+      setTestResult({
+        ok: false,
+        message: e instanceof Error ? e.message : "Connection test failed.",
+      });
     } finally {
       setBusy(null);
     }
   }
 
-  const inputCls =
-    "bg-zinc-800 text-content-primary";
-
   return (
-    <section>
-      <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
-        <AudioLines className="w-3.5 h-3.5" />
-        Speech-to-text
-      </h2>
-
-      <div className="bg-zinc-900 rounded-sm p-6">
-        <p className="text-compact text-content-muted mb-4">
-          Voice messages and audio files are sent by the gateway to the OpenAI-compatible
-          transcription service configured here
-          (<code className="text-content-muted">/audio/transcriptions</code>). Transcripts are shown
-          with the message and delivered to bots. Audio leaves this instance for that endpoint —
-          only configure a service you trust.
-        </p>
-
-        <div className="grid gap-3 max-w-lg">
+    <SettingsSection title="Speech-to-text" icon={AudioLines}>
+      <SettingsCard
+        title="Transcription service"
+        description={
+          <>
+            Voice messages and audio files are sent to the configured OpenAI-compatible
+            <code className="mx-1 font-utility text-compact text-content-secondary">/audio/transcriptions</code>
+            endpoint. Audio leaves this instance, so only configure a service you trust.
+          </>
+        }
+      >
+        <form className="max-w-lg space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <CheckboxField
             label="Enable speech-to-text"
+            hint="Transcripts are shown with messages and delivered to bots after you save."
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
-            className="text-content-secondary"
+            disabled={busy !== null}
           />
 
-          <div>
-            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
-              Endpoint (base URL including /v1)
-            </label>
-            <UiInput
+          <Field label="Endpoint" htmlFor="stt-endpoint" hint="Base URL including /v1">
+            <Input
+              id="stt-endpoint"
+              type="url"
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               placeholder="https://api.openai.com/v1 or http://cheers-stt:8000/v1"
-              className={inputCls}
+              disabled={busy !== null}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
-              Model
-            </label>
-            <UiInput
+          <Field label="Model" htmlFor="stt-model">
+            <Input
+              id="stt-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="whisper-1"
-              className={inputCls}
+              disabled={busy !== null}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label className="text-compact font-medium text-content-muted uppercase tracking-label block mb-1">
-              API key{" "}
-              {loaded?.api_key_set && !clearKey && (
-                <span className="normal-case text-content-muted">
-                  (saved {loaded.api_key_hint} — leave blank to keep it)
-                </span>
-              )}
-            </label>
-            <UiInput
+          <Field
+            label="API key"
+            htmlFor="stt-api-key"
+            hint={loaded?.api_key_set && !clearKey
+              ? `Saved ${loaded.api_key_hint} — leave blank to keep it.`
+              : "Leave blank if the service does not require authentication."}
+          >
+            <Input
+              id="stt-api-key"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              disabled={clearKey}
+              disabled={clearKey || busy !== null}
               placeholder={
                 loaded?.api_key_set
                   ? "Enter a new key to replace it"
-                  : "sk-… (leave blank if the service needs no auth)"
+                  : "sk-…"
               }
               autoComplete="off"
-              className={`${inputCls} disabled:opacity-50`}
             />
             {loaded?.api_key_set && (
               <CheckboxField
@@ -156,41 +153,45 @@ export function AdminSttSettings() {
                 checked={clearKey}
                 onChange={(e) => setClearKey(e.target.checked)}
                 controlSize="compact"
-                className="mt-1 text-compact text-content-muted"
+                disabled={busy !== null}
               />
             )}
-          </div>
+          </Field>
 
-          <div className="flex items-center gap-2 pt-1">
-            <ActionButton action="save" context="settings" accessibleLabel="Save speech-to-text settings" onClick={() => void save()} disabled={busy !== null} loading={busy === "save"} />
-            <Button action="test"
-              variant="secondary"
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton
+              action="save"
+              context="settings"
+              type="submit"
+              accessibleLabel="Save speech-to-text settings"
+              disabled={busy !== null}
+              loading={busy === "save"}
+            />
+            <ActionButton
+              action="test"
+              context="settings"
+              accessibleLabel="Test the saved speech-to-text connection"
               onClick={() => void test()}
               disabled={busy !== null || !loaded?.configured}
+              loading={busy === "test"}
               title={
                 loaded?.configured
                   ? "Send a short test clip using the saved settings"
                   : "Save the settings before testing"
               }
-            >
-              {busy === "test" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FlaskConical className="h-3.5 w-3.5" />
-              )}
-              Test connection
-            </Button>
+            />
           </div>
 
           {testResult && (
-            <p
-              className={`text-compact ${testResult.startsWith("✓") ? "text-success-400" : "text-danger-400"}`}
+            <Banner
+              severity={testResult.ok ? "success" : "error"}
+              icon={testResult.ok ? CircleCheck : AlertCircle}
             >
-              {testResult}
-            </p>
+              {testResult.message}
+            </Banner>
           )}
-        </div>
-      </div>
-    </section>
+        </form>
+      </SettingsCard>
+    </SettingsSection>
   );
 }

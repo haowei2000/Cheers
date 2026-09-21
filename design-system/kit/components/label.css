@@ -1,0 +1,19 @@
+/* Label — the label/help/error triplet every field-shaped component reuses. */
+.ui-label {
+  display: inline-flex; align-items: center; gap: var(--ui-space-1);
+  font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm);
+  font-weight: var(--ui-weight-medium); letter-spacing: var(--ui-tracking-label);
+  color: var(--ui-fg);
+}
+/* "Required" is spelled out, not left to an asterisk's colour. */
+.ui-label__requirement { font-weight: var(--ui-weight-normal); color: var(--ui-fg-subtle); }
+.ui-label--disabled { color: var(--ui-fg-subtle); }
+.ui-help {
+  font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm);
+  color: var(--ui-fg-subtle);
+}
+.ui-error {
+  display: flex; align-items: flex-start; gap: var(--ui-space-1);
+  font-size: var(--ui-text-sm); line-height: var(--ui-leading-sm);
+  color: var(--ui-danger);
+}

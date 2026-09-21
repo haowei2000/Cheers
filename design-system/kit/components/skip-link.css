@@ -1,0 +1,15 @@
+/* Skip link — first in the DOM, invisible until tabbed to. Cheap to build,
+   invisible in screenshots, and the clearest sign a kit was built with care. */
+.ui-skip-link {
+  position: absolute; inset-inline-start: var(--ui-space-4); inset-block-start: var(--ui-space-4);
+  z-index: var(--ui-z-toast); transform: translateY(-200%);
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-accent); color: var(--ui-fg-on-accent);
+  font-size: var(--ui-text-md); font-weight: var(--ui-weight-medium); text-decoration: none;
+  box-shadow: var(--ui-shadow-2);
+  transition: transform var(--ui-duration-base) var(--ui-ease);
+}
+.ui-skip-link:focus-visible { transform: translateY(0); outline: none; }
+.ui-skip-link--always { position: static; transform: none; display: inline-block; }
+/* The target needs tabindex="-1" or focus never actually lands there. */

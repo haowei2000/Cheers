@@ -1,0 +1,31 @@
+/* Navigation — a named nav landmark; the active item carries aria-current and a
+   persistent inset rail, which is this system's selection marker. */
+.ui-nav { display: flex; flex-direction: column; gap: var(--ui-space-1); }
+.ui-nav--horizontal { flex-direction: row; align-items: center; gap: var(--ui-space-1); }
+.ui-nav__section {
+  padding: var(--ui-space-3) var(--ui-space-3) var(--ui-space-1);
+  font-size: var(--ui-text-xs); letter-spacing: var(--ui-tracking-wide);
+  color: var(--ui-fg-subtle);
+}
+.ui-nav__item {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  block-size: var(--ui-control-h-md); padding-inline: var(--ui-space-3);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  color: var(--ui-fg-muted); font-size: var(--ui-text-md); text-decoration: none;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease), color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-nav__item:hover { background: var(--ui-bg-hover); color: var(--ui-fg-strong); }
+.ui-nav__item:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-nav__item[aria-current] {
+  background: var(--ui-bg-selected); color: var(--ui-fg-strong);
+  font-weight: var(--ui-weight-semibold);
+  box-shadow: inset 2px 0 0 0 var(--ui-selected-indicator);
+}
+.ui-nav__item .ui-icon { color: var(--ui-fg-subtle); flex: none; }
+.ui-nav__item[aria-current] .ui-icon { color: inherit; }
+.ui-nav__badge { margin-inline-start: auto; }
+.ui-nav__group { display: flex; flex-direction: column; gap: var(--ui-space-1); padding-inline-start: var(--ui-space-4); }
+.ui-nav--toc .ui-nav__item { block-size: auto; padding-block: var(--ui-space-1); font-size: var(--ui-text-sm); border-radius: 0; box-shadow: inset 1px 0 0 0 var(--ui-hairline); }
+.ui-nav--toc .ui-nav__item[aria-current] { background: transparent; box-shadow: inset 2px 0 0 0 var(--ui-selected-indicator); }
+.ui-nav--collapsed .ui-nav__item { inline-size: var(--ui-control-h-md); padding-inline: 0; justify-content: center; }
+.ui-nav--collapsed .ui-nav__label, .ui-nav--collapsed .ui-nav__badge { display: none; }
