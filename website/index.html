@@ -321,20 +321,6 @@
     .feat li { grid-template-columns: 1fr; gap: 4px; }
   }
 
-  /* Architecture */
-  .arch { display: grid; gap: 12px; }
-  .arch-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  .node {
-    border: 0; border-radius: 10px;
-    padding: 12px 16px; text-align: center; min-width: 132px;
-    background: var(--bg-elevated);
-  }
-  .node .t { font-size: 14px; }
-  .node .s { font-size: 12px; color: var(--ink-faint); margin-top: 3px; }
-  .node.accent { border-color: var(--line-strong); background: rgba(237,236,236,.04); }
-  .arch-link { text-align: center; color: var(--ink-faint); font-size: 14px; letter-spacing: 0.06em; }
-  .arch-caption { text-align: center; color: var(--ink-faint); font-size: 14px; margin-top: 10px; }
-
   /* Docs / link grids */
   .link-grid {
     display: grid;
@@ -438,7 +424,7 @@
     }
   }
 </style>
-<link rel="stylesheet" href="./editorial.css?v=20260811-2" />
+<link rel="stylesheet" href="./editorial.css?v=20260921-1" />
 </head>
 <body class="home-page">
 
@@ -650,6 +636,50 @@
         <h2>One Rust gateway. External agents. Pluggable workspaces.</h2>
         <p>A single backend process serves REST, WebSocket, Agent Bridge, MCP, Workbench packages, and verified integration events. No built-in bot runtime to fork.</p>
       </div>
+      <figure class="arch-map reveal" aria-labelledby="arch-map-caption">
+        <div class="arch-sources">
+          <p class="arch-group label arch-col-1">People</p>
+          <div class="arch-node arch-col-1">
+            <span class="arch-name">Apps</span>
+            <span class="arch-meta">Web · macOS · iOS · Android</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">via </span>REST + WebSocket</span></span>
+          </div>
+          <p class="arch-group label arch-col-2-3">Your machine</p>
+          <div class="arch-node arch-col-2 has-stdio">
+            <span class="arch-name">Connector</span>
+            <span class="arch-meta">Rust daemon</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">via </span>outbound WebSocket</span></span>
+            <span class="arch-stdio" aria-hidden="true"><span class="arch-stdio-label">stdio</span></span>
+          </div>
+          <div class="arch-node arch-col-3">
+            <span class="arch-name">ACP agent</span>
+            <span class="arch-meta">Claude Code · Codex · OpenCode</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">via </span>HTTP MCP</span></span>
+          </div>
+          <p class="arch-group label arch-col-4">Integrations</p>
+          <div class="arch-node arch-col-4">
+            <span class="arch-name">GitHub</span>
+            <span class="arch-meta">Repository events</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">via </span>signed webhooks</span></span>
+          </div>
+        </div>
+        <div class="arch-gateway">
+          <div class="arch-ports">
+            <div class="arch-port"><span class="arch-name">REST + realtime</span><span class="arch-path">/api/v1 · /ws</span></div>
+            <div class="arch-port"><span class="arch-name">Agent Bridge</span><span class="arch-path">/ws/agent-bridge</span></div>
+            <div class="arch-port"><span class="arch-name">MCP tools</span><span class="arch-path">/mcp</span></div>
+            <div class="arch-port"><span class="arch-name">Webhooks</span><span class="arch-path">/api/v1/<wbr>integrations</span></div>
+          </div>
+          <p class="arch-core"><span class="arch-name">Rust gateway</span><span class="arch-meta">One process, one port · channel roles · messages · files · push · background jobs</span></p>
+        </div>
+        <div class="arch-state">
+          <div class="arch-node"><span class="arch-name">PostgreSQL</span><span class="arch-meta">All state · migrations on boot</span></div>
+          <div class="arch-node"><span class="arch-name">RustFS</span><span class="arch-meta">S3-compatible files</span></div>
+          <div class="arch-node"><span class="arch-name">Gotenberg</span><span class="arch-meta">Office previews</span></div>
+          <div class="arch-node"><span class="arch-name">Redis</span><span class="arch-meta">Optional · multi-instance</span></div>
+        </div>
+        <figcaption id="arch-map-caption">Everything meets at one Rust process. The connector runs your agent over ACP on stdio and dials out to the gateway, so your machine needs no open ports.</figcaption>
+      </figure>
       <div class="split reveal">
         <div class="panel">
           <h3>Stack</h3>
@@ -665,32 +695,20 @@
           </ul>
         </div>
         <div class="panel">
-          <h3>Architecture</h3>
-          <div class="arch">
-            <div class="arch-row">
-              <div class="node"><div class="t">Apps</div><div class="s">Web · macOS · mobile</div></div>
-              <div class="node"><div class="t">Connector Hosts</div><div class="s">OpenCode · Claude · Codex</div></div>
-            </div>
-            <div class="arch-link">↓ &nbsp;&nbsp; WebSocket · REST · Agent Bridge · MCP &nbsp;&nbsp; ↑</div>
-            <div class="arch-row">
-              <div class="node accent"><div class="t">Rust Gateway</div><div class="s">the only backend</div></div>
-            </div>
-            <div class="arch-link">↓</div>
-            <div class="arch-row">
-              <div class="node"><div class="t">PostgreSQL</div><div class="s">data · history</div></div>
-              <div class="node"><div class="t">RustFS (S3)</div><div class="s">files</div></div>
-              <div class="node"><div class="t">Extensions</div><div class="s">catalog · packages</div></div>
-              <div class="node"><div class="t">Integrations</div><div class="s">GitHub events</div></div>
-              <div class="node"><div class="t">Redis</div><div class="s">optional</div></div>
-            </div>
-          </div>
-          <p class="arch-caption">Apps, connector hosts, extension packages, and webhooks all meet at the gateway.</p>
+          <h3>How a mention travels</h3>
+          <ol class="feat">
+            <li><span class="k">1 · Post</span><span class="v">Your app sends the message; the gateway saves it to PostgreSQL.</span></li>
+            <li><span class="k">2 · Dispatch</span><span class="v">The gateway hands the task to the bot's connector over the Agent Bridge.</span></li>
+            <li><span class="k">3 · Run</span><span class="v">The connector passes it to the agent over ACP on stdio.</span></li>
+            <li><span class="k">4 · Stream</span><span class="v">Reply chunks reach everyone in the channel live; the final message is saved before it's broadcast.</span></li>
+            <li><span class="k">5 · Pull</span><span class="v">When the agent needs history or files, it pulls them through MCP tools.</span></li>
+          </ol>
         </div>
       </div>
       <div class="link-grid reveal" style="margin-top:48px;">
         <a class="link-card" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
           <span class="dt">Architecture overview</span>
-          <span class="dd">Why the two-tier split and how data flows end to end.</span>
+          <span class="dd">Why one Rust gateway, and how data flows end to end.</span>
         </a>
         <a class="link-card" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
           <span class="dt">Wire protocol</span>

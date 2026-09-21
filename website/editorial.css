@@ -245,7 +245,7 @@ section { padding-block: 50px !important; }
   border: 0 !important;
   background: var(--bg-elevated) !important;
 }
-.feature-media, .node, .tab, .arch-link, .flow, .hop, .what, .who, .example {
+.feature-media, .tab, .flow, .hop, .what, .who, .example {
   border: 0 !important;
   box-shadow: none !important;
 }
@@ -411,6 +411,234 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
   .home-page .link-grid,
   .home-page .link-grid.two { grid-template-columns: 1fr !important; }
   .home-page .feature-media { aspect-ratio: 4 / 3; }
+}
+
+/* Homepage architecture map: a specialized diagram, not an item list.
+   Components are borderless fills and connections are directional hairlines.
+   Mobile-first single column; the four source lanes line up from 880px. */
+.arch-map {
+  max-width: 560px;
+  margin: 0 0 64px;
+}
+.arch-sources,
+.arch-ports,
+.arch-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.arch-ports,
+.arch-state { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.arch-group {
+  margin-top: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.arch-group:first-child { margin-top: 0; }
+.arch-node,
+.arch-port {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.arch-port { background: var(--bg-soft); }
+.arch-name {
+  color: var(--ink);
+  font: 600 14px/1.3 var(--font-utility);
+}
+.arch-meta,
+.arch-path,
+.arch-wire {
+  color: var(--ink-soft);
+  font: 500 12px/1.4 var(--font-utility);
+}
+.arch-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.arch-wire { margin-top: 4px; }
+/* Connector ↔ agent: stacked here, side by side in the lane layout. */
+.arch-node.has-stdio { margin-bottom: 24px; }
+.arch-stdio {
+  position: absolute;
+  top: 100%;
+  left: 24px;
+  height: 32px;
+  border-left: 1px solid var(--ink-faint);
+}
+.arch-stdio-label {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--ink-soft);
+  font: 600 10px/1 var(--font-utility);
+  letter-spacing: .04em;
+}
+.arch-gateway {
+  position: relative;
+  margin: 40px -8px 0;
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.arch-core {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 8px 4px;
+}
+.arch-state {
+  position: relative;
+  margin-top: 40px;
+}
+.arch-gateway::before,
+.arch-state::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: calc(50% - .5px);
+  height: 40px;
+  border-left: 1px solid var(--ink-faint);
+}
+.arch-state::before { border-color: var(--line-strong); }
+.arch-gateway::after {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--ink-faint);
+  border-bottom: 1px solid var(--ink-faint);
+  transform: translateX(-50%) rotate(45deg);
+}
+.arch-map figcaption {
+  max-width: 62ch;
+  margin-top: 24px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (min-width: 880px) {
+  .arch-map { max-width: none; }
+  .arch-sources,
+  .arch-ports,
+  .arch-state {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 32px;
+  }
+  .arch-sources { row-gap: 12px; }
+  .arch-group { grid-row: 1; margin-top: 0; }
+  .arch-sources .arch-node { grid-row: 2; }
+  .arch-col-1 { grid-column: 1; }
+  .arch-col-2 { grid-column: 2; }
+  .arch-col-3 { grid-column: 3; }
+  .arch-col-4 { grid-column: 4; }
+  .arch-col-2-3 { grid-column: 2 / span 2; }
+
+  /* Each source wires straight down to its own gateway entry point: the
+     72px drop is the 64px gap above the gateway plus its 8px inset. */
+  .arch-wire {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 72px;
+    margin: 0;
+  }
+  .arch-wire::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - .5px);
+    border-left: 1px solid var(--ink-faint);
+  }
+  .arch-wire::after {
+    content: "";
+    position: absolute;
+    bottom: 1px;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border-right: 1px solid var(--ink-faint);
+    border-bottom: 1px solid var(--ink-faint);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  .arch-wire-label {
+    position: relative;
+    max-width: calc(100% - 16px);
+    padding: 4px 8px;
+    background: var(--bg);
+    text-align: center;
+  }
+  .arch-via {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .arch-node.has-stdio { margin-bottom: 0; }
+  .arch-stdio {
+    top: 50%;
+    left: 100%;
+    z-index: 1;
+    width: 32px;
+    height: 0;
+    border-left: 0;
+    border-top: 1px solid var(--ink-faint);
+  }
+  .arch-stdio::before,
+  .arch-stdio::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    width: 5px;
+    height: 5px;
+    border-bottom: 1px solid var(--ink-faint);
+  }
+  .arch-stdio::before {
+    left: 1px;
+    border-left: 1px solid var(--ink-faint);
+    transform: rotate(45deg);
+  }
+  .arch-stdio::after {
+    right: 1px;
+    border-right: 1px solid var(--ink-faint);
+    transform: rotate(-45deg);
+  }
+  .arch-stdio-label {
+    top: auto;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .arch-gateway { margin-top: 64px; }
+  .arch-gateway::before,
+  .arch-gateway::after,
+  .arch-state::before { display: none; }
+  .arch-state .arch-node::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: calc(50% - .5px);
+    height: 40px;
+    border-left: 1px solid var(--line-strong);
+  }
 }
 
 @media (max-width: 860px) {
