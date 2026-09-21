@@ -61,10 +61,15 @@ as its build context.
   Han Serif CN display type for mastheads, the same families at reading sizes
   for prose, and Source Sans 3 with native multilingual fallback for controls,
   navigation, warnings, and technical labels.
-- The visual language is dark editorial and borderless: neutral near-black
-  paper, open card layouts, compact spacing, two-pixel control corners, no
-  decorative shadows, and no pill-shaped controls. Hairline rules are reserved
-  for horizontal document/section separation rather than boxed surfaces.
+- The visual language follows the product's Editorial Correspondence palette
+  and the system appearance: carbon-ink slate when the OS is dark, uncoated
+  bond paper when it is light. The theme tokens mirror
+  `frontend/src/index.css`; there is no manual theme toggle, so update both
+  when the product palette changes. Surfaces stay borderless: open card
+  layouts, compact spacing, 10px corners, no decorative shadows or gradients,
+  no frosted-glass blur, and no pill-shaped controls. Hairline rules are
+  reserved for horizontal document/section separation rather than boxed
+  surfaces.
   Legacy inline page CSS may define page-specific layout,
   but the shared stylesheet owns the global tokens and final presentation.
 - Source Serif 4, Source Han Serif CN, and Source Sans 3 are redistributed under

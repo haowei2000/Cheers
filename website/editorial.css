@@ -22,28 +22,39 @@
   font-display: swap;
 }
 
+/* Theme tokens mirror the product palette in frontend/src/index.css: carbon-ink
+   slate when dark, uncoated bond paper when light. The site follows the system
+   appearance, the app's default. Every data-theme variant is listed so legacy
+   page styles and stale attributes can never pin one theme. */
 :root,
 :root[data-theme="auto"],
 :root[data-theme="light"],
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #09090b;
-  --bg-elevated: #111113;
-  --bg-soft: #18181b;
-  --card: #111113;
-  --ink: #f4f4f5;
-  --ink-soft: #b4b4bc;
-  --ink-faint: #7c7c86;
-  --line: rgba(244, 244, 245, 0.13);
-  --line-strong: rgba(244, 244, 245, 0.24);
-  --border: rgba(244, 244, 245, 0.13);
-  --btn: #f4f4f5;
-  --btn-ink: #09090b;
-  --accent: #c7c7d1;
-  --accent-strong: #f4f4f5;
-  --accent-tint: rgba(244, 244, 245, 0.055);
-  --code-bg: #050506;
-  --code-ink: #dedee4;
+  --bg: #161719;
+  --bg-elevated: #1e1f22;
+  --bg-soft: #2c2d31;
+  --card: #1e1f22;
+  --ink: #f4f3f0;
+  --ink-soft: #cccbc7;
+  --ink-faint: #9c9ca2;
+  --line: rgba(244, 243, 240, 0.12);
+  --line-strong: rgba(244, 243, 240, 0.22);
+  --border: rgba(244, 243, 240, 0.12);
+  --btn: #f4f3f0;
+  --btn-ink: #0f1012;
+  --accent: #cccbc7;
+  --accent-strong: #f4f3f0;
+  --accent-tint: rgba(244, 243, 240, 0.06);
+  --code-bg: #141517;
+  --code-ink: #e8e7e4;
+  --code-muted: #9c9ca2;
+  --code-accent: #e8a33d;
+  /* Product screenshots are dark captures; their well stays dark in both
+     themes until they are retaken per theme. */
+  --media-bg: #141517;
+  --selection-bg: #464850;
+  --selection-ink: #f4f3f0;
   --shadow: none;
   --radius: 10px;
   --maxw: 1120px;
@@ -53,6 +64,36 @@
   --font-reading: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Charter, Georgia, serif;
   --font-utility: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root,
+  :root[data-theme="auto"],
+  :root[data-theme="light"],
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --bg: #f3f0e8;
+    --bg-elevated: #faf8f4;
+    --bg-soft: #eae5da;
+    --card: #faf8f4;
+    --ink: #0f1012;
+    --ink-soft: #44444a;
+    --ink-faint: #5c5c62;
+    --line: rgba(28, 29, 32, 0.12);
+    --line-strong: rgba(28, 29, 32, 0.22);
+    --border: rgba(28, 29, 32, 0.12);
+    --btn: #0f1012;
+    --btn-ink: #ffffff;
+    --accent: #44444a;
+    --accent-strong: #0f1012;
+    --accent-tint: rgba(28, 29, 32, 0.05);
+    --code-bg: #eeeae2;
+    --code-ink: #1c1d20;
+    --code-muted: #5c5c62;
+    --code-accent: #92400e;
+    --selection-bg: #a2a09a;
+    --selection-ink: #0f1012;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -90,16 +131,20 @@ h4, button, input, select, textarea, .btn, .icon-btn, .nav-links, .nav-actions,
 }
 code, pre, .code { font-family: var(--font-mono); }
 
-::selection { background: #e4e4e7; color: #09090b; }
+::selection { background: var(--selection-bg); color: var(--selection-ink); }
 :focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
 
 .wrap { max-width: var(--maxw); padding-inline: 28px; }
 
 /* Masthead and navigation */
+/* Solid paper, not frosted glass: the bar is an opaque sheet with a directional
+   hairline, per the Anti-Glassmorphism rule. */
 header.nav {
   border: 0 !important;
-  background: color-mix(in srgb, var(--bg) 94%, transparent) !important;
-  backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: var(--bg) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 .nav-inner {
   min-height: 52px;
@@ -165,8 +210,8 @@ header.nav {
 .btn-lg { min-height: 44px; padding: 11px 16px !important; font-size: 14px !important; }
 .btn-solid, .btn-primary {
   border: 0 !important;
-  background: var(--ink) !important;
-  color: var(--bg) !important;
+  background: var(--btn) !important;
+  color: var(--btn-ink) !important;
 }
 .btn-solid:hover, .btn-primary:hover { background: transparent !important; color: var(--ink) !important; }
 .btn-outline, .btn-ghost, .dl, .icon-btn {
@@ -289,6 +334,7 @@ article h3 { margin-top: 30px; font-size: 16px; font-weight: 600; letter-spacing
 .prose h2:first-of-type { margin-top: 8px !important; }
 .prose p + p { margin-top: 15px !important; }
 .prose a, article p a, article li a { color: var(--ink) !important; text-decoration: underline; }
+.prose a:hover, article p a:hover, article li a:hover { text-decoration-color: currentColor; }
 pre.code, .code {
   max-width: 100%;
   overflow-x: auto;
@@ -300,6 +346,8 @@ pre.code, .code {
   line-height: 1.65;
 }
 code { border: 0 !important; border-radius: var(--radius) !important; background: var(--accent-tint) !important; }
+pre.code .c { color: var(--code-muted); }
+pre.code .p { color: var(--code-accent); }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 0 !important; border-bottom: 1px solid var(--line) !important; }
 th { color: var(--ink) !important; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
@@ -312,9 +360,6 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
 .foot-col a, .foot-links a, .foot-desc { color: var(--ink-soft) !important; }
 .foot-bottom { border-color: var(--line) !important; }
 
-/* The old theme control no longer changes the single Cheers web edition. */
-#themeToggle { display: none !important; }
-
 /* Homepage composition. Keep the marketing spread explicit so shared entity
    and documentation recipes cannot distort its alternating image rhythm. */
 .home-page .hero {
@@ -326,7 +371,7 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
 .home-page .hero-frame {
   border: 0 !important;
   border-radius: 0 !important;
-  background: #0d0d0f !important;
+  background: var(--media-bg) !important;
 }
 .home-page section:not(.hero) { padding-block: 72px !important; }
 .home-page .section-head { margin-bottom: 42px !important; }
@@ -358,7 +403,7 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
   aspect-ratio: 16 / 10;
   place-items: center;
   overflow: hidden;
-  background: #0d0d0f !important;
+  background: var(--media-bg) !important;
 }
 .home-page .feature-media img {
   width: 100% !important;
@@ -816,7 +861,7 @@ footer { border-top: 1px solid var(--line) !important; padding: 36px 0 28px !imp
   text-decoration: none;
   text-transform: uppercase;
 }
-.extension-entry .entry-actions a:first-child { background: var(--ink); color: var(--bg); }
+.extension-entry .entry-actions a:first-child { background: var(--btn); color: var(--btn-ink); }
 .extension-entry .entry-actions a:hover { background: var(--accent-tint); color: var(--ink); }
 .catalog-empty {
   grid-column: 1 / -1;
