@@ -220,6 +220,10 @@ jobs:
           npm --prefix packages/cheers-workbench-sdk test
           node --test scripts/lib/extension-catalog.test.mjs
 
+      - name: Test website screenshot manifest
+        working-directory: .
+        run: node --test scripts/lib/website-shots.test.mjs
+
       - name: Validate cross-platform item contract
         run: npm run design-system:check
 
