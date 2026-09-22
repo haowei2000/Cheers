@@ -174,9 +174,7 @@
     overflow: hidden;
     border: 0;
     border-bottom: 0;
-    background:
-      radial-gradient(80% 60% at 50% 0%, rgba(120, 110, 80, 0.22), transparent 70%),
-      var(--bg-soft);
+    background: var(--media-bg);
   }
   .hero-frame img {
     width: 100%; height: auto; display: block;
@@ -304,19 +302,6 @@
     .feat li { grid-template-columns: 1fr; gap: 4px; }
   }
 
-  .arch { display: grid; gap: 12px; }
-  .arch-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  .node {
-    border: 0; border-radius: 10px;
-    padding: 12px 16px; text-align: center; min-width: 132px;
-    background: var(--bg-elevated);
-  }
-  .node .t { font-size: 14px; }
-  .node .s { font-size: 12px; color: var(--ink-faint); margin-top: 3px; }
-  .node.accent { border-color: var(--line-strong); background: rgba(237,236,236,.04); }
-  .arch-link { text-align: center; color: var(--ink-faint); font-size: 14px; letter-spacing: 0.06em; }
-  .arch-caption { text-align: center; color: var(--ink-faint); font-size: 14px; margin-top: 10px; }
-
   .link-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -416,7 +401,7 @@
     }
   }
 </style>
-<link rel="stylesheet" href="./editorial.css?v=20260811-2" />
+<link rel="stylesheet" href="./editorial.css?v=20260921-2" />
 </head>
 <body class="home-page">
 
@@ -628,6 +613,50 @@
         <h2>一个 Rust 网关，外部智能体，可扩展工作区</h2>
         <p>唯一的后端进程同时提供 REST、WebSocket、Agent Bridge、MCP、Workbench 扩展包与已验证的集成事件。没有需要 fork 的内置 bot 运行时。</p>
       </div>
+      <figure class="arch-map reveal" aria-labelledby="arch-map-caption">
+        <div class="arch-sources">
+          <p class="arch-group label arch-col-1">用户</p>
+          <div class="arch-node arch-col-1">
+            <span class="arch-name">应用</span>
+            <span class="arch-meta">Web · macOS · iOS · Android</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">经 </span>REST + WebSocket</span></span>
+          </div>
+          <p class="arch-group label arch-col-2-3">你的机器</p>
+          <div class="arch-node arch-col-2 has-stdio">
+            <span class="arch-name">Connector</span>
+            <span class="arch-meta">Rust 守护进程</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">经 </span>出站 WebSocket</span></span>
+            <span class="arch-stdio" aria-hidden="true"><span class="arch-stdio-label">stdio</span></span>
+          </div>
+          <div class="arch-node arch-col-3">
+            <span class="arch-name">ACP 智能体</span>
+            <span class="arch-meta">Claude Code · Codex · OpenCode</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">经 </span>HTTP MCP</span></span>
+          </div>
+          <p class="arch-group label arch-col-4">集成</p>
+          <div class="arch-node arch-col-4">
+            <span class="arch-name">GitHub</span>
+            <span class="arch-meta">仓库事件</span>
+            <span class="arch-wire"><span class="arch-wire-label"><span class="arch-via">经 </span>签名 Webhook</span></span>
+          </div>
+        </div>
+        <div class="arch-gateway">
+          <div class="arch-ports">
+            <div class="arch-port"><span class="arch-name">REST + 实时</span><span class="arch-path">/api/v1 · /ws</span></div>
+            <div class="arch-port"><span class="arch-name">Agent Bridge</span><span class="arch-path">/ws/agent-bridge</span></div>
+            <div class="arch-port"><span class="arch-name">MCP 工具</span><span class="arch-path">/mcp</span></div>
+            <div class="arch-port"><span class="arch-name">Webhook</span><span class="arch-path">/api/v1/<wbr>integrations</span></div>
+          </div>
+          <p class="arch-core"><span class="arch-name">Rust 网关</span><span class="arch-meta">一个进程、一个端口 · 频道角色 · 消息 · 文件 · 推送 · 后台任务</span></p>
+        </div>
+        <div class="arch-state">
+          <div class="arch-node"><span class="arch-name">PostgreSQL</span><span class="arch-meta">全部状态 · 启动时迁移</span></div>
+          <div class="arch-node"><span class="arch-name">RustFS</span><span class="arch-meta">S3 兼容文件存储</span></div>
+          <div class="arch-node"><span class="arch-name">Gotenberg</span><span class="arch-meta">Office 文档预览</span></div>
+          <div class="arch-node"><span class="arch-name">Redis</span><span class="arch-meta">可选 · 多实例</span></div>
+        </div>
+        <figcaption id="arch-map-caption">所有连接都汇合到同一个 Rust 进程。Connector 通过 stdio 上的 ACP 运行你的智能体，并主动连出到网关，所以你的机器无需开放任何端口。</figcaption>
+      </figure>
       <div class="split reveal">
         <div class="panel">
           <h3>技术栈</h3>
@@ -643,32 +672,20 @@
           </ul>
         </div>
         <div class="panel">
-          <h3>整体结构</h3>
-          <div class="arch">
-            <div class="arch-row">
-              <div class="node"><div class="t">应用</div><div class="s">Web · macOS · 移动端</div></div>
-              <div class="node"><div class="t">Connector Hosts</div><div class="s">OpenCode · Claude · Codex</div></div>
-            </div>
-            <div class="arch-link">↓ &nbsp;&nbsp; WebSocket · REST · Agent Bridge · MCP &nbsp;&nbsp; ↑</div>
-            <div class="arch-row">
-              <div class="node accent"><div class="t">Rust 网关</div><div class="s">唯一后端</div></div>
-            </div>
-            <div class="arch-link">↓</div>
-            <div class="arch-row">
-              <div class="node"><div class="t">PostgreSQL</div><div class="s">数据 · 历史</div></div>
-              <div class="node"><div class="t">RustFS（S3）</div><div class="s">文件</div></div>
-              <div class="node"><div class="t">扩展</div><div class="s">目录 · 扩展包</div></div>
-              <div class="node"><div class="t">集成</div><div class="s">GitHub 事件</div></div>
-              <div class="node"><div class="t">Redis</div><div class="s">可选</div></div>
-            </div>
-          </div>
-          <p class="arch-caption">应用、connector hosts、扩展包与 Webhook 都在网关汇合。</p>
+          <h3>一次 @ 提及如何流转</h3>
+          <ol class="feat">
+            <li><span class="k">1 · 发送</span><span class="v">应用发出消息，网关将其写入 PostgreSQL。</span></li>
+            <li><span class="k">2 · 派发</span><span class="v">网关经 Agent Bridge 把任务交给该 bot 的 connector。</span></li>
+            <li><span class="k">3 · 执行</span><span class="v">connector 通过 stdio 上的 ACP 把任务交给智能体。</span></li>
+            <li><span class="k">4 · 推送</span><span class="v">回复分片实时推送给频道里的所有人；最终消息先落库、再广播。</span></li>
+            <li><span class="k">5 · 拉取</span><span class="v">需要历史或文件时，智能体通过 MCP 工具按需拉取。</span></li>
+          </ol>
         </div>
       </div>
       <div class="link-grid reveal" style="margin-top:48px;">
         <a class="link-card" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
           <span class="dt">架构总览</span>
-          <span class="dd">为什么是两层架构，数据如何端到端流转。</span>
+          <span class="dd">为什么只有一个 Rust 网关，数据如何端到端流转。</span>
         </a>
         <a class="link-card" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
           <span class="dt">网关协议</span>
