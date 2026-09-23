@@ -8,6 +8,8 @@ export interface Friend {
   username: string;
   display_name?: string | null;
   avatar_url?: string | null;
+  bio?: string | null;
+  is_bot?: boolean;
 }
 
 export interface FriendRequestItem {
@@ -18,11 +20,18 @@ export interface FriendRequestItem {
   display_name?: string | null;
   avatar_url?: string | null;
   direction: "incoming" | "outgoing";
+  message?: string | null;
+  created_at?: string | null;
+  is_bot?: boolean;
+  target_bot_id?: string | null;
+  target_bot_name?: string | null;
 }
 
 export interface FriendActionResult {
   friend_id: string;
   status: string;
+  channel_id?: string | null;
+  is_bot?: boolean;
 }
 
 export function listFriends(): Promise<Friend[]> {
@@ -30,10 +39,13 @@ export function listFriends(): Promise<Friend[]> {
 }
 
 /** Send a friend request (auto-accepts if the other user already requested me). */
-export function sendFriendRequest(friendId: string): Promise<FriendActionResult> {
+export function sendFriendRequest(
+  friendId: string,
+  message?: string
+): Promise<FriendActionResult> {
   return apiJson<FriendActionResult>("/friends", {
     method: "POST",
-    body: JSON.stringify({ friend_id: friendId }),
+    body: JSON.stringify({ friend_id: friendId, message }),
   });
 }
 
@@ -61,9 +73,13 @@ export function listFriendRequests(
   return apiJson<FriendRequestItem[]>(`/friends/requests?direction=${direction}`);
 }
 
-export function acceptFriendRequest(userId: string): Promise<FriendActionResult> {
+export function acceptFriendRequest(
+  userId: string,
+  botId?: string
+): Promise<FriendActionResult> {
+  const query = botId ? `?bot_id=${encodeURIComponent(botId)}` : "";
   return apiJson<FriendActionResult>(
-    `/friends/requests/${encodeURIComponent(userId)}/accept`,
+    `/friends/requests/${encodeURIComponent(userId)}/accept${query}`,
     { method: "POST" }
   );
 }

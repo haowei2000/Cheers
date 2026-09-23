@@ -25,6 +25,7 @@ export interface NotificationItem {
   role?: string | null;
   requested_cwd?: string | null;
   requested_additional_dirs?: string[];
+  message?: string | null;
 }
 
 /** The caller's pending invitations (workspace + channel), newest first. */

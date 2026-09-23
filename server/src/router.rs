@@ -639,6 +639,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/profile",
             patch(api::bots::update_bot_profile),
         )
+        .route(
+            "/api/v1/bots/:bot_id/social-policy",
+            get(api::bots::get_bot_social_policy).put(api::bots::update_bot_social_policy),
+        )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
         .route("/api/v1/bots/:bot_id/enable", post(api::bots::enable_bot))

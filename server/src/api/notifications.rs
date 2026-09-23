@@ -42,6 +42,8 @@ pub struct NotificationDto {
     pub requested_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requested_additional_dirs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// User-scoped WS only.  Mentions and permission nudges call this helper and
@@ -186,10 +188,15 @@ pub async fn load_notifications(
     let friend_rows = sqlx::query(
         "SELECT f.friendship_id, f.user_id AS actor_id,
                 COALESCE(u.display_name, u.username) AS actor_name,
-                f.created_at::text AS created_at
+                f.message,
+                f.created_at::text AS created_at,
+                b.bot_id,
+                b.display_name AS bot_name
          FROM friendships f
          JOIN users u ON u.user_id = f.user_id
-         WHERE f.friend_id = $1 AND f.status = 'pending'",
+         LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id
+         WHERE (f.friend_id = $1 OR (b.created_by = $1 AND b.friend_policy = 'require_approval'))
+           AND f.status = 'pending'",
     )
     .bind(user_id)
     .fetch_all(db)
@@ -249,24 +256,35 @@ pub async fn load_notifications(
     for row in friend_rows {
         let friendship_id: String = row.try_get("friendship_id").unwrap_or_default();
         let actor_id: String = row.try_get("actor_id").unwrap_or_default();
+        let actor_name: Option<String> = row.try_get("actor_name").ok();
+        let bot_name: Option<String> = row.try_get("bot_name").ok().flatten();
+        let bot_id: Option<String> = row.try_get("bot_id").ok().flatten();
+        let title = if let Some(ref bname) = bot_name {
+            format!(
+                "{} 申请添加 Bot [{}] 为好友",
+                actor_name.as_deref().unwrap_or("Someone"),
+                bname
+            )
+        } else {
+            actor_name.clone().unwrap_or_else(|| "Someone".into())
+        };
         items.push(NotificationDto {
             id: format!("friend:{friendship_id}"),
             kind: "friend_request".into(),
-            title: row
-                .try_get("actor_name")
-                .unwrap_or_else(|_| "Someone".into()),
+            title,
             actor_id: Some(actor_id.clone()),
-            actor_name: row.try_get("actor_name").ok(),
+            actor_name,
             created_at: row.try_get("created_at").ok(),
             friendship_id: Some(friendship_id),
             workspace_id: None,
             channel_id: None,
             requester_user_id: Some(actor_id),
-            bot_id: None,
-            bot_name: None,
+            bot_id,
+            bot_name,
             role: None,
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
+            message: row.try_get("message").ok().flatten(),
         });
     }
     for row in workspace_rows {
@@ -287,6 +305,7 @@ pub async fn load_notifications(
             role: row.try_get("role").ok(),
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
+            message: None,
         });
     }
     for row in channel_rows {
@@ -307,6 +326,7 @@ pub async fn load_notifications(
             role: row.try_get("role").ok(),
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
+            message: None,
         });
     }
     for row in bot_rows {
@@ -338,6 +358,7 @@ pub async fn load_notifications(
                         .collect()
                 })
                 .unwrap_or_default(),
+            message: None,
         });
     }
     items.sort_by(|a, b| b.created_at.cmp(&a.created_at));

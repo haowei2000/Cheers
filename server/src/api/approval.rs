@@ -493,7 +493,7 @@ pub async fn list_channel_trace(
 
 #[derive(Deserialize)]
 pub struct ApproversQuery {
-    pub channel_id: Uuid,
+    pub channel_id: Option<Uuid>,
 }
 
 pub async fn list_approvers(
@@ -503,13 +503,50 @@ pub async fn list_approvers(
     Query(q): Query<ApproversQuery>,
 ) -> Result<Json<Value>, AppError> {
     let uid = user_id(&claims)?;
-    ensure_member(&state, q.channel_id, uid, &claims.role).await?;
-    let owner = approval::bot_owner(&state.db, bot_id).await?;
-    let approvers = approval::list_approvers(&state.db, bot_id, q.channel_id).await?;
-    Ok(Json(json!({
-        "owner_id": owner.map(|o| o.to_string()),
-        "delegates": approvers,
-    })))
+    if let Some(channel_id) = q.channel_id {
+        ensure_member(&state, channel_id, uid, &claims.role).await?;
+        let owner = approval::bot_owner(&state.db, bot_id).await?;
+        let approvers = approval::list_approvers(&state.db, bot_id, channel_id).await?;
+        Ok(Json(json!({
+            "owner_id": owner.map(|o| o.to_string()),
+            "delegates": approvers,
+        })))
+    } else {
+        require_bot_owner(&state, bot_id, uid, &claims.role).await?;
+        let owner = approval::bot_owner(&state.db, bot_id).await?;
+        let rows = sqlx::query(
+            "SELECT ad.channel_id, c.name AS channel_name, ad.user_id, u.username, u.display_name,
+                    ad.operation_kind, ad.granted_by, ad.granted_at
+             FROM approval_delegations ad
+             JOIN channels c ON c.channel_id = ad.channel_id
+             JOIN users u ON u.user_id = ad.user_id
+             WHERE ad.bot_id = $1 AND ad.revoked_at IS NULL
+             ORDER BY ad.granted_at DESC",
+        )
+        .bind(bot_id.to_string())
+        .fetch_all(&state.db)
+        .await?;
+        let delegates: Vec<Value> = rows
+            .into_iter()
+            .map(|r| {
+                json!({
+                    "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
+                    "channel_name": r.try_get::<String, _>("channel_name").unwrap_or_default(),
+                    "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
+                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
+                    "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+                    "operation_kind": r.try_get::<String, _>("operation_kind").unwrap_or_else(|_| "*".into()),
+                    "granted_by": r.try_get::<String, _>("granted_by").unwrap_or_default(),
+                    "granted_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("granted_at")
+                        .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        Ok(Json(json!({
+            "owner_id": owner.map(|o| o.to_string()),
+            "delegates": delegates,
+        })))
+    }
 }
 
 /// Default ACP operation_kind when a caller doesn't scope the grant/revoke: the

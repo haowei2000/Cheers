@@ -38,6 +38,7 @@ const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
 const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 const FleetPage = lazy(() => import("@/features/fleet/FleetPage"));
 const ActivityPage = lazy(() => import("@/features/activity/ActivityPage"));
+const PermissionsPage = lazy(() => import("@/features/permissions/PermissionsPage"));
 
 function Spinner() {
   return (
@@ -232,6 +233,16 @@ export default function App() {
             <DesktopPageFrame>
               <RequireAuth>
                 <ActivityPage />
+              </RequireAuth>
+            </DesktopPageFrame>
+          }
+        />
+        <Route
+          path="/permissions"
+          element={
+            <DesktopPageFrame>
+              <RequireAuth>
+                <PermissionsPage />
               </RequireAuth>
             </DesktopPageFrame>
           }

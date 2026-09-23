@@ -5,6 +5,11 @@ import type { TraceEvent } from "@/types";
 
 export interface ApproverInfo {
   user_id: string;
+  channel_id?: string;
+  channel_name?: string;
+  username?: string;
+  display_name?: string | null;
+  operation_kind?: string;
   granted_by: string;
   granted_at: string;
 }
@@ -80,29 +85,42 @@ export async function requestApprovalAccess(
 
 export async function listApprovers(
   botId: string,
-  channelId: string
+  channelId?: string
 ): Promise<ApproversResponse> {
-  return apiJson(`/bots/${botId}/approvers?channel_id=${channelId}`);
+  const query = channelId ? `?channel_id=${encodeURIComponent(channelId)}` : "";
+  return apiJson(`/bots/${botId}/approvers${query}`);
 }
 
 export async function grantApprover(
   botId: string,
   channelId: string,
-  userId: string
+  userId: string,
+  operationKind = "*"
 ): Promise<{ ok: boolean }> {
-  return apiJson(`/bots/${botId}/approvers`, {
-    method: "POST",
-    body: JSON.stringify({ channel_id: channelId, user_id: userId }),
-  }, { recentAuth: "auto", actionClass: "approver_grant" });
+  return apiJson(
+    `/bots/${botId}/approvers`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        channel_id: channelId,
+        user_id: userId,
+        operation_kind: operationKind,
+      }),
+    },
+    { recentAuth: "auto", actionClass: "approver_grant" }
+  );
 }
 
 export async function revokeApprover(
   botId: string,
   channelId: string,
-  userId: string
+  userId: string,
+  operationKind = "*"
 ): Promise<{ ok: boolean }> {
   return apiJson(
-    `/bots/${botId}/approvers/${userId}?channel_id=${channelId}`,
+    `/bots/${botId}/approvers/${userId}?channel_id=${encodeURIComponent(
+      channelId
+    )}&operation_kind=${encodeURIComponent(operationKind)}`,
     { method: "DELETE" }
   );
 }
