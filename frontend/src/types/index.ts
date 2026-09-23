@@ -416,6 +416,10 @@ export interface BotItem {
   processor_privacy_url?: string | null;
   processor_data_use?: string | null;
   processor_policy_version?: string;
+  created_by?: string | null;
+  visibility?: "public" | "friends" | "private";
+  friend_policy?: "open" | "require_approval" | "disabled";
+  invite_policy?: "open" | "require_approval";
 }
 
 export interface WsEvent {

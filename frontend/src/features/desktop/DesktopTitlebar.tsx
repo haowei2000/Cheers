@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   Radar,
   Settings,
+  Shield,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -128,6 +129,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
       { id: "activity", label: "Activity", detail: "Approvals and invitations", path: "/activity", Icon: Bell },
       { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: Radar },
       { id: "friends", label: "Friends", detail: "Friends and requests", path: "/friends", Icon: Users },
+      { id: "permissions", label: "Permissions", detail: "Bot social and operational permissions", path: "/permissions", Icon: Shield },
       { id: "settings", label: "Settings", detail: "Account and application settings", path: "/settings", Icon: Settings },
     ];
     const allWorkspaces = [personalWorkspace, ...workspaces].filter(

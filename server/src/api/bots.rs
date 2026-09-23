@@ -225,7 +225,10 @@ pub async fn list_bots(
                 created_by, status_text, status_emoji, status_updated_at,
                 status_auto_update, status_update_prompt, status_update_interval_minutes,
                 external_processor, processor_name, processor_privacy_url,
-                processor_data_use, processor_policy_version
+                processor_data_use, processor_policy_version,
+                COALESCE(visibility, 'public') AS visibility,
+                COALESCE(friend_policy, 'open') AS friend_policy,
+                COALESCE(invite_policy, 'require_approval') AS invite_policy
          FROM bot_accounts b
          WHERE $1
             OR b.created_by = $2
@@ -304,6 +307,9 @@ pub async fn list_bots(
             "processor_privacy_url": r.try_get::<Option<String>, _>("processor_privacy_url").ok().flatten(),
             "processor_data_use": r.try_get::<Option<String>, _>("processor_data_use").ok().flatten(),
             "processor_policy_version": r.try_get::<String, _>("processor_policy_version").unwrap_or_else(|_| "1".into()),
+            "visibility": r.try_get::<String, _>("visibility").unwrap_or_else(|_| "public".into()),
+            "friend_policy": r.try_get::<String, _>("friend_policy").unwrap_or_else(|_| "open".into()),
+            "invite_policy": r.try_get::<String, _>("invite_policy").unwrap_or_else(|_| "require_approval".into()),
         }));
     }
     Ok(Json(bots))
@@ -1348,6 +1354,79 @@ pub async fn refresh_bot_status(
         "ok": true,
         "channel_id": channel_id.to_string(),
         "msg_id": dto.msg_id,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateBotSocialPolicyRequest {
+    pub visibility: Option<String>,
+    pub friend_policy: Option<String>,
+    pub invite_policy: Option<String>,
+}
+
+pub async fn get_bot_social_policy(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let row = sqlx::query(
+        "SELECT bot_id, COALESCE(visibility, 'public') AS visibility,
+                COALESCE(friend_policy, 'open') AS friend_policy,
+                COALESCE(invite_policy, 'require_approval') AS invite_policy
+         FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "visibility": row.try_get::<String, _>("visibility").unwrap_or_else(|_| "public".into()),
+        "friend_policy": row.try_get::<String, _>("friend_policy").unwrap_or_else(|_| "open".into()),
+        "invite_policy": row.try_get::<String, _>("invite_policy").unwrap_or_else(|_| "require_approval".into()),
+    })))
+}
+
+pub async fn update_bot_social_policy(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<UpdateBotSocialPolicyRequest>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+
+    let visibility = body.visibility.as_deref().unwrap_or("public");
+    if !matches!(visibility, "public" | "friends" | "private") {
+        return Err(AppError::BadRequest("invalid visibility option".into()));
+    }
+    let friend_policy = body.friend_policy.as_deref().unwrap_or("open");
+    if !matches!(friend_policy, "open" | "require_approval" | "disabled") {
+        return Err(AppError::BadRequest("invalid friend_policy option".into()));
+    }
+    let invite_policy = body.invite_policy.as_deref().unwrap_or("require_approval");
+    if !matches!(invite_policy, "open" | "require_approval") {
+        return Err(AppError::BadRequest("invalid invite_policy option".into()));
+    }
+
+    sqlx::query(
+        "UPDATE bot_accounts
+         SET visibility = $1, friend_policy = $2, invite_policy = $3
+         WHERE bot_id = $4",
+    )
+    .bind(visibility)
+    .bind(friend_policy)
+    .bind(invite_policy)
+    .bind(&bot_id)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "visibility": visibility,
+        "friend_policy": friend_policy,
+        "invite_policy": invite_policy,
     })))
 }
 

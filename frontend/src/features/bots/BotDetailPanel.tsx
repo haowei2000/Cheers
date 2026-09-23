@@ -1,10 +1,12 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   CircleDot,
   Ban,
   Power,
+  Shield,
   ShieldCheck,
   Activity,
   Copy,
@@ -115,6 +117,7 @@ export function BotDetailPanel({
   initialTab?: string;
   onClose?: () => void;
 }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>(() => routeTab(initialTab));
 
   useEffect(() => setTab(routeTab(initialTab)), [initialTab, bot.bot_id]);
@@ -248,6 +251,23 @@ export function BotDetailPanel({
         )}
         {tab === "permissions" && (
           <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-surface-elevated/60 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Shield className="h-5 w-5 text-accent-400 shrink-0" />
+                <div className="min-w-0">
+                  <h4 className="text-compact font-bold text-content-strong">权限中心 (Permissions Center)</h4>
+                  <p className="text-minimal text-content-muted truncate">
+                    在独立权限中心集中管理该 Bot 的社交发现范围、好友添加规则与操作审批代理。
+                  </p>
+                </div>
+              </div>
+              <Button
+                action="manage"
+                variant="primary"
+                controlSize="compact"
+                onClick={() => navigate(`/permissions?botId=${bot.bot_id}`)}
+              />
+            </div>
             <BotPostureSection botId={bot.bot_id} />
             <BotPermissionGrantsSection botId={bot.bot_id} />
             <BotToBotGrantsSection botId={bot.bot_id} />

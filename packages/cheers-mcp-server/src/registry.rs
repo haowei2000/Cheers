@@ -446,6 +446,20 @@ pub fn catalog() -> &'static [ResourceSpec] {
             }),
         ),
         db(
+            "channel.messages.suggestions.write",
+            write_tool(
+                "set_suggested_questions",
+                "Suggest follow-up questions",
+                "Attach up to three structured questions to your own reply. Pass questions_json as a JSON array. Each item has text and slots; slot markers use {{mention:key}}, {{file:key}}, or {{panel:key}} and each marker has a matching {key,kind} slot. Use the current reply's msg_id.",
+                SCOPE_MESSAGES_WRITE,
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("msg_id", ParamKind::String),
+                    Param::req("questions_json", ParamKind::String),
+                ],
+            ),
+        ),
+        db(
             "bot.status.write",
             write_tool(
                 "set_status",

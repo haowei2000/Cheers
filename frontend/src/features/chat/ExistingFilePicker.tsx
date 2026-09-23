@@ -20,11 +20,13 @@ export function ExistingFilePicker({
   attachedIds,
   onPick,
   onClose,
+  single = false,
 }: {
   channelId: string;
   attachedIds: string[];
   onPick: (files: FileInfo[]) => void;
   onClose: () => void;
+  single?: boolean;
 }) {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -42,6 +44,7 @@ export function ExistingFilePicker({
 
   function toggle(id: string) {
     setSelected((prev) => {
+      if (single) return prev.has(id) ? new Set() : new Set([id]);
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -56,7 +59,7 @@ export function ExistingFilePicker({
   }
 
   return (
-    <Dialog title="Pick channel files" onClose={onClose} maxWidth="max-w-xl">
+    <Dialog title={single ? "Choose a channel file" : "Pick channel files"} onClose={onClose} maxWidth="max-w-xl">
       {files === null ? (
         <div className="py-8 flex items-center justify-center gap-2 text-compact text-content-muted">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…

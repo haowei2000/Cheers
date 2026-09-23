@@ -36,6 +36,24 @@ describe("MessageItem reply preview", () => {
   });
 });
 
+describe("MessageItem suggested questions", () => {
+  it("shows saved bot questions and an explicit private request action", () => {
+    const markup = renderToStaticMarkup(
+      <MessageItem
+        message={{ ...reply, content_data: { suggested_questions: [{
+          text: "Ask {{mention:who}} to review {{file:target}}",
+          slots: [{ key: "who", kind: "mention" }, { key: "target", kind: "file" }],
+        }] } }}
+        channelId="channel-1"
+        actions={{ onReply: () => {}, onForward: () => {}, onToggleSelect: () => {}, onUseSuggestedQuestion: () => {} }}
+      />,
+    );
+    expect(markup).toContain("Ask [mention] to review [file]");
+    expect(markup).toContain("Suggest more questions");
+    expect(markup).toContain("Copy question into composer");
+  });
+});
+
 describe("MessageItem identity anatomy", () => {
   it("does not crash while a realtime bot frame is missing identity metadata", () => {
     const incomplete = {

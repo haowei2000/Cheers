@@ -561,6 +561,40 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
+        "cheers:messages:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Attach up to three structured questions to your own reply. Pass questions_json as a JSON array. Each item has text and slots; slot markers use {{mention:key}}, {{file:key}}, or {{panel:key}} and each marker has a matching {key,kind} slot. Use the current reply's msg_id.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "msg_id": {
+          "type": "string"
+        },
+        "questions_json": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "msg_id",
+        "questions_json"
+      ],
+      "type": "object"
+    },
+    "name": "set_suggested_questions",
+    "title": "Suggest follow-up questions"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
         "cheers:profile:write"
       ]
     },

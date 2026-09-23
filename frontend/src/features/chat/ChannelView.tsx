@@ -175,6 +175,7 @@ export function ChannelView({
     handleMessage,
     handleStreamDelta,
     handleStreamDone,
+    handleSuggestionsUpdated,
     handleBotTrace,
     handleDeleted,
     handleFileTranscribed,
@@ -382,6 +383,7 @@ export function ChannelView({
       onMessage: handleMessage,
       onStreamDelta: handleStreamDelta,
       onStreamDone: handleStreamDone,
+      onSuggestionsUpdated: handleSuggestionsUpdated,
       onMessageDeleted: handleDeleted,
       onBotUnavailable: (botId, placeholderMsgId) => {
         pendingDeltas.current.delete(placeholderMsgId);
@@ -1269,6 +1271,15 @@ export function ChannelView({
       onForward: (m) =>
         setForward({ content: buildForwardContent([m]), count: 1 }),
       onMention: (m) => mentionMember(m.sender_id),
+      onUseSuggestedQuestion: (question) => {
+        if (question.slots.some((slot) => slot.kind === "mention")) setSelectedSessionId("");
+        setComposePrefill((previous) => ({
+          kind: "suggestion",
+          text: question.text,
+          slots: question.slots,
+          seq: (previous?.seq ?? 0) + 1,
+        }));
+      },
       onToggleSelect: (m) => {
         setSelectMode(true);
         // Entering select mode — disarm reply so the next send can't silently

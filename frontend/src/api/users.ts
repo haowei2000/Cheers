@@ -28,9 +28,13 @@ export interface UserSearchResult {
   username: string;
   display_name?: string | null;
   avatar_url?: string | null;
+  bio?: string | null;
+  is_bot?: boolean;
+  relationship_status?: "friend" | "pending_incoming" | "pending_outgoing" | "none";
+  friendship_id?: string | null;
 }
 
-/** Look up a single user by exact username or user id; no partial directory search. */
+/** Search users by username, display name, or user id. */
 export async function searchUsers(q: string): Promise<UserSearchResult[]> {
   return apiJson<UserSearchResult[]>(`/friends/search?q=${encodeURIComponent(q)}`);
 }

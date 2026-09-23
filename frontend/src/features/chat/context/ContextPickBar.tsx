@@ -202,6 +202,10 @@ export function ContextPickBar({
   const suggestions = useContextSuggestions(channelId, { replyTo, draftText, files });
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
+  const removePick = (id: string) => {
+    remove(channelId, id);
+    window.dispatchEvent(new CustomEvent("cheers:context-pick-removed", { detail: { channelId, id } }));
+  };
   const dismissSuggestion = useContextPickStore((s) => s.dismissSuggestion);
 
   if (!items.length && !suggestions.length) return null;
@@ -271,7 +275,7 @@ export function ContextPickBar({
                   </IconButton>
                 )}
                 <IconButton
-                  onClick={() => remove(channelId, it.id)}
+                  onClick={() => removePick(it.id)}
                   label={`Remove ${it.label}`}
                   title="Remove"
                   controlSize="compact"

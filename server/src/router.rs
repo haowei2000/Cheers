@@ -436,6 +436,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/messages/:msg_id/suggestions",
+            post(api::messages::request_suggestions),
+        )
+        .route(
             "/api/v1/channels/:channel_id/discussions",
             get(api::discussions::list_discussions),
         )
@@ -634,6 +638,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/profile",
             patch(api::bots::update_bot_profile),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/social-policy",
+            get(api::bots::get_bot_social_policy).put(api::bots::update_bot_social_policy),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))

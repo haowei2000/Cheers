@@ -38,6 +38,7 @@ import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { appendMentionToken } from "./mentionInsertion";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button as UiButton } from "@/components/ui/button";
 import { MenuOption } from "@/components/ui/menu-option";
 import {
   ComposerAttachments,
@@ -51,8 +52,13 @@ import {
   persistComposerText,
   restoreComposerText,
   stashComposerDraft,
+  persistSuggestionBindings,
+  restoreSuggestionBindings,
+  type SuggestionBinding,
   type ComposerDraft,
 } from "./composerDrafts";
+import { firstUnresolvedSlot, SLOT_PATTERN, type SuggestedQuestion } from "./suggestedQuestions";
+import { useContextPickStore, type ContextItem } from "./context/contextPick";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -75,9 +81,10 @@ export interface ComposerPrefill {
   seq: number;
   /** Mention requests append inline, de-duplicate the token, and focus the
    * composer. Ordinary suggested content retains the existing new-line mode. */
-  kind?: "text" | "mention";
+  kind?: "text" | "mention" | "suggestion";
   /** Stable member identity avoids ambiguous label-prefix matching. */
   memberId?: string;
+  slots?: SuggestedQuestion["slots"];
 }
 
 // Group @-mention tokens the server expands to real members (findings 3a). Their
@@ -166,10 +173,20 @@ function MessageComposerImpl({
   const [attachments, setAttachments] = useState<FileInfo[]>(
     () => getComposerDraft(channelId)?.attachments ?? []
   );
+  const [suggestionBindings, setSuggestionBindings] = useState<SuggestionBinding[]>(
+    () => restoreSuggestionBindings(channelId),
+  );
+  const [bindingChannelId, setBindingChannelId] = useState(channelId);
+  const [suggestionFileOpen, setSuggestionFileOpen] = useState(false);
+  const [panelSlotKey, setPanelSlotKey] = useState<string | null>(null);
+  const [fileSlotKey, setFileSlotKey] = useState<string | null>(null);
+  const [mentionSlotKey, setMentionSlotKey] = useState<string | null>(null);
+  const addContext = useContextPickStore((s) => s.add);
+  const removeContext = useContextPickStore((s) => s.remove);
   const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>(
-    () => getComposerDraft(channelId)?.picked ?? []
+    () => getComposerDraft(channelId)?.picked ?? restoreSuggestionBindings(channelId).flatMap((b) => b.mention ? [b.mention] : [])
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
@@ -234,7 +251,9 @@ function MessageComposerImpl({
       requestAnimationFrame(() => {
         el.style.height = "auto";
         el.style.height = `${el.scrollHeight}px`;
-        el.setSelectionRange(el.value.length, el.value.length);
+        const slot = prefill.kind === "suggestion" ? firstUnresolvedSlot(el.value) : null;
+        if (slot) el.setSelectionRange(slot.index, slot.index + slot[0].length);
+        else el.setSelectionRange(el.value.length, el.value.length);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,8 +272,9 @@ function MessageComposerImpl({
 
   // Live snapshot of the stashable draft (read by the channel-switch effect and
   // the unmount stash below — refreshed every render, so always current).
-  const draftRef = useRef<ComposerDraft>({ text, attachments, picked, transcribedIds });
-  draftRef.current = { text, attachments, picked, transcribedIds };
+  const draftRef = useRef<ComposerDraft>({ text, attachments, picked, transcribedIds, suggestionBindings });
+  draftRef.current = { text, attachments, picked, transcribedIds, suggestionBindings };
+  const restoredChannelTextRef = useRef(text);
   const prevChannelRef = useRef(channelId);
 
   // Channel switch: stash the outgoing channel's draft, restore (or blank) the
@@ -266,10 +286,18 @@ function MessageComposerImpl({
     prevChannelRef.current = channelId;
     if (prev) stashComposerDraft(prev, draftRef.current);
     const mem = getComposerDraft(channelId);
-    setText(restoreComposerText(channelId));
+    const incomingText = restoreComposerText(channelId);
+    restoredChannelTextRef.current = incomingText;
+    setText(incomingText);
     setAttachments(mem?.attachments ?? []);
-    setPicked(mem?.picked ?? []);
+    const restoredBindings = mem?.suggestionBindings ?? restoreSuggestionBindings(channelId);
+    setPicked(() => {
+      const picked = mem?.picked ?? [];
+      return [...picked, ...restoredBindings.flatMap((b) => b.mention && !picked.some((p) => p.id === b.mention?.id) ? [b.mention] : [])];
+    });
     setTranscribedIds(mem?.transcribedIds ?? new Set());
+    setSuggestionBindings(mem?.suggestionBindings ?? restoreSuggestionBindings(channelId));
+    setBindingChannelId(channelId);
     setPicker(null);
     setAttachMenuOpen(false);
     setLibraryOpen(false);
@@ -298,6 +326,32 @@ function MessageComposerImpl({
     if (!channelId) return;
     persistComposerText(channelId, text);
   }, [channelId, text]);
+
+  useEffect(() => {
+    if (!channelId || bindingChannelId !== channelId) return;
+    persistSuggestionBindings(channelId, suggestionBindings);
+  }, [channelId, bindingChannelId, suggestionBindings]);
+
+  useEffect(() => {
+    const onRemoved = (event: Event) => {
+      const detail = (event as CustomEvent<{ channelId: string; id: string }>).detail;
+      if (detail?.channelId === channelId) {
+        setSuggestionBindings((old) => old.filter((binding) => binding.context?.id !== detail.id));
+      }
+    };
+    window.addEventListener("cheers:context-pick-removed", onRemoved);
+    return () => window.removeEventListener("cheers:context-pick-removed", onRemoved);
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!channelId) return;
+    const restoredText = restoredChannelTextRef.current;
+    for (const binding of restoreSuggestionBindings(channelId)) {
+      if (binding.context && restoredText.includes(binding.insertedText)) addContext(channelId, binding.context);
+    }
+    // Rehydrate only when entering a channel; a deliberate chip removal stays removed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
 
   // Bots whose "@label" token still survives in the draft — the live mention set
   // (mirrors submit()'s routing filter). Emitted up so the parent can show the
@@ -408,6 +462,47 @@ function MessageComposerImpl({
     });
   }
 
+  function replaceSuggestionSlot(key: string, kind: "file" | "panel", replacement: string, context: ContextItem) {
+    const marker = `{{${kind}:${key}}}`;
+    const at = text.indexOf(marker);
+    if (at < 0 || !channelId) return;
+    setText(text.slice(0, at) + replacement + text.slice(at + marker.length));
+    addContext(channelId, context);
+    setSuggestionBindings((old) => [...old.filter((b) => b.key !== key), { key, insertedText: replacement, context }]);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(at + replacement.length, at + replacement.length);
+      adjustHeight();
+    });
+  }
+
+  function chooseSuggestionSlot(kind: "mention" | "file" | "panel", key: string) {
+    const marker = `{{${kind}:${key}}}`;
+    const at = text.indexOf(marker);
+    if (at < 0) return;
+    if (kind === "mention") {
+      setMentionSlotKey(key);
+      setPicker({ kind: "mention", at, query: "", index: 0 });
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(at, at + marker.length);
+      });
+    } else if (kind === "file") {
+      setFileSlotKey(key);
+      setSuggestionFileOpen(true);
+    } else {
+      setPanelSlotKey(key);
+    }
+  }
+
+  const unresolvedSlots = Array.from(text.matchAll(SLOT_PATTERN));
+  const panelContexts: ContextItem[] = [
+    { id: "plan", verb: "channel.plan.read", params: {}, label: "Plan", kind: "plan" },
+    { id: "sessions", verb: "channel.sessions.read", params: {}, label: "Sessions", kind: "sessions" },
+    { id: "activity", verb: "channel.activity.read", params: {}, label: "Activity", kind: "activity" },
+    { id: "cost", verb: "channel.usage.read", params: {}, label: "Cost", kind: "cost" },
+  ];
+
   // Close the attach menu on outside click / Escape.
   const closeAttachMenu = useCallback(() => setAttachMenuOpen(false), []);
   usePopoverDismiss(attachMenuOpen, closeAttachMenu, attachRef);
@@ -483,13 +578,19 @@ function MessageComposerImpl({
   function selectCandidate(c: MentionCandidate) {
     if (!picker) return;
     const el = textareaRef.current;
-    const caret = el?.selectionStart ?? text.length;
+    const caret = mentionSlotKey ? (el?.selectionEnd ?? text.length) : (el?.selectionStart ?? text.length);
     const next =
       text.slice(0, picker.at) + `@${c.label} ` + text.slice(caret);
     setText(next);
     setPicked((prev) =>
       prev.some((p) => p.id === c.id) ? prev : [...prev, c]
     );
+    if (mentionSlotKey) {
+      setSuggestionBindings((old) => [...old.filter((b) => b.key !== mentionSlotKey), {
+        key: mentionSlotKey, insertedText: `@${c.label}`, mention: c,
+      }]);
+      setMentionSlotKey(null);
+    }
     setPicker(null);
     requestAnimationFrame(() => {
       const newPos = picker.at + c.label.length + 2; // "@label "
@@ -583,6 +684,7 @@ function MessageComposerImpl({
   }
 
   async function submit(skipVoiceCheck = false) {
+    if (firstUnresolvedSlot(text)) return;
     const typed = text.trim();
     const fileIds = attachments.map((a) => a.file_id);
     // Backend requires non-empty content; fall back to attachment names.
@@ -615,13 +717,14 @@ function MessageComposerImpl({
     const names = Array.from(
       new Set(survivors.filter((p) => p.type === "group").map((p) => p.id))
     );
-    const draft = { text, attachments, picked, transcribedIds };
+    const draft = { text, attachments, picked, transcribedIds, suggestionBindings };
     setSending(true);
     setText("");
     setPicked([]);
     setPicker(null);
     setAttachments([]);
     setTranscribedIds(new Set());
+    setSuggestionBindings([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     try {
       await onSend(content, ids, fileIds, names);
@@ -632,6 +735,7 @@ function MessageComposerImpl({
       setAttachments(draft.attachments);
       setPicked(draft.picked);
       setTranscribedIds(draft.transcribedIds);
+      setSuggestionBindings(draft.suggestionBindings);
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (!el) return;
@@ -648,6 +752,17 @@ function MessageComposerImpl({
     // Every branch below claims Enter/Arrow/Escape, all of which belong to the
     // IME candidate popup while it is up.
     if (isComposing(e)) return;
+    if (e.key === "Tab" && !picker && unresolvedSlots.length) {
+      const position = e.currentTarget.selectionEnd;
+      const next = e.shiftKey
+        ? [...unresolvedSlots].reverse().find((slot) => slot.index + slot[0].length <= e.currentTarget.selectionStart)
+        : unresolvedSlots.find((slot) => slot.index > position || (slot.index === position && e.currentTarget.selectionStart === position));
+      if (next) {
+        e.preventDefault();
+        e.currentTarget.setSelectionRange(next.index, next.index + next[0].length);
+        return;
+      }
+    }
     if (picker && activeCount) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -671,6 +786,7 @@ function MessageComposerImpl({
       if (e.key === "Escape") {
         e.preventDefault();
         setPicker(null);
+        setMentionSlotKey(null);
         return;
       }
     }
@@ -683,12 +799,19 @@ function MessageComposerImpl({
   function handleInput(e: FormEvent<HTMLTextAreaElement>) {
     const value = e.currentTarget.value;
     setText(value);
+    for (const binding of suggestionBindings) {
+      if (!value.includes(binding.insertedText) && binding.context && channelId) {
+        removeContext(channelId, binding.context.id);
+      }
+    }
+    setSuggestionBindings((old) => old.filter((binding) => value.includes(binding.insertedText)));
     refreshPicker(value, e.currentTarget.selectionStart ?? value.length);
     adjustHeight();
   }
 
   const canSend =
     (text.trim().length > 0 || attachments.length > 0) &&
+    unresolvedSlots.length === 0 &&
     !sending &&
     !uploading &&
     !disabled;
@@ -763,6 +886,28 @@ function MessageComposerImpl({
           onClose={() => setLibraryOpen(false)}
         />
       )}
+      {suggestionFileOpen && channelId && (
+        <ExistingFilePicker
+          channelId={channelId}
+          attachedIds={[]}
+          single
+          onPick={(files) => {
+            const file = files[0];
+            if (file && fileSlotKey) {
+              replaceSuggestionSlot(fileSlotKey, "file", file.original_filename || "file", {
+                id: `suggestion:file:${file.file_id}`,
+                verb: "channel.files.read",
+                params: { file_id: file.file_id },
+                label: file.original_filename || "file",
+                kind: "file",
+              });
+            }
+            setSuggestionFileOpen(false);
+            setFileSlotKey(null);
+          }}
+          onClose={() => { setSuggestionFileOpen(false); setFileSlotKey(null); }}
+        />
+      )}
 
       {voiceWarning && (
         <ComposerVoiceWarning
@@ -786,6 +931,27 @@ function MessageComposerImpl({
             : "focus-within:ring-1 focus-within:ring-content-strong/40"
         )}
       >
+        {unresolvedSlots.length > 0 && (
+          <div className="flex min-w-0 flex-wrap items-center gap-1 px-2 pt-2" aria-label="Fill question references">
+            {unresolvedSlots.map((slot) => (
+              <UiButton key={`${slot[1]}:${slot[2]}`} action="choose" content="text" variant="plain"
+                controlSize="regular" onClick={() => chooseSuggestionSlot(slot[1] as "mention" | "file" | "panel", slot[2])}
+                className="text-content-primary hover:bg-control">
+                Choose {slot[1]}
+              </UiButton>
+            ))}
+            {panelSlotKey && (
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Choose panel context">
+                {panelContexts.map((item) => (
+                  <UiButton key={item.id} action="choose" content="text" variant="plain" controlSize="regular"
+                    onClick={() => { replaceSuggestionSlot(panelSlotKey, "panel", item.label, item); setPanelSlotKey(null); }}>
+                    {item.label}
+                  </UiButton>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {contextBar && (
           <div className="min-w-0 bg-control/20 px-2 py-1">
             {contextBar}

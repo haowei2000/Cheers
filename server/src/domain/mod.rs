@@ -31,6 +31,7 @@ pub mod scheduled_messages;
 pub mod seed;
 pub mod sessions;
 pub mod stt_settings;
+pub mod suggestions;
 pub mod task_chains;
 pub mod tool_presentation;
 pub mod tool_request;

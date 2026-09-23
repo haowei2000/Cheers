@@ -1,0 +1,6 @@
+{
+  "type": "suggestion_result",
+  "v": 1,
+  "request_id": "11111111-2222-4333-8444-555555555555",
+  "content": "[{\"text\":\"Ask {{mention:who}} to review the report\",\"slots\":[{\"key\":\"who\",\"kind\":\"mention\"}]}"
+}
