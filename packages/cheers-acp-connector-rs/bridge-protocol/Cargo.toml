@@ -2,7 +2,7 @@
 name = "cheers-bridge-protocol"
 # The crate version tracks the connector release; the WIRE version is the
 # separate BRIDGE_PROTOCOL_VERSION constant.
-version = "0.1.46"
+version = "0.1.47"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 

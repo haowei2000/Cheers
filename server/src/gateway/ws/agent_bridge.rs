@@ -930,6 +930,21 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             }
         }
 
+        "suggestion_result" => {
+            if let Some(request_id) = frame
+                .get("request_id")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<Uuid>().ok())
+            {
+                crate::api::messages::complete_suggestion_request(
+                    bot.bot_id,
+                    request_id,
+                    frame.get("content").and_then(Value::as_str),
+                    frame.get("error").and_then(Value::as_str),
+                );
+            }
+        }
+
         // ── resource 访问 ──────────────────────────────────────────────────
         // ── 远程工作区 RPC 响应（connector → gateway，按 req_id 关联）──────────
         "workspace_res" => {

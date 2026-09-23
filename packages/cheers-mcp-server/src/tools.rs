@@ -188,6 +188,17 @@ mod tests {
     }
 
     #[test]
+    fn maps_structured_question_submission() {
+        let call = build_resource_call(
+            "set_suggested_questions",
+            &json!({"channel_id":"channel","msg_id":"reply","questions_json":"[{\"text\":\"What next?\",\"slots\":[]}]"})
+                .as_object().unwrap().clone(),
+        ).unwrap();
+        assert_eq!(call.resource, "channel.messages.suggestions.write");
+        assert_eq!(call.params["msg_id"], "reply");
+    }
+
+    #[test]
     fn maps_live_workspace_read_for_remote_http() {
         let call = build_resource_call(
             "read_workspace",

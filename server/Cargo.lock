@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-bridge-protocol"
-version = "0.1.46"
+version = "0.1.47"
 dependencies = [
  "serde",
  "serde_json",

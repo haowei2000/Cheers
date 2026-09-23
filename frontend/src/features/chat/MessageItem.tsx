@@ -50,6 +50,8 @@ import {
   useContextSurface,
 } from "@/components/ui/context-actions";
 import { whenPointerMeans } from "@/lib/hoverIntent";
+import { parseSuggestedQuestions, type SuggestedQuestion } from "./suggestedQuestions";
+import { requestSuggestedQuestions } from "@/api/messages";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -68,6 +70,46 @@ export interface MessageActionHandlers {
   onClearSelection?: () => void;
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
   onRetry?: (m: Message) => void;
+  onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
+}
+
+function SuggestedQuestions({ message, channelId, onUse }: {
+  message: Message;
+  channelId: string;
+  onUse: (question: SuggestedQuestion) => void;
+}) {
+  const [requested, setRequested] = useState<SuggestedQuestion[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saved = parseSuggestedQuestions((message.content_data as Record<string, unknown> | null)?.suggested_questions);
+  const questions = requested ?? saved;
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      setRequested(await requestSuggestedQuestions(channelId, message.msg_id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't suggest questions. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <div className="flex max-w-full flex-col gap-1 font-ui text-regular" aria-label="Suggested questions">
+      {questions.map((question, index) => (
+        <UiButton key={`${index}:${question.text}`} action="copy" content="text" variant="plain"
+          controlWidth="fill" controlSize="regular" className="justify-start text-left text-content-primary hover:bg-control"
+          onClick={() => onUse(question)} title="Copy question into composer">
+          {question.text.replace(/\{\{(mention|file|panel):[a-z][a-z0-9_]*\}\}/g, (_, kind: string) => `[${kind}]`)}
+        </UiButton>
+      ))}
+      <UiButton action="generate" content="text" variant="plain" controlSize="regular"
+        disabled={loading} onClick={() => void refresh()} className="self-start text-content-primary">
+        {loading ? "Suggesting…" : questions.length ? "Suggest more questions" : "Suggest questions"}
+      </UiButton>
+      {error && <p role="alert" className="text-body-error">{error}</p>}
+    </div>
+  );
 }
 
 interface Props {
@@ -959,6 +1001,9 @@ function RegularMessageItem({
         >
           {quote}
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
+          {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
+            <SuggestedQuestions message={message} channelId={channelId} onUse={actions.onUseSuggestedQuestion} />
+          )}
           {presentationLevel !== "minimal" && folio}
           {message.msg_type === "task_claim_confirmation" && (
             <TaskClaimConfirmationCard
@@ -1034,6 +1079,9 @@ function RegularMessageItem({
       >
         {quote}
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
+        {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
+          <SuggestedQuestions message={message} channelId={channelId} onUse={actions.onUseSuggestedQuestion} />
+        )}
         {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard

@@ -71,6 +71,23 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
                 spawn_created_message_effects(state, principal.principal_id, created.clone());
             }
         }
+        Some("channel.messages.suggestions.write") => {
+            if let Some(data) = resp.get("data") {
+                if let Some(channel_id) = data
+                    .get("channel_id")
+                    .and_then(Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    state
+                        .fanout
+                        .broadcast_channel(
+                            channel_id,
+                            WireFrame::channel(channel_id, "suggestions_updated", data.clone()),
+                        )
+                        .await;
+                }
+            }
+        }
         Some("channel.task_claims.evaluate") => {
             if let Some(data) = resp.get("data") {
                 if let Some(message) = data.get("confirmation_message") {

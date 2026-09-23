@@ -114,6 +114,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::Ping
         | DataOutbound::Resume { .. }
         | DataOutbound::ClaimEvaluationResult { .. }
+        | DataOutbound::SuggestionResult { .. }
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }
@@ -143,6 +144,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::Ping
         | DataOutbound::Resume { .. }
         | DataOutbound::ClaimEvaluationResult { .. }
+        | DataOutbound::SuggestionResult { .. }
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }

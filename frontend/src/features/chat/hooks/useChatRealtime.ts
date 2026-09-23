@@ -23,6 +23,7 @@ interface Callbacks {
   onMessage: (msg: Message) => void;
   onStreamDelta: (msgId: string, delta: string, senderId?: string) => void;
   onStreamDone: (msg: Partial<Message> & { msg_id: string }) => void;
+  onSuggestionsUpdated?: (msgId: string, contentData: Message["content_data"]) => void;
   onMessageDeleted: (msgId: string) => void;
   onBotProcessing?: (botId: string) => void;
   /** A mentioned bot could not accept the task. The transient placeholder was
@@ -313,6 +314,9 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     cbs.onStreamDelta(d.msg_id, d.delta ?? "", d.sender_id);
   } else if (type === "message_done") {
     cbs.onStreamDone(data as unknown as Partial<Message> & { msg_id: string });
+  } else if (type === "suggestions_updated") {
+    const update = data as { msg_id: string; content_data: Message["content_data"] };
+    cbs.onSuggestionsUpdated?.(update.msg_id, update.content_data);
   } else if (type === "message_deleted") {
     cbs.onMessageDeleted((data as { msg_id: string }).msg_id);
   } else if (type === "bot_processing") {

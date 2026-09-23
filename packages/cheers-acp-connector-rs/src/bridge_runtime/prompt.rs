@@ -45,6 +45,7 @@ pub(super) fn bridge_ready_from_initialize(
         "config_options": true,
         "trace": policy.trace.allow,
         "session_update": policy.session_update.allow,
+        "suggested_questions": true,
         "agent_capabilities": agent_caps,
     }));
     ready
@@ -94,14 +95,28 @@ pub(super) fn build_prompt(
     // snapshots/attachments) all live here; entity-escaping makes any `</context>`
     // / `<system>` injection in an untrusted field inert.
     let mut children: Vec<String> = Vec::new();
+    let output_contract = if task.trigger.as_deref() == Some("suggestion_request") {
+        "Privately suggest one to three useful follow-up questions about the supplied reply. Return ONLY a JSON array of objects with text (maximum 500 characters) and slots. Each slot has key and kind (mention, file, or panel). Use matching markers {{mention:key}}, {{file:key}}, or {{panel:key}} inside text, or an empty slots array. Maximum six slots per question. Do not perform the questions or call tools."
+    } else {
+        CHEERS_ACP_OUTPUT_CONTRACT
+    };
     children.push(format!(
         "<output_contract>{}</output_contract>",
-        xml_body(CHEERS_ACP_OUTPUT_CONTRACT)
+        xml_body(output_contract)
     ));
     children.push(format!(
         "<identity>{}</identity>",
         xml_body(&identity_context_line(identity, task, channel_name))
     ));
+    if matches!(
+        task.trigger.as_deref(),
+        Some("user_message" | "bot_message")
+    ) {
+        children.push(format!(
+            "<suggested_questions>Your reply message id is {}. If useful, call set_suggested_questions with channel_id and this msg_id before finishing. Suggestions are optional, never send them as messages. Each question may contain editable markers for mention, file, or panel.</suggested_questions>",
+            xml_body(&task.msg_id),
+        ));
+    }
     // Pinned convention/prompt blocks — the channel's standing instructions.
     for block in &task.pinned {
         if !block.trim().is_empty() {

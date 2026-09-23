@@ -712,6 +712,48 @@ impl RuntimeContext {
                     }
                 });
             }
+            ControlInbound::SuggestionRequest {
+                request_id,
+                channel_id,
+                provider_session_key,
+                source_text,
+                ..
+            } => {
+                let task = TaskCommand {
+                    task_id: request_id.clone(),
+                    channel_id,
+                    msg_id: request_id.clone(),
+                    provider_session_key,
+                    session_id: None,
+                    trigger: Some("suggestion_request".to_string()),
+                    trigger_message: Some(
+                        json!({"msg_id":request_id,"text":source_text,"msg_type":"suggestion_request"}),
+                    ),
+                    attachments: Vec::new(),
+                    pinned: Vec::new(),
+                    cwd: None,
+                    additional_dirs: Vec::new(),
+                    context_bundle: None,
+                };
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = runtime
+                        .clone()
+                        .run_task(task, Some(request_id.clone()))
+                        .await
+                    {
+                        let _ = runtime
+                            .io
+                            .send_data(DataOutbound::SuggestionResult {
+                                v: BRIDGE_PROTOCOL_VERSION,
+                                request_id,
+                                content: None,
+                                error: Some(err.to_string()),
+                            })
+                            .await;
+                    }
+                });
+            }
             ControlInbound::Cancel { msg_id, reason } => {
                 self.handle_cancel(&msg_id, reason.as_deref()).await?;
             }
@@ -1753,12 +1795,12 @@ impl RuntimeContext {
             if let Some(evaluation_id) = evaluation_id {
                 let _ = self
                     .io
-                    .send_data(DataOutbound::ClaimEvaluationResult {
-                        v: BRIDGE_PROTOCOL_VERSION,
+                    .send_data(silent_result(
+                        &task,
                         evaluation_id,
-                        content: None,
-                        error: Some("local daemon policy does not allow prompts".to_string()),
-                    })
+                        None,
+                        Some("local daemon policy does not allow prompts".to_string()),
+                    ))
                     .await;
                 return Ok(());
             }
@@ -1815,12 +1857,7 @@ impl RuntimeContext {
                     if let Some(evaluation_id) = evaluation_id {
                         let _ = self
                             .io
-                            .send_data(DataOutbound::ClaimEvaluationResult {
-                                v: BRIDGE_PROTOCOL_VERSION,
-                                evaluation_id,
-                                content: None,
-                                error: Some(message),
-                            })
+                            .send_data(silent_result(&task, evaluation_id, None, Some(message)))
                             .await;
                     }
                 } else {
@@ -1951,21 +1988,33 @@ impl RuntimeContext {
         );
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
-            self.io
-                .send_data_expect_terminal_ack(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    msg_id: task.msg_id.clone(),
-                    message: format!(
-                        "local daemon policy rejected prompt size {} > {} bytes",
-                        prompt_size, self.config.policy.prompt.max_prompt_bytes
-                    ),
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: Some(acp_session_id.clone()),
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
-                .await?;
+            let message = format!(
+                "local daemon policy rejected prompt size {} > {} bytes",
+                prompt_size, self.config.policy.prompt.max_prompt_bytes
+            );
+            if let Some(evaluation_id) = evaluation_id.as_ref() {
+                self.io
+                    .send_data(silent_result(
+                        &task,
+                        evaluation_id.clone(),
+                        None,
+                        Some(message),
+                    ))
+                    .await?;
+            } else {
+                self.io
+                    .send_data_expect_terminal_ack(DataOutbound::Error {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        client_msg_id: Uuid::new_v4().to_string(),
+                        msg_id: task.msg_id.clone(),
+                        message,
+                        provider_session_key: Some(task.provider_session_key.clone()),
+                        provider_session_id: Some(acp_session_id.clone()),
+                        session_id: task.session_id.clone(),
+                        acp_capability: None,
+                    })
+                    .await?;
+            }
             let mut shared = self.shared.runs.lock().await;
             shared.by_msg.remove(&task.msg_id);
             shared.by_acp_session.remove(&acp_session_id);
@@ -2028,12 +2077,12 @@ impl RuntimeContext {
                 };
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
-                        .send_data(DataOutbound::ClaimEvaluationResult {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            evaluation_id: evaluation_id.clone(),
-                            content: Some(final_text),
-                            error: None,
-                        })
+                        .send_data(silent_result(
+                            &task,
+                            evaluation_id.clone(),
+                            Some(final_text),
+                            None,
+                        ))
                         .await?;
                 } else {
                     let terminal_ack = self
@@ -2075,12 +2124,12 @@ impl RuntimeContext {
                 .await?;
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
-                        .send_data(DataOutbound::ClaimEvaluationResult {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            evaluation_id: evaluation_id.clone(),
-                            content: None,
-                            error: Some(message),
-                        })
+                        .send_data(silent_result(
+                            &task,
+                            evaluation_id.clone(),
+                            None,
+                            Some(message),
+                        ))
                         .await?;
                 } else {
                     let terminal_ack = self
@@ -2615,6 +2664,9 @@ impl RuntimeContext {
     }
 
     async fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
+        if task.trigger.as_deref() == Some("suggestion_request") {
+            return Value::Array(Vec::new());
+        }
         // stdio MCP is the ACP baseline transport (always supported); only the
         // optional http/sse transports are gated by mcpCapabilities. We drop a
         // configured http/sse server the agent can't speak with a LOUD warning
@@ -3157,6 +3209,29 @@ struct TaskCommand {
     /// via its Cheers resource tools — NOT inlined like `pinned`. `None` when the
     /// message carried no bundle.
     context_bundle: Option<Value>,
+}
+
+fn silent_result(
+    task: &TaskCommand,
+    id: String,
+    content: Option<String>,
+    error: Option<String>,
+) -> DataOutbound {
+    if task.trigger.as_deref() == Some("suggestion_request") {
+        DataOutbound::SuggestionResult {
+            v: BRIDGE_PROTOCOL_VERSION,
+            request_id: id,
+            content,
+            error,
+        }
+    } else {
+        DataOutbound::ClaimEvaluationResult {
+            v: BRIDGE_PROTOCOL_VERSION,
+            evaluation_id: id,
+            content,
+            error,
+        }
+    }
 }
 
 /// Builds a trusted route only for a human-originated task. Bot/system work has

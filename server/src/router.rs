@@ -436,6 +436,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/messages/:msg_id/suggestions",
+            post(api::messages::request_suggestions),
+        )
+        .route(
             "/api/v1/channels/:channel_id/discussions",
             get(api::discussions::list_discussions),
         )
