@@ -14,6 +14,7 @@ import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
+import type { PresenceFocus } from "../hooks/useChatRealtime";
 import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, viewOf, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
@@ -53,6 +54,10 @@ interface Props {
   /** Prefill the channel composer (a personal renderer capability).
    *  Never sends — owned by ChannelView, which holds the composer. */
   onCompose?: (text: string) => void;
+  sendPresenceFocus?: (chanId: string, focus: { bot_id: string; path?: string | null } | null) => void;
+  workspaceFocus?: PresenceFocus[];
+  currentUserId?: string;
+  memberNames?: Record<string, string> | ReadonlyMap<string, string>;
 }
 
 export interface WorkbenchSceneState {
@@ -151,7 +156,20 @@ export function parseCfg(content: string): WbConfig {
 // explicit escape hatch to the complete file browser.
 // Scenes come from official, personal, or temporary `.cheers-extension` packages. Only
 // personal/temporary macOS packages may contribute sandboxed renderers.
-function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator, onCompose }: Props) {
+function WorkbenchDrawerImpl({
+  open,
+  onClose,
+  channelId,
+  sendResourceReq,
+  openFilePath,
+  filesTick,
+  onOpenLocator,
+  onCompose,
+  sendPresenceFocus,
+  workspaceFocus,
+  currentUserId,
+  memberNames,
+}: Props) {
   const navigate = useNavigate();
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
@@ -597,8 +615,32 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       filesTick,
       openLocator: onOpenLocator,
       composeMessage: onCompose,
+      sendPresenceFocus,
+      workspaceFocus,
+      currentUserId,
+      memberNames,
     }),
-    [open, channelId, profile, fs, sendResourceReq, pinned, togglePin, rendererExtensions, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
+    [
+      open,
+      channelId,
+      profile,
+      fs,
+      sendResourceReq,
+      pinned,
+      togglePin,
+      rendererExtensions,
+      bindings,
+      setBinding,
+      configs,
+      focus,
+      filesTick,
+      onOpenLocator,
+      onCompose,
+      sendPresenceFocus,
+      workspaceFocus,
+      currentUserId,
+      memberNames,
+    ]
   );
   const profilePanels = panelsFor("inline", profile?.profile);
   // Inline panels are ordinary contributions and get the shared PanelContext, not the

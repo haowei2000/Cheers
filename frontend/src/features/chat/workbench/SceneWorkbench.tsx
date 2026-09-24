@@ -44,6 +44,8 @@ import {
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
+import { filterCollaborators } from "./collab";
+import { CollaboratorPills, ConflictBanner } from "./collabView";
 import { useAnnotations } from "./annotations";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
 import type { LensContextTarget } from "./lens/registry";
@@ -704,6 +706,39 @@ export function SceneWorkbench({
   // ONE session for the selected item, shared by this scene's two views: Raw edits
   // `text`, Preview renders `data` parsed from it. See FileSession.
   const session = useFileSession(ctx.fs, selectedPath ?? "");
+
+  // Live-push: Desk files changed on the server (bot finished writing or teammate saved).
+  // Reload the open file in place with automatic 3-way non-destructive merge.
+  const filesTick = ctx.filesTick ?? 0;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const seenFilesTick = useRef(filesTick);
+  useEffect(() => {
+    if (filesTick === seenFilesTick.current) return;
+    seenFilesTick.current = filesTick;
+    void refresh();
+    if (!selectedPath) return;
+    void sessionRef.current.reload(true);
+  }, [filesTick, refresh, selectedPath]);
+
+  // Broadcast presence focus so other clients and bots see who is viewing/editing this item.
+  useEffect(() => {
+    if (!ctx.sendPresenceFocus) return;
+    if (selectedPath) {
+      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selectedPath });
+    } else {
+      ctx.sendPresenceFocus(ctx.channelId, null);
+    }
+    return () => {
+      ctx.sendPresenceFocus?.(ctx.channelId, null);
+    };
+  }, [ctx.sendPresenceFocus, ctx.channelId, selectedPath]);
+
+  const collaborators = useMemo(
+    () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
+    [ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames]
+  );
+
   // Notes anchored into this item — a separate file, so annotating never touches the
   // document being annotated. Same store the file browser reads.
   const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
@@ -1095,6 +1130,7 @@ export function SceneWorkbench({
                 const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";
                 return (
                   <div className="flex h-full min-h-0 flex-col">
+                    <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
                     {pendingNote && (
                       <AnnotationComposer
                         pending={pendingNote}
@@ -1166,12 +1202,13 @@ export function SceneWorkbench({
       </div>
 
       {/* Bottom strip: carries what the file is and what state it is in */}
-      {(selectedPath || status || session.status || annotations.status) && (
+      {(selectedPath || status || session.status || annotations.status || collaborators.length > 1) && (
         <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
           {selectedPath && (
             <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
           )}
           {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+          {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
           {session.parseError && (
             <span
               className="flex-shrink-0 text-minimal text-warning-400"
@@ -1180,6 +1217,7 @@ export function SceneWorkbench({
               syntax error
             </span>
           )}
+          <CollaboratorPills collaborators={collaborators} />
           <span className="min-w-0 flex-1 truncate text-right text-warning-300">
             {status || session.status || annotations.status}
           </span>
