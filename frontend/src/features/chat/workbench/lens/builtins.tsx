@@ -23,6 +23,7 @@ import {
 import { registerLens, type LensProps } from "./registry";
 import { sourcePathKey } from "../annotations";
 import { CanvasLens } from "../canvas/CanvasLens";
+import { ArtifactLens } from "./ArtifactLens";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
@@ -907,3 +908,5 @@ registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (
 // (the host must not hide its affordances) but it also never needs the Save button,
 // because a structured op is written the moment the gesture ends. See CanvasLens.
 registerLens({ id: "canvas", contextPick: "granular", savesItself: true, render: (p) => <CanvasLens {...p} /> });
+registerLens({ id: "html", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="html" /> });
+registerLens({ id: "react", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="react" /> });

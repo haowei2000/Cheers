@@ -29,6 +29,10 @@ export interface LensProps {
   requestContextPick?: (event: MouseEvent<Element>, target: LensContextTarget) => void;
   /** Navigate the user's view to a `cheers:` locator (e.g. opening a referenced file in the Workbench). */
   openLocator?: (uri: string) => void;
+  /** Active state for Design Mode / DOM Inspector */
+  inspectorActive?: boolean;
+  /** Callback for interactive form submissions inside the lens */
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }
 
 export interface Lens {

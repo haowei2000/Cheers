@@ -19,6 +19,7 @@ import {
   Trash2,
   X,
   Copy,
+  Crosshair,
   Eye,
   EyeOff,
   Layers,
@@ -153,6 +154,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   }, []);
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
+  const [isInspectorActive, setIsInspectorActive] = useState(false);
   const addContext = useContextPickStore((s) => s.add);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
   // (default is expanded). `creatingIn` = the folder prefix a new file is being typed
@@ -824,6 +826,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     },
                   }}
                 />
+                  {effMode === "preview" && previewRenderer && (
+                    <FloatingPanelActionPortal
+                      action={{
+                        id: "design-mode",
+                        label: isInspectorActive ? "Exit Design Mode (Inspector)" : "Design Mode (Inspect & Annotate)",
+                        priority: "primary",
+                        icon: Crosshair,
+                        selected: isInspectorActive,
+                        onSelect: () => setIsInspectorActive((prev) => !prev),
+                      }}
+                    />
+                  )}
                   <FloatingPanelActionPortal
                     action={{
                       id: "annotations",
@@ -885,6 +899,13 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                       activeAnnotationId={activeAnnotationId}
                       onSelectAnnotation={setActiveAnnotationId}
+                      inspectorActive={isInspectorActive}
+                      onFormSubmit={(data) => {
+                        const summary = Object.entries(data.formData)
+                          .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+                          .join(", ");
+                        ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
+                      }}
                       onFailure={(rendererId, reason) => {
                         setFailedRenderers((current) => ({
                           ...current,
