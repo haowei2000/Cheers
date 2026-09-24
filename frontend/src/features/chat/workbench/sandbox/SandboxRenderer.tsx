@@ -254,6 +254,7 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
         setInspector(false);
         try { disposer?.(); } catch {}
       });
+    })();`;
   const inspectorCss = ".cheers-inspector-overlay{position:fixed;pointer-events:none;border:2px dashed #2563eb;background-color:rgba(37,99,235,0.12);z-index:2147483640;box-sizing:border-box;display:none;}\n.cheers-inspector-badge{position:absolute;left:0;top:-22px;background-color:#1d4ed8;color:#ffffff;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:14px;padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,0.3);}";
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(extension.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0;}\n${css ? `${css}\n` : ""}${inspectorCss}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
 }
