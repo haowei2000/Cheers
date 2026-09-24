@@ -5,17 +5,11 @@ import type { RendererExtension } from "./rendererExtension";
 const mockExtension: RendererExtension = {
   extensionId: "test-ext",
   title: "Test Extension",
-  version: "1.0.0",
   assets: {
     "dist/renderer.js": "console.log('renderer active');",
     "dist/style.css": ".custom-theme { color: red; }",
   },
   manifest: {
-    manifest_version: 1,
-    id: "test-ext",
-    title: "Test Extension",
-    version: "1.0.0",
-    description: "For testing sandbox inspector and form submission",
     renderers: [
       {
         id: "test-renderer",
