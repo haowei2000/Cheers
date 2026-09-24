@@ -81,7 +81,7 @@ export interface ComposerPrefill {
   seq: number;
   /** Mention requests append inline, de-duplicate the token, and focus the
    * composer. Ordinary suggested content retains the existing new-line mode. */
-  kind?: "text" | "mention" | "suggestion";
+  kind?: "text" | "mention" | "suggestion" | "clear";
   /** Stable member identity avoids ambiguous label-prefix matching. */
   memberId?: string;
   slots?: SuggestedQuestion["slots"];
@@ -228,13 +228,31 @@ function MessageComposerImpl({
   useEffect(() => {
     if (!prefill || prefill.seq === prefillSeq.current) return;
     prefillSeq.current = prefill.seq;
-    setText((t) =>
-      prefill.kind === "mention"
-        ? appendMentionToken(t, prefill.text.replace(/^@/, "").trim())
-        : t.trim()
-          ? `${t}\n${prefill.text}`
-          : prefill.text,
-    );
+    setText((t) => {
+      if (prefill.kind === "mention") {
+        return appendMentionToken(t, prefill.text.replace(/^@/, "").trim());
+      }
+      if (prefill.kind === "suggestion") {
+        return prefill.text;
+      }
+      if (prefill.kind === "clear") {
+        return "";
+      }
+      return t.trim() ? `${t}\n${prefill.text}` : prefill.text;
+    });
+    if (prefill.kind === "suggestion" || prefill.kind === "clear") {
+      setSuggestionBindings([]);
+    }
+    if (prefill.kind === "clear") {
+      const el = textareaRef.current;
+      if (el) {
+        requestAnimationFrame(() => {
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+        });
+      }
+      return;
+    }
     const mentioned =
       prefill.kind === "mention" && prefill.memberId
         ? mentionables.filter((m) => m.id === prefill.memberId)

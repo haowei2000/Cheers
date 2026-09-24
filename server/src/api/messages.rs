@@ -136,7 +136,13 @@ pub async fn request_suggestions(
             "Bot returned too much suggestion text".into(),
         ));
     }
-    let raw: serde_json::Value = serde_json::from_str(&content)
+    let cleaned = content
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let raw: serde_json::Value = serde_json::from_str(cleaned)
         .map_err(|_| AppError::BadRequest("Bot returned invalid suggestions".into()))?;
     let suggestions =
         crate::domain::suggestions::validate(&raw).map_err(|e| AppError::BadRequest(e.into()))?;

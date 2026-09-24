@@ -113,7 +113,7 @@ pub(super) fn build_prompt(
         Some("user_message" | "bot_message")
     ) {
         children.push(format!(
-            "<suggested_questions>Your reply message id is {}. If useful, call set_suggested_questions with channel_id and this msg_id before finishing. Suggestions are optional, never send them as messages. Each question may contain editable markers for mention, file, or panel.</suggested_questions>",
+            "<suggested_questions>Your reply message id is {}. If useful, call set_suggested_questions with channel_id and this msg_id before finishing. Suggestions are optional, never send them as messages. Pass questions_json as a JSON array like [{{\"text\": \"...\", \"slots\": []}}]. Slots are optional editable placeholders for user input ({{{{mention:who}}}}, {{{{file:path}}}}, {{{{panel:name}}}}); if referencing an existing file directly without user picking, write it directly in text and leave slots empty [].</suggested_questions>",
             xml_body(&task.msg_id),
         ));
     }

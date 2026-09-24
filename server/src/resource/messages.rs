@@ -44,7 +44,13 @@ pub async fn handle_suggestions_write(
             "questions_json is too long",
         ));
     }
-    let raw: Value = serde_json::from_str(questions_json)
+    let cleaned = questions_json
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let raw: Value = serde_json::from_str(cleaned)
         .map_err(|_| super::resource_error("INVALID_PARAMS", "questions_json must be JSON"))?;
     let suggestions = crate::domain::suggestions::validate(&raw)
         .map_err(|e| super::resource_error("INVALID_PARAMS", e))?;
