@@ -1,7 +1,9 @@
 import { Select as UiSelect } from "@/components/ui/select";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
-import { Pencil, ShieldCheck, Trash2 } from "lucide-react";
+import { Lock, Pencil, ShieldCheck, Trash2 } from "lucide-react";
+import { Tip } from "@/components/ui/tip";
+import { cn } from "@/lib/cn";
 import {
   getEventAccess,
   upsertEventRule,
@@ -23,8 +25,9 @@ import {
   type CollectionMode,
 } from "@/components/ui/collection-manager";
 import { controlIconClasses } from "@/components/ui/control-size";
-import { Field } from "@/components/ui/field";
+import { Field, SectionHead } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
+import { TabOption } from "@/components/ui/tab-option";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
@@ -42,6 +45,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [membersByChannel, setMembersByChannel] = useState<Record<string, MemberItem[]>>({});
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "grants" | "defaults">("all");
   const [mode, setMode] = useState<CollectionMode>({ kind: "browse" });
   const [editing, setEditing] = useState<EventRule | null>(null);
 
@@ -157,6 +161,28 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       .includes(normalized);
   });
 
+  const effectiveDefaults = useMemo(() => {
+    return access?.effective ?? [];
+  }, [access]);
+
+  const visibleDefaults = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase();
+    if (!q) return effectiveDefaults;
+    return effectiveDefaults.filter((cell) => {
+      const gl = grantLabel(cell.capability, cell.event_class);
+      return (
+        gl.label.toLocaleLowerCase().includes(q) ||
+        cell.event_class.toLocaleLowerCase().includes(q)
+      );
+    });
+  }, [effectiveDefaults, query]);
+
+  const totalCount = useMemo(() => {
+    if (filter === "grants") return visibleGrants.length;
+    if (filter === "defaults") return visibleDefaults.length;
+    return visibleGrants.length + visibleDefaults.length;
+  }, [filter, visibleGrants.length, visibleDefaults.length]);
+
   const beginAdd = () => {
     resetDraft();
     setMode({ kind: "add" });
@@ -259,130 +285,40 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   );
 
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-section-label">Permissions</p>
-        <p className="mt-1 text-compact text-content-muted">Grants refine the bot-wide defaults; deny wins when rules tie.</p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <SectionHead className="mb-0">Permissions</SectionHead>
+          <Tip content="Grants refine the bot-wide defaults; deny wins when rules tie. Default baseline permissions are immutable and shown in neutral tone." />
+        </div>
+        <div className="flex items-center gap-1 border-b border-control/80" role="tablist" aria-label="Permission categories">
+          <TabOption
+            label={`All (${grants.length + effectiveDefaults.length})`}
+            selected={filter === "all"}
+            onClick={() => setFilter("all")}
+            controlSize="compact"
+          />
+          <TabOption
+            label={`Custom Grants (${grants.length})`}
+            selected={filter === "grants"}
+            onClick={() => setFilter("grants")}
+            controlSize="compact"
+          />
+          <TabOption
+            label={`Defaults (${effectiveDefaults.length})`}
+            selected={filter === "defaults"}
+            onClick={() => setFilter("defaults")}
+            controlSize="compact"
+          />
+        </div>
       </div>
 
-      {/* Effective defaults (read-only): the baseline decision per event × role at
-          bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
-          the explicit overrides below. */}
-      {access.effective && access.effective.length > 0 && (
-        <details className="rounded-sm bg-zinc-900 px-3 py-2">
-          <summary className="cursor-pointer text-compact text-content-secondary">View bot-wide defaults</summary>
-          <p className="mt-2 text-minimal text-content-muted"><span className="text-accent-400">•</span> marks a grant; channel, user, and group grants can narrow a default.</p>
-          <div className="mt-2 overflow-x-auto">
-          <table className="min-w-[34rem] w-full text-compact">
-            <thead>
-              <tr className="text-content-muted">
-                <th className="px-3 py-1 text-left font-normal">Event</th>
-                <th
-                  className="px-2 py-1 text-center font-normal text-accent-300"
-                  title="The bot owner (you). Do/Answer are always allowed — owner privilege, not revocable by grants. View follows the same rules as everyone else."
-                >
-                  you · bot owner
-                </th>
-                {MATRIX_ROLES.map((r) => (
-                  <th key={r} className="px-2 py-1 text-center font-normal">
-                    {r}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {CAP_ORDER.map((cap) => {
-                const cells = access.effective.filter((c) => c.capability === cap);
-                if (cells.length === 0) return null;
-                return (
-                  <Fragment key={cap}>
-                    <tr>
-                      <td
-                        colSpan={2 + MATRIX_ROLES.length}
-                        className="px-3 pt-2 pb-1 text-minimal uppercase tracking-section text-content-muted"
-                        title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
-                      >
-                        {CAPABILITY_LABEL[cap].label}
-                      </td>
-                    </tr>
-                    {cells.map((c) => {
-                      const gl = grantLabel(cap, c.event_class);
-                      return (
-                      <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
-                        <td className="px-3 py-1">
-                          <span
-                            className="text-content-secondary"
-                            title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}
-                          >
-                            {gl.label}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 text-center">
-                          {c.bot_owner ? (
-                            <span
-                              className={
-                                c.bot_owner.source === "owner"
-                                  ? "text-accent-300"
-                                  : c.bot_owner.allow
-                                  ? "text-success-400"
-                                  : "text-content-muted"
-                              }
-                              title={
-                                c.bot_owner.source === "owner"
-                                  ? "always allowed — you own this bot"
-                                  : c.bot_owner.source === "rule"
-                                  ? "set by a grant (View has no owner bypass)"
-                                  : "membership default (View has no owner bypass)"
-                              }
-                            >
-                              {c.bot_owner.allow ? "✓" : "✗"}
-                              {c.bot_owner.source === "rule" && (
-                                <span className="text-accent-400">•</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="text-content-muted">—</span>
-                          )}
-                        </td>
-                        {MATRIX_ROLES.map((role) => {
-                          const d = c.roles[role];
-                          if (!d) {
-                            return (
-                              <td key={role} className="px-2 py-1 text-center text-content-muted">
-                                —
-                              </td>
-                            );
-                          }
-                          return (
-                            <td key={role} className="px-2 py-1 text-center">
-                              <span
-                                className={d.allow ? "text-success-400" : "text-content-muted"}
-                                title={d.source === "rule" ? "set by a grant" : "membership default"}
-                              >
-                                {d.allow ? "✓" : "✗"}
-                                {d.source === "rule" && <span className="text-accent-400">•</span>}
-                              </span>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      );
-                    })}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        </details>
-      )}
-
       <CollectionManager
-        label="Permission grants"
-        count={grants.length}
+        label="Permissions"
+        count={totalCount}
         query={query}
         onQueryChange={setQuery}
-        searchPlaceholder="Search permission grants"
+        searchPlaceholder="Search permissions…"
         addLabel="Add grant"
         onAdd={beginAdd}
         addDisabled={mode.kind !== "browse"}
@@ -391,7 +327,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
         controlSize="regular"
       >
         {mode.kind === "add" && editor("add")}
-        {visibleGrants.map((rule) => {
+        {/* Custom assignable grants */}
+        {filter !== "defaults" && visibleGrants.map((rule) => {
           const id = `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
           if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
           if (mode.kind === "delete" && mode.id === id) return (
@@ -407,9 +344,9 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           return (
             <OperationsItem
               key={id}
-              leading={<ShieldCheck className={controlIconClasses.regular} />}
+              leading={<ShieldCheck className={cn(controlIconClasses.regular, "text-accent-400")} />}
               title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300" : "font-utility text-compact uppercase text-danger-300"}>{rule.decision}</span>}
+              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300 font-medium" : "font-utility text-compact uppercase text-danger-300 font-medium"}>{rule.decision}</span>}
               criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
               actions={(
                 <>
@@ -420,7 +357,50 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             />
           );
         })}
-        {visibleGrants.length === 0 && mode.kind !== "add" && <CollectionEmptyItem query={query} onClear={() => setQuery("")} />}
+
+        {/* Default immutable permissions */}
+        {filter !== "grants" && visibleDefaults.map((cell) => {
+          const gl = grantLabel(cell.capability, cell.event_class);
+          const isAllow = cell.roles.member?.allow ?? cell.roles.admin?.allow ?? cell.roles.owner?.allow ?? false;
+          const audience = cell.roles.member?.allow
+            ? "Members, admins & owner"
+            : cell.roles.admin?.allow
+              ? "Admins & owner only"
+              : "Bot owner only";
+
+          return (
+            <OperationsItem
+              key={`default:${cell.capability}:${cell.event_class}`}
+              leading={<Lock className={cn(controlIconClasses.regular, "text-content-muted")} />}
+              title={
+                <span className="flex items-center gap-2">
+                  <span className="text-content-secondary">{gl.label}</span>
+                  <span className="rounded bg-zinc-800/80 px-2 py-1 text-minimal text-content-muted">
+                    Immutable
+                  </span>
+                </span>
+              }
+              subtitle={`Bot-wide default · ${audience}`}
+              status={
+                <span
+                  className={cn(
+                    "font-utility text-compact uppercase font-medium",
+                    isAllow ? "text-content-muted" : "text-danger-400/80"
+                  )}
+                >
+                  {isAllow ? "allow" : "deny"}
+                </span>
+              }
+              actions={
+                <Tip content={gl.desc || "Baseline permission configured by host environment."}>
+                  <span className="text-minimal text-content-muted cursor-help select-none px-1">Default</span>
+                </Tip>
+              }
+            />
+          );
+        })}
+
+        {totalCount === 0 && mode.kind !== "add" && <CollectionEmptyItem query={query} onClear={() => setQuery("")} />}
       </CollectionManager>
     </div>
   );

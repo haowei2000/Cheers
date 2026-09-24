@@ -15,6 +15,7 @@ import {
   Pencil,
   Laptop,
   RefreshCw,
+  Users,
 } from "lucide-react";
 import {
   disableBot,
@@ -36,7 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, SectionHead } from "@/components/ui/field";
+import { Field, MetaRow, SectionHead } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { IconButton } from "@/components/ui/icon-button";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/cn";
 import { messageOf } from "@/lib/notify";
 import { HostItem } from "./HostItem";
 import { BotPostureSection } from "./BotPostureSection";
+import { BotSocialAccessSection } from "./BotSocialAccessSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
 import { BotActivitySection } from "./BotActivitySection";
@@ -77,18 +79,20 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
   );
 }
 
-type Tab = "overview" | "terminals" | "permissions" | "events";
+type Tab = "overview" | "terminals" | "social" | "agent" | "events";
 
 const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
   { id: "overview", label: "Overview", icon: Info },
   { id: "terminals", label: "Hosts", icon: Laptop },
-  { id: "permissions", label: "Access", icon: ShieldCheck },
+  { id: "social", label: "Social Access", icon: Users },
+  { id: "agent", label: "Agent Access", icon: ShieldCheck },
   { id: "events", label: "Audit", icon: Activity },
 ];
 
 function routeTab(value?: string): Tab {
   if (value === "hosts" || value === "terminals") return "terminals";
-  if (value === "access" || value === "permissions") return "permissions";
+  if (value === "social" || value === "social-access") return "social";
+  if (value === "agent" || value === "agent-access" || value === "access" || value === "permissions") return "agent";
   if (value === "audit" || value === "events") return "events";
   return "overview";
 }
@@ -179,8 +183,8 @@ export function BotDetailPanel({
           <PresenceDot
             contentSize="large"
             className={cn(
-              "absolute bottom-0 right-0 ring-zinc-900",
-              bot.is_online ? "bg-emerald-500" : "bg-zinc-600"
+              "absolute bottom-0 right-0 ring-panel",
+              bot.is_online ? "bg-success-400" : "bg-zinc-600"
             )}
             aria-hidden
           />
@@ -249,25 +253,11 @@ export function BotDetailPanel({
             lifecycleActiveRef={refreshLifecycleActive}
           />
         )}
-        {tab === "permissions" && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-surface-elevated/60 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <Shield className="h-5 w-5 text-accent-400 shrink-0" />
-                <div className="min-w-0">
-                  <h4 className="text-compact font-bold text-content-strong">权限中心 (Permissions Center)</h4>
-                  <p className="text-minimal text-content-muted truncate">
-                    在独立权限中心集中管理该 Bot 的社交发现范围、好友添加规则与操作审批代理。
-                  </p>
-                </div>
-              </div>
-              <Button
-                action="manage"
-                variant="primary"
-                controlSize="compact"
-                onClick={() => navigate(`/permissions?botId=${bot.bot_id}`)}
-              />
-            </div>
+        {tab === "social" && (
+          <BotSocialAccessSection botId={bot.bot_id} />
+        )}
+        {tab === "agent" && (
+          <div className="space-y-6">
             <BotPostureSection botId={bot.bot_id} />
             <BotPermissionGrantsSection botId={bot.bot_id} />
             <BotToBotGrantsSection botId={bot.bot_id} />
@@ -411,10 +401,13 @@ function BotOverview({
         />
       )}
 
-      <div className="flex min-w-0 items-center gap-3 text-compact text-content-muted">
-        <span className="shrink-0">Bot ID</span>
-        <code className="min-w-0 flex-1 truncate" title={bot.bot_id}>{bot.bot_id}</code>
-        <CopyButton value={bot.bot_id} label="" />
+      <div className="border-t border-control/80 pt-4">
+        <MetaRow label="Bot ID">
+          <code className="min-w-0 flex-1 truncate font-code text-compact text-content-primary" title={bot.bot_id}>
+            {bot.bot_id}
+          </code>
+          <CopyButton value={bot.bot_id} label="" />
+        </MetaRow>
       </div>
 
       {bot.can_manage && (
@@ -534,7 +527,6 @@ function BotStatusEditor({
   // the profile itself is still persisted by the card's Save button.
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
-  const [externalDetailsOpen, setExternalDetailsOpen] = useState(false);
 
   // Manual "Update status now" completion lifecycle (item 4). Instead of blind
   // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
@@ -646,15 +638,13 @@ function BotStatusEditor({
   }
 
   return (
-    <section className="space-y-4">
+    <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <SectionHead className="mb-0">Profile</SectionHead>
         <div className="flex items-center gap-2">
-          <Tip align="end" content={busy ? "Saving bot profile…" : "Save bot profile"}>
-            <ActionButton action="save" context="inlineEdit" accessibleLabel="Save bot profile" controlSize="regular" onClick={() => void save()} disabled={busy} />
-          </Tip>
+          <ActionButton action="save" context="form" controlSize="compact" type="submit" disabled={busy} />
           <Tip align="end" content={refreshPhase === "waiting" ? "Waiting for the agent to update its status…" : refreshPhase === "done" ? "Status updated" : "Update status now — ask the bot to refresh its status using the saved prompt."}>
-            <IconButton label="Update bot status" controlSize="regular" onClick={() => void refreshNow()} disabled={refreshPhase === "waiting"} aria-busy={refreshPhase === "waiting"}>
+            <IconButton label="Update bot status" controlSize="compact" type="button" onClick={() => void refreshNow()} disabled={refreshPhase === "waiting"} aria-busy={refreshPhase === "waiting"}>
               {refreshPhase === "done" ? <Check className="h-4 w-4 text-success-400" /> : <RefreshCw className={cn("h-4 w-4", refreshPhase === "waiting" && "animate-spin motion-reduce:animate-none")} />}
             </IconButton>
           </Tip>
@@ -663,22 +653,22 @@ function BotStatusEditor({
       <div className="grid gap-4">
         <Field label="Status">
           <div className="flex gap-2">
-          <Input
-            value={statusEmoji}
-            onChange={(e) => setStatusEmoji(e.target.value)}
-            placeholder="🤖"
-            maxLength={8}
-            className="min-w-0 flex-[0.18] text-center"
-            aria-label="Status emoji"
-          />
-          <Input
-            value={statusText}
-            onChange={(e) => setStatusText(e.target.value)}
-            placeholder="Short status (e.g. reviewing PRs)"
-            maxLength={140}
-            className="min-w-0 flex-1"
-            aria-label="Status text"
-          />
+            <Input
+              value={statusEmoji}
+              onChange={(e) => setStatusEmoji(e.target.value)}
+              placeholder="🤖"
+              maxLength={8}
+              className="min-w-0 flex-[0.18] text-center"
+              aria-label="Status emoji"
+            />
+            <Input
+              value={statusText}
+              onChange={(e) => setStatusText(e.target.value)}
+              placeholder="Short status (e.g. reviewing PRs)"
+              maxLength={140}
+              className="min-w-0 flex-1"
+              aria-label="Status text"
+            />
           </div>
         </Field>
 
@@ -698,66 +688,94 @@ function BotStatusEditor({
         <CheckboxField
           label="Sends channel data to an external AI provider"
           checked={externalProcessor}
-          onChange={(e) => {
-            setExternalProcessor(e.target.checked);
-            if (e.target.checked) setExternalDetailsOpen(true);
-          }}
+          onChange={(e) => setExternalProcessor(e.target.checked)}
           className="items-center text-content-secondary"
         />
         {externalProcessor && (
-          <details open={externalDetailsOpen} onToggle={(event) => setExternalDetailsOpen(event.currentTarget.open)} className="mt-3">
-            <summary className="cursor-pointer text-compact text-content-secondary">Configure provider disclosure</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Provider name"><Input value={processorName} onChange={(e) => setProcessorName(e.target.value)} placeholder="OpenAI, Anthropic, or operator name" /></Field>
-              <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
-              <Field label="Data use shown to members" className="sm:col-span-2"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
-              <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
+          <div className="mt-3 space-y-3 rounded-sm bg-field/30 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Provider name">
+                <Input
+                  value={processorName}
+                  onChange={(e) => setProcessorName(e.target.value)}
+                  placeholder="OpenAI, Anthropic, or operator name"
+                />
+              </Field>
+              <Field label="Provider privacy URL">
+                <Input
+                  value={processorPrivacyUrl}
+                  onChange={(e) => setProcessorPrivacyUrl(e.target.value)}
+                  placeholder="https://…"
+                />
+              </Field>
+              <Field label="Data use shown to members" className="sm:col-span-2">
+                <Textarea
+                  value={processorDataUse}
+                  onChange={(e) => setProcessorDataUse(e.target.value)}
+                  rows={2}
+                  placeholder="Messages and selected workspace context are sent to generate replies."
+                />
+              </Field>
+              <Field label="Disclosure version">
+                <Input
+                  value={processorPolicyVersion}
+                  onChange={(e) => setProcessorPolicyVersion(e.target.value)}
+                  placeholder="1"
+                />
+              </Field>
             </div>
-            <p className="mt-3 text-compact text-content-muted">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
-          </details>
+            <p className="text-caption text-content-muted">
+              Changing the disclosure version requires members to consent again before their next AI-directed message.
+            </p>
+          </div>
         )}
       </div>
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="border-t border-control/80 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-        <CheckboxField
-          label="Auto-refresh status"
-          className="items-center"
-          checked={auto}
-          onChange={(e) => setAuto(e.target.checked)}
-        />
-        <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
-        {auto && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-compact text-content-muted">Every</span>
-            <Input
-              type="number"
-              min={5}
-              value={interval}
-              onChange={(e) => setIntervalMin(e.target.value)}
-              controlSize="compact"
-              className="text-center"
-              aria-label="Interval minutes"
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckboxField
+              label="Auto-refresh status"
+              className="items-center"
+              checked={auto}
+              onChange={(e) => setAuto(e.target.checked)}
             />
-            <span className="text-compact text-content-muted">min</span>
-            <Tip
-              align="end"
-              content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
-            >
-              <IconButton
-                label="Edit status prompt"
-                controlSize="compact"
-                onClick={() => {
-                  setPromptDraft(prompt);
-                  setPromptOpen(true);
-                }}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </IconButton>
-            </Tip>
+            <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
           </div>
-        )}
+          {auto && (
+            <div className="flex items-center gap-2">
+              <span className="text-compact text-content-muted">Every</span>
+              <div className="w-16">
+                <Input
+                  type="number"
+                  min={5}
+                  value={interval}
+                  onChange={(e) => setIntervalMin(e.target.value)}
+                  controlSize="compact"
+                  className="text-center"
+                  aria-label="Interval minutes"
+                />
+              </div>
+              <span className="text-compact text-content-muted">min</span>
+              <Tip
+                align="end"
+                content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
+              >
+                <IconButton
+                  label="Edit status prompt"
+                  controlSize="compact"
+                  type="button"
+                  onClick={() => {
+                    setPromptDraft(prompt);
+                    setPromptOpen(true);
+                  }}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </IconButton>
+              </Tip>
+            </div>
+          )}
         </div>
 
         {promptError && <p className="mt-2 text-compact text-danger-400">{promptError}</p>}
@@ -799,6 +817,6 @@ function BotStatusEditor({
           </div>
         </Dialog>
       )}
-    </section>
+    </form>
   );
 }

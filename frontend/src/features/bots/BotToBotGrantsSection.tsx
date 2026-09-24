@@ -17,7 +17,8 @@ import {
   type CollectionMode,
 } from "@/components/ui/collection-manager";
 import { controlIconClasses } from "@/components/ui/control-size";
-import { Field } from "@/components/ui/field";
+import { Field, SectionHead } from "@/components/ui/field";
+import { Tip } from "@/components/ui/tip";
 import { IconButton } from "@/components/ui/icon-button";
 import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
@@ -180,10 +181,11 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
   );
 
   return (
-    <div className="space-y-2">
-      <p className="font-utility text-compact text-content-muted">
-        Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default.
-      </p>
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <SectionHead className="mb-0">Bot-to-bot grants</SectionHead>
+        <Tip content="Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default." />
+      </div>
       <CollectionManager
         label="Bot-to-bot grants"
         count={data.grants.length}
