@@ -43,6 +43,8 @@ export function formatOf(path: string): string {
   if (p.endsWith(".yaml") || p.endsWith(".yml")) return "yaml";
   if (p.endsWith(".toml")) return "toml";
   if (p.endsWith(".xml")) return "xml";
+  if (p.endsWith(".html") || p.endsWith(".htm")) return "html";
+  if (p.endsWith(".tsx") || p.endsWith(".jsx")) return "react";
   return "text";
 }
 
@@ -173,6 +175,22 @@ const BUILTINS: RendererDesc[] = [
       const root = data as Record<string, unknown>;
       return root.codemap === 1 && !!root.nodes && typeof root.nodes === "object";
     },
+  },
+  {
+    id: "builtin:html",
+    title: "HTML Canvas",
+    format: ["html"],
+    source: "builtin",
+    lensId: "html",
+    match: { format: "html" },
+  },
+  {
+    id: "builtin:react",
+    title: "React Canvas",
+    format: ["react"],
+    source: "builtin",
+    lensId: "react",
+    match: { format: "react" },
   },
 ];
 

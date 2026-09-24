@@ -15,6 +15,7 @@ import {
   Boxes,
   CheckSquare2,
   Code2,
+  Crosshair,
   Eye,
   EyeOff,
   FileQuestion,
@@ -713,6 +714,7 @@ export function SceneWorkbench({
     [selectedPath]
   );
   const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const [isInspectorActive, setIsInspectorActive] = useState(false);
   const [revealLine, setRevealLine] = useState<number | undefined>();
   // Paths the user has forced to Raw; everything else follows the content.
   const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
@@ -989,6 +991,18 @@ export function SceneWorkbench({
               onSelect: () => showRaw(selectedPath, !rawPaths.has(selectedPath)),
             }}
           />
+          {renderers[selectedPath] && !rawPaths.has(selectedPath) && (
+            <FloatingPanelActionPortal
+              action={{
+                id: "design-mode",
+                label: isInspectorActive ? "Exit Design Mode (Inspector)" : "Design Mode (Inspect & Annotate)",
+                priority: "primary",
+                icon: Crosshair,
+                selected: isInspectorActive,
+                onSelect: () => setIsInspectorActive((prev) => !prev),
+              }}
+            />
+          )}
           <FloatingPanelActionPortal
             action={{
               id: "annotations",
@@ -1108,6 +1122,13 @@ export function SceneWorkbench({
                             annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                             activeAnnotationId={activeAnnotationId}
                             onSelectAnnotation={setActiveAnnotationId}
+                            inspectorActive={isInspectorActive}
+                            onFormSubmit={(data) => {
+                              const summary = Object.entries(data.formData)
+                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+                                .join(", ");
+                              ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
+                            }}
                             onFailure={(rendererId, reason) => {
                               setFailedRenderers((current) => ({
                                 ...current,

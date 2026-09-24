@@ -1,7 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
-import { AddContextIcon } from "@/components/ui/editorial-icons";
+import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
@@ -9,6 +9,7 @@ import { formatOf } from "../renderers/registry";
 import type { RendererExtension } from "./rendererExtension";
 import { reportRendererStatus } from "../extensions/runtime";
 import { uniqueSourceTextRange } from "../contextSource";
+import type { LensContextTarget } from "../lens/registry";
 import {
   createScheduledMessage,
   deleteScheduledMessage,
@@ -77,11 +78,107 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
       let disposer;
       let renderHandler;
       let contextAddedHandler;
+      let inspectorEnabled = false;
+      let overlay = null;
+      let badge = null;
       const pending = new Map();
       const send = (method, params) => new Promise((resolve, reject) => {
         const id = ++seq; pending.set(id, { resolve, reject });
         parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
       });
+      const ensureOverlay = () => {
+        if (!overlay) {
+          overlay = document.createElement("div");
+          overlay.className = "cheers-inspector-overlay";
+          badge = document.createElement("div");
+          badge.className = "cheers-inspector-badge";
+          overlay.appendChild(badge);
+          document.body.appendChild(overlay);
+        }
+        return overlay;
+      };
+      const getDomPath = (el) => {
+        if (!el || el.nodeType !== 1) return "";
+        const parts = [];
+        let curr = el;
+        while (curr && curr.nodeType === 1 && curr !== document.body && curr !== document.documentElement) {
+          let seg = curr.tagName.toLowerCase();
+          if (curr.id) {
+            seg += "#" + curr.id;
+            parts.unshift(seg);
+            break;
+          }
+          if (curr.classList && curr.classList.length > 0) {
+            const firstClass = curr.classList[0];
+            if (firstClass && !firstClass.startsWith("cheers-")) {
+              seg += "." + firstClass;
+            }
+          }
+          let sibling = curr;
+          let nth = 1;
+          while ((sibling = sibling.previousElementSibling)) {
+            if (sibling.tagName === curr.tagName) nth++;
+          }
+          if (nth > 1) seg += ":nth-of-type(" + nth + ")";
+          parts.unshift(seg);
+          curr = curr.parentElement;
+        }
+        return parts.join(" > ");
+      };
+      const onInspectorPointerMove = (e) => {
+        if (!inspectorEnabled) return;
+        const target = e.target;
+        if (!target || target === overlay || overlay?.contains(target)) return;
+        const r = target.getBoundingClientRect();
+        if (!r.width && !r.height) return;
+        const ov = ensureOverlay();
+        ov.style.display = "block";
+        ov.style.left = r.left + "px";
+        ov.style.top = r.top + "px";
+        ov.style.width = r.width + "px";
+        ov.style.height = r.height + "px";
+        const tag = target.tagName.toLowerCase();
+        const cls = target.className && typeof target.className === "string" ? "." + target.className.trim().split(/\\s+/)[0] : "";
+        badge.textContent = "<" + tag + (cls ? cls.slice(0, 16) : "") + ">";
+        if (r.top < 24) {
+          badge.style.top = "0px";
+        } else {
+          badge.style.top = "-22px";
+        }
+      };
+      const onInspectorClick = (e) => {
+        if (!inspectorEnabled) return;
+        const target = e.target;
+        if (!target || target === overlay || overlay?.contains(target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const r = target.getBoundingClientRect();
+        const label = target.getAttribute("aria-label") || target.innerText?.trim().slice(0, 32) || target.tagName.toLowerCase();
+        const domPath = getDomPath(target);
+        const sourceText = (target.outerHTML || "").slice(0, 500);
+        parent.postMessage({
+          jsonrpc: "2.0",
+          method: "inspector.inspect",
+          params: {
+            x: Math.round(r.left),
+            y: Math.round(r.bottom),
+            label,
+            domPath,
+            sourceText
+          }
+        }, "*");
+      };
+      const setInspector = (enabled) => {
+        inspectorEnabled = Boolean(enabled);
+        if (inspectorEnabled) {
+          document.addEventListener("pointermove", onInspectorPointerMove, true);
+          document.addEventListener("click", onInspectorClick, true);
+        } else {
+          document.removeEventListener("pointermove", onInspectorPointerMove, true);
+          document.removeEventListener("click", onInspectorClick, true);
+          if (overlay) overlay.style.display = "none";
+        }
+      };
       const ctx = {
         file: {
           onRender(handler) { renderHandler = handler; },
@@ -90,6 +187,12 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
         channel: { read(resource, params = {}) { return send("channel.read", { resource, params }); } },
         navigation: { open(uri) { return send("navigation.open", { uri }); } },
         composer: { prefill(text) { return send("composer.prefill", { text }); } },
+        form: {
+          submit(formData, actionId = "submit") { return send("form.submit", { actionId, formData }); }
+        },
+        action: {
+          trigger(actionId, payload = {}) { return send("action.trigger", { actionId, payload }); }
+        },
         context: {
           pick(event, target) {
             event.preventDefault?.();
@@ -125,11 +228,16 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
           message.error ? callback.reject(new Error(message.error.message)) : callback.resolve(message.result);
           return;
         }
+        if (message.method === "inspector.toggle") {
+          setInspector(message.params?.enabled);
+          if (message.id != null) parent.postMessage({ jsonrpc: "2.0", id: message.id, result: { enabled: inspectorEnabled } }, "*");
+        }
         if (message.method === "file.render") {
           try { await renderHandler?.(message.params); parent.postMessage({ jsonrpc: "2.0", id: message.id, result: null }, "*"); }
           catch (error) { parent.postMessage({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: String(error) } }, "*"); }
         }
         if (message.method === "lifecycle.dispose") {
+          setInspector(false);
           try { await disposer?.(); parent.postMessage({ jsonrpc: "2.0", id: message.id, result: null }, "*"); }
           catch (error) { parent.postMessage({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: String(error) } }, "*"); }
         }
@@ -142,9 +250,13 @@ export function buildRendererDocument(extension: RendererExtension, rendererId: 
         disposer = await renderer.activate(ctx);
         parent.postMessage({ jsonrpc: "2.0", method: "renderer.ready" }, "*");
       };
-      addEventListener("pagehide", () => { try { disposer?.(); } catch {} });
+      addEventListener("pagehide", () => {
+        setInspector(false);
+        try { disposer?.(); } catch {}
+      });
     })();`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(extension.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0;}\n${css}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
+  const inspectorCss = ".cheers-inspector-overlay{position:fixed;pointer-events:none;border:2px dashed #2563eb;background-color:rgba(37,99,235,0.12);z-index:2147483640;box-sizing:border-box;display:none;}\n.cheers-inspector-badge{position:absolute;left:0;top:-22px;background-color:#1d4ed8;color:#ffffff;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:14px;padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,0.3);}";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${rendererCsp(extension.manifest.permissions?.network, nonce)}"><style nonce="${nonce}">html,body,#root{height:100%;margin:0;}\n${css ? `${css}\n` : ""}${inspectorCss}</style></head><body><div id="root"></div><script nonce="${nonce}">${bridge}</script><script nonce="${nonce}">${escapeScript(code)}\n;globalThis.__CHEERS_START_RENDERER__().catch((error) => parent.postMessage({ jsonrpc: "2.0", method: "renderer.failed", params: { message: String(error) } }, "*"));</script></body></html>`;
 }
 
 export function SandboxRenderer({
@@ -157,6 +269,9 @@ export function SandboxRenderer({
   onOpen,
   onCompose,
   onFailure,
+  onAnnotate,
+  onFormSubmit,
+  inspectorActive = false,
   active = true,
 }: {
   fs: FsClient;
@@ -168,6 +283,9 @@ export function SandboxRenderer({
   onOpen?: (uri: string) => void;
   onCompose?: (text: string) => void;
   onFailure?: (reason: string) => void;
+  onAnnotate?: (target: LensContextTarget, at: { x: number; y: number }) => void;
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  inspectorActive?: boolean;
   active?: boolean;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -179,13 +297,23 @@ export function SandboxRenderer({
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
   }>());
-  const callbacksRef = useRef({ readChannel, onOpen, onCompose, onFailure });
-  callbacksRef.current = { readChannel, onOpen, onCompose, onFailure };
+  const callbacksRef = useRef({ readChannel, onOpen, onCompose, onFailure, onAnnotate, onFormSubmit });
+  callbacksRef.current = { readChannel, onOpen, onCompose, onFailure, onAnnotate, onFormSubmit };
   const [status, setStatus] = useState<"ready" | "running" | "failed">("ready");
   const [error, setError] = useState("");
   const { open } = useContextActions();
   const addContext = useContextPickStore((state) => state.add);
   const document = useMemo(() => buildRendererDocument(extension, rendererId), [extension, rendererId]);
+
+  useEffect(() => {
+    if (status === "running") {
+      iframeRef.current?.contentWindow?.postMessage({
+        jsonrpc: "2.0",
+        method: "inspector.toggle",
+        params: { enabled: Boolean(inspectorActive) },
+      }, "*");
+    }
+  }, [inspectorActive, status]);
 
   useLayoutEffect(() => {
     if (!active) {
@@ -275,6 +403,61 @@ export function SandboxRenderer({
       if (!("method" in message)) return;
       const params = message.params ?? {};
       if (message.method === "renderer.ready") void sendRender().catch((reason) => void fail(String(reason)));
+      else if (message.method === "inspector.inspect") {
+        const frame = iframeRef.current?.getBoundingClientRect();
+        const x = (frame?.left ?? 0) + Number(params.x ?? 0);
+        const y = (frame?.top ?? 0) + Number(params.y ?? 0);
+        const label = String(params.label ?? "element").trim().slice(0, 160);
+        const sourceText = String(params.sourceText ?? "");
+        const domPath = String(params.domPath ?? "");
+        const target: LensContextTarget = {
+          label: `<${label}>`,
+          sourceText: sourceText || undefined,
+          sourcePath: domPath ? [domPath] : undefined,
+        };
+        open({
+          anchor: pointRect(x, y),
+          source: "pointer",
+          restoreFocus: iframeRef.current,
+          actions: [
+            {
+              id: "annotate-inspect",
+              label: `Annotate <${label}>`,
+              icon: <AnnotationIcon className="h-4 w-4" />,
+              run: () => {
+                callbacksRef.current.onAnnotate?.(target, { x, y });
+              },
+            },
+            {
+              id: "ask-agent-inspect",
+              label: `Ask agent about <${label}>`,
+              icon: <AddContextIcon className="h-4 w-4" />,
+              run: () => {
+                const range = uniqueSourceTextRange(contentRef.current, sourceText);
+                const item = range
+                  ? rangedFileContextItem(path, range.start, range.end)
+                  : rangedFileContextItem(path, 1, 1);
+                addContext(channelId, { ...item, label: `<${label}>` });
+                callbacksRef.current.onCompose?.(`Regarding <${label}> (${domPath}): `);
+                toast.success(`Added <${label}> to context`);
+              },
+            },
+          ],
+        });
+      }
+      else if (message.method === "form.submit" || message.method === "action.trigger") {
+        const actionId = String(params.actionId ?? "submit");
+        const formData = (params.formData ?? params.payload ?? {}) as Record<string, unknown>;
+        respond(message, { ok: true, timestamp: Date.now() });
+        toast.success(`Form action: ${actionId}`);
+        callbacksRef.current.onFormSubmit?.({ actionId, formData });
+        if (callbacksRef.current.onCompose) {
+          const summary = Object.entries(formData)
+            .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+            .join(", ");
+          callbacksRef.current.onCompose(`[Action ${actionId}] ${summary}`);
+        }
+      }
       else if (message.method === "context.pick") {
         const label = String(params.label ?? "").trim().slice(0, 160);
         const sourceText = String(params.sourceText ?? "");
