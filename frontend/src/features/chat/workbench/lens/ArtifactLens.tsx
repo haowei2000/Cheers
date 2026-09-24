@@ -191,7 +191,7 @@ export function buildArtifactHtml(source: string, mode: "html" | "react"): strin
   </style>
 </head>
 <body>
-  ${trimmed || '<div class="text-zinc-400 p-4">Empty HTML Canvas</div>'}
+  ${trimmed || '<div style="color:#a1a1aa;padding:1rem;">Empty HTML Canvas</div>'}
   <script>${BRIDGE_SCRIPT}</script>
 </body>
 </html>`;
@@ -238,12 +238,12 @@ export function buildArtifactHtml(source: string, mode: "html" | "react"): strin
           const root = ReactDOM.createRoot(rootEl);
           root.render(React.createElement(Component));
         } else if (rootEl) {
-          rootEl.innerHTML = '<div class="p-6 text-zinc-500 font-sans">Ready. Provide an export default React component to preview.</div>';
+          rootEl.innerHTML = '<div style="color:#71717a;padding:1.5rem;font-family:sans-serif;">Ready. Provide an export default React component to preview.</div>';
         }
       } catch (err) {
         const rootEl = document.getElementById("root");
         if (rootEl) {
-          rootEl.innerHTML = '<div class="p-4 bg-red-50 text-red-700 rounded-md font-mono text-sm border border-red-200"><strong>React Render Error:</strong><br>' + err.message + '</div>';
+          rootEl.innerHTML = '<div style="color:#b91c1c;background-color:#fef2f2;border:1px solid #fecaca;padding:1rem;border-radius:0.375rem;font-family:monospace;"><strong>React Render Error:</strong><br>' + err.message + '</div>';
         }
       }
     })();
