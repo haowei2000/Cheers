@@ -27,6 +27,8 @@ export function LensView({
   activeAnnotationId,
   onSelectAnnotation,
   openLocator,
+  inspectorActive,
+  onFormSubmit,
 }: {
   session: FileSession;
   lensId: string;
@@ -176,6 +178,8 @@ export function LensPanel({
   channelId,
   reloadTick,
   openLocator,
+  inspectorActive,
+  onFormSubmit,
 }: {
   fs: FsClient;
   path: string;
@@ -184,6 +188,8 @@ export function LensPanel({
   channelId: string;
   reloadTick?: number;
   openLocator?: (uri: string) => void;
+  inspectorActive?: boolean;
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   const session = useFileSession(fs, path);
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
@@ -197,5 +203,16 @@ export function LensPanel({
     void reload(true);
   }, [reloadTick, reload]);
 
-  return <LensView session={session} lensId={lensId} config={config} channelId={channelId} standalone openLocator={openLocator} />;
+  return (
+    <LensView
+      session={session}
+      lensId={lensId}
+      config={config}
+      channelId={channelId}
+      standalone
+      openLocator={openLocator}
+      inspectorActive={inspectorActive}
+      onFormSubmit={onFormSubmit}
+    />
+  );
 }

@@ -20,7 +20,7 @@ const mockExtension: RendererExtension = {
       {
         id: "test-renderer",
         title: "Test Renderer",
-        matches: ["*.yaml", "*.json"],
+        match: ["*.yaml", "*.json"],
         entry: "dist/renderer.js",
         style: "dist/style.css",
       },

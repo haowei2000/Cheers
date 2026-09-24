@@ -120,6 +120,8 @@ export function RendererHost({
       channelId={ctx.channelId}
       reloadTick={ctx.filesTick}
       openLocator={ctx.openLocator}
+      inspectorActive={inspectorActive}
+      onFormSubmit={onFormSubmit}
     />
   );
 }
