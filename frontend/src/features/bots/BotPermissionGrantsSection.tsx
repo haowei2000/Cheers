@@ -25,7 +25,8 @@ import {
   type CollectionMode,
 } from "@/components/ui/collection-manager";
 import { controlIconClasses } from "@/components/ui/control-size";
-import { Field, SectionHead } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { TabOption } from "@/components/ui/tab-option";
 
@@ -285,12 +286,21 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   );
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <SectionHead className="mb-0">Permissions</SectionHead>
+    <CollectionManager
+      label={(
+        <span className="inline-flex items-center gap-2">
+          <span>Permissions</span>
           <Tip content="Grants refine the bot-wide defaults; deny wins when rules tie. Default baseline permissions are immutable and shown in neutral tone." />
-        </div>
+        </span>
+      )}
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search permissions…"
+      addLabel="Add grant"
+      onAdd={beginAdd}
+      addDisabled={mode.kind !== "browse"}
+      searchDisabled={mode.kind !== "browse"}
+      tabs={(
         <div className="flex items-center gap-1 border-b border-control/80" role="tablist" aria-label="Permission categories">
           <TabOption
             label={`All (${grants.length + effectiveDefaults.length})`}
@@ -311,97 +321,106 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             controlSize="compact"
           />
         </div>
-      </div>
+      )}
+      presentationLevel="medium"
+      controlSize="regular"
+    >
+      {mode.kind === "add" && editor("add")}
+      {/* Custom assignable grants */}
+      {filter !== "defaults" && visibleGrants.map((rule) => {
+        const id = `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
+        if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
+        if (mode.kind === "delete" && mode.id === id) return (
+          <CollectionDeleteItem
+            key={id}
+            title={`Revoke ${grantLabel(rule.capability, rule.event_class).label} grant?`}
+            description="The membership default will apply again."
+            onCancel={resetDraft}
+            onConfirm={() => void removeGrant(rule)}
+            deleting={busy !== null}
+          />
+        );
+        return (
+          <OperationsItem
+            key={id}
+            leading={<ShieldCheck className={cn(controlIconClasses.regular, "text-accent-400")} />}
+            title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
+            status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300 font-medium" : "font-utility text-compact uppercase text-danger-300 font-medium"}>{rule.decision}</span>}
+            criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
+            actions={(
+              <>
+                <IconButton label="Edit permission grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>
+                <IconButton label="Revoke permission grant" tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id })}><Trash2 className={controlIconClasses.compact} /></IconButton>
+              </>
+            )}
+          />
+        );
+      })}
 
-      <CollectionManager
-        label="Permissions"
-        count={totalCount}
-        query={query}
-        onQueryChange={setQuery}
-        searchPlaceholder="Search permissions…"
-        addLabel="Add grant"
-        onAdd={beginAdd}
-        addDisabled={mode.kind !== "browse"}
-        searchDisabled={mode.kind !== "browse"}
-        presentationLevel="medium"
-        controlSize="regular"
-      >
-        {mode.kind === "add" && editor("add")}
-        {/* Custom assignable grants */}
-        {filter !== "defaults" && visibleGrants.map((rule) => {
-          const id = `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
-          if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
-          if (mode.kind === "delete" && mode.id === id) return (
-            <CollectionDeleteItem
-              key={id}
-              title={`Revoke ${grantLabel(rule.capability, rule.event_class).label} grant?`}
-              description="The membership default will apply again."
-              onCancel={resetDraft}
-              onConfirm={() => void removeGrant(rule)}
-              deleting={busy !== null}
-            />
-          );
-          return (
-            <OperationsItem
-              key={id}
-              leading={<ShieldCheck className={cn(controlIconClasses.regular, "text-accent-400")} />}
-              title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300 font-medium" : "font-utility text-compact uppercase text-danger-300 font-medium"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
-              actions={(
-                <>
-                  <IconButton label="Edit permission grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>
-                  <IconButton label="Revoke permission grant" tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id })}><Trash2 className={controlIconClasses.compact} /></IconButton>
-                </>
-              )}
-            />
-          );
-        })}
+      {/* Default immutable permissions */}
+      {filter !== "grants" && visibleDefaults.map((cell) => {
+        const gl = grantLabel(cell.capability, cell.event_class);
+        const isAllow = cell.roles.member?.allow ?? cell.roles.admin?.allow ?? cell.roles.owner?.allow ?? false;
+        const audience = cell.roles.member?.allow
+          ? "Members, admins & owner"
+          : cell.roles.admin?.allow
+            ? "Admins & owner only"
+            : "Bot owner only";
 
-        {/* Default immutable permissions */}
-        {filter !== "grants" && visibleDefaults.map((cell) => {
-          const gl = grantLabel(cell.capability, cell.event_class);
-          const isAllow = cell.roles.member?.allow ?? cell.roles.admin?.allow ?? cell.roles.owner?.allow ?? false;
-          const audience = cell.roles.member?.allow
-            ? "Members, admins & owner"
-            : cell.roles.admin?.allow
-              ? "Admins & owner only"
-              : "Bot owner only";
-
-          return (
-            <OperationsItem
-              key={`default:${cell.capability}:${cell.event_class}`}
-              leading={<Lock className={cn(controlIconClasses.regular, "text-content-muted")} />}
-              title={
-                <span className="flex items-center gap-2">
-                  <span className="text-content-secondary">{gl.label}</span>
-                  <span className="rounded bg-zinc-800/80 px-2 py-1 text-minimal text-content-muted">
-                    Immutable
-                  </span>
+        return (
+          <OperationsItem
+            key={`default:${cell.capability}:${cell.event_class}`}
+            leading={<Lock className={cn(controlIconClasses.regular, "text-content-muted")} />}
+            title={
+              <span className="flex items-center gap-2">
+                <span className="text-content-secondary">{gl.label}</span>
+                <span className="rounded bg-zinc-800/80 px-2 py-1 text-minimal text-content-muted">
+                  Immutable
                 </span>
-              }
-              subtitle={`Bot-wide default · ${audience}`}
-              status={
-                <span
-                  className={cn(
-                    "font-utility text-compact uppercase font-medium",
-                    isAllow ? "text-content-muted" : "text-danger-400/80"
-                  )}
-                >
-                  {isAllow ? "allow" : "deny"}
-                </span>
-              }
-              actions={
-                <Tip content={gl.desc || "Baseline permission configured by host environment."}>
-                  <span className="text-minimal text-content-muted cursor-help select-none px-1">Default</span>
-                </Tip>
-              }
-            />
-          );
-        })}
+              </span>
+            }
+            subtitle={`Bot-wide default · ${audience}`}
+            status={
+              <span
+                className={cn(
+                  "font-utility text-compact uppercase font-medium",
+                  isAllow ? "text-content-muted" : "text-danger-400/80"
+                )}
+              >
+                {isAllow ? "allow" : "deny"}
+              </span>
+            }
+            actions={
+              <Tip content={gl.desc || "Baseline permission configured by host environment."}>
+                <span className="text-minimal text-content-muted cursor-help select-none px-1">Default</span>
+              </Tip>
+            }
+          />
+        );
+      })}
 
-        {totalCount === 0 && mode.kind !== "add" && <CollectionEmptyItem query={query} onClear={() => setQuery("")} />}
-      </CollectionManager>
-    </div>
+      {totalCount === 0 && mode.kind !== "add" && (
+        <div role="listitem">
+          <EmptyState
+            icon={filter === "defaults" ? Lock : ShieldCheck}
+            title={
+              query.trim()
+                ? "No matching permissions"
+                : filter === "grants"
+                  ? "No custom grants yet"
+                  : "No permissions configured"
+            }
+            hint={
+              query.trim()
+                ? "Try a different search term"
+                : filter === "grants"
+                  ? "This bot uses standard baseline permissions. Click + to add custom capability rules."
+                  : undefined
+            }
+            className="py-6"
+          />
+        </div>
+      )}
+    </CollectionManager>
   );
 }
