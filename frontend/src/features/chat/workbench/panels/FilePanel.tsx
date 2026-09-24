@@ -29,6 +29,8 @@ import {
 import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileSession } from "../jsonFile";
+import { filterCollaborators } from "../collab";
+import { CollaboratorPills, ConflictBanner } from "../collabView";
 import { useAnnotations } from "../annotations";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "../AnnotationBar";
 import type { LensContextTarget } from "../lens/registry";
@@ -340,10 +342,26 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     seenFilesTick.current = filesTick;
     void refresh();
     if (!selected) return;
-    const open = sessionRef.current;
-    if (open.dirty) open.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
-    else void open.reload(true);
+    void sessionRef.current.reload(true);
   }, [filesTick, refresh, selected]);
+
+  // Broadcast presence focus so other clients and bots see who is viewing/editing this file.
+  useEffect(() => {
+    if (!ctx.sendPresenceFocus) return;
+    if (selected) {
+      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selected });
+    } else {
+      ctx.sendPresenceFocus(ctx.channelId, null);
+    }
+    return () => {
+      ctx.sendPresenceFocus?.(ctx.channelId, null);
+    };
+  }, [ctx.sendPresenceFocus, ctx.channelId, selected]);
+
+  const collaborators = useMemo(
+    () => filterCollaborators(ctx.workspaceFocus, selected, ctx.currentUserId, ctx.memberNames),
+    [ctx.workspaceFocus, selected, ctx.currentUserId, ctx.memberNames]
+  );
 
   const expandAncestors = useCallback((path: string) => {
     setCollapsed((prev) => {
@@ -877,6 +895,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     }}
                     active={session.dirty || Boolean(session.parseError)}
                   />
+                <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
                 {pendingNote && (
                   <AnnotationComposer
                     pending={pendingNote}
@@ -939,7 +958,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         )}
         {/* Bottom strip: the one place nothing floats over. Carries what the file IS and
             what state it is in, now that every control it has is up in the corner. */}
-        {(selected || session.status || annotations.status || status) && (
+        {(selected || session.status || annotations.status || status || collaborators.length > 1) && (
           <div
             aria-live="polite"
             className="mx-1 mb-1 flex items-center gap-2 rounded-sm bg-panel/50 px-3 py-1 text-compact"
@@ -950,6 +969,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
               </span>
             )}
             {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+            {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
             {session.parseError && (
               <span
                 className="flex-shrink-0 text-minimal text-warning-400"
@@ -958,6 +978,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 syntax error
               </span>
             )}
+            <CollaboratorPills collaborators={collaborators} />
             <span className="min-w-0 flex-1 truncate text-right text-content-muted">
               {session.status || annotations.status || status}
             </span>

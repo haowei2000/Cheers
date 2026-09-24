@@ -1528,6 +1528,10 @@ export function ChannelView({
                 filesTick={boardTick.files}
                 onOpenLocator={openLocator}
                 onCompose={composeMessage}
+                sendPresenceFocus={sendPresenceFocus}
+                workspaceFocus={workspaceFocus}
+                currentUserId={user?.user_id}
+                memberNames={memberNames}
               />
 
               {/* Files shares the same docking and tab lifecycle as other panels. */}

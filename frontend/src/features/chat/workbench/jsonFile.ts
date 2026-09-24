@@ -4,6 +4,7 @@ import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
 import { applyEdits } from "./yamlDoc";
 import { applyPatchOps, type PatchOp } from "./patchOps";
+import { merge3Way } from "./collab";
 
 export function errMsg(e: unknown): string {
   if (e instanceof ResourceError) return `${e.code}: ${e.message}`;
@@ -129,6 +130,18 @@ export function canPatch(buffer: FileBuffer): boolean {
   return buffer.parseError === null && !buffer.dirty;
 }
 
+export interface FileSessionConflict {
+  remoteText: string;
+  localText: string;
+  baseText: string;
+  conflictsCount: number;
+}
+
+export interface FileSessionOptions {
+  autoSave?: boolean;
+  autoSaveDelayMs?: number;
+}
+
 export interface FileSession extends FileBuffer {
   path: string;
   /** null => the file does not exist yet (a write with if_version 0 creates it). */
@@ -140,8 +153,16 @@ export interface FileSession extends FileBuffer {
   applyOps: (ops: readonly PatchOp[]) => Promise<void>;
   save: () => Promise<void>;
   /** `skipIfDirty` is for the live-push path only: keep an unsaved buffer rather than
-   *  clobbering it with what a bot just wrote. */
+   *  clobbering it with what a bot just wrote. When 3-way merge is available, clean
+   *  non-overlapping edits are seamlessly merged. */
   reload: (skipIfDirty?: boolean) => Promise<void>;
+
+  // Collaborative real-time additions
+  saving: boolean;
+  autoSave: boolean;
+  setAutoSave: (enabled: boolean) => void;
+  conflictNotice: FileSessionConflict | null;
+  resolveConflict: (choice: "local" | "remote" | "merged") => Promise<void>;
 }
 
 /** Execute a structured edit against exactly the version it was authored from.
@@ -159,29 +180,47 @@ export async function patchWithVersionCheck(
   return fs.patch(path, ops, version);
 }
 
-export function useFileSession(fs: FsClient, path: string): FileSession {
+export function useFileSession(
+  fs: FsClient,
+  path: string,
+  options?: FileSessionOptions
+): FileSession {
   const [buffer, setBuffer] = useState<FileBuffer>(() => emptyBuffer(path));
   const [version, setVersion] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  // Mirror readable synchronously from async callbacks, which cannot see a state update
-  // made after they closed over it: an in-flight `fs.read` may resolve after a keystroke,
-  // and would otherwise clobber it.
+  const [saving, setSaving] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(options?.autoSave ?? true);
+  const [conflictNotice, setConflictNotice] = useState<FileSessionConflict | null>(null);
+
+  // Server baseline for 3-way merge
+  const baseTextRef = useRef("");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const delayMs = options?.autoSaveDelayMs ?? 800;
+
+  // Mirror readable synchronously from async callbacks
   const bufferRef = useRef(buffer);
+  const versionRef = useRef(version);
+  versionRef.current = version;
+
   const write = useCallback((next: FileBuffer) => {
     bufferRef.current = next;
     setBuffer(next);
   }, []);
 
-  // Path switch, applied during THIS render rather than in an effect: both views read
-  // this one buffer, so a frame of the previous file's content would be a frame of the
-  // wrong file rendered by the new file's renderer.
+  // Path switch, applied during THIS render rather than in an effect
   const [openPath, setOpenPath] = useState(path);
   if (openPath !== path) {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
     setOpenPath(path);
     bufferRef.current = emptyBuffer(path);
     setBuffer(bufferRef.current);
+    baseTextRef.current = "";
     setVersion(null);
     setStatus(null);
+    setConflictNotice(null);
   }
 
   const load = useCallback(
@@ -189,14 +228,44 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
       if (!path) return;
       try {
         const f = await fs.read(path);
-        if (skipIfDirty && bufferRef.current.dirty) return;
+        if (skipIfDirty && bufferRef.current.dirty) {
+          // Collaborative 3-way merge attempt
+          const base = baseTextRef.current;
+          const local = bufferRef.current.text;
+          const remote = f.content;
+          const res = merge3Way(base, local, remote);
+
+          if (!res.hasConflict) {
+            // Clean non-overlapping merge!
+            write(adoptText(path, bufferRef.current, res.merged));
+            baseTextRef.current = remote;
+            setVersion(f.version);
+            setStatus("Synced with collaborator");
+            setConflictNotice(null);
+          } else {
+            // Overlapping concurrent edit
+            setConflictNotice({
+              remoteText: remote,
+              localText: local,
+              baseText: base,
+              conflictsCount: res.conflictsCount,
+            });
+            setStatus("Collaborator edited this file — conflict detected");
+          }
+          return;
+        }
+
         write(adoptText(path, bufferRef.current, f.content));
+        baseTextRef.current = f.content;
         setVersion(f.version);
+        setConflictNotice(null);
       } catch (e) {
         if (e instanceof ResourceError && e.code === "NOT_FOUND") {
           if (skipIfDirty && bufferRef.current.dirty) return;
           write(adoptText(path, bufferRef.current, ""));
+          baseTextRef.current = "";
           setVersion(null);
+          setConflictNotice(null);
         } else {
           setStatus(errMsg(e));
         }
@@ -209,9 +278,80 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
     void load();
   }, [load]);
 
+  // Clean up autoSave timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!path) return;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    setSaving(true);
+    setStatus(null);
+    try {
+      const currentText = bufferRef.current.text;
+      const r = await fs.write(path, currentText, versionRef.current ?? 0);
+      write({ ...bufferRef.current, dirty: false });
+      baseTextRef.current = currentText;
+      setVersion(r.version);
+      setConflictNotice(null);
+      setStatus("Saved");
+    } catch (e) {
+      if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
+        // Attempt automatic 3-way merge on write conflict
+        try {
+          const latest = await fs.read(path);
+          const res = merge3Way(baseTextRef.current, bufferRef.current.text, latest.content);
+          if (!res.hasConflict) {
+            const retryWrite = await fs.write(path, res.merged, latest.version);
+            write({ ...adoptText(path, bufferRef.current, res.merged), dirty: false });
+            baseTextRef.current = res.merged;
+            setVersion(retryWrite.version);
+            setConflictNotice(null);
+            setStatus("Auto-merged & saved");
+            return;
+          }
+          setConflictNotice({
+            remoteText: latest.content,
+            localText: bufferRef.current.text,
+            baseText: baseTextRef.current,
+            conflictsCount: res.conflictsCount,
+          });
+          setStatus("Conflict — remote changes conflict with local edits");
+        } catch {
+          setStatus("Conflict — reloaded the latest version; please reapply your changes");
+          await load();
+        }
+      } else {
+        setStatus(errMsg(e));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [fs, path, load, write]);
+
+  const scheduleAutoSave = useCallback(() => {
+    if (!autoSaveEnabled) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      void save();
+    }, delayMs);
+  }, [autoSaveEnabled, delayMs, save]);
+
   const onEditText = useCallback(
-    (next: string) => write(editText(path, bufferRef.current, next)),
-    [path, write]
+    (next: string) => {
+      write(editText(path, bufferRef.current, next));
+      scheduleAutoSave();
+    },
+    [path, write, scheduleAutoSave]
   );
 
   const setData = useCallback(
@@ -222,40 +362,46 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
       }
       try {
         write(editData(path, bufferRef.current, next));
+        scheduleAutoSave();
       } catch (e) {
-        // Serializing can fail against the text it has to patch — a YAML document whose
-        // root is a scalar cannot take a key, for instance. Reported, not thrown: this
-        // runs inside a lens's event handler, where an exception becomes a rejected
-        // promise nobody is awaiting and the user sees nothing happen at all.
         setStatus(errMsg(e));
       }
     },
-    [path, write]
+    [path, write, scheduleAutoSave]
   );
 
-  const save = useCallback(async () => {
-    if (!path) return;
-    setStatus(null);
-    try {
-      const r = await fs.write(path, bufferRef.current.text, version ?? 0);
-      write({ ...bufferRef.current, dirty: false });
-      setVersion(r.version);
-      setStatus("Saved");
-    } catch (e) {
-      if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
-        setStatus("Conflict — reloaded the latest version; please reapply your changes");
+  const resolveConflict = useCallback(
+    async (choice: "local" | "remote" | "merged") => {
+      if (!conflictNotice || !path) return;
+      if (choice === "remote") {
+        write(adoptText(path, bufferRef.current, conflictNotice.remoteText));
+        baseTextRef.current = conflictNotice.remoteText;
+        setConflictNotice(null);
+        setStatus("Adopted remote changes");
         await load();
-      } else {
-        setStatus(errMsg(e));
+      } else if (choice === "local") {
+        try {
+          const latest = await fs.read(path);
+          const r = await fs.write(path, conflictNotice.localText, latest.version);
+          write({ ...bufferRef.current, dirty: false });
+          baseTextRef.current = conflictNotice.localText;
+          setVersion(r.version);
+          setConflictNotice(null);
+          setStatus("Preserved local changes");
+        } catch (e) {
+          setStatus(errMsg(e));
+        }
+      } else if (choice === "merged") {
+        const res = merge3Way(conflictNotice.baseText, conflictNotice.localText, conflictNotice.remoteText);
+        write(editText(path, bufferRef.current, res.merged));
+        setConflictNotice(null);
+        setStatus("Conflict markers inserted; please resolve in Raw editor");
       }
-    }
-  }, [fs, path, version, load, write]);
+    },
+    [conflictNotice, path, write, load, fs]
+  );
 
-  // Structured edit, for callers that know WHICH part changed (a canvas node moving, a
-  // row being inserted). Distinct from `save` because it preserves YAML comments through
-  // an array length change, which the whole-document path documents as a loss. Like a
-  // whole-document save, it never guesses through VERSION_CONFLICT: an indexed op is only
-  // meaningful against the exact document version from which the caller derived it.
+  // Structured edit
   const applyOps = useCallback(
     async (ops: readonly PatchOp[]) => {
       if (ops.length === 0) return;
@@ -273,10 +419,6 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
       }
       setStatus(null);
       try {
-        // Optimistic, so the gesture moves now. Inside the try because a batch can be
-        // invalid against THIS document (an index out of range, a key op on a document
-        // with no root object) — that has to surface as a status, not escape as a
-        // rejected promise no caller is awaiting.
         write(patchData(bufferRef.current, ops));
         await patchWithVersionCheck(fs, path, ops, version);
         setStatus("Saved");
@@ -304,5 +446,10 @@ export function useFileSession(fs: FsClient, path: string): FileSession {
     applyOps,
     save,
     reload: load,
+    saving,
+    autoSave: autoSaveEnabled,
+    setAutoSave: setAutoSaveEnabled,
+    conflictNotice,
+    resolveConflict,
   };
 }
