@@ -49,5 +49,5 @@ export interface WorkbenchContext {
   /** Presence focus list for the channel, tracking who is viewing which path. */
   workspaceFocus?: PresenceFocus[];
   currentUserId?: string;
-  memberNames?: Record<string, string>;
+  memberNames?: Record<string, string> | ReadonlyMap<string, string>;
 }

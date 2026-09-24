@@ -203,12 +203,20 @@ export function filterCollaborators(
   focusList: readonly PresenceFocus[] = [],
   currentPath: string | null | undefined,
   currentUserId?: string | null,
-  botNames: Record<string, string> = {}
+  memberNames?: Record<string, string> | ReadonlyMap<string, string>
 ): CollaboratorInfo[] {
   if (!currentPath) return [];
 
   const list: CollaboratorInfo[] = [];
   const seen = new Set<string>();
+
+  const lookupName = (id: string | undefined): string | undefined => {
+    if (!id || !memberNames) return undefined;
+    if (memberNames instanceof Map || "get" in memberNames) {
+      return (memberNames as ReadonlyMap<string, string>).get(id);
+    }
+    return (memberNames as Record<string, string>)[id];
+  };
 
   for (const item of focusList) {
     if (item.path !== currentPath) continue;
@@ -218,11 +226,12 @@ export function filterCollaborators(
 
     const isSelf = !!currentUserId && item.user_id === currentUserId;
     const isBot = !!item.bot_id && !item.user_id;
+    const resolvedName = isBot ? lookupName(item.bot_id) : lookupName(item.user_id);
     const name = isBot
-      ? botNames[item.bot_id] ?? `Bot ${item.bot_id.slice(0, 6)}`
+      ? resolvedName ?? `Bot ${item.bot_id.slice(0, 6)}`
       : isSelf
       ? "You"
-      : `User ${item.user_id.slice(0, 6)}`;
+      : resolvedName ?? `User ${item.user_id.slice(0, 6)}`;
 
     list.push({
       id: key,

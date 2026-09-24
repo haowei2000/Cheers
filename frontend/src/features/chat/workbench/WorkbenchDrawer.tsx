@@ -57,7 +57,7 @@ interface Props {
   sendPresenceFocus?: (chanId: string, focus: { bot_id: string; path?: string | null } | null) => void;
   workspaceFocus?: PresenceFocus[];
   currentUserId?: string;
-  memberNames?: Record<string, string>;
+  memberNames?: Record<string, string> | ReadonlyMap<string, string>;
 }
 
 export interface WorkbenchSceneState {
