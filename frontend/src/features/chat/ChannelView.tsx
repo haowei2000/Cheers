@@ -33,6 +33,8 @@ import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
 import { ConversationViewport } from "./ConversationViewport";
 import { ReplyComposerBanner } from "./ReplyComposerBanner";
+import { SuggestedQuestionsComposerBanner } from "./SuggestedQuestionsComposerBanner";
+import { findActiveBotSuggestions, type SuggestedQuestion } from "./suggestedQuestions";
 import { ForwardDialog } from "./ForwardDialog";
 import type { MessageActionHandlers } from "./MessageItem";
 import {
@@ -823,6 +825,83 @@ export function ChannelView({
     );
   }, [channelIdForStop]);
 
+  const [dismissedSuggestionMsgId, setDismissedSuggestionMsgId] = useState<string | null>(null);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(0);
+  const autoPrefilledMsgIdRef = useRef<string | null>(null);
+
+  const activeSuggestion = useMemo(() => {
+    return findActiveBotSuggestions({
+      messages,
+      currentUserId: user?.user_id,
+      streamingIds,
+    });
+  }, [messages, user?.user_id, streamingIds]);
+
+  const prevActiveMsgIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentId = activeSuggestion?.msgId ?? null;
+    if (currentId !== prevActiveMsgIdRef.current) {
+      prevActiveMsgIdRef.current = currentId;
+      setSelectedSuggestionIndex(0);
+    }
+  }, [activeSuggestion?.msgId]);
+
+  useEffect(() => {
+    if (!activeSuggestion) return;
+    if (dismissedSuggestionMsgId === activeSuggestion.msgId) return;
+    const key = `${channel?.channel_id}:${activeSuggestion.msgId}`;
+    if (autoPrefilledMsgIdRef.current === key) return;
+    if (draftText.trim().length > 0) return;
+
+    autoPrefilledMsgIdRef.current = key;
+    setSelectedSuggestionIndex(0);
+    const firstQ = activeSuggestion.questions[0];
+    if (firstQ) {
+      if (firstQ.slots.some((s) => s.kind === "mention")) setSelectedSessionId("");
+      setComposePrefill((previous) => ({
+        kind: "suggestion",
+        text: firstQ.text,
+        slots: firstQ.slots,
+        seq: (previous?.seq ?? 0) + 1,
+      }));
+    }
+  }, [
+    activeSuggestion,
+    dismissedSuggestionMsgId,
+    draftText,
+    channel?.channel_id,
+    setComposePrefill,
+    setSelectedSessionId,
+  ]);
+
+  const handleSelectSuggestion = useCallback(
+    (question: SuggestedQuestion, index: number) => {
+      setSelectedSuggestionIndex(index);
+      if (question.slots.some((s) => s.kind === "mention")) setSelectedSessionId("");
+      setComposePrefill((previous) => ({
+        kind: "suggestion",
+        text: question.text,
+        slots: question.slots,
+        seq: (previous?.seq ?? 0) + 1,
+      }));
+    },
+    [setComposePrefill, setSelectedSessionId]
+  );
+
+  const handleDismissSuggestion = useCallback(
+    (msgId: string, questions: SuggestedQuestion[]) => {
+      setDismissedSuggestionMsgId(msgId);
+      if (questions.some((q) => q.text.trim() === draftText.trim())) {
+        setComposePrefill((previous) => ({
+          kind: "clear",
+          text: "",
+          seq: (previous?.seq ?? 0) + 1,
+        }));
+      }
+    },
+    [draftText, setComposePrefill]
+  );
+
   // Resolve a clicked file reference by PROVENANCE and TAKE THE USER TO where it
   // lives — the channel files view (inbox), the workbench File panel (desk), or the
   // workspace browser — instead of a silent download. Never assumes the bot followed
@@ -1273,12 +1352,22 @@ export function ChannelView({
       onMention: (m) => mentionMember(m.sender_id),
       onUseSuggestedQuestion: (question) => {
         if (question.slots.some((slot) => slot.kind === "mention")) setSelectedSessionId("");
+        if (activeSuggestion) {
+          const idx = activeSuggestion.questions.findIndex((q) => q.text === question.text);
+          if (idx !== -1) setSelectedSuggestionIndex(idx);
+        }
         setComposePrefill((previous) => ({
           kind: "suggestion",
           text: question.text,
           slots: question.slots,
           seq: (previous?.seq ?? 0) + 1,
         }));
+      },
+      onSuggestionsLoaded: (msgId, questions) => {
+        handleSuggestionsUpdated(msgId, {
+          ...((messages.find((m) => m.msg_id === msgId)?.content_data as object) ?? {}),
+          suggested_questions: questions,
+        });
       },
       onToggleSelect: (m) => {
         setSelectMode(true);
@@ -1307,6 +1396,10 @@ export function ChannelView({
       applyReplyDefaults,
       mentionMember,
       setComposePrefill,
+      setSelectedSessionId,
+      activeSuggestion,
+      handleSuggestionsUpdated,
+      messages,
     ],
   );
 
@@ -1604,6 +1697,14 @@ export function ChannelView({
                     footer={
                       !selectMode ? (
                         <>
+                          {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
+                            <SuggestedQuestionsComposerBanner
+                              questions={activeSuggestion.questions}
+                              selectedIndex={selectedSuggestionIndex}
+                              onSelect={handleSelectSuggestion}
+                              onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
+                            />
+                          )}
                           {replyTo && (
                             <ReplyComposerBanner
                               message={replyTo}
@@ -1722,6 +1823,14 @@ export function ChannelView({
                   session / @ / context (and sets reply_to on send). Esc clears nesting. */}
               {!selectMode && channel.conversation_mode !== "discuss" && (
                 <>
+                  {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
+                    <SuggestedQuestionsComposerBanner
+                      questions={activeSuggestion.questions}
+                      selectedIndex={selectedSuggestionIndex}
+                      onSelect={handleSelectSuggestion}
+                      onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
+                    />
+                  )}
                   {replyTo && (
                     <ReplyComposerBanner
                       message={replyTo}

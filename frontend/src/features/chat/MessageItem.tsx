@@ -8,7 +8,6 @@ import {
   Copy,
   Forward,
   CheckSquare,
-  Check,
   AlertCircle,
   RotateCw,
   Loader2,
@@ -50,7 +49,11 @@ import {
   useContextSurface,
 } from "@/components/ui/context-actions";
 import { whenPointerMeans } from "@/lib/hoverIntent";
-import { parseSuggestedQuestions, type SuggestedQuestion } from "./suggestedQuestions";
+import {
+  formatSuggestionDisplayText,
+  parseSuggestedQuestions,
+  type SuggestedQuestion,
+} from "./suggestedQuestions";
 import { requestSuggestedQuestions } from "@/api/messages";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
@@ -71,12 +74,14 @@ export interface MessageActionHandlers {
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
   onRetry?: (m: Message) => void;
   onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
+  onSuggestionsLoaded?: (msgId: string, questions: SuggestedQuestion[]) => void;
 }
 
-function SuggestedQuestions({ message, channelId, onUse }: {
+function SuggestedQuestions({ message, channelId, onUse, onLoaded }: {
   message: Message;
   channelId: string;
   onUse: (question: SuggestedQuestion) => void;
+  onLoaded?: (questions: SuggestedQuestion[]) => void;
 }) {
   const [requested, setRequested] = useState<SuggestedQuestion[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,7 +92,9 @@ function SuggestedQuestions({ message, channelId, onUse }: {
     setLoading(true);
     setError(null);
     try {
-      setRequested(await requestSuggestedQuestions(channelId, message.msg_id));
+      const res = await requestSuggestedQuestions(channelId, message.msg_id);
+      setRequested(res);
+      onLoaded?.(res);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't suggest questions. Try again.");
     } finally {
@@ -100,7 +107,7 @@ function SuggestedQuestions({ message, channelId, onUse }: {
         <UiButton key={`${index}:${question.text}`} action="copy" content="text" variant="plain"
           controlWidth="fill" controlSize="regular" className="justify-start text-left text-content-primary hover:bg-control"
           onClick={() => onUse(question)} title="Copy question into composer">
-          {question.text.replace(/\{\{(mention|file|panel):[a-z][a-z0-9_]*\}\}/g, (_, kind: string) => `[${kind}]`)}
+          {formatSuggestionDisplayText(question.text)}
         </UiButton>
       ))}
       <UiButton action="generate" content="text" variant="plain" controlSize="regular"
@@ -1002,7 +1009,12 @@ function RegularMessageItem({
           {quote}
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
           {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
-            <SuggestedQuestions message={message} channelId={channelId} onUse={actions.onUseSuggestedQuestion} />
+            <SuggestedQuestions
+              message={message}
+              channelId={channelId}
+              onUse={actions.onUseSuggestedQuestion}
+              onLoaded={actions.onSuggestionsLoaded ? (q) => actions.onSuggestionsLoaded?.(message.msg_id, q) : undefined}
+            />
           )}
           {presentationLevel !== "minimal" && folio}
           {message.msg_type === "task_claim_confirmation" && (
@@ -1080,7 +1092,12 @@ function RegularMessageItem({
         {quote}
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
         {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
-          <SuggestedQuestions message={message} channelId={channelId} onUse={actions.onUseSuggestedQuestion} />
+          <SuggestedQuestions
+            message={message}
+            channelId={channelId}
+            onUse={actions.onUseSuggestedQuestion}
+            onLoaded={actions.onSuggestionsLoaded ? (q) => actions.onSuggestionsLoaded?.(message.msg_id, q) : undefined}
+          />
         )}
         {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (

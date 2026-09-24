@@ -63,7 +63,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
         <span
           aria-hidden="true"
           className={cn(
-            "mt-1 grid flex-shrink-0 place-items-center rounded-sm bg-control text-content-on-light ring-1 ring-inset ring-zinc-600 transition-colors duration-100",
+            "mt-1 grid flex-shrink-0 place-items-center rounded-[3px] bg-control text-content-on-light ring-1 ring-inset ring-zinc-600 transition-colors duration-100",
             contentIconClasses.regular,
             "peer-checked:bg-content-strong peer-checked:ring-0",
             "peer-focus-visible:ring-2 peer-focus-visible:ring-content-strong/60",

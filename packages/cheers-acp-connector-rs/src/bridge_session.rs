@@ -97,6 +97,7 @@ impl BridgeReady {
                 "config_options": true,
                 "trace": true,
                 "workspace": true,
+                "suggested_questions": true,
             })),
         }
     }

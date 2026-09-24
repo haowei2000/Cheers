@@ -34,6 +34,7 @@ export function CollectionManager({
   showSearch = true,
   searchDisabled,
   headerAction,
+  tabs,
   presentationLevel = "medium",
   controlSize = "regular",
   children,
@@ -51,6 +52,7 @@ export function CollectionManager({
   showSearch?: boolean;
   searchDisabled?: boolean;
   headerAction?: ReactNode;
+  tabs?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   children: ReactNode;
@@ -141,6 +143,12 @@ export function CollectionManager({
             {addControl}
           </ButtonGroup>
         </header>
+      )}
+
+      {tabs && (
+        <div className="pb-2">
+          {tabs}
+        </div>
       )}
 
       <ItemList presentationLevel={presentationLevel} controlSize={controlSize}>

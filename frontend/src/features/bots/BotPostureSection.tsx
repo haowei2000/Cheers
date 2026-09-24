@@ -1,7 +1,8 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
-import { Field } from "@/components/ui/field";
+import { Field, SectionHead } from "@/components/ui/field";
+import { Tip } from "@/components/ui/tip";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import {
@@ -72,17 +73,22 @@ export function BotPostureSection({ botId }: { botId: string }) {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div>
-          <p className="text-section-label">Agent settings</p>
-          <p className="mt-1 text-compact text-content-muted">Settings apply to new sessions and remain within the host’s allow-list.</p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex items-center gap-2">
+          <SectionHead className="mb-0">Agent settings</SectionHead>
+          <Tip content="Settings apply to new sessions and remain within the host’s allow-list. Mode controls when the agent asks for approval." />
         </div>
         {posture && <span className="text-compact text-content-muted">Agent: {posture.agent_type}</span>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {posture && (
-          <Field label="Mode">
+          <Field label={
+            <span className="flex items-center gap-2">
+              Mode
+              <Tip content="Mode controls when the agent stops to ask you before acting." />
+            </span>
+          }>
             {posture.allowed_modes.length > 0 ? (
               <UiSelect value={posture.permission_mode ?? ""} disabled={busy} onChange={(e) => changePosture(e.target.value)} controlSize="regular">
                 {posture.permission_mode == null && <option value="">(unset)</option>}
@@ -108,7 +114,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
       </div>
 
       {(!configOptions || configOptions.advertised.length === 0) && (
-        <details className="rounded-sm bg-zinc-900 px-3 py-2">
+        <details className="rounded-sm bg-control/40 px-3 py-2">
           <summary className="cursor-pointer text-compact text-content-secondary">Advanced configuration override</summary>
           <div className="mt-3 space-y-3">
             {configOptions && Object.keys(configOptions.desired).length > 0 && (
@@ -126,14 +132,6 @@ export function BotPostureSection({ botId }: { botId: string }) {
           </div>
         </details>
       )}
-
-      <details className="rounded-sm bg-zinc-900 px-3 py-2">
-        <summary className="cursor-pointer text-compact text-content-secondary">How agent settings work</summary>
-        <div className="mt-3 space-y-2 text-compact leading-reading text-content-muted">
-          <p>Mode controls when the agent asks for approval. Changing it requires the matching permission grant and is pushed to the live connector.</p>
-          <p>To require review of commits, do not auto-allow <code>git commit</code> or <code>git push</code> in the agent’s own rules.</p>
-        </div>
-      </details>
     </section>
   );
 }

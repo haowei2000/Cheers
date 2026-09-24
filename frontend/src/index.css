@@ -130,7 +130,7 @@
 /* Selection belongs to the content layer: high-contrast enough to remain
    legible in both themes, but neutral so it never reads like an app command. */
 ::selection {
-  background: rgb(var(--tone-ink-700));
+  background: rgb(var(--tone-ink-700, 70 72 80));
   color: rgb(var(--text-strong));
 }
 
@@ -478,6 +478,20 @@ textarea::selection,
   --surface-emphasis: 70 72 80;
   --surface-emphasis-hover: 80 82 90;
   --surface-emphasis-active: 44 45 49;
+
+  /* Neutral ink doubles as the focus/selection scale. Filled actions stay
+     dark while quiet selected surfaces become light in the light theme. */
+  --tone-ink-50: 244 243 240;
+  --tone-ink-100: 232 231 228;
+  --tone-ink-200: 204 203 199;
+  --tone-ink-300: 184 183 180;
+  --tone-ink-400: 156 156 162;
+  --tone-ink-500: 148 148 154;
+  --tone-ink-600: 132 132 138;
+  --tone-ink-700: 70 72 80;
+  --tone-ink-800: 58 60 66;
+  --tone-ink-900: 44 45 49;
+  --tone-ink-950: 30 31 34;
 
   /* Semantic foreground hierarchy. Components describe meaning instead of
      selecting a zinc shade; state colors are registered beside these tokens. */
