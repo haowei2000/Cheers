@@ -11,6 +11,7 @@ export interface User {
   status_text?: string | null;
   status_emoji?: string | null;
   status_updated_at?: string | null;
+  has_password?: boolean;
 }
 
 export interface Workspace {
@@ -415,6 +416,10 @@ export interface BotItem {
   processor_privacy_url?: string | null;
   processor_data_use?: string | null;
   processor_policy_version?: string;
+  created_by?: string | null;
+  visibility?: "public" | "friends" | "private";
+  friend_policy?: "open" | "require_approval" | "disabled";
+  invite_policy?: "open" | "require_approval";
 }
 
 export interface WsEvent {

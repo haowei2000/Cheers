@@ -56,7 +56,8 @@ pub async fn get_me(
 ) -> Result<Json<Value>, AppError> {
     let r = sqlx::query(
         "SELECT user_id, username, display_name, email, role, avatar_url, bio,
-                status_text, status_emoji, status_updated_at
+                status_text, status_emoji, status_updated_at,
+                (password_hash IS NOT NULL) AS has_password
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
     )
     .bind(&claims.sub)
@@ -78,6 +79,7 @@ pub async fn get_me(
             .ok()
             .flatten()
             .map(|t| t.to_rfc3339()),
+        "has_password": r.try_get::<bool, _>("has_password").unwrap_or(false),
     })))
 }
 

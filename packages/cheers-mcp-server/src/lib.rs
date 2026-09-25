@@ -339,7 +339,7 @@ mod tests {
             // already: every resource a locator can name is one of them. Asserted by
             // locator::tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for.
             | "read_locator" => Some(SCOPE_READ),
-            "post_message" => Some(SCOPE_MESSAGES_WRITE),
+            "post_message" | "set_suggested_questions" => Some(SCOPE_MESSAGES_WRITE),
             "inbox_deliver" => Some(SCOPE_FILES_WRITE),
             "desk_write"
             | "desk_edit"

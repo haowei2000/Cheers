@@ -150,7 +150,7 @@ Cheers 使用“编辑部、报纸、信件”的正式语义（Editorial Corres
 ### 4.4 Workbench 顶栏层级
 
 Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放拖拽柄、Collection
-选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Dock/Float、Close。两侧为单行、
+选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Expand/Restore、Dock/Float、Close。两侧为单行、
 不可换行的按钮岛，先实测右侧固定岛，再把剩余宽度交给左侧。空间不足时，先把新增入口收进
 对应选择器菜单，再把选择器收为具有 tooltip 与 accessible name 的图标。Raw workspace files
 是 Collection 菜单中的特殊导航项。产品文案使用 Collection/Tab；持久化 `scene_state` 与扩展

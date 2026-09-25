@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Bell, Palette } from "lucide-react";
 import toast from "react-hot-toast";
 import { ActionButton } from "@/components/ui/action-button";
-import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
+import { SettingsCard, SettingsCardSection, SettingsSection } from "@/components/ui/settings-card";
 import { ThemeSelector } from "@/components/ui/theme-selector";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/push";
@@ -34,7 +34,6 @@ export function ServerCard() {
   const base = isTauri() ? getServerBase() : window.location.origin;
   return (
     <SettingsCard
-      className="mt-4"
       title="Server"
       description={
         <>
@@ -170,11 +169,18 @@ export function AppUpdateCard() {
   }
 
   return (
-    <section className="border-t border-zinc-600/70 py-5">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-regular font-semibold text-content-primary">App updates</p>
-          <ButtonGroup label="App update actions">
+    <SettingsCard
+      title="App updates"
+      description={
+        <>
+          {currentVersion ? `Installed ${currentVersion}. ` : null}
+          {update
+            ? `Version ${update.version} is available — installing restarts Cheers.`
+            : "Check GitHub for a newer signed desktop build."}
+        </>
+      }
+      actions={
+        <ButtonGroup label="App update actions">
             {update ? (
               <ActionButton
                 action="restart"
@@ -192,16 +198,9 @@ export function AppUpdateCard() {
                 onClick={() => void check()}
               />
             )}
-          </ButtonGroup>
-        </div>
-        <p className="text-compact text-content-muted mt-1">
-          {currentVersion ? `Installed ${currentVersion}. ` : null}
-          {update
-            ? `Version ${update.version} is available — installing restarts Cheers.`
-            : "Check GitHub for a newer signed desktop build."}
-        </p>
-      </div>
-    </section>
+        </ButtonGroup>
+      }
+    />
   );
 }
 
@@ -254,19 +253,16 @@ export function PushNotificationsCard() {
   }
 
   return (
-    <section className="border-t border-zinc-600/70 py-5">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-regular font-semibold text-content-primary flex items-center gap-2">
-            <Bell className="w-4 h-4 text-accent-400" /> Push notifications
-          </p>
-          <p className="text-compact text-content-muted mt-1">
-            Approval requests and @mentions reach this device even when Cheers
-            isn't open.
-            {status === "denied" &&
-              " Currently blocked in your browser's site settings."}
-          </p>
-        </div>
+    <SettingsCardSection
+      title="Push notifications"
+      description={
+        <>
+          Approval requests and @mentions reach this device even when Cheers isn't open.
+          {status === "denied" && " Currently blocked in your browser's site settings."}
+        </>
+      }
+      icon={Bell}
+      actions={
         <ActionButton
           action={enabled ? "disable" : "enable"}
           context="settings"
@@ -275,7 +271,7 @@ export function PushNotificationsCard() {
           disabled={busy || status === "loading"}
           onClick={() => void toggle()}
         />
-      </div>
-    </section>
+      }
+    />
   );
 }

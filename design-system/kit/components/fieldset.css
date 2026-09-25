@@ -1,0 +1,20 @@
+/* Fieldset — the legend is the group's accessible name, so it stays a legend. */
+.ui-fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.ui-fieldset__legend {
+  padding: 0; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-semibold);
+  letter-spacing: var(--ui-tracking-label); color: var(--ui-fg-strong);
+}
+.ui-fieldset__description { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); margin: 0; }
+.ui-fieldset--bordered {
+  padding: var(--ui-space-4); border-radius: var(--ui-radius-md);
+  background: var(--ui-bg-raised); box-shadow: var(--ui-shadow-1);
+}
+.ui-fieldset:disabled { opacity: 0.55; }
+.ui-fieldset[data-invalid] .ui-fieldset__legend { color: var(--ui-danger); }
+.ui-fieldset__toggle {
+  all: unset; display: flex; align-items: center; gap: var(--ui-space-2);
+  cursor: pointer; border-radius: var(--ui-radius-sm);
+}
+.ui-fieldset__toggle:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-fieldset__toggle .ui-icon { color: var(--ui-fg-subtle); transition: transform var(--ui-duration-base) var(--ui-ease); }
+.ui-fieldset__toggle[aria-expanded="true"] .ui-icon { transform: rotate(90deg); }

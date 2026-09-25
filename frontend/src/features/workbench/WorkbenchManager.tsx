@@ -3,6 +3,7 @@ import { AlertCircle, Blocks, CircleCheck, ExternalLink, Laptop, Package, Power,
 import { Button as UiButton } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { ItemSection, WorkbenchItem } from "@/components/ui/item";
+import { SettingsCard, SettingsSection } from "@/components/ui/settings-card";
 import { isTauri } from "@/lib/serverConfig";
 import {
   downloadCatalogExtension,
@@ -210,20 +211,20 @@ export function WorkbenchManager() {
   }, [candidate, installing, reload]);
 
   return (
-    <section>
-      <h2 className="mb-4 flex items-center gap-2 text-compact font-semibold uppercase tracking-section text-content-muted">
-        <Blocks className="h-3.5 w-3.5" /> Workbench extensions
-      </h2>
+    <SettingsSection title="Workbench extensions" icon={Blocks}>
       {(error || notice) && (
         <Banner severity={error ? "error" : "success"} icon={error ? AlertCircle : CircleCheck} className="mb-3" onDismiss={() => { setError(null); setNotice(null); }}>
           {error ?? notice}
         </Banner>
       )}
+      <SettingsCard
+        title="Extension library"
+        description="Manage built-in, personal, and verified catalog extensions."
+      >
       <ItemSection
         label="Installed extensions"
         presentationLevel="medium"
         controlSize="regular"
-        className="border-t border-zinc-800 pt-2"
         description="Official Workbench from this Gateway release, plus extensions installed on this Mac."
         action={<div className="flex items-center gap-2">
           <UiButton action="open" content="iconText" variant="plain" type="button" controlSize="compact" onClick={() => { const popup = window.open(OFFICIAL_CATALOG_URL, "_blank", "noopener,noreferrer"); if (popup) popup.opener = null; }}>
@@ -277,7 +278,7 @@ export function WorkbenchManager() {
         label="Official catalog"
         presentationLevel="medium"
         controlSize="regular"
-        className="mt-6 border-t border-zinc-800 pt-2"
+        className="mt-6"
         description="Verified extensions from the official Cheers catalog."
       >
         {catalogEntries.map((entry) => {
@@ -333,8 +334,9 @@ export function WorkbenchManager() {
           />
         )}
       </ItemSection>
+      </SettingsCard>
 
       {candidate && <ExtensionInstallDialog candidate={candidate} installed={installed} busy={installing} onConfirm={() => void confirmInstall()} onClose={() => { clearExtensionInstallIntent(); setCandidate(null); }} />}
-    </section>
+    </SettingsSection>
   );
 }

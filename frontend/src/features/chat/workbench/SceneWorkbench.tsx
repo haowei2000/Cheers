@@ -1,5 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { CollectionIcon, TabIcon } from "@/components/ui/editorial-icons";
+import {
+  AddContextIcon,
+  AnnotationIcon,
+  CollectionIcon,
+  TabIcon,
+} from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
@@ -10,14 +15,15 @@ import {
   Boxes,
   CheckSquare2,
   Code2,
+  Crosshair,
   Eye,
   EyeOff,
   FileQuestion,
   Folder,
   Frame,
   Lock,
-  MessageSquare,
-  Paperclip,
+  Maximize2,
+  Minimize2,
   Save,
   Server,
 } from "lucide-react";
@@ -40,6 +46,8 @@ import {
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
+import { filterCollaborators } from "./collab";
+import { CollaboratorPills, ConflictBanner } from "./collabView";
 import { useAnnotations } from "./annotations";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
 import type { LensContextTarget } from "./lens/registry";
@@ -114,7 +122,7 @@ export function sceneTabContextActions(
         : contextAdded
           ? "Already added to context"
           : "Add Collection to context",
-      icon: <Paperclip className="h-4 w-4" />,
+      icon: <AddContextIcon className="h-4 w-4" />,
       disabled: !contextAvailable || contextAdded,
       group: "secondary",
       run: onAddToContext,
@@ -388,7 +396,7 @@ function ItemTab({
     actions: () => [{
       id: "add-context",
       label: contextAdded ? "Already added to context" : "Add to context",
-      icon: <Paperclip className="h-4 w-4" />,
+      icon: <AddContextIcon className="h-4 w-4" />,
       disabled: contextAdded,
       run: onAddToContext,
     }],
@@ -450,7 +458,7 @@ function ContextPickSurface({
   const actions = () => [{
     id: "add-context",
     label: added ? "Already added to context" : "Add to context",
-    icon: <Paperclip className="h-4 w-4" />,
+    icon: <AddContextIcon className="h-4 w-4" />,
     disabled: added,
     run: () => {
       addContext(channelId, item);
@@ -465,7 +473,7 @@ function ContextPickSurface({
       return [{
         id: "add-lines",
         label: "Add selected lines to context",
-        icon: <Paperclip className="h-4 w-4" />,
+        icon: <AddContextIcon className="h-4 w-4" />,
         disabled: !range,
         run: () => {
           if (!range) throw new Error("The selected text could not be mapped to file lines");
@@ -680,6 +688,7 @@ export function SceneWorkbench({
   const [isTabLocked, setIsTabLocked] = useState(false);
   const [shakeNonce, setShakeNonce] = useState(0);
   const triggerLockedShake = useCallback(() => setShakeNonce((n) => n + 1), []);
+  const [isCardMaximized, setIsCardMaximized] = useState(false);
 
   const activePaths = useMemo(() => {
     const canvas = canvasScenePath(activeScene);
@@ -700,6 +709,39 @@ export function SceneWorkbench({
   // ONE session for the selected item, shared by this scene's two views: Raw edits
   // `text`, Preview renders `data` parsed from it. See FileSession.
   const session = useFileSession(ctx.fs, selectedPath ?? "");
+
+  // Live-push: Desk files changed on the server (bot finished writing or teammate saved).
+  // Reload the open file in place with automatic 3-way non-destructive merge.
+  const filesTick = ctx.filesTick ?? 0;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const seenFilesTick = useRef(filesTick);
+  useEffect(() => {
+    if (filesTick === seenFilesTick.current) return;
+    seenFilesTick.current = filesTick;
+    void refresh();
+    if (!selectedPath) return;
+    void sessionRef.current.reload(true);
+  }, [filesTick, refresh, selectedPath]);
+
+  // Broadcast presence focus so other clients and bots see who is viewing/editing this item.
+  useEffect(() => {
+    if (!ctx.sendPresenceFocus) return;
+    if (selectedPath) {
+      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selectedPath });
+    } else {
+      ctx.sendPresenceFocus(ctx.channelId, null);
+    }
+    return () => {
+      ctx.sendPresenceFocus?.(ctx.channelId, null);
+    };
+  }, [ctx.sendPresenceFocus, ctx.channelId, selectedPath]);
+
+  const collaborators = useMemo(
+    () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
+    [ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames]
+  );
+
   // Notes anchored into this item — a separate file, so annotating never touches the
   // document being annotated. Same store the file browser reads.
   const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
@@ -710,6 +752,7 @@ export function SceneWorkbench({
     [selectedPath]
   );
   const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const [isInspectorActive, setIsInspectorActive] = useState(false);
   const [revealLine, setRevealLine] = useState<number | undefined>();
   // Paths the user has forced to Raw; everything else follows the content.
   const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
@@ -883,6 +926,22 @@ export function SceneWorkbench({
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
   }
 
+  if (!loading && status && entries.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="text-regular font-medium text-content-secondary">{status}</div>
+        <ResponsiveActionButton
+          action="retry"
+          context="settings"
+          wideLabel="Retry"
+          onClick={() => void refresh()}
+          controlSize={workbenchControlSize.tab}
+          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
+        />
+      </div>
+    );
+  }
+
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -955,6 +1014,18 @@ export function SceneWorkbench({
         <>
           <FloatingPanelActionPortal
             action={{
+              id: "card-fill",
+              label: isCardMaximized
+                ? "Restore card deck view (Esc)"
+                : "Maximize card screen fill",
+              priority: "primary",
+              icon: isCardMaximized ? Minimize2 : Maximize2,
+              selected: isCardMaximized,
+              onSelect: () => setIsCardMaximized((prev) => !prev),
+            }}
+          />
+          <FloatingPanelActionPortal
+            action={{
               id: "lock-tab",
               label: isTabLocked ? "Unlock tab scrolling" : "Lock tab in place",
               priority: "primary",
@@ -986,6 +1057,18 @@ export function SceneWorkbench({
               onSelect: () => showRaw(selectedPath, !rawPaths.has(selectedPath)),
             }}
           />
+          {renderers[selectedPath] && !rawPaths.has(selectedPath) && (
+            <FloatingPanelActionPortal
+              action={{
+                id: "design-mode",
+                label: isInspectorActive ? "Exit Design Mode (Inspector)" : "Design Mode (Inspect & Annotate)",
+                priority: "primary",
+                icon: Crosshair,
+                selected: isInspectorActive,
+                onSelect: () => setIsInspectorActive((prev) => !prev),
+              }}
+            />
+          )}
           <FloatingPanelActionPortal
             action={{
               id: "annotations",
@@ -993,7 +1076,7 @@ export function SceneWorkbench({
                 ? `Notes on ${selectedPath}`
                 : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
               priority: "primary",
-              icon: MessageSquare,
+              icon: AnnotationIcon,
               control: (
                 <AnnotationsButton
                   notes={annotations.notes}
@@ -1073,11 +1156,14 @@ export function SceneWorkbench({
               }))}
               selectedPath={selectedPath}
               onSelectTab={selectPath}
+              isMaximized={isCardMaximized}
+              onToggleMaximize={() => setIsCardMaximized((prev) => !prev)}
               renderActiveCardContent={(path) => {
                 const renderer = renderers[path];
                 const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";
                 return (
                   <div className="flex h-full min-h-0 flex-col">
+                    <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
                     {pendingNote && (
                       <AnnotationComposer
                         pending={pendingNote}
@@ -1105,6 +1191,13 @@ export function SceneWorkbench({
                             annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                             activeAnnotationId={activeAnnotationId}
                             onSelectAnnotation={setActiveAnnotationId}
+                            inspectorActive={isInspectorActive}
+                            onFormSubmit={(data) => {
+                              const summary = Object.entries(data.formData)
+                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+                                .join(", ");
+                              ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
+                            }}
                             onFailure={(rendererId, reason) => {
                               setFailedRenderers((current) => ({
                                 ...current,
@@ -1142,12 +1235,13 @@ export function SceneWorkbench({
       </div>
 
       {/* Bottom strip: carries what the file is and what state it is in */}
-      {(selectedPath || status || session.status || annotations.status) && (
+      {(selectedPath || status || session.status || annotations.status || collaborators.length > 1) && (
         <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
           {selectedPath && (
             <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
           )}
           {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+          {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
           {session.parseError && (
             <span
               className="flex-shrink-0 text-minimal text-warning-400"
@@ -1156,6 +1250,7 @@ export function SceneWorkbench({
               syntax error
             </span>
           )}
+          <CollaboratorPills collaborators={collaborators} />
           <span className="min-w-0 flex-1 truncate text-right text-warning-300">
             {status || session.status || annotations.status}
           </span>

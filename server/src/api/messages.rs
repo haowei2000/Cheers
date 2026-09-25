@@ -6,6 +6,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+};
+use tokio::sync::oneshot;
 use tracing::info;
 use uuid::Uuid;
 
@@ -15,6 +20,166 @@ use crate::{
     domain::messages::{self, CreateMessageParams},
     errors::AppError,
 };
+
+struct PendingSuggestion {
+    bot_id: Uuid,
+    response: oneshot::Sender<Result<String, String>>,
+}
+
+static PENDING_SUGGESTIONS: LazyLock<Mutex<HashMap<Uuid, PendingSuggestion>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/** Claim a private result before task-claim evaluation handles its legacy envelope. */
+pub fn complete_suggestion_request(
+    bot_id: Uuid,
+    request_id: Uuid,
+    content: Option<&str>,
+    error: Option<&str>,
+) -> bool {
+    let Ok(mut pending) = PENDING_SUGGESTIONS.lock() else {
+        return false;
+    };
+    if pending
+        .get(&request_id)
+        .is_none_or(|request| request.bot_id != bot_id)
+    {
+        return false;
+    }
+    if let Some(request) = pending.remove(&request_id) {
+        let result = error.map(|e| Err(e.to_string())).unwrap_or_else(|| {
+            content
+                .map(str::to_string)
+                .ok_or_else(|| "Bot returned no suggestions".to_string())
+        });
+        let _ = request.response.send(result);
+    }
+    true
+}
+
+pub async fn request_suggestions(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, msg_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let user_id: Uuid = claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
+    let member: Option<String> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'",
+    ).bind(channel_id.to_string()).bind(user_id.to_string()).fetch_optional(&state.db).await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if member.is_none() {
+        return Err(AppError::Forbidden("not a channel member".into()));
+    }
+    let source = sqlx::query(
+        "SELECT m.sender_id, m.content,
+                EXISTS(SELECT 1 FROM channel_memberships cm
+                       WHERE cm.channel_id=m.channel_id AND cm.member_id=m.sender_id AND cm.member_type='bot') AS bot_is_member,
+                COALESCE((b.binding_config->'connector_control'->'capabilities'->>'suggested_questions')::boolean, FALSE) AS suggestions_supported
+         FROM messages m LEFT JOIN bot_accounts b ON b.bot_id=m.sender_id
+         WHERE m.msg_id=$1 AND m.channel_id=$2 AND m.sender_type='bot' AND m.is_partial=FALSE AND m.is_deleted=FALSE AND m.is_secret=FALSE",
+    ).bind(msg_id.to_string()).bind(channel_id.to_string()).fetch_optional(&state.db).await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .ok_or(AppError::NotFound)?;
+    let bot_id: Uuid = source
+        .try_get::<String, _>("sender_id")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .ok_or(AppError::NotFound)?;
+    if !source.try_get::<bool, _>("bot_is_member").unwrap_or(false) {
+        return Err(AppError::Forbidden(
+            "That bot is no longer in this channel".into(),
+        ));
+    }
+    if !source
+        .try_get::<bool, _>("suggestions_supported")
+        .unwrap_or(false)
+    {
+        return Err(AppError::BadRequest(
+            "This bot needs a newer connector to suggest questions".into(),
+        ));
+    }
+    if !state.bot_locator.is_online(bot_id).await {
+        return Err(AppError::BadRequest("That bot is offline".into()));
+    }
+    let source_text = source.try_get::<String, _>("content").unwrap_or_default();
+    let request_id = Uuid::new_v4();
+    let (send, receive) = oneshot::channel();
+    PENDING_SUGGESTIONS.lock().unwrap().insert(
+        request_id,
+        PendingSuggestion {
+            bot_id,
+            response: send,
+        },
+    );
+    let frame = serde_json::json!({
+        "type":"suggestion_request", "v":1, "request_id":request_id,
+        "channel_id":channel_id,
+        "provider_session_key":format!("cheers:suggestions:{channel_id}:{bot_id}:{request_id}"),
+        "source_text":source_text.chars().take(4000).collect::<String>(),
+    });
+    if !state.bot_locator.dispatch_task(bot_id, frame).await {
+        PENDING_SUGGESTIONS.lock().unwrap().remove(&request_id);
+        return Err(AppError::BadRequest(
+            "That bot could not receive the request".into(),
+        ));
+    }
+    let result = tokio::time::timeout(std::time::Duration::from_secs(90), receive).await;
+    PENDING_SUGGESTIONS.lock().unwrap().remove(&request_id);
+    let content = result
+        .map_err(|_| AppError::BadRequest("Suggestion request timed out".into()))?
+        .map_err(|_| AppError::BadRequest("Suggestion request ended unexpectedly".into()))?
+        .map_err(AppError::BadRequest)?;
+    if content.len() > 8192 {
+        return Err(AppError::BadRequest(
+            "Bot returned too much suggestion text".into(),
+        ));
+    }
+    let cleaned = content
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let raw: serde_json::Value = serde_json::from_str(cleaned)
+        .map_err(|_| AppError::BadRequest("Bot returned invalid suggestions".into()))?;
+    let suggestions =
+        crate::domain::suggestions::validate(&raw).map_err(|e| AppError::BadRequest(e.into()))?;
+    Ok(Json(serde_json::json!({ "suggestions": suggestions })))
+}
+
+#[cfg(test)]
+mod suggestion_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn only_the_requested_bot_can_complete_a_private_result() {
+        let owner = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        let (send, receive) = oneshot::channel();
+        PENDING_SUGGESTIONS.lock().unwrap().insert(
+            request_id,
+            PendingSuggestion {
+                bot_id: owner,
+                response: send,
+            },
+        );
+        assert!(!complete_suggestion_request(
+            Uuid::new_v4(),
+            request_id,
+            Some("[]"),
+            None
+        ));
+        assert!(complete_suggestion_request(
+            owner,
+            request_id,
+            Some("[]"),
+            None
+        ));
+        assert_eq!(receive.await.unwrap().unwrap(), "[]");
+    }
+}
 
 // ── POST /api/v1/channels/{channel_id}/messages ────────────────────────────
 

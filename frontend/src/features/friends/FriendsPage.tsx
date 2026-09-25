@@ -1,25 +1,26 @@
-import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   UserPlus,
   UserMinus,
   Check,
   X,
-  Fingerprint,
   Clock,
   Ban,
+  Users,
+  Search,
+  MessageSquare,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/avatar";
-import { ItemList, ItemRow, ItemSection } from "@/components/ui/item";
+import { ItemList, ItemRow, ItemSection, NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
+import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
-import { TabOption } from "@/components/ui/tab-option";
-import { isComposing } from "@/lib/ime";
+import { Badge } from "@/components/ui/badge";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
   listFriends,
@@ -27,7 +28,6 @@ import {
   cancelFriendRequest,
   listFriendRequests,
   acceptFriendRequest,
-  sendFriendRequest,
   searchUsers,
   blockUser,
   unblockUser,
@@ -37,12 +37,23 @@ import {
   type UserSearchResult,
   type BlockedUser,
 } from "@/api/friends";
+import { createDm } from "@/api/channels";
+import { useChatStore } from "@/stores/chatStore";
+import { UserProfileDialog } from "@/components/user/UserProfileDialog";
+import { cn } from "@/lib/cn";
 
 type Tab = "friends" | "requests" | "add" | "blocked";
 
+const TABS: Array<{ id: Tab; label: string; icon: typeof Users }> = [
+  { id: "friends", label: "Friends", icon: Users },
+  { id: "requests", label: "Requests", icon: Clock },
+  { id: "add", label: "Add", icon: UserPlus },
+  { id: "blocked", label: "Blocked", icon: Ban },
+];
+
 export default function FriendsPage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("friends");
+  const params = useParams();
   const [incomingCount, setIncomingCount] = useState(0);
 
   const refreshIncoming = useCallback(() => {
@@ -54,82 +65,87 @@ export default function FriendsPage() {
     refreshIncoming();
   }, [refreshIncoming]);
 
+  const requested = (params["*"] ?? "").split("/")[0];
+  const tab: Tab = TABS.some((t) => t.id === requested)
+    ? (requested as Tab)
+    : "friends";
+
   return (
-    <div className="h-full bg-zinc-950 text-content-primary flex flex-col">
+    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
       <RouteChromeHeader>
-        <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
           <IconButton
             label="Back to chat"
             onClick={() => navigate("/chat")}
-            title="Back to chat"
             controlSize="regular"
-            className="max-md:-ml-2"
+            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
           >
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </IconButton>
-          <h1 className="text-comfortable font-semibold">Friends</h1>
+          <Users className="h-4 w-4 text-accent-400" aria-hidden="true" />
+          <div>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">
+              Friends
+            </h1>
+            <p className="mt-1 hidden text-minimal text-content-muted sm:block">
+              Direct connections and member requests
+            </p>
+          </div>
         </header>
       </RouteChromeHeader>
 
-      <div className="flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto max-w-2xl p-4 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div
-            aria-label="Friend management"
-            className="flex gap-1 mb-4 border-b border-zinc-800 overflow-x-auto"
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
+        {/* Nav rail */}
+        <nav aria-label="Friends sections" className="sm:w-48 sm:shrink-0">
+          <ItemList
+            presentationLevel="minimal"
+            controlSize="regular"
+            className="flex gap-1 overflow-x-auto sm:flex-col"
           >
-            <TabBtn active={tab === "friends"} onClick={() => setTab("friends")}>
-              Friends
-            </TabBtn>
-            <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
-              Requests
-              {incomingCount > 0 && (
-                <UnreadBadge tone="mention" contentSize="regular" className="ml-2" title={`${incomingCount} incoming requests`} aria-label={`${incomingCount} incoming requests`}>
-                  {incomingCount}
-                </UnreadBadge>
-              )}
-            </TabBtn>
-            <TabBtn active={tab === "add"} onClick={() => setTab("add")}>
-              Add
-            </TabBtn>
-            <TabBtn active={tab === "blocked"} onClick={() => setTab("blocked")}>
-              Blocked
-            </TabBtn>
-          </div>
+            {TABS.map((item) => {
+              const Icon = item.icon;
+              const active = tab === item.id;
+              return (
+                <NavigationItem
+                  key={item.id}
+                  title={item.label}
+                  leading={<Icon className="h-4 w-4" aria-hidden="true" />}
+                  selected={active}
+                  criticalStatus={
+                    item.id === "requests" && incomingCount > 0 ? (
+                      <UnreadBadge tone="mention" contentSize="small">
+                        {incomingCount}
+                      </UnreadBadge>
+                    ) : undefined
+                  }
+                  onClick={() =>
+                    navigate(item.id === "friends" ? "/friends" : `/friends/${item.id}`)
+                  }
+                  className="shrink-0 max-sm:w-auto"
+                />
+              );
+            })}
+          </ItemList>
+        </nav>
 
+        {/* Active section */}
+        <main className="min-w-0 flex-1">
           {tab === "friends" && <FriendsTab />}
           {tab === "requests" && <RequestsTab onChange={refreshIncoming} />}
           {tab === "add" && <AddTab />}
           {tab === "blocked" && <BlockedTab />}
-        </div>
+        </main>
       </div>
     </div>
   );
 }
 
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <TabOption
-      selected={active}
-      aria-controls={`friends-panel-${String(children)}`}
-      onClick={onClick}
-      controlSize="regular"
-      label={children}
-      className="flex shrink-0 items-center whitespace-nowrap"
-    />
-  );
-}
-
 function FriendsTab() {
+  const navigate = useNavigate();
+  const selectChannel = useChatStore((s) => s.selectChannel);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inspectUser, setInspectUser] = useState<Friend | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -141,6 +157,16 @@ function FriendsTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function startChat(f: Friend) {
+    try {
+      const dm = await createDm({ target_user_id: f.friend_id });
+      selectChannel(dm.channel_id);
+      navigate("/chat");
+    } catch {
+      toast.error("Failed to start chat");
+    }
+  }
 
   async function remove(f: Friend) {
     try {
@@ -173,31 +199,58 @@ function FriendsTab() {
     return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
 
   return (
-    <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
-      {friends.map((f) => (
-        <Row
-          key={f.friendship_id}
-          name={f.display_name || f.username}
-          sub={`@${f.username}`}
-          id={f.friend_id}
-          avatar={f.avatar_url}
-        >
-          <IconBtn title="Block" onClick={() => block(f)} danger>
-            <Ban className="w-4 h-4" />
-          </IconBtn>
-          <IconBtn title="Remove friend" onClick={() => remove(f)} danger>
-            <UserMinus className="w-4 h-4" />
-          </IconBtn>
-        </Row>
-      ))}
-    </ItemList>
+    <>
+      <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
+        {friends.map((f) => (
+          <Row
+            key={f.friendship_id}
+            name={f.display_name || f.username}
+            sub={`@${f.username}`}
+            id={f.friend_id}
+            avatar={f.avatar_url}
+            message={f.bio}
+            isBot={f.is_bot}
+            onTitleClick={() => setInspectUser(f)}
+          >
+            <IconBtn title="Send message" onClick={() => startChat(f)} primary>
+              <MessageSquare className="w-4 h-4" />
+            </IconBtn>
+            <IconBtn title="Remove friend" onClick={() => remove(f)} danger>
+              <UserMinus className="w-4 h-4" />
+            </IconBtn>
+            <IconBtn title="Block" onClick={() => block(f)} danger>
+              <Ban className="w-4 h-4" />
+            </IconBtn>
+          </Row>
+        ))}
+      </ItemList>
+
+      {inspectUser && (
+        <UserProfileDialog
+          user={{
+            user_id: inspectUser.friend_id,
+            username: inspectUser.username,
+            display_name: inspectUser.display_name,
+            avatar_url: inspectUser.avatar_url,
+            bio: inspectUser.bio,
+            is_bot: inspectUser.is_bot,
+            relationship_status: "friend",
+            friendship_id: inspectUser.friendship_id,
+          }}
+          onClose={() => setInspectUser(null)}
+          onRelationshipChanged={load}
+        />
+      )}
+    </>
   );
 }
 
 function RequestsTab({ onChange }: { onChange: () => void }) {
+  const selectChannel = useChatStore((s) => s.selectChannel);
   const [incoming, setIncoming] = useState<FriendRequestItem[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inspectUser, setInspectUser] = useState<FriendRequestItem | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -218,10 +271,13 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
 
   async function accept(u: FriendRequestItem) {
     try {
-      await acceptFriendRequest(u.user_id);
-      setIncoming((p) => p.filter((x) => x.user_id !== u.user_id));
+      const res = await acceptFriendRequest(u.user_id, u.target_bot_id || undefined);
+      setIncoming((p) => p.filter((x) => x.friendship_id !== u.friendship_id));
       onChange();
       toast.success("Friend request accepted");
+      if (res.channel_id) {
+        selectChannel(res.channel_id);
+      }
     } catch {
       toast.error("Failed to accept");
     }
@@ -231,10 +287,10 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
     try {
       await cancelFriendRequest(u.friendship_id);
       if (incomingSide) {
-        setIncoming((p) => p.filter((x) => x.user_id !== u.user_id));
+        setIncoming((p) => p.filter((x) => x.friendship_id !== u.friendship_id));
         onChange();
       } else {
-        setOutgoing((p) => p.filter((x) => x.user_id !== u.user_id));
+        setOutgoing((p) => p.filter((x) => x.friendship_id !== u.friendship_id));
       }
       toast.success(incomingSide ? "Request declined" : "Request cancelled");
     } catch {
@@ -254,9 +310,15 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
             <Row
               key={u.friendship_id}
               name={u.display_name || u.username}
-              sub={`@${u.username}`}
+              sub={
+                u.target_bot_name
+                  ? `@${u.username} → 申请添加 Bot: ${u.target_bot_name}`
+                  : `@${u.username}`
+              }
               id={u.user_id}
               avatar={u.avatar_url}
+              message={u.message}
+              onTitleClick={() => setInspectUser(u)}
             >
               <IconBtn title="Accept" onClick={() => accept(u)} primary>
                 <Check className="w-4 h-4" />
@@ -277,6 +339,9 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
               sub={`@${u.username}`}
               id={u.user_id}
               avatar={u.avatar_url}
+              message={u.message}
+              isBot={u.is_bot}
+              onTitleClick={() => setInspectUser(u)}
             >
               <span className="text-compact text-content-muted flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
@@ -289,103 +354,204 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
           ))}
         </Section>
       )}
+
+      {inspectUser && (
+        <UserProfileDialog
+          user={{
+            user_id: inspectUser.user_id,
+            username: inspectUser.username,
+            display_name: inspectUser.display_name,
+            avatar_url: inspectUser.avatar_url,
+            is_bot: inspectUser.is_bot,
+            relationship_status:
+              inspectUser.direction === "incoming" ? "pending_incoming" : "pending_outgoing",
+            friendship_id: inspectUser.friendship_id,
+          }}
+          onClose={() => setInspectUser(null)}
+          onRelationshipChanged={() => {
+            load();
+            onChange();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// Adding a friend is BY EXACT USER ID only (no name/username search) — the directory
-// can't be browsed/enumerated. Paste an id → look it up → confirm → send the request.
 function AddTab() {
-  const [id, setId] = useState("");
-  // null = idle, "none" = looked up but no match, "error" = lookup failed,
-  // else the single matched user.
-  const [result, setResult] = useState<
-    UserSearchResult | null | "none" | "error"
-  >(null);
+  const navigate = useNavigate();
+  const selectChannel = useChatStore((s) => s.selectChannel);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<UserSearchResult[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState<Record<string, string>>({});
+  const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
 
-  async function lookup() {
-    const term = id.trim();
-    if (!term) return;
-    setBusy(true);
-    try {
-      const r = await searchUsers(term);
-      setResult(r[0] ?? "none");
-    } catch {
-      // A failed lookup must not masquerade as "no such user" — that would
-      // assert a false fact when the real cause is a network/server error.
-      setResult("error");
-    } finally {
+  // Debounced live search
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
       setBusy(false);
+      return;
+    }
+    setBusy(true);
+    const timer = setTimeout(() => {
+      searchUsers(q)
+        .then((res) => {
+          setResults(res);
+        })
+        .catch(() => {
+          toast.error("Failed to search users");
+          setResults([]);
+        })
+        .finally(() => {
+          setBusy(false);
+        });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  async function startChat(userId: string) {
+    try {
+      const dm = await createDm({ target_user_id: userId });
+      selectChannel(dm.channel_id);
+      navigate("/chat");
+    } catch {
+      toast.error("Failed to start chat");
     }
   }
 
-  async function add(u: UserSearchResult) {
+  async function handleAccept(u: UserSearchResult) {
     try {
-      const res = await sendFriendRequest(u.user_id);
-      setSent((s) => ({ ...s, [u.user_id]: res.status }));
-      toast.success(
-        res.status === "accepted" ? "You're now friends" : "Request sent"
+      const res = await acceptFriendRequest(u.user_id);
+      toast.success("Friend request accepted");
+      if (res.channel_id) {
+        selectChannel(res.channel_id);
+      }
+      setResults((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.user_id === u.user_id ? { ...x, relationship_status: "friend" } : x
+            )
+          : null
       );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to send request");
+    } catch {
+      toast.error("Failed to accept");
+    }
+  }
+
+  async function handleCancelRequest(u: UserSearchResult) {
+    if (!u.friendship_id) return;
+    try {
+      await cancelFriendRequest(u.friendship_id);
+      toast.success("Request cancelled");
+      setResults((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.user_id === u.user_id ? { ...x, relationship_status: "none" } : x
+            )
+          : null
+      );
+    } catch {
+      toast.error("Failed to cancel request");
     }
   }
 
   return (
     <div>
       <p className="text-compact text-content-muted mb-2 leading-reading">
-        Add a friend by their exact <span className="text-content-secondary">user ID</span>. Ask them
-        to copy it from <span className="text-content-secondary">Settings → Profile → User ID</span>.
+        Find people by <span className="text-content-secondary">username</span>,{" "}
+        <span className="text-content-secondary">display name</span>, or exact{" "}
+        <span className="text-content-secondary">user ID</span>.
       </p>
-      <div className="flex gap-2 mb-3">
+      <div className="mb-4">
         <InputWithLeadingIcon
-          leading={<Fingerprint />}
-          containerClassName="flex-1"
-          aria-label="User ID"
-          value={id}
-          onChange={(e) => {
-            setId(e.target.value);
-            setResult(null);
-          }}
-          onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
-          placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
+          leading={<Search className="h-4 w-4" />}
+          containerClassName="w-full"
+          aria-label="Search users"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search people..."
           controlSize="regular"
-          className="bg-zinc-900 font-code"
+          className="bg-zinc-900"
         />
-        <Button action="lookup" aria-label="Look up user ID" loading={busy} onClick={lookup} disabled={!id.trim()} />
       </div>
-      {result === null ? (
-        <Empty>Enter a user ID and press Look up.</Empty>
-      ) : result === "error" ? (
-        <div
-          role="alert"
-          className="text-regular text-danger-400 py-10 text-center"
-        >
-          Couldn&apos;t look up that ID — check your connection and try again.
-        </div>
-      ) : result === "none" ? (
-        <Empty>No user with that ID.</Empty>
-      ) : (
+
+      {busy && <SurfaceSpinner />}
+
+      {!busy && results === null && (
+        <Empty>Type a name or ID to search for people.</Empty>
+      )}
+
+      {!busy && results !== null && results.length === 0 && (
+        <Empty>No users found matching &quot;{query}&quot;.</Empty>
+      )}
+
+      {!busy && results !== null && results.length > 0 && (
         <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
-          <Row
-            name={result.display_name || result.username}
-            sub={`@${result.username}`}
-            id={result.user_id}
-            avatar={result.avatar_url}
-          >
-            {sent[result.user_id] === "accepted" ? (
-              <span className="text-compact text-success-400">Friends</span>
-            ) : sent[result.user_id] === "pending" ? (
-              <span className="text-compact text-content-muted">Requested</span>
-            ) : (
-              <IconBtn title="Add friend" onClick={() => add(result)} primary>
-                <UserPlus className="w-4 h-4" />
-              </IconBtn>
-            )}
-          </Row>
+          {results.map((u) => {
+            const status = u.relationship_status || "none";
+            return (
+              <Row
+                key={u.user_id}
+                name={u.display_name || u.username}
+                sub={`@${u.username}`}
+                id={u.user_id}
+                avatar={u.avatar_url}
+                message={u.bio}
+                isBot={u.is_bot}
+                onTitleClick={() => setSelectedUser(u)}
+              >
+                {status === "friend" ? (
+                  <>
+                    <span className="text-compact text-accent-400 font-medium">Friend</span>
+                    <IconBtn title="Send message" onClick={() => startChat(u.user_id)} primary>
+                      <MessageSquare className="w-4 h-4" />
+                    </IconBtn>
+                  </>
+                ) : status === "pending_outgoing" ? (
+                  <>
+                    <span className="text-compact text-content-muted flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      Pending
+                    </span>
+                    <IconBtn title="Cancel request" onClick={() => handleCancelRequest(u)} danger>
+                      <X className="w-4 h-4" />
+                    </IconBtn>
+                  </>
+                ) : status === "pending_incoming" ? (
+                  <>
+                    <IconBtn title="Accept request" onClick={() => handleAccept(u)} primary>
+                      <Check className="w-4 h-4" />
+                    </IconBtn>
+                    <IconBtn title="Decline request" onClick={() => handleCancelRequest(u)} danger>
+                      <X className="w-4 h-4" />
+                    </IconBtn>
+                  </>
+                ) : (
+                  <Button
+                    action="add"
+                    variant="primary"
+                    controlSize="compact"
+                    onClick={() => setSelectedUser(u)}
+                  />
+                )}
+              </Row>
+            );
+          })}
         </ItemList>
+      )}
+
+      {selectedUser && (
+        <UserProfileDialog
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+          onRelationshipChanged={() => {
+            if (query.trim()) {
+              searchUsers(query.trim()).then(setResults).catch(() => {});
+            }
+          }}
+        />
       )}
     </div>
   );
@@ -418,6 +584,7 @@ function BlockedTab() {
 
   if (loading) return <SurfaceSpinner />;
   if (!blocked.length) return <Empty>No blocked users.</Empty>;
+
   return (
     <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
       {blocked.map((u) => (
@@ -428,7 +595,8 @@ function BlockedTab() {
           id={u.user_id}
           avatar={u.avatar_url}
         >
-          <Button variant="secondary"
+          <Button
+            variant="secondary"
             action="enable"
             aria-label={`Unblock ${u.display_name || u.username}`}
             onClick={() => unblock(u)}
@@ -445,20 +613,57 @@ function Row({
   sub,
   id,
   avatar,
+  message,
+  isBot,
+  onTitleClick,
   children,
 }: {
   name: string;
   sub: string;
   id?: string;
   avatar?: string | null;
+  message?: string | null;
+  isBot?: boolean;
+  onTitleClick?: () => void;
   children: ReactNode;
 }) {
   return (
     <ItemRow
       kind="identity"
-      title={name}
+      title={
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "font-medium text-content-strong",
+              onTitleClick && "cursor-pointer hover:underline"
+            )}
+            onClick={onTitleClick}
+          >
+            {name}
+          </span>
+          {isBot && (
+            <Badge tone="neutral">
+              Bot
+            </Badge>
+          )}
+        </div>
+      }
       status={<span className="truncate text-compact text-content-muted">{sub}</span>}
-      leading={<Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />}
+      subtitle={
+        message ? (
+          <span className="block truncate text-compact text-content-secondary/90 italic">
+            &quot;{message}&quot;
+          </span>
+        ) : undefined
+      }
+      leading={
+        <div
+          className={cn(onTitleClick && "cursor-pointer")}
+          onClick={onTitleClick}
+        >
+          <Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />
+        </div>
+      }
       actions={<>{children}</>}
       className="gap-3 hover:bg-zinc-900/60"
     />
@@ -500,5 +705,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <div className="text-regular text-content-muted py-10 text-center">{children}</div>;
+  return (
+    <div className="text-regular text-content-muted py-10 text-center">
+      {children}
+    </div>
+  );
 }

@@ -1,0 +1,30 @@
+/* Header — the banner landmark, and the composition test for the whole kit. If
+   anything drifted in tiers 0-3, it shows up here first. */
+.ui-header {
+  display: flex; align-items: center; gap: var(--ui-space-3);
+  block-size: 52px; padding-inline: var(--ui-space-4);
+  background: var(--ui-bg-subtle); color: var(--ui-fg);
+}
+.ui-header__brand {
+  display: flex; align-items: center; gap: var(--ui-space-2);
+  font-family: var(--ui-font-display); font-size: var(--ui-text-lg);
+  font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong);
+  text-decoration: none; letter-spacing: var(--ui-tracking-tight);
+}
+.ui-header__nav { display: flex; align-items: center; gap: var(--ui-space-1); }
+.ui-header__spacer { flex: 1; }
+.ui-header__actions { display: flex; align-items: center; gap: var(--ui-space-2); }
+.ui-header__search { inline-size: min(320px, 40vw); }
+.ui-header--app { background: var(--ui-bg-rail); box-shadow: 0 1px 0 0 var(--ui-hairline); }
+.ui-header--sticky { position: sticky; inset-block-start: 0; z-index: var(--ui-z-sticky); }
+.ui-header--condensed { block-size: var(--ui-control-h-lg); box-shadow: 0 1px 0 0 var(--ui-hairline), var(--ui-shadow-button); }
+.ui-header__menu-button { display: none; }
+@media (max-width: 760px) {
+  .ui-header__nav, .ui-header__search { display: none; }
+  .ui-header__menu-button { display: inline-flex; }
+  .ui-header[data-state="mobile menu open"] .ui-header__nav {
+    display: flex; position: absolute; inset-block-start: 52px; inset-inline: 0;
+    flex-direction: column; align-items: stretch; padding: var(--ui-space-2);
+    background: var(--ui-bg-raised); box-shadow: var(--ui-shadow-2);
+  }
+}

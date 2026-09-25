@@ -50,3 +50,37 @@ export function SettingsCard({
     </div>
   );
 }
+
+/** A named region inside one settings surface. Directional hairlines separate
+ * related regions without turning every group into another card. */
+export function SettingsCardSection({
+  title,
+  description,
+  icon: Icon,
+  actions,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  actions?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn("border-t border-zinc-600/70 py-5 last:pb-0", className)}>
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-title">
+            {Icon && <Icon className="h-4 w-4 text-content-muted" aria-hidden="true" />}
+            {title}
+          </p>
+          {description && <div className="mt-1 text-caption">{description}</div>}
+        </div>
+        {actions && <div className="flex flex-shrink-0 items-center">{actions}</div>}
+      </div>
+      {children && <div className="mt-4">{children}</div>}
+    </section>
+  );
+}

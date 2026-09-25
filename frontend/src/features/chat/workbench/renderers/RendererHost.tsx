@@ -32,6 +32,8 @@ export function RendererHost({
   activeAnnotationId,
   onSelectAnnotation,
   onFailure,
+  inspectorActive,
+  onFormSubmit,
 }: {
   ctx: WorkbenchContext;
   path: string;
@@ -52,6 +54,8 @@ export function RendererHost({
   activeAnnotationId?: string | null;
   onSelectAnnotation?: (id: string) => void;
   onFailure?: (rendererId: string, reason: string) => void;
+  inspectorActive?: boolean;
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   if (renderer.source === "extension") {
     const extension = ctx.rendererExtensions.find((p) => p.extensionId === renderer.extensionId);
@@ -78,6 +82,9 @@ export function RendererHost({
         onOpen={ctx.openLocator}
         onCompose={ctx.composeMessage}
         onFailure={(reason) => onFailure?.(renderer.id, reason)}
+        onAnnotate={annotations?.onAnnotate}
+        onFormSubmit={onFormSubmit}
+        inspectorActive={inspectorActive}
         active={ctx.active}
       />
     );
@@ -98,6 +105,8 @@ export function RendererHost({
         activeAnnotationId={activeAnnotationId}
         onSelectAnnotation={onSelectAnnotation}
         openLocator={ctx.openLocator}
+        inspectorActive={inspectorActive}
+        onFormSubmit={onFormSubmit}
       />
     );
   }
@@ -111,6 +120,8 @@ export function RendererHost({
       channelId={ctx.channelId}
       reloadTick={ctx.filesTick}
       openLocator={ctx.openLocator}
+      inspectorActive={inspectorActive}
+      onFormSubmit={onFormSubmit}
     />
   );
 }

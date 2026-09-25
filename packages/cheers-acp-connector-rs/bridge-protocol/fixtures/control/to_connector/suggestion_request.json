@@ -1,0 +1,8 @@
+{
+  "type": "suggestion_request",
+  "v": 1,
+  "request_id": "11111111-2222-4333-8444-555555555555",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "provider_session_key": "cheers:suggestions:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:11111111-2222-4333-8444-555555555555",
+  "source_text": "I finished the report."
+}

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="auto">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -24,22 +24,6 @@
     --shadow: 0 1px 2px rgba(20,16,8,.04), 0 8px 24px rgba(20,16,8,.06);
     --radius: 10px;
     --maxw: 880px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root[data-theme="auto"] {
-      --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
-      --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
-      --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
-      --code-bg: #0a0c10; --code-ink: #e6e1d6;
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
-    --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
-    --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
-    --code-bg: #0a0c10; --code-ink: #e6e1d6;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
   }
 
   * { box-sizing: border-box; }
@@ -142,7 +126,7 @@
   .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
   .foot-links a { color: var(--ink-soft); }
 </style>
-<link rel="stylesheet" href="./editorial.css?v=20260811-2" />
+<link rel="stylesheet" href="./editorial.css?v=20260921-2" />
 </head>
 <body>
 
@@ -158,7 +142,6 @@
     </nav>
     <div class="nav-actions">
       <a class="icon-btn lang" href="./connector.zh-CN.html" hreflang="zh-CN" lang="zh-CN" title="切换到中文版">中文</a>
-      <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
       <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
     </div>
   </div>
@@ -381,21 +364,5 @@ cce-acp-connector restart --name claude</pre>
   </div>
 </footer>
 
-<script>
-  // Theme toggle: auto → light → dark, persisted (same key as index.html).
-  (function () {
-    var root = document.documentElement;
-    var saved = localStorage.getItem("cheers-theme");
-    if (saved) root.setAttribute("data-theme", saved);
-    document.getElementById("themeToggle").addEventListener("click", function () {
-      var order = ["auto", "light", "dark"];
-      var cur = root.getAttribute("data-theme") || "auto";
-      var next = order[(order.indexOf(cur) + 1) % order.length];
-      root.setAttribute("data-theme", next);
-      localStorage.setItem("cheers-theme", next);
-      this.title = "Theme: " + next + " (click to change)";
-    });
-  })();
-</script>
 </body>
 </html>

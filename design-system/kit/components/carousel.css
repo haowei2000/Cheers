@@ -1,0 +1,33 @@
+/* Carousel — CSS scroll-snap does most of the work, which keeps the swipe,
+   the momentum and the keyboard scrolling native. Buttons are named, and
+   anything that auto-plays gets a pause control. */
+.ui-carousel { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.ui-carousel__viewport {
+  display: flex; gap: var(--ui-space-3); overflow-x: auto;
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+  border-radius: var(--ui-radius-md);
+}
+.ui-carousel__viewport::-webkit-scrollbar { display: none; }
+.ui-carousel__slide {
+  flex: 0 0 100%; scroll-snap-align: start; min-inline-size: 0;
+  border-radius: var(--ui-radius-md); overflow: hidden;
+}
+.ui-carousel--multi .ui-carousel__slide { flex-basis: calc((100% - var(--ui-space-3) * 2) / 3); }
+.ui-carousel__controls { display: flex; align-items: center; gap: var(--ui-space-2); }
+.ui-carousel__dots { display: flex; gap: var(--ui-space-1); margin-inline: auto; }
+.ui-carousel__dot {
+  all: unset; inline-size: 6px; block-size: 6px; cursor: pointer;
+  border-radius: var(--ui-radius-full); background: var(--ui-border);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease), inline-size var(--ui-duration-base) var(--ui-ease);
+}
+.ui-carousel__dot[aria-current="true"] { background: var(--ui-fg-strong); inline-size: 16px; }
+.ui-carousel__dot:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-carousel__thumbs { display: flex; gap: var(--ui-space-2); overflow-x: auto; }
+.ui-carousel__thumb {
+  all: unset; cursor: pointer; inline-size: 72px; flex: none;
+  border-radius: var(--ui-radius-sm); overflow: hidden; opacity: 0.55;
+  transition: opacity var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-carousel__thumb[aria-current="true"] { opacity: 1; box-shadow: 0 0 0 2px var(--ui-border-focus); }
+.ui-carousel__thumb:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+@media (max-width: 640px) { .ui-carousel--multi .ui-carousel__slide { flex-basis: 80%; } }

@@ -23,6 +23,7 @@ import {
 import { registerLens, type LensProps } from "./registry";
 import { sourcePathKey } from "../annotations";
 import { CanvasLens } from "../canvas/CanvasLens";
+import { ArtifactLens } from "./ArtifactLens";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
@@ -853,6 +854,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
                 onClick={() => setSelectedId((cur) => (cur === node.id ? null : node.id))}
                 onContextMenu={(event) => requestContextPick?.(event, {
                   label: node.label,
+                  locator: node.loc || undefined,
                   sourcePath: ["nodes", node.id],
                 })}
                 controlSize="comfortable" className={`absolute flex items-center gap-2 rounded-sm text-left elevation-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedNode ? "border-selected-indicator": focused ? "border-indigo-500/70 bg-panel" : "border-control-hover bg-panel hover:border-zinc-500"}`}
@@ -907,3 +909,5 @@ registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (
 // (the host must not hide its affordances) but it also never needs the Save button,
 // because a structured op is written the moment the gesture ends. See CanvasLens.
 registerLens({ id: "canvas", contextPick: "granular", savesItself: true, render: (p) => <CanvasLens {...p} /> });
+registerLens({ id: "html", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="html" /> });
+registerLens({ id: "react", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="react" /> });

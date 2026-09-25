@@ -1,0 +1,43 @@
+/* Text input — the same height as a button at the same tier, or forms look
+   homemade. The boundary is an inset ring: a resting border would shift layout
+   the moment focus or error changed it. */
+.ui-input {
+  inline-size: 100%; display: block;
+  block-size: var(--ui-control-h-md);
+  padding-inline: var(--ui-control-px-md);
+  border: 0; border-radius: var(--ui-radius-sm);
+  corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  font-family: var(--ui-font-sans); font-size: var(--ui-text-md);
+  line-height: var(--ui-leading-md);
+  box-shadow: var(--ui-ring-inset);
+  transition: box-shadow var(--ui-duration-base) var(--ui-ease),
+              background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-input::placeholder { color: var(--ui-fg-subtle); }
+.ui-input:hover:not(:disabled) { background: var(--ui-bg-control); }
+.ui-input:focus, .ui-input:focus-visible { outline: none; box-shadow: var(--ui-focus-ring-inset); }
+.ui-input:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-input[readonly] { background: transparent; color: var(--ui-fg-muted); }
+.ui-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--ui-danger); }
+.ui-input[aria-invalid="true"]:focus { box-shadow: inset 0 0 0 2px var(--ui-danger); }
+.ui-input--sm { block-size: var(--ui-control-h-sm); padding-inline: var(--ui-control-px-sm); font-size: var(--ui-text-sm); }
+.ui-input--lg { block-size: var(--ui-control-h-lg); }
+/* Borderless variant: inline editing inside a row, where a field boundary would
+   be visual noise until the user actually commits to editing. */
+.ui-input--borderless { background: transparent; box-shadow: none; padding-inline: var(--ui-space-2); }
+.ui-input--borderless:focus { background: var(--ui-bg-inset); box-shadow: var(--ui-focus-ring-inset); }
+
+/* Affix wrapper — the icon sits in the field, the field keeps its own height. */
+.ui-field-affix { position: relative; display: block; }
+.ui-field-affix > .ui-icon,
+.ui-field-affix > .ui-field-affix__end {
+  position: absolute; inset-block: 0; margin-block: auto;
+  block-size: var(--ui-icon-md); color: var(--ui-fg-subtle); pointer-events: none;
+}
+.ui-field-affix > .ui-icon { inset-inline-start: var(--ui-space-3); }
+.ui-field-affix__end { inset-inline-end: var(--ui-space-3); display: flex; align-items: center; font-size: var(--ui-text-sm); }
+.ui-field-affix--start .ui-input { padding-inline-start: calc(var(--ui-space-3) * 2 + var(--ui-icon-md)); }
+.ui-field-affix--end .ui-input { padding-inline-end: calc(var(--ui-space-3) * 2 + var(--ui-icon-md)); }
+/* Field = label + control + hint, stacked on one rhythm. */
+.ui-field { display: flex; flex-direction: column; gap: var(--ui-space-2); }

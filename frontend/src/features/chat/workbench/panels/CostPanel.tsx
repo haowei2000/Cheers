@@ -11,6 +11,7 @@
 // panel; wire it where turns are admitted, not in the dashboard.
 import { Coins, Gauge } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { type PanelContext } from "@/features/chat/panels/registry";
 import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel } from "../useMembersIndex";
@@ -50,75 +51,62 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: PanelContext }) {
   // bot_id → member, so the Bot column reads as avatar + name, not a raw uuid.
   const members = useMembersIndex(ctx.channelId);
   const bots = data.bots ?? [];
-  if (bots.length === 0) {
-    return (
-      <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
-        <Gauge className="w-4 h-4" />
-        No usage reported yet
-      </div>
-    );
-  }
+  const columns: DataTableColumn<BotUsage>[] = [
+    {
+      id: "bot",
+      header: "Bot",
+      sortValue: (bot) => memberLabel(members, bot.bot_id),
+      className: "max-w-[130px]",
+      cell: (bot) => (
+        <span title={bot.bot_id}>
+          <span className="flex items-center gap-2 min-w-0">
+            <Avatar
+              name={memberLabel(members, bot.bot_id)}
+              src={members.get(bot.bot_id)?.avatar_url ?? undefined}
+              id={bot.bot_id}
+              size="small"
+            />
+            <span className="truncate">{memberLabel(members, bot.bot_id)}</span>
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: "session",
+      header: "Session",
+      sortValue: (bot) => bot.session_id,
+      className: "max-w-[90px] truncate font-code text-content-muted",
+      cell: (bot) => <span title={bot.session_id ?? undefined}>{bot.session_id ? bot.session_id.slice(0, 8) : "—"}</span>,
+    },
+    { id: "input", header: "Input", align: "right", sortValue: (bot) => bot.input_tokens, className: "tabular-nums text-content-muted", cell: (bot) => fmtInt(bot.input_tokens) },
+    { id: "output", header: "Output", align: "right", sortValue: (bot) => bot.output_tokens, className: "tabular-nums text-content-muted", cell: (bot) => fmtInt(bot.output_tokens) },
+    { id: "total", header: "Total", align: "right", sortValue: (bot) => bot.total_tokens, className: "tabular-nums text-content-secondary", cell: (bot) => fmtInt(bot.total_tokens) },
+    {
+      id: "context",
+      header: "Context",
+      align: "right",
+      sortValue: (bot) => bot.context_window,
+      className: "tabular-nums",
+      cell: (bot) => (
+        <span className="inline-flex items-center gap-1 text-content-muted">
+          <Gauge className="w-3.5 h-3.5 text-content-muted" />
+          {fmtInt(bot.context_window)}
+        </span>
+      ),
+    },
+    { id: "cost", header: "Cost", align: "right", sortValue: (bot) => bot.cost_usd, className: "tabular-nums text-success-400", cell: (bot) => fmtUsd(bot.cost_usd) },
+  ];
   return (
-    <table className="w-full text-compact">
-      <thead>
-        <tr className="text-content-muted border-b border-control">
-          <th className="text-left font-normal px-3 py-2">Bot</th>
-          <th className="text-left font-normal px-2 py-2">Session</th>
-          <th className="text-right font-normal px-2 py-2">Input</th>
-          <th className="text-right font-normal px-2 py-2">Output</th>
-          <th className="text-right font-normal px-2 py-2">Total</th>
-          <th className="text-right font-normal px-2 py-2">Context</th>
-          <th className="text-right font-normal px-3 py-2">Cost</th>
-        </tr>
-      </thead>
-      <tbody>
-        {bots.map((b) => (
-          <tr
-            key={`${b.bot_id}:${b.session_id ?? "—"}`}
-            className="border-b border-panel hover:bg-control/40 text-content-secondary"
-          >
-            {/* Bot reads as avatar + name (full id in the tooltip); session_id is an
-                opaque technical id: short mono form + tooltip. */}
-            <td className="px-3 py-2 text-content-secondary max-w-[130px]" title={b.bot_id}>
-              <span className="flex items-center gap-2 min-w-0">
-                <Avatar
-                  name={memberLabel(members, b.bot_id)}
-                  src={members.get(b.bot_id)?.avatar_url ?? undefined}
-                  id={b.bot_id}
-                  size="small"
-                />
-                <span className="truncate">{memberLabel(members, b.bot_id)}</span>
-              </span>
-            </td>
-            <td
-              className="px-2 py-2 font-code text-content-muted truncate max-w-[90px]"
-              title={b.session_id ?? undefined}
-            >
-              {b.session_id ? b.session_id.slice(0, 8) : "—"}
-            </td>
-            <td className="px-2 py-2 text-right tabular-nums text-content-muted">
-              {fmtInt(b.input_tokens)}
-            </td>
-            <td className="px-2 py-2 text-right tabular-nums text-content-muted">
-              {fmtInt(b.output_tokens)}
-            </td>
-            <td className="px-2 py-2 text-right tabular-nums text-content-secondary">
-              {fmtInt(b.total_tokens)}
-            </td>
-            {/* context window = latest snapshot; an at-a-glance pressure gauge */}
-            <td className="px-2 py-2 text-right tabular-nums">
-              <span className="inline-flex items-center gap-1 text-content-muted">
-                <Gauge className="w-3.5 h-3.5 text-content-muted" />
-                {fmtInt(b.context_window)}
-              </span>
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-success-400">
-              {fmtUsd(b.cost_usd)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataTable
+      label="Usage by bot and session"
+      columns={columns}
+      rows={bots}
+      getRowKey={(bot) => `${bot.bot_id}:${bot.session_id ?? "—"}`}
+      initialSort={{ columnId: "total", direction: "descending" }}
+      emptyIcon={Gauge}
+      emptyTitle="No usage reported yet"
+      emptyHint="Usage appears after an agent reports its first token update."
+    />
   );
 }
 

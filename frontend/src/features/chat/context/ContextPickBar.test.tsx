@@ -16,13 +16,16 @@ describe("composer context controls", () => {
     expect(markup).toBe("");
   });
 
-  it("renders Add context as a standalone regular toolbar control", () => {
+  it("renders Add context as an accessible regular icon control", () => {
     const markup = renderToStaticMarkup(<ContextPickerButton channelId={CHANNEL_ID} />);
 
-    expect(markup).toContain("Add context");
+    expect(markup).toContain('aria-label="Add context"');
+    expect(markup).toContain('title="Add Cheers resources');
     expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('data-control-size="regular"');
+    expect(markup).toContain('data-button-content="icon"');
+    expect(markup).not.toContain('data-button-slot="label"');
   });
 
   it("keeps suggested context in a separate row without the picker action", () => {

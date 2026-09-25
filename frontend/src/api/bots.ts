@@ -629,3 +629,26 @@ export async function listBotConnectionEvents(
   );
   return res.events;
 }
+
+// ── Social Permissions / Policy ──────────────────────────────────────────────
+
+export interface BotSocialPolicy {
+  bot_id: string;
+  visibility: "public" | "friends" | "private";
+  friend_policy: "open" | "require_approval" | "disabled";
+  invite_policy: "open" | "require_approval";
+}
+
+export async function getBotSocialPolicy(botId: string): Promise<BotSocialPolicy> {
+  return apiJson<BotSocialPolicy>(`/bots/${botId}/social-policy`);
+}
+
+export async function updateBotSocialPolicy(
+  botId: string,
+  policy: Partial<Omit<BotSocialPolicy, "bot_id">>
+): Promise<BotSocialPolicy> {
+  return apiJson<BotSocialPolicy>(`/bots/${botId}/social-policy`, {
+    method: "PUT",
+    body: JSON.stringify(policy),
+  });
+}

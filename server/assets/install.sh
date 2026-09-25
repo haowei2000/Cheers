@@ -31,6 +31,7 @@
 set -euo pipefail
 
 API_BASE="${CHEERS_API_BASE:-__CHEERS_API_BASE__}"
+MIN_CONNECTOR_VERSION="${CHEERS_MIN_CONNECTOR_VERSION:-__CHEERS_MIN_CONNECTOR_VERSION__}"
 CONFIG_DIR="${CHEERS_CONFIG_DIR:-$HOME/.cheers}"
 
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -43,6 +44,46 @@ _PLACEHOLDER='__CHEERS''_API_BASE__'
 if [ -z "$API_BASE" ] || [ "$API_BASE" = "$_PLACEHOLDER" ]; then
   die "CHEERS_API_BASE is not set. Re-run with CHEERS_API_BASE=https://<host>/api/v1"
 fi
+# Same split-literal trick for the config-schema floor the gateway injects.
+# Unlike the API base this one is advisory: running this file straight out of a
+# checkout (no substitution) skips the version guards instead of refusing.
+if [ "$MIN_CONNECTOR_VERSION" = '__CHEERS''_MIN_CONNECTOR_VERSION__' ]; then
+  MIN_CONNECTOR_VERSION=""
+fi
+
+# Mirror of the gateway's connector_version_below_floor: true only when $1 is a
+# semver triple strictly older than the floor. A non-triple is NOT "below" here
+# — callers treat an unknown version separately, because connectors released
+# before `--version` existed cannot report one and are not necessarily old.
+version_below_floor() {
+  [ -n "$MIN_CONNECTOR_VERSION" ] || return 1
+  printf '%s\n%s\n' "$1" "$MIN_CONNECTOR_VERSION" | python3 -c '
+import sys
+def triple(s):
+    parts = s.strip().lstrip("v").split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return None
+lines = sys.stdin.read().splitlines()
+have = triple(lines[0]) if len(lines) > 0 else None
+floor = triple(lines[1]) if len(lines) > 1 else None
+sys.exit(0 if have and floor and have < floor else 1)
+'
+}
+
+# Best-effort version probe; empty when the binary predates the `--version`
+# flag, which the caller must not confuse with "too old". The trailing `|| true`
+# is load-bearing: a binary that rejects --version makes grep exit non-zero, and
+# under `set -e` + pipefail that would abort the script at the caller's
+# HAVE_VER="$(...)" assignment rather than yielding the empty "unknown".
+connector_version() {
+  "$1" --version </dev/null 2>/dev/null \
+    | head -1 | tr -d '\r' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
+}
+
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required (used to parse JSON safely)"
 
@@ -133,8 +174,28 @@ fi
 
 # ── 4. locate (or download) the connector binary ──────────────────────────────
 BIN="${CHEERS_CONNECTOR_BIN:-}"
-if [ -z "$BIN" ]; then
+BIN_FROM_ENV=0
+if [ -n "$BIN" ]; then
+  BIN_FROM_ENV=1
+else
   BIN="$(command -v cce-acp-connector 2>/dev/null || true)"
+fi
+# Schema/binary skew guard, host side (#539). The download proxy already
+# refuses below-floor releases, but a connector that was ALREADY on this box
+# never goes through it — and it still has to parse the config written below,
+# whose [bridge] table is deny_unknown_fields. An older binary rejects the whole
+# file, so the keep-alive service crash-loops with no obvious cause.
+if [ -n "$BIN" ] && [ -n "$MIN_CONNECTOR_VERSION" ]; then
+  HAVE_VER="$(connector_version "$BIN")"
+  if [ -z "$HAVE_VER" ]; then
+    info "connector at $BIN predates --version; cannot verify it meets the $MIN_CONNECTOR_VERSION config floor"
+  elif version_below_floor "$HAVE_VER"; then
+    if [ "$BIN_FROM_ENV" = "1" ]; then
+      die "CHEERS_CONNECTOR_BIN points at connector $HAVE_VER, older than this gateway's config-schema floor $MIN_CONNECTOR_VERSION — it cannot parse the config this installer writes. Upgrade it, or unset CHEERS_CONNECTOR_BIN to download a current binary."
+    fi
+    info "connector $HAVE_VER on PATH is below this gateway's floor $MIN_CONNECTOR_VERSION — downloading a current binary instead"
+    BIN=""
+  fi
 fi
 # Not on PATH → fetch a prebuilt binary. SAME-ORIGIN first: this host provably
 # reaches the gateway (install.sh came from it) while GitHub may be firewalled;
@@ -188,6 +249,12 @@ for r in rels:
         [ -n "$VER" ] || VER="latest"
       fi
       if [ "$VER" != "latest" ]; then
+        # Mirror the download proxy's floor check (#539): this path reaches
+        # GitHub directly, so a pin below the floor would otherwise sidestep
+        # the server-side guard entirely.
+        if version_below_floor "$VER"; then
+          die "CHEERS_CONNECTOR_VERSION=$VER is below this gateway's config-schema floor $MIN_CONNECTOR_VERSION — that binary cannot parse the config this installer writes"
+        fi
         GH_URL="https://github.com/$REPO/releases/download/connector-v$VER/$ASSET"
         info "downloading connector binary ($os/$arch) from $GH_URL …"
         if curl -fsSL --max-time 120 "$GH_URL" -o "$DEST" && [ -s "$DEST" ]; then

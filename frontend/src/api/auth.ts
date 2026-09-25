@@ -314,14 +314,17 @@ export async function twoFactorStatus(): Promise<TwoFactorStatus> {
   return apiJson("/auth/2fa/status");
 }
 
-export async function setEmailTwoFactor(enabled: boolean): Promise<{
+export async function setEmailTwoFactor(
+  enabled: boolean,
+  code?: string
+): Promise<{
   enabled: boolean;
   methods: TwoFactorMethods;
   backup_codes: string[];
 }> {
   return apiJson(
     "/auth/2fa/methods/email",
-    { method: "POST", body: JSON.stringify({ enabled }) },
+    { method: "POST", body: JSON.stringify({ enabled, code }) },
     {
       recentAuth: "auto",
       actionClass: enabled ? "email_factor_enrollment" : "email_factor_removal",
@@ -329,19 +332,33 @@ export async function setEmailTwoFactor(enabled: boolean): Promise<{
   );
 }
 
-export async function setPasswordTwoFactor(enabled: boolean): Promise<{
+export async function setPasswordTwoFactor(
+  enabled: boolean,
+  password?: string
+): Promise<{
   enabled: boolean;
   methods: TwoFactorMethods;
   backup_codes: string[];
 }> {
   return apiJson(
     "/auth/2fa/methods/password",
-    { method: "POST", body: JSON.stringify({ enabled }) },
+    { method: "POST", body: JSON.stringify({ enabled, password }) },
     {
       recentAuth: "auto",
       actionClass: enabled ? "password_factor_enrollment" : "password_factor_removal",
     }
   );
+}
+
+export async function sendEmail2FaEnrollCode(): Promise<{
+  ok: boolean;
+  sent: boolean;
+  email_hint: string;
+}> {
+  return apiJson("/auth/2fa/methods/email/send-code", {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 /** Devices that skip the second step at sign-in for up to 30 days. */
@@ -570,6 +587,37 @@ export async function changePassword(input: {
   two_factor_code?: string;
 }): Promise<{ ok: boolean; access_token: string }> {
   return apiJson("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Set an initial password for accounts without one (e.g. OAuth-only). */
+export async function setPassword(input: {
+  new_password: string;
+}): Promise<{ ok: boolean; access_token: string }> {
+  return apiJson("/auth/set-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Request a verification code to set or change account email. */
+export async function requestEmailUpdateCode(
+  email: string
+): Promise<{ ok: boolean; sent?: boolean }> {
+  return apiJson("/auth/email/request-code", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Confirm email update or initial email link with verification code. */
+export async function updateEmail(input: {
+  email: string;
+  code: string;
+}): Promise<{ ok: boolean; email: string }> {
+  return apiJson("/auth/email/update", {
     method: "POST",
     body: JSON.stringify(input),
   });

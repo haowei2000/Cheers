@@ -1,0 +1,17 @@
+/* Rating — read-only collapses to one text alternative; interactive is a real
+   radio group, because a row of divs cannot be operated with a keyboard. */
+.ui-rating { display: inline-flex; align-items: center; gap: var(--ui-space-2); }
+.ui-rating__stars { display: inline-flex; gap: 2px; color: var(--ui-fg-subtle); }
+.ui-rating__star { inline-size: var(--ui-icon-md); block-size: var(--ui-icon-md); fill: none; stroke: currentColor; stroke-width: var(--ui-icon-stroke); stroke-linejoin: round; }
+.ui-rating__star[data-state="on"] { color: var(--ui-warning); fill: currentColor; }
+.ui-rating__star[data-state="half"] { color: var(--ui-warning); }
+.ui-rating__count { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums; }
+.ui-rating--sm .ui-rating__star { inline-size: var(--ui-icon-sm); block-size: var(--ui-icon-sm); }
+.ui-rating--interactive { gap: 0; }
+.ui-rating--interactive input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.ui-rating--interactive label { cursor: pointer; padding: 2px; border-radius: var(--ui-radius-sm); color: var(--ui-fg-subtle); }
+.ui-rating--interactive input:checked ~ label { color: var(--ui-fg-subtle); }
+.ui-rating--interactive label:hover, .ui-rating--interactive label:hover ~ label { color: var(--ui-warning); }
+.ui-rating--interactive input:focus-visible + label { box-shadow: var(--ui-focus-ring); }
+.ui-rating--interactive[data-value] label { color: var(--ui-warning); }
+.ui-rating[data-state="disabled"] { opacity: 0.5; pointer-events: none; }

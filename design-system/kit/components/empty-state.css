@@ -1,0 +1,22 @@
+/* Empty state — eighty percent writing. A real heading so screen-reader users
+   find it, and one clear way out. */
+.ui-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--ui-space-3); padding: var(--ui-space-7) var(--ui-space-4);
+  text-align: center;
+}
+.ui-empty__glyph {
+  display: grid; place-items: center;
+  inline-size: 44px; block-size: 44px; border-radius: var(--ui-radius-full);
+  background: var(--ui-bg-inset); color: var(--ui-fg-subtle);
+}
+.ui-empty__title { margin: 0; font-size: var(--ui-text-lg); font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong); }
+.ui-empty__body { margin: 0; max-inline-size: 46ch; font-size: var(--ui-text-md); color: var(--ui-fg-muted); line-height: var(--ui-leading-md); }
+.ui-empty__actions { display: flex; gap: var(--ui-space-2); margin-block-start: var(--ui-space-1); }
+.ui-empty--inline {
+  flex-direction: row; text-align: start; padding: var(--ui-space-4);
+  border-radius: var(--ui-radius-md); background: var(--ui-bg-inset);
+}
+.ui-empty--inline .ui-empty__glyph { inline-size: var(--ui-control-h-md); block-size: var(--ui-control-h-md); }
+.ui-empty[data-tone="error"] .ui-empty__glyph { background: var(--ui-danger-bg); color: var(--ui-danger); }
+.ui-empty[data-tone="warning"] .ui-empty__glyph { background: var(--ui-warning-bg); color: var(--ui-warning); }

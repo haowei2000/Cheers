@@ -1,0 +1,34 @@
+/* Colour picker — the typed hex field is the accessible path; swatches are
+   buttons with colour names, not bare divs that only respond to a click. */
+.ui-colorpicker { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.ui-colorpicker__trigger {
+  display: inline-flex; align-items: center; gap: var(--ui-space-2);
+  block-size: var(--ui-control-h-md); padding-inline: var(--ui-space-2) var(--ui-space-3);
+  border: 0; border-radius: var(--ui-radius-sm); cursor: pointer;
+  background: var(--ui-bg-inset); box-shadow: var(--ui-ring-inset);
+  color: var(--ui-fg); font-family: var(--ui-font-mono); font-size: var(--ui-text-sm);
+}
+.ui-colorpicker__trigger:hover { background: var(--ui-bg-control); }
+.ui-colorpicker__trigger:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-colorpicker__chip {
+  inline-size: 20px; block-size: 20px; flex: none;
+  border-radius: var(--ui-radius-sm); box-shadow: var(--ui-ring-inset);
+}
+.ui-colorpicker__swatches { display: grid; grid-template-columns: repeat(8, 24px); gap: var(--ui-space-1); }
+.ui-colorpicker__swatch {
+  all: unset; inline-size: 24px; block-size: 24px; cursor: pointer;
+  border-radius: var(--ui-radius-sm); box-shadow: var(--ui-ring-inset);
+  transition: transform var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-colorpicker__swatch:hover { transform: scale(1.08); }
+.ui-colorpicker__swatch:focus-visible { outline: none; box-shadow: var(--ui-focus-ring); }
+.ui-colorpicker__swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ui-bg), 0 0 0 4px var(--ui-border-focus); }
+.ui-colorpicker__area {
+  block-size: 120px; border-radius: var(--ui-radius-sm);
+  background: linear-gradient(to top, currentColor, transparent),
+              linear-gradient(to right, var(--ui-bg-raised), transparent);
+  box-shadow: var(--ui-ring-inset); position: relative;
+}
+.ui-colorpicker__row { display: flex; align-items: center; gap: var(--ui-space-2); }
+.ui-colorpicker__hex { inline-size: 100px; font-family: var(--ui-font-mono); text-transform: uppercase; }
+.ui-colorpicker__native { inline-size: 36px; block-size: 36px; padding: 0; border: 0; background: none; cursor: pointer; }

@@ -1,10 +1,19 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { PatchOp } from "../patchOps";
+import type { ContextItem } from "@/features/chat/context/contextPick";
+import type { ContextAction } from "@/components/ui/context-actions";
 
 export interface LensContextTarget {
   label: string;
+  /** Direct resource locator URI (e.g. cheers:desk/src/main.rs or cheers:plan). */
+  locator?: string;
+  /** Pre-constructed ContextItem if already resolved by the lens. */
+  contextItem?: ContextItem;
+  /** Fallback: YAML/JSON AST path for line resolution. */
   sourcePath?: ReadonlyArray<string | number>;
   sourceText?: string;
+  /** Custom contextual actions provided by the lens element. */
+  extraActions?: ContextAction[];
 }
 
 // A Lens is a generic, reusable renderer: (data, config) -> editable UI.
@@ -29,6 +38,10 @@ export interface LensProps {
   requestContextPick?: (event: MouseEvent<Element>, target: LensContextTarget) => void;
   /** Navigate the user's view to a `cheers:` locator (e.g. opening a referenced file in the Workbench). */
   openLocator?: (uri: string) => void;
+  /** Active state for Design Mode / DOM Inspector */
+  inspectorActive?: boolean;
+  /** Callback for interactive form submissions inside the lens */
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }
 
 export interface Lens {

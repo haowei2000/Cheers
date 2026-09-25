@@ -1,0 +1,32 @@
+/* File — a row in a register. Type and size belong in the link text, not in a
+   tooltip, because that is what tells someone whether to click. */
+.ui-file {
+  display: flex; align-items: center; gap: var(--ui-space-3);
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+.ui-file:hover { background: var(--ui-bg-hover); }
+.ui-file:focus-within { box-shadow: var(--ui-focus-ring); }
+.ui-file__glyph {
+  flex: none; display: grid; place-items: center;
+  inline-size: var(--ui-control-h-md); block-size: var(--ui-control-h-md);
+  border-radius: var(--ui-radius-sm); background: var(--ui-bg-control);
+  color: var(--ui-fg-subtle); overflow: hidden;
+}
+.ui-file__glyph img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.ui-file__body { min-inline-size: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ui-file__name {
+  font-size: var(--ui-text-md); color: var(--ui-fg-strong);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-file__meta { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums; }
+.ui-file--card {
+  flex-direction: column; align-items: stretch; inline-size: 180px;
+  padding: var(--ui-space-3); background: var(--ui-bg-raised); box-shadow: var(--ui-shadow-1);
+}
+.ui-file--card .ui-file__glyph { inline-size: 100%; block-size: 96px; }
+.ui-file[data-state="error"] { background: var(--ui-danger-bg); }
+.ui-file[data-state="error"] .ui-file__meta { color: var(--ui-danger); }
+.ui-file[data-state="uploading"] .ui-file__name { color: var(--ui-fg-muted); }

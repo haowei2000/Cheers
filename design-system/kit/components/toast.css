@@ -1,0 +1,35 @@
+/* Toast — an alert that leaves. It inherits alert's colours and icons; only
+   placement, motion and stacking are new. Anything the reader must act on gets
+   a non-toast path too, because a toast will be missed. */
+.ui-toast-region {
+  position: fixed; inset-block-end: var(--ui-space-4); inset-inline-end: var(--ui-space-4);
+  z-index: var(--ui-z-toast); display: flex; flex-direction: column-reverse;
+  gap: var(--ui-space-2); max-inline-size: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.ui-toast {
+  pointer-events: auto;
+  display: flex; align-items: flex-start; gap: var(--ui-space-3);
+  padding: var(--ui-space-3); border-radius: var(--ui-radius-md);
+  corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-raised); color: var(--ui-fg);
+  font-size: var(--ui-text-md); box-shadow: var(--ui-shadow-2);
+}
+.ui-toast__icon { flex: none; color: var(--ui-fg-subtle); margin-block-start: 1px; }
+.ui-toast__body { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.ui-toast__title { font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong); }
+.ui-toast__actions { display: flex; gap: var(--ui-space-2); margin-block-start: var(--ui-space-2); }
+.ui-toast--success .ui-toast__icon { color: var(--ui-success); }
+.ui-toast--warning .ui-toast__icon { color: var(--ui-warning); }
+.ui-toast--danger  .ui-toast__icon { color: var(--ui-danger); }
+.ui-toast--info    .ui-toast__icon { color: var(--ui-info); }
+/* The bar shows the auto-dismiss clock; hovering the toast pauses it. */
+.ui-toast__timer { block-size: 2px; border-radius: var(--ui-radius-full); background: var(--ui-border); animation: ui-toast-timer 6s linear forwards; }
+.ui-toast:hover .ui-toast__timer, .ui-toast:focus-within .ui-toast__timer { animation-play-state: paused; }
+@keyframes ui-toast-timer { to { inline-size: 0; } }
+.ui-toast[data-state="exiting"] { opacity: 0; translate: 0 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-toast { transition: opacity var(--ui-duration-base) var(--ui-ease), translate var(--ui-duration-base) var(--ui-ease); }
+  @starting-style { .ui-toast { opacity: 0; translate: 0 8px; } }
+}
+@media (max-width: 640px) { .ui-toast-region { inset-inline: var(--ui-space-3); max-inline-size: none; } }

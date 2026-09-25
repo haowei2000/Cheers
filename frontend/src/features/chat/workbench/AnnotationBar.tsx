@@ -205,7 +205,7 @@ export function AnnotationListContent({
   };
 
   return (
-    <div className="w-96 overflow-hidden rounded-sm bg-panel text-content-primary">
+    <div className="w-96 max-w-full text-content-primary">
       {/* One band of chrome. The panel was captioned "Annotations" and given a count,
           directly under the control you opened it from and directly above the list it
           counts — both said what the screen already showed. What is left is the mark,
@@ -243,6 +243,15 @@ export function AnnotationListContent({
             accessibleLabel="Add note"
             controlSize="compact"
             onClick={() => setIsComposing(true)}
+          />
+        )}
+        {onClose && (
+          <ActionButton
+            action="close"
+            context="windowChrome"
+            accessibleLabel="Close annotations"
+            controlSize="compact"
+            onClick={onClose}
           />
         )}
       </div>
@@ -480,7 +489,7 @@ export function AnnotationsButton({
         </span>
       </IconButton>
       {open && (
-        <PopoverPanel placement="down" align="end" className="p-0 ring-1 ring-zinc-700/80">
+        <PopoverPanel placement="down" align="end" className="w-96 max-w-[calc(100vw-2rem)] overflow-hidden p-0">
           <AnnotationListContent
             notes={notes}
             allNotes={allNotes}

@@ -1,6 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Captions, Download, Eye, FileText, Loader2, Paperclip } from "lucide-react";
+import { Captions, Download, Eye, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiFetch } from "@/api/client";
 import { transcribeFile } from "@/api/files";
@@ -203,7 +204,7 @@ export function FileTile({ file, channelId }: { file: FileInfo; channelId?: stri
       ...(channelId ? [{
         id: "context",
         label: "Add file to context",
-        icon: <Paperclip className="h-4 w-4" />,
+        icon: <AddContextIcon className="h-4 w-4" />,
         group: "secondary" as const,
         run: () => addContext(channelId, {
           id: `file:${file.file_id}`,

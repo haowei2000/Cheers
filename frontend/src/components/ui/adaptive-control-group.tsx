@@ -14,6 +14,7 @@ import { useControlSize, type ControlSize } from "./control-size";
 import { DropdownSelect } from "./dropdown-select";
 import { MenuOption } from "./menu-option";
 import { PopoverPanel, usePopoverDismiss } from "./popover";
+import { Badge } from "./badge";
 
 export type AdaptiveControlPresentation = "iconText" | "text" | "icon" | "collapsed";
 
@@ -51,11 +52,7 @@ export function chooseAdaptiveControlPresentation(
 }
 
 function ControlBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="min-w-4 rounded-sm bg-zinc-700 px-1 text-center text-minimal tabular-nums text-content-secondary">
-      {children}
-    </span>
-  );
+  return <Badge className="min-w-4 justify-center tabular-nums">{children}</Badge>;
 }
 
 function AdaptiveItemControl({

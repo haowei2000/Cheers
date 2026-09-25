@@ -591,6 +591,18 @@ pub enum ControlInbound {
         #[serde(default)]
         activity: Vec<Value>,
     },
+    /// Private model turn for a user-requested question set. The connector
+    /// returns the result through the existing silent evaluation envelope;
+    /// the gateway correlates request_id before claim handling.
+    #[serde(rename = "suggestion_request")]
+    SuggestionRequest {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        channel_id: String,
+        provider_session_key: String,
+        source_text: String,
+    },
     #[serde(rename = "channel_joined")]
     ChannelJoined {
         channel: ChannelInfo,
@@ -974,6 +986,16 @@ pub enum DataOutbound {
         #[serde(default = "default_bridge_protocol_version")]
         v: u32,
         evaluation_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    #[serde(rename = "suggestion_result")]
+    SuggestionResult {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

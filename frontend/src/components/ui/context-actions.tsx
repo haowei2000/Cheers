@@ -82,6 +82,30 @@ export function quoteSelectedText(text: string): string {
     .join("\n");
 }
 
+export function isPointInSelection(
+  selection: Selection | null,
+  x: number,
+  y: number,
+): boolean {
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+  const text = selection.toString();
+  if (!text.trim()) return false;
+  try {
+    const range = selection.getRangeAt(0);
+    const rects = range.getClientRects();
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (!r) continue;
+      if (x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function selectionInSurface(
   surface: HTMLElement,
   selection: Selection | null = window.getSelection(),
@@ -356,6 +380,9 @@ export function useContextSurface({
   return {
     onContextMenu(event: ReactMouseEvent<HTMLElement>) {
       if (disabled || preservesNativeContextMenu(event.target)) return;
+      // Preserve native context menu when right-clicking directly on selected text,
+      // allowing standard copy/search actions.
+      if (isPointInSelection(window.getSelection(), event.clientX, event.clientY)) return;
       const surface = surfaceRef.current;
       if (!surface) return;
       const selection = selectionInSurface(surface);
@@ -367,7 +394,7 @@ export function useContextSurface({
       event.stopPropagation();
       open({
         actions: next,
-        anchor: selection?.rect ?? pointRect(event.clientX, event.clientY),
+        anchor: pointRect(event.clientX, event.clientY),
         // A right click is always a context menu. Selection toolbars are reserved
         // for the immediate left-button selection gesture in `onMouseUp`.
         source: "pointer",

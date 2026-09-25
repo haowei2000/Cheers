@@ -1,7 +1,8 @@
 import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
-import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { MessageSquarePlus, Paperclip, Trash2 } from "lucide-react";
+import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
+import { rangedFileContextItem, workbenchFileContextItem, locatorToContextItem, useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
+import { Copy, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
@@ -26,6 +27,8 @@ export function LensView({
   activeAnnotationId,
   onSelectAnnotation,
   openLocator,
+  inspectorActive,
+  onFormSubmit,
 }: {
   session: FileSession;
   lensId: string;
@@ -45,6 +48,8 @@ export function LensView({
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
   standalone?: boolean;
   openLocator?: (uri: string) => void;
+  inspectorActive?: boolean;
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   const lens = getLens(lensId);
   const { open } = useContextActions();
@@ -70,6 +75,15 @@ export function LensView({
       : target.sourcePath
         ? sourcePathLineRange(parsedText, target.sourcePath)
         : null;
+    const fallbackFileItem: ContextItem | null = path
+      ? {
+          ...workbenchFileContextItem(path),
+          label: target.label ? `${target.label} (${path.split("/").pop() || path})` : (path.split("/").pop() || path),
+        }
+      : null;
+    const resolvedItem: ContextItem | null = target.contextItem
+      ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
+      ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : fallbackFileItem);
     event.preventDefault();
     event.stopPropagation();
     const existing = annotations ? notesOnTarget(annotations.doc, path, target) : [];
@@ -80,20 +94,31 @@ export function LensView({
       actions: [
         {
           id: "add-context",
-          label: range ? `Add ${target.label} to context` : "Source row unavailable",
-          icon: <Paperclip className="h-4 w-4" />,
-          disabled: !range,
+          label: resolvedItem ? `Add to context` : "Source row unavailable",
+          icon: <AddContextIcon className="h-4 w-4" />,
+          disabled: !resolvedItem,
           run: () => {
-            if (!range) return;
-            const item = rangedFileContextItem(path, range.start, range.end);
-            addContext(channelId, { ...item, label: target.label });
-            toast.success(`Added ${target.label} (lines ${range.start}-${range.end}) to context`);
+            if (!resolvedItem) return;
+            addContext(channelId, resolvedItem);
+            const lineDetail = range ? ` (lines ${range.start}-${range.end})` : "";
+            toast.success(`Added ${target.label}${lineDetail} to context`);
           },
         },
+        ...(target.locator || path ? [{
+          id: "copy-locator",
+          label: `Copy URI`,
+          icon: <Copy className="h-4 w-4" />,
+          run: () => {
+            const uri = target.locator ?? `cheers:desk/${path}`;
+            void navigator.clipboard.writeText(uri);
+            toast.success(`Copied ${uri}`);
+          },
+        }] : []),
+        ...(target.extraActions ?? []),
         ...(annotations ? [{
           id: "annotate",
-          label: `Annotate ${target.label}`,
-          icon: <MessageSquarePlus className="h-4 w-4" />,
+          label: `Annotate`,
+          icon: <AnnotationIcon className="h-4 w-4" />,
           // The click point travels with the target: the composer opens on the row you
           // right-clicked, not in a chrome slot somewhere else in the panel.
           run: () => annotations.onAnnotate(target, { x: event.clientX, y: event.clientY }),
@@ -122,7 +147,17 @@ export function LensView({
     <div className="flex flex-col h-full text-compact">
       <div ref={lensContainerRef} className="relative flex-1 min-h-0 overflow-hidden">
         {lens ? (
-          lens.render({ data, config, onChange: session.setData, onOps, readOnly: !writable, requestContextPick, openLocator })
+          lens.render({
+            data,
+            config,
+            onChange: session.setData,
+            onOps,
+            readOnly: !writable,
+            requestContextPick,
+            openLocator,
+            inspectorActive,
+            onFormSubmit,
+          })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
         )}
@@ -163,6 +198,8 @@ export function LensPanel({
   channelId,
   reloadTick,
   openLocator,
+  inspectorActive,
+  onFormSubmit,
 }: {
   fs: FsClient;
   path: string;
@@ -171,6 +208,8 @@ export function LensPanel({
   channelId: string;
   reloadTick?: number;
   openLocator?: (uri: string) => void;
+  inspectorActive?: boolean;
+  onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   const session = useFileSession(fs, path);
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
@@ -184,5 +223,16 @@ export function LensPanel({
     void reload(true);
   }, [reloadTick, reload]);
 
-  return <LensView session={session} lensId={lensId} config={config} channelId={channelId} standalone openLocator={openLocator} />;
+  return (
+    <LensView
+      session={session}
+      lensId={lensId}
+      config={config}
+      channelId={channelId}
+      standalone
+      openLocator={openLocator}
+      inspectorActive={inspectorActive}
+      onFormSubmit={onFormSubmit}
+    />
+  );
 }

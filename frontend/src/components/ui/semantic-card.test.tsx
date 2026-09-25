@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MetricCard } from "./metric-card";
-import { SettingsCard, SettingsSection } from "./settings-card";
+import { SettingsCard, SettingsCardSection, SettingsSection } from "./settings-card";
 
 describe("semantic cards", () => {
   it("composes a settings section from one shared surface", () => {
@@ -25,5 +25,19 @@ describe("semantic cards", () => {
 
     expect(markup).toContain("text-warning-300");
     expect(markup).toContain("text-section-label");
+  });
+
+  it("centralizes nested settings section anatomy", () => {
+    const markup = renderToStaticMarkup(
+      <SettingsCard title="Account">
+        <SettingsCardSection title="Passkeys" description="Use your device lock.">
+          <span>Passkey list</span>
+        </SettingsCardSection>
+      </SettingsCard>,
+    );
+
+    expect(markup).toContain("Passkeys");
+    expect(markup).toContain("Use your device lock.");
+    expect(markup).toContain("border-t border-zinc-600/70");
   });
 });

@@ -1,0 +1,22 @@
+/* Textarea — the field recipe, minus the fixed height. */
+.ui-textarea {
+  inline-size: 100%; display: block; min-block-size: calc(var(--ui-control-h-md) * 2);
+  padding: var(--ui-space-2) var(--ui-control-px-md);
+  border: 0; border-radius: var(--ui-radius-sm); corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  font-family: var(--ui-font-sans); font-size: var(--ui-text-md); line-height: var(--ui-leading-md);
+  box-shadow: var(--ui-ring-inset); resize: vertical;
+  transition: box-shadow var(--ui-duration-base) var(--ui-ease);
+}
+.ui-textarea::placeholder { color: var(--ui-fg-subtle); }
+.ui-textarea:focus { outline: none; box-shadow: var(--ui-focus-ring-inset); }
+.ui-textarea:disabled { opacity: 0.5; resize: none; }
+.ui-textarea[readonly] { background: transparent; color: var(--ui-fg-muted); resize: none; }
+.ui-textarea[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--ui-danger); }
+.ui-textarea--fixed { resize: none; }
+.ui-textarea--autogrow { resize: none; field-sizing: content; max-block-size: 40vh; }
+.ui-textarea-count {
+  display: flex; justify-content: flex-end;
+  font-size: var(--ui-text-xs); color: var(--ui-fg-subtle); font-variant-numeric: tabular-nums;
+}
+.ui-textarea-count[data-state="over"] { color: var(--ui-danger); }

@@ -10,8 +10,61 @@ use crate::{
 
 use super::{
     authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, Principal,
-    ResourceResult,
+    PrincipalType, ResourceResult,
 };
+
+pub async fn handle_suggestions_write(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> ResourceResult {
+    if principal.principal_type != PrincipalType::Bot {
+        return Err(super::permission_denied(
+            "only a bot can suggest questions on its reply",
+        ));
+    }
+    let channel_id: Uuid = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let msg_id: Uuid = params
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "msg_id required"))?;
+    authorize_channel_write(db, principal, channel_id).await?;
+    let questions_json = params
+        .get("questions_json")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if questions_json.len() > 8192 {
+        return Err(super::resource_error(
+            "INVALID_PARAMS",
+            "questions_json is too long",
+        ));
+    }
+    let cleaned = questions_json
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let raw: Value = serde_json::from_str(cleaned)
+        .map_err(|_| super::resource_error("INVALID_PARAMS", "questions_json must be JSON"))?;
+    let suggestions = crate::domain::suggestions::validate(&raw)
+        .map_err(|e| super::resource_error("INVALID_PARAMS", e))?;
+    let content_data: Option<Value> = sqlx::query_scalar(
+        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('suggested_questions', $1::jsonb)
+         WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4 AND is_deleted = FALSE
+         RETURNING content_data",
+    )
+    .bind(serde_json::to_value(suggestions).unwrap_or(Value::Null))
+    .bind(msg_id.to_string()).bind(channel_id.to_string()).bind(principal.principal_id.to_string())
+    .fetch_optional(db).await.map_err(super::db_err("messages.suggestions.write"))?;
+    let content_data = content_data.ok_or_else(|| super::not_found("own bot reply"))?;
+    Ok(serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data}))
+}
 
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params

@@ -87,6 +87,7 @@ export function PanelWorkspace({
     openPanels[0]?.id ?? "viewboard",
   );
   const [showWork, setShowWork] = useState(openPanels.length > 0);
+  const [expanded, setExpanded] = useState(false);
   const [floats, setFloatsState] = useState<Partial<Record<SpawnKind, Geometry>>>(
     {},
   );
@@ -183,6 +184,7 @@ export function PanelWorkspace({
       setFloats({});
     }
     setShowWork(channelPanels.length > 0);
+    setExpanded(false);
     setStack([]);
     setDragging(false);
     previousOpen.current = [];
@@ -214,6 +216,9 @@ export function PanelWorkspace({
       setShowWork(true);
     }
   }, [activationRequest]);
+  useEffect(() => {
+    if (!layout.sideBySide || !hasDock) setExpanded(false);
+  }, [hasDock, layout.sideBySide]);
   const showMessages = useCallback(() => {
     setShowWork(false);
     requestAnimationFrame(() => {
@@ -438,6 +443,8 @@ export function PanelWorkspace({
     return {
       floating,
       canFloat: layout.sideBySide,
+      expanded,
+      canExpand: layout.sideBySide && !floating,
       toFront: () =>
         setStack((current) =>
           current.at(-1) === id
@@ -491,6 +498,12 @@ export function PanelWorkspace({
         }
         setFloats((current) => ({ ...current, [id]: initialGeometry() }));
         remember(requestedWidth, split);
+      },
+      toggleExpanded: () => {
+        if (floating) return;
+        setActive(id);
+        setShowWork(true);
+        setExpanded((current) => !current);
       },
       dragProps: {
         style: { touchAction: "none", cursor: "grab" },
@@ -647,6 +660,7 @@ export function PanelWorkspace({
     };
   }, [
     dock,
+    expanded,
     floats,
     hasDock,
     initialGeometry,
@@ -713,12 +727,12 @@ export function PanelWorkspace({
             className="flex min-h-0 min-w-0 flex-1 flex-col"
             style={{
               display:
-                !layout.sideBySide && hasDock && showWork ? "none" : undefined,
+                expanded || (!layout.sideBySide && hasDock && showWork) ? "none" : undefined,
             }}
           >
             {children}
           </div>
-          {layout.sideBySide && hasDock && (
+          {layout.sideBySide && hasDock && !expanded && (
             <div
               role="separator"
               aria-label="Resize workspace"
@@ -768,10 +782,16 @@ export function PanelWorkspace({
           )}
           <aside
             data-workspace-dock=""
-            className="flex min-h-0 shrink-0 flex-col border-l border-control/80 bg-panel"
+            data-workspace-expanded={expanded || undefined}
+            className={cn(
+              "flex min-h-0 shrink-0 flex-col bg-panel",
+              !expanded && "border-l border-control/80",
+            )}
             style={{
               width: hasDock
-                ? layout.sideBySide
+                ? expanded
+                  ? "100%"
+                  : layout.sideBySide
                   ? layout.panelWidth
                   : "100%"
                 : 0,

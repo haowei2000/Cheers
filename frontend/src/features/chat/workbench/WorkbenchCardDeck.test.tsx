@@ -40,6 +40,8 @@ describe("WorkbenchCardDeck", () => {
     expect(markup).toContain('title="Unsaved changes"');
     expect(markup).toContain('aria-label="Added to context"');
     expect(markup).toContain("2 notes");
+    expect(markup).toContain("bg-canvas");
+    expect(markup).not.toContain("bg-panel");
   });
 
   it("renders locked state badge and keeps card header free of action buttons", () => {
@@ -79,5 +81,24 @@ describe("WorkbenchCardDeck", () => {
     );
 
     expect(markup).toContain("No tabs in this collection");
+  });
+
+  it("renders maximized active card with full fill and hides inactive deck cards", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchCardDeck
+        tabs={sampleTabs}
+        selectedPath="src/main.rs"
+        onSelectTab={() => {}}
+        renderActiveCardContent={(path) => (
+          <div data-testid="active-editor">Active editor for {path}</div>
+        )}
+        isMaximized={true}
+      />,
+    );
+
+    expect(markup).toContain("Active editor for src/main.rs");
+    expect(markup).toContain("h-full w-full");
+    // Inactive card preview should not be rendered in maximized mode
+    expect(markup).not.toContain("This is a document overview...");
   });
 });

@@ -1,6 +1,7 @@
 import type { FsClient, SendResourceReq } from "./fsClient";
 import type { RendererExtension } from "./sandbox/rendererExtension";
 import type { ChannelProfile } from "@/api/channelProfiles";
+import type { PresenceFocus } from "../hooks/useChatRealtime";
 
 // The shared context handed to scene navigation, the Raw file browser, and renderer
 // hosts. Paths remain the storage contract; scene items are the default navigation.
@@ -43,4 +44,10 @@ export interface WorkbenchContext {
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the tree
    *  and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;
+  /** Send presence focus (which bot/path is currently open in Workbench). */
+  sendPresenceFocus?: (chanId: string, focus: { bot_id: string; path?: string | null } | null) => void;
+  /** Presence focus list for the channel, tracking who is viewing which path. */
+  workspaceFocus?: PresenceFocus[];
+  currentUserId?: string;
+  memberNames?: Record<string, string> | ReadonlyMap<string, string>;
 }

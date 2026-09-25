@@ -33,12 +33,15 @@ import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { ChoiceGroup } from "@/components/ui/choice-button";
 import { ThemeSelector } from "@/components/ui/theme-selector";
+import { Badge } from "@/components/ui/badge";
+import { Combobox } from "@/components/ui/combobox";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
-import { SettingsCard } from "@/components/ui/settings-card";
+import { SettingsCard, SettingsCardSection } from "@/components/ui/settings-card";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
 import type { TraceEvent } from "@/types";
 
@@ -90,6 +93,7 @@ const traceGalleryEvents: TraceEvent[] = [
 ];
 
 const iconLabels: Record<EditorialIconName, string> = {
+  addContext: "Add context",
   annotation: "Annotation",
   correspondence: "Correspondence",
   reply: "Reply",
@@ -113,6 +117,16 @@ const iconLabels: Record<EditorialIconName, string> = {
 
 /** Development/visual-test gallery. It is intentionally not exposed as a product route. */
 export function ItemGallery() {
+  const [comboboxValue, setComboboxValue] = useState<string | null>("ada");
+  const tableRows = [
+    { id: "gateway", service: "Gateway", state: "Healthy", latency: 42 },
+    { id: "connector", service: "Connector", state: "Attention", latency: 128 },
+  ];
+  const tableColumns: DataTableColumn<(typeof tableRows)[number]>[] = [
+    { id: "service", header: "Service", cell: (row) => row.service, sortValue: (row) => row.service },
+    { id: "state", header: "State", cell: (row) => <Badge tone={row.state === "Healthy" ? "success" : "warning"} indicator>{row.state}</Badge>, sortValue: (row) => row.state },
+    { id: "latency", header: "Latency", align: "right", cell: (row) => `${row.latency} ms`, sortValue: (row) => row.latency },
+  ];
   return (
     <main className="h-full overflow-y-auto bg-zinc-950 px-4 py-3 text-content-primary sm:px-5">
       <header className="mb-3 border-y-4 border-double border-zinc-500 py-2">
@@ -314,11 +328,48 @@ export function ItemGallery() {
         <div className="grid gap-3 lg:grid-cols-2">
           <SettingsCard title="Color theme" description="Shared settings anatomy keeps titles, descriptions, actions, and content aligned.">
             <ThemeSelector showStatus={false} />
+            <SettingsCardSection title="Account security" description="Nested settings regions share one directional-divider rhythm.">
+              <ItemList presentationLevel="medium" controlSize="regular">
+                <OperationsItem title="Two-step verification" status={<Badge tone="success" indicator>On</Badge>} />
+              </ItemList>
+            </SettingsCardSection>
           </SettingsCard>
           <div className="grid grid-cols-2 gap-2">
             <MetricCard label="Online" value={4} tone="success" />
             <MetricCard label="Waiting" value={2} tone="warning" />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="structured-control-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="structured-control-register" className="mb-2 text-section-label">Badge · Combobox · Data table</h2>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-3 bg-zinc-900 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge>Neutral</Badge>
+              <Badge tone="success" indicator>Healthy</Badge>
+              <Badge tone="warning" indicator>Attention</Badge>
+              <Badge tone="danger" indicator>Failed</Badge>
+              <Badge tone="info">Information</Badge>
+            </div>
+            <Combobox
+              ariaLabel="Choose an engineer"
+              value={comboboxValue}
+              onValueChange={setComboboxValue}
+              options={[
+                { value: "ada", label: "Ada Lovelace", searchText: "analytical engine" },
+                { value: "grace", label: "Grace Hopper", searchText: "compiler" },
+                { value: "margaret", label: "Margaret Hamilton", searchText: "apollo" },
+              ]}
+            />
+          </div>
+          <DataTable
+            label="Service health"
+            columns={tableColumns}
+            rows={tableRows}
+            getRowKey={(row) => row.id}
+            initialSort={{ columnId: "latency", direction: "descending" }}
+          />
         </div>
       </section>
 
@@ -535,7 +586,7 @@ export function ItemGallery() {
             Editorial Icon Register
           </h2>
           <span className="font-utility text-minimal font-medium uppercase tracking-overline text-content-muted">
-            24 grid · 1.75 stroke · issue 02
+            14 / 16 / 20px · 24 grid · 1.75 stroke
           </span>
         </div>
         <div className="grid grid-cols-2 border-l border-t border-zinc-700 sm:grid-cols-4 lg:grid-cols-8">
@@ -545,7 +596,11 @@ export function ItemGallery() {
               className="m-0 min-h-24 border-b border-r border-zinc-700 px-2 py-3"
             >
               <div className="mb-3 flex items-start justify-between text-content-secondary">
-                <EditorialIcon name={name} title={iconLabels[name]} contentSize="large" />
+                <div className="flex items-center gap-2" aria-label={`${iconLabels[name]} size variants`}>
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, small`} contentSize="small" />
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, regular`} contentSize="regular" />
+                  <EditorialIcon name={name} title={`${iconLabels[name]}, large`} contentSize="large" />
+                </div>
                 <span className="font-utility text-minimal tabular-nums text-content-muted">
                   {String(index + 1).padStart(2, "0")}
                 </span>

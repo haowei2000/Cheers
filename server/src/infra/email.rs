@@ -54,6 +54,32 @@ pub async fn send_login_2fa_code(config: &Config, to_email: &str, code: &str) {
     .await;
 }
 
+/// Deliver a one-time email verification code to confirm an email update or initial email link.
+pub async fn send_email_verification_code(config: &Config, to_email: &str, code: &str) {
+    deliver(
+        config,
+        to_email,
+        "Your Cheers email verification code",
+        "Use this code to verify your Cheers email address:",
+        code,
+        "email verification",
+    )
+    .await;
+}
+
+/// Deliver a one-time code to enroll email as a two-factor authentication method.
+pub async fn send_enroll_2fa_code(config: &Config, to_email: &str, code: &str) {
+    deliver(
+        config,
+        to_email,
+        "Your Cheers two-factor verification code",
+        "Use this code to turn on email verification for two-step sign-in:",
+        code,
+        "enroll 2fa",
+    )
+    .await;
+}
+
 /// Send the code to `to_email`, preferring Brevo and falling back to log delivery so
 /// the flow still works in dev (or if the provider is briefly unreachable). `kind`
 /// is a short label for the logs (e.g. `registration`).

@@ -1,0 +1,11 @@
+/* Icon — sized by the control tier it sits in, never by itself.
+   Lucide geometry: 24 viewBox, 2px stroke, round caps. Colour is inherited. */
+.ui-icon {
+  inline-size: var(--ui-icon-md); block-size: var(--ui-icon-md);
+  flex: none; fill: none; stroke: currentColor;
+  stroke-width: var(--ui-icon-stroke);
+  stroke-linecap: round; stroke-linejoin: round;
+  vertical-align: -0.15em;
+}
+.ui-icon--sm { inline-size: var(--ui-icon-sm); block-size: var(--ui-icon-sm); }
+.ui-icon--lg { inline-size: var(--ui-icon-lg); block-size: var(--ui-icon-lg); }

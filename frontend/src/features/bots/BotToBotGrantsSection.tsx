@@ -18,9 +18,12 @@ import {
 } from "@/components/ui/collection-manager";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { Field } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Combobox } from "@/components/ui/combobox";
 
 export function BotToBotGrantsSection({ botId }: { botId: string }) {
   const [data, setData] = useState<BotGrants | null>(null);
@@ -140,11 +143,22 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
         </Select>
       </Field>
       <Field label="Bot">
-        <Select controlSize="regular" value={subjectId} disabled={editorMode === "edit"} onChange={(event) => setSubjectId(event.target.value)}>
-          <option value="">Choose a bot…</option>
-          <option value="*">∗ any bot</option>
-          {data.subjects.map((subject) => <option key={subject.bot_id} value={subject.bot_id}>{subject.label}</option>)}
-        </Select>
+        <Combobox
+          ariaLabel="Choose a bot"
+          placeholder="Search bots…"
+          controlSize="regular"
+          value={subjectId}
+          disabled={editorMode === "edit"}
+          options={[
+            { value: "*", label: "Any bot", searchText: "all wildcard" },
+            ...data.subjects.map((subject) => ({
+              value: subject.bot_id,
+              label: subject.label,
+              searchText: subject.bot_id,
+            })),
+          ]}
+          onValueChange={(value) => setSubjectId(value ?? "")}
+        />
       </Field>
       <Field label="Decision">
         <Select controlSize="regular" value={decision} onChange={(event) => setDecision(event.target.value as "allow" | "deny")}>
@@ -167,55 +181,64 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
   );
 
   return (
-    <div className="space-y-2">
-      <p className="font-utility text-compact text-content-muted">
-        Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default.
-      </p>
-      <CollectionManager
-        label="Bot-to-bot grants"
-        count={data.grants.length}
-        query={query}
-        onQueryChange={setQuery}
-        searchPlaceholder="Search bot grants"
-        addLabel="Add rule"
-        onAdd={beginAdd}
-        addDisabled={mode.kind !== "browse"}
-        searchDisabled={mode.kind !== "browse"}
-        presentationLevel="medium"
-        controlSize="regular"
-      >
-        {mode.kind === "add" && editor("add")}
-        {visibleGrants.map((rule) => {
-          const id = `${rule.grant}:${rule.channel_id}:${rule.subject_id}`;
-          if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
-          if (mode.kind === "delete" && mode.id === id) return (
-            <CollectionDeleteItem
-              key={id}
-              title={`Remove ${kindLabel[rule.grant] ?? rule.grant} rule?`}
-              description="The shared-channel default will apply again."
-              onCancel={reset}
-              onConfirm={() => void remove(rule)}
-              deleting={busy}
-            />
-          );
-          return (
-            <OperationsItem
-              key={id}
-              leading={<ShieldCheck className={controlIconClasses.regular} />}
-              title={`${kindLabel[rule.grant] ?? rule.grant} → ${rule.subject_id === "*" ? "any bot" : subjectLabel[rule.subject_id] || `${rule.subject_id.slice(0, 8)}…`}`}
-              status={<span className={rule.decision === "allow" ? "font-utility text-compact uppercase text-success-300" : "font-utility text-compact uppercase text-danger-300"}>{rule.decision}</span>}
-              criticalStatus={rule.expired ? <span className="font-utility text-compact uppercase text-warning-400">Expired</span> : undefined}
-              actions={(
-                <>
-                  <IconButton label="Edit bot grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>
-                  <IconButton label="Remove bot grant" tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id })}><Trash2 className={controlIconClasses.compact} /></IconButton>
-                </>
-              )}
-            />
-          );
-        })}
-        {visibleGrants.length === 0 && mode.kind !== "add" && <CollectionEmptyItem query={query} onClear={() => setQuery("")} />}
-      </CollectionManager>
-    </div>
+    <CollectionManager
+      label="Bot-to-bot grants"
+      tip="Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default."
+      count={data.grants.length}
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search bot grants"
+      addLabel="Add rule"
+      onAdd={beginAdd}
+      addDisabled={mode.kind !== "browse"}
+      searchDisabled={mode.kind !== "browse"}
+      presentationLevel="medium"
+      controlSize="regular"
+    >
+      {mode.kind === "add" && editor("add")}
+      {visibleGrants.map((rule) => {
+        const id = `${rule.grant}:${rule.channel_id}:${rule.subject_id}`;
+        if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
+        if (mode.kind === "delete" && mode.id === id) return (
+          <CollectionDeleteItem
+            key={id}
+            title={`Remove ${kindLabel[rule.grant] ?? rule.grant} rule?`}
+            description="The shared-channel default will apply again."
+            onCancel={reset}
+            onConfirm={() => void remove(rule)}
+            deleting={busy}
+          />
+        );
+        return (
+          <OperationsItem
+            key={id}
+            leading={<ShieldCheck className={controlIconClasses.regular} />}
+            title={`${kindLabel[rule.grant] ?? rule.grant} → ${rule.subject_id === "*" ? "any bot" : subjectLabel[rule.subject_id] || `${rule.subject_id.slice(0, 8)}…`}`}
+            status={<Badge tone={rule.decision === "allow" ? "success" : "danger"} indicator>{rule.decision}</Badge>}
+            criticalStatus={rule.expired ? <Badge tone="warning" indicator>Expired</Badge> : undefined}
+            actions={(
+              <>
+                <IconButton label="Edit bot grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>
+                <IconButton label="Remove bot grant" tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id })}><Trash2 className={controlIconClasses.compact} /></IconButton>
+              </>
+            )}
+          />
+        );
+      })}
+      {visibleGrants.length === 0 && mode.kind !== "add" && (
+        <div role="listitem">
+          <EmptyState
+            icon={ShieldCheck}
+            title={query.trim() ? "No matching bot grants" : "No bot-to-bot grants yet"}
+            hint={
+              query.trim()
+                ? "Try a different search term"
+                : "Control which other bots may command this bot or read its workspace. Click + to add a rule."
+            }
+            className="py-6"
+          />
+        </div>
+      )}
+    </CollectionManager>
   );
 }

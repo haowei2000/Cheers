@@ -147,6 +147,7 @@ const commonActionPresentations = {
     delete: { content: "iconText", icon: Trash2, variant: "danger" },
     remove: { content: "iconText", icon: Trash2, variant: "danger" },
     revoke: { content: "iconText", icon: X, variant: "danger" },
+    unlink: { content: "iconText", icon: Unlink, variant: "danger" },
   },
   security: {
     add: { content: "iconText", icon: Fingerprint, variant: "emphasis" },

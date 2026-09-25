@@ -1,0 +1,28 @@
+/* Progress indicator — steps in a flow, not a number being nudged (that is
+   Stepper). State is written out, never left to a filled circle alone. */
+.ui-steps { display: flex; gap: var(--ui-space-4); list-style: none; margin: 0; padding: 0; }
+.ui-steps__item { display: flex; align-items: flex-start; gap: var(--ui-space-2); flex: 1; min-inline-size: 0; }
+.ui-steps__marker {
+  flex: none; display: grid; place-items: center;
+  inline-size: 20px; block-size: 20px; border-radius: var(--ui-radius-full);
+  background: var(--ui-bg-control); color: var(--ui-fg-subtle);
+  font-size: var(--ui-text-xs); font-variant-numeric: tabular-nums;
+  box-shadow: var(--ui-ring-inset);
+}
+.ui-steps__body { min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.ui-steps__label { font-size: var(--ui-text-md); color: var(--ui-fg-muted); }
+.ui-steps__note { font-size: var(--ui-text-sm); color: var(--ui-fg-subtle); }
+.ui-steps__item[data-state="complete"] .ui-steps__marker { background: var(--ui-accent); color: var(--ui-fg-on-accent); box-shadow: none; }
+.ui-steps__item[data-state="complete"] .ui-steps__label { color: var(--ui-fg); }
+.ui-steps__item[data-state="current"] .ui-steps__marker { box-shadow: inset 0 0 0 2px var(--ui-border-focus); color: var(--ui-fg-strong); }
+.ui-steps__item[data-state="current"] .ui-steps__label { color: var(--ui-fg-strong); font-weight: var(--ui-weight-semibold); }
+.ui-steps__item[data-state="error"] .ui-steps__marker { background: var(--ui-danger-bg); color: var(--ui-danger); box-shadow: inset 0 0 0 1px var(--ui-danger); }
+.ui-steps__item[data-state="error"] .ui-steps__label { color: var(--ui-danger); }
+.ui-steps__item[data-state="disabled"] { opacity: 0.5; }
+.ui-steps--vertical { flex-direction: column; gap: var(--ui-space-3); }
+/* Timeline: the rail is drawn on the marker column so it never needs a wrapper. */
+.ui-steps--timeline .ui-steps__item { position: relative; padding-block-end: var(--ui-space-4); }
+.ui-steps--timeline .ui-steps__item:not(:last-child)::before {
+  content: ""; position: absolute; inset-inline-start: 9px; inset-block: 24px 0;
+  inline-size: 2px; background: var(--ui-hairline);
+}

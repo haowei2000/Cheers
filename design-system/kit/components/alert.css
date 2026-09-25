@@ -1,0 +1,25 @@
+/* Alert — in the flow and persistent. Anything the reader must act on belongs
+   here rather than in a toast, which leaves before it is read. */
+.ui-alert {
+  display: flex; align-items: flex-start; gap: var(--ui-space-3);
+  padding: var(--ui-space-3); border-radius: var(--ui-radius-md);
+  corner-shape: var(--ui-corner-shape, round);
+  background: var(--ui-bg-inset); color: var(--ui-fg);
+  font-size: var(--ui-text-md); line-height: var(--ui-leading-md);
+}
+.ui-alert__icon { flex: none; color: var(--ui-fg-subtle); margin-block-start: 1px; }
+.ui-alert__body { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: var(--ui-space-1); }
+.ui-alert__title { font-weight: var(--ui-weight-semibold); color: var(--ui-fg-strong); }
+.ui-alert__actions { display: flex; gap: var(--ui-space-2); margin-block-start: var(--ui-space-2); }
+.ui-alert__dismiss { flex: none; }
+.ui-alert--info    { background: var(--ui-info-bg); }
+.ui-alert--info    .ui-alert__icon { color: var(--ui-info); }
+.ui-alert--success { background: var(--ui-success-bg); }
+.ui-alert--success .ui-alert__icon { color: var(--ui-success); }
+.ui-alert--warning { background: var(--ui-warning-bg); }
+.ui-alert--warning .ui-alert__icon { color: var(--ui-warning); }
+.ui-alert--danger  { background: var(--ui-danger-bg); }
+.ui-alert--danger  .ui-alert__icon { color: var(--ui-danger); }
+/* Page-level banner: full bleed, squared off, sits above the app chrome. */
+.ui-alert--banner { border-radius: 0; padding-inline: var(--ui-space-4); box-shadow: 0 1px 0 0 var(--ui-hairline); }
+.ui-alert[hidden] { display: none; }

@@ -8,6 +8,7 @@ import { SearchInput } from "./search-input";
 import { ItemList, OperationsItem } from "./item";
 import type { PresentationLevel } from "./presentation";
 import type { ControlSize } from "./control-size";
+import { Tip } from "./tip";
 import { cn } from "@/lib/cn";
 
 export type CollectionMode =
@@ -23,6 +24,7 @@ export type CollectionMode =
  */
 export function CollectionManager({
   label,
+  tip,
   count,
   query,
   onQueryChange,
@@ -34,12 +36,14 @@ export function CollectionManager({
   showSearch = true,
   searchDisabled,
   headerAction,
+  tabs,
   presentationLevel = "medium",
   controlSize = "regular",
   children,
   className,
 }: {
   label: ReactNode;
+  tip?: ReactNode;
   count?: number;
   query: string;
   onQueryChange: (query: string) => void;
@@ -51,6 +55,7 @@ export function CollectionManager({
   showSearch?: boolean;
   searchDisabled?: boolean;
   headerAction?: ReactNode;
+  tabs?: ReactNode;
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   children: ReactNode;
@@ -120,7 +125,15 @@ export function CollectionManager({
           )}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate">{label}</span>
+            {tip ? (
+              <Tip content={tip} align="start">
+                <span className="min-w-0 truncate cursor-help transition-colors hover:text-content-strong">
+                  {label}
+                </span>
+              </Tip>
+            ) : (
+              <span className="min-w-0 truncate">{label}</span>
+            )}
             {typeof count === "number" && (
               <span className="font-normal tabular-nums text-content-muted">{count}</span>
             )}
@@ -141,6 +154,12 @@ export function CollectionManager({
             {addControl}
           </ButtonGroup>
         </header>
+      )}
+
+      {tabs && (
+        <div className="pb-2">
+          {tabs}
+        </div>
       )}
 
       <ItemList presentationLevel={presentationLevel} controlSize={controlSize}>
@@ -250,7 +269,7 @@ export function CollectionConfirmationItem({
 }: {
   title: ReactNode;
   description: ReactNode;
-  action: "delete" | "remove" | "revoke";
+  action: "delete" | "remove" | "revoke" | "unlink";
   prompt: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;

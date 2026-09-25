@@ -1,14 +1,13 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { messageContextItem, useContextPickStore } from "./context/contextPick";
 import {
   Square,
-  Paperclip,
   MessageCircleMore,
   Copy,
   Forward,
   CheckSquare,
-  Check,
   AlertCircle,
   RotateCw,
   Loader2,
@@ -50,6 +49,7 @@ import {
   useContextSurface,
 } from "@/components/ui/context-actions";
 import { whenPointerMeans } from "@/lib/hoverIntent";
+import type { SuggestedQuestion } from "./suggestedQuestions";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -68,6 +68,8 @@ export interface MessageActionHandlers {
   onClearSelection?: () => void;
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
   onRetry?: (m: Message) => void;
+  onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
+  onSuggestionsLoaded?: (msgId: string, questions: SuggestedQuestion[]) => void;
 }
 
 interface Props {
@@ -832,7 +834,7 @@ function RegularMessageItem({
       next.push({
         id: "add-context",
         label: "Add message to context",
-        icon: <Paperclip className="h-4 w-4" />,
+        icon: <AddContextIcon className="h-4 w-4" />,
         group: "secondary",
         run: () => useContextPickStore.getState().add(channelId, contextRef),
       });

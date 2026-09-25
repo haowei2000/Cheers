@@ -36,17 +36,16 @@ describe("MessageRecordInspector", () => {
     expect(markup).toContain("flex flex-col overflow-hidden");
 
     // Header has shrink-0, is draggable with cursor-grab, and contains close button
-    expect(markup).toContain("shrink-0 px-5 pt-3 md:px-6 md:pt-5");
+    expect(markup).toContain("shrink-0 px-5 pt-3 md:px-6 md:pt-4");
     expect(markup).toContain("cursor-grab");
     expect(markup).toContain('aria-label="Close message record"');
-    expect(markup).toContain("Cheers Bot");
-    expect(markup).toContain("Message record · 07");
+    expect(markup).toContain("Test message");
 
     // Body has min-h-0 flex-1 overflow-y-auto overscroll-contain
     expect(markup).toContain("min-h-0 flex-1 overflow-y-auto overscroll-contain");
   });
 
-  it("pins failure alert inside the shrink-0 header area when present", () => {
+  it("displays message content as the core header and omits redundant top metadata", () => {
     const triggerRef = createRef<HTMLElement>();
     const markup = renderToStaticMarkup(
       <MessageRecordInspector
@@ -64,7 +63,8 @@ describe("MessageRecordInspector", () => {
       />,
     );
 
-    expect(markup).toContain("One or more agent steps failed.");
-    expect(markup).toContain("border-red-950/80");
+    expect(markup).toContain("Test message");
+    expect(markup).not.toContain("Message record ·");
+    expect(markup).not.toContain("One or more agent steps failed.");
   });
 });

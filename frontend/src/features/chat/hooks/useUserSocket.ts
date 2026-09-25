@@ -59,9 +59,21 @@ export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
         return;
       }
       if (frame.type === "auth_err") {
-        authFailedRef.current = true;
-        useAuthStore.getState().markSessionExpired();
-        ws.close();
+        void useAuthStore
+          .getState()
+          .restoreSession()
+          .then((newToken) => {
+            if (!newToken) {
+              authFailedRef.current = true;
+              useAuthStore.getState().markSessionExpired();
+              ws.close();
+            }
+          })
+          .catch(() => {
+            authFailedRef.current = true;
+            useAuthStore.getState().markSessionExpired();
+            ws.close();
+          });
         return;
       }
       // App-wide user frames: invites and voice occupancy for every visible
@@ -76,7 +88,23 @@ export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      if (ev.code === 4401) {
+        void useAuthStore
+          .getState()
+          .restoreSession()
+          .then((newToken) => {
+            if (!newToken) {
+              authFailedRef.current = true;
+              useAuthStore.getState().markSessionExpired();
+            }
+          })
+          .catch(() => {
+            authFailedRef.current = true;
+            useAuthStore.getState().markSessionExpired();
+          });
+        return;
+      }
       if (!mountedRef.current || authFailedRef.current) return;
       if (retryRef.current >= MAX_RETRIES) return;
       const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);

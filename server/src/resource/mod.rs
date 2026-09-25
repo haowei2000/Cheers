@@ -206,6 +206,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── 写操作（频道成员 role 可写）────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        "channel.messages.suggestions.write" => {
+            messages::handle_suggestions_write(db, &principal, &params).await
+        }
         "channel.code.status.write" => {
             channel_profile::handle_code_status(db, &principal, &params).await
         }

@@ -1,5 +1,6 @@
 import { apiJson } from "./client";
 import type { Message } from "@/types";
+import { parseSuggestedQuestions, type SuggestedQuestion } from "@/features/chat/suggestedQuestions";
 
 interface MessagesResponse {
   messages: Message[];
@@ -57,4 +58,13 @@ export async function cancelMessage(
   await apiJson(`/channels/${channelId}/messages/${msgId}/cancel`, {
     method: "POST",
   });
+}
+
+/** Private, non-message request addressed to the bot that authored a reply. */
+export async function requestSuggestedQuestions(channelId: string, msgId: string): Promise<SuggestedQuestion[]> {
+  const result = await apiJson<{ suggestions: unknown }>(
+    `/channels/${channelId}/messages/${msgId}/suggestions`,
+    { method: "POST" },
+  );
+  return parseSuggestedQuestions(result.suggestions);
 }
