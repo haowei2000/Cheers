@@ -5,6 +5,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { LensProps } from "../lens/registry";
+import type { ContextAction } from "@/components/ui/context-actions";
 import { sourcePathKey } from "../annotations";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
@@ -197,6 +198,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       ?.closest<HTMLElement>("[data-canvas-node]")?.dataset.canvasNode;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     // Controls keep their own click — the same guard CodemapLens uses.
     if (target.closest("button")) return;
@@ -380,6 +382,88 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     if (node) openSource(node);
   };
 
+  const findNodeAtEvent = (event: React.MouseEvent<Element>): CanvasNode | undefined => {
+    if (!document_) return undefined;
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-canvas-node]");
+    const id = card?.dataset.canvasNode ?? nodeAtPoint(event.clientX, event.clientY);
+    if (id) {
+      const match = document_.nodes.find((n) => n.id === id);
+      if (match) return match;
+    }
+    const at = toCanvas(event.clientX, event.clientY);
+    const hit = document_.nodes.find((node) => {
+      const rect = rectOf(node.id);
+      if (!rect) return false;
+      return at.x >= rect.x && at.x <= rect.x + rect.w && at.y >= rect.y && at.y <= rect.y + rect.h;
+    });
+    if (hit) return hit;
+    if (selectedId) {
+      return document_.nodes.find((n) => n.id === selectedId);
+    }
+    return undefined;
+  };
+
+  const handleContextMenu = (event: React.MouseEvent<Element>, explicitNode?: CanvasNode) => {
+    if (!requestContextPick) return;
+    const node = explicitNode ?? findNodeAtEvent(event);
+    if (node) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedId(node.id);
+      const isSource = node.kind === "source";
+      const uri = isSource
+        ? node.source.kind === "fs"
+          ? `cheers:desk/${node.source.path}`
+          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
+        : undefined;
+
+      const extraActions: ContextAction[] = [];
+      if (isSource && openLocator) {
+        extraActions.push({
+          id: "open-source",
+          label: `Open ${nodeTitle(node)}`,
+          icon: <ExternalLink className="h-4 w-4" />,
+          run: () => openSource(node),
+        });
+      }
+      extraActions.push({
+        id: "delete-node",
+        label: "Delete node",
+        icon: <Trash2 className="h-4 w-4" />,
+        group: "danger" as const,
+        run: () => {
+          const next = removeCanvasNodeState(selectedId, connectingFromId, node.id);
+          emit(removeNodeOps(document_!, node.id));
+          setSelectedId(next.selectedId);
+          setConnectingFromId(next.connectingFromId);
+        },
+      });
+
+      requestContextPick(event, {
+        label: nodeTitle(node),
+        locator: uri,
+        sourcePath: ["nodes", node.at],
+        extraActions,
+      });
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    requestContextPick(event, {
+      label: "Canvas",
+      sourcePath: ["canvas"],
+      extraActions: [
+        {
+          id: "fit-canvas",
+          label: "Fit canvas",
+          icon: <Maximize2 className="h-4 w-4" />,
+          run: () => fitCanvas(),
+        },
+      ],
+    });
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
@@ -444,6 +528,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
         }}
         onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
+        onContextMenu={(event) => handleContextMenu(event)}
       >
         <div
           role="listbox"
@@ -499,6 +584,12 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             const rect = rectOf(node.id);
             if (!rect) return null;
             const selected = selectedId === node.id;
+            const nodeUri =
+              node.kind === "source"
+                ? node.source.kind === "fs"
+                  ? `cheers:desk/${node.source.path}`
+                  : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
+                : undefined;
             return (
               <div
                 key={node.id}
@@ -509,6 +600,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 data-canvas-node={node.id}
                 data-workbench-context-target="canvas-node"
                 data-workbench-anchor={sourcePathKey(["nodes", node.at])}
+                data-cheers-locator={nodeUri}
+                data-cheers-label={nodeTitle(node)}
                 role="option"
                 aria-selected={selected}
                 aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
@@ -517,9 +610,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                   selected ? "bg-selected ring-selected-indicator" : "bg-panel ring-zinc-700 hover:ring-zinc-500"
                 }`}
                 style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: node.z ?? 0 }}
-                onContextMenu={(event) =>
-                  requestContextPick?.(event, { label: nodeTitle(node), sourcePath: ["nodes", node.at] })
-                }
+                onContextMenu={(event) => handleContextMenu(event, node)}
                 onKeyDown={(event) => onNodeKeyDown(event, node)}
                 onFocus={() => setFocusedId(node.id)}
                 onDoubleClick={() => openSource(node)}

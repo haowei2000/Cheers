@@ -28,4 +28,24 @@ describe("CanvasLens accessibility", () => {
     expect(html).toContain('aria-label="Open selected source in Workbench"');
     expect(html).toContain('aria-label="Fit canvas"');
   });
+
+  it("renders declarative data-cheers-locator on source nodes", () => {
+    const html = renderToStaticMarkup(
+      <CanvasLens
+        data={{
+          canvas: 1,
+          nodes: [
+            { id: "src-node", source: { kind: "fs", path: "src/main.rs" } },
+          ],
+          edges: [],
+        }}
+        config={undefined}
+        onChange={() => {}}
+        onOps={() => {}}
+        openLocator={() => {}}
+      />
+    );
+    expect(html).toContain('data-cheers-locator="cheers:desk/src/main.rs"');
+    expect(html).toContain('data-cheers-label="main.rs"');
+  });
 });

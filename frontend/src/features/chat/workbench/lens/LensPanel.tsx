@@ -1,8 +1,8 @@
 import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
-import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { Trash2 } from "lucide-react";
+import { rangedFileContextItem, locatorToContextItem, useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
+import { Copy, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
@@ -75,6 +75,9 @@ export function LensView({
       : target.sourcePath
         ? sourcePathLineRange(parsedText, target.sourcePath)
         : null;
+    const resolvedItem: ContextItem | null = target.contextItem
+      ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
+      ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : null);
     event.preventDefault();
     event.stopPropagation();
     const existing = annotations ? notesOnTarget(annotations.doc, path, target) : [];
@@ -85,16 +88,26 @@ export function LensView({
       actions: [
         {
           id: "add-context",
-          label: range ? `Add to context` : "Source row unavailable",
+          label: resolvedItem ? `Add to context` : "Source row unavailable",
           icon: <AddContextIcon className="h-4 w-4" />,
-          disabled: !range,
+          disabled: !resolvedItem,
           run: () => {
-            if (!range) return;
-            const item = rangedFileContextItem(path, range.start, range.end);
-            addContext(channelId, { ...item, label: target.label });
-            toast.success(`Added ${target.label} (lines ${range.start}-${range.end}) to context`);
+            if (!resolvedItem) return;
+            addContext(channelId, resolvedItem);
+            const lineDetail = range ? ` (lines ${range.start}-${range.end})` : "";
+            toast.success(`Added ${target.label}${lineDetail} to context`);
           },
         },
+        ...(target.locator ? [{
+          id: "copy-locator",
+          label: `Copy URI`,
+          icon: <Copy className="h-4 w-4" />,
+          run: () => {
+            void navigator.clipboard.writeText(target.locator!);
+            toast.success(`Copied ${target.locator}`);
+          },
+        }] : []),
+        ...(target.extraActions ?? []),
         ...(annotations ? [{
           id: "annotate",
           label: `Annotate`,

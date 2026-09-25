@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeSuggestions,
   contextItemLocator,
+  locatorToContextItem,
   selectionLineRange,
   rangedFileContextItem,
   workbenchFileContextItem,
@@ -186,5 +187,80 @@ describe("toBundle (references only)", () => {
     expect(bundle?.origin).toBe("human");
     expect(bundle?.items[0].params).toMatchObject({ channel_id: "chan", bot_id: "b", path: "a.md" });
     expect("preview" in bundle!.items[0]).toBe(false);
+  });
+});
+
+describe("locatorToContextItem (universal locator parsing to ContextItem)", () => {
+  it("converts a desk file locator into a workbench file context item", () => {
+    const item = locatorToContextItem("cheers:desk/src/main.rs");
+    expect(item).toEqual({
+      id: "file:src/main.rs",
+      verb: "fs.read",
+      params: { path: "src/main.rs" },
+      label: "main.rs",
+      kind: "file",
+    });
+    expect(contextItemLocator(item!)).toBe("cheers:desk/src/main.rs");
+  });
+
+  it("converts a ranged desk locator into a ranged file context item", () => {
+    const item = locatorToContextItem("cheers:desk/dev/plan.yaml#L3-L9");
+    expect(item).toEqual({
+      id: "file:dev/plan.yaml:3-9",
+      verb: "fs.read",
+      params: { path: "dev/plan.yaml", start_line: 3, end_line: 9 },
+      label: "plan.yaml:3-9",
+      kind: "file",
+    });
+    expect(contextItemLocator(item!)).toBe("cheers:desk/dev/plan.yaml#L3-L9");
+  });
+
+  it("converts workspace locators into workspace ContextItem", () => {
+    const item = locatorToContextItem("cheers:ws/@backend/server/main.rs");
+    expect(item).toEqual({
+      id: "ws:@backend::server/main.rs",
+      verb: "workspace.read",
+      params: { bot_id: "@backend", path: "server/main.rs" },
+      label: "main.rs (@@backend workspace)",
+      kind: "file",
+    });
+  });
+
+  it("converts inbox and message locators", () => {
+    const inbox = locatorToContextItem("cheers:inbox/f-99");
+    expect(inbox).toEqual({
+      id: "file:f-99",
+      verb: "channel.files.read",
+      params: { file_id: "f-99" },
+      label: "Attachment f-99",
+      kind: "file",
+    });
+
+    const msg = locatorToContextItem("cheers:msg/m-123");
+    expect(msg).toEqual({
+      id: "msg:m-123",
+      verb: "channel.messages.by-seq",
+      params: { message_id: "m-123" },
+      label: "Message m-123",
+      kind: "message",
+    });
+  });
+
+  it("converts channel projections", () => {
+    expect(locatorToContextItem("cheers:plan")).toMatchObject({ id: "projection:plan", verb: "channel.plan.read", kind: "plan" });
+    expect(locatorToContextItem("cheers:sessions")).toMatchObject({ id: "projection:sessions", verb: "channel.sessions.read", kind: "sessions" });
+    expect(locatorToContextItem("cheers:cost")).toMatchObject({ id: "projection:cost", verb: "channel.usage.read", kind: "cost" });
+    expect(locatorToContextItem("cheers:activity")).toMatchObject({ id: "projection:activity", verb: "channel.activity.read", kind: "activity" });
+  });
+
+  it("preserves custom labels when supplied", () => {
+    const item = locatorToContextItem("cheers:desk/src/main.rs", "Entrypoint File");
+    expect(item?.label).toBe("Entrypoint File");
+  });
+
+  it("returns null for malformed or unknown URIs", () => {
+    expect(locatorToContextItem("https://example.com")).toBeNull();
+    expect(locatorToContextItem("cheers:invalid")).toBeNull();
+    expect(locatorToContextItem("")).toBeNull();
   });
 });
