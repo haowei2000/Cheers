@@ -54,6 +54,84 @@ export function contextItemLocator(item: ContextItem): string | null {
   return projection ? validLocator({ kind: projection }) : null;
 }
 
+/** Reconstruct a ContextItem from a canonical Cheers locator URI.
+ *  Provides a unified conversion path from locators to context chips. */
+export function locatorToContextItem(uri: string, customLabel?: string): ContextItem | null {
+  const loc = parseLocator(uri);
+  if (!loc) return null;
+  switch (loc.kind) {
+    case "desk": {
+      const base = loc.path.split("/").pop() || loc.path;
+      if (loc.line !== undefined) {
+        const item = rangedFileContextItem(loc.path, loc.line, loc.lineEnd ?? loc.line);
+        return customLabel ? { ...item, label: customLabel } : item;
+      }
+      const item = workbenchFileContextItem(loc.path);
+      return customLabel ? { ...item, label: customLabel } : item;
+    }
+    case "ws": {
+      const base = loc.path.split("/").pop() || loc.path;
+      return {
+        id: `ws:${loc.bot}::${loc.path}`,
+        verb: "workspace.read",
+        params: { bot_id: loc.bot, path: loc.path },
+        label: customLabel ?? `${base} (@${loc.bot} workspace)`,
+        kind: "file",
+      };
+    }
+    case "msg": {
+      return {
+        id: `msg:${loc.messageId}`,
+        verb: "channel.messages.by-seq",
+        params: { message_id: loc.messageId },
+        label: customLabel ?? `Message ${loc.messageId}`,
+        kind: "message",
+      };
+    }
+    case "inbox": {
+      return {
+        id: `file:${loc.fileId}`,
+        verb: "channel.files.read",
+        params: { file_id: loc.fileId },
+        label: customLabel ?? `Attachment ${loc.fileId}`,
+        kind: "file",
+      };
+    }
+    case "plan":
+      return {
+        id: "projection:plan",
+        verb: "channel.plan.read",
+        params: {},
+        label: customLabel ?? "Plan",
+        kind: "plan",
+      };
+    case "sessions":
+      return {
+        id: "projection:sessions",
+        verb: "channel.sessions.read",
+        params: {},
+        label: customLabel ?? "Sessions",
+        kind: "sessions",
+      };
+    case "cost":
+      return {
+        id: "projection:cost",
+        verb: "channel.usage.read",
+        params: {},
+        label: customLabel ?? "Cost",
+        kind: "cost",
+      };
+    case "activity":
+      return {
+        id: "projection:activity",
+        verb: "channel.activity.read",
+        params: {},
+        label: customLabel ?? "Activity",
+        kind: "activity",
+      };
+  }
+}
+
 /** The wire shape persisted on the message / delivered to the task frame. Every
  *  item is a pure REFERENCE (verb + params) the consumer resolves under its own
  *  read permission — no inline content. (The old `preview` snapshot field is
