@@ -287,12 +287,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
   return (
     <CollectionManager
-      label={(
-        <span className="inline-flex items-center gap-2">
-          <span>Permissions</span>
-          <Tip content="Grants refine the bot-wide defaults; deny wins when rules tie. Default baseline permissions are immutable and shown in neutral tone." />
-        </span>
-      )}
+      label="Permissions"
+      tip="Grants refine the bot-wide defaults; deny wins when rules tie. Default baseline permissions are immutable and shown in neutral tone."
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder="Search permissions…"

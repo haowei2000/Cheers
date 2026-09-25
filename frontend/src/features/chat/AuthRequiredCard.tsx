@@ -44,7 +44,8 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
   const defaultMethod = methods.find((method) => method.recommended) ?? methods[0];
   const [selectedMethodId, setSelectedMethodId] = useState(defaultMethod?.method_id ?? "");
   const selectedMethod = methods.find((method) => method.method_id === selectedMethodId) ?? defaultMethod;
-  const resolved = data.resolved === true;
+  const [localResolved, setLocalResolved] = useState<"retry" | "cancel" | null>(null);
+  const resolved = data.resolved === true || localResolved !== null;
   const isOwner =
     !!currentUserId &&
     !!data.bot_owner_id &&
@@ -55,7 +56,7 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
     data.description?.trim() ||
     "This agent needs authentication before it can continue.";
   const link = selectedMethod?.link?.trim() || null;
-  const action = data.chosen_action;
+  const action = data.chosen_action ?? localResolved;
   const envAuth = selectedMethod ? isEnvAuthMethod(selectedMethod) : false;
 
   async function ack(next: "retry" | "cancel") {
@@ -68,9 +69,15 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
         next,
         next === "retry" ? selectedMethodId : undefined
       );
+      setLocalResolved(next);
       toast.success(next === "retry" ? "Retrying agent auth…" : "Auth cancelled");
     } catch (e) {
-      toast.error(typeof e === "string" ? e : e instanceof Error ? e.message : "failed");
+      const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "failed";
+      if (msg.includes("already resolved")) {
+        setLocalResolved(next);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setBusy(null);
     }

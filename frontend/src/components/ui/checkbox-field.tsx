@@ -14,10 +14,12 @@ import {
   type ControlSize,
 } from "./control-size";
 import { contentIconClasses } from "./content-size";
+import { Tip } from "./tip";
 
 interface CheckboxFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
   label: ReactNode;
+  tip?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
   controlSize?: ControlSize;
@@ -26,7 +28,7 @@ interface CheckboxFieldProps
 
 /** Native checkbox semantics with the kit's shared visual states and one label/hit target. */
 export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
-  ({ label, hint, error, controlSize, className, id, indeterminate = false, ...props }, ref) => {
+  ({ label, tip, hint, error, controlSize, className, id, indeterminate = false, ...props }, ref) => {
     const size = useControlSize(controlSize);
     const generatedId = useId();
     const inputId = id ?? generatedId;
@@ -79,7 +81,17 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
           <Minus data-mixed className="col-start-1 row-start-1 h-3.5 w-3.5 stroke-[2.5]" />
         </span>
         <span className="min-w-0 py-2 max-md:py-0">
-          <span className="block">{label}</span>
+          <span className="block">
+            {tip ? (
+              <Tip content={tip} align="start">
+                <span className="inline-flex items-center cursor-help transition-colors hover:text-content-strong">
+                  {label}
+                </span>
+              </Tip>
+            ) : (
+              label
+            )}
+          </span>
           {hint && <span className="mt-1 block text-caption">{hint}</span>}
           {error && <span className="mt-1 block text-caption-error" role="alert">{error}</span>}
         </span>

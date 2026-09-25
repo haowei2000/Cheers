@@ -24,6 +24,10 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
   const isMcpOAuth = data.mode === "url" && data.interaction_kind === "mcp_oauth";
   const isInitiatingUser = !data.initiating_user_id || data.initiating_user_id === currentUserId;
 
+  const [localResolved, setLocalResolved] = useState<"accept" | "decline" | "cancel" | null>(null);
+  const resolved = Boolean(data.resolved) || localResolved !== null;
+  const status = data.status ?? localResolved;
+
   /** Submits one terminal answer after client-side required-field checks. */
   async function resolve(action: "accept" | "decline" | "cancel") {
     if (!channelId || !data.request_id || busy) return false;
@@ -45,9 +49,15 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
         action,
         action === "accept" && data.mode === "form" ? values : undefined,
       );
+      setLocalResolved(action);
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not answer request");
+      const msg = error instanceof Error ? error.message : "Could not answer request";
+      if (msg.includes("already resolved")) {
+        setLocalResolved(action);
+        return true;
+      }
+      toast.error(msg);
       return false;
     } finally { setBusy(null); }
   }
@@ -64,10 +74,10 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
     } else popup?.close();
   }
 
-  if (data.resolved) {
+  if (resolved) {
     return <div className="rounded-sm bg-zinc-900/40 px-3 py-2 text-compact text-content-muted">
       <span className="inline-flex items-center gap-2">{isMcpOAuth ? <KeyRound className="h-3.5 w-3.5" /> : <MessageCircleQuestion className="h-3.5 w-3.5" />}
-        {data.status === "completed" ? (isMcpOAuth ? "Cheers MCP connected" : "Interaction completed") : data.status === "accept" ? (isMcpOAuth ? "Authorization opened — waiting for the Agent to confirm" : "Response submitted") : "Interaction declined"}
+        {status === "completed" ? (isMcpOAuth ? "Cheers MCP connected" : "Interaction completed") : status === "accept" ? (isMcpOAuth ? "Authorization opened — waiting for the Agent to confirm" : "Response submitted") : "Interaction declined"}
       </span>
     </div>;
   }

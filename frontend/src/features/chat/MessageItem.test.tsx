@@ -37,7 +37,7 @@ describe("MessageItem reply preview", () => {
 });
 
 describe("MessageItem suggested questions", () => {
-  it("shows saved bot questions and an explicit private request action", () => {
+  it("does not render suggested questions inline inside the message body", () => {
     const markup = renderToStaticMarkup(
       <MessageItem
         message={{ ...reply, content_data: { suggested_questions: [{
@@ -48,9 +48,8 @@ describe("MessageItem suggested questions", () => {
         actions={{ onReply: () => {}, onForward: () => {}, onToggleSelect: () => {}, onUseSuggestedQuestion: () => {} }}
       />,
     );
-    expect(markup).toContain("Ask [mention] to review [file]");
-    expect(markup).toContain("Suggest more questions");
-    expect(markup).toContain("Copy question into composer");
+    expect(markup).not.toContain("Suggest more questions");
+    expect(markup).not.toContain("Copy question into composer");
   });
 });
 

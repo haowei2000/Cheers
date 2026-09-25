@@ -88,14 +88,24 @@ export function PermissionCard({
 }: Props) {
   const data = (message.content_data ?? {}) as PermissionContentData;
   const botId = message.sender_id;
-  // Resolve "who approved" to a member name (falls back to the short id).
-  const profileCard = useProfileCard();
-  const resolverMember = data.resolved_by ? profileCard?.memberOf(data.resolved_by) : undefined;
-  const resolverName =
-    resolverMember?.display_name || resolverMember?.username || data.resolved_by?.slice(0, 8);
   const requestId = data.request_id ?? "";
   const options = useMemo(() => data.options ?? [], [data.options]);
-  const resolved = data.resolved === true;
+  const [localResolved, setLocalResolved] = useState<{
+    resolved: boolean;
+    chosen_kind?: string;
+    resolved_by?: string;
+  } | null>(null);
+
+  const resolved = data.resolved === true || localResolved?.resolved === true;
+  const resolvedKind = data.resolved_kind;
+  const chosenKind = data.chosen_kind ?? localResolved?.chosen_kind;
+  const resolvedBy = data.resolved_by ?? localResolved?.resolved_by;
+
+  // Resolve "who approved" to a member name (falls back to the short id).
+  const profileCard = useProfileCard();
+  const resolverMember = resolvedBy ? profileCard?.memberOf(resolvedBy) : undefined;
+  const resolverName =
+    resolverMember?.display_name || resolverMember?.username || resolvedBy?.slice(0, 8);
 
   const isOwner = !!currentUserId && currentUserId === data.bot_owner_id;
   const [amApprover, setAmApprover] = useState(
@@ -180,16 +190,33 @@ export function PermissionCard({
     if (!channelId || !requestId || !id || busy) return;
     setBusy(true);
     setError(null);
+    const chosenOption = options.find((o) => optId(o) === id);
+    const kind = chosenOption?.kind;
     try {
       const res = await resolvePermission(channelId, requestId, id);
-      // The resolved card is broadcast back over WS; no local mutation needed.
-      // Delivery to the agent is best-effort: the gateway finalizes the card even
-      // when the connector/session is gone (delivered:false). Surface that so the
-      // collapsed "✓ Approved" isn't misread as "the agent acted on it".
+      // The resolved card is broadcast back over WS; local mutation guarantees immediate UX responsiveness.
       if (res && res.delivered === false) setUndelivered(true);
+      setLocalResolved({
+        resolved: true,
+        chosen_kind: kind,
+        resolved_by: currentUserId,
+      });
       onResolved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't resolve the approval");
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("already resolved")) {
+        // If the approval was already resolved on the server, transition locally to resolved
+        // and notify container (e.g. Activity/NotificationCenter) to remove the card immediately.
+        setLocalResolved({
+          resolved: true,
+          chosen_kind: kind ?? "allow",
+          resolved_by: currentUserId,
+        });
+        setError(null);
+        onResolved?.();
+      } else {
+        setError(e instanceof Error ? e.message : "Couldn't resolve the approval");
+      }
     } finally {
       setBusy(false);
     }
@@ -234,8 +261,8 @@ export function PermissionCard({
 
   // ── Resolved: a single quiet trace-style line ────────────────────────────
   if (resolved) {
-    const expired = data.resolved_kind === "expired";
-    const ok = isAllow(data.chosen_kind);
+    const expired = resolvedKind === "expired";
+    const ok = isAllow(chosenKind);
     return (
       <div className="flex items-center gap-2 py-1 text-compact">
         <span
@@ -255,8 +282,8 @@ export function PermissionCard({
             {command}
           </code>
         )}
-        {data.resolved_by && (
-          <span className="text-content-muted whitespace-nowrap" title={data.resolved_by}>
+        {resolvedBy && (
+          <span className="text-content-muted whitespace-nowrap" title={resolvedBy}>
             · {resolverName}
           </span>
         )}

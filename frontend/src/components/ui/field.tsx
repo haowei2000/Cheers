@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { Tip } from "./tip";
 
 // Form field stack (DESIGN.md §2.13): a persistent label over a control, with an
 // optional hint. The label is never replaced by a placeholder (HIG data-entry
@@ -8,22 +9,34 @@ export function Field({
   label,
   htmlFor,
   hint,
+  tip,
   children,
   className,
 }: {
   label: ReactNode;
   htmlFor?: string;
   hint?: ReactNode;
+  tip?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
+  const labelContent = tip ? (
+    <Tip content={tip} align="start">
+      <span className="inline-flex items-center cursor-help transition-colors hover:text-content-strong">
+        {label}
+      </span>
+    </Tip>
+  ) : (
+    label
+  );
+
   return (
     <div className={cn("space-y-2", className)}>
       <label
         htmlFor={htmlFor}
         className="block text-label uppercase"
       >
-        {label}
+        {labelContent}
       </label>
       {children}
       {hint && <p className="text-caption">{hint}</p>}
@@ -57,12 +70,24 @@ export function MetaRow({
 export function SectionHead({
   children,
   icon: Icon,
+  tip,
   className,
 }: {
   children: ReactNode;
   icon?: React.ComponentType<{ className?: string }>;
+  tip?: ReactNode;
   className?: string;
 }) {
+  const content = tip ? (
+    <Tip content={tip} align="start">
+      <span className="inline-flex items-center cursor-help transition-colors hover:text-content-strong">
+        {children}
+      </span>
+    </Tip>
+  ) : (
+    children
+  );
+
   return (
     <p
       className={cn(
@@ -71,7 +96,7 @@ export function SectionHead({
       )}
     >
       {Icon && <Icon className="h-3.5 w-3.5" />}
-      {children}
+      {content}
     </p>
   );
 }
