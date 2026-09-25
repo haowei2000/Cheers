@@ -147,8 +147,8 @@ function Preview() {
           icon={LayoutGrid}
           onClose={() => undefined}
           storageKey="cheers.preview.adaptive-workbench"
-          className="h-[min(720px,calc(100%-4rem))] w-[min(1040px,calc(100%-4rem))]"
-          defaultPosClassName="left-1/2 top-8 -translate-x-1/2"
+          className="h-[min(880px,calc(100%-2rem))] w-[min(1280px,calc(100%-2rem))]"
+          defaultPosClassName="left-1/2 top-4 -translate-x-1/2"
           bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
           panelActions={[{
             id: "raw-mode",

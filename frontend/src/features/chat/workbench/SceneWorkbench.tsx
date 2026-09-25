@@ -22,6 +22,8 @@ import {
   Folder,
   Frame,
   Lock,
+  Maximize2,
+  Minimize2,
   Save,
   Server,
 } from "lucide-react";
@@ -686,6 +688,7 @@ export function SceneWorkbench({
   const [isTabLocked, setIsTabLocked] = useState(false);
   const [shakeNonce, setShakeNonce] = useState(0);
   const triggerLockedShake = useCallback(() => setShakeNonce((n) => n + 1), []);
+  const [isCardMaximized, setIsCardMaximized] = useState(false);
 
   const activePaths = useMemo(() => {
     const canvas = canvasScenePath(activeScene);
@@ -923,6 +926,22 @@ export function SceneWorkbench({
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
   }
 
+  if (!loading && status && entries.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="text-regular font-medium text-content-secondary">{status}</div>
+        <ResponsiveActionButton
+          action="retry"
+          context="settings"
+          wideLabel="Retry"
+          onClick={() => void refresh()}
+          controlSize={workbenchControlSize.tab}
+          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
+        />
+      </div>
+    );
+  }
+
   if (sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -993,6 +1012,18 @@ export function SceneWorkbench({
       {/* Floating Panel Action Portals for Chrome Header */}
       {selectedPath && (
         <>
+          <FloatingPanelActionPortal
+            action={{
+              id: "card-fill",
+              label: isCardMaximized
+                ? "Restore card deck view (Esc)"
+                : "Maximize card screen fill",
+              priority: "primary",
+              icon: isCardMaximized ? Minimize2 : Maximize2,
+              selected: isCardMaximized,
+              onSelect: () => setIsCardMaximized((prev) => !prev),
+            }}
+          />
           <FloatingPanelActionPortal
             action={{
               id: "lock-tab",
@@ -1125,6 +1156,8 @@ export function SceneWorkbench({
               }))}
               selectedPath={selectedPath}
               onSelectTab={selectPath}
+              isMaximized={isCardMaximized}
+              onToggleMaximize={() => setIsCardMaximized((prev) => !prev)}
               renderActiveCardContent={(path) => {
                 const renderer = renderers[path];
                 const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";

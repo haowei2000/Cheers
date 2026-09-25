@@ -132,6 +132,32 @@ const BRIDGE_SCRIPT = `
     }
   };
 
+  const onContextMenu = (e) => {
+    const target = e.target;
+    if (!target || target === overlay || overlay?.contains(target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const label = target.getAttribute("aria-label")
+      || target.getAttribute("title")
+      || target.id
+      || (target.innerText?.trim().slice(0, 32))
+      || target.tagName.toLowerCase();
+    const domPath = getDomPath(target);
+    const sourceText = (target.outerHTML || "").slice(0, 500);
+    parent.postMessage({
+      jsonrpc: "2.0",
+      method: "context.pick",
+      params: {
+        x: Math.round(e.clientX),
+        y: Math.round(e.clientY),
+        label,
+        domPath,
+        sourceText,
+      }
+    }, "*");
+  };
+  document.addEventListener("contextmenu", onContextMenu, true);
+
   window.addEventListener("message", (event) => {
     if (event.source !== parent || !event.data || event.data.jsonrpc !== "2.0") return;
     if (event.data.method === "inspector.toggle") {
@@ -276,7 +302,7 @@ export function ArtifactLens({
       if (event.source !== iframeRef.current?.contentWindow || event.data?.jsonrpc !== "2.0") return;
       const { method, params } = event.data;
 
-      if (method === "inspector.inspect") {
+      if (method === "inspector.inspect" || method === "context.pick") {
         const frame = iframeRef.current?.getBoundingClientRect();
         const clientX = (frame?.left ?? 0) + Number(params?.x ?? 0);
         const clientY = (frame?.top ?? 0) + Number(params?.y ?? 0);

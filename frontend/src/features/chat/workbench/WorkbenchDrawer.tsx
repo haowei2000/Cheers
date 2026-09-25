@@ -676,7 +676,7 @@ function WorkbenchDrawerImpl({
       collapsed={minimized}
       onToggleCollapsed={toggleCollapsed}
       spawnKind="workbench"
-      className="w-[560px] h-[75%]"
+      className="w-[min(960px,calc(100vw-2rem))] h-[min(840px,88%)]"
       defaultPosClassName="top-2 left-2"
       // Collection/Tab navigation and the raw tree own their scrolling; the body is flush.
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"

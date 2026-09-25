@@ -1,7 +1,7 @@
 import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
-import { rangedFileContextItem, locatorToContextItem, useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
+import { rangedFileContextItem, workbenchFileContextItem, locatorToContextItem, useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
 import { Copy, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
@@ -75,9 +75,15 @@ export function LensView({
       : target.sourcePath
         ? sourcePathLineRange(parsedText, target.sourcePath)
         : null;
+    const fallbackFileItem: ContextItem | null = path
+      ? {
+          ...workbenchFileContextItem(path),
+          label: target.label ? `${target.label} (${path.split("/").pop() || path})` : (path.split("/").pop() || path),
+        }
+      : null;
     const resolvedItem: ContextItem | null = target.contextItem
       ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
-      ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : null);
+      ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : fallbackFileItem);
     event.preventDefault();
     event.stopPropagation();
     const existing = annotations ? notesOnTarget(annotations.doc, path, target) : [];
@@ -98,13 +104,14 @@ export function LensView({
             toast.success(`Added ${target.label}${lineDetail} to context`);
           },
         },
-        ...(target.locator ? [{
+        ...(target.locator || path ? [{
           id: "copy-locator",
           label: `Copy URI`,
           icon: <Copy className="h-4 w-4" />,
           run: () => {
-            void navigator.clipboard.writeText(target.locator!);
-            toast.success(`Copied ${target.locator}`);
+            const uri = target.locator ?? `cheers:desk/${path}`;
+            void navigator.clipboard.writeText(uri);
+            toast.success(`Copied ${uri}`);
           },
         }] : []),
         ...(target.extraActions ?? []),
