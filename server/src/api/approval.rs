@@ -283,7 +283,8 @@ pub async fn resolve_permission(
     });
     if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
     {
-        if let Ok(Some(latest)) = approval::find_pending_by_request_id(&state.db, &request_id).await {
+        if let Ok(Some(latest)) = approval::find_pending_by_request_id(&state.db, &request_id).await
+        {
             let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
                 &state,
                 latest.bot_id,
