@@ -39,6 +39,8 @@ describe("buildArtifactHtml", () => {
     expect(html).toContain("<title>Test</title>");
     expect(html).toContain("cheers-inspector-overlay");
     expect(html).toContain("CheersBridge");
+    expect(html).toContain("context.pick");
+    expect(html).toContain("contextmenu");
   });
 
   it("wraps React TSX components with Babel, React, ReactDOM, and mount code", () => {
@@ -54,6 +56,8 @@ describe("buildArtifactHtml", () => {
     expect(html).toContain("@babel/standalone");
     expect(html).toContain("cheers-inspector-overlay");
     expect(html).toContain("CheersBridge");
+    expect(html).toContain("context.pick");
+    expect(html).toContain("contextmenu");
     expect(html).toContain("window.__CHEERS_ROOT_COMPONENT__");
   });
 });

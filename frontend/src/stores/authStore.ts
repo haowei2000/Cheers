@@ -18,7 +18,7 @@ interface AuthState {
   setToken: (token: string) => void;
   markSessionExpired: () => void;
   logout: () => void;
-  restoreSession: () => Promise<void>;
+  restoreSession: () => Promise<string | null>;
 }
 
 interface RefreshResponse {
@@ -82,11 +82,11 @@ export const useAuthStore = create<AuthState>()((set) => ({
     queryClient.clear();
     set({ user: null, token: null, sessionExpired: false });
   },
-  restoreSession: async () => {
+  restoreSession: async (): Promise<string | null> => {
     try {
       if (isTauri()) {
         const serverBase = getServerBase();
-        if (!serverBase) return;
+        if (!serverBase) return null;
         const body = await invokeDesktop<{
           access_token?: string;
           user_id?: string;
@@ -105,11 +105,12 @@ export const useAuthStore = create<AuthState>()((set) => ({
             token: body.access_token,
             sessionExpired: false,
           });
+          return body.access_token;
         }
-        return;
+        return null;
       }
       const body = await restoreWebSession();
-      if (!body) return;
+      if (!body) return null;
       if (body.access_token && body.user_id) {
         set({
           user: {
@@ -121,7 +122,9 @@ export const useAuthStore = create<AuthState>()((set) => ({
           token: body.access_token,
           sessionExpired: false,
         });
+        return body.access_token;
       }
+      return null;
     } finally {
       set({ initialized: true });
     }

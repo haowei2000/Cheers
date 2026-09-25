@@ -91,7 +91,7 @@ const IDLE_CLOSE_DELAY = 30000;
 
 // ── Resource req/res over the same channel socket (workbench fs/channel access) ──
 
-const RESOURCE_REQ_TIMEOUT = 15000;
+const RESOURCE_REQ_TIMEOUT = 8000;
 
 /** Result payload of a resource_req on success (handler `data`). */
 export type ResourceData = unknown;
@@ -171,6 +171,38 @@ function releaseReadyWaiters(error?: Error): void {
   readyWaiters.release(error);
 }
 
+let refreshingAuth: Promise<string | null> | null = null;
+
+function handleAuthError() {
+  clearRetryTimer();
+  if (refreshingAuth) return;
+  refreshingAuth = useAuthStore
+    .getState()
+    .restoreSession()
+    .then((token) => {
+      refreshingAuth = null;
+      if (token) {
+        authFailed = false;
+        ensureSocket(token);
+        return token;
+      } else {
+        authFailed = true;
+        releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
+        useAuthStore.getState().markSessionExpired();
+        ws?.close();
+        return null;
+      }
+    })
+    .catch(() => {
+      refreshingAuth = null;
+      authFailed = true;
+      releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
+      useAuthStore.getState().markSessionExpired();
+      ws?.close();
+      return null;
+    });
+}
+
 function whenSocketReady(): ReadinessWait {
   if (socketReady()) return { promise: Promise.resolve(), cancel: () => {} };
   if (authFailed)
@@ -181,9 +213,12 @@ function whenSocketReady(): ReadinessWait {
   // Waiting is only worth anything if something is coming. A socket that closed while
   // the tab was in the background leaves nothing running to reopen it until the channel
   // effect happens to re-fire, so a caller would sit out its whole budget and time out.
-  // Asking for a resource IS a reason to have a socket: nudge one up. `ensureSocket` is
-  // a no-op when one is already open or mid-connect.
-  if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) ensureSocket(wsToken);
+  // Asking for a resource IS a reason to have a socket: nudge one up immediately and reset backoff.
+  if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) {
+    clearRetryTimer();
+    retryCount = 0;
+    ensureSocket(wsToken);
+  }
   return readyWaiters.wait();
 }
 const pendingReqs = new Map<string, PendingReq>();
@@ -276,12 +311,7 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     return;
   }
   if (type === "auth_err") {
-    // Dead token → tier L: flip the global session-expired takeover and stop
-    // the reconnect loop (retrying with the same token can never succeed).
-    authFailed = true;
-    releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
-    useAuthStore.getState().markSessionExpired();
-    ws?.close();
+    handleAuthError();
     return;
   }
   if (type === "subscribed") {
@@ -423,13 +453,17 @@ function ensureSocket(token: string) {
     handleFrame(event);
   };
 
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
     if (ws !== socket) return; // superseded by a newer socket
     ws = null;
     authed = false;
     // Reject any in-flight resource requests bound to this socket.
     rejectAllPending(new ResourceError("DISCONNECTED", "socket closed"));
-    if (authFailed) return;
+    if (ev.code === 4401) {
+      handleAuthError();
+      return;
+    }
+    if (authFailed || refreshingAuth) return;
     // No subscriber → reconnect lazily on the next attach instead of burning
     // the retry budget while nobody is looking at a channel.
     if (!active) return;
@@ -502,11 +536,19 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // silently frozen forever. Coming back online, refocusing the tab, or the
   // banner's "Retry now" is the escape hatch — reset the retry budget and
   // reconnect now if the socket has died.
-  const reconnectNow = useCallback(() => {
+  const reconnectNow = useCallback((force = false) => {
     if (authFailed || !token) return;
-    if (ws && ws.readyState !== WebSocket.CLOSED) return; // already up or mid-connect
+    if (!force && ws && ws.readyState === WebSocket.OPEN && authed) return;
+    if (!force && ws && ws.readyState === WebSocket.CONNECTING) return;
     clearRetryTimer();
     retryCount = 0;
+    if (ws && ws.readyState !== WebSocket.CLOSED) {
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
+    }
     if (channelId) setStatus("reconnecting");
     ensureSocket(token);
   }, [token, channelId]);
@@ -541,6 +583,9 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // (File/Context plugins) to read/write the channel workspace fs.
   const sendResourceReq = useCallback(
     (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
+      if (token && (!ws || ws.readyState !== WebSocket.OPEN || !authed)) {
+        reconnectNow(true);
+      }
       return new Promise<ResourceData>((resolve, reject) => {
         const reqId = crypto.randomUUID();
         const readiness = whenSocketReady();
@@ -576,7 +621,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         );
       });
     },
-    []
+    [token, reconnectNow]
   );
 
   // Broadcast the caller's workspace focus (which bot's workspace / which path they're

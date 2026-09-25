@@ -43,6 +43,8 @@ interface Props {
   isLocked?: boolean;
   shakeNonce?: number;
   onLockedAttempt?: () => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
   className?: string;
 }
 
@@ -71,6 +73,8 @@ export function WorkbenchCardDeck({
   isLocked = false,
   shakeNonce,
   onLockedAttempt,
+  isMaximized = false,
+  onToggleMaximize,
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,7 +175,7 @@ export function WorkbenchCardDeck({
   }, [tabs]);
 
   const handleScroll = useCallback(() => {
-    if (isLocked) return;
+    if (isLocked || isMaximized) return;
 
     isUserScrollingRef.current = true;
     if (scrollEndTimeoutRef.current !== null) {
@@ -190,7 +194,7 @@ export function WorkbenchCardDeck({
       }
       rafId.current = null;
     });
-  }, [calculateTransforms, isLocked, onSelectTab]);
+  }, [calculateTransforms, isLocked, isMaximized, onSelectTab]);
 
   useIsomorphicLayoutEffect(() => {
     calculateTransforms();
@@ -218,6 +222,14 @@ export function WorkbenchCardDeck({
   }, [selectedPath]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (isMaximized) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onToggleMaximize?.();
+        return;
+      }
+    }
+
     if (tabs.length === 0) return;
     const currentIndex = tabs.findIndex((t) => t.path === selectedPath);
 
@@ -265,16 +277,23 @@ export function WorkbenchCardDeck({
       onKeyDown={handleKeyDown}
       onScroll={handleScroll}
       style={{
-        scrollSnapType: isLocked ? "none" : "y proximity",
+        scrollSnapType: isLocked || isMaximized ? "none" : "y proximity",
       }}
       className={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col items-center gap-8 overscroll-contain px-4 py-16 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-content-strong/30",
-        isLocked ? "overflow-y-hidden" : "overflow-y-auto",
+        "relative flex h-full min-h-0 flex-1 flex-col items-center overscroll-contain outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-content-strong/30",
+        isMaximized
+          ? "p-0 gap-0 overflow-hidden"
+          : "px-2 sm:px-4 py-6 sm:py-8 gap-6 sm:gap-8",
+        isLocked || isMaximized ? "overflow-y-hidden" : "overflow-y-auto",
         className,
       )}
     >
       {tabs.map((tab) => {
         const isSelected = tab.path === selectedPath;
+        if (isMaximized && !isSelected) {
+          return null;
+        }
+
         const Icon = iconForPath(tab.path, tab.rendererId);
         const ext = extensionOf(tab.path);
         const metric = metrics[tab.path] ?? {
@@ -289,20 +308,32 @@ export function WorkbenchCardDeck({
               if (node) cardRefs.current.set(tab.path, node);
               else cardRefs.current.delete(tab.path);
             }}
-            style={{
-              scrollSnapAlign: "center",
-              transform: `scale(${metric.scale})`,
-              opacity: metric.opacity,
-              willChange: "transform, opacity",
-              transformOrigin: "center center",
-            }}
-            className="flex w-full max-w-4xl flex-shrink-0 flex-col transition-all duration-200"
+            style={
+              isMaximized
+                ? { width: "100%", height: "100%" }
+                : {
+                    scrollSnapAlign: "center",
+                    transform: `scale(${metric.scale})`,
+                    opacity: metric.opacity,
+                    willChange: "transform, opacity",
+                    transformOrigin: "center center",
+                  }
+            }
+            className={cn(
+              "flex flex-shrink-0 flex-col transition-all duration-200",
+              isMaximized ? "h-full w-full" : "w-full max-w-[min(96%,1536px)]",
+            )}
           >
             <div
               role="tabpanel"
               aria-label={tab.label}
               tabIndex={isSelected ? undefined : 0}
               onKeyDown={(e) => {
+                if (isMaximized && e.key === "Escape") {
+                  e.preventDefault();
+                  onToggleMaximize?.();
+                  return;
+                }
                 if (!isSelected && (e.key === "Enter" || e.key === " ")) {
                   e.preventDefault();
                   if (isLocked) {
@@ -314,10 +345,15 @@ export function WorkbenchCardDeck({
                 }
               }}
               className={cn(
-                "group relative flex min-h-[60vh] max-h-[78vh] h-[72vh] flex-col rounded-sm bg-canvas ring-1 ring-inset transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-content-strong/50",
-                isSelected
+                "group relative flex flex-col rounded-sm bg-canvas ring-1 ring-inset transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-content-strong/50",
+                isMaximized
+                  ? "h-full w-full min-h-0 max-h-none rounded-none ring-0 shadow-none"
+                  : "min-h-[68vh] max-h-[90vh] h-[84vh]",
+                isSelected && !isMaximized
                   ? "ring-control/60 shadow-md elevation-raised"
-                  : "ring-control/30 shadow-sm opacity-60 hover:opacity-90 hover:ring-control/40 cursor-pointer",
+                  : !isSelected
+                    ? "ring-control/30 shadow-sm opacity-60 hover:opacity-90 hover:ring-control/40 cursor-pointer"
+                    : "",
                 isSelected && isLocked && isShaking && "animate-paper-shake",
               )}
               onClick={() => {
@@ -330,7 +366,15 @@ export function WorkbenchCardDeck({
               }}
             >
               {/* Card Header Bar */}
-              <div className="flex flex-shrink-0 items-center justify-between border-b border-control/40 px-3 py-2 select-none">
+              <div
+                className="flex flex-shrink-0 items-center justify-between border-b border-control/40 px-3 py-2 select-none cursor-default"
+                onDoubleClick={() => {
+                  if (isSelected && onToggleMaximize) {
+                    onToggleMaximize();
+                  }
+                }}
+                title={isSelected && onToggleMaximize ? (isMaximized ? "Double click to restore deck" : "Double click to maximize card fill") : undefined}
+              >
                 <div className="flex min-w-0 items-center gap-2">
                   <Icon className="h-4 w-4 flex-shrink-0 text-content-primary" aria-hidden="true" />
                   <span className="truncate font-utility text-regular font-semibold text-content-strong">
