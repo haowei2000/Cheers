@@ -33,6 +33,8 @@ describe("SuggestedQuestionsComposerBanner", () => {
     expect(markup).toContain("How to run tests?");
     expect(markup).toContain('aria-label="Suggested questions"');
     expect(markup).toContain('aria-label="Dismiss suggestions"');
+    expect(markup).not.toContain("建议追问");
+    expect(markup).toContain("font-serif");
     // First question should have data-selected="true"
     expect(markup).toContain('data-selected="true"');
   });

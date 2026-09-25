@@ -133,5 +133,22 @@ describe("suggested questions", () => {
       });
       expect(active).toBeNull();
     });
+
+    it("identifies suggestions when active bot turn produced multiple bot messages (e.g. post_message and task bubble)", () => {
+      const taskSummaryBubble = {
+        msg_id: "m-bot-task-done",
+        sender_id: "bot-dev",
+        sender_type: "bot",
+        content: "Done task",
+        content_data: {},
+      };
+      const active = findActiveBotSuggestions({
+        messages: [userPrompt, botResponse, taskSummaryBubble],
+        currentUserId: "user-123",
+      });
+      expect(active).not.toBeNull();
+      expect(active?.msgId).toBe("m-bot-1");
+      expect(active?.questions).toHaveLength(2);
+    });
   });
 });

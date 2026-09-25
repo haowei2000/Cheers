@@ -19,7 +19,6 @@ import {
 import { controlIconClasses } from "@/components/ui/control-size";
 import { Field } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Tip } from "@/components/ui/tip";
 import { IconButton } from "@/components/ui/icon-button";
 import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
@@ -183,12 +182,8 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
 
   return (
     <CollectionManager
-      label={(
-        <span className="inline-flex items-center gap-2">
-          <span>Bot-to-bot grants</span>
-          <Tip content="Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default." />
-        </span>
-      )}
+      label="Bot-to-bot grants"
+      tip="Control which other bots may command this bot or read its workspace. Specific rules override the shared-channel default."
       count={data.grants.length}
       query={query}
       onQueryChange={setQuery}

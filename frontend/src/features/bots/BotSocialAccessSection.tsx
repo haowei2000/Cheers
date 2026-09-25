@@ -7,7 +7,6 @@ import {
 } from "@/api/bots";
 import { Field, SectionHead } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { Tip } from "@/components/ui/tip";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 
 export function BotSocialAccessSection({ botId }: { botId: string }) {
@@ -85,20 +84,15 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <SectionHead className="mb-0">Social Access</SectionHead>
-          <Tip content="Configure how other users and channels discover, interact with, and invite this bot." />
-        </div>
+        <SectionHead className="mb-0" tip="Configure how other users and channels discover, interact with, and invite this bot.">
+          Social Access
+        </SectionHead>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label={
-            <span className="flex items-center gap-2">
-              Search Discovery
-              <Tip content="Controls who can find and view this bot in global search and member directories." />
-            </span>
-          }
+          label="Search Discovery"
+          tip="Controls who can find and view this bot in global search and member directories."
         >
           <Select
             value={visibility}
@@ -113,12 +107,8 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
         </Field>
 
         <Field
-          label={
-            <span className="flex items-center gap-2">
-              Friend Requests
-              <Tip content="Controls policy when another user sends a direct friend request to this bot." />
-            </span>
-          }
+          label="Friend Requests"
+          tip="Controls policy when another user sends a direct friend request to this bot."
         >
           <Select
             value={friendPolicy}
@@ -133,12 +123,8 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
         </Field>
 
         <Field
-          label={
-            <span className="flex items-center gap-2">
-              Channel Invitations
-              <Tip content="Controls authorization policy when members invite this bot into a group or channel." />
-            </span>
-          }
+          label="Channel Invitations"
+          tip="Controls authorization policy when members invite this bot into a group or channel."
           className="sm:col-span-2"
         >
           <Select

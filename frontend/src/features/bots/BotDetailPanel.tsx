@@ -734,15 +734,13 @@ function BotStatusEditor({
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="border-t border-control/80 pt-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CheckboxField
-              label="Auto-refresh status"
-              className="items-center"
-              checked={auto}
-              onChange={(e) => setAuto(e.target.checked)}
-            />
-            <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
-          </div>
+          <CheckboxField
+            label="Auto-refresh status"
+            tip="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online."
+            className="items-center"
+            checked={auto}
+            onChange={(e) => setAuto(e.target.checked)}
+          />
           {auto && (
             <div className="flex items-center gap-2">
               <span className="text-compact text-content-muted">Every</span>

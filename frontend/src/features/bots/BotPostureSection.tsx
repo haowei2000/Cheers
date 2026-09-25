@@ -2,7 +2,6 @@ import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Field, SectionHead } from "@/components/ui/field";
-import { Tip } from "@/components/ui/tip";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import {
@@ -74,21 +73,21 @@ export function BotPostureSection({ botId }: { botId: string }) {
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-center gap-2">
-          <SectionHead className="mb-0">Agent settings</SectionHead>
-          <Tip content="Settings apply to new sessions and remain within the host’s allow-list. Mode controls when the agent asks for approval." />
-        </div>
+        <SectionHead
+          className="mb-0"
+          tip="Settings apply to new sessions and remain within the host’s allow-list. Mode controls when the agent asks for approval."
+        >
+          Agent settings
+        </SectionHead>
         {posture && <span className="text-compact text-content-muted">Agent: {posture.agent_type}</span>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {posture && (
-          <Field label={
-            <span className="flex items-center gap-2">
-              Mode
-              <Tip content="Mode controls when the agent stops to ask you before acting." />
-            </span>
-          }>
+          <Field
+            label="Mode"
+            tip="Mode controls when the agent stops to ask you before acting."
+          >
             {posture.allowed_modes.length > 0 ? (
               <UiSelect value={posture.permission_mode ?? ""} disabled={busy} onChange={(e) => changePosture(e.target.value)} controlSize="regular">
                 {posture.permission_mode == null && <option value="">(unset)</option>}

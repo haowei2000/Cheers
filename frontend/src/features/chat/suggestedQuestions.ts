@@ -86,55 +86,54 @@ export function findActiveBotSuggestions({
     return null;
   }
 
-  // 2. Scan backwards to find the latest completed bot message.
+  // 2. Scan backwards through the current turn's bot messages.
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    // If we encounter a user message by current user before any bot message, stop.
-    if (msg.sender_id === currentUserId) {
+    // If we encounter a user message before finding any bot message with suggestions,
+    // we have passed the current bot turn without finding suggestions.
+    if (msg.sender_type === "user") {
       return null;
     }
+
     if (msg.sender_type === "bot") {
       // If this bot message is currently streaming, suggestions are not ready.
       if (streamingIds.includes(msg.msg_id) || msg.is_partial || msg._streaming) {
         return null;
       }
 
-      // Check if there are valid suggestions
+      // Check if there are valid suggestions on this bot message
       const questions = parseSuggestedQuestions(
         (msg.content_data as Record<string, unknown> | null)?.suggested_questions
       );
-      if (questions.length === 0) {
-        // The latest bot message has no suggestions; do not look back at older bot messages.
-        return null;
-      }
+      if (questions.length > 0) {
+        // 3. Verify that this bot turn was triggered by currentUserId
+        let isTriggeredByCurrentUser = false;
 
-      // 3. Verify that this bot message was triggered by currentUserId
-      let isTriggeredByCurrentUser = false;
-
-      if (msg.reply_to_msg_id) {
-        const trigger = messages.find((m) => m.msg_id === msg.reply_to_msg_id);
-        if (trigger && trigger.sender_id === currentUserId) {
-          isTriggeredByCurrentUser = true;
-        }
-      } else {
-        // Find the preceding user message before this bot message
-        for (let j = i - 1; j >= 0; j--) {
-          const prev = messages[j];
-          if (prev.sender_type === "user") {
-            if (prev.sender_id === currentUserId) {
-              isTriggeredByCurrentUser = true;
+        if (msg.reply_to_msg_id) {
+          const trigger = messages.find((m) => m.msg_id === msg.reply_to_msg_id);
+          if (trigger && trigger.sender_id === currentUserId) {
+            isTriggeredByCurrentUser = true;
+          }
+        } else {
+          // Find the preceding user message before this bot message
+          for (let j = i - 1; j >= 0; j--) {
+            const prev = messages[j];
+            if (prev.sender_type === "user") {
+              if (prev.sender_id === currentUserId) {
+                isTriggeredByCurrentUser = true;
+              }
+              break;
             }
-            break;
           }
         }
-      }
 
-      if (isTriggeredByCurrentUser) {
-        return { msgId: msg.msg_id, questions };
-      }
+        if (isTriggeredByCurrentUser) {
+          return { msgId: msg.msg_id, questions };
+        }
 
-      // If this bot message was not triggered by current user, stop (do not leak another user's bot turn).
-      return null;
+        // If this bot message was not triggered by current user, stop (do not leak another user's bot turn).
+        return null;
+      }
     }
   }
 

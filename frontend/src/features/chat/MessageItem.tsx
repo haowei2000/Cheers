@@ -49,12 +49,7 @@ import {
   useContextSurface,
 } from "@/components/ui/context-actions";
 import { whenPointerMeans } from "@/lib/hoverIntent";
-import {
-  formatSuggestionDisplayText,
-  parseSuggestedQuestions,
-  type SuggestedQuestion,
-} from "./suggestedQuestions";
-import { requestSuggestedQuestions } from "@/api/messages";
+import type { SuggestedQuestion } from "./suggestedQuestions";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -75,48 +70,6 @@ export interface MessageActionHandlers {
   onRetry?: (m: Message) => void;
   onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
   onSuggestionsLoaded?: (msgId: string, questions: SuggestedQuestion[]) => void;
-}
-
-function SuggestedQuestions({ message, channelId, onUse, onLoaded }: {
-  message: Message;
-  channelId: string;
-  onUse: (question: SuggestedQuestion) => void;
-  onLoaded?: (questions: SuggestedQuestion[]) => void;
-}) {
-  const [requested, setRequested] = useState<SuggestedQuestion[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const saved = parseSuggestedQuestions((message.content_data as Record<string, unknown> | null)?.suggested_questions);
-  const questions = requested ?? saved;
-  async function refresh() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await requestSuggestedQuestions(channelId, message.msg_id);
-      setRequested(res);
-      onLoaded?.(res);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't suggest questions. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-  return (
-    <div className="flex max-w-full flex-col gap-1 font-ui text-regular" aria-label="Suggested questions">
-      {questions.map((question, index) => (
-        <UiButton key={`${index}:${question.text}`} action="copy" content="text" variant="plain"
-          controlWidth="fill" controlSize="regular" className="justify-start text-left text-content-primary hover:bg-control"
-          onClick={() => onUse(question)} title="Copy question into composer">
-          {formatSuggestionDisplayText(question.text)}
-        </UiButton>
-      ))}
-      <UiButton action="generate" content="text" variant="plain" controlSize="regular"
-        disabled={loading} onClick={() => void refresh()} className="self-start text-content-primary">
-        {loading ? "Suggesting…" : questions.length ? "Suggest more questions" : "Suggest questions"}
-      </UiButton>
-      {error && <p role="alert" className="text-body-error">{error}</p>}
-    </div>
-  );
 }
 
 interface Props {
@@ -1008,14 +961,6 @@ function RegularMessageItem({
         >
           {quote}
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
-          {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
-            <SuggestedQuestions
-              message={message}
-              channelId={channelId}
-              onUse={actions.onUseSuggestedQuestion}
-              onLoaded={actions.onSuggestionsLoaded ? (q) => actions.onSuggestionsLoaded?.(message.msg_id, q) : undefined}
-            />
-          )}
           {presentationLevel !== "minimal" && folio}
           {message.msg_type === "task_claim_confirmation" && (
             <TaskClaimConfirmationCard
@@ -1091,14 +1036,6 @@ function RegularMessageItem({
       >
         {quote}
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
-        {isBot && !active && channelId && actions?.onUseSuggestedQuestion && (
-          <SuggestedQuestions
-            message={message}
-            channelId={channelId}
-            onUse={actions.onUseSuggestedQuestion}
-            onLoaded={actions.onSuggestionsLoaded ? (q) => actions.onSuggestionsLoaded?.(message.msg_id, q) : undefined}
-          />
-        )}
         {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard

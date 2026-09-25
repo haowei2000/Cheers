@@ -197,6 +197,38 @@ pub async fn resolve_permission(
         .and_then(Value::as_bool)
         == Some(true)
     {
+        let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
+            &state,
+            pending.bot_id,
+            channel_id,
+            crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
+        )
+        .await;
+        let wire = WireFrame::channel(
+            channel_id,
+            "message",
+            json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": pending.msg_id,
+                "channel_id": channel_id,
+                "channel_seq": pending.channel_seq,
+                "sender_type": "bot",
+                "sender_id": pending.bot_id,
+                "content": pending.content,
+                "msg_type": "permission",
+                "is_partial": false,
+                "reply_to_msg_id": null,
+                "file_ids": [],
+                "mentions": [],
+                "files": [],
+                "content_data": pending.content_data,
+            }),
+        );
+        state
+            .fanout
+            .broadcast_channel_to_users(channel_id, wire, approval_seers)
+            .await;
+
         return Err(AppError::Conflict("approval already resolved".into()));
     }
     // The operation_kind being approved (opaque ACP toolCall.kind) scopes which
@@ -251,6 +283,40 @@ pub async fn resolve_permission(
     });
     if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
     {
+        if let Ok(Some(latest)) = approval::find_pending_by_request_id(&state.db, &request_id).await
+        {
+            let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
+                &state,
+                latest.bot_id,
+                channel_id,
+                crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
+            )
+            .await;
+            let wire = WireFrame::channel(
+                channel_id,
+                "message",
+                json!({
+                    "v": MESSAGE_SCHEMA_VERSION,
+                    "msg_id": latest.msg_id,
+                    "channel_id": channel_id,
+                    "channel_seq": latest.channel_seq,
+                    "sender_type": "bot",
+                    "sender_id": latest.bot_id,
+                    "content": latest.content,
+                    "msg_type": "permission",
+                    "is_partial": false,
+                    "reply_to_msg_id": null,
+                    "file_ids": [],
+                    "mentions": [],
+                    "files": [],
+                    "content_data": latest.content_data,
+                }),
+            );
+            state
+                .fanout
+                .broadcast_channel_to_users(channel_id, wire, approval_seers)
+                .await;
+        }
         return Err(AppError::Conflict("approval already resolved".into()));
     }
 
@@ -705,6 +771,27 @@ pub async fn ack_auth_required(
         .and_then(Value::as_bool)
         == Some(true)
     {
+        let wire = WireFrame::channel(
+            channel_id,
+            "message",
+            json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": pending.msg_id,
+                "channel_id": channel_id,
+                "channel_seq": pending.channel_seq,
+                "sender_type": "bot",
+                "sender_id": pending.bot_id,
+                "content": pending.content,
+                "msg_type": "auth_required",
+                "is_partial": false,
+                "reply_to_msg_id": null,
+                "file_ids": [],
+                "mentions": [],
+                "files": [],
+                "content_data": pending.content_data,
+            }),
+        );
+        state.fanout.broadcast_channel(channel_id, wire).await;
         return Err(AppError::Conflict("auth request already resolved".into()));
     }
     let method_id = body
@@ -873,6 +960,35 @@ pub async fn resolve_elicitation(
                 "only the user who initiated this agent request may answer it".into(),
             ));
         }
+    }
+    if pending
+        .content_data
+        .get("resolved")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        let wire = WireFrame::channel(
+            channel_id,
+            "message",
+            json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": pending.msg_id,
+                "channel_id": channel_id,
+                "channel_seq": pending.channel_seq,
+                "sender_type": "bot",
+                "sender_id": pending.bot_id,
+                "content": pending.content,
+                "msg_type": "elicitation",
+                "is_partial": false,
+                "reply_to_msg_id": null,
+                "file_ids": [],
+                "mentions": [],
+                "files": [],
+                "content_data": pending.content_data,
+            }),
+        );
+        state.fanout.broadcast_channel(channel_id, wire).await;
+        return Err(AppError::Conflict("elicitation already resolved".into()));
     }
     let role = channel_role(&state, channel_id, uid).await;
     let may_respond = approval::is_approver(&state.db, pending.bot_id, channel_id, uid, "*")
