@@ -49,4 +49,35 @@ describe("Desktop window capability", () => {
       expect(windows.get("quickpanel")).toBe("app.html?quickpanel=1");
     }
   });
+
+  it("allows desktop step-up and authentication commands in desktop permissions", () => {
+    const permissionsPath = resolve(
+      process.cwd(),
+      "../apps/macos/src-tauri/permissions/desktop.toml",
+    );
+    const content = readFileSync(permissionsPath, "utf8");
+    const requiredCommands = [
+      "desktop_password_login",
+      "desktop_verify_factor",
+      "desktop_login_flow_passkey_verify",
+      "desktop_login_flow_password",
+      "desktop_login_flow_code",
+      "desktop_login_flow_email_send",
+      "desktop_start_step_up",
+      "desktop_step_up_password",
+      "desktop_step_up_code",
+      "desktop_step_up_email_send",
+      "desktop_step_up_passkey_options",
+      "desktop_step_up_passkey_verify",
+      "desktop_cancel_step_up",
+      "desktop_oauth_handoff",
+      "desktop_refresh_session",
+      "desktop_logout_session",
+    ];
+
+    for (const cmd of requiredCommands) {
+      expect(content).toContain(`"${cmd}"`);
+    }
+  });
 });
+
