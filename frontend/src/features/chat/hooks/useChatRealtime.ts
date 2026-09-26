@@ -91,7 +91,7 @@ const IDLE_CLOSE_DELAY = 30000;
 
 // ── Resource req/res over the same channel socket (workbench fs/channel access) ──
 
-const RESOURCE_REQ_TIMEOUT = 8000;
+const RESOURCE_REQ_TIMEOUT = 15000;
 
 /** Result payload of a resource_req on success (handler `data`). */
 export type ResourceData = unknown;
@@ -214,10 +214,11 @@ function whenSocketReady(): ReadinessWait {
   // the tab was in the background leaves nothing running to reopen it until the channel
   // effect happens to re-fire, so a caller would sit out its whole budget and time out.
   // Asking for a resource IS a reason to have a socket: nudge one up immediately and reset backoff.
-  if (wsToken && (!ws || ws.readyState === WebSocket.CLOSED)) {
+  const token = wsToken || useAuthStore.getState().token;
+  if (token && (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING)) {
     clearRetryTimer();
     retryCount = 0;
-    ensureSocket(wsToken);
+    ensureSocket(token);
   }
   return readyWaiters.wait();
 }
@@ -536,19 +537,11 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // silently frozen forever. Coming back online, refocusing the tab, or the
   // banner's "Retry now" is the escape hatch — reset the retry budget and
   // reconnect now if the socket has died.
-  const reconnectNow = useCallback((force = false) => {
+  const reconnectNow = useCallback(() => {
     if (authFailed || !token) return;
-    if (!force && ws && ws.readyState === WebSocket.OPEN && authed) return;
-    if (!force && ws && ws.readyState === WebSocket.CONNECTING) return;
+    if (ws && (ws.readyState === WebSocket.OPEN && authed || ws.readyState === WebSocket.CONNECTING)) return;
     clearRetryTimer();
     retryCount = 0;
-    if (ws && ws.readyState !== WebSocket.CLOSED) {
-      try {
-        ws.close();
-      } catch {
-        /* already closed */
-      }
-    }
     if (channelId) setStatus("reconnecting");
     ensureSocket(token);
   }, [token, channelId]);
@@ -583,9 +576,6 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // (File/Context plugins) to read/write the channel workspace fs.
   const sendResourceReq = useCallback(
     (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
-      if (token && (!ws || ws.readyState !== WebSocket.OPEN || !authed)) {
-        reconnectNow(true);
-      }
       return new Promise<ResourceData>((resolve, reject) => {
         const reqId = crypto.randomUUID();
         const readiness = whenSocketReady();
@@ -621,7 +611,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         );
       });
     },
-    [token, reconnectNow]
+    []
   );
 
   // Broadcast the caller's workspace focus (which bot's workspace / which path they're
