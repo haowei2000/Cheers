@@ -48,6 +48,19 @@ describe("RemoteWorkspaceDialog gestures", () => {
   it("routes rows and the open file through the shared context surface", () => {
     expect(source.match(/useContextSurface\(/g)?.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("provides collapsible sidebar toggle controls", () => {
+    expect(source).toContain("sidebarOpen");
+    expect(source).toContain("Hide file tree");
+    expect(source).toContain("Show file tree");
+    expect(source).toContain("PanelLeftClose");
+    expect(source).toContain("PanelLeftOpen");
+  });
+
+  it("places scope and root controls in the workspace body toolbar to prevent clipping", () => {
+    // The floating panel context header pill must not cram rootOptions or checkbox
+    expect(source).toMatch(/data-workspace-content[\s\S]*Entire allowed roots/);
+  });
 });
 
 describe("WorkspacePathLabel", () => {
