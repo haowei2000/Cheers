@@ -469,6 +469,19 @@ impl Config {
             }
         };
 
+        let oauth_web_return_url = optional("OAUTH_WEB_RETURN_URL");
+        let app_domain = optional("APP_DOMAIN");
+        let mcp_public_url = resolve_mcp_public_url(
+            optional("MCP_PUBLIC_URL"),
+            app_domain.as_deref(),
+            oauth_web_return_url.as_deref(),
+        );
+        let connector_public_base = resolve_connector_public_base(
+            env::var("CHEERS_CONNECTOR_PUBLIC_BASE").ok(),
+            app_domain.as_deref(),
+            oauth_web_return_url.as_deref(),
+        );
+
         Self {
             database_url: require("DATABASE_URL"),
             port: env::var("PORT")
@@ -493,10 +506,7 @@ impl Config {
             cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
-            mcp_public_url: optional("MCP_PUBLIC_URL").map(|value| {
-                validate_mcp_url("MCP_PUBLIC_URL", &value, true);
-                value.trim_end_matches('/').to_string()
-            }),
+            mcp_public_url,
             mcp_channel_scope: McpChannelScope::from_env_value(
                 optional("MCP_CHANNEL_SCOPE").as_deref(),
             ),
@@ -506,9 +516,7 @@ impl Config {
                     value.trim_end_matches('/').to_string()
                 },
             ),
-            connector_public_base: env::var("CHEERS_CONNECTOR_PUBLIC_BASE")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
@@ -729,6 +737,87 @@ impl Config {
     }
 }
 
+fn resolve_mcp_public_url(
+    explicit: Option<String>,
+    app_domain: Option<&str>,
+    oauth_web_return_url: Option<&str>,
+) -> Option<String> {
+    if let Some(explicit) = explicit.filter(|v| !v.trim().is_empty()) {
+        validate_mcp_url("MCP_PUBLIC_URL", &explicit, true);
+        return Some(explicit.trim_end_matches('/').to_string());
+    }
+
+    if let Some(domain) = app_domain.map(str::trim).filter(|d| !d.is_empty()) {
+        let domain = domain
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/');
+        let url = format!("https://{domain}/mcp");
+        validate_mcp_url("MCP_PUBLIC_URL", &url, true);
+        return Some(url);
+    }
+
+    if let Some(raw) = oauth_web_return_url
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+    {
+        if let Ok(parsed) = url::Url::parse(raw) {
+            if parsed.scheme() == "https" {
+                if let Some(host) = parsed.host_str() {
+                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+                        let origin = parsed.origin().ascii_serialization();
+                        let url = format!("{origin}/mcp");
+                        validate_mcp_url("MCP_PUBLIC_URL", &url, true);
+                        return Some(url);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_connector_public_base(
+    explicit: Option<String>,
+    app_domain: Option<&str>,
+    oauth_web_return_url: Option<&str>,
+) -> Option<String> {
+    if let Some(explicit) = explicit.filter(|v| !v.trim().is_empty()) {
+        return Some(explicit.trim().to_string());
+    }
+
+    if let Some(domain) = app_domain.map(str::trim).filter(|d| !d.is_empty()) {
+        let domain = domain
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("wss://")
+            .trim_start_matches("ws://")
+            .trim_end_matches('/');
+        return Some(format!("wss://{domain}"));
+    }
+
+    if let Some(raw) = oauth_web_return_url
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+    {
+        if let Ok(parsed) = url::Url::parse(raw) {
+            if parsed.scheme() == "https" {
+                if let Some(host) = parsed.host_str() {
+                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+                        let origin = parsed.origin().ascii_serialization();
+                        if let Some(rest) = origin.strip_prefix("https://") {
+                            return Some(format!("wss://{rest}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn validate_mcp_url(name: &str, value: &str, require_mcp_path: bool) {
     let parsed = url::Url::parse(value)
         .unwrap_or_else(|error| panic!("{name} must be an absolute URL: {error}"));
@@ -790,7 +879,7 @@ fn require_any(keys: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_mcp_url;
+    use super::*;
 
     #[test]
     fn mcp_public_url_requires_exact_endpoint_and_safe_scheme() {
@@ -812,5 +901,73 @@ mod tests {
             )
         })
         .is_err());
+    }
+
+    #[test]
+    fn test_resolve_mcp_public_url_hierarchy() {
+        // 1. Explicit MCP_PUBLIC_URL takes precedence
+        let res = resolve_mcp_public_url(
+            Some("https://custom.example/mcp".into()),
+            Some("www.tocheers.com"),
+            Some("https://auth.tocheers.com/auth/callback"),
+        );
+        assert_eq!(res.as_deref(), Some("https://custom.example/mcp"));
+
+        // 2. APP_DOMAIN takes precedence over OAUTH_WEB_RETURN_URL
+        let res = resolve_mcp_public_url(
+            None,
+            Some("www.tocheers.com"),
+            Some("https://other.example.com/auth/callback"),
+        );
+        assert_eq!(res.as_deref(), Some("https://www.tocheers.com/mcp"));
+
+        // 3. Fallback to OAUTH_WEB_RETURN_URL if HTTPS and non-localhost
+        let res =
+            resolve_mcp_public_url(None, None, Some("https://www.tocheers.com/auth/callback"));
+        assert_eq!(res.as_deref(), Some("https://www.tocheers.com/mcp"));
+
+        // 4. Ignored if OAUTH_WEB_RETURN_URL is localhost / http
+        let res = resolve_mcp_public_url(None, None, Some("http://localhost:5173/auth/callback"));
+        assert_eq!(res, None);
+
+        // 5. None when all unset
+        let res = resolve_mcp_public_url(None, None, None);
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn test_resolve_connector_public_base_hierarchy() {
+        // 1. Explicit base takes precedence
+        let res = resolve_connector_public_base(
+            Some("wss://custom.example".into()),
+            Some("www.tocheers.com"),
+            Some("https://www.tocheers.com/auth/callback"),
+        );
+        assert_eq!(res.as_deref(), Some("wss://custom.example"));
+
+        // 2. APP_DOMAIN takes precedence over OAUTH_WEB_RETURN_URL
+        let res = resolve_connector_public_base(
+            None,
+            Some("www.tocheers.com"),
+            Some("https://other.example.com/auth/callback"),
+        );
+        assert_eq!(res.as_deref(), Some("wss://www.tocheers.com"));
+
+        // 3. Fallback to OAUTH_WEB_RETURN_URL
+        let res = resolve_connector_public_base(
+            None,
+            None,
+            Some("https://www.tocheers.com/auth/callback"),
+        );
+        assert_eq!(res.as_deref(), Some("wss://www.tocheers.com"));
+
+        // 4. Ignored if localhost
+        let res =
+            resolve_connector_public_base(None, None, Some("http://localhost:5173/auth/callback"));
+        assert_eq!(res, None);
+
+        // 5. None when all unset
+        let res = resolve_connector_public_base(None, None, None);
+        assert_eq!(res, None);
     }
 }
