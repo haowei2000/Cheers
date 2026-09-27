@@ -85,11 +85,13 @@ services:
       - GITHUB_APP_CLIENT_SECRET=${GITHUB_APP_CLIENT_SECRET:-}
       - GITHUB_APP_WEBHOOK_SECRET=${GITHUB_APP_WEBHOOK_SECRET:-}
       - OAUTH_WEB_RETURN_URL=${OAUTH_WEB_RETURN_URL:-}
+      - APP_DOMAIN=${APP_DOMAIN:-}
       # Canonical externally reachable HTTP MCP resource and optional separate
       # authorization issuer. Native Agent OAuth binds tokens to this exact URL;
       # never derive it from proxy headers.
       - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-}
       - MCP_AUTHORIZATION_SERVER_ISSUER=${MCP_AUTHORIZATION_SERVER_ISSUER:-}
+      - CHEERS_CONNECTOR_PUBLIC_BASE=${CHEERS_CONNECTOR_PUBLIC_BASE:-}
       # Connector self-update: the release version this gateway advertises in
       # its hello + serves via /api/v1/connector/download. Unset ⇒ no update
       # signal (download proxy then tracks the latest GitHub release).
