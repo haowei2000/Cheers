@@ -14,6 +14,7 @@ import {
   workspaceContextItem,
 } from "@/features/chat/context/contextPick";
 import { useContextSurface, type ContextAction } from "@/components/ui/context-actions";
+import { addRecentWorkspace } from "@/lib/recentWorkspaces";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
@@ -27,6 +28,8 @@ import {
   GitCompare,
   History,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Save,
   X,
@@ -319,6 +322,8 @@ export function RemoteWorkspaceDialog({
   // Session-scoped by default: browse only the active session's root set. Un-checking
   // "Entire allowed roots" drops the session id so the user sees the bot's ENTIRE allowed roots.
   const [scoped, setScoped] = useState(true);
+  // File tree sidebar collapsible state — defaults to open.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
   // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
@@ -504,6 +509,9 @@ export function RemoteWorkspaceDialog({
         setEntries(t.entries);
         setCwd(t.path);
         setTreeRoot(t.root);
+        if (!bg && t.root) {
+          addRecentWorkspace(t.root, botId ?? undefined);
+        }
         // When the canonical path doesn't change (initial listing, manual refresh),
         // the cwd-keyed git-status effect won't re-fire — and its mount-time fetch
         // was superseded by this very navigation's epoch bump. Re-pull explicitly.
@@ -1268,70 +1276,29 @@ export function RemoteWorkspaceDialog({
         }}
         controlSize="compact"
         controlWidth="fill"
-        className="min-w-0 flex-1"
+        className="min-w-0 max-w-44 flex-1"
         menuClassName="max-w-72"
       />
       {/* Which machine, read-only. `allowed_roots` are that host's config, so the
-          workspace below only means anything once you know the machine it is on.
-          Not a switch: moving a bot's active host is an owner-level failover that
-          moves every channel and running session with it. */}
+          workspace below only means anything once you know the machine it is on. */}
       {selectedBot?.host_name && (
         <span
           className="flex min-w-0 shrink items-center gap-1 text-content-muted"
           title={`Browsing ${selectedBot.host_name} — the machine currently serving this bot`}
         >
           <span aria-hidden="true">·</span>
-          <span className="truncate">{selectedBot.host_name}</span>
+          <span className="truncate max-w-36">{selectedBot.host_name}</span>
         </span>
       )}
-      {rootOptions.length > 1 && (
-        <DropdownSelect
-          ariaLabel={`Workspace root: ${root ?? "auto"}`}
-          leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
-          // The trigger names the folder, the menu keeps the path. A native select
-          // sized itself to its longest option — here a full absolute path — which is
-          // what drove the bot selector off one; truncating an absolute path from the
-          // right also hides the only part that identifies it.
-          label={root ? basename(root) : "Auto"}
-          value={root ?? ""}
-          options={rootPickerOptions}
-          onSelect={(value) =>
-            selectRoot(rootOptions.find((option) => option.path === value) ?? null)
-          }
-          controlSize="compact"
-          controlWidth="fill"
-          className="min-w-0 max-w-40 flex-1"
-          menuClassName="max-w-96"
-        />
-      )}
-      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted" />}
-      {err && <span className="truncate text-danger-400" title={err}>{err}</span>}
+      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted shrink-0" />}
+      {err && <span className="truncate text-danger-400 max-w-32" title={err}>{err}</span>}
       {degraded && !err && (
         <span
           className="truncate text-warning-400"
           title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
         >
-          live updates paused
+          paused
         </span>
-      )}
-      {(meta?.git_ops === "off" || sessionId) && <div className="flex-1" />}
-      {meta?.git_ops === "off" && (
-        <span
-          className="text-content-muted"
-          title="This connector's policy disables git inspection (git_ops = off)"
-        >
-          git off
-        </span>
-      )}
-      {sessionId && (
-        <CheckboxField
-          label="Entire allowed roots"
-          className="select-none text-compact text-content-muted"
-          title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-          checked={!scoped}
-          onChange={toggleScoped}
-          controlSize="compact"
-        />
       )}
     </div>
   );
@@ -1436,29 +1403,71 @@ export function RemoteWorkspaceDialog({
         className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:absolute md:inset-0 md:pt-[var(--floating-panel-safe-top)]"
       >
 
-      {/* Git branch badge — quiet, only when the current dir resolves to a repo. */}
-      {botId && git && (
-        <div className="flex items-center gap-2 mb-2 text-compact text-content-muted flex-shrink-0">
-          <GitBranch className="w-3.5 h-3.5 text-content-muted shrink-0" />
-          <span
-            className="text-content-secondary font-code truncate"
-            title={git.branch ?? undefined}
-          >
-            {git.branch || "(detached)"}
-          </span>
-          {!!git.ahead && <span className="text-success-400">↑{git.ahead}</span>}
-          {!!git.behind && <span className="text-warning-400">↓{git.behind}</span>}
-          {git.upstream && (
-            <span
-              className="text-content-muted font-code truncate"
-              title={`Tracking ${git.upstream}`}
-            >
-              vs {git.upstream}
-            </span>
-          )}
-          <span className="text-content-muted">
-            {git.entries.length} change{git.entries.length === 1 ? "" : "s"}
-          </span>
+      {/* Workspace toolbar / scope bar: git status + root & session scope controls */}
+      {botId && (
+        <div className="flex items-center justify-between gap-3 mb-2 text-compact text-content-muted flex-shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            {git && (
+              <div className="flex items-center gap-1 font-code">
+                <GitBranch className="w-3.5 h-3.5 text-content-muted shrink-0" />
+                <span
+                  className="text-content-secondary font-code truncate max-w-48"
+                  title={git.branch ?? undefined}
+                >
+                  {git.branch || "(detached)"}
+                </span>
+                {!!git.ahead && <span className="text-success-400">↑{git.ahead}</span>}
+                {!!git.behind && <span className="text-warning-400">↓{git.behind}</span>}
+                {git.upstream && (
+                  <span
+                    className="text-content-muted font-code truncate hidden sm:inline"
+                    title={`Tracking ${git.upstream}`}
+                  >
+                    vs {git.upstream}
+                  </span>
+                )}
+                <span className="text-content-muted hidden sm:inline">
+                  · {git.entries.length} change{git.entries.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
+            {meta?.git_ops === "off" && (
+              <span
+                className="text-content-muted"
+                title="This connector's policy disables git inspection (git_ops = off)"
+              >
+                git off
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 ml-auto shrink-0">
+            {rootOptions.length > 1 && (
+              <DropdownSelect
+                ariaLabel={`Workspace root: ${root ?? "auto"}`}
+                leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                label={root ? basename(root) : "Auto"}
+                value={root ?? ""}
+                options={rootPickerOptions}
+                onSelect={(value) =>
+                  selectRoot(rootOptions.find((option) => option.path === value) ?? null)
+                }
+                controlSize="compact"
+                className="min-w-28 max-w-56"
+                menuClassName="max-w-96"
+              />
+            )}
+            {sessionId && (
+              <CheckboxField
+                label="Entire allowed roots"
+                className="select-none text-compact text-content-muted"
+                title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
+                checked={!scoped}
+                onChange={toggleScoped}
+                controlSize="compact"
+              />
+            )}
+          </div>
         </div>
       )}
 
@@ -1502,74 +1511,87 @@ export function RemoteWorkspaceDialog({
         // panes fill the remaining body height and keep their own internal scroll.
         <div className="flex gap-3 flex-1 min-h-0 max-md:flex-col">
           {/* Tree pane */}
-          <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
-            {/* Files / Changes / History switch — the latter two only for a git repo. */}
-            {git && (
-              <div role="tablist" aria-label="Workspace views" className="flex items-center gap-1 px-2 py-2 border-b border-control/80 md:hidden">
-                <UiButton
-                  variant="plain"
-                  role="tab"
-                  aria-selected={leftView === "files"}
-                  selected={leftView === "files"}
-                  onClick={() => {
-                    setLeftView("files");
-                    setDiff(null);
-                  }}
-                  controlSize="regular"
-                  className={cn(
-                    "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                    leftView === "files"
-                      ? "border-content-strong text-content-strong font-semibold"
-                      : "border-transparent text-content-primary",
-                  )}
-                >
-                  Files
-                </UiButton>
-                <UiButton
-                  variant="plain"
-                  role="tab"
-                  aria-selected={leftView === "changes"}
-                  selected={leftView === "changes"}
-                  onClick={() => setLeftView("changes")}
-                  controlSize="regular"
-                  className={cn(
-                    "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                    leftView === "changes"
-                      ? "border-content-strong text-content-strong font-semibold"
-                      : "border-transparent text-content-primary",
-                  )}
-                >
-                  Changes
-                  {git.entries.length > 0 && (
-                    <span className="text-minimal text-content-muted tabular-nums">
-                      {git.entries.length}
-                    </span>
-                  )}
-                </UiButton>
-                <UiButton
-                  content="iconText"
-                  variant="plain"
-                  role="tab"
-                  aria-selected={leftView === "history"}
-                  selected={leftView === "history"}
-                  onClick={() => setLeftView("history")}
-                  controlSize="regular"
-                  className={cn(
-                    "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                    leftView === "history"
-                      ? "border-content-strong text-content-strong font-semibold"
-                      : "border-transparent text-content-primary",
-                  )}
-                >
-                  <History className="w-3.5 h-3.5" /> History
-                </UiButton>
-              </div>
-            )}
+          {sidebarOpen && (
+            <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
+              {/* Files / Changes / History switch — the latter two only for a git repo. */}
+              {git && (
+                <div role="tablist" aria-label="Workspace views" className="flex items-center gap-1 px-2 py-2 border-b border-control/80 md:hidden">
+                  <UiButton
+                    variant="plain"
+                    role="tab"
+                    aria-selected={leftView === "files"}
+                    selected={leftView === "files"}
+                    onClick={() => {
+                      setLeftView("files");
+                      setDiff(null);
+                    }}
+                    controlSize="regular"
+                    className={cn(
+                      "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                      leftView === "files"
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary",
+                    )}
+                  >
+                    Files
+                  </UiButton>
+                  <UiButton
+                    variant="plain"
+                    role="tab"
+                    aria-selected={leftView === "changes"}
+                    selected={leftView === "changes"}
+                    onClick={() => setLeftView("changes")}
+                    controlSize="regular"
+                    className={cn(
+                      "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                      leftView === "changes"
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary",
+                    )}
+                  >
+                    Changes
+                    {git.entries.length > 0 && (
+                      <span className="text-minimal text-content-muted tabular-nums">
+                        {git.entries.length}
+                      </span>
+                    )}
+                  </UiButton>
+                  <UiButton
+                    content="iconText"
+                    variant="plain"
+                    role="tab"
+                    aria-selected={leftView === "history"}
+                    selected={leftView === "history"}
+                    onClick={() => setLeftView("history")}
+                    controlSize="regular"
+                    className={cn(
+                      "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
+                      leftView === "history"
+                        ? "border-content-strong text-content-strong font-semibold"
+                        : "border-transparent text-content-primary",
+                    )}
+                  >
+                    <History className="w-3.5 h-3.5" /> History
+                  </UiButton>
+                </div>
+              )}
 
-            {leftView === "changes" && git ? (
-              <>
-                <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
-                  <UiButton action="diffWorking" content="iconText" variant="plain"
+              {leftView === "changes" && git ? (
+                <>
+                  <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
+                    <UiButton
+                      action="collapse"
+                      content="icon"
+                      variant="plain"
+                      controlSize="compact"
+                      onClick={() => setSidebarOpen(false)}
+                      title="Hide file tree"
+                      aria-label="Hide file tree"
+                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
+                    >
+                      <PanelLeftClose className="w-3.5 h-3.5" />
+                    </UiButton>
+                    <UiButton action="diffWorking" content="iconText" variant="plain"
                     onClick={() => openDiff("", false)}
                     selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
                     title="Diff the whole working tree (unstaged)"
@@ -1652,6 +1674,18 @@ export function RemoteWorkspaceDialog({
             ) : leftView === "history" && git ? (
               <>
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
+                  <UiButton
+                    action="collapse"
+                    content="icon"
+                    variant="plain"
+                    controlSize="compact"
+                    onClick={() => setSidebarOpen(false)}
+                    title="Hide file tree"
+                    aria-label="Hide file tree"
+                    className="rounded-sm hover:bg-control text-content-primary shrink-0"
+                  >
+                    <PanelLeftClose className="w-3.5 h-3.5" />
+                  </UiButton>
                   <span className="flex items-center gap-1 flex-1">
                     <History className="w-3.5 h-3.5" /> Commits
                   </span>
@@ -1715,6 +1749,18 @@ export function RemoteWorkspaceDialog({
             ) : (
               <>
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
+                  <UiButton
+                    action="collapse"
+                    content="icon"
+                    variant="plain"
+                    controlSize="compact"
+                    onClick={() => setSidebarOpen(false)}
+                    title="Hide file tree"
+                    aria-label="Hide file tree"
+                    className="rounded-sm hover:bg-control text-content-primary shrink-0"
+                  >
+                    <PanelLeftClose className="w-3.5 h-3.5" />
+                  </UiButton>
                   <UiButton variant="plain"
                     onClick={() => parent !== null && loadDir(parent)}
                     disabled={!cwd}
@@ -1757,6 +1803,7 @@ export function RemoteWorkspaceDialog({
               </>
             )}
           </div>
+        )}
 
           {/* Viewer / editor / diff pane. The open file's actions sit behind the same
               context surface as the rows; the editor's own text keeps the native menu
@@ -1780,6 +1827,20 @@ export function RemoteWorkspaceDialog({
             {diff !== null ? (
               <>
                 <div className="flex items-center gap-2 px-2 py-2 border-b border-control text-compact">
+                  {!sidebarOpen && (
+                    <UiButton
+                      action="expand"
+                      content="icon"
+                      variant="plain"
+                      controlSize="compact"
+                      onClick={() => setSidebarOpen(true)}
+                      title="Show file tree"
+                      aria-label="Show file tree"
+                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
+                    >
+                      <PanelLeftOpen className="w-3.5 h-3.5" />
+                    </UiButton>
+                  )}
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
@@ -1866,7 +1927,23 @@ export function RemoteWorkspaceDialog({
                 <DiffView diff={diff.text} className="flex-1" />
               </>
             ) : !file ? (
-              <div className="flex-1 flex items-center justify-center text-compact text-content-muted">
+              <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted relative">
+                {!sidebarOpen && (
+                  <div className="absolute top-2 left-2">
+                    <UiButton
+                      action="expand"
+                      content="icon"
+                      variant="plain"
+                      controlSize="compact"
+                      onClick={() => setSidebarOpen(true)}
+                      title="Show file tree"
+                      aria-label="Show file tree"
+                      className="rounded-sm hover:bg-control text-content-primary"
+                    >
+                      <PanelLeftOpen className="w-3.5 h-3.5" />
+                    </UiButton>
+                  </div>
+                )}
                 Select a file on the left to view it
               </div>
             ) : (
@@ -1875,6 +1952,20 @@ export function RemoteWorkspaceDialog({
                     stays on one line in a narrow panel; the filename shrinks
                     first (min-w-0) and every action is shrink-0. */}
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact">
+                  {!sidebarOpen && (
+                    <UiButton
+                      action="expand"
+                      content="icon"
+                      variant="plain"
+                      controlSize="compact"
+                      onClick={() => setSidebarOpen(true)}
+                      title="Show file tree"
+                      aria-label="Show file tree"
+                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
+                    >
+                      <PanelLeftOpen className="w-3.5 h-3.5" />
+                    </UiButton>
+                  )}
                   <span className="text-content-secondary truncate flex-1 min-w-0" title={file.path}>
                     {file.filename}
                   </span>
