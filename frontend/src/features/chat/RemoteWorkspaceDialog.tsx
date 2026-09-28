@@ -2,7 +2,6 @@ import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
-import { Select as UiSelect } from "@/components/ui/select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { PresenceDot } from "@/components/ui/presence-dot";
@@ -1400,14 +1399,14 @@ export function RemoteWorkspaceDialog({
     >
       <div
         data-workspace-content=""
-        className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:absolute md:inset-0 md:pt-[var(--floating-panel-safe-top)]"
+        className="flex min-h-0 flex-1 flex-col p-3 md:absolute md:inset-0"
       >
 
       {/* Workspace toolbar / scope bar: git status + root & session scope controls */}
       {botId && (
         <div className="flex items-center justify-between gap-3 mb-2 text-compact text-content-muted flex-shrink-0 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            {git && (
+            {git ? (
               <div className="flex items-center gap-1 font-code">
                 <GitBranch className="w-3.5 h-3.5 text-content-muted shrink-0" />
                 <span
@@ -1430,13 +1429,17 @@ export function RemoteWorkspaceDialog({
                   · {git.entries.length} change{git.entries.length === 1 ? "" : "s"}
                 </span>
               </div>
-            )}
-            {meta?.git_ops === "off" && (
+            ) : meta?.git_ops === "off" ? (
               <span
                 className="text-content-muted"
                 title="This connector's policy disables git inspection (git_ops = off)"
               >
                 git off
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-content-muted">
+                <FolderTree className="w-3.5 h-3.5 shrink-0" />
+                <span>Files</span>
               </span>
             )}
           </div>
@@ -1512,7 +1515,7 @@ export function RemoteWorkspaceDialog({
         <div className="flex gap-3 flex-1 min-h-0 max-md:flex-col">
           {/* Tree pane */}
           {sidebarOpen && (
-            <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm overflow-hidden flex flex-col">
+            <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded-sm bg-panel/30 overflow-hidden flex flex-col">
               {/* Files / Changes / History switch — the latter two only for a git repo. */}
               {git && (
                 <div role="tablist" aria-label="Workspace views" className="flex items-center gap-1 px-2 py-2 border-b border-control/80 md:hidden">
@@ -1814,7 +1817,7 @@ export function RemoteWorkspaceDialog({
             role="region"
             aria-label="Open file"
             tabIndex={-1}
-            className="flex-1 min-h-0 rounded-sm overflow-hidden flex flex-col"
+            className="flex-1 min-h-0 rounded-sm bg-panel/30 overflow-hidden flex flex-col"
             onContextMenu={viewerSurface.onContextMenu}
             onKeyDown={viewerSurface.onKeyDown}
             onPointerDown={viewerSurface.onPointerDown}
@@ -1927,7 +1930,7 @@ export function RemoteWorkspaceDialog({
                 <DiffView diff={diff.text} className="flex-1" />
               </>
             ) : !file ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted relative">
+              <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted relative p-4">
                 {!sidebarOpen && (
                   <div className="absolute top-2 left-2">
                     <UiButton
@@ -1944,6 +1947,7 @@ export function RemoteWorkspaceDialog({
                     </UiButton>
                   </div>
                 )}
+                <File className="w-4 h-4 mb-2 text-content-muted/60" aria-hidden="true" />
                 Select a file on the left to view it
               </div>
             ) : (
