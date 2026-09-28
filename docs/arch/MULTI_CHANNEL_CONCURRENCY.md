@@ -41,8 +41,8 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 
 | 不变量 | 现状 |
 | --- | --- |
-| 1 每频道一会话 | ✅ 阶段 3：并发同 cwd 的回合互相告警（`workspace_shared` trace）；会话映射 30 天未用即清扫，`updated_at` 在复用时刷新以度量闲置而非年龄 |
-| 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 warn |
+| 1 每频道一会话 | ✅ 阶段 3：不同会话并发占用同一规范化 cwd 时拒绝后启动回合；会话映射 30 天未用即清扫，`updated_at` 在复用时刷新以度量闲置而非年龄 |
+| 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 enforce |
 | 3 绑定不放在可变连接状态 | ✅ 阶段 2a：server 名按频道唯一，名字键控的 client 无法把两个频道的连接合并 |
 | 4 容量有界 | ✅ 阶段 1：`TurnSlots` 信号量，默认 4（原默认 1 从未生效，实际并发无上限）；超限回合发 `turn_queued` trace |
 | 4 配额按维度 | ✅ 阶段 3：`MAX_WATCHES` 改为按 workspace root 计费。注：workspace RPC 帧不带频道，watch 由工作台浏览驱动，真实维度是 root——而会话的 root 集合本就是它的 `cwd` + `additionalDirectories`，所以按 root 分摊即按各频道的工作区分摊 |
@@ -57,7 +57,7 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 0 | 跨频道调用基线埋点；隔离验收矩阵成文 | ✅ 本文 + `api/mcp.rs` 的 channel-scope 审计 |
 | 1 | 并发阀门：让 `max_concurrent` 生效 + 背压 trace | ✅ 连接器 0.1.42 |
 | 2a | MCP server 名字按频道唯一化 | ✅ 连接器 0.1.43 |
-| 2b | token 带 `chan` 声明 → warn → enforce | ✅ 网关 + 连接器 0.1.44（默认 warn） |
+| 2b | token 带 `chan` 声明 → warn → enforce | ✅ 网关 + 连接器 0.1.44；当前默认 enforce，可显式设 warn/off |
 | 3 | 隔离补强：cwd 冲突检测、会话 TTL、崩溃终帧、自更新排空上界 | ✅ 连接器 0.1.45 |
 
 阶段 1 排在 2 前面：阶段 2 修的是需要提示注入配合才能利用的越权，阶段 1 修的是正常
@@ -86,7 +86,7 @@ per-session 锁**之后**获取，频道 A 连收 10 条消息时，排队的回
   `read_resource` / `prompts/get` 三条入口做等值校验，不匹配即 `PERMISSION_DENIED`
   （资源读侧返回与"不存在"相同的不透明结果，避免探测）。
 
-  判定表（`MCP_CHANNEL_SCOPE`，默认 `warn`）：
+  判定表（`MCP_CHANNEL_SCOPE`，默认 `enforce`）：
 
   | verdict | 含义 | off | warn | enforce |
   | --- | --- | --- | --- | --- |
@@ -150,3 +150,26 @@ target 为 `cheers::mcp::channel_scope`，按 `verdict` 聚合即得基线：
 一个真 bug：`RawPromptPolicy` 手写的 `Default` 仍把 `max_concurrent` 钉在 1，而 serde
 的字段默认是 4——配置里整个 `[policy.prompt]` 表缺席时走的是前者，于是并发上限被悄悄
 锁死。剩余项（1、2、4、5）待补。
+
+## 6. 下一阶段：工作区与 Agent 进程隔离
+
+MCP 的 `chan` 声明约束的是网关 MCP API。它**不会**约束 Agent 进程自己能读写哪些本地文件。
+ACP `cwd` / `additionalDirectories` 是 Agent 的会话配置；除非所选 Agent 和主机运行环境强制
+执行它们，否则它们只是 Agent 侧的工作区提示。Connector 当前不代理 Agent 的本地 `fs` 或
+`terminal` 能力，也不创建容器或 OS sandbox（见 `CLIENT_DAEMON_ARCHITECTURE.md` 和
+`SESSION_WORKDIR_ROOTSET.md`）。因此，频道专属 CWD 本身不足以证明频道间文件隔离。
+
+下一阶段应引入可强制执行的运行边界：
+
+1. 为每个频道分配独立目录，并拒绝同一 bot 的不同频道绑定相同或相互包含的目录。先审计
+   旧会话并提供显式迁移；不能静默改写 ACP 生命周期内不可变的 `cwd`。
+2. Agent 子进程限制在该频道目录、所需运行时目录和显式批准的只读依赖目录内；阻断经由
+   symlink、`..`、子进程和 shell 绕出边界。没有 OS 强制隔离时，只能称为“工作目录分离”，
+   不能标成安全沙箱。
+3. 覆盖并发、顺序复用、目录嵌套、符号链接、Agent shell/工具和 Connector 重启后的验收；
+   验证隔离机制不可用时会 fail closed。
+
+实施前需确认受支持的 OS（macOS / Linux / Windows）与 Agent 启动方式。Linux 可评估 namespace /
+seccomp 或容器，macOS 需单独评估系统提供的 sandbox 能力；不能假设跨平台使用同一种机制。
+当前仓库没有通用的 Agent 进程 sandbox 抽象，因此不应只把会话 `cwd` 自动改成
+`~/.cheers/workspace/<channel_id>` 就宣称风险已消除。
