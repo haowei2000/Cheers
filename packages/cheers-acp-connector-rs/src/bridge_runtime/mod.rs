@@ -169,9 +169,8 @@ impl AccountRuntime {
         // The Connector is itself an enrolled connector host, which is the
         // principal the Gateway's `client_credentials` grant exists for. Minting
         // here means the Agent only has to speak HTTP MCP; it needs no OAuth
-        // client, metadata document, or consent round-trip of its own. Without an
-        // host id (older Gateway) we keep the headerless entry so an
-        // OAuth-capable Agent can still authenticate natively.
+        // client, metadata document, or consent round-trip of its own. Without
+        // a host id we do not expose an unscoped endpoint to the Agent.
         let mcp_token = match bridge.control_hello().host_id.clone() {
             Some(host_id) if !host_id.trim().is_empty() => {
                 match McpTokenProvider::new(
@@ -184,7 +183,7 @@ impl AccountRuntime {
                         tracing::warn!(
                             account = %self.account_id,
                             error = %error,
-                            "could not build the MCP token provider; falling back to native Agent OAuth"
+                            "could not build the MCP token provider; Cheers MCP tools will be unavailable"
                         );
                         None
                     }
@@ -574,9 +573,9 @@ struct RuntimeContext {
     identity: BotIdentity,
     /// Canonical native HTTP MCP endpoint advertised by the authenticated Gateway.
     mcp_url: String,
-    /// Mints host-bound access tokens for [`Self::mcp_url`]. `None` when
-    /// the Gateway advertised no host id, in which case the endpoint is
-    /// injected headerless and the Agent must run native OAuth itself.
+    /// Mints host-bound, channel-narrowed access tokens for [`Self::mcp_url`].
+    /// `None` when this Gateway cannot provide the host identity required to
+    /// mint a scoped token; in that case the endpoint is not exposed to Agents.
     mcp_token: Option<Arc<McpTokenProvider>>,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
@@ -1908,49 +1907,64 @@ impl RuntimeContext {
         }));
         let sharing_cwd = {
             let mut shared = self.shared.runs.lock().await;
-            // Read the neighbours before inserting this run, so a run never
-            // reports itself as its own conflict.
-            let sharing = shared.channels_running_in(run_cwd.as_deref(), &task.channel_id);
-            shared.by_msg.insert(task.msg_id.clone(), run.clone());
-            shared
-                .by_acp_session
-                .insert(acp_session_id.clone(), run.clone());
-            shared
-                .by_provider_key
-                .insert(task.provider_session_key.clone(), run.clone());
-            if let Some(cwd) = run_cwd.clone() {
+            // Check and reserve under one lock so two channels cannot both pass
+            // the check and then start mutating the same directory.
+            let cwd_key = run_cwd
+                .as_deref()
+                .map(|cwd| canonical_path(Path::new(cwd)).to_string_lossy().to_string());
+            let sharing = shared.channels_running_in(cwd_key.as_deref());
+            if sharing.is_empty() {
+                shared.by_msg.insert(task.msg_id.clone(), run.clone());
                 shared
-                    .cwd_by_msg
-                    .insert(task.msg_id.clone(), (cwd, task.channel_id.clone()));
+                    .by_acp_session
+                    .insert(acp_session_id.clone(), run.clone());
+                shared
+                    .by_provider_key
+                    .insert(task.provider_session_key.clone(), run.clone());
+                if let Some(cwd) = cwd_key {
+                    shared
+                        .cwd_by_msg
+                        .insert(task.msg_id.clone(), (cwd, task.channel_id.clone()));
+                }
             }
             sharing
         };
         if !sharing_cwd.is_empty() {
-            // Not an error and not blocked: sharing a workspace between channels
-            // can be exactly what an operator wants. But the virtual filesystem
-            // is per channel while this directory is not, so two turns editing
-            // it at once can interleave writes with nothing to serialize them —
-            // worth saying out loud in the channel rather than leaving to be
-            // discovered as a mangled file.
             let cwd = run_cwd.clone().unwrap_or_default();
             tracing::warn!(
                 account = %self.account_id,
                 channel = %task.channel_id,
                 other_channels = ?sharing_cwd,
                 cwd = %cwd,
-                "another channel is running a turn in this working directory"
+                "refusing to run across channels in a shared working directory"
             );
-            self.trace(
-                &run,
-                "workspace_shared",
-                "warning",
-                "Another channel is working in this directory",
-                Some(&format!(
-                    "{cwd} is also in use by {} other running turn(s); edits are not serialized between channels",
-                    sharing_cwd.len()
-                )),
-            )
-            .await?;
+            let message = "This workspace is currently in use by another channel. Configure separate workspace directories or retry later.";
+            if let Some(evaluation_id) = evaluation_id {
+                let _ = self
+                    .io
+                    .send_data(silent_result(
+                        &task,
+                        evaluation_id,
+                        None,
+                        Some(message.into()),
+                    ))
+                    .await;
+            } else {
+                let _ = self
+                    .io
+                    .send_data_expect_terminal_ack(DataOutbound::Error {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        client_msg_id: Uuid::new_v4().to_string(),
+                        msg_id: task.msg_id.clone(),
+                        message: message.into(),
+                        provider_session_key: Some(task.provider_session_key.clone()),
+                        provider_session_id: None,
+                        session_id: task.session_id.clone(),
+                        acp_capability: None,
+                    })
+                    .await;
+            }
+            return Ok(());
         }
         self.trace(
             &run,
@@ -2716,25 +2730,29 @@ impl RuntimeContext {
                 );
             }
         }
-        let bearer = match self.mcp_token.as_ref() {
-            Some(provider) => provider
-                .bearer(&task.channel_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        account = %self.account_id,
-                        error = %error,
-                        "could not mint a Cheers MCP access token; injecting the endpoint without \
-                         credentials (Cheers tools stay unavailable unless the Agent runs native OAuth)"
-                    );
-                })
-                .ok(),
-            None => None,
+        let Some(provider) = self.mcp_token.as_ref() else {
+            tracing::warn!(
+                account = %self.account_id,
+                "Gateway did not provide a host-bound MCP token provider; Cheers MCP tools are unavailable"
+            );
+            return Value::Array(servers);
+        };
+        let bearer = match provider.bearer(&task.channel_id).await {
+            Ok(token) => token,
+            Err(error) => {
+                tracing::warn!(
+                    account = %self.account_id,
+                    error = %error,
+                    channel_id = %task.channel_id,
+                    "could not mint a channel-scoped Cheers MCP token; Cheers MCP tools are unavailable"
+                );
+                return Value::Array(servers);
+            }
         };
         servers.push(native_cheers_mcp_server(
             &task.channel_id,
             &self.mcp_url,
-            bearer.as_deref(),
+            &bearer,
         ));
         Value::Array(servers)
     }
@@ -2927,18 +2945,18 @@ struct RunRegistry {
 }
 
 impl RunRegistry {
-    /// Channels other than `channel_id` with a run currently in `cwd`.
+    /// Channels with an active run in this directory; checked before inserting the current run.
     ///
     /// `None` cwd, or a run with none, never matches: "no pinned directory"
-    /// is not a directory two channels can collide in.
-    fn channels_running_in(&self, cwd: Option<&str>, channel_id: &str) -> Vec<String> {
+    /// is not a directory two concurrent runs can collide in.
+    fn channels_running_in(&self, cwd: Option<&str>) -> Vec<String> {
         let Some(cwd) = cwd else {
             return Vec::new();
         };
         let mut channels: Vec<String> = self
             .cwd_by_msg
             .values()
-            .filter(|(run_cwd, run_channel)| run_cwd == cwd && run_channel != channel_id)
+            .filter(|(run_cwd, _)| run_cwd == cwd)
             .map(|(_, run_channel)| run_channel.clone())
             .collect();
         channels.sort_unstable();
@@ -3721,10 +3739,10 @@ max_concurrent = {max_concurrent}
         );
     }
 
-    /// 验收矩阵 #2 的连接器一侧：并发回合注入的 MCP 配置必须各自带本频道的
-    /// server 名。频道与凭证的绑定是否真的传到 agent，属于 agent 镜像的验收。
+    /// Without a host-bound token provider, the Connector must not expose an
+    /// unscoped Cheers MCP endpoint to the Agent.
     #[tokio::test]
-    async fn injected_mcp_servers_are_named_per_channel() {
+    async fn mcp_endpoint_is_omitted_without_a_scoped_token_provider() {
         let dir = tempfile::tempdir().unwrap();
         let (runtime, _started, _release, _taps) =
             fixture_runtime(dir.path(), PromptGate::First, 4).await;
@@ -3735,14 +3753,15 @@ max_concurrent = {max_concurrent}
         let b = runtime
             .mcp_servers_for_task(&fixture_task("channel-b"))
             .await;
-        let name = |servers: &Value| -> String {
-            servers.as_array().unwrap().last().unwrap()["name"]
-                .as_str()
-                .unwrap()
-                .to_string()
+        let has_cheers = |servers: &Value| {
+            servers.as_array().unwrap().iter().any(|server| {
+                server["name"]
+                    .as_str()
+                    .is_some_and(is_cheers_mcp_server_name)
+            })
         };
-        assert_eq!(name(&a), "cheers-channela");
-        assert_eq!(name(&b), "cheers-channelb");
+        assert!(!has_cheers(&a));
+        assert!(!has_cheers(&b));
     }
 
     /// 验收矩阵 #3：频道 A 的回合卡在 agent 里时，频道 B 的回合照常跑完。
@@ -4116,19 +4135,20 @@ max_concurrent = {max_concurrent}
         let mut registry = RunRegistry::default();
         running(&mut registry, "m1", "/repo", "channel-a");
         assert_eq!(
-            registry.channels_running_in(Some("/repo"), "channel-b"),
+            registry.channels_running_in(Some("/repo")),
             vec!["channel-a".to_string()]
         );
     }
 
     /// 自己的在途回合不算冲突——同频道由会话锁串行，本就不会并发写。
     #[test]
-    fn shared_cwd_ignores_the_same_channel() {
+    fn shared_cwd_rejects_another_session_in_the_same_channel() {
         let mut registry = RunRegistry::default();
         running(&mut registry, "m1", "/repo", "channel-a");
-        assert!(registry
-            .channels_running_in(Some("/repo"), "channel-a")
-            .is_empty());
+        assert_eq!(
+            registry.channels_running_in(Some("/repo")),
+            vec!["channel-a".to_string()]
+        );
     }
 
     /// 同一频道的多个回合去重，多个不同频道各报一次。
@@ -4140,7 +4160,7 @@ max_concurrent = {max_concurrent}
         running(&mut registry, "m3", "/repo", "channel-c");
         running(&mut registry, "m4", "/elsewhere", "channel-d");
         assert_eq!(
-            registry.channels_running_in(Some("/repo"), "channel-b"),
+            registry.channels_running_in(Some("/repo")),
             vec!["channel-a".to_string(), "channel-c".to_string()]
         );
     }
@@ -4150,7 +4170,7 @@ max_concurrent = {max_concurrent}
     fn shared_cwd_needs_an_actual_directory() {
         let mut registry = RunRegistry::default();
         running(&mut registry, "m1", "/repo", "channel-a");
-        assert!(registry.channels_running_in(None, "channel-b").is_empty());
+        assert!(registry.channels_running_in(None).is_empty());
     }
 
     // ── TurnSlots：daemon 级并发阀门 ──────────────────────────────────────

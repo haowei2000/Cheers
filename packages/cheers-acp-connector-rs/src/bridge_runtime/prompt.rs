@@ -487,25 +487,16 @@ pub(super) fn is_cheers_mcp_server_name(name: &str) -> bool {
 
 /// Build the authoritative Cheers MCP entry for one channel.
 ///
-/// `bearer` is a host-bound access token the Connector minted for this
-/// session (see [`crate::mcp_token`]). Supplying it means the Agent only has to
-/// speak HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
-/// Document, and no consent round-trip. `None` falls back to the headerless
-/// entry, leaving an OAuth-capable Agent to run native discovery itself.
-pub(super) fn native_cheers_mcp_server(
-    channel_id: &str,
-    mcp_url: &str,
-    bearer: Option<&str>,
-) -> Value {
-    let headers = match bearer {
-        Some(token) => json!([{ "name": "Authorization", "value": format!("Bearer {token}") }]),
-        None => json!([]),
-    };
+/// `bearer` is a host-bound, channel-narrowed access token the Connector minted
+/// for this session (see [`crate::mcp_token`]). Supplying it means the Agent
+/// only has to speak HTTP MCP — it needs no OAuth client of its own, no Client
+/// ID Metadata Document, and no consent round-trip.
+pub(super) fn native_cheers_mcp_server(channel_id: &str, mcp_url: &str, bearer: &str) -> Value {
     json!({
         "type": "http",
         "name": cheers_mcp_server_name(channel_id),
         "url": mcp_url,
-        "headers": headers
+        "headers": [{ "name": "Authorization", "value": format!("Bearer {bearer}") }]
     })
 }
 
@@ -1666,26 +1657,13 @@ mod tests {
             native_cheers_mcp_server(
                 "4f1d9c2e-0000-4000-8000-000000000001",
                 "https://cheers.example/mcp",
-                Some("tok-123")
+                "tok-123"
             ),
             json!({
                 "type": "http",
                 "name": "cheers-4f1d9c2e000040008000000000000001",
                 "url": "https://cheers.example/mcp",
                 "headers": [{"name": "Authorization", "value": "Bearer tok-123"}]
-            })
-        );
-    }
-
-    #[test]
-    fn native_cheers_mcp_falls_back_to_headerless_for_native_agent_oauth() {
-        assert_eq!(
-            native_cheers_mcp_server("channel-a", "https://cheers.example/mcp", None),
-            json!({
-                "type": "http",
-                "name": "cheers-channela",
-                "url": "https://cheers.example/mcp",
-                "headers": []
             })
         );
     }

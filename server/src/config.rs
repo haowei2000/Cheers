@@ -318,18 +318,17 @@ pub struct Config {
 /// minted for one channel is the only per-turn thing the transport carries, so
 /// this decides what happens when a call names a different one.
 ///
-/// Rolling out in stages is the point: connectors that predate channel-narrowed
-/// tokens send no channel at all, and `Warn` measures what `Enforce` would
-/// refuse before it refuses anything.
+/// Channel scoping is enforced by default. `Warn` and `Off` remain explicit
+/// rollout overrides for deployments that need to migrate legacy clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum McpChannelScope {
     /// Never check. The pre-existing behaviour.
     Off,
-    /// Check and log, allow either way. The default while connectors roll out.
-    #[default]
+    /// Check and log, allow either way. Explicit compatibility mode only.
     Warn,
     /// Refuse a call that leaves its token's channel, and refuse a token that
     /// names no channel at all.
+    #[default]
     Enforce,
 }
 
@@ -337,8 +336,8 @@ impl McpChannelScope {
     fn from_env_value(raw: Option<&str>) -> Self {
         match raw.map(str::trim).unwrap_or_default() {
             "off" => Self::Off,
-            "enforce" => Self::Enforce,
-            "" | "warn" => Self::Warn,
+            "" | "enforce" => Self::Enforce,
+            "warn" => Self::Warn,
             other => panic!("MCP_CHANNEL_SCOPE must be off, warn or enforce (got {other:?})"),
         }
     }
@@ -880,6 +879,23 @@ fn require_any(keys: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_channel_scope_defaults_to_enforce() {
+        assert_eq!(McpChannelScope::default(), McpChannelScope::Enforce);
+        assert_eq!(
+            McpChannelScope::from_env_value(None),
+            McpChannelScope::Enforce
+        );
+        assert_eq!(
+            McpChannelScope::from_env_value(Some("warn")),
+            McpChannelScope::Warn
+        );
+        assert_eq!(
+            McpChannelScope::from_env_value(Some("off")),
+            McpChannelScope::Off
+        );
+    }
 
     #[test]
     fn mcp_public_url_requires_exact_endpoint_and_safe_scheme() {

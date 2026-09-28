@@ -132,6 +132,9 @@ pub struct McpAuthorizeRequest {
     code_challenge: String,
     code_challenge_method: String,
     resource: String,
+    /// Optional consent-time channel narrowing selected by the resource owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cheers_channel: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,37 +193,62 @@ pub async fn authorize_inspect(
     validate_client_redirect(&client, &request).map_err(AppError::BadRequest)?;
     let rows = if crate::api::bots::is_admin(&claims) {
         sqlx::query(
-            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username
+            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username,
+                    c.channel_id, c.name AS channel_name
              FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
+             LEFT JOIN channel_memberships bm ON bm.member_id=b.bot_id AND bm.member_type='bot'
+             LEFT JOIN channels c ON c.channel_id=bm.channel_id
              WHERE i.status = 'active' AND i.revoked_at IS NULL AND b.is_disabled = FALSE
-             ORDER BY b.username, i.device_name",
+             ORDER BY b.username, i.device_name, c.name",
         )
         .fetch_all(&state.db)
         .await?
     } else {
         sqlx::query(
-            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username
+            "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username,
+                    c.channel_id, c.name AS channel_name
              FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
+             LEFT JOIN channel_memberships bm ON bm.member_id=b.bot_id AND bm.member_type='bot'
+             LEFT JOIN channels c ON c.channel_id=bm.channel_id
              WHERE i.status = 'active' AND i.revoked_at IS NULL AND b.is_disabled = FALSE
                AND b.created_by = $1
-             ORDER BY b.username, i.device_name",
+               AND (c.channel_id IS NULL OR EXISTS (
+                   SELECT 1 FROM channel_memberships um
+                   WHERE um.member_id=$1 AND um.member_type='user' AND um.channel_id=c.channel_id
+               ))
+             ORDER BY b.username, i.device_name, c.name",
         )
         .bind(&claims.sub)
         .fetch_all(&state.db)
         .await?
     };
-    let hosts = rows
-        .into_iter()
-        .map(|row| {
-            json!({
-                "host_id": row.try_get::<String, _>("host_id").unwrap_or_default(),
-                "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
-                "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
-                "bot_name": row.try_get::<Option<String>, _>("display_name").ok().flatten()
-                    .or_else(|| row.try_get::<String, _>("username").ok()).unwrap_or_default()
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut hosts: Vec<Value> = Vec::new();
+    for row in rows {
+        let host_id = row.try_get::<String, _>("host_id").unwrap_or_default();
+        let index = match hosts.iter().position(|host| host["host_id"] == host_id) {
+            Some(index) => index,
+            None => {
+                hosts.push(json!({
+                    "host_id": host_id,
+                    "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
+                    "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
+                    "bot_name": row.try_get::<Option<String>, _>("display_name").ok().flatten()
+                        .or_else(|| row.try_get::<String, _>("username").ok()).unwrap_or_default(),
+                    "channels": []
+                }));
+                hosts.len() - 1
+            }
+        };
+        if let Ok(Some(channel_id)) = row.try_get::<Option<String>, _>("channel_id") {
+            hosts[index]["channels"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "channel_id": channel_id,
+                    "name": row.try_get::<String, _>("channel_name").unwrap_or_default()
+                }));
+        }
+    }
     Ok(Json(json!({
         "client":{"client_id":client.client_id,"client_name":client.client_name.unwrap_or_else(|| "MCP client".into())},
         "scopes":parse_requested_scopes(&request.scope).unwrap_or_default(),
@@ -269,11 +297,54 @@ pub async fn authorize_approve(
         return Err(AppError::Forbidden("host is unavailable".into()));
     }
 
+    let channel_id = match request.cheers_channel.as_deref() {
+        Some(raw) => {
+            let channel_id = Uuid::parse_str(raw)
+                .map_err(|_| AppError::BadRequest("invalid cheers_channel".into()))?;
+            let channel_allowed: bool = if crate::api::bots::is_admin(&claims) {
+                sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM connector_hosts i
+                     JOIN channel_memberships bm ON bm.member_id=i.bot_id AND bm.member_type='bot'
+                     WHERE i.host_id=$1 AND bm.channel_id=$2 AND i.status='active'
+                       AND i.revoked_at IS NULL)",
+                )
+                .bind(host.to_string())
+                .bind(channel_id.to_string())
+                .fetch_one(&state.db)
+                .await?
+            } else {
+                sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM connector_hosts i
+                     JOIN channel_memberships bm ON bm.member_id=i.bot_id AND bm.member_type='bot'
+                     JOIN channel_memberships um ON um.channel_id=bm.channel_id
+                       AND um.member_id=$3 AND um.member_type='user'
+                     WHERE i.host_id=$1 AND bm.channel_id=$2 AND i.status='active'
+                       AND i.revoked_at IS NULL)",
+                )
+                .bind(host.to_string())
+                .bind(channel_id.to_string())
+                .bind(&claims.sub)
+                .fetch_one(&state.db)
+                .await?
+            };
+            if !channel_allowed {
+                return Err(AppError::Forbidden("channel is unavailable".into()));
+            }
+            Some(channel_id.to_string())
+        }
+        None if state.config.mcp_channel_scope == McpChannelScope::Enforce => {
+            return Err(AppError::BadRequest(
+                "choose a channel to bind this MCP authorization".into(),
+            ));
+        }
+        None => None,
+    };
+
     let code = random_oauth_secret()?;
     sqlx::query(
         "INSERT INTO mcp_oauth_authorization_codes
-         (code_id,code_hash,host_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+         (code_id,code_hash,host_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at,channel_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
     )
     .bind(Uuid::new_v4().to_string())
     .bind(hash_oauth_secret(&code))
@@ -285,6 +356,7 @@ pub async fn authorize_approve(
     .bind(&request.code_challenge)
     .bind(&claims.sub)
     .bind(Utc::now() + Duration::minutes(MCP_AUTH_CODE_TTL_MINUTES))
+    .bind(channel_id)
     .execute(&state.db).await?;
     let redirect_uri = authorization_redirect(
         &request,
@@ -307,6 +379,13 @@ fn validate_authorize_shape(state: &AppState, request: &McpAuthorizeRequest) -> 
     }
     if request.resource != state.config.mcp_resource_url() {
         return Err("resource does not identify this MCP endpoint".into());
+    }
+    if request
+        .cheers_channel
+        .as_deref()
+        .is_some_and(|channel| Uuid::parse_str(channel).is_err())
+    {
+        return Err("cheers_channel must be a channel UUID".into());
     }
     canonical_scope(&request.scope)?;
     Ok(())
@@ -714,6 +793,12 @@ pub async fn issue_mcp_access_token(
             }
         }
     };
+    if channel.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+        return oauth_token_error(
+            "invalid_target",
+            "cheers_channel is required when channel scoping is enforced",
+        );
+    }
 
     let _ = mark_mcp_authorizing(&state, &host_id).await;
 
@@ -822,7 +907,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         "UPDATE mcp_oauth_authorization_codes SET used_at=NOW()
          WHERE code_hash=$1 AND used_at IS NULL AND expires_at>NOW()
            AND client_id=$2 AND redirect_uri=$3 AND resource=$4 AND code_challenge=$5
-         RETURNING host_id, scope",
+         RETURNING host_id, scope, channel_id",
     )
     .bind(hash_oauth_secret(code))
     .bind(client_id)
@@ -849,6 +934,10 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         Ok(value) => value,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
+    let channel_id: Option<String> = match row.try_get("channel_id") {
+        Ok(value) => value,
+        Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
+    };
     let host = match active_host(&mut tx, &host_id).await {
         Ok(Some(value)) => value,
         Ok(None) => return oauth_token_error("invalid_grant", "host is no longer active"),
@@ -864,8 +953,8 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     let refresh_token_id = Uuid::new_v4().to_string();
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at)
-         VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8)",
+         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at,channel_id)
+         VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
     .bind(refresh_token_id)
     .bind(hash_oauth_secret(&refresh_token))
@@ -875,6 +964,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
     .bind(Utc::now() + Duration::days(MCP_REFRESH_TOKEN_TTL_DAYS))
+    .bind(&channel_id)
     .execute(&mut *tx)
     .await
     {
@@ -891,7 +981,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         host_id,
         host.1,
         scope,
-        None,
+        channel_id,
         Some(refresh_token),
     )
 }
@@ -922,7 +1012,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
     let row = match sqlx::query(
-        "SELECT refresh_token_id, family_id, host_id, credential_hash, scope
+        "SELECT refresh_token_id, family_id, host_id, credential_hash, scope, channel_id
          FROM mcp_oauth_refresh_tokens
          WHERE token_hash=$1 AND client_id=$2 AND resource=$3
            AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()
@@ -976,6 +1066,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         row.try_get::<String, _>("host_id"),
         row.try_get::<String, _>("credential_hash"),
         row.try_get::<String, _>("scope"),
+        row.try_get::<Option<String>, _>("channel_id"),
     );
     let (
         Ok(original_id),
@@ -983,11 +1074,18 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         Ok(host_id),
         Ok(grant_credential_hash),
         Ok(original_scope),
+        Ok(original_channel_id),
     ) = decoded
     else {
         tracing::error!("MCP refresh-token row is malformed");
         return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     };
+    if original_channel_id.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+        return oauth_token_error(
+            "invalid_grant",
+            "this refresh grant has no channel binding; authorize again and choose a channel",
+        );
+    }
     let scope = match request.scope.as_deref() {
         None => original_scope,
         Some(raw) => match narrowed_scope(&original_scope, raw) {
@@ -1025,8 +1123,8 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     }
     if let Err(error) = sqlx::query(
         "INSERT INTO mcp_oauth_refresh_tokens
-         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at,channel_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
     )
     .bind(&replacement_id)
     .bind(&family_id)
@@ -1037,6 +1135,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
     .bind(&scope)
     .bind(state.config.mcp_resource_url())
     .bind(Utc::now() + Duration::days(MCP_REFRESH_TOKEN_TTL_DAYS))
+    .bind(&original_channel_id)
     .execute(&mut *tx)
     .await
     {
@@ -1075,7 +1174,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         host_id,
         host.1,
         scope,
-        None,
+        original_channel_id,
         Some(replacement),
     )
 }
