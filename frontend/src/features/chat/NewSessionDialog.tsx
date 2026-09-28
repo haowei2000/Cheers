@@ -21,18 +21,23 @@ import { isComposing } from "@/lib/ime";
 export function NewSessionDialog({
   channelId,
   bots,
+  initialBotId,
+  initialCwd,
   onClose,
   onCreated,
 }: {
   channelId: string;
   /** Bots the caller may create sessions for: id → label. */
   bots: { id: string; label: string }[];
+  /** Optional context when starting from an existing session. */
+  initialBotId?: string;
+  initialCwd?: string;
   onClose: () => void;
   /** Fires with the created session so callers can refetch and/or auto-target it. */
   onCreated: (created: { session_id: string; bot_id: string }) => void;
 }) {
-  const [botId, setBotId] = useState(bots[0]?.id ?? "");
-  const [cwd, setCwd] = useState("");
+  const [botId, setBotId] = useState(initialBotId && bots.some((bot) => bot.id === initialBotId) ? initialBotId : bots[0]?.id ?? "");
+  const [cwd, setCwd] = useState(initialCwd ?? "");
   const [dirs, setDirs] = useState("");
   const [busy, setBusy] = useState(false);
   // The connector's workspace policy for the selected bot — turns the blind

@@ -25,6 +25,7 @@ import {
   GitBranch,
   GitCommit,
   GitCompare,
+  FolderPlus,
   History,
   Loader2,
   RefreshCw,
@@ -59,6 +60,8 @@ import {
 } from "@/api/workspace";
 import { DiffView } from "./DiffView";
 import type { PresenceFocus } from "./hooks/useChatRealtime";
+import { getSessionControls } from "@/api/sessionControl";
+import { NewSessionDialog } from "@/features/chat/NewSessionDialog";
 
 /**
  * Browse a *specific bot's* real working machine. A channel can have several bots,
@@ -319,6 +322,8 @@ export function RemoteWorkspaceDialog({
   // Session-scoped by default: browse only the active session's root set. Un-checking
   // "Entire allowed roots" drops the session id so the user sees the bot's ENTIRE allowed roots.
   const [scoped, setScoped] = useState(true);
+  const [canCreateSession, setCanCreateSession] = useState(false);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
   // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
@@ -612,6 +617,21 @@ export function RemoteWorkspaceDialog({
       alive = false;
     };
   }, [channelId, botId, effectiveSessionId]);
+
+  // Session cwd is immutable after creation. Offer a direct path to create a new
+  // session in the directory currently being browsed, but only when the caller has
+  // the server-resolved session_create grant for this bot.
+  useEffect(() => {
+    let alive = true;
+    setCanCreateSession(false);
+    if (!botId) return;
+    getSessionControls(channelId, botId)
+      .then((controls) => alive && setCanCreateSession(controls.can_create_session))
+      .catch(() => alive && setCanCreateSession(false));
+    return () => {
+      alive = false;
+    };
+  }, [channelId, botId]);
 
   // The channel's session workdirs for the selected bot (best-effort; the primary root-
   // picker source). DB-only on the gateway, so it answers even when the connector is
@@ -1337,6 +1357,7 @@ export function RemoteWorkspaceDialog({
   );
 
   return (
+    <>
     <FloatingPanel
       title="Remote workspace"
       icon={FolderTree}
@@ -1735,6 +1756,17 @@ export function RemoteWorkspaceDialog({
                       <GitCompare className="w-3.5 h-3.5" />
                     </UiButton>
                   )}
+                  {canCreateSession && botId && cwd && (
+                    <UiButton action="add" variant="plain" content="icon"
+                      type="button"
+                      aria-label="Create a new session in this directory"
+                      title="Create a new session in this directory"
+                      onClick={() => setNewSessionOpen(true)}
+                      className="rounded-sm hover:bg-control"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </UiButton>
+                  )}
                   <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </UiButton>
@@ -1990,5 +2022,19 @@ export function RemoteWorkspaceDialog({
       )}
       </div>
     </FloatingPanel>
+    {newSessionOpen && selectedBot && botId && (
+      <NewSessionDialog
+        channelId={channelId}
+        bots={[{ id: botId, label: selectedBot.display_name || selectedBot.username }]}
+        initialBotId={botId}
+        initialCwd={cwd}
+        onClose={() => setNewSessionOpen(false)}
+        onCreated={() => {
+          setNewSessionOpen(false);
+          void getSessionWorkdirs(channelId, botId).then(setSessionWorkdirs).catch(() => {});
+        }}
+      />
+    )}
+    </>
   );
 }
