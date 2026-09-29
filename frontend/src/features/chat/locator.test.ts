@@ -40,6 +40,13 @@ describe("parseLocator", () => {
     expect(parseLocator("cheers:inbox/6f2a-11")).toEqual({ kind: "inbox", fileId: "6f2a-11" });
   });
 
+  it("round-trips a stable code-authored element", () => {
+    const uri = "cheers:desk/cards/status.tsx#^revenue-card";
+    const locator = { kind: "desk" as const, path: "cards/status.tsx", inspectableId: "revenue-card" };
+    expect(parseLocator(uri)).toEqual(locator);
+    expect(formatLocator(locator)).toBe(uri);
+  });
+
   it("swaps a reversed line range instead of rejecting it", () => {
     expect(parseLocator("cheers:desk/a.md#L30-L10")).toEqual({
       kind: "desk",

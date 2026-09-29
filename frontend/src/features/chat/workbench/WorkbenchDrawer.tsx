@@ -36,6 +36,7 @@ import type { RendererExtension } from "./sandbox/rendererExtension";
 import { listPersonalExtensions, pickDevelopmentExtension, readDevelopmentExtension } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 import "./lens/builtins";
+import { parseLocator } from "../locator";
 
 interface Props {
   open: boolean;
@@ -215,7 +216,10 @@ function WorkbenchDrawerImpl({
   }, []);
 
   useEffect(() => {
-    if (openFilePath) setFocus(openFilePath);
+    if (openFilePath) {
+      const locator = openFilePath.startsWith("cheers:") ? parseLocator(openFilePath) : null;
+      setFocus(locator?.kind === "desk" ? locator.path : openFilePath);
+    }
   }, [openFilePath]);
   // Never leak a focus/selection across channels.
   useEffect(() => setFocus(null), [channelId]);
@@ -612,6 +616,10 @@ function WorkbenchDrawerImpl({
       setBinding,
       configs,
       openTarget: focus,
+      openInspectableId: (() => {
+        const locator = openFilePath?.startsWith("cheers:") ? parseLocator(openFilePath) : null;
+        return locator?.kind === "desk" && locator.path === focus ? locator.inspectableId : undefined;
+      })(),
       filesTick,
       openLocator: onOpenLocator,
       composeMessage: onCompose,
@@ -633,6 +641,7 @@ function WorkbenchDrawerImpl({
       setBinding,
       configs,
       focus,
+      openFilePath,
       filesTick,
       onOpenLocator,
       onCompose,

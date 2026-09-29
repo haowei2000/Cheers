@@ -5,6 +5,7 @@
 //!
 //! ```text
 //!   cheers:desk/<path>[#L<n>[-L<n>]]      this channel's Desk file (context_files)
+//!   cheers:desk/<path>#^<id>              a code-authored card in that file
 //!   cheers:ws/<bot>/<path>[#L<n>[-L<n>]]  a bot's real workspace file
 //!   cheers:msg/<message_id>               a message in this channel
 //!   cheers:inbox/<file_id>                a chat attachment
@@ -63,6 +64,7 @@ pub enum Locator {
         path: String,
         line: Option<u32>,
         line_end: Option<u32>,
+        inspectable_id: Option<String>,
     },
     Ws {
         bot: String,
@@ -113,6 +115,14 @@ fn parse_anchor(frag: &str) -> Option<(u32, Option<u32>)> {
     }
 }
 
+fn valid_inspectable_id(id: &str) -> bool {
+    id.len() <= 128
+        && id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._:-".contains(&b))
+}
+
 /// Parse a `cheers:` locator. `None` when the string is not a well-formed locator —
 /// callers surface that as a user-visible error, never as silence.
 ///
@@ -136,7 +146,18 @@ pub fn parse(uri: &str) -> Option<Locator> {
         None => (rest, None),
     };
 
+    let inspectable_id = match frag {
+        Some(f) if f.starts_with('^') => {
+            let id = &f[1..];
+            if !body.starts_with("desk/") || !valid_inspectable_id(id) {
+                return None;
+            }
+            Some(id.to_owned())
+        }
+        _ => None,
+    };
     let anchor = match frag {
+        Some(_) if inspectable_id.is_some() => None,
         // A fragment that is not a line anchor makes the whole locator malformed.
         Some(f) => Some(parse_anchor(f)?),
         None => None,
@@ -160,6 +181,7 @@ pub fn parse(uri: &str) -> Option<Locator> {
             path: clean_rel_path(tail)?,
             line,
             line_end,
+            inspectable_id,
         }),
         "ws" => {
             let i = tail.find('/').filter(|i| *i > 0)?;
@@ -174,17 +196,29 @@ pub fn parse(uri: &str) -> Option<Locator> {
                 line_end,
             })
         }
-        "msg" if !tail.is_empty() && !tail.contains('/') && anchor.is_none() => {
+        "msg"
+            if !tail.is_empty()
+                && !tail.contains('/')
+                && anchor.is_none()
+                && inspectable_id.is_none() =>
+        {
             Some(Locator::Msg {
                 message_id: tail.to_owned(),
             })
         }
-        "inbox" if !tail.is_empty() && !tail.contains('/') && anchor.is_none() => {
+        "inbox"
+            if !tail.is_empty()
+                && !tail.contains('/')
+                && anchor.is_none()
+                && inspectable_id.is_none() =>
+        {
             Some(Locator::Inbox {
                 file_id: tail.to_owned(),
             })
         }
-        "plan" | "sessions" | "cost" | "activity" if tail.is_empty() && anchor.is_none() => {
+        "plan" | "sessions" | "cost" | "activity"
+            if tail.is_empty() && anchor.is_none() && inspectable_id.is_none() =>
+        {
             Some(match kind {
                 "plan" => Locator::Plan,
                 "sessions" => Locator::Sessions,
@@ -213,7 +247,13 @@ pub fn format(locator: &Locator) -> String {
             path,
             line,
             line_end,
-        } => format!("{SCHEME}desk/{path}{}", anchor_suffix(*line, *line_end)),
+            inspectable_id,
+        } => format!(
+            "{SCHEME}desk/{path}{}",
+            inspectable_id
+                .as_ref()
+                .map_or_else(|| anchor_suffix(*line, *line_end), |id| format!("#^{id}"))
+        ),
         Locator::Ws {
             bot,
             path,
@@ -285,6 +325,7 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
             path,
             line,
             line_end,
+            ..
         } => (
             "fs.read",
             merge(
@@ -532,6 +573,7 @@ mod tests {
                 path: "a.md".into(),
                 line: None,
                 line_end: None,
+                inspectable_id: None,
             },
             Locator::Inbox {
                 file_id: "f".into(),
@@ -573,6 +615,7 @@ mod tests {
                 path: "a.md".into(),
                 line: None,
                 line_end: None,
+                inspectable_id: None,
             },
             Locator::Inbox {
                 file_id: "f".into(),

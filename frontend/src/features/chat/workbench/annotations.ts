@@ -2,8 +2,9 @@ import { useCallback, useMemo } from "react";
 import type { FsClient } from "./fsClient";
 import { useFileSession } from "./jsonFile";
 import type { PatchOp } from "./patchOps";
-import { sourcePathLineRange, uniqueSourceTextRange, type SourceLineRange } from "./contextSource";
+import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange, type SourceLineRange } from "./contextSource";
 import type { LensContextTarget } from "./lens/registry";
+import { parseLocator } from "../locator";
 
 // Notes anchored to a part of a workspace file.
 //
@@ -12,14 +13,15 @@ import type { LensContextTarget } from "./lens/registry";
 // person's remark about it. That also makes them ordinary substrate: an agent reads
 // them with `fs.read` like anything else, no new verb and no new store.
 //
-// The anchor is STRUCTURAL where the lens can give one (`["columns", 0]`), not a line
-// number. A line range is resolved from it at read time, so a note survives every edit
-// above it — which is most edits. `sourceText` is the fallback for prose, and a note
+// Code-authored cards use a stable cheers: URI. Structured lenses use an AST path
+// (`["columns", 0]`). Both resolve to the current line at read time, so edits above
+// the target do not move its note. `sourceText` is the fallback for prose, and a note
 // with neither anchors to the file as a whole.
 
 export const ANNOTATIONS_PATH = "annotations.yaml";
 
 export type AnnotationAnchor =
+  | { kind: "uri"; uri: string }
   | { kind: "path"; sourcePath: ReadonlyArray<string | number> }
   | { kind: "text"; sourceText: string }
   | { kind: "file" };
@@ -51,6 +53,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function parseAnchor(raw: unknown): AnnotationAnchor {
   if (!isObject(raw)) return { kind: "file" };
+  if (typeof raw.uri === "string") {
+    const locator = parseLocator(raw.uri);
+    if (locator?.kind === "desk" && locator.inspectableId) return { kind: "uri", uri: raw.uri };
+  }
   if (Array.isArray(raw.path)) {
     const sourcePath = raw.path.filter((part): part is string | number =>
       typeof part === "string" || typeof part === "number"
@@ -92,6 +98,7 @@ export function annotationsFor(doc: AnnotationDoc, path: string): Annotation[] {
 }
 
 export function anchorOf(target: LensContextTarget): AnnotationAnchor {
+  if (target.inspectableId && target.locator) return { kind: "uri", uri: target.locator };
   if (target.sourcePath) return { kind: "path", sourcePath: target.sourcePath };
   if (target.sourceText !== undefined) return { kind: "text", sourceText: target.sourceText };
   return { kind: "file" };
@@ -101,6 +108,7 @@ export function anchorOf(target: LensContextTarget): AnnotationAnchor {
  *  in the same menu that creates them. */
 export function sameAnchor(a: AnnotationAnchor, b: AnnotationAnchor): boolean {
   if (a.kind !== b.kind) return false;
+  if (a.kind === "uri" && b.kind === "uri") return a.uri === b.uri;
   if (a.kind === "path" && b.kind === "path") {
     return a.sourcePath.length === b.sourcePath.length &&
       a.sourcePath.every((part, index) => part === b.sourcePath[index]);
@@ -114,6 +122,7 @@ export function sourcePathKey(path: ReadonlyArray<string | number>): string {
 }
 
 export function anchorKey(anchor: AnnotationAnchor): string {
+  if (anchor.kind === "uri") return `uri:${anchor.uri}`;
   if (anchor.kind === "path") return sourcePathKey(anchor.sourcePath);
   if (anchor.kind === "text") return `text:${anchor.sourceText}`;
   return "file";
@@ -128,12 +137,19 @@ export function notesOnTarget(doc: AnnotationDoc, path: string, target: LensCont
  *  the row was deleted, the prose rewritten — which is a fact worth showing, not an error
  *  to swallow: the note is still there, it just no longer has a place to sit. */
 export function resolveAnnotation(note: Annotation, text: string): SourceLineRange | null {
+  if (note.anchor.kind === "uri") {
+    const locator = parseLocator(note.anchor.uri);
+    return locator?.kind === "desk" && locator.path === note.path && locator.inspectableId
+      ? inspectableIdLineRange(text, locator.inspectableId)
+      : null;
+  }
   if (note.anchor.kind === "path") return sourcePathLineRange(text, note.anchor.sourcePath);
   if (note.anchor.kind === "text") return uniqueSourceTextRange(text, note.anchor.sourceText);
   return null;
 }
 
 function serializeAnchor(anchor: AnnotationAnchor): Record<string, unknown> | undefined {
+  if (anchor.kind === "uri") return { uri: anchor.uri };
   if (anchor.kind === "path") return { path: [...anchor.sourcePath] };
   if (anchor.kind === "text") return { text: anchor.sourceText };
   return undefined;

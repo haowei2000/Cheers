@@ -2,7 +2,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, workbenchFileContextItem, locatorToContextItem, useContextPickStore, type ContextItem } from "@/features/chat/context/contextPick";
-import { Copy, Trash2 } from "lucide-react";
+import { Code2, Copy, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
@@ -10,7 +10,7 @@ import { canEditData, canPatch, useFileSession, type FileSession } from "../json
 import { annotationsFor, notesOnTarget, type AnnotationDoc } from "../annotations";
 import type { LensContextTarget } from "./registry";
 import { getLens } from "./registry";
-import { sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
+import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 import { LensAnnotationOverlay } from "./LensAnnotationOverlay";
 
 // One built-in lens over one file SESSION. The session is owned by the host, because the
@@ -26,6 +26,7 @@ export function LensView({
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
+  onRevealSource,
   openLocator,
   inspectorActive,
   onFormSubmit,
@@ -43,6 +44,7 @@ export function LensView({
   };
   activeAnnotationId?: string | null;
   onSelectAnnotation?: (id: string) => void;
+  onRevealSource?: (line: number) => void;
   /** This lens is the file's whole UI, so it renders the session's own chrome (Save,
    *  status). False when the host has a Raw view over the same session and its own
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
@@ -70,11 +72,15 @@ export function LensView({
   const requestContextPick = (event: React.MouseEvent<Element>, target: LensContextTarget) => {
     // Resolved against `parsedText`, not `text`: the lens is pointing into the document
     // its data came from, and lines from any other revision would anchor elsewhere.
-    const range = target.sourceText !== undefined
-      ? uniqueSourceTextRange(parsedText, target.sourceText)
-      : target.sourcePath
-        ? sourcePathLineRange(parsedText, target.sourcePath)
-        : null;
+    const range = target.inspectableId
+      ? inspectableIdLineRange(parsedText, target.inspectableId)
+      : target.sourceLine && target.sourceLine <= parsedText.split("\n").length
+        ? { start: target.sourceLine, end: target.sourceLine }
+      : target.sourceText !== undefined
+        ? uniqueSourceTextRange(parsedText, target.sourceText)
+        : target.sourcePath
+          ? sourcePathLineRange(parsedText, target.sourcePath)
+          : null;
     const fallbackFileItem: ContextItem | null = path
       ? {
           ...workbenchFileContextItem(path),
@@ -82,6 +88,7 @@ export function LensView({
         }
       : null;
     const resolvedItem: ContextItem | null = target.contextItem
+      ?? (target.inspectableId && range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : null)
       ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
       ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : fallbackFileItem);
     event.preventDefault();
@@ -113,6 +120,12 @@ export function LensView({
             void navigator.clipboard.writeText(uri);
             toast.success(`Copied ${uri}`);
           },
+        }] : []),
+        ...(range && onRevealSource ? [{
+          id: "reveal-source",
+          label: "Open source",
+          icon: <Code2 className="h-4 w-4" />,
+          run: () => onRevealSource(range.start),
         }] : []),
         ...(target.extraActions ?? []),
         ...(annotations ? [{
@@ -149,6 +162,7 @@ export function LensView({
         {lens ? (
           lens.render({
             data,
+            path,
             config,
             onChange: session.setData,
             onOps,
