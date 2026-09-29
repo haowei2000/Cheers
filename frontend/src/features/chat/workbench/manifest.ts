@@ -1,4 +1,5 @@
 import { ResourceError } from "../hooks/useChatRealtime";
+import { AUTO_VIEW } from "./manifestConstants";
 import type { FsClient } from "./fsClient";
 import { formatFor, isStructuredPath } from "./jsonFile";
 import { getLens } from "./lens/registry";
@@ -33,7 +34,7 @@ export interface PanelDef {
   config?: unknown; // view config (e.g. table columns)
 }
 
-export const AUTO_VIEW = "auto";
+export { AUTO_VIEW } from "./manifestConstants";
 
 /** An item's view, with the grammar's default applied. */
 export function viewOf(item: PanelDef): string {

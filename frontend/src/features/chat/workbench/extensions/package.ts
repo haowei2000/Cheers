@@ -1,5 +1,6 @@
 import { inflateSync } from "fflate";
-import { AUTO_VIEW, type PanelDef, type TemplateManifest } from "../manifest";
+import type { PanelDef, TemplateManifest } from "../manifest";
+import { AUTO_VIEW } from "../manifestConstants";
 import type { RendererExtension } from "../sandbox/rendererExtension";
 
 export const EXTENSION_MEDIA_TYPE = "application/vnd.cheers.extension+zip";
