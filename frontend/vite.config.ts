@@ -91,6 +91,7 @@ export default defineConfig({
         globIgnores: [
           "**/assets/FilePreviewModal-*.js",
           "**/assets/CodeEditor-*.js",
+          "**/assets/artifactCompiler.worker-*.js",
           "**/assets/pdf-*.js",
           "**/assets/hljs-*.js",
           "**/assets/pdf.worker*",

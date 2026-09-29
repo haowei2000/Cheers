@@ -31,6 +31,7 @@ export function RendererHost({
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
+  onRevealSource,
   onFailure,
   inspectorActive,
   onFormSubmit,
@@ -53,6 +54,7 @@ export function RendererHost({
   };
   activeAnnotationId?: string | null;
   onSelectAnnotation?: (id: string) => void;
+  onRevealSource?: (line: number) => void;
   onFailure?: (rendererId: string, reason: string) => void;
   inspectorActive?: boolean;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
@@ -104,6 +106,7 @@ export function RendererHost({
         annotations={annotations}
         activeAnnotationId={activeAnnotationId}
         onSelectAnnotation={onSelectAnnotation}
+        onRevealSource={onRevealSource}
         openLocator={ctx.openLocator}
         inspectorActive={inspectorActive}
         onFormSubmit={onFormSubmit}

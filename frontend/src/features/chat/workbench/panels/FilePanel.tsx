@@ -32,6 +32,7 @@ import { errMsg, useFileSession } from "../jsonFile";
 import { filterCollaborators } from "../collab";
 import { CollaboratorPills, ConflictBanner } from "../collabView";
 import { useAnnotations } from "../annotations";
+import { inspectableIdLineRange } from "../contextSource";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "../AnnotationBar";
 import type { LensContextTarget } from "../lens/registry";
 import { PinToggle } from "../PinToggle";
@@ -218,6 +219,19 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // Revealing a note means showing the lines it points at, which only Raw can do — so it
   // switches modes rather than pretending the preview can highlight a line range.
   const [revealLine, setRevealLine] = useState<number | undefined>();
+  const revealedCard = useRef<string | null>(null);
+  useEffect(() => {
+    const id = ctx.openInspectableId;
+    if (!id) { revealedCard.current = null; return; }
+    if (!selected || selected !== ctx.openTarget || session.path !== selected || session.version === null) return;
+    const key = `${selected}#^${id}`;
+    if (revealedCard.current === key) return;
+    const range = inspectableIdLineRange(session.parsedText, id);
+    if (!range) return;
+    revealedCard.current = key;
+    showRaw(selected, true);
+    setRevealLine(range.start);
+  }, [ctx.openInspectableId, ctx.openTarget, selected, session.path, session.version, session.parsedText, showRaw]);
   const onRevealNote = useCallback(
     (range: { start: number; end: number }) => {
       if (!selected) return;
@@ -918,6 +932,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                       activeAnnotationId={activeAnnotationId}
                       onSelectAnnotation={setActiveAnnotationId}
+                      onRevealSource={(line) => { showRaw(selected, true); setRevealLine(line); }}
                       inspectorActive={isInspectorActive}
                       onFormSubmit={(data) => {
                         const summary = Object.entries(data.formData)

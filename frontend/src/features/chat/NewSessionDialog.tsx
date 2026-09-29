@@ -1,22 +1,25 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
-import { Select as UiSelect } from "@/components/ui/select";
 import { Textarea as UiTextarea } from "@/components/ui/textarea";
-// New-session dialog — extracted from SessionsPanel so both the Sessions board
-// and the composer's session chip share one creation flow. Pick a bot (only
-// those the caller holds a session_create grant for) + optional working
-// directory / extra roots, with allowed-root suggestions from the connector's
-// workspace policy.
+import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Plus } from "lucide-react";
+import { Bot, Check, Folder, FolderOpen, Plus } from "lucide-react";
 import { createChannelBotSession } from "@/api/sessionControl";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { bustBotControls } from "./sessionControlsCache";
 import { isComposing } from "@/lib/ime";
+import { isTauri } from "@/lib/serverConfig";
+import { pickFolder } from "@/lib/desktop";
+import {
+  addRecentWorkspace,
+  formatWorkspaceDisplayPath,
+  getRecentWorkspaces,
+  type RecentWorkspace,
+} from "@/lib/recentWorkspaces";
 
 export function NewSessionDialog({
   channelId,
@@ -40,6 +43,14 @@ export function NewSessionDialog({
   const [cwd, setCwd] = useState(initialCwd ?? "");
   const [dirs, setDirs] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recents, setRecents] = useState<RecentWorkspace[]>(() => getRecentWorkspaces());
+
+  useEffect(() => {
+    const onRecentChange = () => setRecents(getRecentWorkspaces());
+    window.addEventListener("cheers:recent-workspaces-changed", onRecentChange);
+    return () => window.removeEventListener("cheers:recent-workspaces-changed", onRecentChange);
+  }, []);
+
   // The connector's workspace policy for the selected bot — turns the blind
   // absolute-path inputs into a pick-from-allowed-roots affordance. Best-effort:
   // null (offline connector / older gateway) keeps the plain inputs.
@@ -58,6 +69,17 @@ export function NewSessionDialog({
     };
   }, [channelId, botId]);
 
+  async function handlePickFolder() {
+    try {
+      const picked = await pickFolder();
+      if (picked) {
+        setCwd(picked);
+      }
+    } catch (e) {
+      notify.error(messageOf(e));
+    }
+  }
+
   async function create() {
     if (!botId || busy) return;
     setBusy(true);
@@ -75,6 +97,10 @@ export function NewSessionDialog({
           : undefined
       );
       toast.success("New session created");
+      const finalCwd = trimmedCwd || meta?.default_cwd;
+      if (finalCwd) {
+        addRecentWorkspace(finalCwd, botId);
+      }
       bustBotControls(channelId, botId);
       onCreated({ session_id: created.session_id, bot_id: botId });
       onClose();
@@ -86,74 +112,173 @@ export function NewSessionDialog({
   }
 
   return (
-    <Dialog title="New session" onClose={onClose} maxWidth="max-w-sm">
+    <Dialog title="New session" onClose={onClose} maxWidth="max-w-md">
       <div className="space-y-3">
-        <label className="block space-y-1">
+        <div className="space-y-1">
           <span className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
-          <UiSelect
+          <DropdownSelect
+            ariaLabel="Bot"
+            leading={<Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            label={bots.find((b) => b.id === botId)?.label ?? "Select a bot"}
             value={botId}
-            disabled={busy}
-            onChange={(e) => setBotId(e.target.value)}
+            options={bots.map((b) => ({ value: b.id, label: b.label }))}
+            onSelect={(value) => setBotId(value)}
             controlSize="regular"
-          >
-            {bots.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
-          </UiSelect>
-        </label>
-        <label className="block space-y-1">
-          <span className="text-compact font-medium text-content-muted uppercase tracking-label">Working directory (optional)</span>
-          <UiInput
-            type="text"
-            value={cwd}
+            controlWidth="fill"
             disabled={busy}
-            placeholder={meta?.default_cwd ?? "/abs/workdir"}
-            list="ws-allowed-roots"
-            onChange={(e) => setCwd(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
-            controlSize="regular"
-            className="font-code text-compact"
+            className="w-full justify-between rounded-sm bg-control/60 px-3 ring-1 ring-inset ring-zinc-700/60 focus:ring-1 focus:ring-content-strong/50"
+            menuClassName="w-full"
           />
+        </div>
+
+        {recents.length > 0 && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-compact font-medium text-content-muted uppercase tracking-label">
+              <span>Recent projects</span>
+              <span className="text-minimal font-normal lowercase text-content-muted">
+                {recents.length} saved
+              </span>
+            </div>
+            <div
+              className="flex flex-col gap-1 max-h-36 overflow-y-auto rounded-sm p-1 bg-control/30 ring-1 ring-inset ring-control"
+              role="listbox"
+              aria-label="Recent projects"
+            >
+              {recents.slice(0, 5).map((w) => {
+                const isSelected = cwd === w.path;
+                return (
+                  <UiButton
+                    key={w.path}
+                    role="option"
+                    aria-selected={isSelected}
+                    selected={isSelected}
+                    variant="plain"
+                    controlSize="compact"
+                    controlWidth="fill"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setCwd(w.path);
+                      if (w.botId && bots.some((b) => b.id === w.botId)) {
+                        setBotId(w.botId);
+                      }
+                    }}
+                    className="flex items-center justify-between gap-2 rounded-sm text-left hover:bg-control"
+                    title={w.path}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Folder className="w-3.5 h-3.5 text-content-muted shrink-0" />
+                      <span className="font-medium text-content-primary truncate">{w.name}</span>
+                      <span className="font-code text-minimal text-content-muted truncate hidden sm:inline">
+                        {formatWorkspaceDisplayPath(w.path)}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-3.5 h-3.5 text-content-strong shrink-0" />
+                    )}
+                  </UiButton>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <label htmlFor="new-session-cwd" className="text-compact font-medium text-content-muted uppercase tracking-label">
+            Working directory (optional)
+          </label>
+          <div className="flex items-center gap-2">
+            <UiInput
+              id="new-session-cwd"
+              type="text"
+              value={cwd}
+              disabled={busy}
+              placeholder={meta?.default_cwd ? `Default: ${meta.default_cwd}` : "/abs/workdir"}
+              list="ws-allowed-roots"
+              onChange={(e) => setCwd(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
+              controlSize="regular"
+              className="font-code text-compact flex-1"
+            />
+            {isTauri() && (
+              <UiButton
+                action="choose"
+                content="iconText"
+                variant="secondary"
+                controlSize="regular"
+                controlWidth="content"
+                type="button"
+                disabled={busy}
+                onClick={() => void handlePickFolder()}
+                title="Browse folder on this Mac"
+                aria-label="Browse folder on this Mac"
+                className="shrink-0"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+              </UiButton>
+            )}
+          </div>
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
             {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
           </datalist>
           {meta && meta.allowed_roots.length > 0 && (
-            <span className="block text-minimal text-content-muted">
-              {meta.backend_may_set_cwd
-                ? "Must be inside an allowed root: "
-                : "This connector does not let the platform set a working directory. Allowed roots: "}
-              {/* design-system-exempt: form-suggestion — inline datalist shortcut. */}
-              {meta.allowed_roots.map((r, i) => (
-                <UiButton variant="plain" role="option" aria-selected={cwd === r} selected={cwd === r}
-                  key={r}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setCwd(r)}
-                  className="font-code text-content-primary hover:text-accent-300 underline decoration-dotted"
-                >
-                  {r}
-                  {i < meta.allowed_roots.length - 1 ? ", " : ""}
-                </UiButton>
-              ))}
-            </span>
+            <div className="space-y-1 pt-1 text-minimal text-content-muted">
+              <div>
+                {meta.backend_may_set_cwd
+                  ? "Allowed roots:"
+                  : "This connector does not let the platform set a working directory. Allowed roots:"}
+              </div>
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Allowed roots">
+                {meta.allowed_roots.map((r) => {
+                  const isDefault = meta.default_cwd === r;
+                  const isSelected = cwd === r;
+                  return (
+                    <UiButton
+                      key={r}
+                      role="option"
+                      aria-selected={isSelected}
+                      selected={isSelected}
+                      variant="secondary"
+                      controlSize="compact"
+                      controlWidth="content"
+                      type="button"
+                      disabled={busy || !meta.backend_may_set_cwd}
+                      onClick={() => setCwd(r)}
+                      className="font-code max-w-full truncate"
+                      title={`Click to use ${r}${isDefault ? " (default)" : ""}`}
+                    >
+                      <span className="truncate">{r}</span>
+                      {isDefault && (
+                        <span className="text-minimal text-content-muted font-normal shrink-0">
+                          (default)
+                        </span>
+                      )}
+                    </UiButton>
+                  );
+                })}
+              </div>
+            </div>
           )}
-        </label>
-        <label className="block space-y-1">
-          <span className="text-compact font-medium text-content-muted uppercase tracking-label">Extra roots (optional)</span>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="new-session-extra-roots" className="text-compact font-medium text-content-muted uppercase tracking-label">
+            Extra roots (optional)
+          </label>
           <UiTextarea
+            id="new-session-extra-roots"
             value={dirs}
             disabled={busy}
             rows={2}
-            placeholder={"/abs/extra-root"}
+            placeholder="/abs/extra-root"
             onChange={(e) => setDirs(e.target.value)}
             controlSize="regular"
             className="font-code text-compact"
           />
           <span className="block text-minimal text-content-muted">One absolute path per line.</span>
-        </label>
+        </div>
+
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel" variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>
             Cancel

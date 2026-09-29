@@ -1,0 +1,1 @@
+export const MAX_ARTIFACT_SOURCE_LENGTH = 200_000;

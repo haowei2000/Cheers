@@ -61,7 +61,7 @@ the RFC 9728 path-derived alias:
 - `/.well-known/oauth-protected-resource`
 - `/.well-known/oauth-protected-resource/mcp`
 
-`MCP_CHANNEL_SCOPE` (`off` | `warn` | `enforce`, default `warn`) decides how
+`MCP_CHANNEL_SCOPE` (`off` | `warn` | `enforce`, default `enforce`) decides how
 strictly a call must stay inside the channel its token was minted for. The
 `client_credentials` grant accepts an optional `cheers_channel` parameter; the
 Gateway refuses to mint a token naming a channel the bot is not a member of, and

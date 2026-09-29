@@ -983,7 +983,7 @@ export function ChannelView({
         return;
       }
       if (loc.kind === "desk") {
-        setWbTarget(loc.path);
+        setWbTarget(loc.inspectableId ? uri : loc.path);
         setWbOpen(true);
         return;
       }

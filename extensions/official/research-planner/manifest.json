@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "title": "Research planner",
   "description": "Declarative paper deadline and planning risk tracking",
+  "icon": "icon.svg",
   "contributes": {
     "scenes": [
       { "id": "planning", "title": "Research planning", "definition": "scenes/planning.json" }

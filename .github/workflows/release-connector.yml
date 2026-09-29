@@ -216,8 +216,8 @@ jobs:
           APPLE_PRIVATE_KEY_P8: ${{ secrets.APPLE_PRIVATE_KEY_P8 }}
           APPLE_WEB_CLIENT_ID: ${{ vars.APPLE_WEB_CLIENT_ID }}
           APPLE_WEB_REDIRECT_URI: ${{ vars.APPLE_WEB_REDIRECT_URI }}
-          GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-gateway:main
-          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-frontend:main
+          GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-gateway:0.1
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cheers-frontend:0.1
           GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
           GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}

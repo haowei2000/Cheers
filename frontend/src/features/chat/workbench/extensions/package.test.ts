@@ -194,4 +194,25 @@ describe("parseExtensionPackage", () => {
       ).rejects.toThrow(/declarative/);
     }
   });
+
+  it("extracts package icon and attaches to parsed extension and scenes", async () => {
+    const svgIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>';
+    const bytes = archive(
+      {
+        ...base,
+        icon: "icon.svg",
+        contributes: {
+          scenes: [{ id: "main", title: "Main", definition: "scenes/main.json" }],
+        },
+      },
+      {
+        "icon.svg": svgIcon,
+        "scenes/main.json": JSON.stringify({ items: [] }),
+      }
+    );
+    const parsed = await parseExtensionPackage(bytes, "global");
+    expect(parsed.manifest.icon).toBe("icon.svg");
+    expect(parsed.iconUrl).toContain("data:image/svg+xml");
+    expect(parsed.scenes[0].icon).toContain("data:image/svg+xml");
+  });
 });

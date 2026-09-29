@@ -1,4 +1,5 @@
 import { ResourceError } from "../hooks/useChatRealtime";
+import { AUTO_VIEW } from "./manifestConstants";
 import type { FsClient } from "./fsClient";
 import { formatFor, isStructuredPath } from "./jsonFile";
 import { getLens } from "./lens/registry";
@@ -33,7 +34,7 @@ export interface PanelDef {
   config?: unknown; // view config (e.g. table columns)
 }
 
-export const AUTO_VIEW = "auto";
+export { AUTO_VIEW } from "./manifestConstants";
 
 /** An item's view, with the grammar's default applied. */
 export function viewOf(item: PanelDef): string {
@@ -55,6 +56,7 @@ export interface TemplateManifest {
   // reaches the agent without a human pinning it by hand. Keep these files SMALL: pinned
   // bodies ride every prompt and count toward the connector's max_prompt_bytes.
   pin?: string[];
+  icon?: string;
 }
 
 // Validate an untrusted manifest (e.g. loaded from a workspace file) before use.
@@ -63,6 +65,7 @@ export function validateManifest(m: unknown): m is TemplateManifest {
   if (!m || typeof m !== "object") return false;
   const o = m as Record<string, unknown>;
   if (typeof o.id !== "string" || typeof o.title !== "string" || !Array.isArray(o.items)) return false;
+  if (o.icon !== undefined && typeof o.icon !== "string") return false;
   if (o.pin !== undefined && !(Array.isArray(o.pin) && (o.pin as unknown[]).every((p) => typeof p === "string"))) return false;
   return (o.items as unknown[]).every((v) => {
     if (!v || typeof v !== "object") return false;
