@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "title": "Notes workflow",
   "description": "A focused Markdown notes renderer with a daily review template",
+  "icon": "icon.svg",
   "contributes": {
     "scenes": [
       { "id": "notes", "title": "Notes", "definition": "scenes/notes.json" }

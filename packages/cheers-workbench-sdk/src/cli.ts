@@ -10,6 +10,8 @@ interface Manifest {
   id: string;
   version: string;
   title: string;
+  description?: string;
+  icon?: string;
   contributes: {
     scenes?: Array<{ id: string; title: string; definition: string }>;
     renderers?: Array<{ id: string; title: string; entry: string; style?: string; match?: string[] }>;
@@ -61,6 +63,9 @@ export function validateManifest(manifest: Manifest): void {
   if (!idPattern.test(manifest.id)) throw new Error("invalid extension id");
   if (!semverPattern.test(manifest.version)) throw new Error("version must be SemVer");
   if (!manifest.title?.trim()) throw new Error("title is required");
+  if (manifest.icon !== undefined && manifest.icon !== "icon.svg" && manifest.icon !== "icon.png") {
+    throw new Error("icon must be icon.svg or icon.png");
+  }
   for (const scene of manifest.contributes?.scenes ?? []) {
     if (!idPattern.test(scene.id) || scene.definition !== `scenes/${scene.id}.json`) throw new Error(`invalid scene contribution: ${scene.id}`);
   }
@@ -112,6 +117,9 @@ export function readPackedManifest(bytes: Uint8Array): Manifest {
   if (!manifestBytes) throw new Error("extension is missing manifest.json");
   const manifest = JSON.parse(strFromU8(manifestBytes)) as Manifest;
   validateManifest(manifest);
+  if (manifest.icon && !files[manifest.icon]) {
+    throw new Error(`missing icon file: ${manifest.icon}`);
+  }
   for (const scene of manifest.contributes.scenes ?? []) {
     if (!files[scene.definition]) throw new Error(`missing scene definition: ${scene.definition}`);
   }
@@ -136,11 +144,40 @@ export async function packExtension(sourceDirectory: string, destination?: strin
   const root = resolve(sourceDirectory);
   const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8")) as Manifest;
   validateManifest(manifest);
-  const files: Record<string, Uint8Array> = {
-    "manifest.json": strToU8(`${JSON.stringify(manifest, null, 2)}\n`),
-  };
+  const files: Record<string, Uint8Array> = {};
   await collect(root, "scenes", files);
   await collect(root, "seed", files);
+
+  let iconPath = manifest.icon;
+  if (!iconPath) {
+    try {
+      if ((await stat(join(root, "icon.svg"))).isFile()) {
+        iconPath = "icon.svg";
+      }
+    } catch { /* no icon.svg */ }
+    if (!iconPath) {
+      try {
+        if ((await stat(join(root, "icon.png"))).isFile()) {
+          iconPath = "icon.png";
+        }
+      } catch { /* no icon.png */ }
+    }
+  }
+
+  if (iconPath) {
+    try {
+      const iconBytes = new Uint8Array(await readFile(join(root, iconPath)));
+      if (iconBytes.byteLength > 128 * 1024) throw new Error(`icon file exceeds 128 KiB: ${iconPath}`);
+      files[iconPath] = iconBytes;
+      manifest.icon = iconPath;
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("icon file exceeds")) throw e;
+      throw new Error(`missing icon file: ${iconPath}`);
+    }
+  } else {
+    process.stderr.write(`warning: extension "${manifest.id}" is missing an icon (e.g. icon.svg). Extensions will soon be required to provide an icon.\n`);
+  }
+  files["manifest.json"] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
 
   for (const renderer of manifest.contributes.renderers ?? []) {
     const candidates = [`.tsx`, `.ts`, `.jsx`, `.js`].map((extension) => join(root, "src/renderers", `${renderer.id}${extension}`));
