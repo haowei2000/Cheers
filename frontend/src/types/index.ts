@@ -240,6 +240,7 @@ export interface ElicitationContentData {
       description?: string;
       enum?: Array<string | number>;
       items?: { enum?: Array<string | number> };
+      oneOf?: Array<{ const?: string | number; title?: string; description?: string } | string | number>;
       default?: unknown;
     }>;
     required?: string[];

@@ -473,6 +473,9 @@ on_timeout         = "cancel"
 # auto_allow = false routes each ACP tool-permission prompt to the channel so a
 # human (owner / delegate) decides. Set true to approve locally and skip cards.
 auto_allow         = false
+# auto_allow_cheers_mcp = true auto-approves Cheers native MCP tools (post_message,
+# get_channel_info, etc.) so standard bot channel actions run without redundant prompts.
+auto_allow_cheers_mcp = true
 # ── L0 set-mode envelope (host-sovereign; see BOT_CONFIG_GOVERNANCE.md) ──
 # backend_may_set_mode: may the platform change the session permission mode at
 #   runtime (L2 session/set_mode). allowed_modes: opaque ACP modeIds the platform
