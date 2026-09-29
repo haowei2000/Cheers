@@ -955,7 +955,8 @@ function RegularMessageItem({
         <div
           ref={contentRef}
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-2 md:flex-none md:w-fit md:max-w-[52rem]",
+            "flex min-w-0 flex-1 flex-col gap-2 md:max-w-[52rem]",
+            showTrace ? "md:w-full" : "md:flex-none md:w-fit",
             isOwnAlignedRight && "items-end",
           )}
         >
