@@ -38,7 +38,19 @@ function ensureWorker(): Worker {
     if (event.data.ok) entry.resolve(event.data.parsed);
     else entry.reject(new Error(event.data.message));
   };
-  created.onerror = () => discardWorker(new Error("Extension parser stopped unexpectedly"));
+  created.onerror = (event: ErrorEvent) => {
+    // Include the browser's diagnostic: the generic message made worker load errors
+    // (for example, a missing emitted chunk) indistinguishable from parser crashes.
+    // Ignore late events from a worker already replaced after a timeout.
+    if (worker !== created) return;
+    const detail = event.message || "unknown worker error";
+    const location = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : "";
+    discardWorker(new Error(`Extension parser stopped unexpectedly: ${detail}${location}`));
+  };
+  created.onmessageerror = () => {
+    if (worker !== created) return;
+    discardWorker(new Error("Extension parser stopped unexpectedly: worker response could not be read"));
+  };
   worker = created;
   return created;
 }

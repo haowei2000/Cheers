@@ -49,6 +49,8 @@ pub struct ExtensionManifest {
     pub title: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub icon: Option<String>,
     pub contributes: Contributions,
     #[serde(default)]
     pub permissions: Permissions,
@@ -354,6 +356,9 @@ pub fn validate_package(raw: &[u8], allow_code: bool) -> Result<ValidatedPackage
         if name.starts_with("seed/") && bytes.len() > MAX_SEED_BYTES {
             return Err(format!("seed file `{name}` exceeds 256 KiB"));
         }
+        if (name == "icon.svg" || name == "icon.png") && bytes.len() > 128 * 1024 {
+            return Err(format!("icon file `{name}` exceeds 128 KiB"));
+        }
         files.insert(name, bytes);
     }
     validate_files(files, raw.to_vec(), allow_code)
@@ -449,6 +454,14 @@ pub fn validate_files(
             return Err(format!("renderer `{}` style is missing", renderer.id));
         }
     }
+    if let Some(icon) = &manifest.icon {
+        let Some(icon_bytes) = files.get(icon) else {
+            return Err(format!("icon `{icon}` is missing from package"));
+        };
+        if icon_bytes.len() > 128 * 1024 {
+            return Err(format!("icon `{icon}` exceeds 128 KiB"));
+        }
+    }
 
     let mut scenes = BTreeMap::new();
     for contribution in &manifest.contributes.scenes {
@@ -529,6 +542,11 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
     Version::parse(&manifest.version).map_err(|e| format!("version must be SemVer: {e}"))?;
     if manifest.title.trim().is_empty() {
         return Err("manifest title is required".into());
+    }
+    if let Some(icon) = &manifest.icon {
+        if icon != "icon.svg" && icon != "icon.png" {
+            return Err("manifest icon must be icon.svg or icon.png".into());
+        }
     }
     let mut ids = HashSet::new();
     for scene in &manifest.contributes.scenes {
@@ -742,6 +760,8 @@ fn validate_archive_path(path: &str) -> Result<(), String> {
 
 fn validate_known_path(path: &str) -> Result<(), String> {
     let known = path == "manifest.json"
+        || path == "icon.svg"
+        || path == "icon.png"
         || (path.starts_with("scenes/") && path.ends_with(".json"))
         || path.starts_with("seed/")
         || (path.starts_with("renderers/") && (path.ends_with(".js") || path.ends_with(".css")));

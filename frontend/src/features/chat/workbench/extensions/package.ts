@@ -1,5 +1,6 @@
 import { inflateSync } from "fflate";
-import { AUTO_VIEW, type PanelDef, type TemplateManifest } from "../manifest";
+import type { PanelDef, TemplateManifest } from "../manifest";
+import { AUTO_VIEW } from "../manifestConstants";
 import type { RendererExtension } from "../sandbox/rendererExtension";
 
 export const EXTENSION_MEDIA_TYPE = "application/vnd.cheers.extension+zip";
@@ -92,6 +93,7 @@ export interface ExtensionManifest {
   version: string;
   title: string;
   description?: string;
+  icon?: string;
   contributes: {
     scenes?: SceneContribution[];
     renderers?: RendererContribution[];
@@ -119,6 +121,7 @@ export interface ParsedExtension {
   rendererExtension: RendererExtension | null;
   bytes: Uint8Array;
   sha256: string;
+  iconUrl?: string;
 }
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -169,6 +172,8 @@ function validatePath(path: string): void {
   }
   const known =
     path === "manifest.json" ||
+    path === "icon.svg" ||
+    path === "icon.png" ||
     (path.startsWith("scenes/") && path.endsWith(".json")) ||
     path.startsWith("seed/") ||
     (path.startsWith("renderers/") && (path.endsWith(".js") || path.endsWith(".css")));
@@ -239,6 +244,9 @@ function inspectZip(bytes: Uint8Array): ZipEntry[] {
     names.add(name);
     if (name.startsWith("seed/") && declaredSize > MAX_SEED_BYTES) {
       throw new Error(`Seed file exceeds 256 KiB: ${name}`);
+    }
+    if ((name === "icon.svg" || name === "icon.png") && declaredSize > 128 * 1024) {
+      throw new Error(`Icon file exceeds 128 KiB: ${name}`);
     }
     const unixMode = externalAttributes >>> 16;
     if ((unixMode & 0xf000) === 0xa000) throw new Error(`Symbolic link is not allowed: ${name}`);
@@ -378,12 +386,16 @@ function normalizeSceneItemV1(item: unknown, seen: Set<string>): PanelDef {
 function parseManifest(bytes: Uint8Array): ExtensionManifest {
   const manifest = JSON.parse(text(bytes, "manifest.json")) as ExtensionManifest;
   requireObject(manifest, "manifest");
-  requireKnownKeys(manifest, ["schemaVersion", "id", "version", "title", "description", "contributes", "permissions"], "manifest");
+  requireKnownKeys(manifest, ["schemaVersion", "id", "version", "title", "description", "icon", "contributes", "permissions"], "manifest");
   if (manifest.schemaVersion !== 1) throw new Error("manifest schemaVersion must be 1");
   requireId("extension", manifest.id);
   if (!SEMVER.test(manifest.version)) throw new Error("manifest version must be SemVer");
   if (typeof manifest.title !== "string" || !manifest.title.trim()) throw new Error("manifest title is required");
   optionalText(manifest.description, "manifest description");
+  optionalText(manifest.icon, "manifest icon");
+  if (manifest.icon !== undefined && manifest.icon !== "icon.svg" && manifest.icon !== "icon.png") {
+    throw new Error("manifest icon must be icon.svg or icon.png");
+  }
   if (!manifest.contributes || typeof manifest.contributes !== "object") throw new Error("manifest contributes is required");
   requireObject(manifest.contributes, "manifest contributes");
   requireKnownKeys(manifest.contributes, ["scenes", "renderers", "automations", "panels"], "manifest contributes");
@@ -546,6 +558,26 @@ export async function parseExtensionPackage(
   };
   for (const panel of manifest.contributes.panels ?? []) resolveView(panel.view);
 
+  if (manifest.icon && !files[manifest.icon]) {
+    throw new Error(`Missing icon file: ${manifest.icon}`);
+  }
+
+  let iconUrl: string | undefined;
+  const iconPath = manifest.icon ?? (files["icon.svg"] ? "icon.svg" : files["icon.png"] ? "icon.png" : undefined);
+  if (iconPath && files[iconPath]) {
+    const iconBytes = files[iconPath];
+    if (iconPath.endsWith(".svg")) {
+      const svgText = text(iconBytes, iconPath);
+      iconUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgText)}`;
+    } else if (iconPath.endsWith(".png")) {
+      let binary = "";
+      for (let i = 0; i < iconBytes.length; i++) {
+        binary += String.fromCharCode(iconBytes[i]);
+      }
+      iconUrl = `data:image/png;base64,${btoa(binary)}`;
+    }
+  }
+
   const scenes: TemplateManifest[] = [];
   for (const contribution of manifest.contributes.scenes ?? []) {
     const sceneBytes = files[contribution.definition];
@@ -582,6 +614,7 @@ export async function parseExtensionPackage(
       items,
       seed,
       pin: definition.pin ?? [],
+      icon: iconUrl,
     });
   }
 
@@ -605,5 +638,5 @@ export async function parseExtensionPackage(
         transient: scope === "temporary",
       }
     : null;
-  return { manifest, scenes, rendererExtension, bytes, sha256: await digest(bytes) };
+  return { manifest, scenes, rendererExtension, bytes, sha256: await digest(bytes), iconUrl };
 }

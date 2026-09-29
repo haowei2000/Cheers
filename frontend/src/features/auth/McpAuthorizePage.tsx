@@ -14,6 +14,7 @@ interface ConsentPreview {
     device_name: string;
     bot_id: string;
     bot_name: string;
+    channels: Array<{ channel_id: string; name: string }>;
   }>;
   redirect_uri: string;
 }
@@ -33,6 +34,7 @@ export default function McpAuthorizePage() {
   const request = useMemo(() => Object.fromEntries(new URLSearchParams(query)), [query]);
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [hostId, setHostId] = useState("");
+  const [channelId, setChannelId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +42,9 @@ export default function McpAuthorizePage() {
     apiJson<ConsentPreview>(`/mcp/oauth/authorize${query}`)
       .then((value) => {
         setPreview(value);
-        setHostId(value.hosts[0]?.host_id ?? "");
+        const firstHostWithChannels = value.hosts.find((host) => host.channels.length > 0) ?? value.hosts[0];
+        setHostId(firstHostWithChannels?.host_id ?? "");
+        setChannelId(firstHostWithChannels?.channels[0]?.channel_id ?? "");
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Authorization request is invalid"));
   }, [query]);
@@ -51,7 +55,12 @@ export default function McpAuthorizePage() {
     try {
       const result = await apiJson<{ redirect_uri: string }>("/mcp/oauth/authorize", {
         method: "POST",
-        body: JSON.stringify({ ...request, host_id: hostId, approved }),
+        body: JSON.stringify({
+          ...request,
+          cheers_channel: channelId || undefined,
+          host_id: hostId,
+          approved,
+        }),
       });
       window.location.replace(result.redirect_uri);
     } catch (reason) {
@@ -64,7 +73,7 @@ export default function McpAuthorizePage() {
     <PublicPageShell
       eyebrow="Cheers · MCP authorization"
       title="Connect an MCP client"
-      description="Choose the Agent host whose existing Cheers permissions will bound this connection."
+      description="Choose an Agent host and channel. This connection will be limited to that channel."
     >
       <div className={`${publicPanelClass} space-y-4`}>
         {!preview && !error && <Spinner contentSize="large" className="mx-auto text-content-muted" />}
@@ -80,7 +89,14 @@ export default function McpAuthorizePage() {
             </div>
             <label className="block space-y-1 text-compact text-content-muted">
               <span>Act as</span>
-              <Select value={hostId} onChange={(event) => setHostId(event.target.value)}>
+              <Select
+                value={hostId}
+                onChange={(event) => {
+                  const nextHost = preview.hosts.find((host) => host.host_id === event.target.value);
+                  setHostId(event.target.value);
+                  setChannelId(nextHost?.channels[0]?.channel_id ?? "");
+                }}
+              >
                 {preview.hosts.map((host) => (
                   <option key={host.host_id} value={host.host_id}>
                     {host.bot_name} · {host.device_name}
@@ -88,6 +104,25 @@ export default function McpAuthorizePage() {
                 ))}
               </Select>
             </label>
+            <label className="block space-y-1 text-compact text-content-muted">
+              <span>Limit access to channel</span>
+              <Select
+                value={channelId}
+                onChange={(event) => setChannelId(event.target.value)}
+              >
+                {(preview.hosts.find((host) => host.host_id === hostId)?.channels ?? [])
+                  .map((channel) => (
+                    <option key={channel.channel_id} value={channel.channel_id}>
+                      {channel.name}
+                    </option>
+                  ))}
+              </Select>
+            </label>
+            {!channelId && (
+              <p role="alert" className="text-compact text-danger-300">
+                This host has no channel that you can authorize.
+              </p>
+            )}
             <div>
               <p className="mb-2 text-compact font-medium text-content-secondary">Requested access</p>
               <ul className="space-y-1 text-compact text-content-muted">
@@ -99,7 +134,7 @@ export default function McpAuthorizePage() {
             </p>
             <div className="flex justify-end gap-2">
               <Button action="cancel" variant="secondary" disabled={busy} onClick={() => void finish(false)} />
-              <Button action="approve" disabled={busy || !hostId} loading={busy} onClick={() => void finish(true)} />
+              <Button action="approve" disabled={busy || !hostId || !channelId} loading={busy} onClick={() => void finish(true)} />
             </div>
           </>
         )}

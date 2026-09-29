@@ -9,21 +9,25 @@ import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/compon
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { Select as UiSelect } from "@/components/ui/select";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
+import { Dialog } from "@/components/ui/dialog";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import {
   Atom,
   Boxes,
+  CalendarCheck,
   CheckSquare2,
   Code2,
   Crosshair,
   Eye,
   EyeOff,
   FileQuestion,
+  FileText,
   Folder,
   Frame,
   Lock,
   Maximize2,
   Minimize2,
+  Plus,
   Save,
   Server,
 } from "lucide-react";
@@ -88,16 +92,44 @@ export function unclaimedRenderableTabs(paths: string[], state: WorkbenchSceneSt
   return paths.filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b));
 }
 
-const sceneMeta: Record<string, { subtitle: string; Icon: typeof Code2; color: string }> = {
+type SceneIconComponent = typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+
+const sceneMeta: Record<string, { subtitle: string; Icon: SceneIconComponent; color: string }> = {
   "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
   "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-research-300" },
   "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-info-300" },
   "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-warning-300" },
+  "notes-workflow": { subtitle: "Focused notes & review", Icon: FileText, color: "text-accent-300" },
+  "research-planner": { subtitle: "Deadlines and risk tracking", Icon: CalendarCheck, color: "text-research-300" },
   [OTHER_SCENE]: { subtitle: "Renderable tabs outside Collections", Icon: Boxes, color: "text-category-300" },
 };
 
-function metaFor(id: string) {
-  return sceneMeta[id] ?? { subtitle: "Native workspace", Icon: CollectionIcon as unknown as typeof Code2, color: "text-content-secondary" };
+function getCoreExtensionId(id: string): string {
+  if (id.startsWith("extension:") || id.startsWith("personal:")) {
+    const parts = id.split(":");
+    return parts[1] || id;
+  }
+  return id;
+}
+
+function createPackageIcon(iconUrl: string): SceneIconComponent {
+  return function PackageIcon({ className, "aria-hidden": ariaHidden }: { className?: string; "aria-hidden"?: boolean | "true" | "false" }) {
+    return <img src={iconUrl} className={cn("h-4 w-4 object-contain", className)} alt="" aria-hidden={ariaHidden ?? "true"} />;
+  };
+}
+
+function metaFor(id: string, iconUrl?: string): { subtitle: string; Icon: SceneIconComponent; color: string } {
+  if (iconUrl) {
+    return {
+      subtitle: "Extension template",
+      Icon: createPackageIcon(iconUrl),
+      color: "",
+    };
+  }
+  const coreId = getCoreExtensionId(id);
+  const found = sceneMeta[id] ?? sceneMeta[coreId];
+  if (found) return found;
+  return { subtitle: "Native workspace", Icon: CollectionIcon as unknown as SceneIconComponent, color: "text-content-secondary" };
 }
 
 export function sceneTabContextActions(
@@ -150,7 +182,7 @@ function SceneTab({
   contextAvailable,
 }: {
   label: string;
-  Icon: typeof Code2;
+  Icon: SceneIconComponent;
   iconColor: string;
   selected: boolean;
   presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
@@ -205,42 +237,119 @@ function SceneTab({
 }
 
 function AddCollectionControl({
-  available,
-  onSelect,
-  onLoad,
+  onOpenNew,
   content = "icon",
 }: {
-  available: TemplateManifest[];
-  onSelect: (manifest: TemplateManifest) => void;
-  onLoad: () => void;
+  onOpenNew: () => void;
   content?: "text" | "icon";
 }) {
   return (
-    <DropdownSelect
-        ariaLabel="Add Collection"
-        label="Add Collection"
-        leading={<CollectionIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
-        content={content}
-        options={[]}
-        actions={[
-          ...available.map((template) => ({
-            value: `template:${template.id}`,
-            label: template.title,
-            leading: <CollectionIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />,
-          })),
-          { value: "load-extension", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-        ]}
-        onSelect={() => undefined}
-        onAction={(value) => {
-          if (value === "load-extension") return onLoad();
-          const manifest = available.find((candidate) => `template:${candidate.id}` === value);
-          if (manifest) onSelect(manifest);
-        }}
-        placement="up"
-        controlSize={workbenchControlSize.tab}
-        controlWidth="fill"
-        className="flex-shrink-0"
-      />
+    <UiButton
+      action="create"
+      type="button"
+      onClick={onOpenNew}
+      content={content === "icon" ? "icon" : "iconText"}
+      variant="plain"
+      aria-label="Add Collection"
+      title="Add Collection"
+      controlSize={workbenchControlSize.tab}
+      className="flex-shrink-0"
+    >
+      <Plus className="h-4 w-4" aria-hidden="true" />
+      {content !== "icon" && <span>Add Collection</span>}
+    </UiButton>
+  );
+}
+
+function NewCollectionDialog({
+  isOpen,
+  available,
+  onSelect,
+  onLoad,
+  onClose,
+}: {
+  isOpen: boolean;
+  available: TemplateManifest[];
+  onSelect: (manifest: TemplateManifest) => void;
+  onLoad: () => void;
+  onClose: () => void;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <Dialog title="New Collection" onClose={onClose} maxWidth="max-w-lg">
+      <div className="flex flex-col gap-4">
+        <p className="text-compact text-content-secondary">
+          Select a template group to add to this workspace.
+        </p>
+        <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto -mx-1 px-1">
+          {available.map((template) => {
+            const meta = metaFor(template.id, template.icon);
+            const Icon = meta.Icon;
+            return (
+              <UiButton
+                key={template.id}
+                role="option"
+                type="button"
+                variant="plain"
+                content="iconText"
+                controlWidth="fill"
+                controlSize="comfortable"
+                onClick={() => {
+                  onSelect(template);
+                  onClose();
+                }}
+                className="justify-start gap-3 rounded text-left"
+              >
+                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
+                  <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1 py-1">
+                  <div className="text-regular font-medium text-content-strong truncate">
+                    {template.title}
+                  </div>
+                  {meta.subtitle && (
+                    <div className="text-compact text-content-muted truncate">
+                      {meta.subtitle}
+                    </div>
+                  )}
+                </div>
+              </UiButton>
+            );
+          })}
+          {available.length === 0 && (
+            <div className="py-6 text-center text-compact text-content-muted">
+              All available templates have already been added to this workspace.
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-between border-t border-control/80 pt-3">
+          <UiButton
+            action="upload"
+            type="button"
+            variant="plain"
+            content="iconText"
+            onClick={() => {
+              onClose();
+              onLoad();
+            }}
+            controlSize="compact"
+          >
+            <Folder className="h-4 w-4" aria-hidden="true" />
+            <span>Load .cheers-extension…</span>
+          </UiButton>
+          <UiButton
+            action="cancel"
+            type="button"
+            variant="plain"
+            onClick={onClose}
+            controlSize="compact"
+          >
+            Cancel
+          </UiButton>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -282,9 +391,9 @@ function WorkbenchHierarchyNavigation({
   activeCollection,
   collectionTitle,
   collectionIcon,
-  availableTemplates,
+  hasAvailableTemplates,
   onSelectCollection,
-  onAddCollection,
+  onOpenNew,
   onLoadCollection,
   onShowRaw,
 }: {
@@ -293,9 +402,9 @@ function WorkbenchHierarchyNavigation({
   activeCollection: string;
   collectionTitle: string;
   collectionIcon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-  availableTemplates: TemplateManifest[];
+  hasAvailableTemplates: boolean;
   onSelectCollection: (id: string) => void;
-  onAddCollection: (manifest: TemplateManifest) => void;
+  onOpenNew: () => void;
   onLoadCollection: () => void;
   onShowRaw: () => void;
 }) {
@@ -312,18 +421,22 @@ function WorkbenchHierarchyNavigation({
   const CollectionIcon = collectionIcon;
 
   const collectionActions: DropdownSelectOption[] = [
-    ...availableTemplates.map((template) => ({
-      value: `add:${template.id}`,
-      label: `New ${template.title}`,
-      leading: <CollectionIcon className="h-4 w-4" aria-hidden="true" />,
-    })),
+    ...(hasAvailableTemplates
+      ? [
+          {
+            value: "new-collection",
+            label: "New Collection…",
+            leading: <Plus className="h-4 w-4" aria-hidden="true" />,
+          },
+        ]
+      : []),
     { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
   const collectionOptions: DropdownSelectOption[] = [
-    ...collections.map(({ id, label }) => ({
+    ...collections.map(({ id, label, Icon }) => ({
       value: `collection:${id}`,
       label,
-      leading: <CollectionIcon className="h-4 w-4" aria-hidden="true" />,
+      leading: <Icon className="h-4 w-4" aria-hidden="true" />,
     })),
     { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
   ];
@@ -333,10 +446,7 @@ function WorkbenchHierarchyNavigation({
   };
   const runCollectionAction = (value: string) => {
     if (value === "load") return onLoadCollection();
-    if (value.startsWith("add:")) {
-      const manifest = availableTemplates.find((candidate) => candidate.id === value.slice(4));
-      if (manifest) onAddCollection(manifest);
-    }
+    if (value === "new-collection") return onOpenNew();
   };
   const controls = (probe = false, icons = iconOnly) => (
     <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
@@ -623,6 +733,7 @@ export function SceneWorkbench({
     () => localStorage.getItem(`${storagePrefix}.scene`) || reconciled.order[0] || ""
   );
   const [selectedByScene, setSelectedByScene] = useState<Record<string, string>>({});
+  const [isNewCollectionOpen, setIsNewCollectionOpen] = useState(false);
   const addContext = useContextPickStore((state) => state.add);
   const picked = usePendingContext(ctx.channelId);
   const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
@@ -826,7 +937,8 @@ export function SceneWorkbench({
       : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
 
   const collectionTabs = () => sceneIds.map((id) => {
-    const meta = metaFor(id);
+    const template = templates.find((candidate) => candidate.id === id);
+    const meta = metaFor(id, template?.icon);
     const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
     const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
       .filter((path) => existing.has(path));
@@ -850,9 +962,10 @@ export function SceneWorkbench({
 
   const collectionNavigationItems = sceneIds.map((id) => {
     const canvasPath = canvasScenePath(id);
+    const template = templates.find((candidate) => candidate.id === id);
     const meta = canvasPath
       ? { subtitle: "Canvas", Icon: Frame, color: "text-accent-300" }
-      : metaFor(id);
+      : metaFor(id, template?.icon);
     const label = canvasPath
       ? (canvasPath.split("/").pop() ?? canvasPath).replace(/\.canvas\.(ya?ml|json)$/i, "")
       : id === OTHER_SCENE
@@ -953,18 +1066,14 @@ export function SceneWorkbench({
           </p>
         </div>
         {available.length > 0 && (
-          <UiSelect
-            defaultValue=""
-            onChange={(event) => {
-              const manifest = templates.find((candidate) => candidate.id === event.target.value);
-              if (manifest) void onAddScene(manifest);
-              event.currentTarget.value = "";
-            }}
-            controlSize={workbenchControlSize.tab} className="rounded-sm bg-content-strong text-compact font-medium text-content-on-light outline-none"
-          >
-            <option value="" disabled>Add a Collection…</option>
-            {available.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
-          </UiSelect>
+          <ResponsiveActionButton
+            action="add"
+            context="toolbar"
+            wideLabel="New Collection…"
+            onClick={() => setIsNewCollectionOpen(true)}
+            controlSize={workbenchControlSize.tab}
+            className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
+          />
         )}
         <ResponsiveActionButton
           action="upload"
@@ -973,6 +1082,13 @@ export function SceneWorkbench({
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
           className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
+        />
+        <NewCollectionDialog
+          isOpen={isNewCollectionOpen}
+          available={available}
+          onSelect={(manifest) => void onAddScene(manifest)}
+          onLoad={onLoadCollection}
+          onClose={() => setIsNewCollectionOpen(false)}
         />
       </div>
     );
@@ -984,7 +1100,9 @@ export function SceneWorkbench({
         mobile={(
           <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
             {collectionTabs()}
-            <AddCollectionControl available={available} onSelect={(manifest) => void onAddScene(manifest)} onLoad={onLoadCollection} />
+            {available.length > 0 && (
+              <AddCollectionControl onOpenNew={() => setIsNewCollectionOpen(true)} />
+            )}
           </div>
         )}
       >
@@ -995,9 +1113,9 @@ export function SceneWorkbench({
             activeCollection={activeScene}
             collectionTitle={title}
             collectionIcon={activeCollectionIcon}
-            availableTemplates={available}
+            hasAvailableTemplates={available.length > 0}
             onSelectCollection={setActiveScene}
-            onAddCollection={(manifest) => void onAddScene(manifest)}
+            onOpenNew={() => setIsNewCollectionOpen(true)}
             onLoadCollection={onLoadCollection}
             onShowRaw={onShowRaw}
           />
@@ -1256,6 +1374,13 @@ export function SceneWorkbench({
           </span>
         </div>
       )}
+      <NewCollectionDialog
+        isOpen={isNewCollectionOpen}
+        available={available}
+        onSelect={(manifest) => void onAddScene(manifest)}
+        onLoad={onLoadCollection}
+        onClose={() => setIsNewCollectionOpen(false)}
+      />
     </div>
   );
 }

@@ -114,6 +114,16 @@ bot_id="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots" \
   -H "authorization: Bearer ${admin_token}" \
   --data "$(jq -nc --arg username "mcp-conformance-${run_suffix}" '{username:$username,display_name:"MCP Conformance Agent",binding_type:"agent_bridge",bridge_provider:"generic"}')" \
   | jq -er .bot_id)"
+workspace_id="$(curl -fsS -X POST "${gateway_origin}/api/v1/workspaces" \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer ${admin_token}" \
+  --data "$(jq -nc --arg name "MCP Conformance ${run_suffix}" '{name:$name}')" \
+  | jq -er .workspace_id)"
+channel_id="$(curl -fsS -X POST "${gateway_origin}/api/v1/channels" \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer ${admin_token}" \
+  --data "$(jq -nc --arg workspace_id "$workspace_id" --arg name "mcp-conformance-${run_suffix}" --arg bot_id "$bot_id" '{workspace_id:$workspace_id,name:$name,type:"private",initial_bot_ids:[$bot_id]}')" \
+  | jq -er .channel_id)"
 
 pairing="$(curl -fsS -X POST "${gateway_origin}/api/v1/bots/${bot_id}/hosts" \
   -H 'content-type: application/json' \
@@ -131,6 +141,7 @@ oauth="$(curl -fsS -u "${host_id}:${credential}" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=client_credentials \
   --data-urlencode "resource=${gateway_origin}/mcp" \
+  --data-urlencode "cheers_channel=${channel_id}" \
   "${gateway_origin}/oauth/token")"
 access_token="$(jq -er .access_token <<<"$oauth")"
 
