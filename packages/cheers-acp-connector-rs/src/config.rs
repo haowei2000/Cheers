@@ -190,6 +190,9 @@ pub struct PermissionPolicy {
     /// enforces resource authz (channel membership + role), making the per-tool
     /// ACP prompt redundant. Default false.
     pub auto_allow: bool,
+    /// Auto-approve Cheers native MCP tool requests locally (post_message,
+    /// get_channel_info, read_workspace, etc.) without prompting the user. Default true.
+    pub auto_allow_cheers_mcp: bool,
     // ── L0 set-mode envelope (ACP-generic; see BOT_CONFIG_GOVERNANCE.md) ──
     /// Whether the platform may change the session permission mode at runtime
     /// (L2 `session/set_mode`). Default true.
@@ -512,6 +515,8 @@ struct RawPermissionPolicy {
     #[serde(default)]
     auto_allow: bool,
     #[serde(default = "default_true")]
+    auto_allow_cheers_mcp: bool,
+    #[serde(default = "default_true")]
     backend_may_set_mode: bool,
     #[serde(default)]
     allowed_modes: Vec<String>,
@@ -524,6 +529,7 @@ impl Default for RawPermissionPolicy {
             wait_timeout_ms: default_permission_wait_timeout_ms(),
             on_timeout: default_permission_on_timeout(),
             auto_allow: false,
+            auto_allow_cheers_mcp: default_true(),
             backend_may_set_mode: true,
             allowed_modes: Vec::new(),
         }
@@ -879,6 +885,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             wait_timeout_ms: raw.permission.wait_timeout_ms.max(1),
             on_timeout: PermissionTimeoutAction::from_str(&raw.permission.on_timeout)?,
             auto_allow: raw.permission.auto_allow,
+            auto_allow_cheers_mcp: raw.permission.auto_allow_cheers_mcp,
             backend_may_set_mode: raw.permission.backend_may_set_mode,
             allowed_modes: raw.permission.allowed_modes,
         },

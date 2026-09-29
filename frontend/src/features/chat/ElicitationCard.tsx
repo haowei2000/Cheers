@@ -92,12 +92,28 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
           {Object.entries(properties).map(([name, schema]) => {
             const label = schema.title || name;
             if (schema.type === "boolean") return <CheckboxField key={name} label={label} checked={Boolean(values[name])} onChange={e => setValues(v => ({...v, [name]:e.target.checked}))} />;
-            const choices = schema.enum ?? schema.items?.enum;
+            const oneOfChoices = Array.isArray(schema.oneOf)
+              ? schema.oneOf.map((c) =>
+                  typeof c === "object" && c !== null
+                    ? ((c as Record<string, unknown>).const ??
+                      (c as Record<string, unknown>).title ??
+                      String(c))
+                    : String(c),
+                )
+              : undefined;
+            const choices = schema.enum ?? schema.items?.enum ?? oneOfChoices;
             return <label key={name} className="block text-compact text-content-secondary">
               <span>{label}{required.has(name) ? " *" : ""}</span>
               {schema.description && <span className="ml-2 text-content-muted">{schema.description}</span>}
-              {choices ? <UiSelect controlSize="regular" multiple={schema.type === "array"} className="mt-1" value={schema.type === "array" ? ((values[name] as Array<string | number> | undefined) ?? []).map(String) : String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "array" ? Array.from(e.target.selectedOptions, option => choices.find(choice => String(choice) === option.value) ?? option.value) : choices.find(choice => String(choice) === e.target.value) ?? e.target.value}))}>
-                {schema.type !== "array" && <option value="">Select…</option>}{choices.map(choice => <option key={String(choice)} value={String(choice)}>{String(choice)}</option>)}
+              {choices ? <UiSelect controlSize="regular" multiple={schema.type === "array"} className="mt-1" value={schema.type === "array" ? ((values[name] as Array<string | number> | undefined) ?? []).map(String) : String(values[name] ?? (schema.default != null ? String(schema.default) : ""))} onChange={e => setValues(v => ({...v, [name]: schema.type === "array" ? Array.from(e.target.selectedOptions, option => choices.find(choice => String(choice) === option.value) ?? option.value) : choices.find(choice => String(choice) === e.target.value) ?? e.target.value}))}>
+                {schema.type !== "array" && <option value="">Select…</option>}
+                {choices.map(choice => {
+                  const s = String(choice);
+                  const title = Array.isArray(schema.oneOf)
+                    ? ((schema.oneOf.find((c) => c && typeof c === "object" && String(c.const ?? c.title) === s) as { title?: string } | undefined)?.title ?? s)
+                    : s;
+                  return <option key={s} value={s}>{title}</option>;
+                })}
               </UiSelect> : <UiInput controlSize="regular" className="mt-1" type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} required={required.has(name)} value={String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "number" || schema.type === "integer" ? Number(e.target.value) : e.target.value}))} />}
             </label>;
           })}
