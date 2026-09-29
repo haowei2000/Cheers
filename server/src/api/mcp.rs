@@ -45,7 +45,7 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
 const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 const MCP_TOKEN_USE: &str = "mcp_access";
-const MCP_ACCESS_TOKEN_TTL_SECS: u64 = 10 * 60;
+pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
 const MCP_AUTH_CODE_TTL_MINUTES: i64 = 5;
 const MCP_REFRESH_TOKEN_TTL_DAYS: i64 = 30;
@@ -841,6 +841,7 @@ fn mint_mcp_access_token(
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
+    let ttl_secs = state.config.mcp_access_token_ttl_secs;
     let claims = McpAccessClaims {
         sub: bot_id,
         host_id,
@@ -850,7 +851,7 @@ fn mint_mcp_access_token(
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
-        exp: now + MCP_ACCESS_TOKEN_TTL_SECS,
+        exp: now + ttl_secs,
         iat: now,
         nbf: now,
     };
@@ -870,7 +871,7 @@ fn mint_mcp_access_token(
         json!(McpTokenResponse {
             access_token: token,
             token_type: "Bearer",
-            expires_in: MCP_ACCESS_TOKEN_TTL_SECS,
+            expires_in: ttl_secs,
             scope,
             refresh_token,
         }),
@@ -2479,9 +2480,13 @@ async fn authenticate_mcp(
     validation.set_issuer(&[issuer]);
     let audience = state.config.mcp_resource_url();
     validation.set_audience(&[audience]);
-    let claims = decode::<McpAccessClaims>(token, &state.config.jwt.decoding, &validation)
-        .map_err(|_| AuthMcpError::Unauthorized)?
-        .claims;
+    let claims = match decode::<McpAccessClaims>(token, &state.config.jwt.decoding, &validation) {
+        Ok(token_data) => token_data.claims,
+        Err(err) => {
+            tracing::warn!(error = %err, "MCP access-token JWT verification failed");
+            return Err(AuthMcpError::Unauthorized);
+        }
+    };
     let Some(scopes) = parse_requested_scopes(&claims.scope) else {
         return Err(AuthMcpError::Unauthorized);
     };
@@ -3704,5 +3709,10 @@ mod tests {
         assert!(ChannelScopeVerdict::Unnarrowed.is_refused(McpChannelScope::Enforce));
         assert!(!ChannelScopeVerdict::InScope.is_refused(McpChannelScope::Enforce));
         assert!(!ChannelScopeVerdict::Channelless.is_refused(McpChannelScope::Enforce));
+    }
+
+    #[test]
+    fn default_mcp_access_token_ttl_is_at_least_one_day() {
+        assert!(DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS >= 86_400);
     }
 }

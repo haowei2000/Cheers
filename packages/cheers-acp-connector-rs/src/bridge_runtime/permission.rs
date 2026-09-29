@@ -47,6 +47,25 @@ impl RuntimeContext {
             }
             None => params,
         };
+        // Scheme 1: Auto-approve Cheers native MCP tools locally when configured
+        if self.config.policy.permission.auto_allow_cheers_mcp && is_cheers_mcp_permission(&params)
+        {
+            if let Some(option_id) = permission_option_id_for_resolution(&params, "allow") {
+                self.trace_with_data(
+                    &run,
+                    "approval",
+                    "approved",
+                    "Auto-allowed Cheers native MCP tool permission (cheers policy)",
+                    None,
+                    Some(
+                        serde_json::json!({ "kind": "approval", "approval_kind": "auto_allowed" }),
+                    ),
+                )
+                .await?;
+                let _ = respond_to.send(PermissionOutcome::Selected { option_id });
+                return Ok(());
+            }
+        }
         // Auto-approve locally when configured: the gateway already enforces
         // resource authz (channel membership + role), so the per-tool ACP prompt
         // is redundant. Without this, forward_to_backend waits for a backend
@@ -114,7 +133,13 @@ impl RuntimeContext {
             .lock()
             .await
             .pending_permissions
-            .insert(request_id.clone(), PendingPermission { params, respond_to });
+            .insert(
+                request_id.clone(),
+                PendingPermission {
+                    params,
+                    target: PendingPermissionTarget::Native(respond_to),
+                },
+            );
         let timeout_runtime = self.clone();
         let timeout_request_id = request_id.clone();
         tokio::spawn(async move {
@@ -177,7 +202,14 @@ impl RuntimeContext {
                     .pending_permissions
                     .remove(&request_id);
                 if let Some(pending) = pending {
-                    let _ = pending.respond_to.send(PermissionOutcome::Cancelled);
+                    match pending.target {
+                        PendingPermissionTarget::Native(tx) => {
+                            let _ = tx.send(PermissionOutcome::Cancelled);
+                        }
+                        PendingPermissionTarget::TranslatedElicitation(tx) => {
+                            let _ = tx.send(elicitation::cancel_response());
+                        }
+                    }
                 }
                 let _ = self
                     .io
@@ -202,7 +234,14 @@ impl RuntimeContext {
                     .pending_permissions
                     .remove(&request_id);
                 if let Some(pending) = pending {
-                    let _ = pending.respond_to.send(PermissionOutcome::Cancelled);
+                    match pending.target {
+                        PendingPermissionTarget::Native(tx) => {
+                            let _ = tx.send(PermissionOutcome::Cancelled);
+                        }
+                        PendingPermissionTarget::TranslatedElicitation(tx) => {
+                            let _ = tx.send(elicitation::cancel_response());
+                        }
+                    }
                 }
                 let _ = self
                     .io
@@ -222,7 +261,7 @@ impl RuntimeContext {
         Ok(())
     }
 
-    async fn handle_permission_timeout(&self, request_id: String) {
+    pub(super) async fn handle_permission_timeout(&self, request_id: String) {
         let pending = self
             .shared
             .interactions
@@ -233,13 +272,20 @@ impl RuntimeContext {
         let Some(pending) = pending else {
             return;
         };
-        let action = self.config.policy.permission.on_timeout;
-        let outcome = match action {
-            PermissionTimeoutAction::Cancel | PermissionTimeoutAction::Deny => {
-                PermissionOutcome::Cancelled
+        match pending.target {
+            PendingPermissionTarget::Native(tx) => {
+                let action = self.config.policy.permission.on_timeout;
+                let outcome = match action {
+                    PermissionTimeoutAction::Cancel | PermissionTimeoutAction::Deny => {
+                        PermissionOutcome::Cancelled
+                    }
+                };
+                let _ = tx.send(outcome);
             }
-        };
-        let _ = pending.respond_to.send(outcome);
+            PendingPermissionTarget::TranslatedElicitation(tx) => {
+                let _ = tx.send(elicitation::cancel_response());
+            }
+        }
         // Tell the gateway to finalize the (still-pending) channel card so it
         // doesn't hang forever. Best-effort: the ACP turn is already answered.
         let _ = self
@@ -253,7 +299,6 @@ impl RuntimeContext {
         tracing::warn!(
             account = %self.account_id,
             request_id = %request_id,
-            action = ?action,
             "ACP permission request timed out waiting for Backend resolution"
         );
     }
@@ -272,26 +317,101 @@ impl RuntimeContext {
         let Some(pending) = pending else {
             return Ok(());
         };
-        // ACP has no distinct "deny" outcome: a rejection is `selected` with a
-        // reject-kind optionId. `cancelled` means the whole turn was aborted —
-        // NOT "the user said no". So honor an explicit option_id for BOTH allow
-        // and reject; only fall back to Cancelled when no option can be resolved
-        // (e.g. a bare "cancel" with nothing selected).
-        let outcome = resolution
-            .option_id
-            .clone()
-            .or_else(|| {
-                permission_option_id_for_resolution(&pending.params, &resolution.resolution)
-            })
-            .map(|option_id| PermissionOutcome::Selected { option_id })
-            .unwrap_or(PermissionOutcome::Cancelled);
-        tracing::info!(
-            account = %self.account_id,
-            request_id = %resolution.request_id,
-            outcome = ?outcome,
-            "Backend resolved ACP permission request"
-        );
-        let _ = pending.respond_to.send(outcome);
+        match pending.target {
+            PendingPermissionTarget::Native(tx) => {
+                // ACP has no distinct "deny" outcome: a rejection is `selected` with a
+                // reject-kind optionId. `cancelled` means the whole turn was aborted —
+                // NOT "the user said no". So honor an explicit option_id for BOTH allow
+                // and reject; only fall back to Cancelled when no option can be resolved
+                // (e.g. a bare "cancel" with nothing selected).
+                let outcome = resolution
+                    .option_id
+                    .clone()
+                    .or_else(|| {
+                        permission_option_id_for_resolution(&pending.params, &resolution.resolution)
+                    })
+                    .map(|option_id| PermissionOutcome::Selected { option_id })
+                    .unwrap_or(PermissionOutcome::Cancelled);
+                tracing::info!(
+                    account = %self.account_id,
+                    request_id = %resolution.request_id,
+                    outcome = ?outcome,
+                    "Backend resolved ACP permission request"
+                );
+                let _ = tx.send(outcome);
+            }
+            PendingPermissionTarget::TranslatedElicitation(tx) => {
+                let opt = resolution
+                    .option_id
+                    .as_deref()
+                    .unwrap_or(resolution.resolution.as_str());
+                let response = match opt {
+                    "allow_session" => json!({
+                        "action": "accept",
+                        "content": { "persist": "session", "approval_scope": "session" }
+                    }),
+                    "allow_always" => json!({
+                        "action": "accept",
+                        "content": { "persist": "always", "approval_scope": "always" }
+                    }),
+                    "allow_once" => json!({
+                        "action": "accept",
+                        "content": { "persist": "once", "approval_scope": "once" }
+                    }),
+                    "decline" | "reject" => json!({
+                        "action": "decline",
+                        "content": null
+                    }),
+                    other if other.starts_with("allow") => json!({
+                        "action": "accept",
+                        "content": { "persist": "session", "approval_scope": "session" }
+                    }),
+                    _ => elicitation::cancel_response(),
+                };
+                tracing::info!(
+                    account = %self.account_id,
+                    request_id = %resolution.request_id,
+                    chosen_option = %opt,
+                    "Backend resolved translated MCP elicitation permission"
+                );
+                let _ = tx.send(response);
+            }
+        }
         Ok(())
     }
+}
+
+pub(super) fn is_cheers_mcp_permission(params: &Value) -> bool {
+    let msg = params.get("message").and_then(Value::as_str).unwrap_or("");
+    if let Some((server, _)) = elicitation::parse_mcp_tool_approval_message(msg) {
+        if is_cheers_mcp_server_name(&server) {
+            return true;
+        }
+    }
+    if let Some(tool) = params.get("tool").or_else(|| params.get("toolCall")) {
+        if let Some(server) = tool
+            .get("server_name")
+            .or_else(|| tool.get("serverName"))
+            .and_then(Value::as_str)
+        {
+            if is_cheers_mcp_server_name(server) {
+                return true;
+            }
+        }
+        if let Some(name) = tool
+            .get("name")
+            .or_else(|| tool.get("tool"))
+            .and_then(Value::as_str)
+        {
+            if is_cheers_mcp_server_name(name) {
+                return true;
+            }
+        }
+        if let Some(cmd) = tool.get("command").and_then(Value::as_str) {
+            if is_cheers_mcp_server_name(cmd) || cmd.starts_with("cheers") {
+                return true;
+            }
+        }
+    }
+    false
 }
