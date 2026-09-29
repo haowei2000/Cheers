@@ -175,6 +175,9 @@ pub struct Config {
     pub mcp_channel_scope: McpChannelScope,
     /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
     pub mcp_authorization_server_issuer: Option<String>,
+    /// Lifetime of an MCP access token in seconds (`MCP_ACCESS_TOKEN_TTL_SECS`, default 86400 = 24h).
+    /// Prevents premature expiration during long-running tasks and human-in-the-loop approval waits.
+    pub mcp_access_token_ttl_secs: u64,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -515,6 +518,10 @@ impl Config {
                     value.trim_end_matches('/').to_string()
                 },
             ),
+            mcp_access_token_ttl_secs: env::var("MCP_ACCESS_TOKEN_TTL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(crate::api::mcp::DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS),
             connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
