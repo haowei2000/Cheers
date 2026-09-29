@@ -77,8 +77,8 @@ describe("MessageItem identity anatomy", () => {
       <MessageItem message={active} channelId="channel-1" />,
     );
 
-    expect(markup).toContain(">Stop</span>");
-    expect(markup).toContain('data-button-content="iconText"');
+    expect(markup).toContain('aria-label="Stop response"');
+    expect(markup).toContain('data-button-content="icon"');
   });
 
   it("keeps the 96px name rail in chat", () => {

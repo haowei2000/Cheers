@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
 // the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
@@ -25,6 +24,8 @@ import {
 } from "@/api/sessionControl";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { NavigationItem } from "@/components/ui/item";
+import { IconButton } from "@/components/ui/icon-button";
+import { controlIconClasses } from "@/components/ui/control-size";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import type { SendResourceReq } from "./workbench/fsClient";
 import { sessionTag, statusDotColor } from "./sessionLabel";
@@ -400,41 +401,45 @@ export function SessionChip({
           )}
 
           <div className="border-t border-zinc-800 my-1" />
-          {creatableBots.length > 0 &&
-            (() => {
+          <div className="flex items-center justify-end gap-1 px-1">
+            {creatableBots.length > 0 &&
+              (() => {
+                const idx = rowIndex++;
+                return (
+                  <IconButton
+                    label="Create session"
+                    controlSize="regular"
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setNewOpen(true);
+                    }}
+                    onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
+                    className={idx === activeIndex ? "bg-zinc-800" : undefined}
+                  >
+                    <Plus className={controlIconClasses.regular} />
+                  </IconButton>
+                );
+              })()}
+            {(() => {
               const idx = rowIndex++;
               return (
-                <UiButton action="create" content="iconText" variant="plain"
+                <IconButton
+                  label="Manage sessions"
+                  controlSize="regular"
                   type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
+                  onClick={() => {
                     setOpen(false);
-                    setNewOpen(true);
+                    onManageSessions();
                   }}
                   onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
-                  className={rowCls(idx, false)}
+                  className={idx === activeIndex ? "bg-zinc-800" : undefined}
                 >
-                  <Plus className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-                </UiButton>
+                  <LayoutDashboard className={controlIconClasses.regular} />
+                </IconButton>
               );
             })()}
-          {(() => {
-            const idx = rowIndex++;
-            return (
-              <UiButton action="manage" content="iconText" variant="plain"
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setOpen(false);
-                  onManageSessions();
-                }}
-                onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
-                className={rowCls(idx, false)}
-              >
-                <LayoutDashboard className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
-              </UiButton>
-            );
-          })()}
+          </div>
         </PopoverPanel>
       )}
 
