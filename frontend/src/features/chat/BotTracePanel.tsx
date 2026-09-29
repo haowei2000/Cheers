@@ -697,7 +697,6 @@ function TraceItem({
         type="button"
         onClick={onToggle}
         aria-expanded={active}
-        aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
  "justify-start gap-2 text-left text-content-primary transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
