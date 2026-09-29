@@ -53,6 +53,7 @@ import { useFileSession } from "./jsonFile";
 import { filterCollaborators } from "./collab";
 import { CollaboratorPills, ConflictBanner } from "./collabView";
 import { useAnnotations } from "./annotations";
+import { inspectableIdLineRange } from "./contextSource";
 import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
 import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
@@ -875,6 +876,19 @@ export function SceneWorkbench({
       return next;
     });
   }, []);
+  const revealedCard = useRef<string | null>(null);
+  useEffect(() => {
+    const id = ctx.openInspectableId;
+    if (!id) { revealedCard.current = null; return; }
+    if (!selectedPath || selectedPath !== ctx.openTarget || session.path !== selectedPath || session.version === null) return;
+    const key = `${selectedPath}#^${id}`;
+    if (revealedCard.current === key) return;
+    const range = inspectableIdLineRange(session.parsedText, id);
+    if (!range) return;
+    revealedCard.current = key;
+    showRaw(selectedPath, true);
+    setRevealLine(range.start);
+  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, showRaw]);
 
   // The session has already read the selected file, so feed the discovery map from it
   // rather than issuing a second read for the same bytes — and so an edit does not leave
@@ -1309,6 +1323,7 @@ export function SceneWorkbench({
                             annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                             activeAnnotationId={activeAnnotationId}
                             onSelectAnnotation={setActiveAnnotationId}
+                            onRevealSource={(line) => { showRaw(path, true); setRevealLine(line); }}
                             inspectorActive={isInspectorActive}
                             onFormSubmit={(data) => {
                               const summary = Object.entries(data.formData)

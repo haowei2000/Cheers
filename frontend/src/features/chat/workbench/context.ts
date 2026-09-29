@@ -33,6 +33,8 @@ export interface WorkbenchContext {
   /** Deep-link target: a file path the browser should auto-open (e.g. a clicked Desk
    *  ref in a bot reply, or a just-activated scenario's first file). */
   openTarget?: string | null;
+  /** Card identity from an inbound Desk locator, resolved against current source. */
+  openInspectableId?: string;
   /** Navigate the user's view to a `cheers:` locator (desk / ws / inbox — see
    *  features/chat/locator.ts). Exposed to renderers only with permission.
    *  API; implemented by ChannelView, which owns every jump surface. UI routing only. */

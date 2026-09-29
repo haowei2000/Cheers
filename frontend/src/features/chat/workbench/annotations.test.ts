@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyPatchOps } from "./patchOps";
 import {
   addAnnotationOps,
+  anchorOf,
   anchorKey,
   annotationId,
   annotationsFor,
@@ -85,6 +86,17 @@ describe("anchoring", () => {
 
   it("keeps each file's notes to itself", () => {
     expect(annotationsFor(parsed(), "dev/todo.md").map((n) => n.id)).toEqual(["todo-note"]);
+  });
+
+  it("keeps a card note attached to its URI as source lines move", () => {
+    const uri = "cheers:desk/cards/status.tsx#^revenue-card";
+    const target = { label: "Revenue", locator: uri, inspectableId: "revenue-card" };
+    const doc = parsed({ notes: [{ id: "revenue-note", path: "cards/status.tsx", anchor: { uri }, label: "Revenue", note: "Clarify this figure" }] });
+    expect(anchorOf(target)).toEqual({ kind: "uri", uri });
+    expect(notesOnTarget(doc, "cards/status.tsx", target)).toHaveLength(1);
+    expect(resolveAnnotation(doc.notes[0], '// heading\n<section data-cheers-id="revenue-card"/>'))
+      .toEqual({ start: 2, end: 2 });
+    expect(resolveAnnotation(doc.notes[0], '<section data-cheers-id="other"/>')).toBeNull();
   });
 });
 
