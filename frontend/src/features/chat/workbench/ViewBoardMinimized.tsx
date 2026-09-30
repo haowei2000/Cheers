@@ -1,5 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ClipboardList, Coins, Layers, ShieldCheck } from "lucide-react";
 import { listApprovalAudit, type AuditEvent } from "@/api/approval";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
@@ -8,6 +8,7 @@ import { PermissionCard } from "@/features/chat/PermissionCard";
 import type { Message, PermissionContentData } from "@/types";
 import type { PanelContext } from "@/features/chat/panels/registry";
 import { permissionSourceId } from "@/features/chat/messageTree";
+import type { SessionOpt } from "./useViewBoardState";
 
 // Compact number formatting for the glance (never the full precision the boards show).
 function fmtTokens(n: number): string {
@@ -101,7 +102,7 @@ function approvalPreview(m: Message): string {
   return (m.content ?? "Permission request").slice(0, 80);
 }
 
-function ApprovalsGlance({
+const ApprovalsGlance = memo(function ApprovalsGlance({
   ctx,
   auditSummary,
   auditCount,
@@ -209,6 +210,12 @@ function ApprovalsGlance({
       )}
     </div>
   );
+});
+
+export interface ViewBoardMinimizedProps {
+  ctx: PanelContext;
+  onExpand: (boardId: string) => void;
+  sessions?: SessionOpt[] | null;
 }
 
 /**
@@ -218,13 +225,11 @@ function ApprovalsGlance({
  * summary, and the latest activity event. Clicking a row expands the full panel straight
  * to that board. Reads the same resource verbs the boards do (channel-wide).
  */
-export function ViewBoardMinimized({
+function ViewBoardMinimizedImpl({
   ctx,
   onExpand,
-}: {
-  ctx: PanelContext;
-  onExpand: (boardId: string) => void;
-}) {
+  sessions: propSessions,
+}: ViewBoardMinimizedProps) {
   const [s, setS] = useState<Summary>({
     plans: null,
     usage: null,
@@ -233,6 +238,8 @@ export function ViewBoardMinimized({
     latest: null,
     names: null,
   });
+
+  const activeSessions = propSessions !== undefined ? propSessions : s.sessions;
 
   // Guard against a stale channel's response landing after a switch: each loader
   // captures the channel it fetched for and only commits if it's still current.
@@ -339,73 +346,92 @@ export function ViewBoardMinimized({
   const costTick = ctx.tick?.cost ?? 0;
   useEffect(() => loadCost(), [costTick, loadCost]);
   const sessionsTick = ctx.tick?.sessions ?? 0;
-  useEffect(() => loadSessions(), [sessionsTick, loadSessions]);
+  useEffect(() => {
+    if (propSessions === undefined) loadSessions();
+  }, [sessionsTick, loadSessions, propSessions]);
   const auditTick = ctx.tick?.audit ?? 0;
   useEffect(() => loadAudit(), [auditTick, loadAudit]);
   useEffect(() => loadActivity(), [loadActivity]);
   useEffect(() => loadNames(), [loadNames]);
   const activityTick = ctx.tick?.activity ?? 0;
 
-  // Sessions have no dedicated signal — they change with agent activity, so refresh
-  // them (and the latest-activity line) on the per-message "activity" tick, debounced
-  // so a burst of messages collapses into one read. Skips the mount (the
-  // loader-identity effects already load everything once).
+  // Refresh latest-activity (and fallback sessions if not externally provided) on debounced activity tick.
   const lastActivity = useRef(activityTick);
   useEffect(() => {
     if (activityTick === lastActivity.current) return;
     lastActivity.current = activityTick;
     const t = setTimeout(() => {
-      loadSessions();
+      if (propSessions === undefined) {
+        loadSessions();
+      }
       loadActivity();
     }, 800);
     return () => clearTimeout(t);
-  }, [activityTick, loadSessions, loadActivity]);
+  }, [activityTick, loadSessions, loadActivity, propSessions]);
 
-  const label = (id?: string | null) => (id ? (s.names?.[id] ?? id.slice(0, 8)) : "—");
+  const label = useCallback(
+    (id?: string | null) => (id ? (s.names?.[id] ?? id.slice(0, 8)) : "—"),
+    [s.names]
+  );
 
   // ── Plan: the PRIMARY sessions' plans (fall back to all plans when none match). ──
-  const primaryIds = new Set((s.sessions ?? []).filter((x) => x.is_primary).map((x) => x.session_id));
-  const primaryPlans = (s.plans ?? []).filter((p) => p.session_id && primaryIds.has(p.session_id));
-  const planScope = primaryPlans.length ? primaryPlans : (s.plans ?? []);
-  const planDone = planScope.reduce((a, p) => a + (p.completed || 0), 0);
-  const planTotal = planScope.reduce((a, p) => a + (p.total || 0), 0);
-  const planPct = planTotal > 0 ? Math.round((planDone / planTotal) * 100) : 0;
+  const primaryIds = useMemo(
+    () => new Set((activeSessions ?? []).filter((x) => x.is_primary).map((x) => x.session_id)),
+    [activeSessions]
+  );
+  const { planScope, primaryPlans, planDone, planTotal, planPct } = useMemo(() => {
+    const pPlans = (s.plans ?? []).filter((p) => p.session_id && primaryIds.has(p.session_id));
+    const scope = pPlans.length ? pPlans : (s.plans ?? []);
+    const done = scope.reduce((a, p) => a + (p.completed || 0), 0);
+    const total = scope.reduce((a, p) => a + (p.total || 0), 0);
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    return { planScope: scope, primaryPlans: pPlans, planDone: done, planTotal: total, planPct: pct };
+  }, [s.plans, primaryIds]);
 
   // ── Cost: channel total + per-bot breakdown (usage rows are per (bot, session)). ──
-  const byBot = new Map<string, { tokens: number; cost: number }>();
-  for (const u of s.usage ?? []) {
-    const cur = byBot.get(u.bot_id) ?? { tokens: 0, cost: 0 };
-    cur.tokens += u.total_tokens || 0;
-    cur.cost += u.cost_usd || 0;
-    byBot.set(u.bot_id, cur);
-  }
-  const botCosts = [...byBot.entries()].sort((a, b) => b[1].cost - a[1].cost);
-  const totalCost = botCosts.reduce((a, [, v]) => a + v.cost, 0);
-  const totalTokens = botCosts.reduce((a, [, v]) => a + v.tokens, 0);
+  const { botCosts, totalCost, totalTokens } = useMemo(() => {
+    const byBot = new Map<string, { tokens: number; cost: number }>();
+    for (const u of s.usage ?? []) {
+      const cur = byBot.get(u.bot_id) ?? { tokens: 0, cost: 0 };
+      cur.tokens += u.total_tokens || 0;
+      cur.cost += u.cost_usd || 0;
+      byBot.set(u.bot_id, cur);
+    }
+    const sorted = [...byBot.entries()].sort((a, b) => b[1].cost - a[1].cost);
+    return {
+      botCosts: sorted,
+      totalCost: sorted.reduce((a, [, v]) => a + v.cost, 0),
+      totalTokens: sorted.reduce((a, [, v]) => a + v.tokens, 0),
+    };
+  }, [s.usage]);
   const COST_LINES = 4;
 
   // ── Sessions: count + status breakdown ("1 busy · 2 idle"). ──
-  const byStatus = new Map<string, number>();
-  for (const x of s.sessions ?? []) {
-    const st = x.status || "unknown";
-    byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
-  }
-  const sessionSummary = [...byStatus.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([st, n]) => `${n} ${st}`)
-    .join(" · ");
+  const sessionSummary = useMemo(() => {
+    const byStatus = new Map<string, number>();
+    for (const x of activeSessions ?? []) {
+      const st = x.status || "unknown";
+      byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
+    }
+    return [...byStatus.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([st, n]) => `${n} ${st}`)
+      .join(" · ");
+  }, [activeSessions]);
 
   // ── Approvals: prefer live pending; fall back to audit history counts. ──
-  const audit = { allowed: 0, denied: 0, expired: 0, pending: 0 };
-  for (const e of s.audit ?? []) audit[classifyAudit(e)]++;
-  const permissionSummary = [
-    audit.allowed ? `${audit.allowed} allowed` : null,
-    audit.denied ? `${audit.denied} denied` : null,
-    audit.pending ? `${audit.pending} pending` : null,
-    audit.expired ? `${audit.expired} expired` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const permissionSummary = useMemo(() => {
+    const audit = { allowed: 0, denied: 0, expired: 0, pending: 0 };
+    for (const e of s.audit ?? []) audit[classifyAudit(e)]++;
+    return [
+      audit.allowed ? `${audit.allowed} allowed` : null,
+      audit.denied ? `${audit.denied} denied` : null,
+      audit.pending ? `${audit.pending} pending` : null,
+      audit.expired ? `${audit.expired} expired` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }, [s.audit]);
 
   return (
     <div className="p-2">
@@ -446,7 +472,7 @@ export function ViewBoardMinimized({
       <GlanceRow
         Icon={Layers}
         label="Sessions"
-        value={s.sessions ? String(s.sessions.length) : "—"}
+        value={activeSessions ? String(activeSessions.length) : "—"}
         onClick={() => onExpand("sessions")}
       >
         {sessionSummary && <DetailLine name={sessionSummary} />}
@@ -476,3 +502,5 @@ export function ViewBoardMinimized({
     </div>
   );
 }
+
+export const ViewBoardMinimized = memo(ViewBoardMinimizedImpl);
