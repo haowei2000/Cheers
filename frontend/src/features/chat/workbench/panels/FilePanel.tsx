@@ -941,11 +941,24 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
                       }}
                       onFailure={(rendererId, reason) => {
+                        const updatedFailed = [...new Set([...(failedRenderers[selected] ?? []), rendererId])];
                         setFailedRenderers((current) => ({
                           ...current,
-                          [selected]: [...new Set([...(current[selected] ?? []), rendererId])],
+                          [selected]: updatedFailed,
                         }));
-                        setStatus(`${previewRenderer.title} failed: ${reason}. Switched to the next available renderer.`);
+                        const nextOptions = previewOptions(
+                          selected,
+                          session.parsedText,
+                          rendererExtensions,
+                          bindings[selected],
+                          updatedFailed
+                        );
+                        if (nextOptions.length > 0) {
+                          setStatus(`${previewRenderer.title} failed: ${reason}. Switched to ${nextOptions[0].title}.`);
+                        } else {
+                          showRaw(selected, true);
+                          setStatus(`${previewRenderer.title} failed: ${reason}. Degraded to Raw mode.`);
+                        }
                       }}
                     />
                   </div>

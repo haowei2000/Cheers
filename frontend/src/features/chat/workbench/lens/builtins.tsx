@@ -31,9 +31,16 @@ import { ResponsiveActionButton } from "@/components/ui/responsive-action-button
 import { workbenchControlSize } from "../workbench-control";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
-interface TableConfig {
-  columns: { key: string; label: string; options?: string[] }[];
+export interface TableColumnConfig {
+  key: string;
+  label: string;
+  options?: string[];
 }
+
+export interface TableConfig {
+  columns: TableColumnConfig[];
+}
+
 // A tabular row is a PLAIN OBJECT. YAML happily parses `- alpha` to a string row and a
 // bare `-` to null; the registry no longer offers the table for those, but the lens
 // still guards every row itself (a template binding or a file edited after binding can
@@ -48,7 +55,8 @@ function isPlainRow(v: unknown): v is Record<string, unknown> {
 export function inferColumns(rows: unknown[]): TableConfig["columns"] {
   const keys: string[] = [];
   const seen = new Set<string>();
-  for (const r of rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  for (const r of safeRows) {
     if (!isPlainRow(r)) continue;
     for (const k of Object.keys(r))
       if (!seen.has(k)) {
@@ -62,19 +70,25 @@ export function inferColumns(rows: unknown[]): TableConfig["columns"] {
 // string ({..."alpha"}) silently becomes {"0":"a","1":"l",…} and Save would write that
 // corruption into the user's file — null tells the caller to no-op instead.
 export function updateRowCell(rows: unknown[], i: number, key: string, v: string): unknown[] | null {
-  if (!isPlainRow(rows[i])) return null;
+  if (!Array.isArray(rows) || i < 0 || i >= rows.length || !isPlainRow(rows[i])) return null;
   return rows.map((r, j) => (j === i && isPlainRow(r) ? { ...r, [key]: v } : r));
 }
 export function tableRowContextLabel(row: unknown, columns: TableConfig["columns"], index: number): string {
-  if (isPlainRow(row)) {
-    const value = columns.map((column) => String(row[column.key] ?? "").trim()).find(Boolean);
+  if (isPlainRow(row) && Array.isArray(columns)) {
+    const value = columns
+      .filter((column) => column && typeof column.key === "string")
+      .map((column) => String(row[column.key] ?? "").trim())
+      .find(Boolean);
     if (value) return value.slice(0, 120);
   }
   return `Row ${index + 1}`;
 }
 function TableLens({ data, config, onChange, readOnly, requestContextPick }: LensProps) {
   const rows = Array.isArray(data) ? (data as unknown[]) : [];
-  const configured = (config as TableConfig | undefined)?.columns;
+  const rawConfigColumns = (config as TableConfig | undefined)?.columns;
+  const configured = Array.isArray(rawConfigColumns)
+    ? rawConfigColumns.filter((c): c is TableColumnConfig => Boolean(c && typeof c.key === "string" && c.key.length > 0))
+    : undefined;
   const columns = configured?.length ? configured : inferColumns(rows);
   const update = (i: number, key: string, v: string) => {
     const next = updateRowCell(rows, i, key, v);
@@ -177,26 +191,51 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
 }
 
 // ── kanban: { columns: [{ name, items: string[] }] } ─────────────────────────
-interface BoardData {
-  columns: { name: string; items: string[] }[];
+export interface BoardColumn {
+  name: string;
+  items: string[];
 }
+
+export interface BoardData {
+  columns: BoardColumn[];
+}
+
+export function parseBoardColumns(data: unknown): BoardColumn[] {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+  const rawCols = (data as Record<string, unknown>).columns;
+  if (!Array.isArray(rawCols)) return [];
+  return rawCols.flatMap((c): BoardColumn[] => {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return [];
+    const col = c as Record<string, unknown>;
+    const name = typeof col.name === "string" && col.name ? col.name : "Column";
+    const items = Array.isArray(col.items)
+      ? col.items.map((it) => (typeof it === "string" ? it : it == null ? "" : String(it)))
+      : [];
+    return [{ name, items }];
+  });
+}
+
 function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps) {
-  const cols = (data as BoardData | null)?.columns ?? [];
+  const cols = useMemo(() => parseBoardColumns(data), [data]);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const setCols = (next: BoardData["columns"]) => onChange({ columns: next });
+  const setCols = (next: BoardColumn[]) => onChange({ columns: next });
 
   const addItem = (ci: number) => {
+    if (ci < 0 || ci >= cols.length) return;
     const t = (drafts[ci] ?? "").trim();
     if (!t) return;
     setCols(cols.map((c, j) => (j === ci ? { ...c, items: [...c.items, t] } : c)));
     setDrafts({ ...drafts, [ci]: "" });
   };
-  const delItem = (ci: number, ii: number) =>
+  const delItem = (ci: number, ii: number) => {
+    if (ci < 0 || ci >= cols.length) return;
     setCols(cols.map((c, j) => (j === ci ? { ...c, items: c.items.filter((_, k) => k !== ii) } : c)));
+  };
   const moveItem = (ci: number, ii: number, dir: -1 | 1) => {
     const ti = ci + dir;
-    if (ti < 0 || ti >= cols.length) return;
+    if (ci < 0 || ci >= cols.length || ti < 0 || ti >= cols.length) return;
     const item = cols[ci].items[ii];
+    if (item === undefined) return;
     setCols(
       cols.map((c, j) => {
         if (j === ci) return { ...c, items: c.items.filter((_, k) => k !== ii) };
@@ -281,7 +320,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
 // ── markdown: a string (prompt templates, notes, drafts). Inert <UiTextarea> edit;
 //    never dangerouslySetInnerHTML. (A sanitized preview can be added later.)
 function MarkdownLens({ data, onChange, readOnly, requestContextPick }: LensProps) {
-  const text = typeof data === "string" ? data : "";
+  const text = typeof data === "string" ? data : data == null ? "" : typeof data === "object" ? JSON.stringify(data, null, 2) : String(data);
   return (
     <UiTextarea
       data-workbench-context-target="markdown"
@@ -308,12 +347,17 @@ function MarkdownLens({ data, onChange, readOnly, requestContextPick }: LensProp
 // View-only — the data is machine-written, so no in-chart editing. Series colors are a
 // fixed-order palette validated for the zinc-950 surface (contrast ≥3:1, CVD ΔE 23.6);
 // identity is never color-alone: ≥2 series get a legend, ≤4 also get direct end-labels.
-interface ChartPoint {
+export interface ChartPoint {
   x: number;
   y: number;
   sourceIndex: number;
 }
-interface ChartData {
+export interface ChartSeries {
+  name: string;
+  sourceIndex: number;
+  pts: ChartPoint[];
+}
+export interface ChartData {
   xLabel?: string;
   yLabel?: string;
   series?: { name?: string; points?: unknown }[];
@@ -323,19 +367,26 @@ const CW = 640;
 const CH = 300;
 const PAD = { l: 48, r: 88, t: 14, b: 30 };
 
-function parseSeries(d: ChartData | null): { name: string; sourceIndex: number; pts: ChartPoint[] }[] {
-  if (!d || !Array.isArray(d.series)) return [];
-  return d.series
-    .map((s, i) => ({
-      name: typeof s?.name === "string" && s.name ? s.name : `series ${i + 1}`,
-      sourceIndex: i,
-      pts: (Array.isArray(s?.points) ? (s.points as unknown[]) : [])
-        // isFinite, not typeof: JSON.parse("1e999") yields Infinity, which would poison
-        // the shared y-range and blank every series' scale into NaN
-        .map((p, sourceIndex) => (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: p[0] as number, y: p[1] as number, sourceIndex } : null))
-        .filter((p): p is ChartPoint => p !== null),
-    }))
-    .filter((s) => s.pts.length > 0);
+export function parseSeries(d: unknown): ChartSeries[] {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return [];
+  const rawSeries = (d as Record<string, unknown>).series;
+  if (!Array.isArray(rawSeries)) return [];
+  return rawSeries
+    .map((s, i) => {
+      if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+      const seriesObj = s as Record<string, unknown>;
+      const name = typeof seriesObj.name === "string" && seriesObj.name ? seriesObj.name : `series ${i + 1}`;
+      const pts = (Array.isArray(seriesObj.points) ? seriesObj.points : [])
+        .map((p, sourceIndex) => {
+          if (!Array.isArray(p)) return null;
+          const x = Number(p[0]);
+          const y = Number(p[1]);
+          return Number.isFinite(x) && Number.isFinite(y) ? { x, y, sourceIndex } : null;
+        })
+        .filter((p): p is ChartPoint => p !== null);
+      return { name, sourceIndex: i, pts };
+    })
+    .filter((s): s is ChartSeries => s !== null && s.pts.length > 0);
 }
 
 function niceTicks(min: number, max: number, count = 4): number[] {
@@ -375,8 +426,10 @@ function fmtNum(v: number, step?: number): string {
 }
 
 function ChartLens({ data, requestContextPick }: LensProps) {
-  const d = data as ChartData | null;
-  const series = parseSeries(d);
+  const d = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
+  const series = parseSeries(data);
+  const xLabel = typeof d?.xLabel === "string" ? d.xLabel : undefined;
+  const yLabel = typeof d?.yLabel === "string" ? d.yLabel : undefined;
   const [hoverX, setHoverX] = useState<number | null>(null);
   if (series.length === 0) {
     return (
@@ -443,7 +496,7 @@ function ChartLens({ data, requestContextPick }: LensProps) {
         });
   // width estimate covers the header row too, and CJK glyphs count double (~10px vs ~6px)
   const wchars = (s: string) => [...s].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
-  const tipW = 20 + 6 * Math.max(...series.map((s) => wchars(s.name) + 8), wchars(d?.xLabel ?? "x") + 10, 10);
+  const tipW = 20 + 6 * Math.max(...series.map((s) => wchars(s.name) + 8), wchars(xLabel ?? "x") + 10, 10);
   const tipFlip = hx !== null && sx(hx) + tipW + 12 > CW - PAD.r;
   // clamp into the viewBox: a flipped tooltip for a long series name would otherwise
   // translate negative and get clipped by the svg's overflow
@@ -482,14 +535,14 @@ function ChartLens({ data, requestContextPick }: LensProps) {
           </text>
         ))}
         <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="rgb(var(--tone-zinc-700))" strokeWidth="1" />
-        {d?.yLabel && (
+        {yLabel && (
           <text x={PAD.l} y={PAD.t - 3} fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))">
-            {d.yLabel}
+            {yLabel}
           </text>
         )}
-        {d?.xLabel && (
+        {xLabel && (
           <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))">
-            {d.xLabel}
+            {xLabel}
           </text>
         )}
         {series.map((s, i) =>
@@ -537,7 +590,7 @@ function ChartLens({ data, requestContextPick }: LensProps) {
             <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
               <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="rgb(var(--tone-zinc-900))" stroke="rgb(var(--tone-zinc-700))" strokeWidth="1" />
               <text x="8" y="12" fontSize="var(--type-minimal-size)" fill="rgb(var(--text-muted))" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {d?.xLabel ?? "x"} {fmtNum(hx)}
+                {xLabel ?? "x"} {fmtNum(hx)}
               </text>
               {hoverRows.map((r, j) => (
                 <g key={`t${r.i}`} transform={`translate(8, ${26 + j * 14})`}>
@@ -842,7 +895,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
             })}
           </svg>
           {document.nodes.map((node) => {
-            const position = layout.positions.get(node.id)!;
+            const position = layout.positions.get(node.id) ?? { x: 46, y: 44 };
             const focused = document.focus.has(node.id);
             const selectedNode = selectedId === node.id;
             return (
