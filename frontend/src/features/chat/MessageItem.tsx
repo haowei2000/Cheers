@@ -23,6 +23,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { ResourceRefCards, resourceRefCards } from "./ResourceRefCards";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
@@ -1157,15 +1158,10 @@ function MessageBody({
   // main-thread work. Render the in-flight text as plain whitespace-pre-wrap and
   // only switch to full Markdown + highlighting once the turn finalizes
   // (_streaming clears), which leaves completed messages rendered exactly as before.
-  const hasMarkdown =
-    !message._streaming &&
-    (content.includes("```") ||
-      content.includes("**") ||
-      content.includes("*") ||
-      content.includes("#") ||
-      content.includes("[") ||
-      content.includes("\n") ||
-      content.includes("`"));
+  const hasMarkdown = !message._streaming;
+  const cards = message.sender_type === "bot" && !active
+    ? resourceRefCards(message.content_data)
+    : [];
 
   return (
     <div className="relative">
@@ -1182,6 +1178,7 @@ function MessageBody({
             {content}
           </p>
         ))}
+      <ResourceRefCards cards={cards} />
       {message._streaming && (
         <TypewriterCursor className="ml-1" />
       )}

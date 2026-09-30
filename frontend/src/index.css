@@ -850,6 +850,11 @@ button:not(:disabled) {
   color: rgb(var(--text-strong));
 }
 
+.prose a:focus-visible {
+  outline: 2px solid rgb(var(--selection-indicator));
+  outline-offset: 2px;
+}
+
 .prose code {
   background: rgb(var(--tone-zinc-800));
   color: rgb(var(--text-secondary));
