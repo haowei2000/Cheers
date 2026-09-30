@@ -17,7 +17,8 @@ import {
 import { workbenchFileContextItem } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import { ConflictBanner } from "./collabView";
-import { AnnotationComposer, AnnotationsButton } from "./AnnotationBar";
+import { AnnotationComposer } from "./AnnotationComposer";
+import { AnnotationsButton } from "./AnnotationsButton";
 import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";

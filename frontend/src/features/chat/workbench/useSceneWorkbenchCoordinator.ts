@@ -10,7 +10,7 @@ import { useFileSession } from "./jsonFile";
 import { filterCollaborators } from "./collab";
 import { useAnnotations } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
-import type { PendingAnnotation } from "./AnnotationBar";
+import type { PendingAnnotation } from "./AnnotationComposer";
 import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
 import type { RendererDesc } from "./renderers/registry";

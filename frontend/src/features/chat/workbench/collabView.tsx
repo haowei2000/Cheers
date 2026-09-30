@@ -13,12 +13,14 @@ export function CollaboratorPills({
 
   return (
     <div
+      role="status"
+      aria-label={`${collaborators.length} collaborators editing`}
       className="inline-flex items-center gap-1 rounded-sm bg-panel/80 px-2 py-1 text-compact text-content-muted ring-1 ring-inset ring-control/40 select-none shadow-xs"
       title={collaborators.map((c) => c.name).join(", ")}
     >
       <PresenceDot contentSize="small" className="bg-emerald-500" />
-      <Users className="h-3.5 w-3.5 text-content-muted" />
-      <span className="text-minimal font-medium">
+      <Users className="h-3.5 w-3.5 text-content-muted" aria-hidden="true" />
+      <span className="text-minimal font-medium text-content-secondary">
         {collaborators.length} editing
       </span>
     </div>
@@ -35,10 +37,14 @@ export function ConflictBanner({
   if (!conflict) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-warning-500/30 bg-warning-500/10 px-3 py-1 text-compact text-warning-200">
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="flex flex-wrap items-center justify-between gap-2 border-b border-warning-500/30 bg-warning-500/10 px-3 py-2 text-compact text-warning-800 dark:text-warning-200"
+    >
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-warning-400">⚠️ Collaboration Conflict</span>
-        <span>
+        <span className="font-semibold text-warning-600 dark:text-warning-400">⚠️ Collaboration Conflict</span>
+        <span className="text-content-primary dark:text-warning-200">
           A collaborator also modified this file ({conflict.conflictsCount} conflicting region{conflict.conflictsCount > 1 ? "s" : ""}).
         </span>
       </div>
