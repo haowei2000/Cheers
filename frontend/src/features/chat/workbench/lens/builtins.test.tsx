@@ -1,6 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { inferColumns, parseCodemap, tableRowContextLabel, updateRowCell, codemapLayout } from "./builtins";
+import {
+  inferColumns,
+  parseBoardColumns,
+  parseCodemap,
+  parseSeries,
+  tableRowContextLabel,
+  updateRowCell,
+  codemapLayout,
+} from "./builtins";
 import { getLens, lensIds } from "./registry";
 import "./builtins"; // side effect: register the lenses under test
 
@@ -159,5 +167,77 @@ describe("official built-in lens context contract", () => {
     expect(render("chart", { series: [{ name: "loss", points: [[1, 0.5]] }] })).toContain('data-workbench-anchor="[&quot;series&quot;,0,&quot;points&quot;,0]"');
     expect(render("codemap", { codemap: 1, nodes: { api: { label: "API" } }, edges: [] })).toContain('data-workbench-context-target="codemap-node"');
     expect(render("codemap", { codemap: 1, nodes: { api: { label: "API" } }, edges: [] })).toContain('data-workbench-anchor="[&quot;nodes&quot;,&quot;api&quot;]"');
+  });
+});
+
+describe("resilient rendering when data is empty or malformed", () => {
+  const render = (id: string, data: unknown, config?: unknown) =>
+    renderToStaticMarkup(
+      <>{getLens(id)!.render({ data, config, onChange: () => {} })}</>
+    );
+
+  it("table handles non-array data and invalid column configs gracefully", () => {
+    expect(() => render("table", null)).not.toThrow();
+    expect(render("table", null)).toContain("Empty");
+    expect(() => render("table", { not: "an-array" })).not.toThrow();
+    expect(() => render("table", [{ a: 1 }], { columns: "invalid" as unknown as [] })).not.toThrow();
+    expect(() => render("table", [{ a: 1 }], { columns: [null, { key: "", label: "" }] as unknown as [] })).not.toThrow();
+    expect(render("table", [{ a: 1 }])).toContain("1");
+  });
+
+  it("kanban parses malformed data into safe columns without throwing", () => {
+    expect(parseBoardColumns(null)).toEqual([]);
+    expect(parseBoardColumns({ columns: "not-an-array" })).toEqual([]);
+    expect(
+      parseBoardColumns({
+        columns: [
+          null,
+          { name: 123 as unknown as string, items: ["item 1", null, 42] as unknown as string[] },
+        ],
+      })
+    ).toEqual([{ name: "Column", items: ["item 1", "", "42"] }]);
+
+    expect(() => render("kanban", null)).not.toThrow();
+    expect(render("kanban", null)).toContain("Empty board");
+    expect(() => render("kanban", { columns: "invalid" })).not.toThrow();
+    expect(render("kanban", { columns: "invalid" })).toContain("Empty board");
+  });
+
+  it("chart parses malformed series points and labels safely", () => {
+    expect(parseSeries(null)).toEqual([]);
+    expect(parseSeries("scalar string")).toEqual([]);
+    expect(parseSeries({ series: [null, { points: [[1, "bad"]] }] })).toEqual([]);
+    expect(
+      parseSeries({
+        series: [{ name: "valid", points: [[0, 1], [1, Infinity], [2, 3]] }],
+      })
+    ).toEqual([
+      {
+        name: "valid",
+        sourceIndex: 0,
+        pts: [
+          { x: 0, y: 1, sourceIndex: 0 },
+          { x: 2, y: 3, sourceIndex: 2 },
+        ],
+      },
+    ]);
+
+    expect(() => render("chart", null)).not.toThrow();
+    expect(render("chart", null)).toContain("Empty");
+    expect(() => render("chart", { series: "not-array" })).not.toThrow();
+    expect(() => render("chart", { series: [{ points: [[1, 2]] }], xLabel: { not: "string" } as unknown as string })).not.toThrow();
+  });
+
+  it("codemap renders empty state for malformed documents", () => {
+    expect(() => render("codemap", null)).not.toThrow();
+    expect(render("codemap", null)).toContain("Codemap is empty");
+    expect(() => render("codemap", { codemap: 1, nodes: null, edges: null })).not.toThrow();
+    expect(render("codemap", { codemap: 1, nodes: null, edges: null })).toContain("Codemap is empty");
+  });
+
+  it("markdown handles non-string data gracefully", () => {
+    expect(() => render("markdown", null)).not.toThrow();
+    expect(() => render("markdown", { note: "test" })).not.toThrow();
+    expect(render("markdown", { note: "test" })).toContain("note");
   });
 });
