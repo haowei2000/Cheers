@@ -1,705 +1,73 @@
-import { Button as UiButton } from "@/components/ui/button";
 import {
-  AddContextIcon,
   AnnotationIcon,
   CollectionIcon,
-  TabIcon,
 } from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
-import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
-import { Select as UiSelect } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { Dialog } from "@/components/ui/dialog";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense } from "react";
 import {
-  Atom,
-  Boxes,
-  CalendarCheck,
-  CheckSquare2,
-  Code2,
   Crosshair,
   Eye,
   EyeOff,
   FileQuestion,
-  FileText,
-  Folder,
   Frame,
-  Lock,
-  Maximize2,
-  Minimize2,
-  Plus,
   Save,
-  Server,
 } from "lucide-react";
-import { LockOff } from "@/components/ui/slashed-icon";
-import { cn } from "@/lib/cn";
-import {
-  pointRect,
-  preservesNativeContextMenu,
-  useContextActions,
-  useContextSurface,
-  type ContextAction,
-} from "@/components/ui/context-actions";
-import {
-  rangedFileContextItem,
-  selectionLineRange,
-  useContextPickStore,
-  usePendingContext,
-  workbenchFileContextItem,
-} from "@/features/chat/context/contextPick";
+import { workbenchFileContextItem } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
-import type { FsEntry } from "./fsClient";
-import { useFileSession } from "./jsonFile";
-import { filterCollaborators } from "./collab";
-import { CollaboratorPills, ConflictBanner } from "./collabView";
-import { useAnnotations } from "./annotations";
-import { inspectableIdLineRange } from "./contextSource";
-import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from "./AnnotationBar";
-import type { LensContextTarget } from "./lens/registry";
+import { ConflictBanner } from "./collabView";
+import { AnnotationComposer, AnnotationsButton } from "./AnnotationBar";
 import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
-import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
 import {
   FloatingPanelActionPortal,
   FloatingPanelNavigationPortal,
 } from "@/components/ui/floating-panel";
-import { WorkbenchTabLocator } from "./WorkbenchTabLocator";
-import { WorkbenchCardDeck } from "./WorkbenchCardDeck";
+import { ContextPickSurface } from "./ContextPickSurface";
+import {
+  CANVAS_SCENE,
+  OTHER_SCENE,
+  canvasSceneId,
+  canvasScenePath,
+  isCanvasPath,
+  canAddTabToCollection,
+  unclaimedRenderableTabs,
+  reconcileSceneItems,
+  metaFor,
+  sceneTabContextActions,
+  itemTitle,
+  type SceneIconComponent,
+} from "./sceneState";
+import {
+  SceneTab,
+  AddCollectionControl,
+  NewCollectionDialog,
+  AddTabControl,
+  WorkbenchHierarchyNavigation,
+  ItemTab,
+} from "./SceneNavigation";
+import { WorkbenchStatusBar } from "./WorkbenchStatusBar";
+import { useSceneWorkbenchCoordinator } from "./useSceneWorkbenchCoordinator";
 
-const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
-
-const OTHER_SCENE = "__other__";
-
-// A canvas is the successor to a scene: a named collection of channel content, but one
-// that lives in its own file instead of in `scene_state` (docs/arch/CANVAS.md). So it
-// takes a slot in the SAME primary navigation, as a scene whose only item is that file
-// — which is why the canvas itself becomes the navigation and the item tabs go quiet.
-//
-// Flat coexistence rather than a mode switch: while both concepts exist, a channel
-// should be able to migrate one scene at a time and always see both.
-const CANVAS_SCENE = "canvas:";
-const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
-const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
-const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
-
-export function canAddTabToCollection(state: WorkbenchSceneState, collectionId: string): boolean {
-  return collectionId !== OTHER_SCENE && !canvasScenePath(collectionId) && state.order.includes(collectionId);
-}
-
-export function unclaimedRenderableTabs(paths: string[], state: WorkbenchSceneState): string[] {
-  const claimed = new Set(state.order.flatMap((id) => state.items[id] ?? []));
-  return paths.filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b));
-}
-
-type SceneIconComponent = typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-
-const sceneMeta: Record<string, { subtitle: string; Icon: SceneIconComponent; color: string }> = {
-  "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
-  "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-research-300" },
-  "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-info-300" },
-  "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-warning-300" },
-  "notes-workflow": { subtitle: "Focused notes & review", Icon: FileText, color: "text-accent-300" },
-  "research-planner": { subtitle: "Deadlines and risk tracking", Icon: CalendarCheck, color: "text-research-300" },
-  [OTHER_SCENE]: { subtitle: "Renderable tabs outside Collections", Icon: Boxes, color: "text-category-300" },
+// Re-export domain items so existing callers remain backward-compatible
+export {
+  CANVAS_SCENE,
+  OTHER_SCENE,
+  canvasSceneId,
+  canvasScenePath,
+  isCanvasPath,
+  canAddTabToCollection,
+  unclaimedRenderableTabs,
+  reconcileSceneItems,
+  metaFor,
+  sceneTabContextActions,
+  type SceneIconComponent,
 };
 
-function getCoreExtensionId(id: string): string {
-  if (id.startsWith("extension:") || id.startsWith("personal:")) {
-    const parts = id.split(":");
-    return parts[1] || id;
-  }
-  return id;
-}
-
-function createPackageIcon(iconUrl: string): SceneIconComponent {
-  return function PackageIcon({ className, "aria-hidden": ariaHidden }: { className?: string; "aria-hidden"?: boolean | "true" | "false" }) {
-    return <img src={iconUrl} className={cn("h-4 w-4 object-contain", className)} alt="" aria-hidden={ariaHidden ?? "true"} />;
-  };
-}
-
-function metaFor(id: string, iconUrl?: string): { subtitle: string; Icon: SceneIconComponent; color: string } {
-  if (iconUrl) {
-    return {
-      subtitle: "Extension template",
-      Icon: createPackageIcon(iconUrl),
-      color: "",
-    };
-  }
-  const coreId = getCoreExtensionId(id);
-  const found = sceneMeta[id] ?? sceneMeta[coreId];
-  if (found) return found;
-  return { subtitle: "Native workspace", Icon: CollectionIcon as unknown as SceneIconComponent, color: "text-content-secondary" };
-}
-
-export function sceneTabContextActions(
-  label: string,
-  onSelect: () => void,
-  onShowRaw: () => void,
-  onAddToContext: () => void,
-  contextAdded = false,
-  contextAvailable = true,
-): ContextAction[] {
-  return [
-    {
-      id: "open-collection",
-      label: `Open ${label}`,
-      icon: <CollectionIcon className="h-4 w-4" />,
-      run: onSelect,
-    },
-    {
-      id: "add-context",
-      label: !contextAvailable
-        ? "No Collection files to add"
-        : contextAdded
-          ? "Already added to context"
-          : "Add Collection to context",
-      icon: <AddContextIcon className="h-4 w-4" />,
-      disabled: !contextAvailable || contextAdded,
-      group: "secondary",
-      run: onAddToContext,
-    },
-    {
-      id: "raw",
-      label: "Raw",
-      icon: <Folder className="h-4 w-4" />,
-      group: "secondary",
-      run: onShowRaw,
-    },
-  ];
-}
-
-function SceneTab({
-  label,
-  Icon,
-  iconColor,
-  selected,
-  presentation,
-  onSelect,
-  onShowRaw,
-  onAddToContext,
-  contextAdded,
-  contextAvailable,
-}: {
-  label: string;
-  Icon: SceneIconComponent;
-  iconColor: string;
-  selected: boolean;
-  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
-  onSelect: () => void;
-  onShowRaw: () => void;
-  onAddToContext: () => void;
-  contextAdded: boolean;
-  contextAvailable: boolean;
-}) {
-  const surfaceRef = useRef<HTMLButtonElement>(null);
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions: () => sceneTabContextActions(label, onSelect, onShowRaw, onAddToContext, contextAdded, contextAvailable),
-  });
-  const contextHandlers = {
-    onContextMenu: contextSurface.onContextMenu,
-    onKeyDown: contextSurface.onKeyDown,
-    onPointerDown: contextSurface.onPointerDown,
-    onPointerMove: contextSurface.onPointerMove,
-    onPointerUp: contextSurface.onPointerUp,
-    onPointerCancel: contextSurface.onPointerCancel,
-    onPointerLeave: contextSurface.onPointerLeave,
-    onClickCapture: contextSurface.onClickCapture,
-  };
-
-  const iconOnly = presentation === "icon";
-  return (
-    <UiButton
-      ref={surfaceRef}
-      variant="plain"
-      content={iconOnly ? "icon" : "text"}
-      role="tab"
-      aria-selected={selected}
-      selected={selected}
-      aria-label={iconOnly ? label : undefined}
-      title={iconOnly ? label : undefined}
-      type="button"
-      onClick={onSelect}
-      controlSize={workbenchControlSize.tab}
-      className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
-      )}
-      {...contextHandlers}
-    >
-      {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
-      {!iconOnly && <span className="truncate">{label}</span>}
-    </UiButton>
-  );
-}
-
-function AddCollectionControl({
-  onOpenNew,
-  content = "icon",
-}: {
-  onOpenNew: () => void;
-  content?: "text" | "icon";
-}) {
-  return (
-    <UiButton
-      action="create"
-      type="button"
-      onClick={onOpenNew}
-      content={content === "icon" ? "icon" : "iconText"}
-      variant="plain"
-      aria-label="Add Collection"
-      title="Add Collection"
-      controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0"
-    >
-      <Plus className="h-4 w-4" aria-hidden="true" />
-      {content !== "icon" && <span>Add Collection</span>}
-    </UiButton>
-  );
-}
-
-function NewCollectionDialog({
-  isOpen,
-  available,
-  onSelect,
-  onLoad,
-  onClose,
-}: {
-  isOpen: boolean;
-  available: TemplateManifest[];
-  onSelect: (manifest: TemplateManifest) => void;
-  onLoad: () => void;
-  onClose: () => void;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <Dialog title="New Collection" onClose={onClose} maxWidth="max-w-lg">
-      <div className="flex flex-col gap-4">
-        <p className="text-compact text-content-secondary">
-          Select a template group to add to this workspace.
-        </p>
-        <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto -mx-1 px-1">
-          {available.map((template) => {
-            const meta = metaFor(template.id, template.icon);
-            const Icon = meta.Icon;
-            return (
-              <UiButton
-                key={template.id}
-                role="option"
-                type="button"
-                variant="plain"
-                content="iconText"
-                controlWidth="fill"
-                controlSize="comfortable"
-                onClick={() => {
-                  onSelect(template);
-                  onClose();
-                }}
-                className="justify-start gap-3 rounded text-left"
-              >
-                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
-                  <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
-                </div>
-                <div className="min-w-0 flex-1 py-1">
-                  <div className="text-regular font-medium text-content-strong truncate">
-                    {template.title}
-                  </div>
-                  {meta.subtitle && (
-                    <div className="text-compact text-content-muted truncate">
-                      {meta.subtitle}
-                    </div>
-                  )}
-                </div>
-              </UiButton>
-            );
-          })}
-          {available.length === 0 && (
-            <div className="py-6 text-center text-compact text-content-muted">
-              All available templates have already been added to this workspace.
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between border-t border-control/80 pt-3">
-          <UiButton
-            action="upload"
-            type="button"
-            variant="plain"
-            content="iconText"
-            onClick={() => {
-              onClose();
-              onLoad();
-            }}
-            controlSize="compact"
-          >
-            <Folder className="h-4 w-4" aria-hidden="true" />
-            <span>Load .cheers-extension…</span>
-          </UiButton>
-          <UiButton
-            action="cancel"
-            type="button"
-            variant="plain"
-            onClick={onClose}
-            controlSize="compact"
-          >
-            Cancel
-          </UiButton>
-        </div>
-      </div>
-    </Dialog>
-  );
-}
-
-function AddTabControl({
-  candidates,
-  onSelect,
-  content = "icon",
-}: {
-  candidates: string[];
-  onSelect: (path: string) => void;
-  content?: "text" | "icon";
-}) {
-  if (!candidates.length) return null;
-  return (
-    <DropdownSelect
-      ariaLabel="Open Tab"
-      label="Open Tab"
-      leading={<TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
-      content={content}
-      options={[]}
-      actions={candidates.map((path) => ({
-        value: path,
-        label: basename(path),
-        leading: <TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />,
-      }))}
-      onSelect={() => undefined}
-      onAction={onSelect}
-      placement="up"
-      controlSize={workbenchControlSize.tab}
-      controlWidth="fill"
-      className="flex-shrink-0"
-    />
-  );
-}
-
-function WorkbenchHierarchyNavigation({
-  availableWidth,
-  collections,
-  activeCollection,
-  collectionTitle,
-  collectionIcon,
-  hasAvailableTemplates,
-  onSelectCollection,
-  onOpenNew,
-  onLoadCollection,
-  onShowRaw,
-}: {
-  availableWidth: number;
-  collections: Array<{ id: string; label: string; Icon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }> }>;
-  activeCollection: string;
-  collectionTitle: string;
-  collectionIcon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-  hasAvailableTemplates: boolean;
-  onSelectCollection: (id: string) => void;
-  onOpenNew: () => void;
-  onLoadCollection: () => void;
-  onShowRaw: () => void;
-}) {
-  const textProbe = useRef<HTMLDivElement>(null);
-  const [requiredTextWidth, setRequiredTextWidth] = useState(Number.POSITIVE_INFINITY);
-  useLayoutEffect(() => {
-    const measure = () => setRequiredTextWidth(textProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY);
-    measure();
-    const observer = new ResizeObserver(measure);
-    if (textProbe.current) observer.observe(textProbe.current);
-    return () => observer.disconnect();
-  }, [collections.length, collectionTitle]);
-  const iconOnly = availableWidth < requiredTextWidth;
-  const CollectionIcon = collectionIcon;
-
-  const collectionActions: DropdownSelectOption[] = [
-    ...(hasAvailableTemplates
-      ? [
-          {
-            value: "new-collection",
-            label: "New Collection…",
-            leading: <Plus className="h-4 w-4" aria-hidden="true" />,
-          },
-        ]
-      : []),
-    { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-  ];
-  const collectionOptions: DropdownSelectOption[] = [
-    ...collections.map(({ id, label, Icon }) => ({
-      value: `collection:${id}`,
-      label,
-      leading: <Icon className="h-4 w-4" aria-hidden="true" />,
-    })),
-    { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-  ];
-  const chooseCollection = (value: string) => {
-    if (value === "raw") return onShowRaw();
-    onSelectCollection(value.slice("collection:".length));
-  };
-  const runCollectionAction = (value: string) => {
-    if (value === "load") return onLoadCollection();
-    if (value === "new-collection") return onOpenNew();
-  };
-  const controls = (probe = false, icons = iconOnly) => (
-    <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
-      <DropdownSelect
-        ariaLabel={`Collection: ${collectionTitle}`}
-        label={collectionTitle || "Collections"}
-        leading={<CollectionIcon className="h-4 w-4" aria-hidden="true" />}
-        content={icons ? "icon" : "text"}
-        value={`collection:${activeCollection}`}
-        options={collectionOptions}
-        onSelect={chooseCollection}
-        actions={collectionActions}
-        onAction={runCollectionAction}
-        placement="up"
-        controlWidth="slot"
-        className="max-w-64 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
-      />
-    </div>
-  );
-
-  return (
-    <div className="relative min-w-0 max-w-full overflow-hidden">
-      {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
-    </div>
-  );
-}
-
-function basename(path: string) {
-  return path.split("/").pop() || path;
-}
-
-function fallbackItemTitle(path: string) {
-  const file = basename(path);
-  const stem = file.includes(".") ? file.slice(0, file.lastIndexOf(".")) : file;
-  return stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function ItemTab({
-  label,
-  selected,
-  presentation,
-  contextAdded,
-  onSelect,
-  onAddToContext,
-}: {
-  label: string;
-  selected: boolean;
-  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
-  contextAdded: boolean;
-  onSelect: () => void;
-  onAddToContext: () => void;
-}) {
-  const surfaceRef = useRef<HTMLButtonElement>(null);
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions: () => [{
-      id: "add-context",
-      label: contextAdded ? "Already added to context" : "Add to context",
-      icon: <AddContextIcon className="h-4 w-4" />,
-      disabled: contextAdded,
-      run: onAddToContext,
-    }],
-  });
-
-  return (
-    <UiButton
-      ref={surfaceRef}
-      variant="plain"
-      role="tab"
-      aria-selected={selected}
-      selected={selected}
-      aria-label={presentation === "icon" ? label : undefined}
-      title={presentation === "icon" ? label : undefined}
-      content={presentation === "icon" ? "icon" : "text"}
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "page" : undefined}
-      controlSize={workbenchControlSize.tab}
-      className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
-      )}
-      onContextMenu={contextSurface.onContextMenu}
-      onKeyDown={contextSurface.onKeyDown}
-      onPointerDown={contextSurface.onPointerDown}
-      onPointerMove={contextSurface.onPointerMove}
-      onPointerUp={contextSurface.onPointerUp}
-      onPointerCancel={contextSurface.onPointerCancel}
-      onPointerLeave={contextSurface.onPointerLeave}
-      onClickCapture={contextSurface.onClickCapture}
-    >
-      {presentation === "icon" ? <TabIcon className="h-4 w-4" aria-hidden="true" /> : label}
-    </UiButton>
-  );
-}
-
-function ContextPickSurface({
-  channelId,
-  path,
-  content,
-  children,
-  onAdded,
-}: {
-  channelId: string;
-  path: string;
-  content: string;
-  children: ReactNode;
-  onAdded: (label: string) => void;
-}) {
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const { open } = useContextActions();
-  const addContext = useContextPickStore((state) => state.add);
-  const picked = usePendingContext(channelId);
-  const item = workbenchFileContextItem(path);
-  const added = picked.some((candidate) => candidate.id === item.id);
-  const actions = () => [{
-    id: "add-context",
-    label: added ? "Already added to context" : "Add to context",
-    icon: <AddContextIcon className="h-4 w-4" />,
-    disabled: added,
-    run: () => {
-      addContext(channelId, item);
-      onAdded(item.label);
-    },
-  } satisfies ContextAction];
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions,
-    selectionActions: (selection) => {
-      const range = selectionLineRange(content, selection.text);
-      return [{
-        id: "add-lines",
-        label: "Add selected lines to context",
-        icon: <AddContextIcon className="h-4 w-4" />,
-        disabled: !range,
-        run: () => {
-          if (!range) throw new Error("The selected text could not be mapped to file lines");
-          const ranged = rangedFileContextItem(path, range.start, range.end);
-          addContext(channelId, ranged);
-          onAdded(ranged.label);
-        },
-      } satisfies ContextAction];
-    },
-  });
-
-  const onContextMenuCapture = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target instanceof Element && event.target.closest("[data-workbench-context-target]")) return;
-    if (!preservesNativeContextMenu(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    open({
-      actions: actions(),
-      anchor: pointRect(event.clientX, event.clientY),
-      source: "pointer",
-      restoreFocus: event.target instanceof HTMLElement ? event.target : surfaceRef.current,
-    });
-  };
-
-  return (
-    <div
-      ref={surfaceRef}
-      className="h-full min-h-0"
-      tabIndex={0}
-      onContextMenuCapture={onContextMenuCapture}
-      onContextMenu={contextSurface.onContextMenu}
-      onMouseUp={contextSurface.onMouseUp}
-      onKeyDown={contextSurface.onKeyDown}
-      onPointerDown={contextSurface.onPointerDown}
-      onPointerMove={contextSurface.onPointerMove}
-      onPointerUp={contextSurface.onPointerUp}
-      onPointerCancel={contextSurface.onPointerCancel}
-      onPointerLeave={contextSurface.onPointerLeave}
-      onClickCapture={contextSurface.onClickCapture}
-    >
-      {children}
-    </div>
-  );
-}
-
-export function reconcileSceneItems(
-  sceneState: WorkbenchSceneState | undefined,
-  templates: TemplateManifest[],
-  legacyEnvironment?: string | null
-): WorkbenchSceneState {
-  const order = sceneState?.order?.length
-    ? [...sceneState.order]
-    : legacyEnvironment
-      ? [legacyEnvironment]
-      : [];
-  const titles = { ...(sceneState?.titles ?? {}) };
-  const items = Object.fromEntries(
-    Object.entries(sceneState?.items ?? {}).map(([id, paths]) => [id, [...paths]])
-  );
-  for (const id of order) {
-    const template = templates.find((candidate) => candidate.id === id);
-    if (!template) continue;
-    titles[id] ??= template.title;
-    const paths = items[id] ?? [];
-    for (const item of template.items) if (!paths.includes(item.source.path)) paths.push(item.source.path);
-    items[id] = paths;
-  }
-  return { version: 1, order, titles, items };
-}
-
-function itemTitle(sceneId: string, path: string, templates: TemplateManifest[]) {
-  return (
-    templates
-      .find((template) => template.id === sceneId)
-      ?.items.find((item) => item.source.path === path)?.title ?? fallbackItemTitle(path)
-  );
-}
-
-function rendererFor(
-  path: string,
-  content: string | undefined,
-  ctx: WorkbenchContext,
-  failed: string[] = []
-): RendererDesc | undefined {
-  if (content === undefined) {
-    const bound = ctx.bindings[path] ? getRenderer(ctx.bindings[path], ctx.rendererExtensions) : undefined;
-    return bound && !failed.includes(bound.id) ? bound : undefined;
-  }
-  return previewOptions(path, content, ctx.rendererExtensions, ctx.bindings[path], failed)[0];
-}
-
-async function readDiscoverableFiles(
-  entries: FsEntry[],
-  ctx: WorkbenchContext,
-  onBatch: (values: Record<string, string>) => void
-) {
-  const candidates = entries.filter((entry) => {
-    if (entry.is_dir || entry.path === ".workbench.json") return false;
-    if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.rendererExtensions)) return false;
-    return /\.(md|markdown|json|ya?ml)$/i.test(entry.path);
-  });
-  for (let start = 0; start < candidates.length; start += 4) {
-    const batch = candidates.slice(start, start + 4);
-    const results = await Promise.all(
-      batch.map(async (entry) => {
-        try {
-          return [entry.path, (await ctx.fs.read(entry.path)).content] as const;
-        } catch {
-          return null;
-        }
-      })
-    );
-    onBatch(Object.fromEntries(results.filter((value): value is readonly [string, string] => value !== null)));
-  }
-}
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 export function SceneWorkbench({
   ctx,
@@ -720,261 +88,45 @@ export function SceneWorkbench({
   onLoadCollection: () => void;
   onShowRaw: () => void;
 }) {
-  const [entries, setEntries] = useState<FsEntry[]>([]);
-  const [contents, setContents] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<string | null>(null);
-  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
-  const reconciled = useMemo(
-    () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
-    [sceneState, templates, legacyEnvironment]
-  );
-  const storagePrefix = `cheers.workbench.${ctx.channelId}`;
-  const [activeScene, setActiveScene] = useState(
-    () => localStorage.getItem(`${storagePrefix}.scene`) || reconciled.order[0] || ""
-  );
-  const [selectedByScene, setSelectedByScene] = useState<Record<string, string>>({});
-  const [isNewCollectionOpen, setIsNewCollectionOpen] = useState(false);
-  const addContext = useContextPickStore((state) => state.add);
-  const picked = usePendingContext(ctx.channelId);
-  const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
+  const coord = useSceneWorkbenchCoordinator({
+    ctx,
+    sceneState,
+    legacyEnvironment,
+    templates,
+    onAddTab,
+  });
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const listing = await ctx.fs.ls("");
-      setEntries(listing.entries);
-      setStatus(null);
-      void readDiscoverableFiles(listing.entries, ctx, (values) =>
-        setContents((previous) => ({ ...previous, ...values }))
-      );
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Couldn’t load Workbench items");
-    } finally {
-      setLoading(false);
-    }
-  }, [ctx]);
-
-  useEffect(() => void refresh(), [refresh]);
-  useEffect(() => {
-    if (ctx.filesTick !== undefined) void refresh();
-  }, [ctx.filesTick, refresh]);
-
-  const existing = useMemo(
-    () => new Set(entries.filter((entry) => !entry.is_dir).map((entry) => entry.path)),
-    [entries]
-  );
-  const renderers = useMemo(() => {
-    const found: Record<string, RendererDesc> = {};
-    for (const path of existing) {
-      const renderer = rendererFor(path, contents[path], ctx, failedRenderers[path]);
-      if (renderer) found[path] = renderer;
-    }
-    return found;
-  }, [existing, contents, ctx, failedRenderers]);
-  const otherPaths = useMemo(
-    () => unclaimedRenderableTabs(Object.keys(renderers), reconciled),
-    [renderers, reconciled]
-  );
-  const canvasPaths = useMemo(
-    () => [...existing].filter(isCanvasPath).sort((a, b) => a.localeCompare(b)),
-    [existing]
-  );
-  const sceneIds = useMemo(
-    () => [...reconciled.order, ...canvasPaths.map(canvasSceneId), ...(otherPaths.length ? [OTHER_SCENE] : [])],
-    [reconciled.order, canvasPaths, otherPaths.length]
-  );
-
-  useEffect(() => {
-    if (!sceneIds.length) {
-      setActiveScene("");
-      return;
-    }
-    if (!sceneIds.includes(activeScene)) setActiveScene(sceneIds[0]);
-  }, [sceneIds, activeScene]);
-  useEffect(() => {
-    if (!activeScene) return;
-    localStorage.setItem(`${storagePrefix}.scene`, activeScene);
-  }, [activeScene, storagePrefix]);
-
-  const [isTabLocked, setIsTabLocked] = useState(false);
-  const [shakeNonce, setShakeNonce] = useState(0);
-  const triggerLockedShake = useCallback(() => setShakeNonce((n) => n + 1), []);
-  const [isCardMaximized, setIsCardMaximized] = useState(false);
-
-  const activePaths = useMemo(() => {
-    const canvas = canvasScenePath(activeScene);
-    if (canvas) return existing.has(canvas) ? [canvas] : [];
-    const paths = activeScene === OTHER_SCENE ? otherPaths : reconciled.items[activeScene] ?? [];
-    return paths.filter((path) => existing.has(path) && (activeScene !== OTHER_SCENE || renderers[path]));
-  }, [activeScene, otherPaths, reconciled.items, existing, renderers]);
-  const storedSelection = activeScene
-    ? localStorage.getItem(`${storagePrefix}.item.${activeScene}`)
-    : null;
-  const selectedPath =
-    (selectedByScene[activeScene] && activePaths.includes(selectedByScene[activeScene])
-      ? selectedByScene[activeScene]
-      : storedSelection && activePaths.includes(storedSelection)
-        ? storedSelection
-        : activePaths[0]) ?? null;
-
-  // ONE session for the selected item, shared by this scene's two views: Raw edits
-  // `text`, Preview renders `data` parsed from it. See FileSession.
-  const session = useFileSession(ctx.fs, selectedPath ?? "");
-
-  // Live-push: Desk files changed on the server (bot finished writing or teammate saved).
-  // Reload the open file in place with automatic 3-way non-destructive merge.
-  const filesTick = ctx.filesTick ?? 0;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  const seenFilesTick = useRef(filesTick);
-  useEffect(() => {
-    if (filesTick === seenFilesTick.current) return;
-    seenFilesTick.current = filesTick;
-    void refresh();
-    if (!selectedPath) return;
-    void sessionRef.current.reload(true);
-  }, [filesTick, refresh, selectedPath]);
-
-  // Broadcast presence focus so other clients and bots see who is viewing/editing this item.
-  useEffect(() => {
-    if (!ctx.sendPresenceFocus) return;
-    if (selectedPath) {
-      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selectedPath });
-    } else {
-      ctx.sendPresenceFocus(ctx.channelId, null);
-    }
-    return () => {
-      ctx.sendPresenceFocus?.(ctx.channelId, null);
-    };
-  }, [ctx.sendPresenceFocus, ctx.channelId, selectedPath]);
-
-  const collaborators = useMemo(
-    () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
-    [ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames]
-  );
-
-  // Notes anchored into this item — a separate file, so annotating never touches the
-  // document being annotated. Same store the file browser reads.
-  const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
-  const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
-  const onAnnotate = useCallback(
-    (target: LensContextTarget, at: { x: number; y: number }) =>
-      selectedPath && setPendingNote({ target, path: selectedPath, at }),
-    [selectedPath]
-  );
-  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
-  const [isInspectorActive, setIsInspectorActive] = useState(false);
-  const [revealLine, setRevealLine] = useState<number | undefined>();
-  // Paths the user has forced to Raw; everything else follows the content.
-  const [rawPaths, setRawPaths] = useState<ReadonlySet<string>>(() => new Set());
-  const showRaw = useCallback((path: string, raw: boolean) => {
-    setRawPaths((current) => {
-      if (current.has(path) === raw) return current;
-      const next = new Set(current);
-      if (raw) next.add(path); else next.delete(path);
-      return next;
-    });
-  }, []);
-  const revealedCard = useRef<string | null>(null);
-  useEffect(() => {
-    const id = ctx.openInspectableId;
-    if (!id) { revealedCard.current = null; return; }
-    if (!selectedPath || selectedPath !== ctx.openTarget || session.path !== selectedPath || session.version === null) return;
-    const key = `${selectedPath}#^${id}`;
-    if (revealedCard.current === key) return;
-    const range = inspectableIdLineRange(session.parsedText, id);
-    if (!range) return;
-    revealedCard.current = key;
-    showRaw(selectedPath, true);
-    setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, showRaw]);
-
-  // The session has already read the selected file, so feed the discovery map from it
-  // rather than issuing a second read for the same bytes — and so an edit does not leave
-  // the map (which decides what counts as a scene item at all) describing an old file.
-  useEffect(() => {
-    if (!selectedPath || session.path !== selectedPath || session.version === null) return;
-    const text = session.parsedText;
-    setContents((current) => (current[selectedPath] === text ? current : { ...current, [selectedPath]: text }));
-  }, [selectedPath, session.path, session.version, session.parsedText]);
-
-  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
-  useEffect(() => {
-    setPendingNote(null);
-    setActiveAnnotationId(null);
-  }, [selectedPath]);
-
-  const selectPath = useCallback((path: string, sceneId = activeScene) => {
-    setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));
-    localStorage.setItem(`${storagePrefix}.item.${sceneId}`, path);
-  }, [activeScene, storagePrefix]);
-
-  const onSelectAnnotationFile = useCallback(
-    (path: string) => {
-      const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(path));
-      const targetScene = owner ?? OTHER_SCENE;
-      setActiveScene(targetScene);
-      selectPath(path, targetScene);
-      showRaw(path, true);
-    },
-    [reconciled.items, reconciled.order, selectPath, showRaw]
-  );
-
-  const addPathToContext = (path: string) => {
-    const item = workbenchFileContextItem(path);
-    addContext(ctx.channelId, item);
-    setStatus(`Added ${item.label} to context`);
-  };
-
-  const addSceneToContext = (id: string) => {
-    const paths = id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [];
-    const existingPaths = paths.filter((path) => existing.has(path));
-    for (const path of existingPaths) addContext(ctx.channelId, workbenchFileContextItem(path));
-    if (existingPaths.length) {
-      setStatus(`Added ${existingPaths.length} ${existingPaths.length === 1 ? "file" : "files"} to context`);
-    }
-  };
-
-  useEffect(() => {
-    const target = ctx.openTarget;
-    if (!target || !renderers[target]) return;
-    const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(target));
-    setActiveScene(owner ?? OTHER_SCENE);
-    setSelectedByScene((previous) => ({ ...previous, [owner ?? OTHER_SCENE]: target }));
-  }, [ctx.openTarget, renderers, reconciled]);
-
-  const available = templates.filter((template) => !reconciled.order.includes(template.id));
+  const available = templates.filter((template) => !coord.reconciled.order.includes(template.id));
   const title =
-    activeScene === OTHER_SCENE
+    coord.activeScene === OTHER_SCENE
       ? "Other"
-      : reconciled.titles[activeScene] ?? templates.find((template) => template.id === activeScene)?.title ?? activeScene;
+      : coord.reconciled.titles[coord.activeScene] ?? templates.find((template) => template.id === coord.activeScene)?.title ?? coord.activeScene;
 
-  const collectionTabs = () => sceneIds.map((id) => {
+  const collectionTabs = () => coord.sceneIds.map((id) => {
     const template = templates.find((candidate) => candidate.id === id);
     const meta = metaFor(id, template?.icon);
-    const label = id === OTHER_SCENE ? "Other" : reconciled.titles[id] ?? id;
-    const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
-      .filter((path) => existing.has(path));
+    const label = id === OTHER_SCENE ? "Other" : coord.reconciled.titles[id] ?? id;
+    const contextPaths = (id === OTHER_SCENE ? coord.otherPaths : coord.reconciled.items[id] ?? [])
+      .filter((path) => coord.existing.has(path));
     return (
       <SceneTab
         key={id}
         label={label}
         Icon={meta.Icon}
         iconColor={meta.color}
-        selected={activeScene === id}
+        selected={coord.activeScene === id}
         presentation="iconText"
-        onSelect={() => setActiveScene(id)}
+        onSelect={() => coord.setActiveScene(id)}
         onShowRaw={onShowRaw}
-        onAddToContext={() => addSceneToContext(id)}
+        onAddToContext={() => coord.addSceneToContext(id)}
         contextAdded={contextPaths.length > 0
-          && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+          && contextPaths.every((path) => coord.pickedIds.has(workbenchFileContextItem(path).id))}
         contextAvailable={contextPaths.length > 0}
       />
     );
   });
 
-  const collectionNavigationItems = sceneIds.map((id) => {
+  const collectionNavigationItems = coord.sceneIds.map((id) => {
     const canvasPath = canvasScenePath(id);
     const template = templates.find((candidate) => candidate.id === id);
     const meta = canvasPath
@@ -984,55 +136,54 @@ export function SceneWorkbench({
       ? (canvasPath.split("/").pop() ?? canvasPath).replace(/\.canvas\.(ya?ml|json)$/i, "")
       : id === OTHER_SCENE
         ? "Other"
-        : reconciled.titles[id] ?? id;
-    const contextPaths = (id === OTHER_SCENE ? otherPaths : reconciled.items[id] ?? [])
-      .filter((path) => existing.has(path));
+        : coord.reconciled.titles[id] ?? id;
+    const contextPaths = (id === OTHER_SCENE ? coord.otherPaths : coord.reconciled.items[id] ?? [])
+      .filter((path) => coord.existing.has(path));
     return {
       id,
       label,
       icon: meta.Icon,
-      selected: activeScene === id,
-      onSelect: () => setActiveScene(id),
+      selected: coord.activeScene === id,
+      onSelect: () => coord.setActiveScene(id),
       control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
         <SceneTab
           label={label}
           Icon={meta.Icon}
           iconColor={meta.color}
-          selected={activeScene === id}
+          selected={coord.activeScene === id}
           presentation={presentation}
-          onSelect={() => setActiveScene(id)}
+          onSelect={() => coord.setActiveScene(id)}
           onShowRaw={onShowRaw}
-          onAddToContext={() => addSceneToContext(id)}
+          onAddToContext={() => coord.addSceneToContext(id)}
           contextAdded={contextPaths.length > 0
-            && contextPaths.every((path) => pickedIds.has(workbenchFileContextItem(path).id))}
+            && contextPaths.every((path) => coord.pickedIds.has(workbenchFileContextItem(path).id))}
           contextAvailable={contextPaths.length > 0}
         />
       ),
     };
   });
 
-  // A canvas navigates itself — you click a node, not a tab — so the item strip that a
-  // scene fills stays empty here. This is the same shape the ViewBoard already has.
-  const itemNavigationItems = (canvasScenePath(activeScene) ? [] : activePaths).map((path) => ({
+  const itemNavigationItems = (canvasScenePath(coord.activeScene) ? [] : coord.activePaths).map((path) => ({
     id: path,
-    label: itemTitle(activeScene, path, templates),
-    selected: path === selectedPath,
-    onSelect: () => selectPath(path),
+    label: itemTitle(coord.activeScene, path, templates),
+    selected: path === coord.selectedPath,
+    onSelect: () => coord.selectPath(path),
     control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
       <ItemTab
-        label={itemTitle(activeScene, path, templates)}
-        selected={path === selectedPath}
+        label={itemTitle(coord.activeScene, path, templates)}
+        selected={path === coord.selectedPath}
         presentation={presentation}
-        onSelect={() => selectPath(path)}
-        onAddToContext={() => addPathToContext(path)}
-        contextAdded={pickedIds.has(workbenchFileContextItem(path).id)}
+        onSelect={() => coord.selectPath(path)}
+        onAddToContext={() => coord.addPathToContext(path)}
+        contextAdded={coord.pickedIds.has(workbenchFileContextItem(path).id)}
       />
     ),
   }));
-  const canAddTab = canAddTabToCollection(reconciled, activeScene);
+
+  const canAddTab = canAddTabToCollection(coord.reconciled, coord.activeScene);
   const tabCandidates = canAddTab
-    ? Object.keys(renderers)
-      .filter((path) => !isCanvasPath(path) && !(reconciled.items[activeScene] ?? []).includes(path))
+    ? Object.keys(coord.renderers)
+      .filter((path) => !isCanvasPath(path) && !(coord.reconciled.items[coord.activeScene] ?? []).includes(path))
       .sort((a, b) => a.localeCompare(b))
     : [];
   const collectionMenuItems = collectionNavigationItems.map((item) => ({
@@ -1040,36 +191,29 @@ export function SceneWorkbench({
     label: item.label,
     Icon: item.icon,
   }));
-  const activeCollectionIcon = collectionMenuItems.find((item) => item.id === activeScene)?.Icon ?? CollectionIcon;
-  const addTabAndSelect = (path: string) => {
-    void onAddTab(activeScene, path).then((added) => {
-      if (!added) return;
-      setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
-      localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
-    });
-  };
+  const activeCollectionIcon = collectionMenuItems.find((item) => item.id === coord.activeScene)?.Icon ?? CollectionIcon;
 
-  if (loading && entries.length === 0) {
+  if (coord.loading && coord.entries.length === 0) {
     return <div className="flex h-full items-center justify-center text-compact text-content-muted">Preparing Workbench…</div>;
   }
 
-  if (!loading && status && entries.length === 0) {
+  if (!coord.loading && coord.status && coord.entries.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <div className="text-regular font-medium text-content-secondary">{status}</div>
+        <div className="text-regular font-medium text-content-secondary">{coord.status}</div>
         <ResponsiveActionButton
           action="retry"
           context="settings"
+          variant="secondary"
           wideLabel="Retry"
-          onClick={() => void refresh()}
+          onClick={() => void coord.refresh()}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         />
       </div>
     );
   }
 
-  if (sceneIds.length === 0) {
+  if (coord.sceneIds.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <CollectionIcon className="h-5 w-5 text-content-muted" />
@@ -1083,30 +227,32 @@ export function SceneWorkbench({
           <ResponsiveActionButton
             action="add"
             context="toolbar"
+            variant="primary"
             wideLabel="New Collection…"
-            onClick={() => setIsNewCollectionOpen(true)}
+            onClick={() => coord.setIsNewCollectionOpen(true)}
             controlSize={workbenchControlSize.tab}
-            className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           />
         )}
         <ResponsiveActionButton
           action="upload"
           context="toolbar"
+          variant="secondary"
           wideLabel="Load .cheers-extension…"
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         />
         <NewCollectionDialog
-          isOpen={isNewCollectionOpen}
+          isOpen={coord.isNewCollectionOpen}
           available={available}
           onSelect={(manifest) => void onAddScene(manifest)}
           onLoad={onLoadCollection}
-          onClose={() => setIsNewCollectionOpen(false)}
+          onClose={() => coord.setIsNewCollectionOpen(false)}
         />
       </div>
     );
   }
+
+  const selectedPath = coord.selectedPath;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1115,7 +261,7 @@ export function SceneWorkbench({
           <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
             {collectionTabs()}
             {available.length > 0 && (
-              <AddCollectionControl onOpenNew={() => setIsNewCollectionOpen(true)} />
+              <AddCollectionControl onOpenNew={() => coord.setIsNewCollectionOpen(true)} />
             )}
           </div>
         )}
@@ -1124,21 +270,21 @@ export function SceneWorkbench({
           <WorkbenchHierarchyNavigation
             availableWidth={availableWidth}
             collections={collectionMenuItems}
-            activeCollection={activeScene}
+            activeCollection={coord.activeScene}
             collectionTitle={title}
             collectionIcon={activeCollectionIcon}
             hasAvailableTemplates={available.length > 0}
-            onSelectCollection={setActiveScene}
-            onOpenNew={() => setIsNewCollectionOpen(true)}
+            onSelectCollection={coord.setActiveScene}
+            onOpenNew={() => coord.setIsNewCollectionOpen(true)}
             onLoadCollection={onLoadCollection}
             onShowRaw={onShowRaw}
           />
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2 md:hidden">
+        <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1 bg-panel/50">
           <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
-          {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
+          {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={coord.addTabAndSelect} />}
         </div>
       )}
       {/* Floating Panel Action Portals for Chrome Header */}
@@ -1146,255 +292,181 @@ export function SceneWorkbench({
         <>
           <FloatingPanelActionPortal
             action={{
-              id: "card-fill",
-              label: isCardMaximized
-                ? "Restore card deck view (Esc)"
-                : "Maximize card screen fill",
-              priority: "primary",
-              icon: isCardMaximized ? Minimize2 : Maximize2,
-              selected: isCardMaximized,
-              onSelect: () => setIsCardMaximized((prev) => !prev),
-            }}
-          />
-          <FloatingPanelActionPortal
-            action={{
-              id: "lock-tab",
-              label: isTabLocked ? "Unlock tab scrolling" : "Lock tab in place",
-              priority: "primary",
-              icon: isTabLocked ? Lock : LockOff,
-              selected: false,
-              onSelect: () => {
-                setIsTabLocked((prev) => {
-                  const next = !prev;
-                  if (!next) {
-                    setShakeNonce(0);
-                  }
-                  return next;
-                });
-              },
-            }}
-          />
-          <FloatingPanelActionPortal
-            action={{
               id: "view-mode",
-              label: !renderers[selectedPath]
+              label: !coord.renderers[selectedPath]
                 ? "No matching renderer — raw only"
-                : (!rawPaths.has(selectedPath) && renderers[selectedPath])
-                  ? `Showing the ${renderers[selectedPath].title} preview — switch to raw`
+                : (!coord.rawPaths.has(selectedPath) && coord.renderers[selectedPath])
+                  ? `Showing the ${coord.renderers[selectedPath].title} preview — switch to raw`
                   : "Showing raw text — switch to the preview",
               priority: "primary",
-              icon: (!rawPaths.has(selectedPath) && renderers[selectedPath]) ? Eye : EyeOff,
+              icon: (!coord.rawPaths.has(selectedPath) && coord.renderers[selectedPath]) ? Eye : EyeOff,
               selected: false,
-              disabled: !renderers[selectedPath],
-              onSelect: () => showRaw(selectedPath, !rawPaths.has(selectedPath)),
+              disabled: !coord.renderers[selectedPath],
+              onSelect: () => coord.showRaw(selectedPath, !coord.rawPaths.has(selectedPath)),
             }}
           />
-          {renderers[selectedPath] && !rawPaths.has(selectedPath) && (
+          {coord.renderers[selectedPath] && !coord.rawPaths.has(selectedPath) && (
             <FloatingPanelActionPortal
               action={{
                 id: "design-mode",
-                label: isInspectorActive ? "Exit Design Mode (Inspector)" : "Design Mode (Inspect & Annotate)",
+                label: coord.isInspectorActive ? "Exit Design Mode (Inspector)" : "Design Mode (Inspect & Annotate)",
                 priority: "primary",
                 icon: Crosshair,
-                selected: isInspectorActive,
-                onSelect: () => setIsInspectorActive((prev) => !prev),
+                selected: coord.isInspectorActive,
+                onSelect: () => coord.setIsInspectorActive((prev) => !prev),
               }}
             />
           )}
           <FloatingPanelActionPortal
             action={{
               id: "annotations",
-              label: annotations.notes.length === 0
+              label: coord.annotations.notes.length === 0
                 ? `Notes on ${selectedPath}`
-                : `${annotations.notes.length} note${annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
+                : `${coord.annotations.notes.length} note${coord.annotations.notes.length > 1 ? "s" : ""} on ${selectedPath}`,
               priority: "primary",
               icon: AnnotationIcon,
               control: (
                 <AnnotationsButton
-                  notes={annotations.notes}
-                  allNotes={annotations.doc.notes}
+                  notes={coord.annotations.notes}
+                  allNotes={coord.annotations.doc.notes}
                   currentPath={selectedPath}
-                  text={session.parsedText}
-                  activeAnnotationId={activeAnnotationId}
-                  onSelectAnnotation={setActiveAnnotationId}
-                  onRemove={onRemoveNote}
+                  text={coord.session.parsedText}
+                  activeAnnotationId={coord.activeAnnotationId}
+                  onSelectAnnotation={coord.setActiveAnnotationId}
+                  onRemove={coord.onRemoveNote}
                   onReveal={(range) => {
-                    showRaw(selectedPath, true);
-                    setRevealLine(range.start);
+                    coord.showRaw(selectedPath, true);
+                    coord.setRevealLine(range.start);
                   }}
-                  onSelectFile={onSelectAnnotationFile}
-                  onAddNote={(entry) => void annotations.add(entry)}
+                  onSelectFile={coord.onSelectAnnotationFile}
+                  onAddNote={(entry) => void coord.annotations.add(entry)}
                 />
               ),
             }}
-            active={Boolean(selectedPath || annotations.doc.notes.length > 0)}
+            active={Boolean(selectedPath || coord.annotations.doc.notes.length > 0)}
           />
           <FloatingPanelActionPortal
             action={{
               id: "save-file",
-              label: session.parseError
+              label: coord.session.parseError
                 ? `Save ${selectedPath} — the text does not parse`
                 : `Save ${selectedPath}`,
               priority: "primary",
               icon: Save,
-              disabled: !session.dirty,
-              onSelect: () => void session.save(),
+              disabled: !coord.session.dirty,
+              onSelect: () => void coord.session.save(),
             }}
-            active={session.dirty || Boolean(session.parseError)}
+            active={coord.session.dirty || Boolean(coord.session.parseError)}
           />
         </>
       )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {activePaths.length === 0 ? (
+        {coord.activePaths.length === 0 ? (
           <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
-            <FileQuestion className="h-5 w-5 text-content-muted" />
-            <span>No native Tabs in this Collection.</span>
+            <FileQuestion className="h-5 w-5 text-content-muted" aria-hidden="true" />
+            <span className="text-regular font-medium text-content-secondary">No native Tabs in this Collection.</span>
             <span className="max-w-xs text-compact leading-4 text-content-muted">
-              Unsupported files stay hidden here and remain available from Raw.
+              Unsupported files stay hidden here and remain available from Raw workspace files.
             </span>
+            <Button
+              action="open"
+              type="button"
+              variant="secondary"
+              controlSize="compact"
+              onClick={onShowRaw}
+              className="mt-2"
+            >
+              Open Raw files
+            </Button>
           </div>
-        ) : (
-          <div className="flex h-full min-h-0 flex-1 overflow-hidden">
-            {/* The Minimal Tick-Ruler Locator on the left */}
-            <WorkbenchTabLocator
-              tabs={activePaths.map((path) => ({
-                path,
-                label: itemTitle(activeScene, path, templates),
-                isDirty: selectedPath === path && session.dirty,
-                hasError: selectedPath === path && Boolean(session.parseError),
-                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
-              }))}
-              selectedIndex={Math.max(0, activePaths.indexOf(selectedPath ?? ""))}
-              onSelectTab={(path) => selectPath(path)}
-              isLocked={isTabLocked}
-              shakeNonce={shakeNonce}
-              onLockedActionAttempt={triggerLockedShake}
-              className="hidden md:flex"
-            />
-
-            {/* The Vertical Card-Deck Stream */}
-            <WorkbenchCardDeck
-              tabs={activePaths.map((path) => ({
-                path,
-                label: itemTitle(activeScene, path, templates),
-                isDirty: selectedPath === path && session.dirty,
-                hasError: selectedPath === path && Boolean(session.parseError),
-                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
-                noteCount: selectedPath === path ? annotations.notes.length : undefined,
-                rendererId: renderers[path]?.id,
-                rendererTitle: renderers[path]?.title,
-                previewSnippet: selectedPath === path ? session.text : contents[path],
-              }))}
-              selectedPath={selectedPath}
-              onSelectTab={selectPath}
-              isMaximized={isCardMaximized}
-              onToggleMaximize={() => setIsCardMaximized((prev) => !prev)}
-              renderActiveCardContent={(path) => {
-                const renderer = renderers[path];
-                const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";
-                return (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
-                    {pendingNote && (
-                      <AnnotationComposer
-                        pending={pendingNote}
-                        onCancel={() => setPendingNote(null)}
-                        onSubmit={(entry) => {
-                          void annotations.add(entry);
-                          setPendingNote(null);
+        ) : selectedPath ? (
+          (() => {
+            const activeRenderer = coord.renderers[selectedPath];
+            const effMode = coord.rawPaths.has(selectedPath) || !activeRenderer ? "raw" : "preview";
+            return (
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-canvas">
+                <ConflictBanner conflict={coord.session.conflictNotice} onResolve={coord.session.resolveConflict} />
+                {coord.pendingNote && (
+                  <AnnotationComposer
+                    pending={coord.pendingNote}
+                    onCancel={() => coord.setPendingNote(null)}
+                    onSubmit={(entry) => {
+                      void coord.annotations.add(entry);
+                      coord.setPendingNote(null);
+                    }}
+                  />
+                )}
+                <div className="min-h-0 flex-1">
+                  <ContextPickSurface
+                    channelId={ctx.channelId}
+                    path={selectedPath}
+                    content={coord.session.text}
+                    onAdded={(lbl) => coord.setStatus(`Added ${lbl} to context`)}
+                  >
+                    {effMode === "preview" && activeRenderer ? (
+                      <RendererHost
+                        ctx={ctx}
+                        path={selectedPath}
+                        renderer={activeRenderer}
+                        config={ctx.configs[selectedPath]}
+                        session={coord.session}
+                        annotations={{ doc: coord.annotations.doc, onAnnotate: coord.onAnnotate, onRemove: coord.onRemoveNote }}
+                        activeAnnotationId={coord.activeAnnotationId}
+                        onSelectAnnotation={coord.setActiveAnnotationId}
+                        onRevealSource={(line) => { coord.showRaw(selectedPath, true); coord.setRevealLine(line); }}
+                        inspectorActive={coord.isInspectorActive}
+                        onFormSubmit={(data) => {
+                          const summary = Object.entries(data.formData)
+                            .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+                            .join(", ");
+                          ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
+                        }}
+                        onFailure={(rendererId, reason) => {
+                          coord.setFailedRenderers((current) => ({
+                            ...current,
+                            [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                          }));
+                          coord.setStatus(`${activeRenderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
                         }}
                       />
+                    ) : (
+                      <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
+                        <CodeEditor
+                          value={coord.session.text}
+                          onChange={coord.session.editText}
+                          path={selectedPath}
+                          scrollToLine={coord.revealLine}
+                          notes={coord.annotations.notes}
+                          activeAnnotationId={coord.activeAnnotationId}
+                          onSelectAnnotation={coord.setActiveAnnotationId}
+                          className="h-full min-h-0 overflow-hidden"
+                        />
+                      </Suspense>
                     )}
-                    <div className="min-h-0 flex-1">
-                      <ContextPickSurface
-                        channelId={ctx.channelId}
-                        path={path}
-                        content={session.text}
-                        onAdded={(label) => setStatus(`Added ${label} to context`)}
-                      >
-                        {effMode === "preview" && renderer ? (
-                          <RendererHost
-                            ctx={ctx}
-                            path={path}
-                            renderer={renderer}
-                            config={ctx.configs[path]}
-                            session={session}
-                            annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
-                            activeAnnotationId={activeAnnotationId}
-                            onSelectAnnotation={setActiveAnnotationId}
-                            onRevealSource={(line) => { showRaw(path, true); setRevealLine(line); }}
-                            inspectorActive={isInspectorActive}
-                            onFormSubmit={(data) => {
-                              const summary = Object.entries(data.formData)
-                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-                                .join(", ");
-                              ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
-                            }}
-                            onFailure={(rendererId, reason) => {
-                              setFailedRenderers((current) => ({
-                                ...current,
-                                [path]: [...new Set([...(current[path] ?? []), rendererId])],
-                              }));
-                              setStatus(`${renderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
-                            }}
-                          />
-                        ) : (
-                          <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
-                            <CodeEditor
-                              value={session.text}
-                              onChange={session.editText}
-                              path={path}
-                              scrollToLine={revealLine}
-                              notes={annotations.notes}
-                              activeAnnotationId={activeAnnotationId}
-                              onSelectAnnotation={setActiveAnnotationId}
-                              className="h-full min-h-0 overflow-hidden"
-                            />
-                          </Suspense>
-                        )}
-                      </ContextPickSurface>
-                    </div>
-                  </div>
-                );
-              }}
-              onAddToContext={addPathToContext}
-              isLocked={isTabLocked}
-              shakeNonce={shakeNonce}
-              onLockedAttempt={triggerLockedShake}
-            />
-          </div>
-        )}
+                  </ContextPickSurface>
+                </div>
+              </div>
+            );
+          })()
+        ) : null}
       </div>
 
-      {/* Bottom strip: carries what the file is and what state it is in */}
-      {(selectedPath || status || session.status || annotations.status || collaborators.length > 1) && (
-        <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
-          {selectedPath && (
-            <span className="min-w-0 truncate text-content-muted" title={selectedPath}>{selectedPath}</span>
-          )}
-          {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
-          {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
-          {session.parseError && (
-            <span
-              className="flex-shrink-0 text-minimal text-warning-400"
-              title={`${session.parseError} — the preview is showing the last version that parsed`}
-            >
-              syntax error
-            </span>
-          )}
-          <CollaboratorPills collaborators={collaborators} />
-          <span className="min-w-0 flex-1 truncate text-right text-warning-300">
-            {status || session.status || annotations.status}
-          </span>
-        </div>
-      )}
+      <WorkbenchStatusBar
+        selectedPath={selectedPath}
+        dirty={coord.session.dirty}
+        saving={coord.session.saving}
+        parseError={coord.session.parseError}
+        collaborators={coord.collaborators}
+        status={coord.status || coord.session.status || coord.annotations.status}
+      />
+
       <NewCollectionDialog
-        isOpen={isNewCollectionOpen}
+        isOpen={coord.isNewCollectionOpen}
         available={available}
         onSelect={(manifest) => void onAddScene(manifest)}
         onLoad={onLoadCollection}
-        onClose={() => setIsNewCollectionOpen(false)}
+        onClose={() => coord.setIsNewCollectionOpen(false)}
       />
     </div>
   );
