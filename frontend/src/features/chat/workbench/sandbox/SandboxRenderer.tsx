@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { Button } from "@/components/ui/button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
@@ -574,21 +575,23 @@ export function SandboxRenderer({
   if (status === "failed") {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-compact text-center">
-        <div className="p-4 max-w-md rounded-sm border border-warning-500/30 bg-warning-500/10 text-warning-400">
+        <div className="p-4 max-w-md rounded-sm ring-1 ring-inset ring-warning-500/30 bg-warning-500/10 text-warning-400">
           <p className="font-medium mb-1">Renderer failed</p>
           <p className="text-minimal text-content-secondary break-words mb-3">{error}</p>
           <div className="flex items-center justify-center gap-2">
-            <button
+            <Button
+              action="retry"
               type="button"
+              variant="secondary"
+              controlSize="compact"
               onClick={() => {
                 failedRef.current = false;
                 setError("");
                 setStatus("ready");
               }}
-              className="px-2.5 py-1 text-compact rounded-sm bg-control text-content-primary hover:bg-control-hover"
             >
               Retry
-            </button>
+            </Button>
           </div>
         </div>
       </div>

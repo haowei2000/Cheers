@@ -143,6 +143,7 @@ export function RendererFallbackView({
         {onRetry && (
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
             <UiButton
+              action="retry"
               variant="plain"
               controlSize="compact"
               onClick={onRetry}
