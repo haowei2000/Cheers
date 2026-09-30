@@ -1,44 +1,19 @@
-import { Button as UiButton } from "@/components/ui/button";
 import {
-  AddContextIcon,
   AnnotationIcon,
   CollectionIcon,
-  TabIcon,
 } from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
-import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
-import { Select as UiSelect } from "@/components/ui/select";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { Dialog } from "@/components/ui/dialog";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Atom,
-  Boxes,
-  CalendarCheck,
-  CheckSquare2,
-  Code2,
   Crosshair,
   Eye,
   EyeOff,
   FileQuestion,
-  FileText,
-  Folder,
   Frame,
-  Plus,
   Save,
-  Server,
 } from "lucide-react";
-import { cn } from "@/lib/cn";
 import {
-  pointRect,
-  preservesNativeContextMenu,
-  useContextActions,
-  useContextSurface,
-  type ContextAction,
-} from "@/components/ui/context-actions";
-import {
-  rangedFileContextItem,
-  selectionLineRange,
   useContextPickStore,
   usePendingContext,
   workbenchFileContextItem,
@@ -54,646 +29,55 @@ import { AnnotationComposer, AnnotationsButton, type PendingAnnotation } from ".
 import type { LensContextTarget } from "./lens/registry";
 import type { TemplateManifest } from "./manifest";
 import { RendererHost } from "./renderers/RendererHost";
-import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
+import type { RendererDesc } from "./renderers/registry";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import { workbenchControlSize } from "./workbench-control";
 import {
   FloatingPanelActionPortal,
   FloatingPanelNavigationPortal,
 } from "@/components/ui/floating-panel";
+import { ContextPickSurface } from "./ContextPickSurface";
+import {
+  CANVAS_SCENE,
+  OTHER_SCENE,
+  canvasSceneId,
+  canvasScenePath,
+  isCanvasPath,
+  canAddTabToCollection,
+  unclaimedRenderableTabs,
+  reconcileSceneItems,
+  metaFor,
+  sceneTabContextActions,
+  itemTitle,
+  rendererFor,
+  readDiscoverableFiles,
+  type SceneIconComponent,
+} from "./sceneState";
+import {
+  SceneTab,
+  AddCollectionControl,
+  NewCollectionDialog,
+  AddTabControl,
+  WorkbenchHierarchyNavigation,
+  ItemTab,
+} from "./SceneNavigation";
 
-const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
-
-const OTHER_SCENE = "__other__";
-
-// A canvas is the successor to a scene: a named collection of channel content, but one
-// that lives in its own file instead of in `scene_state` (docs/arch/CANVAS.md). So it
-// takes a slot in the SAME primary navigation, as a scene whose only item is that file
-// — which is why the canvas itself becomes the navigation and the item tabs go quiet.
-//
-// Flat coexistence rather than a mode switch: while both concepts exist, a channel
-// should be able to migrate one scene at a time and always see both.
-const CANVAS_SCENE = "canvas:";
-const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
-const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
-const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
-
-export function canAddTabToCollection(state: WorkbenchSceneState, collectionId: string): boolean {
-  return collectionId !== OTHER_SCENE && !canvasScenePath(collectionId) && state.order.includes(collectionId);
-}
-
-export function unclaimedRenderableTabs(paths: string[], state: WorkbenchSceneState): string[] {
-  const claimed = new Set(state.order.flatMap((id) => state.items[id] ?? []));
-  return paths.filter((path) => !claimed.has(path) && !isCanvasPath(path)).sort((a, b) => a.localeCompare(b));
-}
-
-type SceneIconComponent = typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-
-const sceneMeta: Record<string, { subtitle: string; Icon: SceneIconComponent; color: string }> = {
-  "cheers-code-project": { subtitle: "Plan, fix, and ship", Icon: Code2, color: "text-accent-300" },
-  "cheers-research-lab": { subtitle: "Experiments and submissions", Icon: Atom, color: "text-research-300" },
-  "cheers-task-board": { subtitle: "Turn intent into progress", Icon: CheckSquare2, color: "text-info-300" },
-  "cheers-team-ops": { subtitle: "Systems and ownership", Icon: Server, color: "text-warning-300" },
-  "notes-workflow": { subtitle: "Focused notes & review", Icon: FileText, color: "text-accent-300" },
-  "research-planner": { subtitle: "Deadlines and risk tracking", Icon: CalendarCheck, color: "text-research-300" },
-  [OTHER_SCENE]: { subtitle: "Renderable tabs outside Collections", Icon: Boxes, color: "text-category-300" },
+// Re-export domain items so existing callers remain backward-compatible
+export {
+  CANVAS_SCENE,
+  OTHER_SCENE,
+  canvasSceneId,
+  canvasScenePath,
+  isCanvasPath,
+  canAddTabToCollection,
+  unclaimedRenderableTabs,
+  reconcileSceneItems,
+  metaFor,
+  sceneTabContextActions,
+  type SceneIconComponent,
 };
 
-function getCoreExtensionId(id: string): string {
-  if (id.startsWith("extension:") || id.startsWith("personal:")) {
-    const parts = id.split(":");
-    return parts[1] || id;
-  }
-  return id;
-}
-
-function createPackageIcon(iconUrl: string): SceneIconComponent {
-  return function PackageIcon({ className, "aria-hidden": ariaHidden }: { className?: string; "aria-hidden"?: boolean | "true" | "false" }) {
-    return <img src={iconUrl} className={cn("h-4 w-4 object-contain", className)} alt="" aria-hidden={ariaHidden ?? "true"} />;
-  };
-}
-
-function metaFor(id: string, iconUrl?: string): { subtitle: string; Icon: SceneIconComponent; color: string } {
-  if (iconUrl) {
-    return {
-      subtitle: "Extension template",
-      Icon: createPackageIcon(iconUrl),
-      color: "",
-    };
-  }
-  const coreId = getCoreExtensionId(id);
-  const found = sceneMeta[id] ?? sceneMeta[coreId];
-  if (found) return found;
-  return { subtitle: "Native workspace", Icon: CollectionIcon as unknown as SceneIconComponent, color: "text-content-secondary" };
-}
-
-export function sceneTabContextActions(
-  label: string,
-  onSelect: () => void,
-  onShowRaw: () => void,
-  onAddToContext: () => void,
-  contextAdded = false,
-  contextAvailable = true,
-): ContextAction[] {
-  return [
-    {
-      id: "open-collection",
-      label: `Open ${label}`,
-      icon: <CollectionIcon className="h-4 w-4" />,
-      run: onSelect,
-    },
-    {
-      id: "add-context",
-      label: !contextAvailable
-        ? "No Collection files to add"
-        : contextAdded
-          ? "Already added to context"
-          : "Add Collection to context",
-      icon: <AddContextIcon className="h-4 w-4" />,
-      disabled: !contextAvailable || contextAdded,
-      group: "secondary",
-      run: onAddToContext,
-    },
-    {
-      id: "raw",
-      label: "Raw",
-      icon: <Folder className="h-4 w-4" />,
-      group: "secondary",
-      run: onShowRaw,
-    },
-  ];
-}
-
-function SceneTab({
-  label,
-  Icon,
-  iconColor,
-  selected,
-  presentation,
-  onSelect,
-  onShowRaw,
-  onAddToContext,
-  contextAdded,
-  contextAvailable,
-}: {
-  label: string;
-  Icon: SceneIconComponent;
-  iconColor: string;
-  selected: boolean;
-  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
-  onSelect: () => void;
-  onShowRaw: () => void;
-  onAddToContext: () => void;
-  contextAdded: boolean;
-  contextAvailable: boolean;
-}) {
-  const surfaceRef = useRef<HTMLButtonElement>(null);
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions: () => sceneTabContextActions(label, onSelect, onShowRaw, onAddToContext, contextAdded, contextAvailable),
-  });
-  const contextHandlers = {
-    onContextMenu: contextSurface.onContextMenu,
-    onKeyDown: contextSurface.onKeyDown,
-    onPointerDown: contextSurface.onPointerDown,
-    onPointerMove: contextSurface.onPointerMove,
-    onPointerUp: contextSurface.onPointerUp,
-    onPointerCancel: contextSurface.onPointerCancel,
-    onPointerLeave: contextSurface.onPointerLeave,
-    onClickCapture: contextSurface.onClickCapture,
-  };
-
-  const iconOnly = presentation === "icon";
-  return (
-    <UiButton
-      ref={surfaceRef}
-      variant="plain"
-      content={iconOnly ? "icon" : "text"}
-      role="tab"
-      aria-selected={selected}
-      selected={selected}
-      aria-label={iconOnly ? label : undefined}
-      title={iconOnly ? label : undefined}
-      type="button"
-      onClick={onSelect}
-      controlSize={workbenchControlSize.tab}
-      className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
-      )}
-      {...contextHandlers}
-    >
-      {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
-      {!iconOnly && <span className="truncate">{label}</span>}
-    </UiButton>
-  );
-}
-
-function AddCollectionControl({
-  onOpenNew,
-  content = "icon",
-}: {
-  onOpenNew: () => void;
-  content?: "text" | "icon";
-}) {
-  return (
-    <UiButton
-      action="create"
-      type="button"
-      onClick={onOpenNew}
-      content={content === "icon" ? "icon" : "iconText"}
-      variant="plain"
-      aria-label="Add Collection"
-      title="Add Collection"
-      controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0"
-    >
-      <Plus className="h-4 w-4" aria-hidden="true" />
-      {content !== "icon" && <span>Add Collection</span>}
-    </UiButton>
-  );
-}
-
-function NewCollectionDialog({
-  isOpen,
-  available,
-  onSelect,
-  onLoad,
-  onClose,
-}: {
-  isOpen: boolean;
-  available: TemplateManifest[];
-  onSelect: (manifest: TemplateManifest) => void;
-  onLoad: () => void;
-  onClose: () => void;
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <Dialog title="New Collection" onClose={onClose} maxWidth="max-w-lg">
-      <div className="flex flex-col gap-4">
-        <p className="text-compact text-content-secondary">
-          Select a template group to add to this workspace.
-        </p>
-        <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto -mx-1 px-1">
-          {available.map((template) => {
-            const meta = metaFor(template.id, template.icon);
-            const Icon = meta.Icon;
-            return (
-              <UiButton
-                key={template.id}
-                role="option"
-                type="button"
-                variant="plain"
-                content="iconText"
-                controlWidth="fill"
-                controlSize="comfortable"
-                onClick={() => {
-                  onSelect(template);
-                  onClose();
-                }}
-                className="justify-start gap-3 rounded text-left"
-              >
-                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
-                  <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
-                </div>
-                <div className="min-w-0 flex-1 py-1">
-                  <div className="text-regular font-medium text-content-strong truncate">
-                    {template.title}
-                  </div>
-                  {meta.subtitle && (
-                    <div className="text-compact text-content-muted truncate">
-                      {meta.subtitle}
-                    </div>
-                  )}
-                </div>
-              </UiButton>
-            );
-          })}
-          {available.length === 0 && (
-            <div className="py-6 text-center text-compact text-content-muted">
-              All available templates have already been added to this workspace.
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between border-t border-control/80 pt-3">
-          <UiButton
-            action="upload"
-            type="button"
-            variant="plain"
-            content="iconText"
-            onClick={() => {
-              onClose();
-              onLoad();
-            }}
-            controlSize="compact"
-          >
-            <Folder className="h-4 w-4" aria-hidden="true" />
-            <span>Load .cheers-extension…</span>
-          </UiButton>
-          <UiButton
-            action="cancel"
-            type="button"
-            variant="plain"
-            onClick={onClose}
-            controlSize="compact"
-          >
-            Cancel
-          </UiButton>
-        </div>
-      </div>
-    </Dialog>
-  );
-}
-
-function AddTabControl({
-  candidates,
-  onSelect,
-  content = "icon",
-}: {
-  candidates: string[];
-  onSelect: (path: string) => void;
-  content?: "text" | "icon";
-}) {
-  if (!candidates.length) return null;
-  return (
-    <DropdownSelect
-      ariaLabel="Open Tab"
-      label="Open Tab"
-      leading={<TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />}
-      content={content}
-      options={[]}
-      actions={candidates.map((path) => ({
-        value: path,
-        label: basename(path),
-        leading: <TabIcon className="h-4 w-4 text-content-secondary" aria-hidden="true" />,
-      }))}
-      onSelect={() => undefined}
-      onAction={onSelect}
-      placement="up"
-      controlSize={workbenchControlSize.tab}
-      controlWidth="fill"
-      className="flex-shrink-0"
-    />
-  );
-}
-
-function WorkbenchHierarchyNavigation({
-  availableWidth,
-  collections,
-  activeCollection,
-  collectionTitle,
-  collectionIcon,
-  hasAvailableTemplates,
-  onSelectCollection,
-  onOpenNew,
-  onLoadCollection,
-  onShowRaw,
-}: {
-  availableWidth: number;
-  collections: Array<{ id: string; label: string; Icon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }> }>;
-  activeCollection: string;
-  collectionTitle: string;
-  collectionIcon: typeof Code2 | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
-  hasAvailableTemplates: boolean;
-  onSelectCollection: (id: string) => void;
-  onOpenNew: () => void;
-  onLoadCollection: () => void;
-  onShowRaw: () => void;
-}) {
-  const textProbe = useRef<HTMLDivElement>(null);
-  const [requiredTextWidth, setRequiredTextWidth] = useState(Number.POSITIVE_INFINITY);
-  useLayoutEffect(() => {
-    const measure = () => setRequiredTextWidth(textProbe.current?.scrollWidth ?? Number.POSITIVE_INFINITY);
-    measure();
-    const observer = new ResizeObserver(measure);
-    if (textProbe.current) observer.observe(textProbe.current);
-    return () => observer.disconnect();
-  }, [collections.length, collectionTitle]);
-  const iconOnly = availableWidth < requiredTextWidth;
-  const CollectionIcon = collectionIcon;
-
-  const collectionActions: DropdownSelectOption[] = [
-    ...(hasAvailableTemplates
-      ? [
-          {
-            value: "new-collection",
-            label: "New Collection…",
-            leading: <Plus className="h-4 w-4" aria-hidden="true" />,
-          },
-        ]
-      : []),
-    { value: "load", label: "Load .cheers-extension…", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-  ];
-  const collectionOptions: DropdownSelectOption[] = [
-    ...collections.map(({ id, label, Icon }) => ({
-      value: `collection:${id}`,
-      label,
-      leading: <Icon className="h-4 w-4" aria-hidden="true" />,
-    })),
-    { value: "raw", label: "Raw workspace files", leading: <Folder className="h-4 w-4" aria-hidden="true" /> },
-  ];
-  const chooseCollection = (value: string) => {
-    if (value === "raw") return onShowRaw();
-    onSelectCollection(value.slice("collection:".length));
-  };
-  const runCollectionAction = (value: string) => {
-    if (value === "load") return onLoadCollection();
-    if (value === "new-collection") return onOpenNew();
-  };
-  const controls = (probe = false, icons = iconOnly) => (
-    <div className="flex min-w-0 flex-nowrap items-center gap-1" aria-hidden={probe || undefined}>
-      <DropdownSelect
-        ariaLabel={`Collection: ${collectionTitle}`}
-        label={collectionTitle || "Collections"}
-        leading={<CollectionIcon className="h-4 w-4" aria-hidden="true" />}
-        content={icons ? "icon" : "text"}
-        value={`collection:${activeCollection}`}
-        options={collectionOptions}
-        onSelect={chooseCollection}
-        actions={collectionActions}
-        onAction={runCollectionAction}
-        placement="up"
-        controlWidth="slot"
-        className="max-w-64 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
-      />
-    </div>
-  );
-
-  return (
-    <div className="relative min-w-0 max-w-full overflow-hidden">
-      {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
-    </div>
-  );
-}
-
-function basename(path: string) {
-  return path.split("/").pop() || path;
-}
-
-function fallbackItemTitle(path: string) {
-  const file = basename(path);
-  const stem = file.includes(".") ? file.slice(0, file.lastIndexOf(".")) : file;
-  return stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function ItemTab({
-  label,
-  selected,
-  presentation,
-  contextAdded,
-  onSelect,
-  onAddToContext,
-}: {
-  label: string;
-  selected: boolean;
-  presentation: Exclude<AdaptiveControlPresentation, "collapsed">;
-  contextAdded: boolean;
-  onSelect: () => void;
-  onAddToContext: () => void;
-}) {
-  const surfaceRef = useRef<HTMLButtonElement>(null);
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions: () => [{
-      id: "add-context",
-      label: contextAdded ? "Already added to context" : "Add to context",
-      icon: <AddContextIcon className="h-4 w-4" />,
-      disabled: contextAdded,
-      run: onAddToContext,
-    }],
-  });
-
-  return (
-    <UiButton
-      ref={surfaceRef}
-      variant="plain"
-      role="tab"
-      aria-selected={selected}
-      selected={selected}
-      aria-label={presentation === "icon" ? label : undefined}
-      title={presentation === "icon" ? label : undefined}
-      content={presentation === "icon" ? "icon" : "text"}
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "page" : undefined}
-      controlSize={workbenchControlSize.tab}
-      className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
-      )}
-      onContextMenu={contextSurface.onContextMenu}
-      onKeyDown={contextSurface.onKeyDown}
-      onPointerDown={contextSurface.onPointerDown}
-      onPointerMove={contextSurface.onPointerMove}
-      onPointerUp={contextSurface.onPointerUp}
-      onPointerCancel={contextSurface.onPointerCancel}
-      onPointerLeave={contextSurface.onPointerLeave}
-      onClickCapture={contextSurface.onClickCapture}
-    >
-      {presentation === "icon" ? <TabIcon className="h-4 w-4" aria-hidden="true" /> : label}
-    </UiButton>
-  );
-}
-
-function ContextPickSurface({
-  channelId,
-  path,
-  content,
-  children,
-  onAdded,
-}: {
-  channelId: string;
-  path: string;
-  content: string;
-  children: ReactNode;
-  onAdded: (label: string) => void;
-}) {
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const { open } = useContextActions();
-  const addContext = useContextPickStore((state) => state.add);
-  const picked = usePendingContext(channelId);
-  const item = workbenchFileContextItem(path);
-  const added = picked.some((candidate) => candidate.id === item.id);
-  const actions = () => [{
-    id: "add-context",
-    label: added ? "Already added to context" : "Add to context",
-    icon: <AddContextIcon className="h-4 w-4" />,
-    disabled: added,
-    run: () => {
-      addContext(channelId, item);
-      onAdded(item.label);
-    },
-  } satisfies ContextAction];
-  const contextSurface = useContextSurface({
-    surfaceRef,
-    actions,
-    selectionActions: (selection) => {
-      const range = selectionLineRange(content, selection.text);
-      return [{
-        id: "add-lines",
-        label: "Add selected lines to context",
-        icon: <AddContextIcon className="h-4 w-4" />,
-        disabled: !range,
-        run: () => {
-          if (!range) throw new Error("The selected text could not be mapped to file lines");
-          const ranged = rangedFileContextItem(path, range.start, range.end);
-          addContext(channelId, ranged);
-          onAdded(ranged.label);
-        },
-      } satisfies ContextAction];
-    },
-  });
-
-  const onContextMenuCapture = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target instanceof Element && event.target.closest("[data-workbench-context-target]")) return;
-    if (!preservesNativeContextMenu(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    open({
-      actions: actions(),
-      anchor: pointRect(event.clientX, event.clientY),
-      source: "pointer",
-      restoreFocus: event.target instanceof HTMLElement ? event.target : surfaceRef.current,
-    });
-  };
-
-  return (
-    <div
-      ref={surfaceRef}
-      className="h-full min-h-0"
-      tabIndex={0}
-      onContextMenuCapture={onContextMenuCapture}
-      onContextMenu={contextSurface.onContextMenu}
-      onMouseUp={contextSurface.onMouseUp}
-      onKeyDown={contextSurface.onKeyDown}
-      onPointerDown={contextSurface.onPointerDown}
-      onPointerMove={contextSurface.onPointerMove}
-      onPointerUp={contextSurface.onPointerUp}
-      onPointerCancel={contextSurface.onPointerCancel}
-      onPointerLeave={contextSurface.onPointerLeave}
-      onClickCapture={contextSurface.onClickCapture}
-    >
-      {children}
-    </div>
-  );
-}
-
-export function reconcileSceneItems(
-  sceneState: WorkbenchSceneState | undefined,
-  templates: TemplateManifest[],
-  legacyEnvironment?: string | null
-): WorkbenchSceneState {
-  const order = sceneState?.order?.length
-    ? [...sceneState.order]
-    : legacyEnvironment
-      ? [legacyEnvironment]
-      : [];
-  const titles = { ...(sceneState?.titles ?? {}) };
-  const items = Object.fromEntries(
-    Object.entries(sceneState?.items ?? {}).map(([id, paths]) => [id, [...paths]])
-  );
-  for (const id of order) {
-    const template = templates.find((candidate) => candidate.id === id);
-    if (!template) continue;
-    titles[id] ??= template.title;
-    const paths = items[id] ?? [];
-    for (const item of template.items) if (!paths.includes(item.source.path)) paths.push(item.source.path);
-    items[id] = paths;
-  }
-  return { version: 1, order, titles, items };
-}
-
-function itemTitle(sceneId: string, path: string, templates: TemplateManifest[]) {
-  return (
-    templates
-      .find((template) => template.id === sceneId)
-      ?.items.find((item) => item.source.path === path)?.title ?? fallbackItemTitle(path)
-  );
-}
-
-function rendererFor(
-  path: string,
-  content: string | undefined,
-  ctx: WorkbenchContext,
-  failed: string[] = []
-): RendererDesc | undefined {
-  if (content === undefined) {
-    const bound = ctx.bindings[path] ? getRenderer(ctx.bindings[path], ctx.rendererExtensions) : undefined;
-    return bound && !failed.includes(bound.id) ? bound : undefined;
-  }
-  return previewOptions(path, content, ctx.rendererExtensions, ctx.bindings[path], failed)[0];
-}
-
-async function readDiscoverableFiles(
-  entries: FsEntry[],
-  ctx: WorkbenchContext,
-  onBatch: (values: Record<string, string>) => void
-) {
-  const candidates = entries.filter((entry) => {
-    if (entry.is_dir || entry.path === ".workbench.json") return false;
-    if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.rendererExtensions)) return false;
-    return /\.(md|markdown|json|ya?ml)$/i.test(entry.path);
-  });
-  for (let start = 0; start < candidates.length; start += 4) {
-    const batch = candidates.slice(start, start + 4);
-    const results = await Promise.all(
-      batch.map(async (entry) => {
-        try {
-          return [entry.path, (await ctx.fs.read(entry.path)).content] as const;
-        } catch {
-          return null;
-        }
-      })
-    );
-    onBatch(Object.fromEntries(results.filter((value): value is readonly [string, string] => value !== null)));
-  }
-}
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 export function SceneWorkbench({
   ctx,
