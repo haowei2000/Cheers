@@ -38,6 +38,9 @@ import { Combobox } from "@/components/ui/combobox";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 import { InlineReference } from "@/components/ui/inline-reference";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { LocatorOpenContext } from "@/features/chat/messageLinks";
+import { ResourceRefCards } from "@/features/chat/ResourceRefCards";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
@@ -218,6 +221,19 @@ export function ItemGallery() {
         <p className="mt-1 font-utility text-compact text-content-muted">
           Preserve the referenced text; the Open action belongs to its accessible name, never the visible label.
         </p>
+      </section>
+
+      <section aria-labelledby="resource-reference-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="resource-reference-register" className="font-display text-comfortable font-semibold tracking-display">
+          Bot links and resource cards
+        </h2>
+        <LocatorOpenContext.Provider value={() => {}}>
+          <MarkdownRenderer content="https://example.com · cheers:desk/notes.md#L3" className="mt-2 text-message" />
+          <ResourceRefCards cards={[
+            { v: 1, kind: "resource_ref", uri: "cheers:desk/notes.md#L3", title: "Research notes", description: "Findings from this turn" },
+            { v: 1, kind: "resource_ref", uri: "cheers:plan" },
+          ]} />
+        </LocatorOpenContext.Provider>
       </section>
 
       <section aria-labelledby="trace-disclosure-register" className="mb-4 border-y border-zinc-700 py-3">

@@ -1,3 +1,4 @@
+use cheers_mcp_server::locator::{self, Locator};
 use chrono::Utc;
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -12,6 +13,99 @@ use super::{
     authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, Principal,
     PrincipalType, ResourceResult,
 };
+
+/** Parse Bot-authored, read-only resource cards before any message is persisted. */
+fn validate_cards_json(raw: &str) -> Result<Value, &'static str> {
+    if raw.len() > 8192 {
+        return Err("cards_json is too long");
+    }
+    let value: Value = serde_json::from_str(raw).map_err(|_| "cards_json must be JSON")?;
+    let cards = value.as_array().ok_or("cards_json must be an array")?;
+    if cards.is_empty() || cards.len() > 3 {
+        return Err("cards_json must contain one to three cards");
+    }
+    let mut seen = std::collections::HashSet::new();
+    for card in cards {
+        let object = card.as_object().ok_or("each card must be an object")?;
+        if object
+            .keys()
+            .any(|key| !matches!(key.as_str(), "v" | "kind" | "uri" | "title" | "description"))
+        {
+            return Err("card has an unsupported field");
+        }
+        if object.get("v").and_then(Value::as_u64) != Some(1)
+            || object.get("kind").and_then(Value::as_str) != Some("resource_ref")
+        {
+            return Err("unsupported card version or kind");
+        }
+        let uri = object
+            .get("uri")
+            .and_then(Value::as_str)
+            .ok_or("card uri required")?;
+        if matches!(locator::parse(uri), None | Some(Locator::Msg { .. })) {
+            return Err("card uri must name an openable Cheers resource");
+        }
+        if !seen.insert(uri) {
+            return Err("duplicate card uri");
+        }
+        for (key, limit) in [("title", 120), ("description", 240)] {
+            if let Some(value) = object.get(key) {
+                let text = value.as_str().ok_or("card text must be a string")?;
+                if text.trim().is_empty()
+                    || text.len() > limit
+                    || text.chars().any(char::is_control)
+                {
+                    return Err("card text is invalid");
+                }
+            }
+        }
+    }
+    Ok(value)
+}
+
+pub async fn handle_cards_write(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> ResourceResult {
+    if principal.principal_type != PrincipalType::Bot {
+        return Err(super::permission_denied(
+            "only a bot can add cards to its reply",
+        ));
+    }
+    let channel_id: Uuid = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let msg_id: Uuid = params
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "msg_id required"))?;
+    let cards_json = params
+        .get("cards_json")
+        .and_then(Value::as_str)
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "cards_json required"))?;
+    let cards = validate_cards_json(cards_json)
+        .map_err(|error| super::resource_error("INVALID_PARAMS", error))?;
+    authorize_channel_write(db, principal, channel_id).await?;
+    let content_data: Option<Value> = sqlx::query_scalar(
+        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('cards', $1::jsonb)
+         WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4
+           AND is_partial = FALSE AND is_deleted = FALSE AND NULLIF(BTRIM(content), '') IS NOT NULL
+         RETURNING content_data",
+    )
+    .bind(cards)
+    .bind(msg_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(principal.principal_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(super::db_err("messages.cards.write"))?;
+    let content_data = content_data.ok_or_else(|| super::not_found("own completed bot reply"))?;
+    Ok(serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data}))
+}
 
 pub async fn handle_suggestions_write(
     db: &PgPool,
@@ -257,6 +351,26 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let content_data = match params.get("cards_json") {
+        Some(Value::String(raw)) if principal.principal_type == PrincipalType::Bot => {
+            if content.trim().is_empty() {
+                return Err(super::resource_error(
+                    "INVALID_PARAMS",
+                    "card messages need fallback text",
+                ));
+            }
+            let cards = validate_cards_json(raw)
+                .map_err(|error| super::resource_error("INVALID_PARAMS", error))?;
+            Some(serde_json::json!({"cards": cards}))
+        }
+        Some(_) => {
+            return Err(super::resource_error(
+                "INVALID_PARAMS",
+                "cards_json is only available to bots",
+            ))
+        }
+        None => None,
+    };
     let msg_type = params
         .get("msg_type")
         .and_then(|v| v.as_str())
@@ -335,8 +449,8 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
           is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
-          context_bundle)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11)
+          context_bundle, content_data)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11, $12)
          RETURNING thread_root_msg_id",
     )
     .bind(msg_id.to_string())
@@ -350,6 +464,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(now)
     .bind(channel_seq)
     .bind(context_bundle.clone())
+    .bind(content_data.clone())
     .fetch_one(&mut *tx)
     .await
     .map_err(super::db_err("messages.create: insert message"))?;
@@ -377,7 +492,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         mentions: mention_dtos,
         files,
         created_at: now,
-        content_data: None,
+        content_data,
         context_bundle,
         trace_count: Some(0),
         trace_has_failure: Some(false),
@@ -418,6 +533,32 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     );
 
     Ok(data)
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::validate_cards_json;
+
+    #[test]
+    fn accepts_versioned_read_only_resource_cards() {
+        let cards = validate_cards_json(
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/notes.md#L3","title":"Notes"}]"#,
+        )
+        .unwrap();
+        assert_eq!(cards[0]["uri"], "cheers:desk/notes.md#L3");
+    }
+
+    #[test]
+    fn rejects_unopenable_or_action_bearing_cards() {
+        for raw in [
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:msg/m-1"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers://auth/callback"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/../secret"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:plan","action":"approve"}]"#,
+        ] {
+            assert!(validate_cards_json(raw).is_err(), "{raw}");
+        }
+    }
 }
 
 fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {

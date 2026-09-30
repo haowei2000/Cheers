@@ -317,7 +317,7 @@ export function useChannelMessages({
     [],
   );
 
-  const handleSuggestionsUpdated = useCallback((msgId: string, contentData: Message["content_data"]) => {
+  const handleContentDataUpdated = useCallback((msgId: string, contentData: Message["content_data"]) => {
     setMessages((prev) => prev.map((message) =>
       message.msg_id === msgId ? { ...message, content_data: contentData } : message,
     ));
@@ -394,7 +394,7 @@ export function useChannelMessages({
     handleMessage,
     handleStreamDelta,
     handleStreamDone,
-    handleSuggestionsUpdated,
+    handleContentDataUpdated,
     handleBotTrace,
     handleDeleted,
     handleFileTranscribed,

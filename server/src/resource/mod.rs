@@ -209,6 +209,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "channel.messages.suggestions.write" => {
             messages::handle_suggestions_write(db, &principal, &params).await
         }
+        "channel.messages.cards.write" => {
+            messages::handle_cards_write(db, &principal, &params).await
+        }
         "channel.code.status.write" => {
             channel_profile::handle_code_status(db, &principal, &params).await
         }
