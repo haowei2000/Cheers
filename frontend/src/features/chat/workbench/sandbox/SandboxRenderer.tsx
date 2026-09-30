@@ -303,7 +303,16 @@ export function SandboxRenderer({
   const [error, setError] = useState("");
   const { open } = useContextActions();
   const addContext = useContextPickStore((state) => state.add);
-  const document = useMemo(() => buildRendererDocument(extension, rendererId), [extension, rendererId]);
+  const { document, documentError } = useMemo(() => {
+    try {
+      return { document: buildRendererDocument(extension, rendererId), documentError: null };
+    } catch (err) {
+      return {
+        document: "",
+        documentError: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }, [extension, rendererId]);
 
   useEffect(() => {
     if (status === "running") {
@@ -373,6 +382,10 @@ export function SandboxRenderer({
       reportRendererStatus(extension.extensionId, "failed", reason);
       callbacksRef.current.onFailure?.(reason);
     };
+    if (documentError) {
+      void fail(documentError);
+      return;
+    }
     const sendRender = async () => {
       let content = "";
       let version = 0;
@@ -558,6 +571,28 @@ export function SandboxRenderer({
   }, [active, addContext, channelId, extension, fs, open, path, rendererId]);
 
   if (!active) return null;
-  if (status === "failed") return <div className="p-3 text-warning-400 text-compact">Renderer failed: {error}. Showing Raw is still available.</div>;
+  if (status === "failed") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-6 text-compact text-center">
+        <div className="p-4 max-w-md rounded-sm border border-warning-500/30 bg-warning-500/10 text-warning-400">
+          <p className="font-medium mb-1">Renderer failed</p>
+          <p className="text-minimal text-content-secondary break-words mb-3">{error}</p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                failedRef.current = false;
+                setError("");
+                setStatus("ready");
+              }}
+              className="px-2.5 py-1 text-compact rounded-sm bg-control text-content-primary hover:bg-control-hover"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return <iframe ref={iframeRef} sandbox="allow-scripts" srcDoc={document} title={`${extension.title} (${status})`} className="h-full w-full border-0 bg-white" />;
 }

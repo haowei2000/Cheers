@@ -39,6 +39,7 @@ import {
   metaFor,
   sceneTabContextActions,
   itemTitle,
+  rendererFor,
   type SceneIconComponent,
 } from "./sceneState";
 import {
@@ -423,11 +424,23 @@ export function SceneWorkbench({
                           ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
                         }}
                         onFailure={(rendererId, reason) => {
+                          const updatedFailed = [...new Set([...(coord.failedRenderers[selectedPath] ?? []), rendererId])];
                           coord.setFailedRenderers((current) => ({
                             ...current,
-                            [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                            [selectedPath]: updatedFailed,
                           }));
-                          coord.setStatus(`${activeRenderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
+                          const nextRenderer = rendererFor(
+                            selectedPath,
+                            coord.session.text,
+                            ctx,
+                            updatedFailed
+                          );
+                          if (nextRenderer) {
+                            coord.setStatus(`${activeRenderer.title} failed: ${reason}. Switched to ${nextRenderer.title}.`);
+                          } else {
+                            coord.showRaw(selectedPath, true);
+                            coord.setStatus(`${activeRenderer.title} failed: ${reason}. Degraded to Raw mode.`);
+                          }
                         }}
                       />
                     ) : (
