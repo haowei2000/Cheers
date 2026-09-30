@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, LayoutGrid, RotateCcw, Save, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -52,9 +52,46 @@ export function ChannelToolbar(props: Props) {
   const [panelsOpen, setPanelsOpen] = useState(false);
   const panelsRootRef = useRef<HTMLDivElement>(null);
   const panelsButtonRef = useRef<HTMLButtonElement>(null);
+  const panelsMenuRef = useRef<HTMLDivElement>(null);
   const closePanels = useCallback(() => setPanelsOpen(false), []);
   usePopoverDismiss(panelsOpen, closePanels, panelsRootRef);
   useEffect(() => setPanelsOpen(false), [props.channelId]);
+
+  useEffect(() => {
+    if (!panelsOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const active = panelsMenuRef.current?.querySelector<HTMLButtonElement>(
+        "[role='menuitemcheckbox'][aria-checked='true']:not(:disabled)",
+      );
+      const first = panelsMenuRef.current?.querySelector<HTMLButtonElement>(
+        "[role^='menuitem']:not(:disabled)",
+      );
+      (active ?? first)?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [panelsOpen]);
+
+  const onPanelsMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePanels();
+      panelsButtonRef.current?.focus();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(
+      panelsMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']:not(:disabled)") ?? [],
+    );
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : (current + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   // Window open-state and toggles stay keyed by SpawnKind — ChannelView owns each
   // window's own props, so the picker only needs identity plus on/off.
@@ -177,7 +214,7 @@ export function ChannelToolbar(props: Props) {
           aria-haspopup="menu"
           content="icon"
           controlSize="compact"
-          selected={openCount > 0}
+          selected={panelsOpen || openCount > 0}
         >
           <LayoutGrid className="w-4 h-4" aria-hidden="true" />
         </Button>
@@ -187,7 +224,12 @@ export function ChannelToolbar(props: Props) {
             align="end"
             className="z-50 w-72 max-h-[70vh] overflow-y-auto p-1"
           >
-            <div role="menu" aria-label="Panels">
+            <div
+              ref={panelsMenuRef}
+              role="menu"
+              aria-label="Panels"
+              onKeyDown={onPanelsMenuKeyDown}
+            >
               <div className="px-2 pb-1 pt-1 text-minimal uppercase tracking-label text-content-muted">
                 Windows
               </div>

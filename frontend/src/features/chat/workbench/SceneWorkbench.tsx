@@ -3,6 +3,7 @@ import {
   CollectionIcon,
 } from "@/components/ui/editorial-icons";
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
+import { Button } from "@/components/ui/button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { lazy, Suspense } from "react";
 import {
@@ -203,10 +204,10 @@ export function SceneWorkbench({
         <ResponsiveActionButton
           action="retry"
           context="settings"
+          variant="secondary"
           wideLabel="Retry"
           onClick={() => void coord.refresh()}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         />
       </div>
     );
@@ -226,19 +227,19 @@ export function SceneWorkbench({
           <ResponsiveActionButton
             action="add"
             context="toolbar"
+            variant="primary"
             wideLabel="New Collection…"
             onClick={() => coord.setIsNewCollectionOpen(true)}
             controlSize={workbenchControlSize.tab}
-            className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
           />
         )}
         <ResponsiveActionButton
           action="upload"
           context="toolbar"
+          variant="secondary"
           wideLabel="Load .cheers-extension…"
           onClick={onLoadCollection}
           controlSize={workbenchControlSize.tab}
-          className="rounded-sm bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active"
         />
         <NewCollectionDialog
           isOpen={coord.isNewCollectionOpen}
@@ -281,7 +282,7 @@ export function SceneWorkbench({
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1.5 bg-panel/50">
+        <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1 bg-panel/50">
           <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={coord.addTabAndSelect} />}
         </div>
@@ -363,11 +364,20 @@ export function SceneWorkbench({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {coord.activePaths.length === 0 ? (
           <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
-            <FileQuestion className="h-5 w-5 text-content-muted" />
-            <span>No native Tabs in this Collection.</span>
+            <FileQuestion className="h-5 w-5 text-content-muted" aria-hidden="true" />
+            <span className="text-regular font-medium text-content-secondary">No native Tabs in this Collection.</span>
             <span className="max-w-xs text-compact leading-4 text-content-muted">
-              Unsupported files stay hidden here and remain available from Raw.
+              Unsupported files stay hidden here and remain available from Raw workspace files.
             </span>
+            <Button
+              type="button"
+              variant="secondary"
+              controlSize="compact"
+              onClick={onShowRaw}
+              className="mt-2"
+            >
+              Open Raw files
+            </Button>
           </div>
         ) : selectedPath ? (
           (() => {

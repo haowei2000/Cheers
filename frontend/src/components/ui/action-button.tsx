@@ -191,7 +191,7 @@ type CommonActionIntent = {
 
 export type ActionButtonProps = Omit<
   ButtonProps,
-  "action" | "children" | "content" | "label" | "variant"
+  "action" | "children" | "content" | "label"
 > & CommonActionIntent & {
   /** Adds object-specific context to icon-only accessible names, e.g. "Save profile". */
   accessibleLabel?: string;
@@ -204,7 +204,7 @@ export type ActionButtonProps = Omit<
  * this registry owns icon/text presentation, tone, and the visible action label.
  */
 export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
-  ({ action, context, accessibleLabel, controlSize, type = "button", wideLabel, ...props }, ref) => {
+  ({ action, context, accessibleLabel, controlSize, type = "button", wideLabel, variant, ...props }, ref) => {
     const presentation = (commonActionPresentations[context] as Partial<Record<CommonActionKey, Presentation>>)[action] as Presentation;
     const resolvedSize = useControlSize(controlSize);
     const Icon = presentation.icon;
@@ -219,7 +219,7 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
         action={visibleLabel ? undefined : action}
         label={visibleLabel}
         content={visibleLabel ? "iconText" : presentation.content}
-        variant={presentation.variant}
+        variant={variant ?? presentation.variant}
         controlSize={resolvedSize}
         {...props}
         aria-label={accessibleLabel ?? props["aria-label"] ?? (presentation.content === "icon" ? label : undefined)}

@@ -75,14 +75,14 @@ export function SceneTab({
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors hover:bg-transparent",
+        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
         selected
           ? "border-content-strong text-content-strong font-semibold"
           : "border-transparent text-content-primary hover:text-content-strong",
       )}
       {...contextHandlers}
     >
-      {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} />}
+      {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} aria-hidden="true" />}
       {!iconOnly && <span className="truncate">{label}</span>}
     </UiButton>
   );
@@ -97,10 +97,10 @@ export function AddCollectionControl({
 }) {
   return (
     <UiButton
-      action="create"
       type="button"
       onClick={onOpenNew}
       content={content === "icon" ? "icon" : "iconText"}
+      controlWidth={content === "icon" ? "slot" : "content"}
       variant="plain"
       aria-label="Add Collection"
       title="Add Collection"
@@ -134,7 +134,11 @@ export function NewCollectionDialog({
         <p className="text-compact text-content-secondary">
           Select a template group to add to this workspace.
         </p>
-        <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto -mx-1 px-1">
+        <div
+          role="listbox"
+          aria-label="Available templates"
+          className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto -mx-1 px-1"
+        >
           {available.map((template) => {
             const meta = metaFor(template.id, template.icon);
             const Icon = meta.Icon;
@@ -144,14 +148,14 @@ export function NewCollectionDialog({
                 role="option"
                 type="button"
                 variant="plain"
-                content="iconText"
+                content="text"
                 controlWidth="fill"
                 controlSize="comfortable"
                 onClick={() => {
                   onSelect(template);
                   onClose();
                 }}
-                className="justify-start gap-3 rounded text-left"
+                className="justify-start gap-3 rounded text-left px-3 hover:bg-control/60"
               >
                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
                   <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
@@ -177,10 +181,10 @@ export function NewCollectionDialog({
         </div>
         <div className="flex items-center justify-between border-t border-control/80 pt-3">
           <UiButton
-            action="upload"
             type="button"
             variant="plain"
             content="iconText"
+            controlWidth="content"
             onClick={() => {
               onClose();
               onLoad();
@@ -229,7 +233,7 @@ export function AddTabControl({
       }))}
       onSelect={() => undefined}
       onAction={onSelect}
-      placement="up"
+      placement="down"
       controlSize={workbenchControlSize.tab}
       controlWidth="fill"
       className="flex-shrink-0"
@@ -312,7 +316,8 @@ export function WorkbenchHierarchyNavigation({
         onSelect={chooseCollection}
         actions={collectionActions}
         onAction={runCollectionAction}
-        placement="up"
+        placement="down"
+        controlSize={workbenchControlSize.chrome}
         controlWidth="slot"
         className="max-w-64 bg-transparent hover:bg-control/50 text-content-primary hover:text-content-strong"
       />

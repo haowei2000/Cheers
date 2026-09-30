@@ -28,14 +28,23 @@ export const WorkbenchStatusBar = memo(function WorkbenchStatusBar({
   }
 
   return (
-    <div className="flex items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact">
+    <div
+      role="status"
+      aria-label="Workbench status"
+      className="flex min-h-7 items-center gap-2 border-t border-control/80 bg-panel px-3 py-1 text-compact font-utility"
+    >
       {selectedPath && (
         <span className="min-w-0 truncate text-content-muted" title={selectedPath}>
           {selectedPath}
         </span>
       )}
       {dirty && (
-        <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">
+        <span
+          role="img"
+          aria-label="Unsaved changes"
+          className="flex-shrink-0 text-minimal text-warning-400 font-semibold"
+          title="Unsaved changes"
+        >
           ●
         </span>
       )}
@@ -46,7 +55,8 @@ export const WorkbenchStatusBar = memo(function WorkbenchStatusBar({
       )}
       {parseError && (
         <span
-          className="flex-shrink-0 text-minimal text-warning-400"
+          role="alert"
+          className="flex-shrink-0 text-minimal text-warning-400 font-medium"
           title={`${parseError} — the preview is showing the last version that parsed`}
         >
           syntax error
@@ -54,7 +64,10 @@ export const WorkbenchStatusBar = memo(function WorkbenchStatusBar({
       )}
       <CollaboratorPills collaborators={collaborators} />
       {status && (
-        <span className="min-w-0 flex-1 truncate text-right text-warning-300">
+        <span
+          aria-live="polite"
+          className="min-w-0 flex-1 truncate text-right text-content-secondary font-medium"
+        >
           {status}
         </span>
       )}

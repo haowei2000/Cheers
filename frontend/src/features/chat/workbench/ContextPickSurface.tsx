@@ -84,8 +84,10 @@ export function ContextPickSurface({
   return (
     <div
       ref={surfaceRef}
-      className="h-full min-h-0"
+      className="h-full min-h-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-zinc-700/50 dark:focus-visible:ring-zinc-400/50"
       tabIndex={0}
+      role="region"
+      aria-label={`Workbench content: ${path}`}
       onContextMenuCapture={onContextMenuCapture}
       onContextMenu={contextSurface.onContextMenu}
       onMouseUp={contextSurface.onMouseUp}
