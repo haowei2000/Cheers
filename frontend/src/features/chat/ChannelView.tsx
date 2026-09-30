@@ -89,6 +89,7 @@ const VoiceRoomPanel = lazy(() =>
   import("./VoiceRoomPanel").then((m) => ({ default: m.VoiceRoomPanel })),
 );
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
+import { LocatorOpenContext } from "./messageLinks";
 import { ProfileCardProvider } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { parseLocator } from "./locator";
@@ -177,7 +178,7 @@ export function ChannelView({
     handleMessage,
     handleStreamDelta,
     handleStreamDone,
-    handleSuggestionsUpdated,
+    handleContentDataUpdated,
     handleBotTrace,
     handleDeleted,
     handleFileTranscribed,
@@ -385,7 +386,7 @@ export function ChannelView({
       onMessage: handleMessage,
       onStreamDelta: handleStreamDelta,
       onStreamDone: handleStreamDone,
-      onSuggestionsUpdated: handleSuggestionsUpdated,
+      onContentDataUpdated: handleContentDataUpdated,
       onMessageDeleted: handleDeleted,
       onBotUnavailable: (botId, placeholderMsgId) => {
         pendingDeltas.current.delete(placeholderMsgId);
@@ -983,7 +984,7 @@ export function ChannelView({
         return;
       }
       if (loc.kind === "desk") {
-        setWbTarget(loc.path);
+        setWbTarget(loc.inspectableId ? uri : loc.path);
         setWbOpen(true);
         return;
       }
@@ -1364,7 +1365,7 @@ export function ChannelView({
         }));
       },
       onSuggestionsLoaded: (msgId, questions) => {
-        handleSuggestionsUpdated(msgId, {
+        handleContentDataUpdated(msgId, {
           ...((messages.find((m) => m.msg_id === msgId)?.content_data as object) ?? {}),
           suggested_questions: questions,
         });
@@ -1398,7 +1399,7 @@ export function ChannelView({
       setComposePrefill,
       setSelectedSessionId,
       activeSuggestion,
-      handleSuggestionsUpdated,
+      handleContentDataUpdated,
       messages,
     ],
   );
@@ -1683,6 +1684,7 @@ export function ChannelView({
               )}
               {/* Messages */}
               {channel.conversation_mode === "discuss" ? (
+                <LocatorOpenContext.Provider value={openLocator}>
                 <ResolveRefContext.Provider value={resolveAndOpenRef}>
                   <DiscussionView
                     channelId={channel.channel_id}
@@ -1747,6 +1749,7 @@ export function ChannelView({
                     onComposerContextChange={handleDiscussionComposerContextChange}
                   />
                 </ResolveRefContext.Provider>
+                </LocatorOpenContext.Provider>
               ) : loading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <Loader2 className="w-5 h-5 text-content-muted animate-spin" />
@@ -1759,6 +1762,7 @@ export function ChannelView({
                   action={{ label: "Retry", onClick: loadHistory }}
                 />
               ) : (
+                <LocatorOpenContext.Provider value={openLocator}>
                 <ResolveRefContext.Provider value={resolveAndOpenRef}>
                   <MessageList
                     messages={messages}
@@ -1776,6 +1780,7 @@ export function ChannelView({
                     conversationMode={channel.conversation_mode ?? "chat"}
                   />
                 </ResolveRefContext.Provider>
+                </LocatorOpenContext.Provider>
               )}
 
               {/* Multi-select toolbar — replaces nothing, floats above the composer. */}

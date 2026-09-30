@@ -21,6 +21,21 @@ export function uniqueSourceTextRange(content: string, sourceText: string): Sour
   return offsetRange(normalized, first, first + anchor.length);
 }
 
+/** A code-authored card keeps its identity when surrounding JSX/HTML is edited.
+ * Duplicate ids are ambiguous and deliberately do not resolve. */
+export function inspectableIdLineRange(content: string, id: string): SourceLineRange | null {
+  if (!id || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)) return null;
+  const pattern = /\bdata-cheers-id\s*=\s*(["'])([^"']+)\1/g;
+  let match: RegExpExecArray | null;
+  let found: SourceLineRange | null = null;
+  while ((match = pattern.exec(content)) !== null) {
+    if (match[2] !== id) continue;
+    if (found) return null;
+    found = offsetRange(content, match.index, match.index + match[0].length);
+  }
+  return found;
+}
+
 /** Resolve a built-in lens target through the YAML AST. JSON is a YAML 1.2 subset. */
 export function sourcePathLineRange(
   content: string,

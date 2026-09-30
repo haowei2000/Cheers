@@ -514,7 +514,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Send or reply to a channel message. Reuse one idempotency_key when retrying so it posts once.",
+    "description": "Send or reply to a channel message. Optional cards_json is a JSON array of up to three read-only {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?} cards; text remains the fallback. Reuse one idempotency_key when retrying so it posts once.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -546,6 +546,9 @@
           "type": "string"
         },
         "text": {
+          "type": "string"
+        },
+        "cards_json": {
           "type": "string"
         }
       },
@@ -591,6 +594,40 @@
     },
     "name": "set_suggested_questions",
     "title": "Suggest follow-up questions"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:messages:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Attach one to three read-only Cheers resource cards to your own completed reply. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces any previous cards on that reply.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "msg_id": {
+          "type": "string"
+        },
+        "cards_json": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "msg_id",
+        "cards_json"
+      ],
+      "type": "object"
+    },
+    "name": "set_resource_cards",
+    "title": "Attach resource cards"
   },
   {
     "_meta": {

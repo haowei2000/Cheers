@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/types";
 import { MessageItem } from "./MessageItem";
+import { LocatorOpenContext } from "./messageLinks";
 
 const source: Message = {
   msg_id: "source-message",
@@ -54,6 +55,26 @@ describe("MessageItem suggested questions", () => {
 });
 
 describe("MessageItem identity anatomy", () => {
+  it("renders a standalone Bot URL as a link after completion and plain text while streaming", () => {
+    const final = renderToStaticMarkup(<MessageItem message={{ ...reply, content: "https://example.com" }} />);
+    const streaming = renderToStaticMarkup(<MessageItem message={{ ...reply, content: "https://example.com", _streaming: true }} />);
+    expect(final).toContain('href="https://example.com"');
+    expect(streaming).not.toContain('href="https://example.com"');
+  });
+
+  it("shows a Bot's validated resource card with its fallback text", () => {
+    const markup = renderToStaticMarkup(
+      <LocatorOpenContext.Provider value={() => {}}>
+        <MessageItem message={{ ...reply, content: "The plan is ready.", content_data: {
+          cards: [{ v: 1, kind: "resource_ref", uri: "cheers:plan", title: "Plan" }],
+        } }} />
+      </LocatorOpenContext.Provider>,
+    );
+    expect(markup).toContain("The plan is ready.");
+    expect(markup).toContain("Plan");
+    expect(markup).toContain('href="#workspace-ref-cheers%3Aplan"');
+  });
+
   it("does not crash while a realtime bot frame is missing identity metadata", () => {
     const incomplete = {
       msg_id: "early-stream-delta",
@@ -77,8 +98,8 @@ describe("MessageItem identity anatomy", () => {
       <MessageItem message={active} channelId="channel-1" />,
     );
 
-    expect(markup).toContain(">Stop</span>");
-    expect(markup).toContain('data-button-content="iconText"');
+    expect(markup).toContain('aria-label="Stop response"');
+    expect(markup).toContain('data-button-content="icon"');
   });
 
   it("keeps the 96px name rail in chat", () => {

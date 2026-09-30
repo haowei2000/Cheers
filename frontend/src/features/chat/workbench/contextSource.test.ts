@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { sourcePathLineRange, uniqueSourceTextRange } from "./contextSource";
+import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange } from "./contextSource";
+
+describe("inspectableIdLineRange", () => {
+  it("follows a code-authored card after preceding source changes", () => {
+    const card = '<section data-cheers-id="revenue-card">Revenue</section>';
+    expect(inspectableIdLineRange(card, "revenue-card")).toEqual({ start: 1, end: 1 });
+    expect(inspectableIdLineRange(`// new heading\n${card}`, "revenue-card")).toEqual({ start: 2, end: 2 });
+  });
+
+  it("rejects duplicate and malformed identities", () => {
+    const card = '<div data-cheers-id="same"/><div data-cheers-id="same"/>';
+    expect(inspectableIdLineRange(card, "same")).toBeNull();
+    expect(inspectableIdLineRange(card, "bad/id")).toBeNull();
+  });
+});
 
 describe("uniqueSourceTextRange", () => {
   it("maps a unique multiline anchor and normalizes CRLF", () => {

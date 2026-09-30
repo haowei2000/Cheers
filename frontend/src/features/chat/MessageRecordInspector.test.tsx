@@ -67,4 +67,26 @@ describe("MessageRecordInspector", () => {
     expect(markup).not.toContain("Message record ·");
     expect(markup).not.toContain("One or more agent steps failed.");
   });
+
+  it("renders resize grip on desktop", () => {
+    const triggerRef = createRef<HTMLElement>();
+    const markup = renderToStaticMarkup(
+      <MessageRecordInspector
+        message={testMessage}
+        channelId="ch-1"
+        meta={{
+          hasDetails: true,
+          contextCount: 1,
+          traceCount: 2,
+          hasTrace: true,
+          hasFailure: false,
+        }}
+        triggerRef={triggerRef}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('title="Resize"');
+    expect(markup).toContain("cursor-se-resize");
+  });
 });

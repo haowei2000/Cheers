@@ -23,6 +23,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { ResourceRefCards, resourceRefCards } from "./ResourceRefCards";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
@@ -955,7 +956,8 @@ function RegularMessageItem({
         <div
           ref={contentRef}
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-2 md:flex-none md:w-fit md:max-w-[52rem]",
+            "flex min-w-0 flex-1 flex-col gap-2 md:max-w-[52rem]",
+            showTrace ? "md:w-full" : "md:flex-none md:w-fit",
             isOwnAlignedRight && "items-end",
           )}
         >
@@ -1082,9 +1084,11 @@ function RegularMessageItem({
 function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) {
   const [stopping, setStopping] = useState(false);
   return (
-    <UiButton action="stop" content="iconText" variant="plain"
+    <IconButton
+      label="Stop response"
+      tone="danger"
       type="button"
-      loading={stopping}
+      disabled={stopping}
       onClick={async () => {
         setStopping(true);
         // On success leave it disabled: the turn finalizes via the stream and
@@ -1092,11 +1096,15 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      controlSize="regular" className="bg-zinc-800/80 text-content-primary hover:bg-zinc-700 hover:text-content-strong"
+      controlSize="compact"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
-      <Square className="w-3.5 h-3.5" fill="currentColor" />
-    </UiButton>
+      {stopping ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : (
+        <Square className="w-3.5 h-3.5" fill="currentColor" />
+      )}
+    </IconButton>
   );
 }
 
@@ -1150,15 +1158,10 @@ function MessageBody({
   // main-thread work. Render the in-flight text as plain whitespace-pre-wrap and
   // only switch to full Markdown + highlighting once the turn finalizes
   // (_streaming clears), which leaves completed messages rendered exactly as before.
-  const hasMarkdown =
-    !message._streaming &&
-    (content.includes("```") ||
-      content.includes("**") ||
-      content.includes("*") ||
-      content.includes("#") ||
-      content.includes("[") ||
-      content.includes("\n") ||
-      content.includes("`"));
+  const hasMarkdown = !message._streaming;
+  const cards = message.sender_type === "bot" && !active
+    ? resourceRefCards(message.content_data)
+    : [];
 
   return (
     <div className="relative">
@@ -1175,6 +1178,7 @@ function MessageBody({
             {content}
           </p>
         ))}
+      <ResourceRefCards cards={cards} />
       {message._streaming && (
         <TypewriterCursor className="ml-1" />
       )}

@@ -2,7 +2,7 @@
 // {verb, params} resource addressing (design: docs/arch/CODEMAP.md §4). One token, no
 // spaces, GitHub-style line anchors:
 //
-//   cheers:desk/<path>[#L<n>[-L<n>]]        this channel's Desk (context_files) file
+//   cheers:desk/<path>[#L<n>[-L<n>]|#^<id>] this channel's Desk file or code-authored card
 //   cheers:ws/<bot>/<path>[#L<n>[-L<n>]]    a bot's real workspace file; <bot> is
 //                                           "@handle" (member name) or a bot id
 //   cheers:msg/<message_id>                 a message in this channel
@@ -19,7 +19,7 @@
 // rejected) — "strict generation, tolerant parsing".
 
 export type Locator =
-  | { kind: "desk"; path: string; line?: number; lineEnd?: number }
+  | { kind: "desk"; path: string; line?: number; lineEnd?: number; inspectableId?: string }
   | { kind: "ws"; bot: string; path: string; line?: number; lineEnd?: number }
   | { kind: "msg"; messageId: string }
   | { kind: "inbox"; fileId: string }
@@ -61,6 +61,10 @@ function parseAnchor(frag: string): { line: number; lineEnd?: number } | null {
   return b < a ? { line: b, lineEnd: a } : { line: a, lineEnd: b };
 }
 
+export function validInspectableId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id);
+}
+
 /** Parse a `cheers:` locator. Returns null when the uri is not a well-formed locator —
  *  callers surface that as a user-visible error, never as silence. */
 export function parseLocator(uri: string): Locator | null {
@@ -84,15 +88,21 @@ export function parseLocator(uri: string): Locator | null {
   const tail = slash < 0 ? "" : body.slice(slash + 1);
 
   let anchor: { line: number; lineEnd?: number } | null = null;
+  let inspectableId: string | undefined;
   if (frag !== null) {
-    anchor = parseAnchor(frag);
-    if (!anchor) return null; // a fragment that isn't a line anchor is a malformed locator
+    if (scheme === "desk" && frag.startsWith("^")) {
+      inspectableId = frag.slice(1);
+      if (!validInspectableId(inspectableId)) return null;
+    } else {
+      anchor = parseAnchor(frag);
+      if (!anchor) return null; // a fragment that isn't an anchor is malformed
+    }
   }
 
   if (scheme === "desk") {
     const path = cleanRelPath(tail);
     if (!path) return null;
-    return { kind: "desk", path, ...(anchor ?? {}) };
+    return { kind: "desk", path, ...(anchor ?? {}), ...(inspectableId ? { inspectableId } : {}) };
   }
   if (scheme === "ws") {
     const slash2 = tail.indexOf("/");
@@ -133,7 +143,7 @@ function anchorSuffix(line?: number, lineEnd?: number): string {
 export function formatLocator(loc: Locator): string {
   switch (loc.kind) {
     case "desk":
-      return `${LOCATOR_SCHEME}desk/${loc.path}${anchorSuffix(loc.line, loc.lineEnd)}`;
+      return `${LOCATOR_SCHEME}desk/${loc.path}${loc.inspectableId ? `#^${loc.inspectableId}` : anchorSuffix(loc.line, loc.lineEnd)}`;
     case "ws":
       return `${LOCATOR_SCHEME}ws/${loc.bot}/${loc.path}${anchorSuffix(loc.line, loc.lineEnd)}`;
     case "msg":

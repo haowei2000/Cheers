@@ -434,15 +434,18 @@ export function PermissionCard({
           const id = optId(o);
           const reject = (o.kind ?? "").startsWith("reject");
           return (
-            <ControlTrigger
+            <UiButton
+              action={reject ? "reject" : "approve"}
+              content="text"
               controlWidth="fill"
               key={id}
+              variant={reject ? "danger" : "secondary"}
               disabled={busy || !id}
               onClick={() => onResolve(id)}
               controlSize="regular"
               className={cn(
-                "justify-start bg-zinc-800/55 text-left transition-colors hover:bg-zinc-700/70",
-                reject ? "text-danger-300 hover:text-danger-200" : "text-content-primary hover:text-content-strong",
+                "justify-start text-left",
+                reject && "hover:bg-red-950/60 hover:text-danger-300",
               )}
             >
               <span className="min-w-0 truncate text-compact font-medium">
@@ -453,7 +456,7 @@ export function PermissionCard({
                   {o.description}
                 </span>
               )}
-            </ControlTrigger>
+            </UiButton>
           );
         })}
       </div>

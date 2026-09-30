@@ -1,7 +1,6 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -26,7 +25,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { fetchMessageTrace } from "@/api/approval";
-import { FloatingPanel } from "@/components/ui/floating-panel";
 import { Banner } from "@/components/ui/banner";
 import type { Message, PermissionContentData, TraceEvent } from "@/types";
 import { DiffView } from "./DiffView";
@@ -652,7 +650,6 @@ function TraceItem({
   view: "inline" | "record";
 }) {
   const { Icon, tone, label } = eventMeta(event);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const pendingData = pendingApproval
     ? (pendingApproval.content_data as PermissionContentData | null | undefined)
     : null;
@@ -681,9 +678,9 @@ function TraceItem({
       ? statusLabel(event.status)
       : null;
 
-  // Esc closes the floating inspector only (pending approvals stay inline).
+  // Escape collapses the selected event card, unless a nested control consumed it.
   useEffect(() => {
-    if (!active || needsAction) return;
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       e.preventDefault();
@@ -691,32 +688,15 @@ function TraceItem({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [active, needsAction, onToggle]);
-
-  // Pending approvals expand inline under the row with action buttons — no click needed.
-  if (needsAction && pendingApproval) {
-    return (
-      <div className="min-w-0">
-        <PermissionCard
-          message={pendingApproval}
-          channelId={channelId}
-          currentUserId={currentUserId}
-          onResolved={onApprovalResolved}
-          embedded
-          compact={view === "inline"}
-        />
-      </div>
-    );
-  }
+  }, [active, onToggle]);
 
   return (
-    <div className="relative min-w-0">
+    <div className="w-full min-w-0">
       <ControlTrigger controlWidth="fill"
-        ref={triggerRef}
+        aria-controls={active ? `trace-event-${event.id}` : undefined}
         type="button"
         onClick={onToggle}
         aria-expanded={active}
-        aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
         controlSize="compact" className={cn(
  "justify-start gap-2 text-left text-content-primary transition-colors hover:bg-zinc-900/70",
  active && "bg-zinc-900/70",
@@ -743,47 +723,28 @@ function TraceItem({
           )}
         />
       </ControlTrigger>
-      {active &&
-        createPortal(
-          <FloatingPanel
-            title={event.kind === "approval" ? "Approval needed" : displayTitle}
-            icon={event.kind === "approval" ? ShieldCheck : Icon}
-            onClose={onToggle}
-            storageKey={
-              event.kind === "approval"
-                ? "cheers.float.trace-approval"
-                : "cheers.float.trace-inspector"
-            }
-            className={
-              event.kind === "approval"
-                ? "w-[min(28rem,94vw)] h-auto max-h-[min(36rem,calc(100dvh-10rem))]"
-                : "w-[min(42rem,94vw)] h-[min(32rem,calc(100dvh-10rem))]"
-            }
-            // Portaled to body: must ignore LaneBoundsContext, else absolute
-            // coords bind to the wrong box and drag/placement break.
-            viewport
-            anchorRef={triggerRef}
-            reanchorOnOpen
-            anchorPlacement="left"
-            bodyClassName="!p-0"
-          >
-            <div className="p-3 md:pt-[var(--floating-panel-safe-top)]">
-              {pendingApproval ? (
-                <PermissionCard
-                  message={pendingApproval}
-                  channelId={channelId}
-                  currentUserId={currentUserId}
-                  onResolved={onApprovalResolved}
-                />
-              ) : event.kind === "approval" ? (
-                <ApprovalEventCard event={event} />
-              ) : (
-                <TraceEventInspector event={event} />
-              )}
-            </div>
-          </FloatingPanel>,
-          document.body,
-        )}
+      {active && (
+        <section
+          id={`trace-event-${event.id}`}
+          aria-label={`${displayTitle} details`}
+          className="mt-1 w-full min-w-0 overflow-hidden rounded-sm bg-panel/60 ring-1 ring-inset ring-zinc-800/80"
+        >
+          {pendingApproval ? (
+            <PermissionCard
+              message={pendingApproval}
+              channelId={channelId}
+              currentUserId={currentUserId}
+              onResolved={onApprovalResolved}
+              embedded
+              compact={view === "inline"}
+            />
+          ) : event.kind === "approval" ? (
+            <ApprovalEventCard event={event} />
+          ) : (
+            <TraceEventInspector event={event} />
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -818,9 +779,8 @@ function syntheticApprovalEvent(message: Message, anchorMsgId: string): TraceEve
 /**
  * Collapsible "agent steps" panel for a bot turn. Lazily fetches the durable
  * trace timeline (docs/arch/TRACE_PERSISTENCE.md) on first expand and renders
- * each step — including approval events interleaved inline. Pending approvals
- * stay as normal timeline rows; their detail is the interactive PermissionCard,
- * auto-opened until the user decides.
+ * each step — including approval events interleaved inline. Event rows stay
+ * collapsed until selected; selecting one reveals its type-specific card.
  * Self-hides when a turn has no recorded steps and no pending approvals.
  */
 export function BotTracePanel({
@@ -993,7 +953,7 @@ export function BotTracePanel({
   const latestOnly = view === "record" && streaming && !showAll && timeline.length > 1;
 
   return (
-    <div className={cn(view === "record" ? "w-full" : hasActionable ? "max-w-lg" : "max-w-md")}>
+    <div className="w-full min-w-0">
       {showToggle && (
         <ControlTrigger
           type="button"

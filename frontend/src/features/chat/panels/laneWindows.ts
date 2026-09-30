@@ -19,11 +19,13 @@ export interface LaneWindowDescriptor {
   id: SpawnKind;
   title: string;
   icon: LucideIcon;
+  description: string;
 }
 
 export const LANE_WINDOWS: readonly LaneWindowDescriptor[] = [
-  { id: "files", title: "Channel files", icon: Paperclip },
-  { id: "workspace", title: "Remote workspace", icon: FolderTree },
-  { id: "viewboard", title: "ViewBoard", icon: LayoutDashboard },
-  { id: "workbench", title: "Workbench", icon: PanelRight },
+  { id: "files", title: "Channel files", icon: Paperclip, description: "Attachments" },
+  { id: "workspace", title: "Remote workspace", icon: FolderTree, description: "Host filesystem" },
+  { id: "viewboard", title: "ViewBoard", icon: LayoutDashboard, description: "Plan & metrics" },
+  { id: "workbench", title: "Workbench", icon: PanelRight, description: "Editor & canvas" },
 ];
+

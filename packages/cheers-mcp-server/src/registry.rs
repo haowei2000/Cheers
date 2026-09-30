@@ -428,7 +428,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             Some(ToolBinding {
                 name: "post_message",
                 title: "Post a message",
-                description: "Send or reply to a channel message. Reuse one idempotency_key when retrying so it posts once.",
+                description: "Send or reply to a channel message. Optional cards_json is a JSON array of up to three read-only {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?} cards; text remains the fallback. Reuse one idempotency_key when retrying so it posts once.",
                 scope: SCOPE_MESSAGES_WRITE,
                 read_only: false,
                 destructive_hint: false,
@@ -439,6 +439,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::opt("mention_names", ParamKind::StringArray),
                     Param::opt("reply_to_msg_id", ParamKind::String),
                     Param::opt("context", ParamKind::StringArray),
+                    Param::opt("cards_json", ParamKind::String),
                     Param::opt("idempotency_key", ParamKind::String),
                 ],
                 constants: &[("msg_type", "text")],
@@ -456,6 +457,20 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("msg_id", ParamKind::String),
                     Param::req("questions_json", ParamKind::String),
+                ],
+            ),
+        ),
+        db(
+            "channel.messages.cards.write",
+            write_tool(
+                "set_resource_cards",
+                "Attach resource cards",
+                "Attach one to three read-only Cheers resource cards to your own completed reply. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces any previous cards on that reply.",
+                SCOPE_MESSAGES_WRITE,
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("msg_id", ParamKind::String),
+                    Param::req("cards_json", ParamKind::String),
                 ],
             ),
         ),

@@ -6,6 +6,7 @@ import { GripHorizontal, ListTree, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { IconButton } from "@/components/ui/icon-button";
 import { DragHandle } from "@/components/ui/drag-handle";
+import { ResizeGrip } from "@/components/ui/resize-grip";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import type { Message } from "@/types";
@@ -45,7 +46,7 @@ export function MessageRecordInspector({
   const panelRef = useRef<HTMLElement | null>(null);
   const isMobile = useIsMobile();
   const titleId = useId();
-  const drag = useWindowDrag(`cheers.message-record.${message.msg_id}`, !isMobile, undefined, {
+  const drag = useWindowDrag("cheers.message-record", !isMobile, undefined, {
     anchorRef: triggerRef,
     reanchorOnOpen: true,
     anchorPlacement: "down",
@@ -129,8 +130,10 @@ export function MessageRecordInspector({
         data-snapped={drag.isSnapped ? "true" : undefined}
         onPointerDownCapture={drag.toFront}
         style={isMobile ? undefined : {
-          ...drag.posStyle,
-          maxHeight: `min(40rem, calc(100dvh - ${(drag.pos?.y ?? 8) + 8}px))`,
+          ...drag.style,
+          ...(drag.size ? {} : {
+            maxHeight: `min(40rem, calc(100dvh - ${(drag.pos?.y ?? 8) + 8}px))`,
+          }),
         }}
         className={cn(
           "pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[82dvh] flex flex-col overflow-hidden bg-zinc-950 outline-none",
@@ -209,6 +212,8 @@ export function MessageRecordInspector({
             )}
           </div>
         </div>
+
+        {!isMobile && <ResizeGrip resizeProps={drag.resizeProps} />}
       </aside>
     </div>
   );

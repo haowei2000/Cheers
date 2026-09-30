@@ -80,6 +80,7 @@ function SessionCard({
   selected,
   channelId,
   controls,
+  onChangeWorkdir,
   refetch,
   busy,
   dragId,
@@ -91,6 +92,7 @@ function SessionCard({
   selected: string;
   channelId: string;
   controls?: SessionControls;
+  onChangeWorkdir?: () => void;
   refetch: () => void;
   /** A promote/close is in flight for this bot group (disables card actions). */
   busy: boolean;
@@ -322,8 +324,23 @@ function SessionCard({
               <span className="font-code text-content-secondary truncate" title={cwd || "connector default"}>
                 {cwd || "default"}
               </span>
-              {cwd && <span>· immutable</span>}
+              {cwd && <span>· fixed for this session</span>}
+              {!!onChangeWorkdir && (
+                <UiButton action="add" variant="plain"
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={onChangeWorkdir}
+                  className="text-content-primary hover:text-content-strong underline underline-offset-2 disabled:opacity-50 shrink-0"
+                >
+                  use another directory
+                </UiButton>
+              )}
             </div>
+            {!!onChangeWorkdir && (
+              <div className="ml-12 text-content-muted">
+                The working directory is fixed when a session starts. Create a new session to use a different one.
+              </div>
+            )}
             {dirsDraft === null ? (
               <div className="flex items-start gap-1 mt-1">
                 <span className="text-content-muted w-12 shrink-0">roots</span>
@@ -386,6 +403,7 @@ function BotGroup({
   selected,
   channelId,
   controls,
+  onChangeWorkdir,
   refetch,
 }: {
   botId: string;
@@ -394,6 +412,7 @@ function BotGroup({
   selected: string;
   channelId: string;
   controls?: SessionControls;
+  onChangeWorkdir: (session: SessionRow) => void;
   refetch: () => void;
 }) {
   const primary = sessions.find((s) => s.is_primary);
@@ -496,6 +515,7 @@ function BotGroup({
           selected={selected}
           channelId={channelId}
           controls={controls}
+          onChangeWorkdir={controls?.can_create_session ? () => onChangeWorkdir(s) : undefined}
           refetch={refetch}
           busy={promoting}
           dragId={drag?.id ?? null}
@@ -615,6 +635,7 @@ function SessionsBody({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [sessions, memberBots]);
 
+  const [dialogSession, setDialogSession] = useState<SessionRow | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
@@ -650,16 +671,22 @@ function SessionsBody({
             selected={selected}
             channelId={ctx.channelId}
             controls={controls[g.botId]}
+            onChangeWorkdir={setDialogSession}
             refetch={refetch}
           />
         ))
       )}
 
-      {dialogOpen && (
+      {(dialogOpen || dialogSession) && (
         <NewSessionDialog
           channelId={ctx.channelId}
           bots={creatableBots}
-          onClose={() => setDialogOpen(false)}
+          initialBotId={dialogSession?.bot_id}
+          initialCwd={dialogSession?.workspace?.cwd ?? undefined}
+          onClose={() => {
+            setDialogOpen(false);
+            setDialogSession(null);
+          }}
           onCreated={refetch}
         />
       )}

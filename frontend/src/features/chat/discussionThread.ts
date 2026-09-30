@@ -9,6 +9,13 @@ export function inDiscussionThread(message: Message, rootId: string): boolean {
   return false;
 }
 
+function permissionSourceId(message: Message): string | null {
+  if (message.msg_type !== "permission") return null;
+  const source = (message.content_data as { source_msg_id?: unknown } | null | undefined)
+    ?.source_msg_id;
+  return typeof source === "string" && source.length > 0 ? source : null;
+}
+
 /** Overlay live WS rows (partials, permission cards) onto the REST thread. */
 export function mergeDiscussionMessages(
   root: Message,
@@ -30,9 +37,11 @@ export function mergeDiscussionMessages(
       }
       return;
     }
+    const sourceId = permissionSourceId(message);
     if (
       inDiscussionThread(message, root.msg_id) ||
-      (message.reply_to_msg_id != null && byId.has(message.reply_to_msg_id))
+      (message.reply_to_msg_id != null && byId.has(message.reply_to_msg_id)) ||
+      (sourceId !== null && byId.has(sourceId))
     ) {
       byId.set(message.msg_id, message);
     }
@@ -45,7 +54,11 @@ export function mergeDiscussionMessages(
     grew = false;
     for (const message of live) {
       if (byId.has(message.msg_id)) continue;
-      if (message.reply_to_msg_id && byId.has(message.reply_to_msg_id)) {
+      const sourceId = permissionSourceId(message);
+      if (
+        (message.reply_to_msg_id && byId.has(message.reply_to_msg_id)) ||
+        (sourceId && byId.has(sourceId))
+      ) {
         byId.set(message.msg_id, message);
         grew = true;
       }

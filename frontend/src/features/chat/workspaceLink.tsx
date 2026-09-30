@@ -22,7 +22,7 @@ export const ResolveRefContext = createContext<((c: RefClick) => void) | null>(n
 export function looksLikePath(s: string): boolean {
   const t = s.trim();
   if (!t || t.length > 200 || /\s/.test(t)) return false;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return false; // URL / scheme
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return false; // URL / Cheers locator / other scheme
   const hasSlash = t.includes("/");
   const hasExt = /\.[A-Za-z0-9]{1,8}$/.test(t);
   return hasSlash || hasExt;

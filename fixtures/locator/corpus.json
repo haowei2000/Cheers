@@ -49,6 +49,16 @@
       }
     },
     {
+      "uri": "cheers:desk/cards/status.tsx#^revenue-card",
+      "why": "A code-authored element has a stable id; reading it still uses the existing fs.read permission.",
+      "parses": true,
+      "resource": "fs.read",
+      "params": {
+        "channel_id": "c-1",
+        "path": "cards/status.tsx"
+      }
+    },
+    {
       "uri": "cheers:desk/a.md#L9-L3",
       "why": "Tolerant on intent: a reversed range names the same lines.",
       "parses": true,
@@ -151,6 +161,16 @@
     {
       "uri": "cheers:desk/a.md#L0",
       "why": "Lines are 1-indexed.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a.tsx#^bad/id",
+      "why": "Inspectable ids are single tokens with no path separator.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:desk/a.tsx#^",
+      "why": "An empty inspectable id cannot select an element.",
       "parses": false
     },
     {

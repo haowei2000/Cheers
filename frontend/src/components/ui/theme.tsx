@@ -29,10 +29,11 @@ export function resolveTheme(
 }
 
 function readPreference(): ThemePreference {
-  const bootPreference = document.documentElement.dataset.themePreference ?? null;
+  if (typeof document === "undefined") return "system";
+  const bootPreference = document.documentElement?.dataset?.themePreference ?? null;
   if (isThemePreference(bootPreference)) return bootPreference;
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
     return isThemePreference(stored) ? stored : "system";
   } catch {
     return "system";
@@ -40,6 +41,7 @@ function readPreference(): ThemePreference {
 }
 
 function applyTheme(preference: ThemePreference, resolved: ResolvedTheme) {
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.themePreference = preference;
   root.dataset.theme = resolved;
@@ -61,7 +63,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readPreference);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
-    window.matchMedia(SYSTEM_QUERY).matches,
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(SYSTEM_QUERY).matches
+      : false,
   );
   const resolvedTheme = resolveTheme(preference, systemPrefersDark);
 

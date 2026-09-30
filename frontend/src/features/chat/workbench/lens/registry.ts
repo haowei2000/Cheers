@@ -7,6 +7,10 @@ export interface LensContextTarget {
   label: string;
   /** Direct resource locator URI (e.g. cheers:desk/src/main.rs or cheers:plan). */
   locator?: string;
+  /** Stable code-authored DOM identity, declared with data-cheers-id. */
+  inspectableId?: string;
+  /** One-based JSX source line injected during preview compilation. */
+  sourceLine?: number;
   /** Pre-constructed ContextItem if already resolved by the lens. */
   contextItem?: ContextItem;
   /** Fallback: YAML/JSON AST path for line resolution. */
@@ -22,6 +26,8 @@ export interface LensContextTarget {
 // using existing UI = pure data in a manifest (no code).
 export interface LensProps {
   data: unknown;
+  /** Channel file rendered by this lens, when there is one. */
+  path?: string;
   config: unknown;
   onChange: (next: unknown) => void;
   /** Structured edit, for a lens that knows WHICH part changed. Preferred over

@@ -176,6 +176,16 @@ mod tests {
         .unwrap();
         assert_eq!(message.resource, "channel.messages.create");
         assert_eq!(message.params["content"], "hi");
+        let cards_json = r#"[{"v":1,"kind":"resource_ref","uri":"cheers:plan"}]"#;
+        let card_message = build_resource_call(
+            "post_message",
+            &json!({"channel_id":"c", "text":"See the plan", "cards_json":cards_json})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert_eq!(card_message.params["cards_json"], cards_json);
         let remove = build_resource_call(
             "desk_rm",
             &json!({"channel_id":"c", "path":"x"})
@@ -185,6 +195,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(remove.resource, "fs.rm");
+    }
+
+    #[test]
+    fn maps_resource_cards_to_the_message_write_contract() {
+        let cards_json = r#"[{"v":1,"kind":"resource_ref","uri":"cheers:plan"}]"#;
+        let call = build_resource_call(
+            "set_resource_cards",
+            &json!({"channel_id":"c", "msg_id":"m", "cards_json":cards_json})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert_eq!(call.resource, "channel.messages.cards.write");
+        assert_eq!(call.params["cards_json"], cards_json);
     }
 
     #[test]

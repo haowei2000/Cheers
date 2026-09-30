@@ -40,7 +40,7 @@ use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
-    ElicitationResolution, PermissionResolution, RuntimeSessionAckSession,
+    ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
     RuntimeSessionControlSession, ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
@@ -3079,9 +3079,14 @@ async fn watch_loop(
     shared.watches.lock().await.remove(&watch_id);
 }
 
+enum PendingPermissionTarget {
+    Native(oneshot::Sender<PermissionOutcome>),
+    TranslatedElicitation(oneshot::Sender<Value>),
+}
+
 struct PendingPermission {
     params: Value,
-    respond_to: oneshot::Sender<PermissionOutcome>,
+    target: PendingPermissionTarget,
 }
 
 struct PendingElicitation {
