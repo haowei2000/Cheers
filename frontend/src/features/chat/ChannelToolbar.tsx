@@ -185,17 +185,18 @@ export function ChannelToolbar(props: Props) {
           <PopoverPanel
             placement="down"
             align="end"
-            className="z-50 w-60 max-h-[70vh] overflow-y-auto p-1"
+            className="z-50 w-72 max-h-[70vh] overflow-y-auto p-1"
           >
             <div role="menu" aria-label="Panels">
               <div className="px-2 pb-1 pt-1 text-minimal uppercase tracking-label text-content-muted">
                 Windows
               </div>
-              {LANE_WINDOWS.map(({ id, title, icon: Icon }) => (
+              {LANE_WINDOWS.map(({ id, title, icon: Icon, description }) => (
                 <MenuOption
                   key={id}
                   controlSize="regular"
                   label={title}
+                  trailing={<span className="text-minimal text-content-muted">{description}</span>}
                   selected={windowOpen[id]}
                   // A window row toggles something on and off, so it is a checkbox item,
                   // not a plain action. MenuOption paints `selected` but sets no ARIA,

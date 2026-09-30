@@ -75,7 +75,7 @@ const NAV: {
   { id: "bots", label: "Bots", icon: Bot },
   { id: "server", label: "Server", icon: Server },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
-  { id: "workbench", label: "Workbench", icon: Blocks },
+  { id: "workbench", label: "Workbench extensions", icon: Blocks },
   { id: "scheduled", label: "Scheduled tasks", icon: CalendarClock },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
