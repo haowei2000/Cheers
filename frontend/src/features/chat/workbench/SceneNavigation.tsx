@@ -12,6 +12,7 @@ import { AddContextIcon, TabIcon } from "@/components/ui/editorial-icons";
 import { useContextSurface } from "@/components/ui/context-actions";
 import type { AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { cn } from "@/lib/cn";
+import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
 import { workbenchControlSize } from "./workbench-control";
 import type { TemplateManifest } from "./manifest";
 import {
@@ -97,6 +98,7 @@ export function AddCollectionControl({
 }) {
   return (
     <UiButton
+      action="add"
       type="button"
       onClick={onOpenNew}
       content={content === "icon" ? "icon" : "iconText"}
@@ -155,7 +157,7 @@ export function NewCollectionDialog({
                   onSelect(template);
                   onClose();
                 }}
-                className="justify-start gap-3 rounded text-left px-3 hover:bg-control/60"
+                className="justify-start gap-3 rounded text-left hover:bg-control/60"
               >
                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
                   <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
@@ -180,20 +182,17 @@ export function NewCollectionDialog({
           )}
         </div>
         <div className="flex items-center justify-between border-t border-control/80 pt-3">
-          <UiButton
-            type="button"
-            variant="plain"
-            content="iconText"
-            controlWidth="content"
+          <ResponsiveActionButton
+            action="upload"
+            context="toolbar"
+            variant="secondary"
+            wideLabel="Load .cheers-extension…"
             onClick={() => {
               onClose();
               onLoad();
             }}
             controlSize="compact"
-          >
-            <Folder className="h-4 w-4" aria-hidden="true" />
-            <span>Load .cheers-extension…</span>
-          </UiButton>
+          />
           <UiButton
             action="cancel"
             type="button"

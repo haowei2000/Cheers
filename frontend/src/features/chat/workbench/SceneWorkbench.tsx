@@ -370,6 +370,7 @@ export function SceneWorkbench({
               Unsupported files stay hidden here and remain available from Raw workspace files.
             </span>
             <Button
+              action="open"
               type="button"
               variant="secondary"
               controlSize="compact"
