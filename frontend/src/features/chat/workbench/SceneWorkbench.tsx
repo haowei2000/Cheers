@@ -24,14 +24,10 @@ import {
   FileText,
   Folder,
   Frame,
-  Lock,
-  Maximize2,
-  Minimize2,
   Plus,
   Save,
   Server,
 } from "lucide-react";
-import { LockOff } from "@/components/ui/slashed-icon";
 import { cn } from "@/lib/cn";
 import {
   pointRect,
@@ -65,8 +61,6 @@ import {
   FloatingPanelActionPortal,
   FloatingPanelNavigationPortal,
 } from "@/components/ui/floating-panel";
-import { WorkbenchTabLocator } from "./WorkbenchTabLocator";
-import { WorkbenchCardDeck } from "./WorkbenchCardDeck";
 
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
@@ -797,10 +791,6 @@ export function SceneWorkbench({
     localStorage.setItem(`${storagePrefix}.scene`, activeScene);
   }, [activeScene, storagePrefix]);
 
-  const [isTabLocked, setIsTabLocked] = useState(false);
-  const [shakeNonce, setShakeNonce] = useState(0);
-  const triggerLockedShake = useCallback(() => setShakeNonce((n) => n + 1), []);
-  const [isCardMaximized, setIsCardMaximized] = useState(false);
 
   const activePaths = useMemo(() => {
     const canvas = canvasScenePath(activeScene);
@@ -1136,7 +1126,7 @@ export function SceneWorkbench({
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2 md:hidden">
+        <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1.5 bg-panel/50">
           <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={addTabAndSelect} />}
         </div>
@@ -1144,36 +1134,6 @@ export function SceneWorkbench({
       {/* Floating Panel Action Portals for Chrome Header */}
       {selectedPath && (
         <>
-          <FloatingPanelActionPortal
-            action={{
-              id: "card-fill",
-              label: isCardMaximized
-                ? "Restore card deck view (Esc)"
-                : "Maximize card screen fill",
-              priority: "primary",
-              icon: isCardMaximized ? Minimize2 : Maximize2,
-              selected: isCardMaximized,
-              onSelect: () => setIsCardMaximized((prev) => !prev),
-            }}
-          />
-          <FloatingPanelActionPortal
-            action={{
-              id: "lock-tab",
-              label: isTabLocked ? "Unlock tab scrolling" : "Lock tab in place",
-              priority: "primary",
-              icon: isTabLocked ? Lock : LockOff,
-              selected: false,
-              onSelect: () => {
-                setIsTabLocked((prev) => {
-                  const next = !prev;
-                  if (!next) {
-                    setShakeNonce(0);
-                  }
-                  return next;
-                });
-              },
-            }}
-          />
           <FloatingPanelActionPortal
             action={{
               id: "view-mode",
@@ -1254,117 +1214,76 @@ export function SceneWorkbench({
               Unsupported files stay hidden here and remain available from Raw.
             </span>
           </div>
-        ) : (
-          <div className="flex h-full min-h-0 flex-1 overflow-hidden">
-            {/* The Minimal Tick-Ruler Locator on the left */}
-            <WorkbenchTabLocator
-              tabs={activePaths.map((path) => ({
-                path,
-                label: itemTitle(activeScene, path, templates),
-                isDirty: selectedPath === path && session.dirty,
-                hasError: selectedPath === path && Boolean(session.parseError),
-                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
-              }))}
-              selectedIndex={Math.max(0, activePaths.indexOf(selectedPath ?? ""))}
-              onSelectTab={(path) => selectPath(path)}
-              isLocked={isTabLocked}
-              shakeNonce={shakeNonce}
-              onLockedActionAttempt={triggerLockedShake}
-              className="hidden md:flex"
-            />
-
-            {/* The Vertical Card-Deck Stream */}
-            <WorkbenchCardDeck
-              tabs={activePaths.map((path) => ({
-                path,
-                label: itemTitle(activeScene, path, templates),
-                isDirty: selectedPath === path && session.dirty,
-                hasError: selectedPath === path && Boolean(session.parseError),
-                hasContext: pickedIds.has(workbenchFileContextItem(path).id),
-                noteCount: selectedPath === path ? annotations.notes.length : undefined,
-                rendererId: renderers[path]?.id,
-                rendererTitle: renderers[path]?.title,
-                previewSnippet: selectedPath === path ? session.text : contents[path],
-              }))}
-              selectedPath={selectedPath}
-              onSelectTab={selectPath}
-              isMaximized={isCardMaximized}
-              onToggleMaximize={() => setIsCardMaximized((prev) => !prev)}
-              renderActiveCardContent={(path) => {
-                const renderer = renderers[path];
-                const effMode = rawPaths.has(path) || !renderer ? "raw" : "preview";
-                return (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
-                    {pendingNote && (
-                      <AnnotationComposer
-                        pending={pendingNote}
-                        onCancel={() => setPendingNote(null)}
-                        onSubmit={(entry) => {
-                          void annotations.add(entry);
-                          setPendingNote(null);
+        ) : selectedPath ? (
+          (() => {
+            const activeRenderer = renderers[selectedPath];
+            const effMode = rawPaths.has(selectedPath) || !activeRenderer ? "raw" : "preview";
+            return (
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-canvas">
+                <ConflictBanner conflict={session.conflictNotice} onResolve={session.resolveConflict} />
+                {pendingNote && (
+                  <AnnotationComposer
+                    pending={pendingNote}
+                    onCancel={() => setPendingNote(null)}
+                    onSubmit={(entry) => {
+                      void annotations.add(entry);
+                      setPendingNote(null);
+                    }}
+                  />
+                )}
+                <div className="min-h-0 flex-1">
+                  <ContextPickSurface
+                    channelId={ctx.channelId}
+                    path={selectedPath}
+                    content={session.text}
+                    onAdded={(label) => setStatus(`Added ${label} to context`)}
+                  >
+                    {effMode === "preview" && activeRenderer ? (
+                      <RendererHost
+                        ctx={ctx}
+                        path={selectedPath}
+                        renderer={activeRenderer}
+                        config={ctx.configs[selectedPath]}
+                        session={session}
+                        annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
+                        activeAnnotationId={activeAnnotationId}
+                        onSelectAnnotation={setActiveAnnotationId}
+                        onRevealSource={(line) => { showRaw(selectedPath, true); setRevealLine(line); }}
+                        inspectorActive={isInspectorActive}
+                        onFormSubmit={(data) => {
+                          const summary = Object.entries(data.formData)
+                            .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+                            .join(", ");
+                          ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
+                        }}
+                        onFailure={(rendererId, reason) => {
+                          setFailedRenderers((current) => ({
+                            ...current,
+                            [selectedPath]: [...new Set([...(current[selectedPath] ?? []), rendererId])],
+                          }));
+                          setStatus(`${activeRenderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
                         }}
                       />
+                    ) : (
+                      <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
+                        <CodeEditor
+                          value={session.text}
+                          onChange={session.editText}
+                          path={selectedPath}
+                          scrollToLine={revealLine}
+                          notes={annotations.notes}
+                          activeAnnotationId={activeAnnotationId}
+                          onSelectAnnotation={setActiveAnnotationId}
+                          className="h-full min-h-0 overflow-hidden"
+                        />
+                      </Suspense>
                     )}
-                    <div className="min-h-0 flex-1">
-                      <ContextPickSurface
-                        channelId={ctx.channelId}
-                        path={path}
-                        content={session.text}
-                        onAdded={(label) => setStatus(`Added ${label} to context`)}
-                      >
-                        {effMode === "preview" && renderer ? (
-                          <RendererHost
-                            ctx={ctx}
-                            path={path}
-                            renderer={renderer}
-                            config={ctx.configs[path]}
-                            session={session}
-                            annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
-                            activeAnnotationId={activeAnnotationId}
-                            onSelectAnnotation={setActiveAnnotationId}
-                            onRevealSource={(line) => { showRaw(path, true); setRevealLine(line); }}
-                            inspectorActive={isInspectorActive}
-                            onFormSubmit={(data) => {
-                              const summary = Object.entries(data.formData)
-                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-                                .join(", ");
-                              ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
-                            }}
-                            onFailure={(rendererId, reason) => {
-                              setFailedRenderers((current) => ({
-                                ...current,
-                                [path]: [...new Set([...(current[path] ?? []), rendererId])],
-                              }));
-                              setStatus(`${renderer.title} failed: ${reason}. Switched to a built-in renderer or Raw.`);
-                            }}
-                          />
-                        ) : (
-                          <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>
-                            <CodeEditor
-                              value={session.text}
-                              onChange={session.editText}
-                              path={path}
-                              scrollToLine={revealLine}
-                              notes={annotations.notes}
-                              activeAnnotationId={activeAnnotationId}
-                              onSelectAnnotation={setActiveAnnotationId}
-                              className="h-full min-h-0 overflow-hidden"
-                            />
-                          </Suspense>
-                        )}
-                      </ContextPickSurface>
-                    </div>
-                  </div>
-                );
-              }}
-              onAddToContext={addPathToContext}
-              isLocked={isTabLocked}
-              shakeNonce={shakeNonce}
-              onLockedAttempt={triggerLockedShake}
-            />
-          </div>
-        )}
+                  </ContextPickSurface>
+                </div>
+              </div>
+            );
+          })()
+        ) : null}
       </div>
 
       {/* Bottom strip: carries what the file is and what state it is in */}

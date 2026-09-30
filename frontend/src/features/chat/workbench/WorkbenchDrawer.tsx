@@ -1,16 +1,12 @@
 import { useManagedPanel } from "@/components/ui/managed-panel";
 import { ActionButton } from "@/components/ui/action-button";
-import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { MenuOption } from "@/components/ui/menu-option";
-import { Tip } from "@/components/ui/tip";
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CollectionIcon } from "@/components/ui/editorial-icons";
-import { Folder, Package, Pin } from "lucide-react";
+import { Folder, Package } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
-import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
-import { ItemList, WorkbenchItem } from "@/components/ui/item";
+import { GlanceRow } from "@/components/ui/glance-row";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
@@ -19,22 +15,14 @@ import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, viewOf, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { SceneWorkbench } from "./SceneWorkbench";
-import { workbenchControlSize } from "./workbench-control";
 import { listOfficialScenes } from "./extensions/api";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
 import "@/features/chat/panels/builtin/githubCode";
-import { hasCode, type ParsedExtension } from "./extensions/package";
-import { parseExtensionPackageOffThread, parsePersonalExtension } from "./extensions/parseOffThread";
-import { ExtensionInstallDialog } from "@/features/workbench/ExtensionInstallDialog";
-import type { ExtensionInstallCandidate } from "@/features/workbench/extensionInstall";
-import {
-  isPersonalExtensionDisabled,
-  registerTemporaryExtension,
-} from "./extensions/runtime";
+import { parsePersonalExtension } from "./extensions/parseOffThread";
+import { isPersonalExtensionDisabled } from "./extensions/runtime";
 import type { RendererExtension } from "./sandbox/rendererExtension";
-import { listPersonalExtensions, pickDevelopmentExtension, readDevelopmentExtension } from "@/lib/desktop";
-import { isTauri } from "@/lib/serverConfig";
+import { listPersonalExtensions } from "@/lib/desktop";
 import "./lens/builtins";
 import { parseLocator } from "../locator";
 
@@ -186,19 +174,11 @@ function WorkbenchDrawerImpl({
     try { return JSON.parse(localStorage.getItem(localBindingKey) ?? "{}"); } catch { return {}; }
   });
   const [busy, setBusy] = useState(false);
-  /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
-  const [dragOver, setDragOver] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  /** A dropped package waiting on consent. `thenActivate` remembers whether the
-   * drop was a "open this scenario" gesture, so confirming does what the drop
-   * would have done. */
-  const [pendingLoad, setPendingLoad] = useState<(ExtensionInstallCandidate & { thenActivate: boolean }) | null>(null);
-  const [pinMenu, setPinMenu] = useState(false);
   const [rawMode, setRawMode] = useState(false);
   /** Focus request for the browser: a Desk-ref deep link (openFilePath) or the last
    *  activated scenario's first file — whichever happened most recently wins. */
   const [focus, setFocus] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const changed = () => setExtensionsRevision((revision) => revision + 1);
@@ -394,174 +374,7 @@ function WorkbenchDrawerImpl({
     }
   }, [cfg, fs, writeCfg]);
 
-  // Temporary upload: validate a manifest, keep it in THIS session only (never persisted,
-  // never shared), and activate it. Activating still seeds the scenario's data files into
-  // the channel — that's the point of opening the scenario — but the template DEFINITION
-  // is ephemeral. To share a template across channels/users, an admin installs it as a
-  // official template in Settings → Workbench extensions.
-  //
-  // On desktop this scope is `temporary`, the one scope that may carry renderer code and
-  // `network: unrestricted` — the server refuses to store either. Dropping a file is not
-  // consent to run it, so anything with code or a permission goes through the same dialog
-  // Settings uses; a purely declarative package activates directly, because a modal with
-  // nothing in it teaches people to click through the ones that matter.
-  const admit = useCallback(
-    (extension: ParsedExtension, notice: string) => {
-      registerTemporaryExtension(extension);
-      setSessionTemplates((current) => [
-        ...extension.scenes,
-        ...current.filter((scene) => !sceneBelongsToExtension(scene.id, extension.manifest.id)),
-      ]);
-      if (extension.rendererExtension) setSessionRendererExtensions((current) => [extension.rendererExtension!, ...current.filter((candidate) => candidate.extensionId !== extension.manifest.id)]);
-      setNotice(notice);
-    },
-    []
-  );
 
-  const offer = useCallback(
-    (extension: ParsedExtension, sourceLabel: string, thenActivate: boolean) => {
-      if (hasCode(extension.manifest)) {
-        setPendingLoad({ extension, scope: "temporary", source: "file", sourceLabel, thenActivate });
-        return;
-      }
-      admit(extension, `Loaded temporarily: ${extension.manifest.title}`);
-      const first = extension.scenes[0];
-      if (thenActivate && first) void activate(first);
-    },
-    [activate, admit]
-  );
-
-  const loadExtensionFile = useCallback(
-    (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".cheers-extension")) {
-        setNotice("Choose a .cheers-extension package");
-        return;
-      }
-      void file.arrayBuffer()
-        .then((bytes) => parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global"))
-        .then((extension) => offer(extension, file.name, true))
-        .catch((reason) => setNotice(errMsg(reason)));
-    },
-    [offer]
-  );
-
-  const loadExtensionBytes = useCallback((bytes: Uint8Array, title: string) => {
-    void parseExtensionPackageOffThread(bytes, isTauri() ? "temporary" : "global")
-      .then((extension) => offer(extension, title, false))
-      .catch((reason) => setNotice(errMsg(reason)));
-  }, [offer]);
-
-  const confirmPendingLoad = useCallback(() => {
-    if (!pendingLoad) return;
-    const { extension, thenActivate } = pendingLoad;
-    setPendingLoad(null);
-    admit(extension, `Loaded temporarily: ${extension.manifest.title}`);
-    const first = extension.scenes[0];
-    if (thenActivate && first) void activate(first);
-  }, [pendingLoad, activate, admit]);
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file) loadExtensionFile(file);
-    },
-    [loadExtensionFile]
-  );
-
-  const onPickFile = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) loadExtensionFile(file);
-      e.target.value = "";
-    },
-    [loadExtensionFile]
-  );
-
-  // ---- Hot reload: watch the extension file on disk and re-load it on every save ----
-  // The dev loop used to be "edit, drag the file in again" — dozens of round trips while
-  // tuning a renderer's UI. With the File System Access API we keep the picked handle and
-  // poll its mtime, so saving in your editor reloads the extension in place: the session
-  // renderer is replaced, SandboxRenderer sees a new bundle, and the iframe reboots.
-  // Chromium-only (Firefox/Safari lack showOpenFilePicker) — the button hides elsewhere
-  // and drag-drop remains the universal path.
-  const [watching, setWatching] = useState<string | null>(null);
-  const watchTimer = useRef<number | null>(null);
-  const canWatch = isTauri() || typeof (window as { showOpenFilePicker?: unknown }).showOpenFilePicker === "function";
-
-  const stopWatch = useCallback(() => {
-    if (watchTimer.current !== null) {
-      window.clearInterval(watchTimer.current);
-      watchTimer.current = null;
-    }
-    setWatching(null);
-  }, []);
-
-  const startWatch = useCallback(async () => {
-    if (isTauri()) {
-      const selected = await pickDevelopmentExtension();
-      if (!selected) return;
-      const decode = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
-      let lastSeen = selected.sha256;
-      loadExtensionBytes(decode(selected.contentBase64), selected.id);
-      setWatching(selected.path.split("/").pop() ?? selected.id);
-      if (watchTimer.current !== null) window.clearInterval(watchTimer.current);
-      watchTimer.current = window.setInterval(() => {
-        void readDevelopmentExtension(selected.path)
-          .then((next) => {
-            if (next.sha256 === lastSeen) return;
-            lastSeen = next.sha256;
-            loadExtensionBytes(decode(next.contentBase64), next.id);
-          })
-          .catch(() => { stopWatch(); setNotice("Stopped watching: the package is no longer readable"); });
-      }, 1000);
-      return;
-    }
-    interface PickedFile {
-      getFile: () => Promise<File>;
-    }
-    const pick = (window as unknown as {
-      showOpenFilePicker: (o: unknown) => Promise<PickedFile[]>;
-    }).showOpenFilePicker;
-    let handle: PickedFile;
-    try {
-      const [h] = await pick({
-        multiple: false,
-        types: [
-          {
-            description: "Workbench extension",
-            accept: { "application/vnd.cheers.extension+zip": [".cheers-extension"] },
-          },
-        ],
-      });
-      if (!h) return;
-      handle = h;
-    } catch {
-      return; // user dismissed the picker
-    }
-    const first = await handle.getFile();
-    let lastSeen = first.lastModified;
-    loadExtensionFile(first);
-    setWatching(first.name);
-    if (watchTimer.current !== null) window.clearInterval(watchTimer.current);
-    watchTimer.current = window.setInterval(() => {
-      void handle
-        .getFile()
-        .then((f) => {
-          if (f.lastModified === lastSeen) return;
-          lastSeen = f.lastModified;
-          loadExtensionFile(f);
-        })
-        .catch(() => {
-          // The file was moved/deleted, or permission lapsed — stop rather than spin.
-          stopWatch();
-          setNotice("Stopped watching: the file is no longer readable");
-        });
-    }, 1000);
-  }, [loadExtensionFile, loadExtensionBytes, stopWatch]);
-
-  useEffect(() => stopWatch, [stopWatch]);
 
   // Session templates first so a temporary upload overrides a same-id official template for this session.
   const allEnvs = useMemo(() => {
@@ -698,140 +511,22 @@ function WorkbenchDrawerImpl({
           { id: "raw-workspace-files", label: "Raw workspace files", icon: Folder, selected: true, onSelect: () => undefined },
         ],
       } : undefined}
-      // Dropping a .cheers-extension anywhere on the panel loads it (after consent).
-      dropTarget={{
-        active: dragOver || busy,
-        onDragOver: (e: DragEvent) => {
-          e.preventDefault();
-          setDragOver(true);
-        },
-        onDragLeave: () => setDragOver(false),
-        onDrop,
-      }}
-      panelActions={[
-        ...(canWatch ? [{
-          id: "watch-extension",
-          label: watching ? "Stop watching extension" : "Watch extension file",
-          priority: "secondary" as const,
-          disabled: busy,
-          onSelect: () => watching ? stopWatch() : void startWatch(),
-          control: watching ? (
-            <Tip content="Stop watching the current extension file.">
-              <ResponsiveActionButton
-                action="stop"
-                context="toolbar"
-                wideLabel="Stop watching"
-                controlSize={workbenchControlSize.chrome}
-                onClick={stopWatch}
-                aria-label={`Stop watching ${watching}`}
-                title="Stop watching extension"
-                className="text-success-400 hover:text-success-300"
-              />
-            </Tip>
-          ) : (
-            <Tip content="Watch an extension file and reload it after every editor save.">
-              <ResponsiveActionButton
-                action="watch"
-                context="toolbar"
-                wideLabel="Watch extension"
-                controlSize={workbenchControlSize.chrome}
-                onClick={() => void startWatch()}
-                disabled={busy}
-                aria-label="Watch an extension file on disk"
-                title="Watch extension file"
-                className="text-content-primary hover:text-content-strong disabled:opacity-50"
-              />
-            </Tip>
-          ),
-        }] : []),
-        ...(pinned.length > 0 ? [{
-          id: "pinned-files",
-          label: `${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`,
-          priority: "secondary" as const,
-          icon: Pin,
-          control: (
-            <div className="relative">
-              <Tip content="Manage files pinned into every prompt.">
-                <div className="relative inline-flex">
-                  <ActionButton
-                    action="pin"
-                    context="toolbar"
-                    controlSize={workbenchControlSize.chrome}
-                    onClick={() => setPinMenu((open) => !open)}
-                    aria-label={`${pinned.length} pinned ${pinned.length === 1 ? "file" : "files"}`}
-                    aria-expanded={pinMenu}
-                    title="Manage pinned files"
-                    className="relative text-warning-400/80 hover:text-warning-300"
-                  />
-                  <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 min-w-4 rounded-sm bg-amber-400 px-1 text-center text-minimal leading-3 text-content-on-light">
-                    {pinned.length > 9 ? "9+" : pinned.length}
-                  </span>
-                </div>
-              </Tip>
-              {pinMenu && (
-                <div className="absolute right-0 top-6 z-50 w-64 rounded-sm bg-panel p-1 elevation-overlay">
-                  <div className="px-2 py-1 text-minimal uppercase tracking-section text-content-muted">Pinned (injected into every prompt)</div>
-                  <ItemList presentationLevel="minimal" controlSize="compact">
-                    {pinned.map((path) => (
-                      <WorkbenchItem
-                        key={path}
-                        title={path}
-                        controlSize="compact"
-                        actions={<ActionButton action="unpin" context="toolbar" aria-label={`Unpin ${path}`} onClick={() => togglePin(path)} title="Unpin" className="flex-shrink-0 text-content-primary hover:text-danger-400" />}
-                        className="border-0"
-                      />
-                    ))}
-                  </ItemList>
-                </div>
-              )}
-            </div>
-          ),
-          overflow: (
-            <>
-              {/* design-system-exempt: menu-option — compound pinned-file action menu. */}
-              {pinned.map((path) => (
-                <MenuOption key={path} label={`Unpin ${path}`} leading={<Pin className="h-4 w-4" />} onClick={() => togglePin(path)} />
-              ))}
-            </>
-          ),
-        }] : []),
-      ]}
       collapsedSummary={() => (
         <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
-            <GlanceRow
-              Icon={Package}
-              label="Collection"
-              value={allEnvs.find((e) => e.id === selectedId)?.title ?? "General"}
-              onClick={toggleCollapsed}
-              title="Open workbench"
-            />
-            <GlanceRow
-              Icon={Pin}
-              label="Pinned"
-              value={String(pinned.length)}
-              onClick={toggleCollapsed}
-            >
-              {pinned.slice(0, 4).map((p) => (
-                <DetailLine key={p} name={p.split("/").pop() || p} />
-              ))}
-              {pinned.length > 4 && <DetailLine name={`+${pinned.length - 4} more`} />}
-            </GlanceRow>
-          </div>
+          <GlanceRow
+            Icon={Package}
+            label="Collection"
+            value={allEnvs.find((e) => e.id === selectedId)?.title ?? "General"}
+            onClick={toggleCollapsed}
+            title="Open workbench"
+          />
+        </div>
       )}
     >
-        {pendingLoad && (
-          <ExtensionInstallDialog
-            candidate={pendingLoad}
-            busy={false}
-            onConfirm={confirmPendingLoad}
-            onClose={() => setPendingLoad(null)}
-          />
-        )}
-
         {notice && (
           <div className="mx-2 mt-2 flex items-center gap-2 rounded-sm bg-amber-500/10 px-3 py-2 text-compact text-warning-400/90">
             <span className="flex-1">{notice}</span>
-            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize={workbenchControlSize.chrome} onClick={() => setNotice(null)} />
+            <ActionButton action="close" context="windowChrome" accessibleLabel="Dismiss notice" controlSize="compact" onClick={() => setNotice(null)} />
           </div>
         )}
 
@@ -839,7 +534,7 @@ function WorkbenchDrawerImpl({
           <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-sm bg-panel/50 px-3 py-2 text-compact text-content-muted">
             <Package className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />
             <span className="flex-1">
-              No collections yet. Load a .cheers-extension package or install one in Settings.
+              No collections yet. Install one in Settings.
             </span>
             <ActionButton
               action="open"
@@ -855,15 +550,6 @@ function WorkbenchDrawerImpl({
         <div className={minimized ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
           {open && profilePanels.map((panel) => <Fragment key={panel.id}>{panel.render(panelCtx)}</Fragment>)}
           <div className="min-h-0 flex-1 overflow-hidden">
-            {/* design-system-native: file-input */}
-            <input
-              ref={fileRef}
-              aria-label="Choose a temporary extension package"
-              type="file"
-              accept=".cheers-extension,application/vnd.cheers.extension+zip"
-              onChange={onPickFile}
-              className="hidden"
-            />
             {open && (rawMode ? (
               <FilePanel ctx={ctx} />
             ) : (
@@ -874,7 +560,7 @@ function WorkbenchDrawerImpl({
                 templates={allEnvs}
                 onAddScene={activate}
                 onAddTab={addTab}
-                onLoadCollection={() => fileRef.current?.click()}
+                onLoadCollection={() => navigate("/settings/workbench")}
                 onShowRaw={() => setRawMode(true)}
               />
             ))}
