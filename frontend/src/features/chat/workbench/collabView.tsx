@@ -40,7 +40,7 @@ export function ConflictBanner({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex flex-wrap items-center justify-between gap-2 border-b border-warning-500/30 bg-warning-500/10 px-3 py-1.5 text-compact text-warning-800 dark:text-warning-200"
+      className="flex flex-wrap items-center justify-between gap-2 border-b border-warning-500/30 bg-warning-500/10 px-3 py-2 text-compact text-warning-800 dark:text-warning-200"
     >
       <div className="flex items-center gap-2">
         <span className="font-semibold text-warning-600 dark:text-warning-400">⚠️ Collaboration Conflict</span>
