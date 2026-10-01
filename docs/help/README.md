@@ -23,6 +23,8 @@ This directory contains user-facing, administrator-facing, and operations-facing
 | CI/CD maintainer | [CI/CD Planning and Optimization Tool](CI_CD_TOOL.md) | Change-impact planning, workflow audits, run metrics, caching, and duplicate-run prevention |
 | Troubleshooter | [Troubleshooting Q&A](技术排查Q&A.md) | Health checks, logs, database, Bot no-response, preview failures |
 
+- [Channel annotations](annotations.md): shared, persisted file and agent-event notes.
+
 ## Current Defaults
 
 - Frontend: `http://localhost`

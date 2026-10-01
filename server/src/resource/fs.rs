@@ -1294,7 +1294,7 @@ fn looks_like_file_id(path: &str) -> bool {
         })
 }
 
-fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, String)> {
+pub(crate) fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, String)> {
     let path = raw.trim().trim_matches('/').to_string();
     if path.is_empty() {
         if allow_empty {

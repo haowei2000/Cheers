@@ -1,3 +1,4 @@
+import { AnnotationPreviewProvider } from "@/features/annotations/previewSupport";
 import { ContextActionsProvider } from "@/components/ui/context-actions";
 import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
 import { ThemeProvider } from "@/components/ui/theme";
@@ -128,6 +129,7 @@ function Preview() {
   return (
     <ThemeProvider>
       <ContextActionsProvider>
+      <AnnotationPreviewProvider>
         {/* Inside a FloatingPanel, because that is where FilePanel actually runs — and
             its eye, Save and notes buttons now live in the panel's action corner, so a
             harness without one would show none of them. */}
@@ -144,6 +146,7 @@ function Preview() {
             <FilePanel ctx={context} />
           </FloatingPanel>
         </main>
+      </AnnotationPreviewProvider>
       </ContextActionsProvider>
     </ThemeProvider>
   );

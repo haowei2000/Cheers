@@ -18,7 +18,7 @@ export interface PendingAnnotation {
 
 export interface AnnotationComposerProps {
   pending: PendingAnnotation;
-  onSubmit: (entry: NewAnnotation) => void;
+  onSubmit: (entry: NewAnnotation) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -26,12 +26,17 @@ const COMPOSER_W = 320;
 const COMPOSER_H = 168;
 const EDGE = 8;
 
-const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-export function anchorOfTarget(target: LensContextTarget): NewAnnotation["anchor"] {
-  if (target.inspectableId && target.locator) return { kind: "uri", uri: target.locator };
+export function anchorOfTarget(
+  target: LensContextTarget,
+): NewAnnotation["anchor"] {
+  if (target.inspectableId && target.locator)
+    return { kind: "uri", uri: target.locator };
   if (target.sourcePath) return { kind: "path", sourcePath: target.sourcePath };
-  if (target.sourceText !== undefined) return { kind: "text", sourceText: target.sourceText };
+  if (target.sourceText !== undefined)
+    return { kind: "text", sourceText: target.sourceText };
   return { kind: "file" };
 }
 
@@ -44,7 +49,7 @@ export function anchorOfTarget(target: LensContextTarget): NewAnnotation["anchor
  * Accessibility & Interaction (HIG & Cheers contract):
  * - Role: dialog (aria-modal="true") with accessible label identifying the target.
  * - Focus management: captures previous focus on mount and restores it on dismiss.
- * - Keyboard navigation: Esc to cancel, Enter / Cmd+Enter to save, Tab focus trapping.
+ * - Keyboard navigation: Esc to cancel, Ctrl/Cmd+Enter to save, Tab focus trapping.
  * - Tokens: concentric corners, bg-panel, elevation-overlay, ring-1 ring-control/40 for crisp contrast.
  */
 export function AnnotationComposer({
@@ -53,15 +58,23 @@ export function AnnotationComposer({
   onCancel,
 }: AnnotationComposerProps) {
   const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Dismiss on outside click or global Escape
-  usePopoverDismiss(true, onCancel, rootRef);
+  usePopoverDismiss(!saving, onCancel, rootRef);
 
   // Capture previous focused element before mount to restore on dismiss
   const [previouslyFocused] = useState(() =>
-    typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null
+    typeof document !== "undefined"
+      ? (document.activeElement as HTMLElement | null)
+      : null,
   );
 
   // A new target replaces whatever was half-written for the previous one: two notes
@@ -80,15 +93,17 @@ export function AnnotationComposer({
     const getFocusables = () =>
       Array.from(
         root.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+          'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         e.preventDefault();
-        onCancel();
+        if (!savingRef.current) onCancelRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -121,7 +136,7 @@ export function AnnotationComposer({
         previouslyFocused.focus();
       }
     };
-  }, [onCancel, previouslyFocused]);
+  }, [previouslyFocused]);
 
   // Clamped so the box is never half off-screen — a right-click near the bottom-right
   // corner of a panel is the normal case, not the edge case.
@@ -136,14 +151,22 @@ export function AnnotationComposer({
     });
   }, [pending]);
 
-  const submit = () => {
-    if (!note.trim()) return;
-    onSubmit({
-      path: pending.path,
-      anchor: anchorOfTarget(pending.target),
-      label: pending.target.label,
-      note,
-    });
+  const submit = async () => {
+    if (!note.trim() || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        path: pending.path,
+        anchor: anchorOfTarget(pending.target),
+        label: pending.target.label,
+        note,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save note. Retry.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const content = (
@@ -153,13 +176,25 @@ export function AnnotationComposer({
       aria-modal="true"
       aria-label={`Note on ${pending.target.label}`}
       tabIndex={-1}
-      style={{ position: "fixed", left: box.left, top: box.top, width: COMPOSER_W }}
+      style={{
+        position: "fixed",
+        left: box.left,
+        top: box.top,
+        width: COMPOSER_W,
+      }}
       className="z-50 flex flex-col gap-2 rounded-concentric [--concentric-inset:0.5rem] bg-panel p-3 elevation-overlay ring-1 ring-control/40 outline-none"
     >
       <div className="flex items-center gap-2">
-        <EditorialIcon name="annotation" contentSize="small" className="flex-shrink-0 text-content-muted" />
+        <EditorialIcon
+          name="annotation"
+          contentSize="small"
+          className="flex-shrink-0 text-content-muted"
+        />
         <span className="min-w-0 truncate text-compact text-content-secondary">
-          Note on <span className="font-medium text-content-primary">{pending.target.label}</span>
+          Note on{" "}
+          <span className="font-medium text-content-primary">
+            {pending.target.label}
+          </span>
         </span>
       </div>
       <Textarea
@@ -170,10 +205,11 @@ export function AnnotationComposer({
           if (event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
-            onCancel();
+            if (!savingRef.current) onCancelRef.current();
           } else if (
-            (event.key === "Enter" && !event.shiftKey) ||
-            (event.key === "Enter" && (event.metaKey || event.ctrlKey))
+            event.key === "Enter" &&
+            (event.metaKey || event.ctrlKey) &&
+            !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
             submit();
@@ -182,13 +218,21 @@ export function AnnotationComposer({
         placeholder="What should be said about this?"
         controlSize="regular"
         rows={3}
+        disabled={saving}
+        maxLength={16384}
         aria-label="Annotation note content"
       />
+      {error && (
+        <p role="alert" className="text-regular text-danger-400">
+          {error}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-2">
         <UiButton
           action="cancel"
           variant="plain"
           onClick={onCancel}
+          disabled={saving}
           controlSize="regular"
           className="text-content-primary hover:text-content-strong"
         >
@@ -199,7 +243,7 @@ export function AnnotationComposer({
           context="form"
           accessibleLabel="Save note"
           controlSize="regular"
-          disabled={!note.trim()}
+          disabled={!note.trim() || saving}
           onClick={submit}
         />
       </div>

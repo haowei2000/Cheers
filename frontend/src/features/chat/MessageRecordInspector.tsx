@@ -20,6 +20,7 @@ interface MessageRecordInspectorProps {
   currentUserId?: string;
   pendingApprovals?: Message[];
   focusRequestId?: string | null;
+  focusEventId?: string | null;
   meta: MessageDetailsMeta;
   triggerRef: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -39,6 +40,7 @@ export function MessageRecordInspector({
   currentUserId,
   pendingApprovals,
   focusRequestId,
+  focusEventId,
   meta,
   triggerRef,
   onClose,
@@ -204,6 +206,7 @@ export function MessageRecordInspector({
                   currentUserId={currentUserId}
                   streaming={Boolean(message._streaming || message.is_partial)}
                   focusRequestId={focusRequestId}
+              focusEventId={focusEventId}
                   expanded
                   showToggle={false}
                   view="record"

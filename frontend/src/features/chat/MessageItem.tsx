@@ -1,3 +1,4 @@
+import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
@@ -441,7 +442,15 @@ function RegularMessageItem({
       !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
   ).length;
   const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
+  const annotationSurface = useAnnotationSurface();
+  const annotationSource = annotationSurface?.revealed?.target;
+  useEffect(() => {
+    const target = annotationSurface?.activeTarget;
+    if (target?.kind === "event" && target.msg_id === message.msg_id) setInspectorOpen(false);
+  }, [annotationSurface?.activeTarget, message.msg_id]);
+  const focusAnnotationEvent = annotationSource?.kind === "event" && annotationSource.msg_id === message.msg_id ? annotationSource.event_id : null;
   const [inspectorOpen, setInspectorOpen] = useState(Boolean(focusRequestId));
+  useEffect(() => { if (focusAnnotationEvent) setInspectorOpen(true); }, [focusAnnotationEvent, annotationSurface?.revealed]);
   const inspectorTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -802,6 +811,7 @@ function RegularMessageItem({
       currentUserId={currentUserId}
       pendingApprovals={pendingApprovals}
       focusRequestId={focusRequestId}
+      focusEventId={focusAnnotationEvent}
       meta={detailsMeta}
       triggerRef={inspectorTriggerRef}
       onClose={() => setInspectorOpen(false)}

@@ -1,3 +1,4 @@
+import { AnnotationsLauncher } from "@/features/annotations/AnnotationProvider";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, LayoutGrid, RotateCcw, Save, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,7 @@ export function ChannelToolbar(props: Props) {
 
   return (
     <>
+      <AnnotationsLauncher />
       <div className="relative hidden md:block" ref={membersRootRef}>
         <ControlTrigger
           controlWidth="content"

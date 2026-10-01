@@ -333,15 +333,12 @@ export function SceneWorkbench({
                   allNotes={coord.annotations.doc.notes}
                   currentPath={selectedPath}
                   text={coord.session.parsedText}
-                  activeAnnotationId={coord.activeAnnotationId}
                   onSelectAnnotation={coord.setActiveAnnotationId}
-                  onRemove={coord.onRemoveNote}
                   onReveal={(range) => {
                     coord.showRaw(selectedPath, true);
                     coord.setRevealLine(range.start);
                   }}
                   onSelectFile={coord.onSelectAnnotationFile}
-                  onAddNote={(entry) => void coord.annotations.add(entry)}
                 />
               ),
             }}
@@ -393,8 +390,8 @@ export function SceneWorkbench({
                   <AnnotationComposer
                     pending={coord.pendingNote}
                     onCancel={() => coord.setPendingNote(null)}
-                    onSubmit={(entry) => {
-                      void coord.annotations.add(entry);
+                    onSubmit={async (entry) => {
+                      await coord.annotations.add(entry);
                       coord.setPendingNote(null);
                     }}
                   />
@@ -414,8 +411,7 @@ export function SceneWorkbench({
                         config={ctx.configs[selectedPath]}
                         session={coord.session}
                         annotations={{ doc: coord.annotations.doc, onAnnotate: coord.onAnnotate, onRemove: coord.onRemoveNote }}
-                        activeAnnotationId={coord.activeAnnotationId}
-                        onSelectAnnotation={coord.setActiveAnnotationId}
+                              onSelectAnnotation={coord.setActiveAnnotationId}
                         onRevealSource={(line) => { coord.showRaw(selectedPath, true); coord.setRevealLine(line); }}
                         inspectorActive={coord.isInspectorActive}
                         onFormSubmit={(data) => {
@@ -452,8 +448,7 @@ export function SceneWorkbench({
                           path={selectedPath}
                           scrollToLine={coord.revealLine}
                           notes={coord.annotations.notes}
-                          activeAnnotationId={coord.activeAnnotationId}
-                          onSelectAnnotation={coord.setActiveAnnotationId}
+                                  onSelectAnnotation={coord.setActiveAnnotationId}
                           className="h-full min-h-0 overflow-hidden"
                         />
                       </Suspense>
