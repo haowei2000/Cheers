@@ -35,6 +35,20 @@ pub struct SessionRecord {
     /// channel in daily use would still lose its session once a month.
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    /// Applied only after a successful ordinary ACP prompt.
+    #[serde(
+        default,
+        rename = "promptContractVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub prompt_contract_version: Option<u32>,
+    /// Digest of the complete pinned instruction set last sent to this session.
+    #[serde(
+        default,
+        rename = "pinnedDigest",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pinned_digest: Option<String>,
 }
 
 impl SessionRecord {
@@ -141,12 +155,58 @@ impl SessionStateStore {
             .map(|record| record.acp_session_id.clone())
     }
 
+    pub fn prompt_context(
+        &self,
+        account_id: &str,
+        provider_session_key: &str,
+        acp_session_id: &str,
+    ) -> (Option<u32>, Option<String>) {
+        self.state
+            .sessions
+            .get(account_id)
+            .and_then(|items| items.get(provider_session_key))
+            .filter(|record| record.acp_session_id == acp_session_id)
+            .map(|record| (record.prompt_contract_version, record.pinned_digest.clone()))
+            .unwrap_or((None, None))
+    }
+
+    pub async fn mark_prompt_context(
+        &mut self,
+        account_id: &str,
+        provider_session_key: &str,
+        acp_session_id: &str,
+        contract_version: Option<u32>,
+        pinned_digest: String,
+    ) -> anyhow::Result<()> {
+        if let Some(record) = self
+            .state
+            .sessions
+            .get_mut(account_id)
+            .and_then(|items| items.get_mut(provider_session_key))
+            .filter(|record| record.acp_session_id == acp_session_id)
+        {
+            if let Some(version) = contract_version {
+                record.prompt_contract_version = Some(version);
+            }
+            record.pinned_digest = Some(pinned_digest);
+            self.save().await?;
+        }
+        Ok(())
+    }
+
     pub async fn set(
         &mut self,
         account_id: &str,
         provider_session_key: &str,
         acp_session_id: &str,
     ) -> anyhow::Result<()> {
+        let previous = self
+            .state
+            .sessions
+            .get(account_id)
+            .and_then(|items| items.get(provider_session_key))
+            .filter(|record| record.acp_session_id == acp_session_id)
+            .cloned();
         self.state
             .sessions
             .entry(account_id.to_string())
@@ -156,6 +216,10 @@ impl SessionStateStore {
                 SessionRecord {
                     acp_session_id: acp_session_id.to_string(),
                     updated_at: Utc::now().to_rfc3339(),
+                    prompt_contract_version: previous
+                        .as_ref()
+                        .and_then(|record| record.prompt_contract_version),
+                    pinned_digest: previous.and_then(|record| record.pinned_digest),
                 },
             );
         self.save().await
@@ -213,6 +277,8 @@ mod tests {
     fn records_within_the_ttl_survive() {
         let record = SessionRecord {
             acp_session_id: "s1".to_string(),
+            prompt_contract_version: None,
+            pinned_digest: None,
             updated_at: (Utc::now() - ChronoDuration::days(SESSION_TTL_DAYS - 1)).to_rfc3339(),
         };
         assert!(!record.is_expired(Utc::now()));
@@ -223,6 +289,8 @@ mod tests {
     fn records_unused_past_the_ttl_expire() {
         let record = SessionRecord {
             acp_session_id: "s1".to_string(),
+            prompt_contract_version: None,
+            pinned_digest: None,
             updated_at: (Utc::now() - ChronoDuration::days(SESSION_TTL_DAYS + 1)).to_rfc3339(),
         };
         assert!(record.is_expired(Utc::now()));
@@ -233,6 +301,8 @@ mod tests {
     fn records_with_an_unreadable_stamp_expire() {
         let record = SessionRecord {
             acp_session_id: "s1".to_string(),
+            prompt_contract_version: None,
+            pinned_digest: None,
             updated_at: "not a timestamp".to_string(),
         };
         assert!(record.is_expired(Utc::now()));
@@ -306,5 +376,43 @@ mod tests {
             .await
             .expect("remove");
         assert_eq!(reloaded.get("acct", "provider-key"), None);
+    }
+
+    #[tokio::test]
+    async fn prompt_context_survives_refresh_and_resets_for_a_new_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let mut store = SessionStateStore::new(&path);
+        store.load().await.unwrap();
+        store.set("acct", "provider", "session-1").await.unwrap();
+        assert_eq!(
+            store.prompt_context("acct", "provider", "session-1"),
+            (None, None)
+        );
+        store
+            .mark_prompt_context("acct", "provider", "session-1", Some(1), "digest-1".into())
+            .await
+            .unwrap();
+        store.set("acct", "provider", "session-1").await.unwrap();
+
+        let mut reloaded = SessionStateStore::new(&path);
+        reloaded.load().await.unwrap();
+        assert_eq!(
+            reloaded.prompt_context("acct", "provider", "session-1"),
+            (Some(1), Some("digest-1".into()))
+        );
+        reloaded.set("acct", "provider", "session-2").await.unwrap();
+        assert_eq!(
+            reloaded.prompt_context("acct", "provider", "session-2"),
+            (None, None)
+        );
+        reloaded
+            .mark_prompt_context("acct", "provider", "session-1", Some(1), "stale".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            reloaded.prompt_context("acct", "provider", "session-2"),
+            (None, None)
+        );
     }
 }

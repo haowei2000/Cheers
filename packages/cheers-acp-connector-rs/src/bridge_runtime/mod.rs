@@ -1992,6 +1992,21 @@ impl RuntimeContext {
                 self.config.policy.prompt.allow_audio && capabilities.prompt_audio,
             )
         };
+        let (applied_contract_version, applied_pinned_digest) =
+            self.state.lock().await.prompt_context(
+                &self.account_id,
+                &task.provider_session_key,
+                &acp_session_id,
+            );
+        let current_pinned_digest = pinned_digest(&task.pinned);
+        let ordinary_turn = !matches!(
+            task.trigger.as_deref(),
+            Some("suggestion_request" | "claim_evaluation")
+        );
+        let include_contract =
+            ordinary_turn && applied_contract_version != Some(PROMPT_CONTRACT_VERSION);
+        let include_pinned =
+            applied_pinned_digest.as_deref() != Some(current_pinned_digest.as_str());
         let prompt = build_prompt(
             &task,
             &self.identity,
@@ -1999,6 +2014,8 @@ impl RuntimeContext {
             channel_name.as_deref(),
             send_images,
             send_audio,
+            include_contract,
+            include_pinned,
         );
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
@@ -2074,6 +2091,23 @@ impl RuntimeContext {
 
         match prompt_result {
             Ok(result) => {
+                // Commit only after ACP acknowledges the prompt. If it times out
+                // or the daemon crashes, the next turn safely resends context.
+                if let Err(error) = self
+                    .state
+                    .lock()
+                    .await
+                    .mark_prompt_context(
+                        &self.account_id,
+                        &task.provider_session_key,
+                        &acp_session_id,
+                        include_contract.then_some(PROMPT_CONTRACT_VERSION),
+                        current_pinned_digest,
+                    )
+                    .await
+                {
+                    tracing::warn!(account = %self.account_id, %error, "could not persist ACP prompt context");
+                }
                 self.trace(
                     &run,
                     "prompt_finished",
@@ -3993,6 +4027,8 @@ max_concurrent = {max_concurrent}
             Some("#general"),
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("@bot summarize"));
@@ -4001,8 +4037,40 @@ max_concurrent = {max_concurrent}
         assert!(text.contains("channel_name=\"#general\""));
         assert!(
             text.contains("You are a strict reviewer."),
-            "pinned convention block must be injected every prompt"
+            "a changed pinned convention must be sent"
         );
+        let later = build_prompt(
+            &task,
+            &test_identity(),
+            &test_prompt_policy(true),
+            Some("#general"),
+            false,
+            false,
+            false,
+            false,
+        );
+        let later_text = later[0]["text"].as_str().unwrap();
+        assert!(later_text.contains("@bot summarize"));
+        assert!(later_text.contains("channel_id=channel-1"));
+        assert!(!later_text.contains("<output_contract>"));
+        assert!(!later_text.contains("<pinned>"));
+
+        let mut cleared = task.clone();
+        cleared.pinned.clear();
+        let removal = build_prompt(
+            &cleared,
+            &test_identity(),
+            &test_prompt_policy(true),
+            None,
+            false,
+            false,
+            false,
+            true,
+        );
+        let removal_text = removal[0]["text"].as_str().unwrap();
+        assert!(removal_text.contains("An empty set clears them"));
+        assert!(!removal_text.contains("<pinned>"));
+        assert_ne!(pinned_digest(&task.pinned), pinned_digest(&cleared.pinned));
     }
 
     fn image_attachment() -> AttachmentInfo {
@@ -4048,6 +4116,8 @@ max_concurrent = {max_concurrent}
             Some("#c"),
             true,
             false,
+            true,
+            true,
         );
         let image = prompt
             .iter()
@@ -4075,6 +4145,8 @@ max_concurrent = {max_concurrent}
             Some("#c"),
             false,
             false,
+            true,
+            true,
         );
         assert!(
             prompt.iter().all(|block| block["type"] != "image"),
@@ -4378,6 +4450,8 @@ max_concurrent = {max_concurrent}
             Some("#general"),
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
@@ -4417,6 +4491,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
@@ -4502,6 +4578,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         // Rendered as the XML <attached_context> envelope with typed <reference> children.
@@ -4537,6 +4615,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         // The single XML envelope wraps everything.
@@ -4589,6 +4669,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("main.rs (@codex workspace)"));
@@ -4624,6 +4706,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
@@ -4652,6 +4736,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(!text.contains("resource \""));
@@ -4668,6 +4754,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
@@ -4691,6 +4779,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
@@ -4718,6 +4808,8 @@ max_concurrent = {max_concurrent}
             None,
             false,
             false,
+            true,
+            true,
         );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
