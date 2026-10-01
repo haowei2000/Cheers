@@ -283,7 +283,12 @@ F2 reuses the foundation with no UI; F4 mirrors F1 for the agent side (attach on
 Cheers already has a **pin** (`PinToggle` in the workbench file tree →
 `.workbench.json` `pinned[]` → `dispatcher::load_pinned_context`): a file whose
 full content is inlined into the `pinned` slot of **every** task frame in the
-channel — "the semantic layer, a controlled push, not auto-memory."
+channel. The ACP connector sends the full pinned set on the first prompt of a
+session and when its content changes, including an explicit clear when all pins
+are removed. The connector records the applied digest with the ACP session ID
+after a successful prompt, so `session/load` and connector restarts preserve
+this decision. This remains "the semantic layer, a controlled push, not
+auto-memory."
 
 They do **not** conflict — different scope, different delivery slot — and pin in
 fact *validates* this direction (same "controlled push" philosophy). Context
@@ -300,8 +305,8 @@ does at channel scope:
 Three rules keep them clean (not a v1 merge):
 
 1. **No name collision.** The picker is "add context" (this message), never
-   "pin" (always). Pinned files show in the picker as *already pinned — in every
-   prompt*, so a user doesn't redundantly attach them.
+   "pin" (standing channel context). Pinned files show in the picker as
+   *already pinned*, so a user doesn't redundantly attach them.
 2. **No double delivery.** A file that is both pinned and attached would reach the
    agent twice (inlined in `pinned` + via the bundle). The human picker disables
    already-pinned files; the F2 handoff auto-assembler **excludes pinned paths**.
