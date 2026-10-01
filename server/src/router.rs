@@ -220,6 +220,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             delete(api::passkey::delete_credential),
         )
         .route(
+            "/api/v1/channels/:channel_id/annotations",
+            get(api::annotations::list).post(api::annotations::create),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/annotations/:id",
+            axum::routing::patch(api::annotations::edit).delete(api::annotations::remove),
+        )
+        .route(
             "/api/v1/workbench/extensions",
             get(api::workbench::list_extensions),
         )

@@ -1,3 +1,6 @@
+import type { SavedAnnotation } from "@/api/annotations";
+import toast from "react-hot-toast";
+import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
 import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
@@ -31,7 +34,7 @@ import type { FsEntry } from "../fsClient";
 import { errMsg, useFileSession } from "../jsonFile";
 import { filterCollaborators } from "../collab";
 import { CollaboratorPills, ConflictBanner } from "../collabView";
-import { useAnnotations } from "../annotations";
+import { useAnnotations, resolveAnnotation } from "../annotations";
 import { inspectableIdLineRange } from "../contextSource";
 import { AnnotationComposer, type PendingAnnotation } from "../AnnotationComposer";
 import { AnnotationsButton } from "../AnnotationsButton";
@@ -206,17 +209,15 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // See FileSession — Raw and Preview each owning a session is what used to make an
   // unsaved edit vanish on a mode switch.
   const session = useFileSession(fs, selected ?? "");
-  // Notes anchored into this file. A separate session because they live in a separate
-  // file — the document belongs to whoever edits it, and a note is someone else's remark
-  // ABOUT it, so writing one must never touch the thing it is about.
-  const annotations = useAnnotations(fs, selected ?? "");
+  // File anchors adapt the shared channel annotation store without editing the source.
+  const annotations = useAnnotations(selected ?? "", ctx.channelId);
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
     (target: LensContextTarget, at: { x: number; y: number }) =>
       selected && setPendingNote({ target, path: selected, at }),
     [selected]
   );
-  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id).catch(error => toast.error(error instanceof Error ? error.message : "Could not delete annotation.")), [annotations]);
   // Revealing a note means showing the lines it points at, which only Raw can do — so it
   // switches modes rather than pretending the preview can highlight a line range.
   const [revealLine, setRevealLine] = useState<number | undefined>();
@@ -232,7 +233,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     revealedCard.current = key;
     showRaw(selected, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selected, session.path, session.version, session.parsedText, showRaw]);
+  }, [ctx.openInspectableId, ctx.openTarget, selected, session.path, session.version, session.parsedText, session.version, session.status, showRaw]);
   const onRevealNote = useCallback(
     (range: { start: number; end: number }) => {
       if (!selected) return;
@@ -242,12 +243,27 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     [selected, showRaw]
   );
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
-  // A pending note belongs to the file it was started on; changing files abandons it
-  // rather than silently re-aiming it at a row in a different document.
   useEffect(() => {
     setPendingNote(null);
     setActiveAnnotationId(null);
   }, [selected]);
+  const annotationSurface = useAnnotationSurface();
+  const lastAnnotationReveal = useRef<SavedAnnotation | null>(null);
+  useEffect(() => {
+    const item = annotationSurface?.revealed;
+    if (item?.target.kind !== "file" || item.target.path !== selected) return;
+    if (lastAnnotationReveal.current === item) return;
+    setActiveAnnotationId(item.id);
+    if (session.version === null && !session.status) return;
+    lastAnnotationReveal.current = item;
+    const note = annotations.doc.notes.find(n => n.id === item.id);
+    const range = note ? resolveAnnotation(note, session.parsedText) : null;
+    if (range) {
+      showRaw(selected!, true);
+      setRevealLine(range.start);
+    }
+  }, [annotationSurface?.revealed, selected, annotations.doc, session.parsedText, session.version, session.status, showRaw]);
+
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -885,15 +901,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           allNotes={annotations.doc.notes}
                           currentPath={selected ?? undefined}
                           text={session.parsedText}
-                          activeAnnotationId={activeAnnotationId}
                           onSelectAnnotation={setActiveAnnotationId}
-                          onRemove={onRemoveNote}
                           onReveal={onRevealNote}
                           onSelectFile={(path) => {
                             setSelected(path);
                             showRaw(path, true);
                           }}
-                          onAddNote={(entry) => void annotations.add(entry)}
                         />
                       ),
                     }}
@@ -915,8 +928,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <AnnotationComposer
                     pending={pendingNote}
                     onCancel={() => setPendingNote(null)}
-                    onSubmit={(entry) => {
-                      void annotations.add(entry);
+                    onSubmit={async (entry) => {
+                      await annotations.add(entry);
                       setPendingNote(null);
                     }}
                   />

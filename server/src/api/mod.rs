@@ -38,3 +38,5 @@ pub mod voice_retention;
 pub mod workbench;
 pub mod workspace;
 pub mod workspaces;
+
+pub mod annotations;
