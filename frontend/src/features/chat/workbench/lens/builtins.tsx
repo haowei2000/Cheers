@@ -250,7 +250,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
       {cols.length === 0 && <div className="p-3 text-content-muted">Empty board</div>}
       {/* design-system-exempt: item-section - Kanban column grouping container */}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-52 flex-shrink-0 flex flex-col border-r border-control/80 last:border-r-0 pr-4">
+        <div key={ci} className="w-52 shrink-0 flex flex-col border-r border-control/80 last:border-r-0 pr-4">
           <div className="flex items-center justify-between pb-1 mb-2 border-b border-control/80 text-compact font-serif font-bold text-content-strong tracking-wide">
             <span>{c.name}</span>
             <span className="font-code text-minimal text-content-muted tabular-nums">{c.items.length}</span>
@@ -305,7 +305,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
                 wideLabel="Add task"
                 accessibleLabel={`Add task to ${c.name}`}
                 controlSize={workbenchControlSize.rowAction}
-                containerClassName="flex-shrink-0"
+                containerClassName="shrink-0"
                 onClick={() => addItem(ci)}
               />
             </div>
@@ -752,12 +752,12 @@ function CodemapInspector({ node, onClose }: { node: CodemapNode; onClose?: () =
             title="Close node details"
             content="icon"
             controlSize="compact"
-            className="flex-shrink-0 rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
+            className="shrink-0 rounded-sm text-content-primary hover:bg-control hover:text-content-strong"
           >
             <PanelRightClose className="h-4 w-4" />
           </UiButton>
         )}
-        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-accent-300">
           <CodemapKindIcon kind={node.kind} />
         </span>
         <div className="min-w-0 flex-1">
@@ -914,7 +914,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
                 style={{ left: position.x, top: position.y }}
                 aria-label={`${node.label}, ${node.kind}, ${node.status}`}
               >
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary"><CodemapKindIcon kind={node.kind} /></span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary"><CodemapKindIcon kind={node.kind} /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-compact font-medium text-content-primary">{node.label}</span>
                   <span className="mt-1 flex items-center gap-1 text-minimal capitalize text-content-muted"><CodemapStatus status={node.status} />{node.status}</span>

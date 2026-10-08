@@ -168,7 +168,7 @@ export function BotDetailPanel({
       {/* Identity header — the avatar is the upload entry (managers); presence dot
           per §2.7 sits on it, with the online/offline pill carrying the text. */}
       <div className="flex items-start gap-3 pb-4 border-b border-control/80">
-        <div className="relative flex-shrink-0">
+        <div className="relative shrink-0">
           {bot.can_manage ? (
             <AvatarUpload
               name={name}
@@ -199,7 +199,7 @@ export function BotDetailPanel({
             {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
         </div>
-        <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {bot.is_disabled && (
             <span className="inline-flex items-center gap-1 text-compact text-danger-400">
               <Ban className="w-3.5 h-3.5" />

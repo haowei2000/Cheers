@@ -188,7 +188,7 @@ export function AnnotationComposer({
         <EditorialIcon
           name="annotation"
           contentSize="small"
-          className="flex-shrink-0 text-content-muted"
+          className="shrink-0 text-content-muted"
         />
         <span className="min-w-0 truncate text-compact text-content-secondary">
           Note on{" "}

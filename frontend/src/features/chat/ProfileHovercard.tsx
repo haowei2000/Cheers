@@ -172,10 +172,10 @@ function ProfileCard({
     <div
       data-profile-card
       style={{ position: "fixed", width: CARD_W, ...pos }}
-      className="z-[60] rounded-sm bg-zinc-900 p-3 shadow-xl shadow-black/40 space-y-3"
+      className="z-60 rounded-sm bg-zinc-900 p-3 shadow-xl shadow-black/40 space-y-3"
     >
       <div className="flex items-start gap-3">
-        <div className="relative flex-shrink-0">
+        <div className="relative shrink-0">
           <Avatar name={name} src={member.avatar_url || undefined} id={member.member_id} size="large" />
           {member.is_online != null && (
             <PresenceDot
@@ -216,7 +216,7 @@ function ProfileCard({
 
       {member.bio && (
         <div>
-          <p className="text-compact text-content-muted whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          <p className="text-compact text-content-muted whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">
             {member.bio}
           </p>
         </div>

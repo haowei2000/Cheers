@@ -189,7 +189,7 @@ function AudioBody({ file }: { file: FileInfo }) {
     <div className="flex flex-col gap-3 rounded-sm bg-zinc-950/40 p-4">
       <audio controls src={src} className="w-full" />
       {file.summary && (
-        <p className="whitespace-pre-wrap break-words text-regular leading-reading text-content-muted">
+        <p className="whitespace-pre-wrap wrap-break-word text-regular leading-reading text-content-muted">
           {file.summary}
         </p>
       )}

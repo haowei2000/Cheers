@@ -240,7 +240,7 @@ function SendStatus({
   }
   return (
     <div role="alert" className={cn("mt-1 flex items-center gap-2 text-danger-400", controlTextClasses.compact)}>
-      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
         <UiButton action="retry" content="iconText" variant="plain"
@@ -281,7 +281,7 @@ function ReplyPreview({
     <span
       aria-hidden
       className={cn(
-        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-300/60 dark:border-zinc-700/80",
+        "mt-2 h-4 w-8 shrink-0 border-t border-zinc-300/60 dark:border-zinc-700/80",
         reversed
           ? "ml-2 rounded-tr-sm border-r"
           : "mr-2 rounded-tl-sm border-l",
@@ -363,8 +363,8 @@ export const MessageItem = memo(function MessageItem(props: Props) {
   if (message.is_deleted) {
     return (
       <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-1 flex items-center gap-3 group">
-        {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
-        {isConsecutive && <div className="w-9 flex-shrink-0" />}
+        {!isConsecutive && <div className="w-9 h-9 shrink-0" />}
+        {isConsecutive && <div className="w-9 shrink-0" />}
         <span className="text-content-muted font-reading italic text-regular">
           This message was deleted
         </span>
@@ -375,7 +375,7 @@ export const MessageItem = memo(function MessageItem(props: Props) {
   if (message.msg_type === "permission") {
     return (
       <div className="flex items-start gap-3 px-4 py-1">
-        <div className="w-9 flex-shrink-0" />
+        <div className="w-9 shrink-0" />
         <div className="flex-1 min-w-0">
           <PermissionCard
             message={message}
@@ -390,7 +390,7 @@ export const MessageItem = memo(function MessageItem(props: Props) {
   if (message.msg_type === "auth_required" || message.msg_type === "elicitation") {
     return (
       <div className="flex items-start gap-3 px-4 py-1">
-        <div className="w-9 flex-shrink-0" />
+        <div className="w-9 shrink-0" />
         <div className="flex-1 min-w-0">
           <AgentInteractionCard
             message={message}
@@ -659,7 +659,7 @@ function RegularMessageItem({
     <div
       data-content-size="regular"
       className={cn(
-        "flex flex-shrink-0 flex-col items-center gap-1 pt-1 font-utility",
+        "flex shrink-0 flex-col items-center gap-1 pt-1 font-utility",
         nameIsVisible ? identityRailWidthClasses.regular : "w-fit",
       )}
     >
@@ -702,7 +702,7 @@ function RegularMessageItem({
     <div
       data-content-size="regular"
       className={cn(
-        "flex flex-shrink-0 items-start justify-center pt-1 font-utility",
+        "flex shrink-0 items-start justify-center pt-1 font-utility",
         // A consecutive row indents to whatever the identity above it reserved —
         // the rail in Chat, the avatar's own square in Discussion.
         nameIsVisible ? identityRailWidthClasses.regular : controlSquareClasses.regular,
@@ -933,7 +933,7 @@ function RegularMessageItem({
         className={cn(
           "group relative flex items-start gap-3 rounded-sm transition-colors hover:z-20 focus-within:z-20",
           nested
-            ? "w-full px-2 py-1 hover:bg-zinc-900/40 md:w-fit md:max-w-[56rem]"
+            ? "w-full px-2 py-1 hover:bg-zinc-900/40 md:w-fit md:max-w-4xl"
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
           isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
@@ -966,7 +966,7 @@ function RegularMessageItem({
         <div
           ref={contentRef}
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-2 md:max-w-[52rem]",
+            "flex min-w-0 flex-1 flex-col gap-2 md:max-w-208",
             showTrace ? "md:w-full" : "md:flex-none md:w-fit",
             isOwnAlignedRight && "items-end",
           )}
@@ -1042,7 +1042,7 @@ function RegularMessageItem({
       <div
         ref={contentRef}
         className={cn(
-          "flex min-w-0 flex-1 flex-col gap-2 md:w-fit md:max-w-[52rem] md:flex-[0_1_auto]",
+          "flex min-w-0 flex-1 flex-col gap-2 md:w-fit md:max-w-208 md:flex-[0_1_auto]",
           isOwnAlignedRight && "items-end",
         )}
       >
@@ -1184,7 +1184,7 @@ function MessageBody({
             />
           </PathOpenContext.Provider>
         ) : (
-          <p className="text-message whitespace-pre-wrap break-words">
+          <p className="text-message whitespace-pre-wrap wrap-break-word">
             {content}
           </p>
         ))}

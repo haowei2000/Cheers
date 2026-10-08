@@ -192,7 +192,7 @@ export function HostDetailDialog({
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
-            <h2 className="break-words font-utility text-comfortable font-semibold text-content-primary">
+            <h2 className="wrap-break-word font-utility text-comfortable font-semibold text-content-primary">
               {host.device_name}
             </h2>
             <p
@@ -275,7 +275,7 @@ export function HostDetailDialog({
           {!host.revoked_at &&
             host.mcp_connection_state !== "connected" &&
             details?.agent_profile?.login_hint && (
-              <p className="whitespace-pre-wrap break-words rounded-sm bg-zinc-800/60 p-3 text-compact text-content-secondary">
+              <p className="whitespace-pre-wrap wrap-break-word rounded-sm bg-zinc-800/60 p-3 text-compact text-content-secondary">
                 {details.agent_profile.login_hint}
               </p>
             )}

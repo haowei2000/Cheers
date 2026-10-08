@@ -140,7 +140,7 @@ export function MessageRecordInspector({
         className={cn(
           "pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[82dvh] flex flex-col overflow-hidden bg-zinc-950 outline-none",
           "rounded-t-sm shadow-2xl shadow-black/50",
-          "md:bottom-auto md:right-auto md:left-2 md:top-2 md:w-[32rem] md:max-w-[calc(100vw-16px)] md:rounded-sm",
+          "md:bottom-auto md:right-auto md:left-2 md:top-2 md:w-lg md:max-w-[calc(100vw-16px)] md:rounded-sm",
         )}
       >
         <div className="shrink-0 px-5 pt-3 md:px-6 md:pt-4">
@@ -156,7 +156,7 @@ export function MessageRecordInspector({
             <div className="min-w-0 flex-1">
               <h2
                 id={titleId}
-                className="font-reading text-regular text-content-primary line-clamp-3 select-text break-words"
+                className="font-reading text-regular text-content-primary line-clamp-3 select-text wrap-break-word"
               >
                 {messageText}
               </h2>

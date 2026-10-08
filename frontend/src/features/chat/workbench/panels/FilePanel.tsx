@@ -493,7 +493,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const createInput = (depth: number) => (
     <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
-      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+      <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
       <UiInput
         autoFocus
         value={newName}
@@ -571,11 +571,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 onClick={() => toggleCollapse(node.path)}
                 expanded={!isCollapsed}
                 disclosure={isCollapsed ? (
-                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+                  <ChevronRight className="w-3.5 h-3.5 shrink-0 text-content-muted" />
                 ) : (
-                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+                  <ChevronDown className="w-3.5 h-3.5 shrink-0 text-content-muted" />
                 )}
-                leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-accent-400/70" />}
+                leading={<Folder className="w-3.5 h-3.5 shrink-0 text-accent-400/70" />}
                 actions={<><UiButton variant="plain"
                 type="button"
                 content="icon" controlSize="compact"
@@ -607,7 +607,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           depth={depth}
           title={node.name}
           selected={selected === node.path}
-          leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />}
+          leading={<FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />}
           actions={deleteControl(node.path, false)}
           onClick={() => pickFile(node.path)}
         />
@@ -621,10 +621,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         // Compact: overlay drawer over the editor so reading width isn't halved.
         compact
           ? "absolute inset-y-1.5 left-1.5 z-10 w-[min(16rem,calc(100%-1.5rem))] elevation-overlay ring-1 ring-zinc-700/80"
-          : "w-52 flex-shrink-0"
+          : "w-52 shrink-0"
       )}
     >
-      <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-control/50 px-2">
+      <div className="mx-1 mt-1 flex h-9 shrink-0 items-center gap-1 rounded-sm bg-control/50 px-2">
         <ActionButton action="add" context="toolbar"
           type="button"
           onClick={() => beginCreate("")}
@@ -675,7 +675,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
+          className="flex shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -686,7 +686,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           type="button"
           aria-label="Close file tree"
           onClick={() => setTreeOpenUser(false)}
-          className="absolute inset-0 z-[5] bg-black/40"
+          className="absolute inset-0 z-5 bg-black/40"
         />
       )}
 
@@ -778,7 +778,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     control: (
                       <DropdownSelect
                         ariaLabel="Renderer for Preview (Auto = best content match)"
-                        leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                        leading={<Layers className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
                         label={rendererLabel}
                         value={bound?.id ?? ""}
                         options={[
@@ -1010,11 +1010,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 {compact ? basename(selected) : selected}
               </span>
             )}
-            {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
-            {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
+            {session.dirty && <span className="shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+            {session.saving && <span className="shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
             {session.parseError && (
               <span
-                className="flex-shrink-0 text-minimal text-warning-400"
+                className="shrink-0 text-minimal text-warning-400"
                 title={`${session.parseError} — the preview is showing the last version that parsed`}
               >
                 syntax error

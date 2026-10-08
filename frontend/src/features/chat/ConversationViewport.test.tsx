@@ -16,7 +16,7 @@ describe("ConversationViewport", () => {
       'data-channel-conversation="" class="flex min-h-0 min-w-0 flex-1 flex-col"',
     );
     expect(markup).toContain(
-      'data-message-scroll-boundary="" class="flex h-full min-h-0 w-full min-w-0 flex-col md:mx-auto md:max-w-[52rem]"',
+      'data-message-scroll-boundary="" class="flex h-full min-h-0 w-full min-w-0 flex-col md:mx-auto md:max-w-208"',
     );
     expect(markup.match(/<article>/g)).toHaveLength(100);
   });

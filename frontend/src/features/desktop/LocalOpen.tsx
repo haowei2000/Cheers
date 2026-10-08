@@ -152,7 +152,7 @@ export function LocalOpen({
         </UiButton>
       </div>
       {menuOpen && (
-        <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-[9.5rem]">
+        <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-38">
           {hintLocal === false && (
             <p className="px-3 py-1 text-minimal text-content-muted border-b border-zinc-800">
               Remote file — opens a downloaded copy

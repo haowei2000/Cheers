@@ -1441,7 +1441,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
@@ -1692,7 +1692,7 @@ export function ChannelView({
                 <Banner
                   severity={rtStatus === "offline" ? "error" : "warning"}
                   icon={WifiOff}
-                  className="mx-4 mt-2 flex-shrink-0"
+                  className="mx-4 mt-2 shrink-0"
                   action={{ label: "Retry now", onClick: reconnectNow }}
                 >
                   {rtStatus === "offline"

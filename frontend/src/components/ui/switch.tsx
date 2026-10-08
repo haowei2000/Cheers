@@ -55,7 +55,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(
         <span
           aria-hidden
           className={cn(
-            "relative h-5 w-9 flex-shrink-0 rounded-sm bg-control ring-1 ring-inset ring-zinc-600",
+            "relative h-5 w-9 shrink-0 rounded-sm bg-control ring-1 ring-inset ring-zinc-600",
             "transition-colors duration-100",
             "peer-checked:bg-content-strong peer-checked:ring-0",
             "peer-focus-visible:ring-2 peer-focus-visible:ring-content-strong/50",

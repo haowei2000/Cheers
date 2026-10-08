@@ -91,7 +91,7 @@ export function ExistingFilePicker({
  }
               >
                 <BallotCheckbox checked={checked} />
-                <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
+                <FileTypeIcon file={f} size={16} className="shrink-0" />
                 <span
                   className="min-w-0 flex-1 truncate text-regular text-content-secondary"
                   title={f.original_filename || f.file_id}

@@ -260,7 +260,7 @@ export function SceneWorkbench({
     <div className="flex h-full min-h-0 flex-col">
       <FloatingPanelNavigationPortal
         mobile={(
-          <div role="tablist" aria-label="Collections" className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
+          <div role="tablist" aria-label="Collections" className="flex shrink-0 gap-1 overflow-x-auto border-b border-control/80 px-2 py-2">
             {collectionTabs()}
             {available.length > 0 && (
               <AddCollectionControl onOpenNew={() => coord.setIsNewCollectionOpen(true)} />
@@ -284,7 +284,7 @@ export function SceneWorkbench({
         )}
       </FloatingPanelNavigationPortal>
       {itemNavigationItems.length > 0 && (
-        <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1 bg-panel/50">
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1 bg-panel/50">
           <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
           {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={coord.addTabAndSelect} />}
         </div>

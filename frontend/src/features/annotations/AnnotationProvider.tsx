@@ -339,7 +339,7 @@ export function AnnotationProvider({
                         </div>
                       ) : (
                         <div className="p-3 space-y-3">
-                          <p className="whitespace-pre-wrap break-words font-reading text-regular text-content-primary">
+                          <p className="whitespace-pre-wrap wrap-break-word font-reading text-regular text-content-primary">
                             {item.note}
                           </p>
                           <p className="text-compact text-content-muted">

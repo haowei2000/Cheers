@@ -37,7 +37,7 @@ export function GlanceRow({
       className="group flex w-full flex-col gap-1 rounded-sm px-3 py-2 text-left transition-colors hover:bg-zinc-800/60"
     >
       <div className="flex items-center gap-2">
-        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+        <Icon className="w-3.5 h-3.5 shrink-0 text-content-muted" />
         <span className="flex-1 text-caption">{label}</span>
         {sub && <span className="text-metadata tabular-nums">{sub}</span>}
         <span className="text-status tabular-nums truncate max-w-[55%] text-right">

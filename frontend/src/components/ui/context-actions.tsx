@@ -251,7 +251,7 @@ function ContextActionsOverlay({
       data-context-actions="true"
       data-context-actions-source={request.source}
       className={cn(
-        "z-[110] bg-zinc-900 font-utility text-regular shadow-xl shadow-black/40 focus:outline-none",
+        "z-110 bg-zinc-900 font-utility text-regular shadow-xl shadow-black/40 focus:outline-none",
         isToolbar
           ? "flex items-center gap-1 rounded-sm p-1"
           : "w-56 max-w-[calc(100vw-1rem)] rounded-concentric p-1 [--concentric-inset:0.25rem]",
@@ -278,7 +278,7 @@ function ContextActionsOverlay({
         <button
           type="button"
           aria-label="Close context actions"
-          className="fixed inset-0 z-[109] cursor-default bg-black/45"
+          className="fixed inset-0 z-109 cursor-default bg-black/45"
           onClick={() => onClose(true)}
         />
       )}

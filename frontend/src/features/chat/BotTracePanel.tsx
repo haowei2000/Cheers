@@ -273,7 +273,7 @@ function DetailValue({ value }: { value: unknown }) {
       : value
     : formatJson(value);
   return (
-    <pre className="whitespace-pre-wrap break-words font-code">
+    <pre className="whitespace-pre-wrap wrap-break-word font-code">
       {rendered}
     </pre>
   );
@@ -487,7 +487,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
             )}
           </div>
           {presentation.command && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-code text-content-secondary">{presentation.command}</pre>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap wrap-break-word font-code text-content-secondary">{presentation.command}</pre>
           )}
           {!presentation.command && presentation.target && (
             <div className="mt-2 break-all font-code text-content-secondary">{presentation.target}</div>
@@ -513,7 +513,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                     : formatJson(entry);
                 const status = typeof item?.status === "string" ? item.status : null;
                 return (
-                  <li key={`${index}-${content}`} className="break-words">
+                  <li key={`${index}-${content}`} className="wrap-break-word">
                     <span className="text-content-secondary">{content}</span>
                     {status && (
                       <span className="ml-2 text-content-muted">

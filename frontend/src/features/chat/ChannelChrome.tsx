@@ -29,7 +29,7 @@ export function ChannelChrome({
   }
 
   return (
-    <div className="relative z-30 mb-2 flex h-11 flex-shrink-0 items-center gap-3 bg-panel px-4 max-md:gap-1 max-md:px-2">
+    <div className="relative z-30 mb-2 flex h-11 shrink-0 items-center gap-3 bg-panel px-4 max-md:gap-1 max-md:px-2">
       {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
       {onBack && (
         <UiButton
@@ -39,15 +39,15 @@ export function ChannelChrome({
           aria-label="Back to channels"
           content="icon"
           controlSize="comfortable"
-          className="-ml-1 flex flex-shrink-0 items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong md:hidden"
+          className="-ml-1 flex shrink-0 items-center justify-center rounded-sm text-content-primary hover:bg-zinc-800 hover:text-content-strong md:hidden"
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </UiButton>
       )}
       {isDm ? (
-        <Mail className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
+        <Mail className="h-4 w-4 shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       ) : (
-        <Hash className="h-4 w-4 flex-shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
+        <Hash className="h-4 w-4 shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       )}
       <div className="flex min-w-0 items-baseline gap-2">
         <span className="min-w-0 truncate font-serif text-regular font-bold tracking-tight text-content-strong max-md:pl-1">

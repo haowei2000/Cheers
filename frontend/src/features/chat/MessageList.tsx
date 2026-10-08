@@ -410,7 +410,7 @@ export function MessageList({
       onScroll={handleScroll}
       className="chat-scrollbar flex-1 overflow-y-auto overscroll-contain py-2"
     >
-      <div className="mx-auto w-full max-w-[72rem]">
+      <div className="mx-auto w-full max-w-6xl">
         {loading && (
           <div className="flex justify-center py-4">
             <Spinner contentSize="large" className="text-content-muted" />

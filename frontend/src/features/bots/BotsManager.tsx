@@ -29,24 +29,24 @@ function BotRow({
       onClick={onSelect}
       selected={active}
       title={`${bot.display_name || bot.username} · @${bot.username}`}
-      leading={<div className={`flex flex-shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
+      leading={<div className={`flex shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
         <Bot className="w-4 h-4 text-accent-300" />
       </div>}
       criticalStatus={bot.is_disabled ? (
         <Ban
-          className="w-3.5 h-3.5 text-danger-400 flex-shrink-0"
+          className="w-3.5 h-3.5 text-danger-400 shrink-0"
           role="img"
           aria-label="Disabled"
         />
       ) : bot.is_online ? (
         <Circle
-          className="w-3.5 h-3.5 flex-shrink-0 fill-emerald-400 text-success-400"
+          className="w-3.5 h-3.5 shrink-0 fill-emerald-400 text-success-400"
           role="img"
           aria-label="Online"
         />
       ) : (
         <CircleDot
-          className="w-3.5 h-3.5 flex-shrink-0 text-content-muted"
+          className="w-3.5 h-3.5 shrink-0 text-content-muted"
           role="img"
           aria-label="Offline"
         />

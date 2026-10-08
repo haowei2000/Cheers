@@ -42,21 +42,21 @@ export const WorkbenchStatusBar = memo(function WorkbenchStatusBar({
         <span
           role="img"
           aria-label="Unsaved changes"
-          className="flex-shrink-0 text-minimal text-warning-400 font-semibold"
+          className="shrink-0 text-minimal text-warning-400 font-semibold"
           title="Unsaved changes"
         >
           ●
         </span>
       )}
       {saving && (
-        <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">
+        <span className="shrink-0 text-minimal text-content-muted animate-pulse">
           Saving…
         </span>
       )}
       {parseError && (
         <span
           role="alert"
-          className="flex-shrink-0 text-minimal text-warning-400 font-medium"
+          className="shrink-0 text-minimal text-warning-400 font-medium"
           title={`${parseError} — the preview is showing the last version that parsed`}
         >
           syntax error

@@ -62,7 +62,7 @@ export function CreateBotDialog({
           A bot is a durable identity — an agent only runs once a device is connected to it.
           Next you'll pick that device; you can close that step and connect one later.
         </div>
-        {error && <p className="text-compact text-danger-400 break-words">{error}</p>}
+        {error && <p className="text-compact text-danger-400 wrap-break-word">{error}</p>}
         <Field
           label="Username"
           htmlFor={usernameId}

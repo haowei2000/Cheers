@@ -862,7 +862,7 @@ function MessageComposerImpl({
     // Mobile: tighter gutters + safe-area bottom padding so the input clears the
     // home indicator; the dvh root + interactive-widget=resizes-content keep it
     // above the on-screen keyboard.
-    <div className="relative mx-auto w-full max-w-[72rem] px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="relative mx-auto w-full max-w-6xl px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
         <ComposerMentionPicker
           candidates={filteredMentions}
@@ -1020,7 +1020,7 @@ function MessageComposerImpl({
               <Mic className="w-4 h-4" />
             )}
           </IconButton>
-          <div ref={attachRef} className="relative flex-shrink-0">
+          <div ref={attachRef} className="relative shrink-0">
             <IconButton
               onClick={() => setAttachMenuOpen((o) => !o)}
               disabled={disabled || !channelId}
