@@ -360,7 +360,7 @@ export function VoiceRoomPanel({
   const captionText = latestInterim?.text || latestTranscript?.text || null;
 
   return (
-    <section className="mx-4 mb-2 flex-shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
+    <section className="mx-4 mb-2 shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
       <div ref={audioRootRef} className="hidden" aria-hidden="true" />
       <VoiceRoomToolbar
         connected={connected}

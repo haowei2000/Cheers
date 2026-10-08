@@ -1,3 +1,4 @@
+import { AnnotationPreviewProvider } from "@/features/annotations/previewSupport";
 import { ContextActionsProvider } from "@/components/ui/context-actions";
 import { ThemeProvider } from "@/components/ui/theme";
 import { FloatingPanel } from "@/components/ui/floating-panel";
@@ -141,6 +142,7 @@ function Preview() {
   return (
     <ThemeProvider>
       <ContextActionsProvider>
+      <AnnotationPreviewProvider>
       <main className="relative h-full overflow-hidden bg-canvas text-content-primary">
         <FloatingPanel
           title="Workbench"
@@ -169,6 +171,7 @@ function Preview() {
           />
         </FloatingPanel>
       </main>
+      </AnnotationPreviewProvider>
       </ContextActionsProvider>
     </ThemeProvider>
   );

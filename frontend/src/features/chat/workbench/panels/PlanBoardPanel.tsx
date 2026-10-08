@@ -51,10 +51,10 @@ function groupFor(status?: string | null): string {
 
 function StatusIcon({ group }: { group: string }) {
   if (group === "in_progress")
-    return <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-warning-400" />;
+    return <CircleDot className="w-3.5 h-3.5 shrink-0 text-warning-400" />;
   if (group === "completed")
-    return <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-success-500" />;
-  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />;
+    return <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-success-500" />;
+  return <Circle className="w-3.5 h-3.5 shrink-0 text-content-muted" />;
 }
 
 function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
@@ -92,7 +92,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             </span>
           ) : null}
           <div className="flex-1" />
-          <span className="text-compact text-content-muted tabular-nums flex-shrink-0">
+          <span className="text-compact text-content-muted tabular-nums shrink-0">
             {completed}/{total}
           </span>
         </div>

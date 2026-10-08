@@ -196,7 +196,7 @@ function ReachabilityNote({ reachability }: { reachability: { configured: boolea
   if (reachability.configured) return null;
   return (
     <p className="flex items-start gap-2 text-compact text-warning-400">
-      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-1" />
       <span>
         This server hasn't been given an address that other machines can reach,
         so a host running anywhere else may not be able to sign in. Setting
@@ -430,7 +430,7 @@ export function CreateHostWizard({
       />
       <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-3">
         {error && (
-          <p className="text-compact text-danger-400 break-words">{error}</p>
+          <p className="text-compact text-danger-400 wrap-break-word">{error}</p>
         )}
 
         {/* ── Step 0: choose an existing bot and host agent ─── */}
@@ -506,15 +506,15 @@ export function CreateHostWizard({
             <div className={`rounded-sm bg-zinc-800/40 p-3 space-y-2 ${expired ? "opacity-60" : ""}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Terminal className="w-4 h-4 text-accent-300 flex-shrink-0" />
+                  <Terminal className="w-4 h-4 text-accent-300 shrink-0" />
                   <span className="text-compact font-semibold text-content-secondary truncate">
                     Run in terminal
                   </span>
-                  <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-content-muted flex-shrink-0">
+                  <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-content-muted shrink-0">
                     Recommended · Easiest
                   </span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {localDesktop && (
                     <Button
                       action="installHere"
@@ -581,12 +581,12 @@ export function CreateHostWizard({
             <div className={`rounded-sm bg-zinc-800/40 p-3 space-y-2 ${expired ? "opacity-60" : ""}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Sparkles className="w-4 h-4 text-accent-300 flex-shrink-0" />
+                  <Sparkles className="w-4 h-4 text-accent-300 shrink-0" />
                   <span className="text-compact font-semibold text-content-secondary truncate">
                     Ask an agent on the host
                   </span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {agentPrompt && (
                     <CopyBtn value={agentPrompt} title="Copy prompt" />
                   )}
@@ -605,7 +605,7 @@ export function CreateHostWizard({
               </div>
 
               <div className="rounded-sm bg-zinc-950 p-3 max-h-36 overflow-y-auto">
-                <pre className="text-compact leading-reading text-content-secondary whitespace-pre-wrap break-words font-code select-all">
+                <pre className="text-compact leading-reading text-content-secondary whitespace-pre-wrap wrap-break-word font-code select-all">
                   {agentPrompt || (guidanceError ? `Error: ${guidanceError}` : pairingBusy ? "Creating pairing code…" : "No active code")}
                 </pre>
               </div>
@@ -769,8 +769,8 @@ function PairingSection({
 
       {pairing && !connected && !expired && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
-          <p className="flex items-center gap-2 text-compact text-content-muted flex-shrink-0">
-            <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+          <p className="flex items-center gap-2 text-compact text-content-muted shrink-0">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
             <span>
               Single-use. Expires in{" "}
               <span className="tabular-nums text-warning-300">{formatCountdown(secondsLeft)}</span>
@@ -790,7 +790,7 @@ function PairingSection({
 
       {pairing && !connected && expired && (
         <p className="flex items-start gap-2 text-compact text-warning-400">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-1" />
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-1" />
           <span>
             This code has expired — running it now fails with “pairing code is
             invalid or expired”. Press{" "}

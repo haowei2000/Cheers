@@ -49,9 +49,9 @@ export const MenuOption = forwardRef<HTMLButtonElement, MenuOptionProps>(
         )}
         {...props}
       >
-        {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
+        {leading && <span className="flex shrink-0 items-center">{leading}</span>}
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {trailing && <span className="ml-auto flex flex-shrink-0 items-center">{trailing}</span>}
+        {trailing && <span className="ml-auto flex shrink-0 items-center">{trailing}</span>}
       </button>
     );
   }

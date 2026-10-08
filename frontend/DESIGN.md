@@ -406,7 +406,7 @@ usePopoverDismiss(open, close, rootRef);
 
 If the panel must escape a `transform`/`overflow-hidden`/`backdrop-blur`
 ancestor, portal to `document.body` instead (ProfileHovercard precedent,
-`z-[60]`).
+`z-60`).
 
 ### 2.5 Chips (composer, files)
 
@@ -614,7 +614,7 @@ overlapping avatars, most-relevant first. Used by the Activity ViewBoard
         dimmed && "opacity-50 hover:opacity-100"
       )}
     >
-      <Avatar size="xs" className="!w-6 !h-6" online={m.is_online ?? undefined} … />
+      <Avatar size="xs" className="w-6! h-6!" online={m.is_online ?? undefined} … />
     </button>
   ))}
 </div>
@@ -822,3 +822,18 @@ and CollectionManager group collection-level controls next to the heading and
 count. Search retains the content width below; Add is rendered exactly once.
 Groups may wrap on narrow screens. Item-specific operations remain with their
 items, and surfaces outside this scope retain their existing action placement.
+
+### Tailwind 4 build contract
+
+The frontend uses Tailwind 4 through `@tailwindcss/postcss` and loads the shared
+TypeScript configuration with `@config` in `src/index.css`. Theme color channels
+come from the existing light/dark CSS tokens; do not derive their RGB fallbacks
+from Tailwind's default OKLCH palette. Keep `tailwind-merge` on its Tailwind 4
+compatible major version.
+
+The browser baseline is Safari 16.4+, Chrome 111+, and Firefox 128+, as documented
+in the [Tailwind upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
+Validate migrations in the Item Gallery at 390, 768, and 1280px in both themes,
+including 200% zoom, named group hover, idle-pointer suppression, and native
+checkbox states. Keep the security audit enabled; the Tailwind 3 glob dependency
+chain was removed to eliminate the unpatched `braces` advisory.

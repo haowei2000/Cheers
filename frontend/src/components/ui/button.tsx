@@ -101,7 +101,7 @@ function IconTextContent({ action, children, label, loading, size }: {
         data-button-slot="icon"
         aria-hidden="true"
         className={cn(
-          "inline-flex flex-shrink-0 items-center justify-center self-stretch [&>svg]:flex-shrink-0",
+          "inline-flex shrink-0 items-center justify-center self-stretch [&>svg]:shrink-0",
           controlSquareClasses[size],
         )}
       >
@@ -157,7 +157,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       aria-pressed={isTab || props["aria-expanded"] !== undefined ? undefined : (props["aria-pressed"] as boolean | undefined) ?? (selected || undefined)}
       data-selected={selected || undefined}
       className={cn(
-        "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:flex-shrink-0",
+        "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:shrink-0",
         variantCls[variant],
         isTab
           ? cn(

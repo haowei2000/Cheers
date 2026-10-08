@@ -26,7 +26,7 @@ export const ButtonGroup = forwardRef<
         aria-label={label}
         data-button-group=""
         className={cn(
-          "flex max-w-full flex-wrap items-center gap-1 [&>*]:shrink-0",
+          "flex max-w-full flex-wrap items-center gap-1 *:shrink-0",
           floating && "floating-control-surface rounded-concentric p-1",
           className,
         )}

@@ -1,3 +1,4 @@
+import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import type { SharedWorkspaceLayout } from "./workbench/sharedLayout";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
   useContextPickStore,
   toBundle,
   messageContextItem,
+  workbenchFileContextItem,
   type ContextItem,
 } from "./context/contextPick";
 import { ContextPickBar, ContextPickerButton } from "./context/ContextPickBar";
@@ -1439,7 +1441,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
@@ -1537,6 +1539,22 @@ export function ChannelView({
     />
   );
   return (
+    <AnnotationProvider key={channel.channel_id} channelId={channel.channel_id} userId={user?.user_id} canWrite={channel.my_role !== "readonly"} canManage={channel.my_role === "owner" || channel.my_role === "admin"}
+      onCompose={(text, item) => {
+        const target = item.target;
+        const source = target.kind === "file" ? workbenchFileContextItem(target.path) : messageContextItem({ msg_id: target.msg_id, channel_seq: target.snapshot.channel_seq ?? messagesRef.current.find(m => m.msg_id === target.msg_id)?.channel_seq });
+        if (source) useContextPickStore.getState().add(channel.channel_id, source);
+        composeMessage(text);
+      }}
+      onReveal={async (item) => {
+        if (item.target.kind === "file") {
+          const anchor = item.target.anchor;
+          if (anchor.kind === "uri") openLocator(anchor.uri);
+          else { setWbTarget(item.target.path); setWbOpen(true); }
+        } else {
+          await jumpToMessage(item.target.msg_id);
+        }
+      }}>
     <ProfileCardProvider
       members={memberById}
       currentUserId={user?.user_id}
@@ -1674,7 +1692,7 @@ export function ChannelView({
                 <Banner
                   severity={rtStatus === "offline" ? "error" : "warning"}
                   icon={WifiOff}
-                  className="mx-4 mt-2 flex-shrink-0"
+                  className="mx-4 mt-2 shrink-0"
                   action={{ label: "Retry now", onClick: reconnectNow }}
                 >
                   {rtStatus === "offline"
@@ -1901,5 +1919,6 @@ export function ChannelView({
         )}
       </div>
     </ProfileCardProvider>
+    </AnnotationProvider>
   );
 }

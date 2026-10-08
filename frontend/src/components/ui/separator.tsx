@@ -22,7 +22,7 @@ export const Separator = forwardRef<HTMLDivElement, SeparatorProps>(
       aria-orientation={decorative ? undefined : orientation}
       aria-hidden={decorative || undefined}
       className={cn(
-        "flex-shrink-0 bg-zinc-800",
+        "shrink-0 bg-zinc-800",
         orientation === "horizontal" ? "h-px w-full" : "w-px self-stretch",
         className
       )}

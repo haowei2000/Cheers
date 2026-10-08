@@ -86,11 +86,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
           ) : channel.type === "dm" ? (
             <Avatar name={channel.name} id={channel.channel_id} size="small" />
           ) : channel.type === "private" ? (
-            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
               <Lock className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           ) : (
-            <span className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
               <Hash className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           )
@@ -207,9 +207,9 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   };
 
   return (
-    <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar border-r border-control/80 flex flex-col flex-shrink-0">
+    <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar border-r border-control/80 flex flex-col shrink-0">
       {/* Workspace header with editorial typography and channel action */}
-      <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-control/80 px-3">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-control/80 px-3">
         {onOpenNav && (
           <UiButton
             variant="plain"
@@ -218,7 +218,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             aria-label="Open navigation"
             content="icon"
             controlSize="comfortable"
-            className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-control-hover transition-colors flex-shrink-0"
+            className="-ml-2 mr-1 flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-control-hover transition-colors shrink-0"
           >
             <Menu className={controlIconClasses.comfortable} />
           </UiButton>
@@ -234,7 +234,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             {workspace?.name ?? "Workspace"}
           </span>
           {canOpenSettings && (
-            <Settings className={cn(controlIconClasses.regular, "text-content-muted/70 group-hover:text-content-strong flex-shrink-0 transition-colors")} />
+            <Settings className={cn(controlIconClasses.regular, "text-content-muted/70 group-hover:text-content-strong shrink-0 transition-colors")} />
           )}
         </ControlTrigger>
         <IconButton
@@ -242,7 +242,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           onClick={() => setChannelOpen(true)}
           label="New channel"
           title="New channel"
-          className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover flex-shrink-0"
+          className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover shrink-0"
         >
           <Plus className={controlIconClasses.compact} />
         </IconButton>
@@ -300,7 +300,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 label="New direct message"
                 title="New direct message"
                 onClick={() => setDmOpen(true)}
-                className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active flex-shrink-0"
+                className="ml-1 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active shrink-0"
               >
                 <Plus className={controlIconClasses.compact} />
               </IconButton>

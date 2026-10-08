@@ -30,7 +30,7 @@ export function UnreadBadge({
     <span
       data-design-system-exempt="unread"
       className={cn(
-        "inline-flex flex-shrink-0 items-center justify-center rounded-full font-bold tabular-nums leading-none",
+        "inline-flex shrink-0 items-center justify-center rounded-full font-bold tabular-nums leading-none",
         sizeClasses[contentSize],
         toneClasses[tone],
         className

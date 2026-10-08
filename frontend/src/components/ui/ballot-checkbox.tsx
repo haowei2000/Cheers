@@ -20,7 +20,7 @@ export function BallotCheckbox({
   return (
     <span
       className={cn(
-        "flex items-center justify-center rounded-sm flex-shrink-0 transition-colors",
+        "flex items-center justify-center rounded-sm shrink-0 transition-colors",
         size === "compact" ? "w-3.5 h-3.5" : "w-4 h-4",
         checked
           ? "bg-accent-600 ring-1 ring-inset ring-accent-600 text-content-on-accent"

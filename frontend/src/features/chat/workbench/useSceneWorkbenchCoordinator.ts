@@ -1,3 +1,6 @@
+import type { SavedAnnotation } from "@/api/annotations";
+import toast from "react-hot-toast";
+import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useContextPickStore,
@@ -8,7 +11,7 @@ import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
 import { filterCollaborators } from "./collab";
-import { useAnnotations } from "./annotations";
+import { useAnnotations, resolveAnnotation } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
 import type { PendingAnnotation } from "./AnnotationComposer";
 import type { LensContextTarget } from "./lens/registry";
@@ -175,14 +178,14 @@ export function useSceneWorkbenchCoordinator({
   );
 
   // Annotations
-  const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
+  const annotations = useAnnotations(selectedPath ?? "", ctx.channelId);
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
     (target: LensContextTarget, at: { x: number; y: number }) =>
       selectedPath && setPendingNote({ target, path: selectedPath, at }),
     [selectedPath]
   );
-  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id).catch(error => toast.error(error instanceof Error ? error.message : "Could not delete annotation.")), [annotations]);
   const [isInspectorActive, setIsInspectorActive] = useState(false);
   const [revealLine, setRevealLine] = useState<number | undefined>();
 
@@ -209,7 +212,7 @@ export function useSceneWorkbenchCoordinator({
     revealedCard.current = key;
     showRaw(selectedPath, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, showRaw]);
+  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, session.version, session.status, showRaw]);
 
   // Keep discovery map in sync with active session
   useEffect(() => {
@@ -223,6 +226,22 @@ export function useSceneWorkbenchCoordinator({
     setPendingNote(null);
     setActiveAnnotationId(null);
   }, [selectedPath]);
+  const annotationSurface = useAnnotationSurface();
+  const lastAnnotationReveal = useRef<SavedAnnotation | null>(null);
+  useEffect(() => {
+    const item = annotationSurface?.revealed;
+    if (item?.target.kind !== "file" || item.target.path !== selectedPath) return;
+    if (lastAnnotationReveal.current === item) return;
+    setActiveAnnotationId(item.id);
+    if (session.version === null && !session.status) return;
+    lastAnnotationReveal.current = item;
+    const note = annotations.doc.notes.find(n => n.id === item.id);
+    const range = note ? resolveAnnotation(note, session.parsedText) : null;
+    if (range) {
+      showRaw(selectedPath!, true);
+      setRevealLine(range.start);
+    }
+  }, [annotationSurface?.revealed, selectedPath, annotations.doc, session.parsedText, session.version, session.status, showRaw]);
 
   const selectPath = useCallback((path: string, sceneId = activeScene) => {
     setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));

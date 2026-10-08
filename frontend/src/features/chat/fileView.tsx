@@ -88,12 +88,12 @@ function AudioTile({ file }: { file: FileInfo }) {
   return (
     <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-3 py-2">
       <div className="flex items-center gap-2 text-compact text-content-secondary">
-        <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
+        <FileTypeIcon file={file} size={16} className="shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
           {file.original_filename || "audio"}
         </span>
         {typeof file.size_bytes === "number" && (
-          <span className="flex-shrink-0 text-content-muted">{formatBytes(file.size_bytes)}</span>
+          <span className="shrink-0 text-content-muted">{formatBytes(file.size_bytes)}</span>
         )}
       </div>
       {failed ? (
@@ -131,7 +131,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 
   if (file.summary) {
     return (
-      <p className="whitespace-pre-wrap break-words text-compact leading-reading text-content-muted">
+      <p className="whitespace-pre-wrap wrap-break-word text-compact leading-reading text-content-muted">
         {file.summary}
       </p>
     );
@@ -180,7 +180,7 @@ function UnavailableFileTile({ file }: { file: FileInfo }) {
       className="inline-flex max-w-[240px] items-center gap-2 rounded-sm border border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-content-muted"
       data-design-system-exempt="drop-zone"
     >
-      <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+      <FileText className="h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0">
         <span className="block truncate">{file.original_filename || "Remote file"}</span>
         <span className="block text-minimal">Attachment unavailable</span>
@@ -255,7 +255,7 @@ export function FileTile({ file, channelId }: { file: FileInfo; channelId?: stri
           title={file.original_filename || file.file_id}
           controlSize="regular" className="inline-flex items-center gap-2 rounded-sm bg-zinc-800/60  text-content-primary hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
-          <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
+          <FileTypeIcon file={file} size={16} className="shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>
           {typeof file.size_bytes === "number" && (
             <span className="text-content-muted">{formatBytes(file.size_bytes)}</span>

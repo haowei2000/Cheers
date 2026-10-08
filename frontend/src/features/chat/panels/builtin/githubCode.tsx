@@ -200,9 +200,9 @@ function CodeHeader(ctx: PanelContext) {
       className="hidden min-w-0 items-center gap-2 text-compact text-content-muted lg:flex"
       title={`${facts.repository} · ${facts.branch} · ${facts.state}`}
     >
-      <GitFork className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+      <GitFork className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="max-w-48 truncate text-content-secondary">{facts.repository}</span>
-      <GitBranch className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+      <GitBranch className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="max-w-28 truncate">{facts.branch}</span>
       <span className={stateTone(facts.state)}>{facts.state}</span>
     </div>

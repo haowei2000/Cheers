@@ -20,7 +20,7 @@ export function PresenceDot({
       data-content-size={contentSize}
       data-design-system-exempt="presence"
       className={cn(
-        "inline-block flex-shrink-0 rounded-full",
+        "inline-block shrink-0 rounded-full",
         presenceSizeClasses[contentSize],
         className
       )}

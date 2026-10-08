@@ -121,7 +121,7 @@ export function McpCheckResults({ report }: { report: McpCheckReport }) {
                         <status.Icon className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1 space-y-1">
-                        <span className="block break-words text-content-secondary">
+                        <span className="block wrap-break-word text-content-secondary">
                           {check.summary}
                           {check.observed_at && (
                             <span className="text-content-muted">
@@ -131,12 +131,12 @@ export function McpCheckResults({ report }: { report: McpCheckReport }) {
                           )}
                         </span>
                         {check.detail && (
-                          <span className="block break-words text-compact text-content-muted">
+                          <span className="block wrap-break-word text-compact text-content-muted">
                             {check.detail}
                           </span>
                         )}
                         {check.hint && (
-                          <span className="block break-words text-compact text-content-muted">
+                          <span className="block wrap-break-word text-compact text-content-muted">
                             {check.hint}
                           </span>
                         )}

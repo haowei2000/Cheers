@@ -102,7 +102,7 @@ function NodeBody({ node }: { node: CanvasNode }) {
   const detail = node.source.kind === "fs" ? node.source.path : node.source.verb;
   return (
     <div className="flex min-h-0 flex-1 items-start gap-2 px-3 pb-3">
-      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
         {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1">
@@ -615,9 +615,9 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 onFocus={() => setFocusedId(node.id)}
                 onDoubleClick={() => openSource(node)}
               >
-                <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2">
+                <div className="flex shrink-0 items-center gap-2 px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
-                  {node.rect && <span className="flex-shrink-0 text-minimal text-content-muted">pinned</span>}
+                  {node.rect && <span className="shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
                 <NodeBody node={node} />
                 {selected && !readOnly &&

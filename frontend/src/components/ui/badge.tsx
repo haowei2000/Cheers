@@ -45,7 +45,7 @@ export function Badge({
       data-badge-tone={tone}
       aria-disabled={disabled || undefined}
       className={cn(
-        "inline-flex h-5 max-w-full flex-shrink-0 items-center gap-1 rounded-sm px-2 font-utility text-minimal font-medium leading-none tracking-label whitespace-nowrap",
+        "inline-flex h-5 max-w-full shrink-0 items-center gap-1 rounded-sm px-2 font-utility text-minimal font-medium leading-none tracking-label whitespace-nowrap",
         toneClasses[tone],
         disabled && "opacity-50",
         className,
@@ -56,7 +56,7 @@ export function Badge({
         <span
           aria-hidden="true"
           data-design-system-exempt="status-indicator"
-          className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current"
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-current"
         />
       )}
       <span className="truncate">{children}</span>
