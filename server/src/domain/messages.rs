@@ -77,19 +77,17 @@ pub async fn create_message(
     }
 
     // ── 1. 验成员资格 ─────────────────────────────────────────────────────
-    let is_member = sqlx::query(
+    let is_member = sqlx::query_scalar!(
         "SELECT EXISTS(
             SELECT 1 FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        ) AS ok",
+        ) AS \"ok!\"",
+        params.channel_id.to_string(),
+        params.user_id.to_string(),
     )
-    .bind(params.channel_id.to_string())
-    .bind(params.user_id.to_string())
     .fetch_one(db)
     .await
-    .map_err(AppError::Db)?
-    .try_get::<bool, _>("ok")
-    .unwrap_or(false);
+    .map_err(AppError::Db)?;
 
     if !is_member {
         info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message denied: user is not a member");
@@ -747,19 +745,17 @@ pub async fn search_messages(
 /// Channel membership guard shared by the read paths. Any membership row
 /// (user or bot) grants read access to the channel's history.
 async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    let is_member = sqlx::query(
+    let is_member = sqlx::query_scalar!(
         "SELECT EXISTS(
             SELECT 1 FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2
-        ) AS ok",
+        ) AS \"ok!\"",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_one(db)
     .await
-    .map_err(AppError::Db)?
-    .try_get::<bool, _>("ok")
-    .unwrap_or(false);
+    .map_err(AppError::Db)?;
 
     if is_member {
         Ok(())

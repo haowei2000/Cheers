@@ -445,26 +445,26 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
         .map_err(super::db_err("messages.create: allocate channel_seq"))?;
-    let thread_root_msg_id: Option<String> = sqlx::query_scalar(
+    let thread_root_msg_id: Option<String> = sqlx::query_scalar!(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
           is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
           context_bundle, content_data)
          VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11, $12)
          RETURNING thread_root_msg_id",
+        msg_id.to_string(),
+        channel_id.to_string(),
+        principal.sender_type(),
+        principal.principal_id.to_string(),
+        &content,
+        &msg_type,
+        reply_to_msg_id.as_deref(),
+        serde_json::json!(file_ids.clone()),
+        now,
+        channel_seq,
+        context_bundle.clone(),
+        content_data.clone(),
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(principal.sender_type())
-    .bind(principal.principal_id.to_string())
-    .bind(&content)
-    .bind(&msg_type)
-    .bind(&reply_to_msg_id)
-    .bind(serde_json::json!(file_ids.clone()))
-    .bind(now)
-    .bind(channel_seq)
-    .bind(context_bundle.clone())
-    .bind(content_data.clone())
     .fetch_one(&mut *tx)
     .await
     .map_err(super::db_err("messages.create: insert message"))?;

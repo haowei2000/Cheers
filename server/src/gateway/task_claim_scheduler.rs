@@ -45,7 +45,7 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
     // Re-open ranges whose connector vanished mid-evaluation. The cursor rewind
     // is conditional on still pointing at that exact reservation, so it cannot
     // overwrite a later successful reservation.
-    sqlx::query(r#"WITH stale AS (
+    sqlx::query!(r#"WITH stale AS (
         SELECT evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to
         FROM task_claim_evaluations WHERE status='dispatched' AND dispatched_at < NOW()-INTERVAL '10 minutes'
       ), rewound AS (
@@ -147,8 +147,14 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     let to: i64 = candidates.last().unwrap().try_get("seq")?;
     let new_evaluation_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
-    let reserved = sqlx::query("UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,next_eligible_at=NOW()+make_interval(secs=>$4),updated_at=NOW() WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$5")
-        .bind(channel_id.to_string()).bind(bot_id.to_string()).bind(to).bind(interval).bind(last).execute(&mut *tx).await?.rows_affected()==1;
+    let reserved = sqlx::query!(
+        "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,next_eligible_at=NOW()+make_interval(secs=>$4),updated_at=NOW() WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$5",
+        channel_id.to_string(),
+        bot_id.to_string(),
+        to,
+        f64::from(interval),
+        last,
+    ).execute(&mut *tx).await?.rows_affected() == 1;
     if !reserved {
         tx.rollback().await?;
         return Ok(());
@@ -157,19 +163,19 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     // The range itself stays unique so retries must reactivate that durable
     // evaluation instead of attempting a duplicate insert.  Reusing its ID
     // also keeps Activity history and any late connector response coherent.
-    let evaluation_id: String = sqlx::query_scalar(
+    let evaluation_id: String = sqlx::query_scalar!(
         "INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at) \
          VALUES($1,$2,$3,$4,$5,'dispatched',NOW(),NOW()) \
          ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE \
          SET status='dispatched', error=NULL, reserved_at=NOW(), dispatched_at=NOW(), completed_at=NULL \
          WHERE task_claim_evaluations.status='failed' \
          RETURNING evaluation_id",
+        new_evaluation_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+        from,
+        to,
     )
-    .bind(new_evaluation_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(from)
-    .bind(to)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| anyhow::anyhow!("evaluation range is already active"))?;

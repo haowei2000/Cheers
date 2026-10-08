@@ -4,6 +4,7 @@
 # packages/ — a server/-only context can't see it.
 FROM rust:1-bookworm AS builder
 WORKDIR /app/server
+ENV SQLX_OFFLINE=true
 
 # ── 1) Dependency cache layer ────────────────────────────────────────────────
 # Copy ONLY the manifests (server's + the path-dep crate's) and stub out both
@@ -38,6 +39,7 @@ COPY packages/cheers-acp-connector-rs/bridge-protocol \
 COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
 COPY server/src ./src
 COPY server/migrations ./migrations
+COPY server/.sqlx ./.sqlx
 # assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
 COPY server/assets ./assets
 # CRITICAL: `docker COPY` preserves the source files' original mtimes, which are

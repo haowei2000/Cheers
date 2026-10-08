@@ -97,7 +97,7 @@ jobs:
   gateway-integration:
     name: Gateway Integration (Postgres)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: changes
     if: needs.changes.outputs.gateway == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
@@ -125,6 +125,7 @@ jobs:
       # test and auto-runs server/migrations. The URL comes from the environment
       # (never hard-coded in code) so parallel stacks can vary it freely.
       DATABASE_URL: postgres://cheers:cheers@localhost:5432/cheers
+      SQLX_OFFLINE: "true"
 
     steps:
       - uses: actions/checkout@v5
@@ -138,6 +139,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
+
+      - name: Install matching SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres,rustls
+
+      # The service starts empty. Validate every migration before checking the
+      # metadata against the resulting schema; prepare overrides offline mode.
+      - name: Check SQLx query metadata against migrated Postgres
+        run: bash ../scripts/sqlx-offline.sh check
 
       # One feature-enabled invocation compiles the gateway once and runs its
       # unit, doc, and Postgres-backed integration suites.
