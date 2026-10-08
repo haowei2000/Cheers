@@ -59,11 +59,21 @@ docker compose build --no-cache gateway
 docker compose up -d --force-recreate --no-deps gateway
 ```
 
-The real HTTP regression test uses an isolated gateway/database:
+The real HTTP regression test uses an isolated database created by sqlx and starts
+its own gateway on an OS-assigned port. Only a PostgreSQL connection with permission
+to create test databases is needed; OpenSSL generates temporary signing keys. The
+gateway process and temporary files are cleaned up when the test finishes.
 
 ```sh
 cd server
+DATABASE_URL="$TEST_DATABASE_URL" cargo test --features integration --test annotations_http
+```
+
+To run the same assertions against an existing isolated stack, supply its target
+URL through `INTEGRATION_BASE_URL` (no fixed port):
+
+```sh
 INTEGRATION_BASE_URL="$TEST_GATEWAY_URL" DATABASE_URL="$TEST_DATABASE_URL" \
 INTEGRATION_LOGIN="$TEST_LOGIN" INTEGRATION_PASSWORD="$TEST_PASSWORD" \
-cargo test --features integration --test annotations_http
+cargo test --features integration --test annotations_http external_gateway_annotations -- --ignored
 ```

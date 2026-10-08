@@ -1,12 +1,120 @@
-//! Run against an isolated gateway and its database:
-//! INTEGRATION_BASE_URL=http://... DATABASE_URL=postgres://... \
-//! INTEGRATION_LOGIN=... INTEGRATION_PASSWORD=... \
-//! cargo test --features integration --test annotations_http
+//! Runs with the existing Postgres integration suite. sqlx creates and migrates
+//! an isolated database; this test starts its own gateway on a temporary port.
+//! DATABASE_URL=postgres://... cargo test --features integration --test annotations_http
 #![cfg(feature = "integration")]
 use reqwest::{Client, Method, StatusCode};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{ConnectOptions, PgPool};
+use std::{
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    time::Duration,
+};
 use uuid::Uuid;
+
+/// Own the process and temporary keys even if an assertion panics.
+struct TestGateway {
+    process: Option<Child>,
+    directory: PathBuf,
+}
+impl Drop for TestGateway {
+    fn drop(&mut self) {
+        if let Some(process) = self.process.as_mut() {
+            let _ = process.kill();
+            let _ = process.wait();
+        }
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+impl TestGateway {
+    async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
+        let directory = std::env::temp_dir().join(format!("cheers-annotations-{}", Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let mut gateway = Self {
+            process: None,
+            directory,
+        };
+        let private = gateway.directory.join("private.pem");
+        let public = gateway.directory.join("public.pem");
+        for args in [
+            vec![
+                "genpkey",
+                "-algorithm",
+                "RSA",
+                "-pkeyopt",
+                "rsa_keygen_bits:2048",
+                "-out",
+                private.to_str().unwrap(),
+            ],
+            vec![
+                "pkey",
+                "-in",
+                private.to_str().unwrap(),
+                "-pubout",
+                "-out",
+                public.to_str().unwrap(),
+            ],
+        ] {
+            let output = Command::new("openssl")
+                .args(args)
+                .output()
+                .expect("openssl is required for temporary test keys");
+            assert!(output.status.success(), "temporary key generation failed");
+        }
+        // Ask the OS for a free port rather than assume one shared by other stacks.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let base = format!("http://127.0.0.1:{port}");
+        let log = std::fs::File::create(gateway.directory.join("gateway.log")).unwrap();
+        gateway.process = Some(
+            Command::new(env!("CARGO_BIN_EXE_server"))
+                .current_dir(&gateway.directory)
+                .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
+                .env("PORT", port.to_string())
+                .env("JWT_PRIVATE_KEY", std::fs::read_to_string(private).unwrap())
+                .env("JWT_PUBLIC_KEY", std::fs::read_to_string(public).unwrap())
+                .env("ADMIN_USERNAME", login)
+                .env("ADMIN_PASSWORD", password)
+                .env("S3_ENDPOINT", "http://127.0.0.1:1")
+                .env("S3_ACCESS_KEY", "integration-test")
+                .env("S3_SECRET_KEY", "integration-test")
+                .stdout(Stdio::from(log.try_clone().unwrap()))
+                .stderr(Stdio::from(log))
+                .spawn()
+                .unwrap(),
+        );
+        let client = Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            let exited = gateway.process.as_mut().unwrap().try_wait().unwrap();
+            assert!(
+                exited.is_none(),
+                "test gateway exited: {:?}\n{}",
+                exited,
+                std::fs::read_to_string(gateway.directory.join("gateway.log")).unwrap()
+            );
+            if client
+                .get(format!("{base}/health"))
+                .send()
+                .await
+                .is_ok_and(|r| r.status().is_success())
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "test gateway did not become ready\n{}",
+                std::fs::read_to_string(gateway.directory.join("gateway.log")).unwrap()
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        (gateway, base)
+    }
+}
 
 async fn request(
     client: &Client,
@@ -40,22 +148,30 @@ async fn login(client: &Client, base: &str, login: &str, password: &str) -> Valu
     assert!(status.is_success(), "login failed: {body}");
     body
 }
+#[sqlx::test]
+async fn file_and_event_annotations_are_durable_scoped_and_conflict_safe(db: PgPool) {
+    let password = Uuid::new_v4().to_string();
+    let (_gateway, base) = TestGateway::start(&db, "annotation-test-admin", &password).await;
+    check_annotations(db, base, "annotation-test-admin", password).await;
+}
+
+/// Optional smoke test against an already running isolated stack. The default
+/// CI test above runs these same assertions using its own database and gateway.
 #[tokio::test]
-async fn file_and_event_annotations_are_durable_scoped_and_conflict_safe() {
-    let base = std::env::var("INTEGRATION_BASE_URL").expect("use an isolated INTEGRATION_BASE_URL");
-    let db =
-        PgPool::connect(&std::env::var("DATABASE_URL").expect("gateway's isolated DATABASE_URL"))
-            .await
-            .unwrap();
+#[ignore = "external stack: set INTEGRATION_BASE_URL, DATABASE_URL, INTEGRATION_LOGIN and INTEGRATION_PASSWORD"]
+async fn external_gateway_annotations() {
+    let base = std::env::var("INTEGRATION_BASE_URL").expect("INTEGRATION_BASE_URL");
+    let db = PgPool::connect(&std::env::var("DATABASE_URL").expect("DATABASE_URL"))
+        .await
+        .unwrap();
+    let username = std::env::var("INTEGRATION_LOGIN").expect("INTEGRATION_LOGIN");
     let password = std::env::var("INTEGRATION_PASSWORD").expect("INTEGRATION_PASSWORD");
+    check_annotations(db, base, &username, password).await;
+}
+
+async fn check_annotations(db: PgPool, base: String, username: &str, password: String) {
     let client = Client::new();
-    let auth = login(
-        &client,
-        &base,
-        &std::env::var("INTEGRATION_LOGIN").expect("INTEGRATION_LOGIN"),
-        &password,
-    )
-    .await;
+    let auth = login(&client, &base, username, &password).await;
     let token = auth["access_token"].as_str().unwrap();
     let owner = auth["user_id"].as_str().unwrap();
     let (status, ws) = request(
