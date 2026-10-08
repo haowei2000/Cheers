@@ -6,8 +6,7 @@ import { inspectableIdLineRange } from "../contextSource";
 import { Code2 } from "lucide-react";
 import { moveCodeCanvasCard } from "./codeCanvasSource";
 import { MAX_ARTIFACT_SOURCE_LENGTH } from "./artifactLimits";
-import reactRuntime from "../../../../../node_modules/react/umd/react.production.min.js?raw";
-import reactDomRuntime from "../../../../../node_modules/react-dom/umd/react-dom.production.min.js?raw";
+import reactRuntime from "virtual:artifact-react-runtime";
 import canvasStyles from "@/index.css?inline";
 
 export interface ArtifactLensProps extends LensProps {
@@ -333,7 +332,7 @@ export function buildArtifactHtml(source: string, mode: "html" | "react", compil
   })();` : "";
   return `<!doctype html><html><head>${head}<style>html,body,#root{height:100vh;margin:0;padding:0}</style></head>
 <body><div id="root">${compiledCode ? "" : status}</div>
-<script>${escapeScript(reactRuntime)}</script><script>${escapeScript(reactDomRuntime)}</script>
+<script>${escapeScript(reactRuntime)}</script>
 ${compiledCode ? `<script>${escapeScript(app)}</script>` : ""}</body></html>`;
 }
 

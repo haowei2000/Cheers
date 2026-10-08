@@ -106,7 +106,7 @@ export function useHoverIntent(options: HoverIntentOptions = {}): {
   hide: () => void;
 } {
   const [visible, setVisible] = useState(false);
-  const controllerRef = useRef<HoverIntentController>();
+  const controllerRef = useRef<HoverIntentController | null>(null);
   if (!controllerRef.current) {
     controllerRef.current = createHoverIntentController(setVisible, options);
   }
