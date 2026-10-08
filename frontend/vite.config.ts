@@ -4,9 +4,41 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { buildSync } from "esbuild";
 
 const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url));
 const WEBSITE_DIR = path.resolve(FRONTEND_DIR, "../website");
+
+/** React 19 no longer ships UMD files. Bundle the installed runtime for the
+ * opaque-origin preview iframe, which cannot fetch modules under its CSP. */
+function artifactReactRuntime() {
+  const id = "virtual:artifact-react-runtime";
+  const resolvedId = "\0" + id;
+  let runtime: string | undefined;
+  return {
+    name: "cheers-artifact-react-runtime",
+    resolveId(source: string) {
+      return source === id ? resolvedId : undefined;
+    },
+    load(source: string) {
+      if (source !== resolvedId) return;
+      runtime ??= buildSync({
+        stdin: {
+          contents: 'import React from "react"; import * as ReactDOM from "react-dom/client"; window.React = React; window.ReactDOM = ReactDOM;',
+          resolveDir: FRONTEND_DIR,
+        },
+        bundle: true,
+        write: false,
+        format: "iife",
+        platform: "browser",
+        target: "es2020",
+        minify: true,
+        define: { "process.env.NODE_ENV": '"production"' },
+      }).outputFiles[0].text;
+      return `export default ${JSON.stringify(runtime)};`;
+    },
+  };
+}
 
 /** Keep website/ authoritative on the production origin while preserving the
  * React app shell separately for /login, /chat, and the other SPA routes. */
@@ -48,6 +80,7 @@ const WS_PROXY_TARGET =
 export default defineConfig({
   plugins: [
     react(),
+    artifactReactRuntime(),
     publicWebsite(),
     // PWA: installable app + Web Push. injectManifest (not generateSW) because
     // the service worker is hand-written (src/sw.ts) — push/notificationclick
