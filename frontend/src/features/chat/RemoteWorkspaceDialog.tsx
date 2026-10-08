@@ -1259,7 +1259,7 @@ export function RemoteWorkspaceDialog({
   ];
 
   const workspaceContextControls = (
-    <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-compact">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 text-compact">
       {/* A DropdownSelect, not a native <select>. A native one sizes itself to its
           LONGEST option — here a display name plus "(no access)" — so in the panel's
           capped corner it either blew the island open or, constrained, shrank past its
@@ -1295,7 +1295,7 @@ export function RemoteWorkspaceDialog({
         }}
         controlSize="compact"
         controlWidth="fill"
-        className="min-w-0 max-w-44 flex-1"
+        className="min-w-24 max-w-44 flex-1"
         menuClassName="max-w-72"
       />
       {/* Which machine, read-only. `allowed_roots` are that host's config, so the
@@ -1308,6 +1308,32 @@ export function RemoteWorkspaceDialog({
           <span aria-hidden="true">·</span>
           <span className="truncate max-w-36">{selectedBot.host_name}</span>
         </span>
+      )}
+      {botId && rootOptions.length > 1 && (
+        <DropdownSelect
+          ariaLabel={`Workspace root: ${root ?? "auto"}`}
+          leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+          label={root ? basename(root) : "Auto"}
+          value={root ?? ""}
+          options={rootPickerOptions}
+          onSelect={(value) =>
+            selectRoot(rootOptions.find((option) => option.path === value) ?? null)
+          }
+          controlSize="compact"
+          controlWidth="fill"
+          className="min-w-24 max-w-52 flex-1"
+          menuClassName="max-w-96"
+        />
+      )}
+      {botId && sessionId && (
+        <CheckboxField
+          label="Entire allowed roots"
+          className="shrink-0 select-none text-compact text-content-muted"
+          title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
+          checked={!scoped}
+          onChange={toggleScoped}
+          controlSize="compact"
+        />
       )}
       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted shrink-0" />}
       {err && <span className="truncate text-danger-400 max-w-32" title={err}>{err}</span>}
@@ -1465,33 +1491,6 @@ export function RemoteWorkspaceDialog({
             )}
           </div>
 
-          <div className="flex items-center gap-3 ml-auto shrink-0">
-            {rootOptions.length > 1 && (
-              <DropdownSelect
-                ariaLabel={`Workspace root: ${root ?? "auto"}`}
-                leading={<FolderTree className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
-                label={root ? basename(root) : "Auto"}
-                value={root ?? ""}
-                options={rootPickerOptions}
-                onSelect={(value) =>
-                  selectRoot(rootOptions.find((option) => option.path === value) ?? null)
-                }
-                controlSize="compact"
-                className="min-w-28 max-w-56"
-                menuClassName="max-w-96"
-              />
-            )}
-            {sessionId && (
-              <CheckboxField
-                label="Entire allowed roots"
-                className="select-none text-compact text-content-muted"
-                title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-                checked={!scoped}
-                onChange={toggleScoped}
-                controlSize="compact"
-              />
-            )}
-          </div>
         </div>
       )}
 
