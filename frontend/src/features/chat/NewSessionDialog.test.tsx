@@ -44,9 +44,14 @@ describe("NewSessionDialog", () => {
   });
 
   it("supports recent projects and desktop folder browsing", () => {
-    expect(source).toContain("Recent projects");
+    expect(source).toContain("Recent projects on this Bot");
     expect(source).toContain("handlePickFolder");
     expect(source).toContain("addRecentWorkspace");
     expect(source).toContain("pickFolder");
+    expect(source).toContain("visibleRecents.map((w)");
+    expect(source).not.toContain("recents.slice(0, 5)");
+    expect(source).toContain("workspace.botId === botId");
+    expect(source).not.toContain("setBotId(w.botId)");
+    expect(source).toContain("Choose a folder on this Mac");
   });
 });

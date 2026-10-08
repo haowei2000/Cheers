@@ -45,6 +45,7 @@ export function NewSessionDialog({
   const [dirs, setDirs] = useState("");
   const [busy, setBusy] = useState(false);
   const [recents, setRecents] = useState<RecentWorkspace[]>(() => getRecentWorkspaces());
+  const visibleRecents = recents.filter((workspace) => !workspace.botId || workspace.botId === botId);
 
   useEffect(() => {
     const onRecentChange = () => setRecents(getRecentWorkspaces());
@@ -132,12 +133,12 @@ export function NewSessionDialog({
           />
         </div>
 
-        {recents.length > 0 && (
+        {visibleRecents.length > 0 && (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-compact font-medium text-content-muted uppercase tracking-label">
-              <span>Recent projects</span>
+              <span>Recent projects on this Bot</span>
               <span className="text-minimal font-normal lowercase text-content-muted">
-                {recents.length} saved
+                {visibleRecents.length} saved
               </span>
             </div>
             <div
@@ -145,7 +146,7 @@ export function NewSessionDialog({
               role="listbox"
               aria-label="Recent projects"
             >
-              {recents.slice(0, 5).map((w) => {
+              {visibleRecents.map((w) => {
                 const isSelected = cwd === w.path;
                 return (
                   <UiButton
@@ -160,9 +161,6 @@ export function NewSessionDialog({
                     disabled={busy}
                     onClick={() => {
                       setCwd(w.path);
-                      if (w.botId && bots.some((b) => b.id === w.botId)) {
-                        setBotId(w.botId);
-                      }
                     }}
                     className="flex items-center justify-between gap-2 rounded-sm text-left hover:bg-control"
                     title={w.path}
@@ -210,7 +208,7 @@ export function NewSessionDialog({
                 type="button"
                 disabled={busy}
                 onClick={() => void handlePickFolder()}
-                title="Browse folder on this Mac"
+                title="Choose a folder on this Mac; enter a path on the Bot's machine for remote workspaces"
                 aria-label="Browse folder on this Mac"
                 className="shrink-0"
               >
@@ -229,8 +227,8 @@ export function NewSessionDialog({
             <div className="space-y-1 pt-1 text-minimal text-content-muted">
               <div>
                 {meta.backend_may_set_cwd
-                  ? "Allowed roots:"
-                  : "This connector does not let the platform set a working directory. Allowed roots:"}
+                  ? "Bot machine · allowed roots:"
+                  : "Bot machine · this connector does not let the platform set a working directory. Allowed roots:"}
               </div>
               <div className="flex flex-wrap gap-1" role="group" aria-label="Allowed roots">
                 {meta.allowed_roots.map((r) => {
