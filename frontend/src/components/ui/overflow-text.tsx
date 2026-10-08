@@ -97,7 +97,7 @@ export function OverflowText({
         className={cn(
           "min-w-0 max-w-full",
           strategy === "singleLine" && "block overflow-hidden text-ellipsis whitespace-nowrap",
-          strategy === "wrap" && "whitespace-pre-wrap [overflow-wrap:anywhere]",
+          strategy === "wrap" && "whitespace-pre-wrap wrap-anywhere",
           strategy === "horizontalScroll" && "block overflow-x-auto whitespace-pre",
         )}
         onMouseEnter={(event) => {
@@ -143,7 +143,7 @@ export function OverflowText({
           role="tooltip"
           className={cn(
             contrastTooltipSurfaceClasses,
-            "max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap text-regular font-normal [overflow-wrap:anywhere]",
+            "max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap text-regular font-normal wrap-anywhere",
           )}
         >
           {fullText}

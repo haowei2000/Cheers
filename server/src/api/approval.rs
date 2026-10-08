@@ -54,7 +54,7 @@ async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
 /// bot's event policy denies this user `SEE` for the row's class. A row's class is
 /// `permission_request` for `kind="approval"`, else `tool_call` (the execution-detail
 /// class). Rows with no `bot_id` (system traces) pass. Platform admins bypass.
-async fn filter_traces_by_see(
+pub(crate) async fn filter_traces_by_see(
     state: &AppState,
     channel_id: Uuid,
     uid: Uuid,

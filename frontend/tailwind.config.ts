@@ -1,50 +1,13 @@
 import type { Config } from "tailwindcss";
-import colors from "tailwindcss/colors";
 import plugin from "tailwindcss/plugin";
 
-// The product historically used Tailwind's electric indigo as its default
-// accent. Keep the semantic class name while existing call sites migrate, but
-// map it to a neutral ink scale so focus, selection, and primary actions remain
-// visible without turning every interaction into a neon highlight.
-const editorialInk = {
-  50: "#f8f6f2",
-  100: "#eae5da",
-  200: "#dad5ca",
-  300: "#c8c3b6",
-  400: "#9c9a92",
-  500: "#6e6d66",
-  600: "#484742",
-  700: "#32312d",
-  800: "#222220",
-  900: "#161719",
-  950: "#0f1012",
-};
-
-const editorialNeutral = {
-  ...colors.zinc,
-  50: "#f4f3f0",
-  100: "#e8e7e4",
-  200: "#cccbc7",
-  300: "#b8b7b4",
-  400: "#9c9ca2",
-  500: "#94949a",
-  600: "#84848a",
-  700: "#3e3f44",
-  800: "#303136",
-  900: "#222327",
-  950: "#161719",
-};
-
-function rgbChannels(hex: string): string {
-  const value = hex.replace("#", "");
-  return `${Number.parseInt(value.slice(0, 2), 16)} ${Number.parseInt(value.slice(2, 4), 16)} ${Number.parseInt(value.slice(4, 6), 16)}`;
-}
-
-function themedScale(name: string, palette: Record<string | number, string>) {
+// Color channels are owned by the shared light/dark theme in index.css.
+// Do not derive them from Tailwind's version-dependent default palette.
+function themedScale(name: string) {
   return Object.fromEntries(
-    Object.entries(palette).map(([shade, fallback]) => [
+    [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((shade) => [
       shade,
-      `rgb(var(--tone-${name}-${shade}, ${rgbChannels(fallback)}) / <alpha-value>)`,
+      `rgb(var(--tone-${name}-${shade}) / <alpha-value>)`,
     ]),
   );
 }
@@ -96,15 +59,15 @@ export default {
           "on-light": "rgb(var(--text-on-light) / <alpha-value>)",
           "on-accent": "rgb(var(--text-on-accent) / <alpha-value>)",
         },
-        accent: themedScale("ink", editorialInk),
-        danger: themedScale("danger", colors.red),
-        warning: themedScale("warning", colors.amber),
-        success: themedScale("success", colors.emerald),
-        removed: themedScale("removed", colors.rose),
-        info: themedScale("info", colors.sky),
-        stale: themedScale("stale", colors.orange),
-        research: themedScale("research", colors.violet),
-        category: themedScale("category", colors.teal),
+        accent: themedScale("ink"),
+        danger: themedScale("danger"),
+        warning: themedScale("warning"),
+        success: themedScale("success"),
+        removed: themedScale("removed"),
+        info: themedScale("info"),
+        stale: themedScale("stale"),
+        research: themedScale("research"),
+        category: themedScale("category"),
         rail: "rgb(var(--surface-rail) / <alpha-value>)",
         sidebar: "rgb(var(--surface-sidebar) / <alpha-value>)",
         canvas: "rgb(var(--surface-canvas) / <alpha-value>)",
@@ -125,19 +88,19 @@ export default {
           hover: "rgb(var(--surface-emphasis-hover) / <alpha-value>)",
           active: "rgb(var(--surface-emphasis-active) / <alpha-value>)",
         },
-        indigo: themedScale("ink", editorialInk),
-        red: themedScale("danger", colors.red),
-        amber: themedScale("warning", colors.amber),
-        emerald: themedScale("success", colors.emerald),
-        rose: themedScale("removed", colors.rose),
-        sky: themedScale("info", colors.sky),
-        orange: themedScale("stale", colors.orange),
-        violet: themedScale("research", colors.violet),
-        teal: themedScale("category", colors.teal),
+        indigo: themedScale("ink"),
+        red: themedScale("danger"),
+        amber: themedScale("warning"),
+        emerald: themedScale("success"),
+        rose: themedScale("removed"),
+        sky: themedScale("info"),
+        orange: themedScale("stale"),
+        violet: themedScale("research"),
+        teal: themedScale("category"),
         // The product uses compact utility copy extensively, especially in
         // Settings. Lift the quiet text tiers well above AA and separate card,
         // field and divider surfaces from zinc-950 without losing hierarchy.
-        zinc: themedScale("zinc", editorialNeutral),
+        zinc: themedScale("zinc"),
       },
       borderRadius: {
         sm: "var(--radius-control)",

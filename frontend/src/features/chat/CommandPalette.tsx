@@ -54,7 +54,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               i !== activeIndex && "hover:bg-zinc-800",
             )}
           >
-            <Terminal className="w-4 h-4 text-success-400 flex-shrink-0" />
+            <Terminal className="w-4 h-4 text-success-400 shrink-0" />
             <span className="font-medium font-code">/{c.name}</span>
             {c.description && (
               <span className="text-compact text-content-muted truncate">
@@ -62,7 +62,7 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               </span>
             )}
             {!grouped && (
-              <span className="ml-auto text-minimal px-1 py-1 rounded-sm bg-zinc-800 text-content-muted flex-shrink-0">
+              <span className="ml-auto text-minimal px-1 py-1 rounded-sm bg-zinc-800 text-content-muted shrink-0">
                 {c.botLabel}
               </span>
             )}

@@ -41,7 +41,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         controlSize={controlSize}
         variant="plain"
         className={cn(
-          "flex-shrink-0",
+          "shrink-0",
           toneClasses[tone],
           className
         )}

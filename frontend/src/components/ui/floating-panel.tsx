@@ -344,7 +344,7 @@ export function FloatingPanel({
   // expands instead of half-starting a drag.
   const titleLabel = (
     <>
-      {Icon && <Icon className="w-4 h-4 text-content-muted flex-shrink-0" />}
+      {Icon && <Icon className="w-4 h-4 text-content-muted shrink-0" />}
       <span className="text-compact font-semibold uppercase tracking-section text-content-muted truncate">
         {title}
       </span>
@@ -527,9 +527,9 @@ export function FloatingPanel({
             {...drag.handleProps}
             controlSize={FLOATING_CHROME_CONTROL_SIZE}
             data-floating-panel-handle=""
-            className="flex min-h-11 flex-shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
+            className="flex min-h-11 shrink-0 cursor-grab select-none items-center gap-2 px-3 active:cursor-grabbing"
           >
-            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
+            <GripHorizontal className="h-4 w-4 shrink-0 text-content-muted" aria-hidden="true" />
             {titleEl}
             <div className="flex-1" />
             <ActionButton
@@ -585,7 +585,7 @@ export function FloatingPanel({
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
-              className="pointer-events-auto flex h-7 flex-shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-muted active:cursor-grabbing"
+              className="pointer-events-auto flex h-7 shrink-0 cursor-grab select-none items-center rounded-sm px-1 text-content-muted active:cursor-grabbing"
               aria-label={`${title} — drag to move`}
             >
               {/* The grip alone. The panel's mark went the way its name did: a panel whose
@@ -593,7 +593,7 @@ export function FloatingPanel({
                   that is capped, an icon you never click is width taken from the tabs. The
                   mark stays where it earns its place — the collapsed pill and the mobile
                   header, where there is no content to say it for you. */}
-              <GripHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+              <GripHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
             </div>
             <div
               ref={setNavigationTarget}
@@ -668,9 +668,9 @@ export function FloatingPanel({
           <div
             {...(managed?.dragProps ?? drag.handleProps)}
             data-floating-panel-handle=""
-            className="flex min-h-11 flex-shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden"
+            className="flex min-h-11 shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden"
           >
-            <GripHorizontal className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
+            <GripHorizontal className="h-4 w-4 shrink-0 text-content-muted" aria-hidden="true" />
             {titleLabel}
             <div className="flex-1" />
             <ButtonGroup label="Panel actions" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="ml-auto">
@@ -705,7 +705,7 @@ export function FloatingPanel({
               data-floating-panel-content=""
               className={cn(
                 // Reserve the measured height when button groups wrap.
-                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-[var(--floating-panel-chrome-top)]",
+                "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-(--floating-panel-chrome-top)",
                 bodyClassName
               )}
             >

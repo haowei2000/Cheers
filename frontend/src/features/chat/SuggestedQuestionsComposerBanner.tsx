@@ -24,7 +24,7 @@ export function SuggestedQuestionsComposerBanner({
   if (questions.length === 0) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[72rem] px-4 pt-2 max-md:px-3">
+    <div className="mx-auto w-full max-w-6xl px-4 pt-2 max-md:px-3">
       <div
         className="flex items-center gap-2 rounded-sm bg-panel px-3 py-1 shadow-2xs"
         role="region"

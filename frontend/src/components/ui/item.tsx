@@ -86,7 +86,7 @@ export function ItemRow({
   const size = useControlSize(controlSize);
   const content = (
     <>
-      {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
+      {leading && <span className="flex shrink-0 items-center">{leading}</span>}
       <span className="min-w-0 flex-1 text-left">
         <span className="flex min-w-0 items-center gap-2">
           <span className={cn("truncate font-utility font-medium tracking-normal text-current", controlTextClasses[size])}>
@@ -107,9 +107,9 @@ export function ItemRow({
           </span>
         )}
       </span>
-      {trailing && <span className="ml-auto flex flex-shrink-0 items-center">{trailing}</span>}
+      {trailing && <span className="ml-auto flex shrink-0 items-center">{trailing}</span>}
       {actions && (
-        <span className="ml-auto flex flex-shrink-0 items-center gap-1" data-item-actions="">
+        <span className="ml-auto flex shrink-0 items-center gap-1" data-item-actions="">
           {actions}
         </span>
       )}
@@ -335,7 +335,7 @@ export function DiffLineItem({
       )}
     >
       {lineNumber && <span className="mr-2 w-10 select-none text-right text-content-muted">{lineNumber}</span>}
-      {marker && <span className="mr-2 flex-shrink-0 select-none">{marker}</span>}
+      {marker && <span className="mr-2 shrink-0 select-none">{marker}</span>}
       <span>{content}</span>
     </div>
   );
@@ -378,7 +378,7 @@ export function ItemChip({
       </span>
       {criticalStatus}
       {actions && (
-        <span data-item-actions className="ml-auto inline-flex flex-shrink-0 items-center gap-1">
+        <span data-item-actions className="ml-auto inline-flex shrink-0 items-center gap-1">
           {actions}
         </span>
       )}

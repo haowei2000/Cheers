@@ -92,7 +92,7 @@ export function MessageContextChips({
         key={`${it.kind}:${it.label}:${i}`}
         leading={<Icon className="w-3.5 h-3.5" />}
         label={it.label}
-        className="max-w-[14rem]"
+        className="max-w-56"
       />
     );
   });
@@ -223,7 +223,7 @@ export function ContextPickBar({
             leading={<Icon className="w-3.5 h-3.5" />}
             controlSize="regular"
             presentationLevel="medium"
-            className={`flex-shrink-0 rounded-sm bg-control/30 text-content-muted ${controlHeightClasses.regular}`}
+            className={`shrink-0 rounded-sm bg-control/30 text-content-muted ${controlHeightClasses.regular}`}
             actions={
               <>
                 <IconButton
@@ -257,7 +257,7 @@ export function ContextPickBar({
           <ItemChip
             key={it.id}
             label={<ContextItemLabel item={it} />}
-            leading={<Icon className="h-4 w-4 flex-shrink-0 text-content-muted" />}
+            leading={<Icon className="h-4 w-4 shrink-0 text-content-muted" />}
             presentationLevel="medium"
             controlSize="regular"
             className="rounded-sm bg-control/70 text-regular text-content-primary shadow-2xs transition-colors hover:bg-control/90"
@@ -312,7 +312,7 @@ export function ContextPickerButton({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div ref={rootRef} className="relative inline-flex flex-shrink-0">
+    <div ref={rootRef} className="relative inline-flex shrink-0">
       <UiButton
         action="addContext"
         content="icon"

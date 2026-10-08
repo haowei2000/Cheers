@@ -121,7 +121,7 @@ export function FloatingLayer({
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}
       onBlur={onBlur}
-      className={cn("z-[100]", className)}
+      className={cn("z-100", className)}
     >
       {children}
     </div>,

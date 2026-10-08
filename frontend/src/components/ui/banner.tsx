@@ -53,7 +53,7 @@ export function Banner({
         className
       )}
     >
-      {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
+      {Icon && <Icon className="w-4 h-4 shrink-0" />}
       <div className="flex-1 min-w-0">{children}</div>
       {action && (
         <Button
@@ -61,7 +61,7 @@ export function Banner({
           controlSize="compact"
           onClick={action.onClick}
           className={cn(
-            "flex-shrink-0 px-3 font-semibold",
+            "shrink-0 px-3 font-semibold",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-content-strong/50",
             actionCls[severity]
           )}
@@ -74,7 +74,7 @@ export function Banner({
           onClick={onDismiss}
           label="Dismiss"
           controlSize="compact"
-          className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+          className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
         >
           <X className="w-4 h-4" />
         </IconButton>

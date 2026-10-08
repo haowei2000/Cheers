@@ -27,7 +27,7 @@ describe("CheckboxField", () => {
   it("registers the indeterminate visual state", () => {
     const markup = renderToStaticMarkup(<CheckboxField label="Select all" indeterminate />);
 
-    expect(markup).toContain("peer-[:indeterminate]");
+    expect(markup).toContain("peer-indeterminate");
     expect(markup).toContain("data-mixed");
   });
 });

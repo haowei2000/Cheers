@@ -118,7 +118,7 @@ export function NewSessionDialog({
           <span className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
           <DropdownSelect
             ariaLabel="Bot"
-            leading={<Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            leading={<Bot className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
             label={bots.find((b) => b.id === botId)?.label ?? "Select a bot"}
             value={botId}
             options={bots.map((b) => ({ value: b.id, label: b.label }))}

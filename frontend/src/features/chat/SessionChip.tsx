@@ -330,12 +330,12 @@ export function SessionChip({
         aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
       >
         {selected ? (
-          <ArrowRight className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
+          <ArrowRight className="w-3.5 h-3.5 text-accent-400 shrink-0" />
         ) : (
-          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-accent-400" : "text-content-muted")} />
+          <Layers className={cn("w-3.5 h-3.5 shrink-0", open ? "text-accent-400" : "text-content-muted")} />
         )}
         <span>{selected ? "Session" : "Auto"}</span>
-        <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("w-3.5 h-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </ComposerToolbarButton>
 
       {open && (
@@ -345,8 +345,8 @@ export function SessionChip({
             return (
               <NavigationItem
                 title="Auto · @mention → primary"
-                leading={<Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
-                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
+                leading={<Layers className="w-3.5 h-3.5 text-content-muted shrink-0" />}
+                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
                 selected={!value}
                 role="option"
                 aria-selected={!value}
@@ -377,7 +377,7 @@ export function SessionChip({
                     </span>}
                     leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
                     status={<span className="text-compact text-content-muted">{s.status}</span>}
-                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
+                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
                     selected={isSel}
                     role="option"
                     aria-selected={isSel}

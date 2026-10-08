@@ -33,7 +33,7 @@ function Preview() {
         <span className="text-compact text-content-secondary">{lastPick}</span>
       </header>
       <div className="flex min-h-0 flex-1 gap-3">
-        <section className="min-w-0 flex-[3] overflow-hidden rounded-sm ring-1 ring-line-subtle">
+        <section className="min-w-0 flex-3 overflow-hidden rounded-sm ring-1 ring-line-subtle">
           <ArtifactLens
             data={source}
             path="cards/dashboard.tsx"
@@ -45,7 +45,7 @@ function Preview() {
           />
         </section>
         <UiTextarea
-          className="min-w-0 flex-[2] resize-none font-code text-compact"
+          className="min-w-0 flex-2 resize-none font-code text-compact"
           aria-label="Code canvas source"
           value={source}
           onChange={(event) => setSource(event.target.value)}

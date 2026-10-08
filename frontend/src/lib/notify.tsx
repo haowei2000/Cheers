@@ -55,9 +55,9 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           t.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
         }`}
       >
-        <Icon className={`mt-1 h-4 w-4 flex-shrink-0 ${ICON_CLS[severity]}`} />
+        <Icon className={`mt-1 h-4 w-4 shrink-0 ${ICON_CLS[severity]}`} />
         <div className="min-w-0 text-regular text-content-secondary">
-          <span className="break-words">{message}</span>
+          <span className="wrap-break-word">{message}</span>
           {opts?.action && (
             <div className="mt-1">
               <Button action="dismiss"
@@ -78,7 +78,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           onClick={() => toast.dismiss(t.id)}
           label="Dismiss"
           controlSize="compact"
-          className="-my-1 -mr-1 flex-shrink-0 text-content-primary transition-colors hover:text-content-strong"
+          className="-my-1 -mr-1 shrink-0 text-content-primary transition-colors hover:text-content-strong"
         >
           <X className="h-4 w-4" />
         </IconButton>

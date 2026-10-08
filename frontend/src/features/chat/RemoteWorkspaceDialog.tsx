@@ -1267,7 +1267,7 @@ export function RemoteWorkspaceDialog({
           trigger names the bot, the menu keeps why one is unavailable. */}
       <DropdownSelect
         ariaLabel="Select a bot"
-        leading={<Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+        leading={<Bot className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
         label={botLabel}
         value={botId ?? ""}
         options={(bots ?? []).map((bot) => ({
@@ -1425,7 +1425,7 @@ export function RemoteWorkspaceDialog({
 
       {/* Workspace toolbar / scope bar: git status + root & session scope controls */}
       {botId && (
-        <div className="flex items-center justify-between gap-3 mb-2 text-compact text-content-muted flex-shrink-0 flex-wrap">
+        <div className="flex items-center justify-between gap-3 mb-2 text-compact text-content-muted shrink-0 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             {git ? (
               <div className="flex items-center gap-1 font-code">
@@ -1469,7 +1469,7 @@ export function RemoteWorkspaceDialog({
             {rootOptions.length > 1 && (
               <DropdownSelect
                 ariaLabel={`Workspace root: ${root ?? "auto"}`}
-                leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                leading={<FolderTree className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
                 label={root ? basename(root) : "Auto"}
                 value={root ?? ""}
                 options={rootPickerOptions}
@@ -1498,7 +1498,7 @@ export function RemoteWorkspaceDialog({
       {/* Workspace presence — who ELSE is viewing this bot's workspace right now, so
           co-editing is visible before conflicts happen. */}
       {botId && viewers.length > 0 && (
-        <div className="flex items-center flex-wrap gap-2 mb-2 text-compact flex-shrink-0">
+        <div className="flex items-center flex-wrap gap-2 mb-2 text-compact shrink-0">
           <span className="text-content-muted shrink-0">Viewing</span>
           {viewers.map((v) => {
             const name = memberNames?.get(v.user_id) || v.user_id.slice(0, 8);

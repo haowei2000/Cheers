@@ -190,7 +190,7 @@ function FileSectionView({ section }: { section: FileSection }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label={`${open ? "Collapse" : "Expand"} ${section.title}`}
-        controlSize="regular" className="sticky top-[22px] z-[1] flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900 text-left hover:bg-zinc-800/90"
+        controlSize="regular" className="sticky top-[22px] z-1 flex items-center gap-2 border-y border-zinc-800/70 bg-zinc-900 text-left hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
@@ -210,7 +210,7 @@ function FileSectionView({ section }: { section: FileSection }) {
           controlSize="compact"
           tone={l.kind === "add" ? "add" : l.kind === "del" ? "remove" : "context"}
           marker={l.kind === "meta" || l.kind === "hunk" ? (
-            <span className="sticky left-0 inline-block w-[5.375rem] shrink-0 select-none bg-zinc-950" />
+            <span className="sticky left-0 inline-block w-21.5 shrink-0 select-none bg-zinc-950" />
           ) : (
             <Gutter line={l} />
           )}
@@ -251,7 +251,7 @@ export function DiffView({
     <div className={`overflow-auto ${className ?? ""}`}>
       <div className="w-max min-w-full font-code text-regular leading-regular">
         {/* Diffstat summary — sticky so totals stay visible while scrolling. */}
-        <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-2 py-1 text-compact tabular-nums">
+        <div className="sticky top-0 z-2 flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-2 py-1 text-compact tabular-nums">
           <span className="text-content-muted">
             {sections.length} file{sections.length === 1 ? "" : "s"}
           </span>

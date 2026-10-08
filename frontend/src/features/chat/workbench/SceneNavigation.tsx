@@ -76,7 +76,7 @@ export function SceneTab({
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
+        "shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
         selected
           ? "border-content-strong text-content-strong font-semibold"
           : "border-transparent text-content-primary hover:text-content-strong",
@@ -107,7 +107,7 @@ export function AddCollectionControl({
       aria-label="Add Collection"
       title="Add Collection"
       controlSize={workbenchControlSize.tab}
-      className="flex-shrink-0"
+      className="shrink-0"
     >
       <Plus className="h-4 w-4" aria-hidden="true" />
       {content !== "icon" && <span>Add Collection</span>}
@@ -159,7 +159,7 @@ export function NewCollectionDialog({
                 }}
                 className="justify-start gap-3 rounded text-left hover:bg-control/60"
               >
-                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-control text-content-primary">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-control text-content-primary">
                   <Icon className={cn("h-4 w-4", meta.color)} aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1 py-1">
@@ -235,7 +235,7 @@ export function AddTabControl({
       placement="down"
       controlSize={workbenchControlSize.tab}
       controlWidth="fill"
-      className="flex-shrink-0"
+      className="shrink-0"
     />
   );
 }
@@ -373,7 +373,7 @@ export function ItemTab({
       aria-current={selected ? "page" : undefined}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "flex-shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
+        "shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
         selected
           ? "border-content-strong text-content-strong font-semibold"
           : "border-transparent text-content-primary hover:text-content-strong",

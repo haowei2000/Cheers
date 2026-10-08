@@ -577,7 +577,7 @@ export function SandboxRenderer({
       <div className="flex flex-col items-center justify-center h-full p-6 text-compact text-center">
         <div className="p-4 max-w-md rounded-sm ring-1 ring-inset ring-warning-500/30 bg-warning-500/10 text-warning-400">
           <p className="font-medium mb-1">Renderer failed</p>
-          <p className="text-minimal text-content-secondary break-words mb-3">{error}</p>
+          <p className="text-minimal text-content-secondary wrap-break-word mb-3">{error}</p>
           <div className="flex items-center justify-center gap-2">
             <Button
               action="retry"

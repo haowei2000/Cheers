@@ -81,7 +81,7 @@ export function AvatarUpload({
       aria-label="Change avatar"
       data-design-system-exempt="identity"
       className={cn(
-        "group relative inline-flex flex-shrink-0 items-center justify-center rounded-full",
+        "group relative inline-flex shrink-0 items-center justify-center rounded-full",
         controlSquareClasses.comfortable,
       )}
       title="Change avatar"

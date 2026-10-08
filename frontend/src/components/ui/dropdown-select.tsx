@@ -138,7 +138,7 @@ export function DropdownSelect({
         "relative inline-flex min-w-0",
         // A square trigger must keep its registered ControlSize box; without this the
         // flex row shrinks it into an unregistered in-between width.
-        iconOnly ? "flex-shrink-0" : controlWidth === "fill" && "w-full",
+        iconOnly ? "shrink-0" : controlWidth === "fill" && "w-full",
       )}
     >
       <ControlTrigger
@@ -169,11 +169,11 @@ export function DropdownSelect({
           className,
         )}
       >
-        {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
+        {leading && <span className="flex shrink-0 items-center">{leading}</span>}
         {!iconOnly && (
           <>
             <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-            <ChevronDown className={cn("h-4 w-4 flex-shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+            <ChevronDown className={cn("h-4 w-4 shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
           </>
         )}
       </ControlTrigger>

@@ -44,7 +44,7 @@ export function SettingsCard({
           <p className="text-title">{title}</p>
           {description && <div className="mt-1 text-caption">{description}</div>}
         </div>
-        {actions && <div className="flex flex-shrink-0 items-center">{actions}</div>}
+        {actions && <div className="flex shrink-0 items-center">{actions}</div>}
       </div>
       {children && <div className="mt-4">{children}</div>}
     </div>
@@ -78,7 +78,7 @@ export function SettingsCardSection({
           </p>
           {description && <div className="mt-1 text-caption">{description}</div>}
         </div>
-        {actions && <div className="flex flex-shrink-0 items-center">{actions}</div>}
+        {actions && <div className="flex shrink-0 items-center">{actions}</div>}
       </div>
       {children && <div className="mt-4">{children}</div>}
     </section>

@@ -41,7 +41,7 @@ export const SlashedIcon = forwardRef<HTMLSpanElement, SlashedIconProps>(
     }
     return (
       <span ref={ref} className={cn("relative inline-flex items-center justify-center", className)}>
-        <Icon className="h-full w-full flex-shrink-0" aria-hidden="true" {...props} />
+        <Icon className="h-full w-full shrink-0" aria-hidden="true" {...props} />
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -49,7 +49,7 @@ export const SlashedIcon = forwardRef<HTMLSpanElement, SlashedIconProps>(
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="pointer-events-none absolute inset-0 h-full w-full flex-shrink-0"
+          className="pointer-events-none absolute inset-0 h-full w-full shrink-0"
           aria-hidden="true"
         >
           <path d={SLASH_PATH} />
@@ -69,7 +69,7 @@ export function withSlash<P extends SVGProps<SVGSVGElement> = SVGProps<SVGSVGEle
   const Slashed = forwardRef<HTMLSpanElement, P>(({ className, ...props }, ref) => {
     const iconProps = {
       ...props,
-      className: "h-full w-full flex-shrink-0",
+      className: "h-full w-full shrink-0",
       "aria-hidden": true,
     } as unknown as P;
 
@@ -83,7 +83,7 @@ export function withSlash<P extends SVGProps<SVGSVGElement> = SVGProps<SVGSVGEle
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="pointer-events-none absolute inset-0 h-full w-full flex-shrink-0"
+          className="pointer-events-none absolute inset-0 h-full w-full shrink-0"
           aria-hidden="true"
         >
           <path d={SLASH_PATH} />
