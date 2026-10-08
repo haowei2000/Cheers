@@ -1,4 +1,5 @@
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
+import { MenuOption } from "@/components/ui/menu-option";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
 // the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
 // message goes ("Auto" = mention routing → each bot's primary session, or one
@@ -342,19 +343,18 @@ export function SessionChip({
 
       {open && (
         <PopoverPanel className="w-80 max-w-[calc(100vw-2rem)] max-h-[min(70vh,28rem)] overflow-y-auto p-1">
-          <button
-            type="button"
+          <MenuOption
+            label="Switch to workspace…"
+            leading={<Plus className="h-4 w-4" />}
+            trailing={creatableBots.length === 0 ? <span className="text-minimal text-content-muted">No permission</span> : undefined}
+            controlSize="compact"
             disabled={creatableBots.length === 0}
             onClick={() => {
               setOpen(false);
               setNewOpen(true);
             }}
-            className="flex w-full items-center gap-2 rounded-sm border border-accent-500/30 bg-accent-500/10 px-3 py-2 text-left text-compact text-accent-200 hover:bg-accent-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            <span className="font-medium">Switch to workspace…</span>
-            {creatableBots.length === 0 && <span className="ml-auto text-minimal text-content-muted">No permission</span>}
-          </button>
+            className="bg-accent-500/10 font-medium text-accent-200 hover:bg-accent-500/15"
+          />
           <div className="px-3 pb-1 pt-2 text-minimal uppercase tracking-label text-content-muted">
             Existing sessions · switch back without losing work
           </div>
@@ -391,7 +391,7 @@ export function SessionChip({
                   <NavigationItem
                     key={s.session_id}
                     title={(
-                      <span className="flex min-w-0 flex-col items-start gap-0.5" title={s.cwd || "Bot default"}>
+                      <span className="flex min-w-0 flex-col items-start gap-1" title={s.cwd || "Bot default"}>
                         <span className="truncate">{s.cwd ? cwdBasename(s.cwd) : "Bot default"}{s.is_primary ? " · primary" : ""}</span>
                         {s.cwd && <span className="truncate text-minimal text-content-muted">{formatWorkspaceDisplayPath(s.cwd)}</span>}
                       </span>

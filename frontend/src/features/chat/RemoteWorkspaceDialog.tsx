@@ -1259,7 +1259,7 @@ export function RemoteWorkspaceDialog({
   ];
 
   const workspaceContextControls = (
-    <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 text-compact">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-1 text-compact">
       {/* A DropdownSelect, not a native <select>. A native one sizes itself to its
           LONGEST option — here a display name plus "(no access)" — so in the panel's
           capped corner it either blew the island open or, constrained, shrank past its
