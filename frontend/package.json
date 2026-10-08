@@ -20,7 +20,7 @@
     "@babel/standalone": "^7.29.9",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/lang-markdown": "^6.5.1",
+    "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "^6.7.1",
@@ -36,7 +36,7 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "highlight.js": "^11.11.2",
-    "livekit-client": "^2.21.0",
+    "livekit-client": "^2.22.3",
     "lucide-react": "^1.33.0",
     "pdfjs-dist": "^6.2.108",
     "qrcode": "^1.5.4",
@@ -49,7 +49,7 @@
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^3.7.0",
     "yaml": "^2.9.0",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
