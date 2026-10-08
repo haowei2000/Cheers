@@ -29,6 +29,21 @@ struct PendingSuggestion {
 static PENDING_SUGGESTIONS: LazyLock<Mutex<HashMap<Uuid, PendingSuggestion>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Locks [`PENDING_SUGGESTIONS`], recovering the guard if another thread panicked
+/// while holding it.
+///
+/// This map is a request registry, not a cache: a plain `.unwrap()` turned an
+/// unrelated panic into a poisoned-lock panic on whichever worker next handled a
+/// suggestion request, and *skipping* the operation on poison would be worse —
+/// the requester would wait out the full 90s timeout with nothing left that can
+/// complete it. A panic cannot leave a `HashMap` structurally invalid, so
+/// recovering the guard preserves the original behaviour exactly.
+fn pending_suggestions() -> std::sync::MutexGuard<'static, HashMap<Uuid, PendingSuggestion>> {
+    PENDING_SUGGESTIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /** Claim a private result before task-claim evaluation handles its legacy envelope. */
 pub fn complete_suggestion_request(
     bot_id: Uuid,
@@ -106,7 +121,7 @@ pub async fn request_suggestions(
     let source_text = source.try_get::<String, _>("content").unwrap_or_default();
     let request_id = Uuid::new_v4();
     let (send, receive) = oneshot::channel();
-    PENDING_SUGGESTIONS.lock().unwrap().insert(
+    pending_suggestions().insert(
         request_id,
         PendingSuggestion {
             bot_id,
@@ -120,13 +135,13 @@ pub async fn request_suggestions(
         "source_text":source_text.chars().take(4000).collect::<String>(),
     });
     if !state.bot_locator.dispatch_task(bot_id, frame).await {
-        PENDING_SUGGESTIONS.lock().unwrap().remove(&request_id);
+        pending_suggestions().remove(&request_id);
         return Err(AppError::BadRequest(
             "That bot could not receive the request".into(),
         ));
     }
     let result = tokio::time::timeout(std::time::Duration::from_secs(90), receive).await;
-    PENDING_SUGGESTIONS.lock().unwrap().remove(&request_id);
+    pending_suggestions().remove(&request_id);
     let content = result
         .map_err(|_| AppError::BadRequest("Suggestion request timed out".into()))?
         .map_err(|_| AppError::BadRequest("Suggestion request ended unexpectedly".into()))?
@@ -158,7 +173,7 @@ mod suggestion_tests {
         let owner = Uuid::new_v4();
         let request_id = Uuid::new_v4();
         let (send, receive) = oneshot::channel();
-        PENDING_SUGGESTIONS.lock().unwrap().insert(
+        pending_suggestions().insert(
             request_id,
             PendingSuggestion {
                 bot_id: owner,

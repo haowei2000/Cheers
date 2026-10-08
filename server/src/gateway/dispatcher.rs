@@ -761,9 +761,24 @@ fn build_task_frame(
         attachments: task_context
             .attachments
             .into_iter()
-            .map(|a| {
-                serde_json::from_value::<proto::AttachmentInfo>(a)
-                    .expect("attachment objects fit AttachmentInfo (flatten extra)")
+            .filter_map(|a| {
+                match serde_json::from_value::<proto::AttachmentInfo>(a) {
+                    Ok(info) => Some(info),
+                    // Degrade rather than panic. This used to be
+                    // `.expect("attachment objects fit AttachmentInfo")`, which
+                    // made any future `AttachmentInfo` shape change a panic on
+                    // the task-dispatch path — taking down the whole dispatch
+                    // (and the placeholder the user is already watching) over
+                    // one malformed attachment instead of delivering the task.
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "dropping attachment that does not fit AttachmentInfo; \
+                             dispatching the task without it"
+                        );
+                        None
+                    }
+                }
             })
             .collect(),
         pinned: task_context.pinned,

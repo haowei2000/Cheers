@@ -32,6 +32,13 @@ struct RosterEntry {
     fetched_at: Instant,
 }
 
+/// Process-wide bot-roster cache.
+///
+/// Both lock sites recover from poisoning with `PoisonError::into_inner` rather
+/// than `.unwrap()`. A panic anywhere else used to poison this mutex and turn
+/// every later presence read into a panic on the worker thread; the data is a
+/// plain `HashMap` of cloned rows, which a panic cannot leave structurally
+/// invalid, and the entries are TTL-checked on read, so recovery is safe.
 fn roster_cache() -> &'static Mutex<HashMap<Uuid, RosterEntry>> {
     static CACHE: OnceLock<Mutex<HashMap<Uuid, RosterEntry>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -41,7 +48,9 @@ fn roster_cache() -> &'static Mutex<HashMap<Uuid, RosterEntry>> {
 /// 查询失败时与原行为一致——返回空且不写入缓存（下次调用重试）。
 async fn channel_bot_members(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     {
-        let cache = roster_cache().lock().unwrap();
+        let cache = roster_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = cache.get(&channel_id) {
             if entry.fetched_at.elapsed() < BOT_ROSTER_TTL {
                 return entry.members.clone();
@@ -57,7 +66,9 @@ async fn channel_bot_members(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     .await;
     match fetched {
         Ok(member_ids) => {
-            let mut cache = roster_cache().lock().unwrap();
+            let mut cache = roster_cache()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             cache.insert(
                 channel_id,
                 RosterEntry {

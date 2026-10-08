@@ -535,32 +535,6 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     Ok(data)
 }
 
-#[cfg(test)]
-mod card_tests {
-    use super::validate_cards_json;
-
-    #[test]
-    fn accepts_versioned_read_only_resource_cards() {
-        let cards = validate_cards_json(
-            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/notes.md#L3","title":"Notes"}]"#,
-        )
-        .unwrap();
-        assert_eq!(cards[0]["uri"], "cheers:desk/notes.md#L3");
-    }
-
-    #[test]
-    fn rejects_unopenable_or_action_bearing_cards() {
-        for raw in [
-            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:msg/m-1"}]"#,
-            r#"[{"v":1,"kind":"resource_ref","uri":"cheers://auth/callback"}]"#,
-            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/../secret"}]"#,
-            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:plan","action":"approve"}]"#,
-        ] {
-            assert!(validate_cards_json(raw).is_err(), "{raw}");
-        }
-    }
-}
-
 fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {
     match error {
         mentions::MentionParseError::Db(_) => super::resource_error("INTERNAL_ERROR", "db error"),
@@ -679,4 +653,32 @@ async fn load_message_file_refs(
     }
 
     Ok(ordered)
+}
+
+// Kept at the end of the file: clippy's `items_after_test_module` rejects
+// production items that follow a `#[cfg(test)] mod`.
+#[cfg(test)]
+mod card_tests {
+    use super::validate_cards_json;
+
+    #[test]
+    fn accepts_versioned_read_only_resource_cards() {
+        let cards = validate_cards_json(
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/notes.md#L3","title":"Notes"}]"#,
+        )
+        .unwrap();
+        assert_eq!(cards[0]["uri"], "cheers:desk/notes.md#L3");
+    }
+
+    #[test]
+    fn rejects_unopenable_or_action_bearing_cards() {
+        for raw in [
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:msg/m-1"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers://auth/callback"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:desk/../secret"}]"#,
+            r#"[{"v":1,"kind":"resource_ref","uri":"cheers:plan","action":"approve"}]"#,
+        ] {
+            assert!(validate_cards_json(raw).is_err(), "{raw}");
+        }
+    }
 }

@@ -1,13 +1,24 @@
-.PHONY: lint fix test docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down
+.PHONY: lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down
 
+# Mirrors the CI clippy step exactly: same feature set, same deny-warnings gate.
+# Without `--features integration` the integration suites aren't linted at all,
+# and without `-D warnings` this target can't fail — CI would, so run both.
 lint:
-	cd server && cargo clippy --all-targets
+	cd server && cargo clippy --all-targets --features integration -- -D warnings
 
 fix:
 	cd server && cargo fmt && cargo clippy --fix --allow-dirty --allow-staged
 
+# Unit tests only. The 65 Postgres-backed integration tests are gated behind the
+# non-default `integration` feature, so this target passing does NOT imply CI
+# will pass — use `make test-integration` (needs DATABASE_URL) for that.
 test:
 	cd server && cargo test
+
+# The suites CI runs in the `gateway-integration` job. Needs a reachable
+# Postgres that can CREATE DATABASE; #[sqlx::test] builds and drops one per test.
+test-integration:
+	cd server && cargo test --features integration
 
 docs-pages:
 	node scripts/generate-architecture-status-page.mjs
