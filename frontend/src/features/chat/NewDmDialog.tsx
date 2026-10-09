@@ -83,7 +83,6 @@ export function NewDmDialog({
             ref={inputRef}
             containerClassName="flex-1"
             aria-label="Search users"
-            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"

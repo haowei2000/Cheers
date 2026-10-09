@@ -55,7 +55,6 @@ export function ServerPicker() {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !busy && void connect()}
           placeholder="https://www.tocheers.com"
-          autoFocus
         />
         {error && <p className="text-compact text-removed-400 mt-2">{error}</p>}
         <div className="mt-4">

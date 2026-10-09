@@ -688,7 +688,6 @@ export function ConnectorManager() {
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
               placeholder="agbpair_…"
-              autoFocus
               spellCheck={false}
               controlSize="regular"
               className="font-code"

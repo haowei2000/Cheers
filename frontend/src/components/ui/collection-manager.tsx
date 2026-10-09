@@ -87,7 +87,6 @@ export function CollectionManager({
           )}
         >
           <SearchInput
-            autoFocus
             containerClassName="flex-1"
             aria-label={searchPlaceholder}
             controlSize={controlSize}

@@ -169,7 +169,6 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
         <SearchInput
-          autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search pages, workspaces, and channels…"

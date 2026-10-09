@@ -81,6 +81,7 @@ export function ContextPickSurface({
     });
   };
 
+  /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- This workbench surface is a composite keyboard/pointer/context-menu target. */
   return (
     <div
       ref={surfaceRef}
@@ -102,4 +103,5 @@ export function ContextPickSurface({
       {children}
     </div>
   );
+  /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
 }

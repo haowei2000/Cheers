@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button";
 import { slotActionLabels } from "./action-labels";
-import { Input } from "./input";
 import { InputWithLeadingIcon } from "./input-with-leading-icon";
 import { Select } from "./select";
 import { ControlTrigger } from "./control-trigger";

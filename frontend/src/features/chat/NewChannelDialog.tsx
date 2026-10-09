@@ -223,7 +223,6 @@ export function NewChannelDialog({
         <InputWithLeadingIcon
           leading={<Hash />}
           aria-label="Channel name"
-          autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}

@@ -10,6 +10,7 @@ import { createChannelBotSession } from "@/api/sessionControl";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { bustBotControls } from "./sessionControlsCache";
 import { isComposing } from "@/lib/ime";
 import { isTauri } from "@/lib/serverConfig";
@@ -183,13 +184,12 @@ export function NewSessionDialog({
           </div>
         )}
 
-        <div className="space-y-1">
-          <label htmlFor="new-session-cwd" className="text-compact font-medium text-content-muted uppercase tracking-label">
-            Working directory (optional)
-          </label>
+        <Field label="Working directory (optional)">
+          <span id="new-session-cwd-label" className="sr-only">Working directory (optional)</span>
           <div className="flex items-center gap-2">
             <UiInput
               id="new-session-cwd"
+              aria-labelledby="new-session-cwd-label"
               type="text"
               value={cwd}
               disabled={busy}
@@ -220,7 +220,10 @@ export function NewSessionDialog({
           </div>
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
-            {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
+            {meta?.allowed_roots.map((r) => (
+              // eslint-disable-next-line jsx-a11y/control-has-associated-label -- Option labels the suggestion shown by the labelled working-directory input.
+              <option key={r} value={r} label={r} />
+            ))}
           </datalist>
           {meta && meta.allowed_roots.length > 0 && (
             <div className="space-y-1 pt-1 text-minimal text-content-muted">
@@ -260,12 +263,9 @@ export function NewSessionDialog({
               </div>
             </div>
           )}
-        </div>
+        </Field>
 
-        <div className="space-y-1">
-          <label htmlFor="new-session-extra-roots" className="text-compact font-medium text-content-muted uppercase tracking-label">
-            Extra roots (optional)
-          </label>
+        <Field label="Extra roots (optional)" htmlFor="new-session-extra-roots">
           <UiTextarea
             id="new-session-extra-roots"
             value={dirs}
@@ -277,7 +277,7 @@ export function NewSessionDialog({
             className="font-code text-compact"
           />
           <span className="block text-minimal text-content-muted">One absolute path per line.</span>
-        </div>
+        </Field>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel" variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>

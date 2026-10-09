@@ -3,6 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { apiJson } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { PublicPageShell, publicPanelClass } from "@/components/public/PublicPageShell";
 
@@ -87,9 +88,9 @@ export default function McpAuthorizePage() {
                 <p className="truncate text-compact text-content-muted">{preview.client.client_id}</p>
               </div>
             </div>
-            <label className="block space-y-1 text-compact text-content-muted">
-              <span>Act as</span>
+            <Field label="Act as" htmlFor="authorize-host">
               <Select
+                id="authorize-host"
                 value={hostId}
                 onChange={(event) => {
                   const nextHost = preview.hosts.find((host) => host.host_id === event.target.value);
@@ -103,10 +104,10 @@ export default function McpAuthorizePage() {
                   </option>
                 ))}
               </Select>
-            </label>
-            <label className="block space-y-1 text-compact text-content-muted">
-              <span>Limit access to channel</span>
+            </Field>
+            <Field label="Limit access to channel" htmlFor="authorize-channel">
               <Select
+                id="authorize-channel"
                 value={channelId}
                 onChange={(event) => setChannelId(event.target.value)}
               >
@@ -117,7 +118,7 @@ export default function McpAuthorizePage() {
                     </option>
                   ))}
               </Select>
-            </label>
+            </Field>
             {!channelId && (
               <p role="alert" className="text-compact text-danger-300">
                 This host has no channel that you can authorize.

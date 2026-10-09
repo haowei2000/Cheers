@@ -106,7 +106,7 @@ function AudioTile({ file }: { file: FileInfo }) {
           Playback unavailable — click to download
         </UiButton>
       ) : src ? (
-        <audio controls src={src} preload="metadata" className="h-9 w-full" />
+        <audio controls src={src} aria-label="Audio file preview" preload="metadata" className="h-9 w-full"><track kind="captions" /></audio>
       ) : (
         <div className="flex h-9 items-center gap-2 text-compact text-content-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…

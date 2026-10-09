@@ -44,6 +44,7 @@ export function DropdownSelect({
   actions = [],
   onAction,
   ariaLabel,
+  ariaLabelledBy,
   placement = "down",
   align = "start",
   controlSize,
@@ -74,6 +75,7 @@ export function DropdownSelect({
   actions?: DropdownSelectOption[];
   onAction?: (value: string) => void;
   ariaLabel: string;
+  ariaLabelledBy?: string;
   placement?: "up" | "down";
   align?: "start" | "end";
   controlSize?: ControlSize;
@@ -131,6 +133,7 @@ export function DropdownSelect({
 
   const iconOnly = content === "icon";
 
+  /* eslint-disable jsx-a11y/no-static-element-interactions -- Composite menu/listbox routes keyboard navigation through its focusable popup and option buttons. */
   return (
     <div
       ref={rootRef}
@@ -149,6 +152,7 @@ export function DropdownSelect({
         selected={open || active}
         disabled={disabled || (options.length === 0 && actions.length === 0)}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         title={iconOnly ? ariaLabel : undefined}
         aria-haspopup={popupRole}
         aria-controls={open ? popupId : undefined}
@@ -179,6 +183,7 @@ export function DropdownSelect({
       </ControlTrigger>
       {open && (
         <PopoverPanel placement={placement} align={align} className={cn("w-56 p-1", menuClassName)}>
+          {/* The portalled panel's mouse-down listener prevents its children from reaching outside-dismiss logic. */}
           <div ref={menuRef} id={popupId} role={popupRole} tabIndex={-1} aria-label={ariaLabel} onKeyDown={onMenuKeyDown}>
             {withGroups(options).map(({ option, group }) => {
               const selected = option.value === value;
@@ -241,4 +246,5 @@ export function DropdownSelect({
       )}
     </div>
   );
+  /* eslint-enable jsx-a11y/no-static-element-interactions */
 }

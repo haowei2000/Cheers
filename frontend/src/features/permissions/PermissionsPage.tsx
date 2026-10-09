@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { IconButton } from "@/components/ui/icon-button";
 import { TabOption } from "@/components/ui/tab-option";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
@@ -67,7 +68,7 @@ export default function PermissionsPage() {
       })
       .catch(() => toast.error("Failed to load bots"))
       .finally(() => setLoadingBots(false));
-  }, []);
+  }, [selectedBotId, setSearchParams]);
 
   const selectBot = (id: string) => {
     setSelectedBotId(id);
@@ -410,20 +411,17 @@ function PolicyOptionCard({
   recommended?: boolean;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <ControlTrigger
+      controlWidth="fill"
+      controlSize="comfortable"
+      selected={selected}
+      aria-pressed={selected}
+      aria-label={title}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
       className={cn(
-        "cursor-pointer rounded-lg p-4 transition-all relative flex flex-col justify-between",
+        "h-auto items-stretch whitespace-normal rounded-lg text-left transition-all relative flex flex-col justify-between",
         selected
-          ? "bg-zinc-800 text-content-strong ring-1 ring-accent-400/80 shadow-sm"
+          ? "bg-zinc-800 text-content-strong ring-1 ring-accent-400/80 shadow-sm hover:bg-zinc-800"
           : "bg-surface-elevated/60 text-content-primary hover:bg-zinc-800/50 hover:text-content-strong"
       )}
     >
@@ -452,7 +450,7 @@ function PolicyOptionCard({
           {selected && <Check className="w-4 h-4 stroke-[2.5]" />}
         </div>
       </div>
-    </div>
+    </ControlTrigger>
   );
 }
 

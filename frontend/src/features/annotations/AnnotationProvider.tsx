@@ -111,20 +111,17 @@ export function AnnotationProvider({
   );
   const editor = (item?: SavedAnnotation) => (
     <div className="space-y-2 p-3">
-      <label
-        className="block text-regular text-content-secondary"
-        htmlFor="annotation-note"
-      >
+      <span id="annotation-note-label" className="block text-regular text-content-secondary">
         {item
           ? `Edit: ${item.label}`
           : `Note on ${selection?.label ?? "selected object"}`}
-      </label>
+      </span>
       <Textarea
         id="annotation-note"
+        aria-labelledby="annotation-note-label"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={4}
-        autoFocus
         disabled={store.pending}
         maxLength={16384}
         aria-label="Annotation note"

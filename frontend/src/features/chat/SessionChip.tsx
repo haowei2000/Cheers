@@ -15,7 +15,7 @@ import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 // changes, so fetch-on-open is the freshness model.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   getSessionControls,

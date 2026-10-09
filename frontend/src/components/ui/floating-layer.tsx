@@ -110,13 +110,13 @@ export function FloatingLayer({
 
   if (!style) return null;
   return createPortal(
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Portal stops inside pointer presses from reaching document outside-dismiss handlers.
     <div
       id={id}
-      role={role}
+      role={role ?? "presentation"}
       style={style}
-      // Outside-dismiss handlers live on document. Keep interactions inside a
-      // portalled menu from being mistaken for an outside press.
       onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}

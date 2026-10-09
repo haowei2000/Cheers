@@ -12,7 +12,6 @@ import {
 import {
   CollectionDeleteItem,
   CollectionEditorItem,
-  CollectionEmptyItem,
   CollectionManager,
   type CollectionMode,
 } from "@/components/ui/collection-manager";

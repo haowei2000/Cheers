@@ -1,5 +1,5 @@
 import { Select as UiSelect } from "@/components/ui/select";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { Lock, Pencil, ShieldCheck, Trash2 } from "lucide-react";
 import { Tip } from "@/components/ui/tip";
@@ -20,7 +20,6 @@ import { OperationsItem } from "@/components/ui/item";
 import {
   CollectionDeleteItem,
   CollectionEditorItem,
-  CollectionEmptyItem,
   CollectionManager,
   type CollectionMode,
 } from "@/components/ui/collection-manager";
@@ -32,7 +31,6 @@ import { TabOption } from "@/components/ui/tab-option";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
-const MATRIX_ROLES = ["owner", "admin", "member"] as const;
 const CAP_ORDER: Capability[] = ["initiate", "see", "respond"];
 
 /**

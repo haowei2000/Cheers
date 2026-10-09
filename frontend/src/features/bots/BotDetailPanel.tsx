@@ -1,12 +1,10 @@
 import { Button as UiButton } from "@/components/ui/button";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   CircleDot,
   Ban,
   Power,
-  Shield,
   ShieldCheck,
   Activity,
   Copy,
@@ -121,7 +119,6 @@ export function BotDetailPanel({
   initialTab?: string;
   onClose?: () => void;
 }) {
-  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>(() => routeTab(initialTab));
 
   useEffect(() => setTab(routeTab(initialTab)), [initialTab, bot.bot_id]);
@@ -296,19 +293,19 @@ function BotHostsSection({
 }) {
   const [items, setItems] = useState<ConnectorHost[]>([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setItems(await listConnectorHosts(botId));
     } catch (e) {
       onError(String(e));
     }
-  };
+  }, [botId, onError]);
 
   useEffect(() => {
     void load();
     const id = window.setInterval(() => void load(), 20_000);
     return () => clearInterval(id);
-  }, [botId]);
+  }, [botId, load]);
 
   return (
     <section className="space-y-3">
@@ -793,7 +790,6 @@ function BotStatusEditor({
             onChange={(e) => setPromptDraft(e.target.value)}
             placeholder="Prompt the bot runs to compose its own status, e.g. 'Summarize what you're working on in under 10 words.'"
             rows={4}
-            autoFocus
             aria-label="Status update prompt"
           />
           <p className="text-compact text-content-muted">

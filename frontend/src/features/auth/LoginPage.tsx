@@ -26,10 +26,10 @@ import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { AppleMark, GitHubMark, GoogleMark } from "@/components/ui/provider-marks";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { Fingerprint, Mail } from "lucide-react";
 import {
   PublicPageShell,
-  publicLabelClass,
   publicLinkClass,
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
@@ -303,20 +303,16 @@ export default function LoginPage() {
           onSubmit={handleFactorSubmit}
           className={publicPanelClass}
         >
-          <div className="space-y-2">
-            <label htmlFor="factor-code" className={publicLabelClass}>
-              {usePasswordFactor ? "Password" : "Verification code"}
-            </label>
+          <Field label={usePasswordFactor ? "Password" : "Verification code"} htmlFor="factor-code">
             <Input
               id="factor-code"
               type={usePasswordFactor ? "password" : "text"}
               autoComplete={usePasswordFactor ? "current-password" : "one-time-code"}
-              autoFocus
               value={factorCode}
               onChange={(e) => setFactorCode(e.target.value)}
               placeholder={usePasswordFactor ? "Your password" : "123456"}
             />
-          </div>
+          </Field>
           {otherFamilies.length > 0 && (
             <div className="space-y-2">
               <p className="text-compact font-medium text-content-muted">
@@ -401,24 +397,17 @@ export default function LoginPage() {
               Sign in with a method already connected to your account. You&apos;ll link {accountLinkLabel} next.
             </div>
           )}
-          <div className="space-y-2">
-            <label
-              htmlFor="login"
-              className={publicLabelClass}
-            >
-              Username or Email
-            </label>
+          <Field label="Username or Email" htmlFor="login">
             <Input
               id="login"
               type="text"
               placeholder="you@example.com"
               autoComplete="username"
               required
-              autoFocus
               value={form.login}
               onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))}
             />
-          </div>
+          </Field>
 
           {capabilities?.passkey && (
             <Button action="usePasskey" content="iconText" controlWidth="fill"
@@ -439,13 +428,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className={publicLabelClass}
-            >
-              Password
-            </label>
+          <Field label="Password" htmlFor="password">
             <Input
               id="password"
               type="password"
@@ -457,7 +440,7 @@ export default function LoginPage() {
                 setForm((f) => ({ ...f, password: e.target.value }))
               }
             />
-          </div>
+          </Field>
 
           <Button action="signIn" controlWidth="fill"
             type="submit"

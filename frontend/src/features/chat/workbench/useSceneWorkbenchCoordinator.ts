@@ -161,16 +161,17 @@ export function useSceneWorkbenchCoordinator({
 
   // Presence focus broadcast
   useEffect(() => {
-    if (!ctx.sendPresenceFocus) return;
+    const { sendPresenceFocus, channelId } = ctx;
+    if (!sendPresenceFocus) return;
     if (selectedPath) {
-      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selectedPath });
+      sendPresenceFocus(channelId, { bot_id: "", path: selectedPath });
     } else {
-      ctx.sendPresenceFocus(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     }
     return () => {
-      ctx.sendPresenceFocus?.(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     };
-  }, [ctx.sendPresenceFocus, ctx.channelId, selectedPath]);
+  }, [ctx, selectedPath]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
@@ -212,7 +213,7 @@ export function useSceneWorkbenchCoordinator({
     revealedCard.current = key;
     showRaw(selectedPath, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, session.version, session.status, showRaw]);
+  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, session.status, showRaw]);
 
   // Keep discovery map in sync with active session
   useEffect(() => {

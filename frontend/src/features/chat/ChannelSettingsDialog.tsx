@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import { Trash2, LogOut, Mic, MicOff, Loader2 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ActionButton } from "@/components/ui/action-button";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
@@ -363,7 +362,6 @@ export function ChannelSettingsDialog({
                   <div className="flex min-w-0 flex-1 items-center gap-1">
                     <UiInput
                       id="channel-settings-name"
-                      autoFocus
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       onKeyDown={(e) => {
@@ -466,7 +464,6 @@ export function ChannelSettingsDialog({
                 <div className="flex min-w-0 items-center gap-1">
                   <UiInput
                     id="channel-settings-purpose"
-                    autoFocus
                     value={purpose}
                     placeholder="(Optional) what this channel is for…"
                     onChange={(e) => setPurpose(e.target.value)}
@@ -683,7 +680,6 @@ export function ChannelSettingsDialog({
                   action="cancel"
                   variant="secondary"
                   controlSize="compact"
-                  autoFocus
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
                 />
@@ -707,7 +703,7 @@ export function ChannelSettingsDialog({
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 shrink-0">
-                <Button action="cancel" variant="ghost" controlSize="compact" autoFocus onClick={() => setConfirmingLeave(false)} />
+                <Button action="cancel" variant="ghost" controlSize="compact" onClick={() => setConfirmingLeave(false)} />
                 <Button action="leave" aria-label="Leave channel" variant="secondary" controlSize="compact" onClick={() => void leave()} />
               </div>
             ) : (

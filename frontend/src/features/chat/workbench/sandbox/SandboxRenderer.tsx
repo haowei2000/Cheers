@@ -569,7 +569,7 @@ export function SandboxRenderer({
       window.removeEventListener("message", handler);
       if (!failedRef.current) reportRendererStatus(extension.extensionId, "ready");
     };
-  }, [active, addContext, channelId, extension, fs, open, path, rendererId]);
+  }, [active, addContext, channelId, documentError, extension, fs, open, path, rendererId]);
 
   if (!active) return null;
   if (status === "failed") {

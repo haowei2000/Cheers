@@ -18,7 +18,6 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  Check,
   ChevronDown,
   Filter,
   Paperclip,
@@ -358,7 +357,6 @@ function FlowEpisode({
       <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded} selected={expanded}
         type="button"
         onClick={onToggle}
-        aria-expanded={expanded}
         controlSize="regular" className={cn(
  "flex items-center gap-2 text-left transition-colors",
  !expanded && "hover:bg-control/40"
@@ -712,7 +710,6 @@ function MemberFilter({
           <SearchInput
             containerClassName="m-1 w-auto"
             aria-label="Search members"
-            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search members…"

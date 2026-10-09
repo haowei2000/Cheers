@@ -98,7 +98,7 @@ export function ConnectorConfigForm({
     return () => {
       cancelled = true;
     };
-  }, [f?.default_cwd, f?.allowed_roots]);
+  }, [f]);
 
   async function openRaw() {
     try {

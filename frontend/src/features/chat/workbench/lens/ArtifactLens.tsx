@@ -485,6 +485,7 @@ export function ArtifactLens({
     return () => window.removeEventListener("message", handler);
   }, [content, inspectorActive, onChange, onFormSubmit, openLocator, path, readOnly, requestContextPick]);
 
+  /* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The titled iframe receives an onLoad synchronization callback for the isolated artifact editor. */
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
       <iframe
@@ -499,4 +500,5 @@ export function ArtifactLens({
       />
     </div>
   );
+  /* eslint-enable jsx-a11y/no-noninteractive-element-interactions */
 }

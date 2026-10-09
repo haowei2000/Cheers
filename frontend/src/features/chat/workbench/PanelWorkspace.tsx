@@ -734,7 +734,9 @@ export function PanelWorkspace({
           </div>
           {layout.sideBySide && hasDock && !expanded && (
             <div
-              role="separator"
+              role="slider"
+              aria-valuetext={`Workspace width ${Math.round(layout.panelWidth)} pixels`}
+              aria-roledescription="resizable divider"
               aria-label="Resize workspace"
               aria-orientation="vertical"
               aria-valuemin={320}
@@ -743,40 +745,16 @@ export function PanelWorkspace({
               tabIndex={0}
               className="w-2 shrink-0 cursor-col-resize touch-none bg-control/30 focus-visible:bg-control-hover"
               onKeyDown={(event) => {
-                if (
-                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                    event.key,
-                  )
-                )
-                  return;
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
                 event.preventDefault();
-                const next =
-                  event.key === "Home"
-                    ? 320
-                    : event.key === "End"
-                      ? width - 488
-                      : layout.panelWidth +
-                        (event.key === "ArrowLeft" ? 24 : -24);
+                const next = event.key === "Home" ? 320 : event.key === "End" ? width - 488 : layout.panelWidth + (event.key === "ArrowLeft" ? 24 : -24);
                 const clamped = resolveWorkspaceLayout(width, next).panelWidth;
                 setRequestedWidth(clamped);
                 remember(clamped, split);
               }}
               onPointerDown={(event) => {
                 const right = rootRef.current!.getBoundingClientRect().right;
-                trackPointer(
-                  event,
-                  (next) =>
-                    setRequestedWidth(
-                      resolveWorkspaceLayout(width, right - next.clientX)
-                        .panelWidth,
-                    ),
-                  (next) =>
-                    remember(
-                      resolveWorkspaceLayout(width, right - next.clientX)
-                        .panelWidth,
-                      split,
-                    ),
-                );
+                trackPointer(event, (next) => setRequestedWidth(resolveWorkspaceLayout(width, right - next.clientX).panelWidth), (next) => remember(resolveWorkspaceLayout(width, right - next.clientX).panelWidth, split));
               }}
             />
           )}
@@ -851,7 +829,10 @@ export function PanelWorkspace({
               {panels}
               {splitIds.length === 2 && (
                 <div
-                  role="separator"
+                  role="slider"
+                  aria-valuetext={`Panel split ${Math.round(splitRatio * 100)} percent`}
+                  aria-roledescription="resizable divider"
+                  onMouseDown={(event) => event.preventDefault()}
                   aria-label="Resize panel split"
                   aria-orientation="horizontal"
                   aria-valuemin={Math.ceil(
