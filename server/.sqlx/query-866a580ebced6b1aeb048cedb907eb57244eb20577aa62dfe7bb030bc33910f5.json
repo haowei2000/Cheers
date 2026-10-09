@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_sessions\n         SET step_up_at = NOW(), last_seen_at = NOW()\n         WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL\n           AND absolute_expires_at > NOW()\n         RETURNING step_up_at AS \"value!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "866a580ebced6b1aeb048cedb907eb57244eb20577aa62dfe7bb030bc33910f5"
+}

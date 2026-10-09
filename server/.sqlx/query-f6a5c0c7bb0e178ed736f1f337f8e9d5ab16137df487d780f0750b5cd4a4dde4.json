@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduled_message_runs\n         (run_id,task_id,scheduled_for,trigger,status,attempt)\n         VALUES ($1,$2,$3,'schedule','running',$4)\n         ON CONFLICT (task_id,scheduled_for,trigger,attempt) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f6a5c0c7bb0e178ed736f1f337f8e9d5ab16137df487d780f0750b5cd4a4dde4"
+}

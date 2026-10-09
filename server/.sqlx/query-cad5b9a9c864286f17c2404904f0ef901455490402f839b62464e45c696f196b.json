@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET kind = 'text' WHERE kind = 'voice'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "cad5b9a9c864286f17c2404904f0ef901455490402f839b62464e45c696f196b"
+}

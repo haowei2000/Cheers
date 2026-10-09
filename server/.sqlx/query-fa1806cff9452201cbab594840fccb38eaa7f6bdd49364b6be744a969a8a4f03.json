@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE approval_delegations\n         SET revoked_at = NOW(), revoked_by = $5\n         WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3\n           AND operation_kind = $4 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa1806cff9452201cbab594840fccb38eaa7f6bdd49364b6be744a969a8a4f03"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id AS bot_id,\n                COALESCE(\n                    bac.commands,\n                    ba.binding_config #> '{connector_control,options,options,availableCommands}'\n                ) AS commands\n         FROM channel_memberships cm\n         JOIN bot_accounts ba ON ba.bot_id = cm.member_id\n         LEFT JOIN bot_available_commands bac\n                ON bac.channel_id = cm.channel_id AND bac.bot_id = cm.member_id\n         WHERE cm.channel_id = $1 AND cm.member_type = 'bot'\n         ORDER BY cm.member_id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "commands",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "8dc830bf07258e4f5dc4cdbb7304343481662ec39b60351af84234777c6d4429"
+}

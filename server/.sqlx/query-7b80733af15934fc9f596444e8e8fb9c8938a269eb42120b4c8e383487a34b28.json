@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO messages\n            (msg_id, channel_id, sender_type, sender_id, content, msg_type,\n             is_partial, file_ids, channel_seq, in_reply_to_msg_id)\n         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7, $8)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Jsonb",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7b80733af15934fc9f596444e8e8fb9c8938a269eb42120b4c8e383487a34b28"
+}

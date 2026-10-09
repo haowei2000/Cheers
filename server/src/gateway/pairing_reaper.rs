@@ -22,27 +22,27 @@ async fn reap_once(db: &PgPool, retention_secs: i64) {
     // Pending hosts contain no credential and are useful only while
     // their bound pairing code is live. Delete them first; the FK cascades the matching
     // code and prevents abandoned device rows from accumulating.
-    let pending = sqlx::query(
+    let pending = sqlx::query!(
         "DELETE FROM connector_hosts i
          USING enrollment_codes e
          WHERE e.host_id = i.host_id
            AND i.status = 'pending'
            AND (e.redeemed_at IS NOT NULL OR e.revoked OR e.expires_at < NOW())
            AND e.created_at < NOW() - make_interval(secs => $1)",
+        retention_secs as f64,
     )
-    .bind(retention_secs as f64)
     .execute(db)
     .await;
     if let Err(e) = pending {
         tracing::warn!(error = %e, "pending host reaper failed");
         return;
     }
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "DELETE FROM enrollment_codes
          WHERE (redeemed_at IS NOT NULL OR revoked OR expires_at < NOW())
            AND created_at < NOW() - make_interval(secs => $1)",
+        retention_secs as f64,
     )
-    .bind(retention_secs as f64)
     .execute(db)
     .await;
     match res {

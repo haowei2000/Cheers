@@ -1515,7 +1515,6 @@ export function ChannelView({
     ],
     [filesOpen, vbOpen, wbOpen, wsOpen],
   );
-
   if (!channel) {
     return (
       <ChannelSelectionState

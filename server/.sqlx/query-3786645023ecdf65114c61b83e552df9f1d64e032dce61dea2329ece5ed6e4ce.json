@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rt.refresh_token_id, rt.session_id, rt.expires_at AS refresh_expires_at,\n                rt.consumed_at, rt.revoked_at AS token_revoked_at,\n                s.user_id, s.client_type, s.csrf_token_hash, s.absolute_expires_at,\n                s.revoked_at AS session_revoked_at\n         FROM auth_refresh_tokens rt\n         JOIN auth_sessions s ON s.session_id = rt.session_id\n         WHERE rt.token_hash = $1\n         FOR UPDATE OF rt, s",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "refresh_token_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "refresh_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "consumed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "token_revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "client_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "csrf_token_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "absolute_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "session_revoked_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "3786645023ecdf65114c61b83e552df9f1d64e032dce61dea2329ece5ed6e4ce"
+}

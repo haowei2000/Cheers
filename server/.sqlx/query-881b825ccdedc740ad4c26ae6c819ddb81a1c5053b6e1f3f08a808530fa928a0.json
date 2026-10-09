@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_session_bindings SET role = 'other'\n         WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3\n           AND role = 'primary' AND session_id <> $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "881b825ccdedc740ad4c26ae6c819ddb81a1c5053b6e1f3f08a808530fa928a0"
+}

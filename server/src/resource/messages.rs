@@ -1,7 +1,7 @@
 use cheers_mcp_server::locator::{self, Locator};
 use chrono::Utc;
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -90,16 +90,16 @@ pub async fn handle_cards_write(
     let cards = validate_cards_json(cards_json)
         .map_err(|error| super::resource_error("INVALID_PARAMS", error))?;
     authorize_channel_write(db, principal, channel_id).await?;
-    let content_data: Option<Value> = sqlx::query_scalar(
-        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('cards', $1::jsonb)
+    let content_data: Option<Value> = sqlx::query_scalar!(
+        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('cards', $1::jsonb)
          WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4
            AND is_partial = FALSE AND is_deleted = FALSE AND NULLIF(BTRIM(content), '') IS NOT NULL
-         RETURNING content_data",
+         RETURNING content_data AS "value!""#,
+        cards,
+        msg_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
     )
-    .bind(cards)
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(principal.principal_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(super::db_err("messages.cards.write"))?;
@@ -148,13 +148,15 @@ pub async fn handle_suggestions_write(
         .map_err(|_| super::resource_error("INVALID_PARAMS", "questions_json must be JSON"))?;
     let suggestions = crate::domain::suggestions::validate(&raw)
         .map_err(|e| super::resource_error("INVALID_PARAMS", e))?;
-    let content_data: Option<Value> = sqlx::query_scalar(
-        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('suggested_questions', $1::jsonb)
+    let content_data: Option<Value> = sqlx::query_scalar!(
+        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('suggested_questions', $1::jsonb)
          WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4 AND is_deleted = FALSE
-         RETURNING content_data",
+         RETURNING content_data AS "value!""#,
+        serde_json::to_value(suggestions).unwrap_or(Value::Null),
+        msg_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
     )
-    .bind(serde_json::to_value(suggestions).unwrap_or(Value::Null))
-    .bind(msg_id.to_string()).bind(channel_id.to_string()).bind(principal.principal_id.to_string())
     .fetch_optional(db).await.map_err(super::db_err("messages.suggestions.write"))?;
     let content_data = content_data.ok_or_else(|| super::not_found("own bot reply"))?;
     Ok(serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data}))
@@ -590,14 +592,13 @@ async fn load_message_file_refs(
         return Ok(Vec::new());
     }
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,
                 summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
-    )
-    .bind(file_ids)
-    .fetch_all(db)
+        file_ids,
+    ).fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, ctx = "load_message_file_refs: select file records", "resource internal error");
@@ -605,31 +606,18 @@ async fn load_message_file_refs(
 
     let mut refs = Vec::new();
     for row in rows {
-        let file_id = row.try_get::<String, _>("file_id").unwrap_or_default();
-        let size_bytes = row.try_get::<Option<i64>, _>("size_bytes").ok().flatten();
+        let file_id = row.file_id.clone();
+        let size_bytes = row.size_bytes.map(i64::from);
         refs.push(MessageFileRef {
             file_id: file_id.clone(),
-            original_filename: row
-                .try_get::<Option<String>, _>("original_filename")
-                .ok()
-                .flatten(),
-            content_type: row
-                .try_get::<Option<String>, _>("content_type")
-                .ok()
-                .flatten(),
+            original_filename: row.original_filename.clone(),
+            content_type: row.content_type.clone(),
             size_bytes,
-            status: row.try_get::<Option<String>, _>("status").ok().flatten(),
-            expires_at: row
-                .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
-                .ok()
-                .flatten()
-                .map(|at| at.to_rfc3339()),
+            status: Some(row.status.clone()),
+            expires_at: row.expires_at.clone().map(|at| at.to_rfc3339()),
             preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
             download_url: Some(format!("/api/v1/files/{}/download", file_id)),
-            summary: row
-                .try_get::<Option<String>, _>("summary_3lines")
-                .ok()
-                .flatten(),
+            summary: row.summary_3lines.clone(),
         });
     }
 

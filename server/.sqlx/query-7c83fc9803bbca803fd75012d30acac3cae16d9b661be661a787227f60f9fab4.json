@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduled_message_runs\n         (run_id,task_id,scheduled_for,trigger,status) VALUES ($1,$2,$3,'manual','running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7c83fc9803bbca803fd75012d30acac3cae16d9b661be661a787227f60f9fab4"
+}

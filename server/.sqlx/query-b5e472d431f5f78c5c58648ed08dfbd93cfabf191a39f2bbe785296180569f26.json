@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role\n         FROM channel_memberships\n         WHERE channel_id = $1 AND member_id = $2 AND member_type = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b5e472d431f5f78c5c58648ed08dfbd93cfabf191a39f2bbe785296180569f26"
+}

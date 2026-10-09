@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0dabd2ba77b26c1df2d91354808d5d1f408a598ad85b353e54ecec750859f0a8"
+}

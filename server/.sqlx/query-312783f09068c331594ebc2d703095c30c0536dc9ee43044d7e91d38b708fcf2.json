@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_message_runs SET status='failed',error=$4,finished_at=NOW()\n             WHERE task_id=$1 AND scheduled_for=$2 AND trigger=$3 AND attempt=$5 AND status='running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "312783f09068c331594ebc2d703095c30c0536dc9ee43044d7e91d38b708fcf2"
+}

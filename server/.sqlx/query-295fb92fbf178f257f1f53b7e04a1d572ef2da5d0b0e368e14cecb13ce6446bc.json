@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE friendships SET status='accepted', responded_at=NOW(), updated_at=NOW()\n         WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'\n         RETURNING friendship_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friendship_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "295fb92fbf178f257f1f53b7e04a1d572ef2da5d0b0e368e14cecb13ce6446bc"
+}

@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.claim_id,r.evaluation_id,r.channel_id,r.bot_id,COALESCE(NULLIF(b.display_name,''),b.username) AS \"bot_name!\",r.summary,r.proposed_action,r.confidence::float8 AS \"confidence!\",r.impact,r.status,r.resolved_by,r.resolution_note,r.execution_msg_id,r.created_at,r.resolved_at,r.requester_id,r.source_message_id,r.confirmation_message_id FROM task_claim_requests r JOIN bot_accounts b ON b.bot_id=r.bot_id WHERE r.channel_id=$1 AND ($2::text IS NULL OR r.status=$2) ORDER BY r.created_at DESC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "evaluation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "bot_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "proposed_action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "confidence!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "impact",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "resolved_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "resolution_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "execution_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "resolved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "requester_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "source_message_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "confirmation_message_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "20251b6c707cd6ad8e15dd7dd471cdbd7a400f9b8b1c4fbf6125254e4648b90f"
+}

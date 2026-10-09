@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.refresh_token_encrypted, c.client_id FROM apple_auth_credentials c\n         JOIN auth_external_identities i ON i.identity_id = c.identity_id\n         WHERE i.provider = 'apple' AND i.user_id = $1 AND c.revoked_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "refresh_token_encrypted",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "client_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "78a654767b32322a1f5f0c822cf38c66639ee6eec9f23fa79f75e43dccc98147"
+}

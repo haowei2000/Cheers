@@ -18,7 +18,7 @@ use livekit_protocol::CreateAgentDispatchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::Row;
+
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -322,8 +322,8 @@ pub(crate) async fn voice_member(
     channel_id: &str,
     user_id: &str,
 ) -> Result<VoiceMember, AppError> {
-    let row = sqlx::query(
-        "SELECT EXISTS(SELECT 1 FROM channel_features cf
+    let row = sqlx::query!(
+        "SELECT EXISTS(SELECT 1 AS present FROM channel_features cf
                        WHERE cf.channel_id = c.channel_id
                          AND cf.feature = 'voice' AND cf.enabled = TRUE) AS voice_enabled,
                 cm.role AS channel_role,
@@ -333,21 +333,17 @@ pub(crate) async fn voice_member(
               AND cm.member_id = $2 AND cm.member_type = 'user'
          JOIN users u ON u.user_id = cm.member_id
          WHERE c.channel_id = $1",
+        channel_id,
+        user_id,
     )
-    .bind(channel_id)
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Forbidden("active channel membership required".into()))?;
 
     Ok(VoiceMember {
-        voice_enabled: row.try_get("voice_enabled").unwrap_or(false),
-        channel_role: row
-            .try_get("channel_role")
-            .unwrap_or_else(|_| "member".into()),
-        display_name: row
-            .try_get("display_name")
-            .unwrap_or_else(|_| "Member".into()),
+        voice_enabled: row.voice_enabled.clone().unwrap_or(false),
+        channel_role: row.channel_role.clone(),
+        display_name: row.display_name.clone().unwrap_or_else(|| "Member".into()),
     })
 }
 
@@ -426,20 +422,20 @@ pub async fn join(
     let provider_room_id = room_name(&channel_id);
     let mut tx = state.db.begin().await?;
     let session_id = Uuid::new_v4().to_string();
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO voice_sessions
             (voice_session_id, channel_id, provider, provider_room_id, status)
          VALUES ($1, $2, 'livekit', $3, 'starting')
          ON CONFLICT (channel_id) WHERE ended_at IS NULL
          DO UPDATE SET updated_at = NOW()
          RETURNING voice_session_id",
+        &session_id,
+        &channel_id,
+        &provider_room_id,
     )
-    .bind(&session_id)
-    .bind(&channel_id)
-    .bind(&provider_room_id)
     .fetch_one(&mut *tx)
     .await?;
-    let voice_session_id: String = row.try_get("voice_session_id").unwrap_or(session_id);
+    let voice_session_id: String = row.voice_session_id.clone();
 
     let connection_nonce = Uuid::new_v4().to_string();
     let participant_session_id = Uuid::new_v4().to_string();
@@ -455,32 +451,32 @@ pub async fn join(
     // A participant row exists after a listen-only join, but its consent is
     // deliberately NULL until the disclosure is accepted. Decode both "no
     // participant row" and "participant row with NULL consent" safely.
-    let existing_consent: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+    let existing_consent: Option<String> = sqlx::query_scalar!(
         "SELECT consent_version FROM voice_participant_sessions
                             WHERE user_id = $1 AND voice_session_id = $2",
+        &claims.sub,
+        &voice_session_id,
     )
-    .bind(&claims.sub)
-    .bind(&voice_session_id)
     .fetch_optional(&mut *tx)
     .await?
     .flatten();
     let has_consent = existing_consent.as_deref() == Some(CONSENT_VERSION);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO voice_participant_sessions
             (participant_session_id, voice_session_id, user_id, provider_identity,
              connection_nonce, consent_version)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        participant_session_id,
+        &voice_session_id,
+        &claims.sub,
+        &identity,
+        connection_nonce,
+        if has_consent {
+            Some(CONSENT_VERSION)
+        } else {
+            None
+        },
     )
-    .bind(participant_session_id)
-    .bind(&voice_session_id)
-    .bind(&claims.sub)
-    .bind(&identity)
-    .bind(connection_nonce)
-    .bind(if has_consent {
-        Some(CONSENT_VERSION)
-    } else {
-        None
-    })
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -520,24 +516,21 @@ pub async fn state(
 ) -> Result<Json<VoiceStateResponse>, AppError> {
     Uuid::parse_str(&channel_id).map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id, status, transcription_status, started_at
          FROM voice_sessions
          WHERE channel_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_optional(&state.db)
     .await?;
 
     let session = row.map(|r| VoiceSessionDto {
-        voice_session_id: r.try_get("voice_session_id").unwrap_or_default(),
-        status: r.try_get("status").unwrap_or_else(|_| "starting".into()),
-        transcription_status: r
-            .try_get("transcription_status")
-            .unwrap_or_else(|_| "off".into()),
-        started_at: r
-            .try_get::<chrono::DateTime<Utc>, _>("started_at")
+        voice_session_id: r.voice_session_id.clone(),
+        status: r.status.clone(),
+        transcription_status: r.transcription_status.clone(),
+        started_at: Some(r.started_at.clone())
             .map(|v| v.to_rfc3339())
             .unwrap_or_default(),
     });
@@ -687,22 +680,22 @@ pub async fn start_transcription(
         .ok_or_else(|| AppError::ServiceUnavailable("real-time voice is not configured".into()))?;
 
     let mut tx = state.db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id, provider_room_id, transcription_status, started_at,
                 transcriber_dispatch_id
          FROM voice_sessions
          WHERE channel_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1 FOR UPDATE",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| {
         AppError::Conflict("join the voice channel before starting transcription".into())
     })?;
-    let voice_session_id: String = row.try_get("voice_session_id")?;
-    let current_status: String = row.try_get("transcription_status")?;
-    let dispatch_id: Option<String> = row.try_get("transcriber_dispatch_id").ok().flatten();
+    let voice_session_id: String = row.voice_session_id.clone();
+    let current_status: String = row.transcription_status.clone();
+    let dispatch_id: Option<String> = row.transcriber_dispatch_id.clone();
     if matches!(current_status.as_str(), "starting" | "active") && dispatch_id.is_some() {
         tx.commit().await?;
         return Ok(Json(VoiceTranscriptionControlResponse {
@@ -711,19 +704,19 @@ pub async fn start_transcription(
         }));
     }
     let pending_dispatch_id = format!("pending:{}", Uuid::new_v4());
-    sqlx::query(
+    sqlx::query!(
         "UPDATE voice_sessions
          SET transcription_status = 'starting', transcriber_dispatch_id = $2, updated_at = NOW()
          WHERE voice_session_id = $1",
+        &voice_session_id,
+        &pending_dispatch_id,
     )
-    .bind(&voice_session_id)
-    .bind(&pending_dispatch_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
 
-    let provider_room_id: String = row.try_get("provider_room_id")?;
-    let started_at: chrono::DateTime<Utc> = row.try_get("started_at")?;
+    let provider_room_id: String = row.provider_room_id.clone();
+    let started_at: chrono::DateTime<Utc> = row.started_at.clone();
     let metadata = json!({
         "voice_session_id": voice_session_id,
         "channel_id": channel_id,
@@ -743,14 +736,14 @@ pub async fn start_transcription(
     let dispatch = match dispatch {
         Ok(value) => value,
         Err(error) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_sessions
                  SET transcription_status = 'failed', transcriber_dispatch_id = NULL,
                      updated_at = NOW()
                  WHERE voice_session_id = $1 AND transcriber_dispatch_id = $2",
+                &voice_session_id,
+                &pending_dispatch_id,
             )
-            .bind(&voice_session_id)
-            .bind(&pending_dispatch_id)
             .execute(&state.db)
             .await?;
             broadcast_transcription_status(&state, channel_uuid, &voice_session_id, "failed").await;
@@ -760,14 +753,14 @@ pub async fn start_transcription(
             ));
         }
     };
-    sqlx::query(
+    sqlx::query!(
         "UPDATE voice_sessions
          SET transcriber_dispatch_id = $2, transcription_status = 'active', updated_at = NOW()
          WHERE voice_session_id = $1 AND transcriber_dispatch_id = $3",
+        &voice_session_id,
+        dispatch.id,
+        &pending_dispatch_id,
     )
-    .bind(&voice_session_id)
-    .bind(dispatch.id)
-    .bind(&pending_dispatch_id)
     .execute(&state.db)
     .await?;
     broadcast_transcription_status(&state, channel_uuid, &voice_session_id, "active").await;
@@ -799,19 +792,19 @@ pub async fn stop_transcription(
         .config
         .livekit_api_url()
         .ok_or_else(|| AppError::ServiceUnavailable("real-time voice is not configured".into()))?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id, provider_room_id, transcriber_dispatch_id
          FROM voice_sessions
          WHERE channel_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Conflict("no active voice session".into()))?;
-    let voice_session_id: String = row.try_get("voice_session_id")?;
-    let provider_room_id: String = row.try_get("provider_room_id")?;
-    let dispatch_id: Option<String> = row.try_get("transcriber_dispatch_id").ok().flatten();
+    let voice_session_id: String = row.voice_session_id.clone();
+    let provider_room_id: String = row.provider_room_id.clone();
+    let dispatch_id: Option<String> = row.transcriber_dispatch_id.clone();
     if let Some(dispatch_id) = dispatch_id {
         if dispatch_id.starts_with("pending:") {
             return Err(AppError::Conflict(
@@ -827,12 +820,12 @@ pub async fn stop_transcription(
                 AppError::ServiceUnavailable("could not stop transcription worker".into())
             })?;
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE voice_sessions
          SET transcriber_dispatch_id = NULL, transcription_status = 'off', updated_at = NOW()
          WHERE voice_session_id = $1",
+        &voice_session_id,
     )
-    .bind(&voice_session_id)
     .execute(&state.db)
     .await?;
     broadcast_transcription_status(&state, channel_uuid, &voice_session_id, "off").await;
@@ -842,42 +835,33 @@ pub async fn stop_transcription(
     }))
 }
 
-fn presence_snapshots(rows: Vec<sqlx::postgres::PgRow>) -> Vec<VoicePresenceSnapshot> {
+fn presence_snapshots(
+    rows: Vec<crate::infra::db::query_rows::VoicePresenceRow>,
+) -> Vec<VoicePresenceSnapshot> {
     let mut snapshots = Vec::<VoicePresenceSnapshot>::new();
     let mut indexes = HashMap::<String, usize>::new();
     for row in rows {
-        let channel_id: String = row.try_get("channel_id").unwrap_or_default();
+        let channel_id: String = row.channel_id.clone();
         let index = *indexes.entry(channel_id.clone()).or_insert_with(|| {
             let index = snapshots.len();
             snapshots.push(VoicePresenceSnapshot {
                 channel_id,
-                voice_session_id: row.try_get("voice_session_id").ok(),
-                status: row.try_get("status").ok(),
+                voice_session_id: Some(row.voice_session_id.clone()),
+                status: Some(row.status.clone()),
                 participants: Vec::new(),
             });
             index
         });
-        let Some(user_id) = row.try_get::<Option<String>, _>("user_id").ok().flatten() else {
+        let Some(user_id) = row.user_id.clone() else {
             continue;
         };
         snapshots[index]
             .participants
             .push(VoicePresenceParticipant {
                 user_id,
-                display_name: row
-                    .try_get::<Option<String>, _>("display_name")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_else(|| "Member".into()),
-                avatar_url: row
-                    .try_get::<Option<String>, _>("avatar_url")
-                    .ok()
-                    .flatten(),
-                mic_published: row
-                    .try_get::<Option<chrono::DateTime<Utc>>, _>("mic_published_at")
-                    .ok()
-                    .flatten()
-                    .is_some(),
+                display_name: row.display_name.clone().unwrap_or_else(|| "Member".into()),
+                avatar_url: row.avatar_url.clone(),
+                mic_published: row.mic_published_at.clone().is_some(),
             });
     }
     snapshots
@@ -891,9 +875,10 @@ pub async fn presence(
     State(state): State<AppState>,
     Extension(claims): Extension<BrowserClaims>,
 ) -> Result<Json<Vec<VoicePresenceSnapshot>>, AppError> {
-    let rows = sqlx::query(
-        "SELECT vs.channel_id, vs.voice_session_id, vs.status,
-                vps.user_id,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::VoicePresenceRow,
+        r###"SELECT vs.channel_id, vs.voice_session_id, vs.status,
+                vps.user_id AS "user_id?",
                 COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,
                 u.avatar_url, vps.mic_published_at
          FROM voice_sessions vs
@@ -906,9 +891,9 @@ pub async fn presence(
               AND vps.joined_at IS NOT NULL AND vps.left_at IS NULL
          LEFT JOIN users u ON u.user_id = vps.user_id
          WHERE vs.ended_at IS NULL
-         ORDER BY vs.channel_id, vps.joined_at, vps.participant_session_id",
+         ORDER BY vs.channel_id, vps.joined_at, vps.participant_session_id"###,
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(presence_snapshots(rows)))
@@ -918,9 +903,10 @@ async fn channel_presence_snapshot(
     state: &AppState,
     channel_id: Uuid,
 ) -> Result<VoicePresenceSnapshot, AppError> {
-    let rows = sqlx::query(
-        "SELECT vs.channel_id, vs.voice_session_id, vs.status,
-                vps.user_id,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::VoicePresenceRow,
+        r###"SELECT vs.channel_id, vs.voice_session_id, vs.status,
+                vps.user_id AS "user_id?",
                 COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,
                 u.avatar_url, vps.mic_published_at
          FROM voice_sessions vs
@@ -928,9 +914,9 @@ async fn channel_presence_snapshot(
               AND vps.joined_at IS NOT NULL AND vps.left_at IS NULL
          LEFT JOIN users u ON u.user_id = vps.user_id
          WHERE vs.channel_id = $1 AND vs.ended_at IS NULL
-         ORDER BY vps.joined_at, vps.participant_session_id",
+         ORDER BY vps.joined_at, vps.participant_session_id"###,
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(&state.db)
     .await?;
     Ok(presence_snapshots(rows)
@@ -952,11 +938,11 @@ async fn broadcast_voice_presence(state: &AppState, channel_id: Uuid) {
             return;
         }
     };
-    let member_ids: Vec<String> = sqlx::query_scalar(
+    let member_ids: Vec<String> = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships
          WHERE channel_id = $1 AND member_type = 'user'",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();
@@ -1001,36 +987,32 @@ fn transcriber_authorized(state: &AppState, headers: &HeaderMap) -> Result<(), A
     Ok(())
 }
 
-pub(crate) fn transcript_dto(row: sqlx::postgres::PgRow) -> TranscriptSegmentDto {
+pub(crate) fn transcript_dto(
+    row: crate::infra::db::query_rows::TranscriptRow,
+) -> TranscriptSegmentDto {
     TranscriptSegmentDto {
-        segment_id: row.try_get("segment_id").unwrap_or_default(),
-        voice_session_id: row.try_get("voice_session_id").unwrap_or_default(),
-        channel_id: row.try_get("channel_id").unwrap_or_default(),
-        participant_session_id: row.try_get("participant_session_id").unwrap_or_default(),
-        user_id: row.try_get("user_id").unwrap_or_default(),
-        provider_segment_id: row.try_get("provider_segment_id").unwrap_or_default(),
-        provider_event_id: row.try_get("provider_event_id").unwrap_or_default(),
-        track_id: row.try_get("track_id").unwrap_or_default(),
-        channel_seq: row.try_get("channel_seq").unwrap_or_default(),
-        text: row.try_get("text").unwrap_or_default(),
-        started_at_ms: row.try_get("started_at_ms").unwrap_or_default(),
-        ended_at_ms: row.try_get("ended_at_ms").unwrap_or_default(),
-        language: row.try_get("language").ok(),
-        confidence: row.try_get("confidence").ok(),
-        supersedes_segment_id: row.try_get("supersedes_segment_id").ok(),
-        finalized_at: row
-            .try_get::<chrono::DateTime<Utc>, _>("finalized_at")
+        segment_id: row.segment_id.clone(),
+        voice_session_id: row.voice_session_id.clone(),
+        channel_id: row.channel_id.clone(),
+        participant_session_id: row.participant_session_id.clone(),
+        user_id: row.user_id.clone(),
+        provider_segment_id: row.provider_segment_id.clone(),
+        provider_event_id: row.provider_event_id.clone(),
+        track_id: row.track_id.clone(),
+        channel_seq: row.channel_seq.clone(),
+        text: row.text.clone(),
+        started_at_ms: row.started_at_ms.clone(),
+        ended_at_ms: row.ended_at_ms.clone(),
+        language: row.language.clone(),
+        confidence: row.confidence.clone(),
+        supersedes_segment_id: row.supersedes_segment_id.clone(),
+        finalized_at: Some(row.finalized_at.clone())
             .map(|value| value.to_rfc3339())
             .unwrap_or_default(),
-        created_at: row
-            .try_get::<chrono::DateTime<Utc>, _>("created_at")
+        created_at: Some(row.created_at.clone())
             .map(|value| value.to_rfc3339())
             .unwrap_or_default(),
-        deleted_at: row
-            .try_get::<Option<chrono::DateTime<Utc>>, _>("deleted_at")
-            .ok()
-            .flatten()
-            .map(|value| value.to_rfc3339()),
+        deleted_at: row.deleted_at.clone().map(|value| value.to_rfc3339()),
     }
 }
 
@@ -1109,14 +1091,6 @@ fn validate_transcript(body: &TranscriptSegmentIngestRequest) -> Result<ValidTra
     })
 }
 
-pub(crate) const TRANSCRIPT_SELECT: &str =
-    "SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
-            provider_segment_id, provider_event_id, track_id, channel_seq, text,
-            started_at_ms, ended_at_ms, language,
-            confidence::double precision AS confidence,
-            supersedes_segment_id, finalized_at, created_at, deleted_at
-     FROM voice_transcript_segments";
-
 /// POST /internal/v1/voice/sessions/:voice_session_id/transcript-segments
 pub async fn ingest_transcript_segment(
     State(state): State<AppState>,
@@ -1129,7 +1103,7 @@ pub async fn ingest_transcript_segment(
         .map_err(|_| AppError::BadRequest("invalid voice session id".into()))?;
     let valid = validate_transcript(&body)?;
 
-    let speaker = sqlx::query(
+    let speaker = sqlx::query!(
         "SELECT vs.channel_id, vs.status, vs.started_at AS session_started_at,
                 vps.participant_session_id, vps.user_id, vps.joined_at, vps.left_at
          FROM voice_sessions vs
@@ -1138,22 +1112,24 @@ pub async fn ingest_transcript_segment(
          JOIN channel_memberships cm ON cm.channel_id = vs.channel_id
               AND cm.member_id = vps.user_id AND cm.member_type = 'user'
          WHERE vs.voice_session_id = $1",
+        &voice_session_id,
+        body.participant_identity.trim(),
+        body.track_id.trim(),
     )
-    .bind(&voice_session_id)
-    .bind(body.participant_identity.trim())
-    .bind(body.track_id.trim())
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Forbidden("unknown or unauthorized voice participant".into()))?;
-    let status: String = speaker.try_get("status").unwrap_or_default();
+    let status: String = speaker.status.clone();
     if status == "failed" {
         return Err(AppError::BadRequest("voice session has failed".into()));
     }
     let joined_at: chrono::DateTime<Utc> = speaker
-        .try_get("joined_at")
+        .joined_at
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
         .map_err(|_| AppError::BadRequest("participant never joined the room".into()))?;
-    let left_at: Option<chrono::DateTime<Utc>> = speaker.try_get("left_at").ok().flatten();
-    let session_started_at: chrono::DateTime<Utc> = speaker.try_get("session_started_at")?;
+    let left_at: Option<chrono::DateTime<Utc>> = speaker.left_at.clone();
+    let session_started_at: chrono::DateTime<Utc> = speaker.session_started_at.clone();
     let speech_started_at = session_started_at + chrono::Duration::milliseconds(body.started_at_ms);
     let speech_ended_at = session_started_at + chrono::Duration::milliseconds(body.ended_at_ms);
     let grace = chrono::Duration::seconds(30);
@@ -1165,24 +1141,24 @@ pub async fn ingest_transcript_segment(
             "segment falls outside the participant session".into(),
         ));
     }
-    let channel_id: String = speaker.try_get("channel_id")?;
+    let channel_id: String = speaker.channel_id.clone();
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::Internal("invalid channel id in voice session".into()))?;
-    let participant_session_id: String = speaker.try_get("participant_session_id")?;
-    let user_id: String = speaker.try_get("user_id")?;
+    let participant_session_id: String = speaker.participant_session_id.clone();
+    let user_id: String = speaker.user_id.clone();
 
     let supersedes = match body.supersedes_segment_id.as_deref() {
         Some(value) => {
             Uuid::parse_str(value)
                 .map_err(|_| AppError::BadRequest("invalid supersedes_segment_id".into()))?;
-            let belongs: bool = sqlx::query_scalar(
-                "SELECT EXISTS(
-                    SELECT 1 FROM voice_transcript_segments
+            let belongs: bool = sqlx::query_scalar!(
+                r#"SELECT EXISTS(
+                    SELECT 1 AS present FROM voice_transcript_segments
                     WHERE segment_id = $1 AND voice_session_id = $2
-                 )",
+                 ) AS "value!" "#,
+                value,
+                &voice_session_id,
             )
-            .bind(value)
-            .bind(&voice_session_id)
             .fetch_one(&state.db)
             .await?;
             if !belongs {
@@ -1196,18 +1172,23 @@ pub async fn ingest_transcript_segment(
     };
 
     let mut tx = state.db.begin().await?;
-    let existing_sql = format!(
-        "{TRANSCRIPT_SELECT}
+    if let Some(row) = sqlx::query_as!(
+        crate::infra::db::query_rows::TranscriptRow,
+        r###"SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+            provider_segment_id, provider_event_id, track_id, channel_seq, text,
+            started_at_ms, ended_at_ms, language,
+            confidence::double precision AS confidence,
+            supersedes_segment_id, finalized_at, created_at, deleted_at
+     FROM voice_transcript_segments
          WHERE voice_session_id = $1
            AND (provider_event_id = $2 OR provider_segment_id = $3)
-         ORDER BY created_at LIMIT 1"
-    );
-    if let Some(row) = sqlx::query(&existing_sql)
-        .bind(&voice_session_id)
-        .bind(body.provider_event_id.trim())
-        .bind(body.segment_id.trim())
-        .fetch_optional(&mut *tx)
-        .await?
+         ORDER BY created_at LIMIT 1"###,
+        &voice_session_id,
+        body.provider_event_id.trim(),
+        body.segment_id.trim(),
+    )
+    .fetch_optional(&mut *tx)
+    .await?
     {
         tx.commit().await?;
         return Ok(Json(transcript_dto(row)));
@@ -1215,57 +1196,69 @@ pub async fn ingest_transcript_segment(
 
     let seq = channel_seq::allocate(&mut tx, channel_uuid).await?;
     let segment_id = Uuid::new_v4().to_string();
-    let inserted = sqlx::query(
-        "INSERT INTO voice_transcript_segments
+    let inserted = sqlx::query_as!(
+        crate::infra::db::query_rows::TranscriptRow,
+        r###"INSERT INTO voice_transcript_segments
             (segment_id, voice_session_id, channel_id, participant_session_id, user_id,
              provider_segment_id, provider_event_id, track_id, channel_seq, text,
              started_at_ms, ended_at_ms, language, confidence, supersedes_segment_id,
              finalized_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                 $14::numeric, $15, $16)
+                 $14::text::numeric, $15, $16)
          ON CONFLICT DO NOTHING
          RETURNING segment_id, voice_session_id, channel_id, participant_session_id, user_id,
                    provider_segment_id, provider_event_id, track_id, channel_seq, text,
                    started_at_ms, ended_at_ms, language,
                    confidence::double precision AS confidence,
-                   supersedes_segment_id, finalized_at, created_at",
+                   supersedes_segment_id, finalized_at, created_at, deleted_at"###,
+        &segment_id,
+        &voice_session_id,
+        &channel_id,
+        &participant_session_id,
+        &user_id,
+        body.segment_id.trim(),
+        body.provider_event_id.trim(),
+        body.track_id.trim(),
+        seq,
+        &valid.text,
+        body.started_at_ms,
+        body.ended_at_ms,
+        valid.language.as_deref(),
+        valid.confidence.as_deref(),
+        supersedes.as_deref(),
+        valid.finalized_at,
     )
-    .bind(&segment_id)
-    .bind(&voice_session_id)
-    .bind(&channel_id)
-    .bind(&participant_session_id)
-    .bind(&user_id)
-    .bind(body.segment_id.trim())
-    .bind(body.provider_event_id.trim())
-    .bind(body.track_id.trim())
-    .bind(seq)
-    .bind(&valid.text)
-    .bind(body.started_at_ms)
-    .bind(body.ended_at_ms)
-    .bind(&valid.language)
-    .bind(&valid.confidence)
-    .bind(&supersedes)
-    .bind(valid.finalized_at)
     .fetch_optional(&mut *tx)
     .await?;
 
     let Some(row) = inserted else {
         tx.rollback().await?;
-        let row = sqlx::query(&existing_sql)
-            .bind(&voice_session_id)
-            .bind(body.provider_event_id.trim())
-            .bind(body.segment_id.trim())
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or_else(|| AppError::Conflict("transcript segment conflict".into()))?;
+        let row = sqlx::query_as!(
+            crate::infra::db::query_rows::TranscriptRow,
+            r###"SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+            provider_segment_id, provider_event_id, track_id, channel_seq, text,
+            started_at_ms, ended_at_ms, language,
+            confidence::double precision AS confidence,
+            supersedes_segment_id, finalized_at, created_at, deleted_at
+     FROM voice_transcript_segments
+         WHERE voice_session_id = $1
+           AND (provider_event_id = $2 OR provider_segment_id = $3)
+         ORDER BY created_at LIMIT 1"###,
+            &voice_session_id,
+            body.provider_event_id.trim(),
+            body.segment_id.trim(),
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Conflict("transcript segment conflict".into()))?;
         return Ok(Json(transcript_dto(row)));
     };
-    sqlx::query(
+    sqlx::query!(
         "UPDATE voice_sessions
          SET transcription_status = 'active', updated_at = NOW()
          WHERE voice_session_id = $1 AND transcription_status IN ('off', 'starting')",
+        &voice_session_id,
     )
-    .bind(&voice_session_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1296,24 +1289,22 @@ pub async fn transcriber_context(
     if room_name.is_empty() || room_name.len() > 255 {
         return Err(AppError::BadRequest("invalid LiveKit room name".into()));
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id, channel_id, provider_room_id, started_at
          FROM voice_sessions
          WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1",
+        &room_name,
     )
-    .bind(&room_name)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
     Ok(Json(VoiceTranscriberContext {
-        voice_session_id: row.try_get("voice_session_id")?,
-        channel_id: row.try_get("channel_id")?,
-        room_name: row.try_get("provider_room_id")?,
-        started_at: row
-            .try_get::<chrono::DateTime<Utc>, _>("started_at")?
-            .to_rfc3339(),
+        voice_session_id: row.voice_session_id.clone(),
+        channel_id: row.channel_id.clone(),
+        room_name: row.provider_room_id.clone(),
+        started_at: row.started_at.clone().to_rfc3339(),
     }))
 }
 
@@ -1334,17 +1325,22 @@ pub async fn transcript(
     }
     let after_seq = query.after_seq.unwrap_or(0).max(0);
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
-    let sql = format!(
-        "{TRANSCRIPT_SELECT}
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::TranscriptRow,
+        r###"SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+            provider_segment_id, provider_event_id, track_id, channel_seq, text,
+            started_at_ms, ended_at_ms, language,
+            confidence::double precision AS confidence,
+            supersedes_segment_id, finalized_at, created_at, deleted_at
+     FROM voice_transcript_segments
          WHERE channel_id = $1 AND channel_seq > $2 AND deleted_at IS NULL
-         ORDER BY channel_seq ASC LIMIT $3"
-    );
-    let rows = sqlx::query(&sql)
-        .bind(channel_uuid.to_string())
-        .bind(after_seq)
-        .bind(limit)
-        .fetch_all(&state.db)
-        .await?;
+         ORDER BY channel_seq ASC LIMIT $3"###,
+        channel_uuid.to_string(),
+        after_seq,
+        limit,
+    )
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows.into_iter().map(transcript_dto).collect()))
 }
 
@@ -1372,38 +1368,38 @@ pub async fn grant_consent(
     let provider_room_id = room_name(&channel_id);
 
     // Resolve the live session (must be joined already).
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id FROM voice_sessions
          WHERE channel_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Conflict("join the voice channel first".into()))?;
-    let voice_session_id: String = row.try_get("voice_session_id")?;
+    let voice_session_id: String = row.voice_session_id.clone();
 
     // Record consent (idempotent) for every participant-session this user has in
     // the session (normally one).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE voice_participant_sessions
          SET consent_version = $1
          WHERE user_id = $2 AND voice_session_id = $3 AND consent_version IS DISTINCT FROM $1",
+        CONSENT_VERSION,
+        &claims.sub,
+        &voice_session_id,
     )
-    .bind(CONSENT_VERSION)
-    .bind(&claims.sub)
-    .bind(&voice_session_id)
     .execute(&state.db)
     .await?;
 
     // Re-mint a publishable token against the same identity the client already
     // holds — same `provider_identity` so it maps to the existing participant.
-    let identity_row: Option<String> = sqlx::query_scalar(
+    let identity_row: Option<String> = sqlx::query_scalar!(
         "SELECT provider_identity FROM voice_participant_sessions
          WHERE user_id = $1 AND voice_session_id = $2 LIMIT 1",
+        &claims.sub,
+        &voice_session_id,
     )
-    .bind(&claims.sub)
-    .bind(&voice_session_id)
     .fetch_optional(&state.db)
     .await?;
     let Some(identity) = identity_row else {
@@ -1460,23 +1456,23 @@ pub async fn withdraw_consent(
             "channel is not a voice channel".into(),
         ));
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT voice_session_id FROM voice_sessions
          WHERE channel_id = $1 AND ended_at IS NULL
          ORDER BY started_at DESC LIMIT 1",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Conflict("no active voice session".into()))?;
-    let voice_session_id: String = row.try_get("voice_session_id")?;
-    sqlx::query(
+    let voice_session_id: String = row.voice_session_id.clone();
+    sqlx::query!(
         "UPDATE voice_participant_sessions
          SET consent_version = NULL
          WHERE user_id = $1 AND voice_session_id = $2",
+        &claims.sub,
+        &voice_session_id,
     )
-    .bind(&claims.sub)
-    .bind(&voice_session_id)
     .execute(&state.db)
     .await?;
 
@@ -1516,17 +1512,17 @@ pub(crate) async fn write_transcript_audit(
     action: &str,
     details: serde_json::Value,
 ) {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "INSERT INTO transcript_audit_events
             (channel_id, voice_session_id, segment_id, actor_user_id, action, details)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        channel_id,
+        voice_session_id,
+        segment_id,
+        actor_user_id,
+        action,
+        details,
     )
-    .bind(channel_id)
-    .bind(voice_session_id)
-    .bind(segment_id)
-    .bind(actor_user_id)
-    .bind(action)
-    .bind(details)
     .execute(db)
     .await;
     if let Err(error) = result {
@@ -1616,15 +1612,15 @@ pub async fn livekit_webhook(
         .unwrap_or("");
 
     let mut tx = state.db.begin().await?;
-    let claimed = sqlx::query(
+    let claimed = sqlx::query!(
         "INSERT INTO voice_webhook_events
             (provider, event_id, event_type, provider_room_id)
          VALUES ('livekit', $1, $2, NULLIF($3, ''))
          ON CONFLICT (provider, event_id) DO NOTHING",
+        event_id,
+        event_name,
+        provider_room_id,
     )
-    .bind(event_id)
-    .bind(event_name)
-    .bind(provider_room_id)
     .execute(&mut *tx)
     .await?
     .rows_affected()
@@ -1637,82 +1633,82 @@ pub async fn livekit_webhook(
     let channel_id: Option<String> = if provider_room_id.is_empty() {
         None
     } else {
-        sqlx::query_scalar(
+        sqlx::query_scalar!(
             "SELECT channel_id FROM voice_sessions
              WHERE provider = 'livekit' AND provider_room_id = $1
              ORDER BY started_at DESC LIMIT 1",
+            provider_room_id,
         )
-        .bind(provider_room_id)
         .fetch_optional(&mut *tx)
         .await?
     };
 
     match event_name {
         "room_started" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_sessions SET status = 'active', updated_at = NOW()
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
+                provider_room_id,
             )
-            .bind(provider_room_id)
             .execute(&mut *tx)
             .await?;
         }
         "room_finished" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_sessions
                  SET status = 'ended', ended_at = NOW(), updated_at = NOW()
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
+                provider_room_id,
             )
-            .bind(provider_room_id)
             .execute(&mut *tx)
             .await?;
         }
         "participant_joined" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_participant_sessions SET joined_at = COALESCE(joined_at, NOW())
                  WHERE provider_identity = $1 AND left_at IS NULL",
+                participant_identity,
             )
-            .bind(participant_identity)
             .execute(&mut *tx)
             .await?;
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_sessions SET status = 'active', updated_at = NOW()
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
+                provider_room_id,
             )
-            .bind(provider_room_id)
             .execute(&mut *tx)
             .await?;
         }
         "participant_left" | "participant_connection_aborted" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_participant_sessions SET left_at = COALESCE(left_at, NOW())
                  WHERE provider_identity = $1 AND left_at IS NULL",
+                participant_identity,
             )
-            .bind(participant_identity)
             .execute(&mut *tx)
             .await?;
         }
         "track_published" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_participant_sessions
                  SET mic_published_at = COALESCE(mic_published_at, NOW()),
                      provider_track_id = NULLIF($2, '')
                  WHERE provider_identity = $1 AND left_at IS NULL",
+                participant_identity,
+                provider_track_id,
             )
-            .bind(participant_identity)
-            .bind(provider_track_id)
             .execute(&mut *tx)
             .await?;
         }
         "track_unpublished" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE voice_participant_sessions
                  SET mic_published_at = NULL, provider_track_id = NULL
                  WHERE provider_identity = $1 AND left_at IS NULL
                    AND (provider_track_id = NULLIF($2, '') OR NULLIF($2, '') IS NULL)",
+                participant_identity,
+                provider_track_id,
             )
-            .bind(participant_identity)
-            .bind(provider_track_id)
             .execute(&mut *tx)
             .await?;
         }

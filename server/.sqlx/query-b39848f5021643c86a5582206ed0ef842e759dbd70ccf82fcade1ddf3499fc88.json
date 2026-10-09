@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspaces (workspace_id, name, kind, owner_user_id)\n         VALUES ($1, 'Personal', 'personal', $2)\n         ON CONFLICT (owner_user_id) WHERE kind = 'personal' DO NOTHING\n         RETURNING workspace_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b39848f5021643c86a5582206ed0ef842e759dbd70ccf82fcade1ddf3499fc88"
+}

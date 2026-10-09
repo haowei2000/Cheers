@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO integration_credentials (\n             credential_id, integration_id, subject_type, subject_id, external_account,\n             access_token_enc, refresh_token_enc, scopes, expires_at, created_by\n         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n         ON CONFLICT (integration_id, subject_type, subject_id, external_account)\n         DO UPDATE SET\n             access_token_enc  = EXCLUDED.access_token_enc,\n             refresh_token_enc = EXCLUDED.refresh_token_enc,\n             scopes            = EXCLUDED.scopes,\n             expires_at        = EXCLUDED.expires_at,\n             revoked_at        = NULL,\n             last_refreshed_at = NOW(),\n             updated_at        = NOW()\n         RETURNING credential_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credential_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "77170d5ac4bee34b43976a4aaa3d4dcc491a6e95d71d47fe6e8d39de2bf9901b"
+}

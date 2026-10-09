@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy\n        FROM channel_bot_monitoring\n        WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())\n        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "debounce_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "min_interval_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_evaluations_per_hour",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "batch_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "confidence_threshold",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_evaluated_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "policy",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "768562168ad4536d49c1868b46a915437d1795493d7dbd0d5bd10ba37ced9f1e"
+}

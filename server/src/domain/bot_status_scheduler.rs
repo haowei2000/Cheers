@@ -53,15 +53,16 @@ async fn tick(state: &AppState) -> Result<(), sqlx::Error> {
     // Due = opted in, not disabled, has an owner, and either never refreshed or
     // its interval has elapsed. GREATEST(..,1) floors a null/0 interval at 1 min
     // so a misconfigured bot can't be prompted every single tick.
-    let due: Vec<(String, String)> = sqlx::query_as(
-        "SELECT bot_id, created_by FROM bot_accounts
+    let due: Vec<(String, String)> = sqlx::query!(
+        r#"SELECT bot_id, created_by AS "created_by!" FROM bot_accounts
          WHERE status_auto_update = TRUE
            AND is_disabled = FALSE
            AND created_by IS NOT NULL
            AND (status_last_auto_update_at IS NULL
                 OR status_last_auto_update_at
-                   < NOW() - make_interval(mins => GREATEST(status_update_interval_minutes, 1)))",
+                   < NOW() - make_interval(mins => GREATEST(status_update_interval_minutes, 1)))"#,
     )
+    .map(|row| (row.bot_id, row.created_by))
     .fetch_all(&state.db)
     .await?;
 
@@ -94,20 +95,17 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
     // the post and the clock bump so the bot is re-evaluated next tick (a permission
     // change takes effect on its own). Fail-open on a rules error, matching the
     // manual path and create_message.
-    let owner_role: String = sqlx::query(
+    let owner_role: String = sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        owner,
     )
-    .bind(channel_id.to_string())
-    .bind(owner)
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| {
-        use sqlx::Row;
-        r.try_get::<Option<String>, _>("role").ok().flatten()
-    })
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string());
     let may_prompt = crate::domain::acp_policy::allows(
         &state.db,
@@ -128,12 +126,13 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
         return Ok(());
     }
 
-    let configured: Option<String> =
-        sqlx::query_scalar("SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1")
-            .bind(bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten();
+    let configured: Option<String> = sqlx::query_scalar!(
+        "SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1",
+        bot_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
     let prompt = configured
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -163,10 +162,12 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
     // Mark attempted (NOW()) so a non-responding agent isn't re-prompted every
     // tick — the clock resets on the post, not on the agent's reply. A bot that
     // does answer will bump this again via persist_bot_self_status.
-    sqlx::query("UPDATE bot_accounts SET status_last_auto_update_at = NOW() WHERE bot_id = $1")
-        .bind(bot_id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "UPDATE bot_accounts SET status_last_auto_update_at = NOW() WHERE bot_id = $1",
+        bot_id,
+    )
+    .execute(&state.db)
+    .await?;
 
     Ok(())
 }

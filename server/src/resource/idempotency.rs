@@ -15,7 +15,7 @@ use std::io::Write;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 
 use super::{Principal, ResourceResult};
 
@@ -64,26 +64,24 @@ impl IdempotencyKey {
 
     /// The committed result of an earlier call with this key, flagged as a replay.
     pub async fn replay(&self, db: &PgPool) -> Result<Option<Value>, (String, String)> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT request_hash, response FROM resource_idempotency_keys
              WHERE principal_type = $1 AND principal_id = $2 AND resource = $3
                AND idempotency_key = $4
                AND created_at > NOW() - make_interval(hours => $5)",
+            self.principal_type,
+            &self.principal_id,
+            self.resource,
+            &self.key,
+            RETENTION_HOURS,
         )
-        .bind(self.principal_type)
-        .bind(&self.principal_id)
-        .bind(self.resource)
-        .bind(&self.key)
-        .bind(RETENTION_HOURS)
         .fetch_optional(db)
         .await
         .map_err(super::db_err("idempotency: select key"))?;
         let Some(row) = row else {
             return Ok(None);
         };
-        let stored_hash: String = row
-            .try_get("request_hash")
-            .map_err(super::db_err("idempotency: read request_hash"))?;
+        let stored_hash: String = row.request_hash.clone();
         if stored_hash != self.request_hash {
             return Err(super::resource_error(
                 "E_IDEMPOTENCY_KEY_REUSED",
@@ -91,7 +89,9 @@ impl IdempotencyKey {
             ));
         }
         let mut response: Value = row
-            .try_get("response")
+            .response
+            .clone()
+            .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
             .map_err(super::db_err("idempotency: read response"))?;
         if let Some(object) = response.as_object_mut() {
             object.insert(REPLAY_FLAG.to_string(), Value::Bool(true));
@@ -106,21 +106,21 @@ impl IdempotencyKey {
         &self,
         tx: &mut Transaction<'_, Postgres>,
     ) -> Result<bool, (String, String)> {
-        let claimed = sqlx::query(
+        let claimed = sqlx::query!(
             "INSERT INTO resource_idempotency_keys
                  (principal_type, principal_id, resource, idempotency_key, request_hash)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (principal_type, principal_id, resource, idempotency_key) DO UPDATE
                  SET request_hash = EXCLUDED.request_hash, response = NULL, created_at = NOW()
                  WHERE resource_idempotency_keys.created_at <= NOW() - make_interval(hours => $6)
-             RETURNING 1",
+             RETURNING 1 AS claimed",
+            self.principal_type,
+            &self.principal_id,
+            self.resource,
+            &self.key,
+            &self.request_hash,
+            RETENTION_HOURS,
         )
-        .bind(self.principal_type)
-        .bind(&self.principal_id)
-        .bind(self.resource)
-        .bind(&self.key)
-        .bind(&self.request_hash)
-        .bind(RETENTION_HOURS)
         .fetch_optional(&mut **tx)
         .await
         .map_err(super::db_err("idempotency: claim key"))?;
@@ -133,16 +133,16 @@ impl IdempotencyKey {
         tx: &mut Transaction<'_, Postgres>,
         response: &Value,
     ) -> Result<(), (String, String)> {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE resource_idempotency_keys SET response = $5
              WHERE principal_type = $1 AND principal_id = $2 AND resource = $3
                AND idempotency_key = $4",
+            self.principal_type,
+            &self.principal_id,
+            self.resource,
+            &self.key,
+            response,
         )
-        .bind(self.principal_type)
-        .bind(&self.principal_id)
-        .bind(self.resource)
-        .bind(&self.key)
-        .bind(response)
         .execute(&mut **tx)
         .await
         .map_err(super::db_err("idempotency: store response"))?;
@@ -162,11 +162,11 @@ impl IdempotencyKey {
 
 /// Deletes keys past retention, returning how many were removed.
 pub async fn sweep_expired(db: &PgPool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "DELETE FROM resource_idempotency_keys
          WHERE created_at <= NOW() - make_interval(hours => $1)",
+        RETENTION_HOURS,
     )
-    .bind(RETENTION_HOURS)
     .execute(db)
     .await?;
     Ok(result.rows_affected())

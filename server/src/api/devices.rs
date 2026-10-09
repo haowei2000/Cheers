@@ -36,7 +36,7 @@ pub async fn register_device(
     if token.is_empty() {
         return Err(AppError::BadRequest("push_token is required".into()));
     }
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO user_devices (user_id, push_token, platform, device_name)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (push_token) DO UPDATE
@@ -44,11 +44,11 @@ pub async fn register_device(
                 platform = EXCLUDED.platform,
                 device_name = EXCLUDED.device_name,
                 last_seen_at = now()",
+        &claims.sub,
+        token,
+        body.platform.trim(),
+        body.device_name.as_deref(),
     )
-    .bind(&claims.sub)
-    .bind(token)
-    .bind(body.platform.trim())
-    .bind(body.device_name.as_deref())
     .execute(&state.db)
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -61,10 +61,12 @@ pub async fn delete_device(
     Extension(claims): Extension<Claims>,
     Path(push_token): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    sqlx::query("DELETE FROM user_devices WHERE push_token = $1 AND user_id = $2")
-        .bind(&push_token)
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM user_devices WHERE push_token = $1 AND user_id = $2",
+        &push_token,
+        &claims.sub,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({ "ok": true })))
 }

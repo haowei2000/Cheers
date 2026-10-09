@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.session_id, s.metadata->'workspace'->>'cwd' AS cwd\n           FROM cheers_sessions s\n           JOIN cheers_session_bindings b ON b.session_id = s.session_id\n          WHERE b.channel_id = $1 AND s.bot_id = $2\n            AND s.status NOT IN ('terminated', 'revoked', 'expired')\n          ORDER BY s.last_used_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "cwd",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "820443589689c62fcae38a6027533a7059f46806ae8925f56c6f1b7e20350f5b"
+}

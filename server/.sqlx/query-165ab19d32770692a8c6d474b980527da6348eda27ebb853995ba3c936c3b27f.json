@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT path, content FROM context_files\n         WHERE channel_id = $1 AND is_dir = FALSE\n           AND (path = $2 OR path = $3 OR path LIKE '%/' || $4 ESCAPE '\\')\n         ORDER BY (path = $2) DESC, length(path) ASC\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "165ab19d32770692a8c6d474b980527da6348eda27ebb853995ba3c936c3b27f"
+}

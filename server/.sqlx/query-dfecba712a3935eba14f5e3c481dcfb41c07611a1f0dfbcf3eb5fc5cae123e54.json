@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_participant_sessions\n                 SET mic_published_at = NULL, provider_track_id = NULL\n                 WHERE provider_identity = $1 AND left_at IS NULL\n                   AND (provider_track_id = NULLIF($2, '') OR NULLIF($2, '') IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dfecba712a3935eba14f5e3c481dcfb41c07611a1f0dfbcf3eb5fc5cae123e54"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status, message, responded_at, updated_at)\n                 VALUES ($1, $2, $3, $4, 'accepted', $5, NOW(), NOW())\n                 ON CONFLICT (pair_key) DO UPDATE\n                 SET status = 'accepted', responded_at = NOW(), updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "272cc6958041aa45aaaba223d4a88568ad25a9d61b3bc4c1187952a534c81bcb"
+}

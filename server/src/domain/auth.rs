@@ -54,15 +54,15 @@ pub async fn load_auth_user(db: &PgPool, user_id: &str) -> Result<AuthUser, AppE
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
-    if row.is_suspended {
+    if row.is_suspended.clone() {
         return Err(AppError::Forbidden("account suspended".into()));
     }
     Ok(AuthUser {
-        id: row.user_id,
-        username: row.username,
-        display_name: row.display_name,
-        role: row.role,
-        token_version: row.token_version,
+        id: row.user_id.clone(),
+        username: row.username.clone(),
+        display_name: row.display_name.clone(),
+        role: row.role.clone(),
+        token_version: row.token_version.clone(),
     })
 }
 
@@ -84,7 +84,7 @@ pub async fn authenticate(
     .map_err(AppError::Db)?
     .ok_or_else(|| AppError::Unauthorized("invalid credentials".into()))?;
 
-    let hashed: Option<String> = row.password_hash;
+    let hashed: Option<String> = row.password_hash.clone();
     let hashed = hashed
         .ok_or_else(|| AppError::Unauthorized("use Sign in with Apple for this account".into()))?;
 
@@ -98,15 +98,15 @@ pub async fn authenticate(
         return Err(AppError::Unauthorized("invalid credentials".into()));
     }
 
-    if row.is_suspended {
+    if row.is_suspended.clone() {
         return Err(AppError::Forbidden("account suspended".into()));
     }
 
     Ok(AuthUser {
-        id: row.user_id,
-        username: row.username,
-        display_name: row.display_name,
-        role: row.role,
-        token_version: row.token_version,
+        id: row.user_id.clone(),
+        username: row.username.clone(),
+        display_name: row.display_name.clone(),
+        role: row.role.clone(),
+        token_version: row.token_version.clone(),
     })
 }

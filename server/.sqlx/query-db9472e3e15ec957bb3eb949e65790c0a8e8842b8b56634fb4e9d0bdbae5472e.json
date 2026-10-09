@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT seq,kind,actor,text,created_at FROM (\n        SELECT channel_seq AS seq,'message'::text AS kind,COALESCE(NULLIF(u.display_name,''),u.username,m.sender_id) AS actor,m.content AS text,m.created_at\n        FROM messages m LEFT JOIN users u ON m.sender_type='user' AND u.user_id=m.sender_id\n        WHERE m.channel_id=$1 AND m.sender_type='user' AND NOT m.is_partial AND NOT m.is_deleted AND NOT m.is_secret AND m.channel_seq>$2\n        UNION ALL\n        SELECT v.channel_seq,'voice_transcript',COALESCE(NULLIF(u.display_name,''),u.username,v.user_id),v.text,v.finalized_at\n        FROM voice_transcript_segments v LEFT JOIN users u ON u.user_id=v.user_id\n        WHERE v.channel_id=$1 AND $3 AND v.channel_seq>$2\n      ) activity ORDER BY seq LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "db9472e3e15ec957bb3eb949e65790c0a8e8842b8b56634fb4e9d0bdbae5472e"
+}

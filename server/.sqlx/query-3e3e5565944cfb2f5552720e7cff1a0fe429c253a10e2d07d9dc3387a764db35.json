@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id, bot_id, mode, scope, debounce_seconds, min_interval_seconds, max_evaluations_per_hour, batch_size, confidence_threshold::float8 AS \"confidence_threshold!\", policy FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "debounce_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "min_interval_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_evaluations_per_hour",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "batch_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "confidence_threshold!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "policy",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "3e3e5565944cfb2f5552720e7cff1a0fe429c253a10e2d07d9dc3387a764db35"
+}

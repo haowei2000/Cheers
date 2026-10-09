@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id, session_id, entries, total, completed, updated_at\n         FROM bot_session_plans\n         WHERE channel_id = $1\n           AND ($2::text IS NULL OR session_id = $2::text)\n         ORDER BY updated_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "entries",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "total",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "completed",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "273610387d72838f50408c8857e0e3f6a1d46654695636b817a8311771f80c87"
+}

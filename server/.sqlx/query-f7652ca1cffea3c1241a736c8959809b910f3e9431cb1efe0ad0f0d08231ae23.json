@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT webhook_secret_enc\n           FROM integration_installations\n          WHERE installation_id = $1 AND integration_id = $2 AND disabled_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "webhook_secret_enc",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f7652ca1cffea3c1241a736c8959809b910f3e9431cb1efe0ad0f0d08231ae23"
+}

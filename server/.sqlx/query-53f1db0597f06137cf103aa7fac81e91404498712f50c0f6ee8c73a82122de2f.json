@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.bot_id, b.scope_id AS channel_id,\n                COUNT(*) FILTER (WHERE s.status = 'busy') AS busy,\n                COUNT(*) FILTER (WHERE s.status NOT IN\n                    ('busy','terminated','revoked','expired','error')) AS idle\n         FROM cheers_session_bindings b\n         JOIN cheers_sessions s ON s.session_id = b.session_id\n         WHERE b.scope_type = 'channel' AND b.scope_id = ANY($1)\n         GROUP BY b.bot_id, b.scope_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "busy",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "idle",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "53f1db0597f06137cf103aa7fac81e91404498712f50c0f6ee8c73a82122de2f"
+}

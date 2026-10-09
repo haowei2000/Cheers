@@ -37,7 +37,7 @@ pub async fn export_transcript(
     Extension(claims): Extension<BrowserClaims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<TranscriptExportResponse>, AppError> {
-    use crate::api::voice::{transcript_dto, TranscriptSegmentDto, TRANSCRIPT_SELECT};
+    use crate::api::voice::{transcript_dto, TranscriptSegmentDto};
     use chrono::Utc;
 
     let channel_uuid = Uuid::parse_str(&channel_id)
@@ -54,16 +54,21 @@ pub async fn export_transcript(
         ));
     }
     const EXPORT_LIMIT: i64 = 10_000;
-    let query_string = format!(
-        "{TRANSCRIPT_SELECT}
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::TranscriptRow,
+        r###"SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+            provider_segment_id, provider_event_id, track_id, channel_seq, text,
+            started_at_ms, ended_at_ms, language,
+            confidence::double precision AS confidence,
+            supersedes_segment_id, finalized_at, created_at, deleted_at
+     FROM voice_transcript_segments
          WHERE channel_id = $1 AND deleted_at IS NULL
-         ORDER BY channel_seq ASC LIMIT $2",
-    );
-    let rows = sqlx::query(&query_string)
-        .bind(channel_uuid.to_string())
-        .bind(EXPORT_LIMIT)
-        .fetch_all(&state.db)
-        .await?;
+         ORDER BY channel_seq ASC LIMIT $2"###,
+        channel_uuid.to_string(),
+        EXPORT_LIMIT,
+    )
+    .fetch_all(&state.db)
+    .await?;
     let segments: Vec<TranscriptSegmentDto> = rows.into_iter().map(transcript_dto).collect();
     write_transcript_audit(
         &state.db,
@@ -101,13 +106,13 @@ pub async fn delete_transcript_segment(
             "channel owner or admin required".into(),
         ));
     }
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE voice_transcript_segments
          SET deleted_at = NOW()
          WHERE channel_id = $1 AND channel_seq = $2 AND deleted_at IS NULL",
+        &channel_id,
+        seq,
     )
-    .bind(&channel_id)
-    .bind(seq)
     .execute(&state.db)
     .await?;
     if result.rows_affected() == 0 {

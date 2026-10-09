@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM bot_event_access bea\n         USING channels c\n         WHERE bea.channel_id = c.channel_id AND c.workspace_id = $1\n           AND c.type <> 'dm' AND bea.subject_kind = 'user' AND bea.subject_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2051c3726e82d2d2f6c0b26b3e4823cda9f8bdaffb60c02c3c0d731c1d14a4ef"
+}

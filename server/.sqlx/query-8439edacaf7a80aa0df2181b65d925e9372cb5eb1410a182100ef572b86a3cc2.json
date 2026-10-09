@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_features (channel_id, feature, config, enabled)\n         VALUES ($1, $2, $3, TRUE)\n         ON CONFLICT (channel_id, feature) DO UPDATE\n           SET enabled = TRUE, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8439edacaf7a80aa0df2181b65d925e9372cb5eb1410a182100ef572b86a3cc2"
+}

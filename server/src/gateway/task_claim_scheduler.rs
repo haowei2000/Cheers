@@ -4,7 +4,7 @@
 
 use chrono::Timelike;
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -45,7 +45,8 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
     // Re-open ranges whose connector vanished mid-evaluation. The cursor rewind
     // is conditional on still pointing at that exact reservation, so it cannot
     // overwrite a later successful reservation.
-    sqlx::query!(r#"WITH stale AS (
+    sqlx::Executor::execute(&state.db, sqlx::query!(
+        r#"WITH stale AS (
         SELECT evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to
         FROM task_claim_evaluations WHERE status='dispatched' AND dispatched_at < NOW()-INTERVAL '10 minutes'
       ), rewound AS (
@@ -53,11 +54,13 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
         FROM stale s WHERE m.channel_id=s.channel_id AND m.bot_id=s.bot_id AND m.last_evaluated_seq=s.source_seq_to
         RETURNING s.evaluation_id
       ) UPDATE task_claim_evaluations e SET status='failed',error='evaluation lease expired',completed_at=NOW()
-        FROM rewound r WHERE e.evaluation_id=r.evaluation_id"#).execute(&state.db).await?;
-    let rows = sqlx::query(r#"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy
+        FROM rewound r WHERE e.evaluation_id=r.evaluation_id"#,
+    )).await?;
+    let rows = sqlx::query_as!(crate::infra::db::query_rows::MonitoringRow, r###"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy
         FROM channel_bot_monitoring
         WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())
-        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20"#).fetch_all(&state.db).await?;
+        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20"###,
+    ).fetch_all(&state.db).await?;
     for row in rows {
         if let Err(error) = schedule_one(state, row).await {
             tracing::warn!(%error, "task-claim evaluation scheduling failed");
@@ -66,41 +69,60 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::Result<()> {
-    let channel_id: Uuid = row.try_get::<String, _>("channel_id")?.parse()?;
-    let bot_id: Uuid = row.try_get::<String, _>("bot_id")?.parse()?;
+async fn schedule_one(
+    state: &AppState,
+    row: crate::infra::db::query_rows::MonitoringRow,
+) -> anyhow::Result<()> {
+    let channel_id: Uuid = row.channel_id.clone().parse()?;
+    let bot_id: Uuid = row.bot_id.clone().parse()?;
     if !state.bot_locator.is_online(bot_id).await {
-        sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2")
-            .bind(channel_id.to_string()).bind(bot_id.to_string()).execute(&state.db).await?;
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),
+            bot_id.to_string(),
+        ).execute(&state.db).await?;
         return Ok(());
     }
-    let mode: String = row.try_get("mode")?;
-    let last: i64 = row.try_get("last_evaluated_seq")?;
-    let batch: i32 = row.try_get("batch_size")?;
-    let max_hourly: i32 = row.try_get("max_evaluations_per_hour")?;
-    let debounce: i32 = row.try_get("debounce_seconds")?;
-    let interval: i32 = row.try_get("min_interval_seconds")?;
-    let confidence: f64 = row.try_get("confidence_threshold")?;
-    let policy: serde_json::Value = row.try_get("policy").unwrap_or_else(|_| json!({}));
+    let mode: String = row.mode.clone();
+    let last: i64 = row.last_evaluated_seq.clone();
+    let batch: i32 = row.batch_size.clone();
+    let max_hourly: i32 = row.max_evaluations_per_hour.clone();
+    let debounce: i32 = row.debounce_seconds.clone();
+    let interval: i32 = row.min_interval_seconds.clone();
+    let confidence: f64 = row
+        .confidence_threshold
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+    let policy: serde_json::Value = row.policy.clone();
     // Quiet-hours gate: if the policy declares a quiet window and we are inside
     // it, pause (re-arm at the top of the hour — the sweeper will re-check on
     // the next tick). `quiet_hours: { "start": "22:00", "end": "07:00" }`.
     if let Some(window) = policy.get("quiet_hours") {
         if in_quiet_window(window) {
-            sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 minutes' WHERE channel_id=$1 AND bot_id=$2")
-                .bind(channel_id.to_string()).bind(bot_id.to_string()).execute(&state.db).await?;
+            sqlx::query!(
+                "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 minutes' WHERE channel_id=$1 AND bot_id=$2",
+                channel_id.to_string(),
+                bot_id.to_string(),
+            ).execute(&state.db).await?;
             return Ok(());
         }
     }
-    let hourly: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_claim_evaluations WHERE channel_id=$1 AND bot_id=$2 AND reserved_at > NOW()-INTERVAL '1 hour'")
-        .bind(channel_id.to_string()).bind(bot_id.to_string()).fetch_one(&state.db).await?;
+    let hourly: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM task_claim_evaluations WHERE channel_id=$1 AND bot_id=$2 AND reserved_at > NOW()-INTERVAL '1 hour'"#,
+        channel_id.to_string(),
+        bot_id.to_string(),
+    ).fetch_one(&state.db).await?;
     if hourly >= i64::from(max_hourly) {
-        sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '5 minutes' WHERE channel_id=$1 AND bot_id=$2")
-            .bind(channel_id.to_string()).bind(bot_id.to_string()).execute(&state.db).await?;
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '5 minutes' WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),
+            bot_id.to_string(),
+        ).execute(&state.db).await?;
         return Ok(());
     }
     let include_voice = mode != "text";
-    let candidates = sqlx::query(r#"SELECT seq,kind,actor,text,created_at FROM (
+    let candidates = sqlx::query!(
+        r#"SELECT seq,kind,actor,text,created_at FROM (
         SELECT channel_seq AS seq,'message'::text AS kind,COALESCE(NULLIF(u.display_name,''),u.username,m.sender_id) AS actor,m.content AS text,m.created_at
         FROM messages m LEFT JOIN users u ON m.sender_type='user' AND u.user_id=m.sender_id
         WHERE m.channel_id=$1 AND m.sender_type='user' AND NOT m.is_partial AND NOT m.is_deleted AND NOT m.is_secret AND m.channel_seq>$2
@@ -108,14 +130,26 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
         SELECT v.channel_seq,'voice_transcript',COALESCE(NULLIF(u.display_name,''),u.username,v.user_id),v.text,v.finalized_at
         FROM voice_transcript_segments v LEFT JOIN users u ON u.user_id=v.user_id
         WHERE v.channel_id=$1 AND $3 AND v.channel_seq>$2
-      ) activity ORDER BY seq LIMIT $4"#)
-        .bind(channel_id.to_string()).bind(last).bind(include_voice).bind(batch).fetch_all(&state.db).await?;
+      ) activity ORDER BY seq LIMIT $4"#,
+        channel_id.to_string(),
+        last,
+        include_voice,
+        i64::from(batch),
+    ).fetch_all(&state.db).await?;
     if candidates.is_empty() {
-        sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 seconds' WHERE channel_id=$1 AND bot_id=$2")
-            .bind(channel_id.to_string()).bind(bot_id.to_string()).execute(&state.db).await?;
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 seconds' WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),
+            bot_id.to_string(),
+        ).execute(&state.db).await?;
         return Ok(());
     }
-    let newest: chrono::DateTime<chrono::Utc> = candidates.last().unwrap().try_get("created_at")?;
+    let newest: chrono::DateTime<chrono::Utc> = candidates
+        .last()
+        .unwrap()
+        .created_at
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
     let age = chrono::Utc::now()
         .signed_duration_since(newest)
         .num_seconds();
@@ -133,28 +167,34 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
         .unwrap_or_default();
     let newest_text: String = candidates
         .last()
-        .and_then(|r| r.try_get::<String, _>("text").ok())
+        .and_then(|r| r.text.clone())
         .unwrap_or_default();
     let is_immediate = immediate_triggers
         .iter()
         .any(|kw| !kw.is_empty() && newest_text.to_lowercase().contains(&kw.to_lowercase()));
     if !is_immediate && age < i64::from(debounce) {
-        sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2")
-            .bind(channel_id.to_string()).bind(bot_id.to_string()).bind(newest + chrono::Duration::seconds(i64::from(debounce))).execute(&state.db).await?;
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),
+            bot_id.to_string(),
+            newest + chrono::Duration::seconds(i64::from(debounce)),
+        )
+        .execute(&state.db)
+        .await?;
         return Ok(());
     }
-    let from: i64 = candidates.first().unwrap().try_get("seq")?;
-    let to: i64 = candidates.last().unwrap().try_get("seq")?;
+    let from: i64 = candidates.first().unwrap().seq.unwrap_or_default();
+    let to: i64 = candidates.last().unwrap().seq.unwrap_or_default();
     let new_evaluation_id = Uuid::new_v4();
     let mut tx = state.db.begin().await?;
     let reserved = sqlx::query!(
-        "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,next_eligible_at=NOW()+make_interval(secs=>$4),updated_at=NOW() WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$5",
+        "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,next_eligible_at=NOW()+make_interval(secs=>$4::int4),updated_at=NOW() WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$5",
         channel_id.to_string(),
         bot_id.to_string(),
         to,
-        f64::from(interval),
+        interval,
         last,
-    ).execute(&mut *tx).await?.rows_affected() == 1;
+    ).execute(&mut *tx).await?.rows_affected()==1;
     if !reserved {
         tx.rollback().await?;
         return Ok(());
@@ -180,12 +220,21 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     .await?
     .ok_or_else(|| anyhow::anyhow!("evaluation range is already active"))?;
     tx.commit().await?;
-    let items: Vec<Value> = candidates.into_iter().map(|r| json!({"seq":r.try_get::<i64,_>("seq").unwrap_or_default(),"kind":r.try_get::<String,_>("kind").unwrap_or_default(),"actor":r.try_get::<String,_>("actor").unwrap_or_default(),"text":r.try_get::<String,_>("text").unwrap_or_default(),"created_at":r.try_get::<chrono::DateTime<chrono::Utc>,_>("created_at").ok().map(|d|d.to_rfc3339())})).collect();
-    let frame = json!({"type":"claim_evaluation","v":1,"evaluation_id":evaluation_id,"channel_id":channel_id,"provider_session_key":format!("cheers:claim-evaluation:{channel_id}:{bot_id}"),"scope":row.try_get::<String,_>("scope").unwrap_or_default(),"confidence_threshold":confidence,"source_seq_from":from,"source_seq_to":to,"activity":items});
+    let items: Vec<Value> = candidates.into_iter().map(|r| json!({"seq":r.seq.clone().unwrap_or_default(),"kind":r.kind.clone().unwrap_or_default(),"actor":r.actor.clone().unwrap_or_default(),"text":r.text.clone().unwrap_or_default(),"created_at":r.created_at.clone().map(|d|d.to_rfc3339())})).collect();
+    let frame = json!({"type":"claim_evaluation","v":1,"evaluation_id":evaluation_id,"channel_id":channel_id,"provider_session_key":format!("cheers:claim-evaluation:{channel_id}:{bot_id}"),"scope":row.scope.clone(),"confidence_threshold":confidence,"source_seq_from":from,"source_seq_to":to,"activity":items});
     if !state.bot_locator.dispatch_task(bot_id, frame).await {
         let mut tx = state.db.begin().await?;
-        sqlx::query("UPDATE channel_bot_monitoring SET last_evaluated_seq=$3-1,next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$4").bind(channel_id.to_string()).bind(bot_id.to_string()).bind(from).bind(to).execute(&mut *tx).await?;
-        sqlx::query("UPDATE task_claim_evaluations SET status='failed',error='bot went offline',completed_at=NOW() WHERE evaluation_id=$1").bind(&evaluation_id).execute(&mut *tx).await?;
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3::int8-1,next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$4",
+            channel_id.to_string(),
+            bot_id.to_string(),
+            from,
+            to,
+        ).execute(&mut *tx).await?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='failed',error='bot went offline',completed_at=NOW() WHERE evaluation_id=$1",
+            &evaluation_id,
+        ).execute(&mut *tx).await?;
         tx.commit().await?;
     }
     Ok(())
@@ -210,22 +259,26 @@ pub async fn complete(
     content: Option<&str>,
     error: Option<&str>,
 ) -> anyhow::Result<Value> {
-    let eval = sqlx::query(
+    let eval = sqlx::query!(
         "SELECT channel_id,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND bot_id=$2",
+        evaluation_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(evaluation_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_optional(db)
     .await?;
     let Some(eval) = eval else {
         anyhow::bail!("unknown evaluation");
     };
-    if eval.try_get::<String, _>("status")? != "dispatched" {
+    if eval.status.clone() != "dispatched" {
         return Ok(json!({"evaluation_id":evaluation_id,"duplicate":true}));
     }
-    let channel_id: Uuid = eval.try_get::<String, _>("channel_id")?.parse()?;
+    let channel_id: Uuid = eval.channel_id.clone().parse()?;
     if let Some(error) = error {
-        sqlx::query("UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1").bind(evaluation_id.to_string()).bind(error).execute(db).await?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1",
+            evaluation_id.to_string(),
+            error,
+        ).execute(db).await?;
         signal_activity(state, channel_id).await;
         return Ok(json!({"evaluation_id":evaluation_id,"status":"failed"}));
     }
@@ -256,9 +309,11 @@ pub async fn complete(
             } else {
                 "invalid model decision JSON"
             };
-            sqlx::query("UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1")
-                .bind(evaluation_id.to_string())
-                .bind(reason)
+            sqlx::query!(
+                "UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1",
+                evaluation_id.to_string(),
+                reason,
+            )
                 .execute(db)
                 .await?;
             signal_activity(state, channel_id).await;
@@ -272,34 +327,44 @@ pub async fn complete(
         "task-claim model decision received"
     );
     if decision.decision != "claim" {
-        sqlx::query("UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1").bind(evaluation_id.to_string()).execute(db).await?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
+            evaluation_id.to_string(),
+        )
+        .execute(db)
+        .await?;
         signal_activity(state, channel_id).await;
         return Ok(json!({"evaluation_id":evaluation_id,"status":"ignored"}));
     }
-    let threshold: f64 = sqlx::query_scalar("SELECT confidence_threshold::float8 FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2").bind(channel_id.to_string()).bind(bot_id.to_string()).fetch_one(db).await?;
+    let threshold: f64 = sqlx::query_scalar!(
+        r#"SELECT confidence_threshold::float8 AS "value!" FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2"#,
+        channel_id.to_string(),
+        bot_id.to_string(),
+    ).fetch_one(db).await?;
     let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
     if confidence < threshold {
-        sqlx::query("UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1").bind(evaluation_id.to_string()).execute(db).await?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
+            evaluation_id.to_string(),
+        )
+        .execute(db)
+        .await?;
         signal_activity(state, channel_id).await;
         return Ok(json!({"evaluation_id":evaluation_id,"status":"below_threshold"}));
     }
-    let source = sqlx::query(
-        "SELECT m.msg_id, m.sender_id, m.content FROM task_claim_evaluations e\
-         LEFT JOIN messages m ON m.channel_id=e.channel_id AND m.channel_seq=e.source_seq_to\
+    let source = sqlx::query!(
+        "SELECT m.msg_id AS \"msg_id?\", m.sender_id AS \"sender_id?\", m.content AS \"content?\" FROM task_claim_evaluations e
+         LEFT JOIN messages m ON m.channel_id=e.channel_id AND m.channel_seq=e.source_seq_to
          WHERE e.evaluation_id=$1 LIMIT 1",
+        evaluation_id.to_string(),
     )
-    .bind(evaluation_id.to_string())
     .fetch_optional(db)
     .await?;
-    let source_message_id = source
-        .as_ref()
-        .and_then(|r| r.try_get::<String, _>("msg_id").ok());
-    let requester_id = source
-        .as_ref()
-        .and_then(|r| r.try_get::<String, _>("sender_id").ok());
+    let source_message_id = source.as_ref().and_then(|r| r.msg_id.clone());
+    let requester_id = source.as_ref().and_then(|r| r.sender_id.clone());
     let source_text = source
         .as_ref()
-        .and_then(|r| r.try_get::<String, _>("content").ok())
+        .and_then(|r| r.content.clone())
         .unwrap_or_default();
     // The model only decides claim/ignore. The gateway owns the durable task
     // description, avoiding an overlong JSON answer being truncated by a
@@ -337,32 +402,58 @@ pub async fn complete(
         .unwrap_or_else(|| "medium".into());
     let claim_id = Uuid::new_v4();
     let mut tx = db.begin().await?;
-    sqlx::query("UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1 AND status='dispatched'").bind(evaluation_id.to_string()).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(evaluation_id) DO NOTHING")
-        .bind(claim_id.to_string()).bind(evaluation_id.to_string()).bind(channel_id.to_string()).bind(bot_id.to_string()).bind(&summary).bind(&action).bind(confidence).bind(&impact).bind(requester_id.as_deref()).bind(source_message_id.as_deref()).execute(&mut *tx).await?;
+    sqlx::query!(
+        "UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1 AND status='dispatched'",
+        evaluation_id.to_string(),
+    ).execute(&mut *tx).await?;
+    sqlx::query!(
+        "INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id) VALUES($1,$2,$3,$4,$5,$6,$7::float8,$8,$9,$10) ON CONFLICT(evaluation_id) DO NOTHING",
+        claim_id.to_string(),
+        evaluation_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+        &summary,
+        &action,
+        confidence,
+        &impact,
+        requester_id.as_deref(),
+        source_message_id.as_deref(),
+    ).execute(&mut *tx).await?;
     tx.commit().await?;
     if let (Some(requester_id), Some(source_message_id)) = (requester_id, source_message_id) {
         let confirmation_id = Uuid::new_v4();
         let requester_name =
-            sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE user_id=$1")
-                .bind(&requester_id)
+            sqlx::query_scalar!("SELECT username FROM users WHERE user_id=$1", &requester_id,)
                 .fetch_optional(db)
                 .await?
                 .unwrap_or_else(|| "there".into());
         let mut tx = db.begin().await?;
         let seq = crate::domain::channel_seq::allocate(&mut tx, channel_id).await?;
         let content = format!("@{requester_name} OpenCode 想认领这个任务：{summary}\n\n{action}");
-        sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)")
-            .bind(confirmation_id.to_string()).bind(channel_id.to_string()).bind(bot_id.to_string()).bind(&content).bind(&source_message_id).bind(seq).bind(json!({"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false})).execute(&mut *tx).await?;
-        sqlx::query(
+        sqlx::query!(
+            "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)",
+            confirmation_id.to_string(),
+            channel_id.to_string(),
+            bot_id.to_string(),
+            &content,
+            &source_message_id,
+            seq,
+            json!({"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false}),
+        ).execute(&mut *tx).await?;
+        sqlx::query!(
             "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
+            confirmation_id.to_string(),
+            &requester_id,
         )
-        .bind(confirmation_id.to_string())
-        .bind(&requester_id)
         .execute(&mut *tx)
         .await?;
-        sqlx::query("UPDATE task_claim_requests SET confirmation_message_id=$2,updated_at=NOW() WHERE claim_id=$1")
-            .bind(claim_id.to_string()).bind(confirmation_id.to_string()).execute(&mut *tx).await?;
+        sqlx::query!(
+            "UPDATE task_claim_requests SET confirmation_message_id=$2,updated_at=NOW() WHERE claim_id=$1",
+            claim_id.to_string(),
+            confirmation_id.to_string(),
+        )
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({"msg_id":confirmation_id,"channel_id":channel_id,"channel_seq":seq,"sender_type":"bot","sender_id":bot_id,"sender_name":"OpenCode","content":content,"msg_type":"task_claim_confirmation","is_partial":false,"reply_to_msg_id":source_message_id,"mentions":[{"member_id":requester_id,"member_type":"user"}],"content_data":{"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false}}))).await;
     }

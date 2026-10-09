@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS present FROM friendships WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "present",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "36aebf2f51be1670cb45034a3e3a7995ed8c8da4df9a8633ef7a3e16cdcb6e67"
+}

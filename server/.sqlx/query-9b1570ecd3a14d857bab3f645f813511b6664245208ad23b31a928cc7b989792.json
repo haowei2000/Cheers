@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM user_blocks\n            WHERE (blocker_id = $1 AND blocked_id = $2)\n               OR (blocker_id = $2 AND blocked_id = $1)\n         ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9b1570ecd3a14d857bab3f645f813511b6664245208ad23b31a928cc7b989792"
+}

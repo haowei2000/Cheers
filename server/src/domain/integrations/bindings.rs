@@ -12,7 +12,7 @@
 //! which channel role, and when a projection may overwrite a human's decision —
 //! is in [`super::projection`] and is deliberately pure.
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 use super::projection::{self, ExistingMembership, RoleProjection, SyncAction};
 
@@ -46,7 +46,7 @@ pub async fn bind(
     config: &serde_json::Value,
     created_by: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO channel_integration_bindings (
              channel_id, integration_id, installation_id, external_kind, external_id,
              config, created_by
@@ -57,39 +57,34 @@ pub async fn bind(
              external_kind   = EXCLUDED.external_kind,
              external_id     = EXCLUDED.external_id,
              config          = EXCLUDED.config",
+        &binding.channel_id,
+        &binding.integration_id,
+        &binding.installation_id,
+        &binding.external_kind,
+        &binding.external_id,
+        config,
+        created_by,
     )
-    .bind(&binding.channel_id)
-    .bind(&binding.integration_id)
-    .bind(&binding.installation_id)
-    .bind(&binding.external_kind)
-    .bind(&binding.external_id)
-    .bind(config)
-    .bind(created_by)
     .execute(db)
     .await?;
     Ok(())
 }
 
-fn read_binding(row: &sqlx::postgres::PgRow) -> anyhow::Result<Binding> {
+fn read_binding(row: &crate::infra::db::query_rows::BindingRow) -> anyhow::Result<Binding> {
     Ok(Binding {
-        channel_id: row.try_get("channel_id")?,
-        integration_id: row.try_get("integration_id")?,
-        installation_id: row.try_get("installation_id")?,
-        external_kind: row.try_get("external_kind")?,
-        external_id: row.try_get("external_id")?,
-        created_by: row.try_get("created_by")?,
+        channel_id: row.channel_id.clone(),
+        integration_id: row.integration_id.clone(),
+        installation_id: row.installation_id.clone(),
+        external_kind: row.external_kind.clone(),
+        external_id: row.external_id.clone(),
+        created_by: row.created_by.clone(),
     })
 }
 
-const COLUMNS: &str =
-    "channel_id, integration_id, installation_id, external_kind, external_id, created_by";
-
 pub async fn for_channel(db: &PgPool, channel_id: &str) -> anyhow::Result<Option<Binding>> {
-    let row = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM channel_integration_bindings WHERE channel_id = $1"
-    ))
-    .bind(channel_id)
-    .fetch_optional(db)
+    let row = sqlx::query_as!(crate::infra::db::query_rows::BindingRow, r###"SELECT channel_id, integration_id, installation_id, external_kind, external_id, created_by FROM channel_integration_bindings WHERE channel_id = $1"###,
+        channel_id,
+    ).fetch_optional(db)
     .await?;
     row.as_ref().map(read_binding).transpose()
 }
@@ -102,16 +97,14 @@ pub async fn for_external(
     external_kind: &str,
     external_id: &str,
 ) -> anyhow::Result<Option<Binding>> {
-    let row = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM channel_integration_bindings
+    let row = sqlx::query_as!(crate::infra::db::query_rows::BindingRow, r###"SELECT channel_id, integration_id, installation_id, external_kind, external_id, created_by FROM channel_integration_bindings
           WHERE integration_id = $1 AND installation_id = $2
-            AND external_kind = $3 AND external_id = $4"
-    ))
-    .bind(integration_id)
-    .bind(installation_id)
-    .bind(external_kind)
-    .bind(external_id)
-    .fetch_optional(db)
+            AND external_kind = $3 AND external_id = $4"###,
+        integration_id,
+        installation_id,
+        external_kind,
+        external_id,
+    ).fetch_optional(db)
     .await?;
     row.as_ref().map(read_binding).transpose()
 }
@@ -124,16 +117,18 @@ pub async fn for_external(
 /// re-bind treats those rows as human-owned and cannot demote them.
 pub async fn unbind(db: &PgPool, channel_id: &str) -> anyhow::Result<bool> {
     let mut tx = db.begin().await?;
-    let removed = sqlx::query("DELETE FROM channel_integration_bindings WHERE channel_id = $1")
-        .bind(channel_id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
-    sqlx::query(
+    let removed = sqlx::query!(
+        "DELETE FROM channel_integration_bindings WHERE channel_id = $1",
+        channel_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    sqlx::query!(
         "UPDATE channel_memberships SET projected_from = NULL
           WHERE channel_id = $1 AND projected_from IS NOT NULL",
+        channel_id,
     )
-    .bind(channel_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -197,19 +192,20 @@ pub async fn sync_members(
     let mut report = SyncReport::default();
     let mut tx = db.begin().await?;
 
-    let workspace_id: String =
-        sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id = $1")
-            .bind(channel_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let workspace_id: String = sqlx::query_scalar!(
+        "SELECT workspace_id FROM channels WHERE channel_id = $1",
+        channel_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
 
     for collaborator in collaborators {
-        let user_id: Option<String> = sqlx::query_scalar(
+        let user_id: Option<String> = sqlx::query_scalar!(
             "SELECT user_id FROM auth_external_identities
               WHERE provider = $1 AND subject = $2",
+            provider,
+            &collaborator.subject,
         )
-        .bind(provider)
-        .bind(&collaborator.subject)
         .fetch_optional(&mut *tx)
         .await?;
         let Some(user_id) = user_id else {
@@ -217,14 +213,14 @@ pub async fn sync_members(
             continue;
         };
 
-        let in_workspace: bool = sqlx::query_scalar(
-            "SELECT EXISTS (
-                 SELECT 1 FROM workspace_memberships
+        let in_workspace: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                 SELECT 1 AS present FROM workspace_memberships
                   WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
-             )",
+             ) AS "value!" "#,
+            &workspace_id,
+            &user_id,
         )
-        .bind(&workspace_id)
-        .bind(&user_id)
         .fetch_one(&mut *tx)
         .await?;
         if !in_workspace {
@@ -232,18 +228,18 @@ pub async fn sync_members(
             continue;
         }
 
-        let existing = sqlx::query(
+        let existing = sqlx::query!(
             "SELECT role, projected_from FROM channel_memberships
               WHERE channel_id = $1 AND member_id = $2",
+            channel_id,
+            &user_id,
         )
-        .bind(channel_id)
-        .bind(&user_id)
         .fetch_optional(&mut *tx)
         .await?
         .map(|row| -> anyhow::Result<ExistingMembership> {
             Ok(ExistingMembership {
-                role: row.try_get("role")?,
-                projected_from: row.try_get("projected_from")?,
+                role: row.role.clone(),
+                projected_from: row.projected_from.clone(),
             })
         })
         .transpose()?;
@@ -255,29 +251,29 @@ pub async fn sync_members(
             existing.as_ref(),
         ) {
             SyncAction::Add(role) => {
-                sqlx::query(
+                sqlx::query!(
                     "INSERT INTO channel_memberships
                          (channel_id, member_id, member_type, role, added_by, projected_from)
                      VALUES ($1, $2, 'user', $3, $4, $5)",
+                    channel_id,
+                    &user_id,
+                    &role,
+                    actor_id,
+                    integration_id,
                 )
-                .bind(channel_id)
-                .bind(&user_id)
-                .bind(&role)
-                .bind(actor_id)
-                .bind(integration_id)
                 .execute(&mut *tx)
                 .await?;
                 report.added += 1;
             }
             SyncAction::Rewrite(role) => {
-                sqlx::query(
+                sqlx::query!(
                     "UPDATE channel_memberships SET role = $3, projected_from = $4
                       WHERE channel_id = $1 AND member_id = $2",
+                    channel_id,
+                    &user_id,
+                    &role,
+                    integration_id,
                 )
-                .bind(channel_id)
-                .bind(&user_id)
-                .bind(&role)
-                .bind(integration_id)
                 .execute(&mut *tx)
                 .await?;
                 report.rewritten += 1;
@@ -288,10 +284,12 @@ pub async fn sync_members(
         }
     }
 
-    sqlx::query("UPDATE channel_integration_bindings SET synced_at = NOW() WHERE channel_id = $1")
-        .bind(channel_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE channel_integration_bindings SET synced_at = NOW() WHERE channel_id = $1",
+        channel_id,
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(report)
 }

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM messages\n         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b0c815ef63122b0444565712fd7b161db8dc0f8e0951df9290faa364850f257"
+}

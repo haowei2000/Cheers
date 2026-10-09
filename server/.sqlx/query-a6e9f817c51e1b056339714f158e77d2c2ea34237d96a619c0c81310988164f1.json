@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM github_app_installation_sessions\n          WHERE expires_at < NOW() OR consumed_at < NOW() - INTERVAL '1 day'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a6e9f817c51e1b056339714f158e77d2c2ea34237d96a619c0c81310988164f1"
+}

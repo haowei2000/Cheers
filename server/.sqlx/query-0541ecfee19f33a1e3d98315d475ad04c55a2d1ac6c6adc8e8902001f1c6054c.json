@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_id, object_key, original_filename, channel_id\n           FROM file_records\n           WHERE status = 'uploaded'\n             AND transcribe_requested_at IS NOT NULL\n             AND md_path IS NULL\n             AND conversion_attempts < $1\n             AND (expires_at IS NULL OR expires_at > NOW())\n             AND content_type ILIKE 'audio/%'\n           ORDER BY conversion_attempts ASC, transcribe_requested_at ASC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "original_filename",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0541ecfee19f33a1e3d98315d475ad04c55a2d1ac6c6adc8e8902001f1c6054c"
+}

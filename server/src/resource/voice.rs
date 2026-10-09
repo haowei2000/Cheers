@@ -2,7 +2,7 @@
 //! exposed through Resource; only finalized, speaker-attributed text is readable.
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -31,7 +31,7 @@ pub async fn handle_transcript(
         .and_then(Value::as_i64)
         .unwrap_or(100)
         .clamp(1, 500);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT t.segment_id, t.voice_session_id, t.channel_id,
                 t.participant_session_id, t.user_id,
                 COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS speaker_name,
@@ -43,10 +43,10 @@ pub async fn handle_transcript(
          JOIN users u ON u.user_id = t.user_id
          WHERE t.channel_id = $1 AND t.channel_seq > $2
          ORDER BY t.channel_seq ASC LIMIT $3",
+        channel_id.to_string(),
+        since_seq,
+        limit,
     )
-    .bind(channel_id.to_string())
-    .bind(since_seq)
-    .bind(limit)
     .fetch_all(db)
     .await
     .map_err(super::db_err("voice.transcript: select segments"))?;
@@ -55,23 +55,23 @@ pub async fn handle_transcript(
         .into_iter()
         .map(|row| {
             json!({
-                "segment_id": row.try_get::<String, _>("segment_id").unwrap_or_default(),
-                "voice_session_id": row.try_get::<String, _>("voice_session_id").unwrap_or_default(),
-                "channel_id": row.try_get::<String, _>("channel_id").unwrap_or_default(),
-                "participant_session_id": row.try_get::<String, _>("participant_session_id").unwrap_or_default(),
-                "user_id": row.try_get::<String, _>("user_id").unwrap_or_default(),
-                "speaker_name": row.try_get::<String, _>("speaker_name").unwrap_or_else(|_| "Member".into()),
-                "provider_segment_id": row.try_get::<String, _>("provider_segment_id").unwrap_or_default(),
-                "track_id": row.try_get::<String, _>("track_id").unwrap_or_default(),
-                "channel_seq": row.try_get::<i64, _>("channel_seq").unwrap_or_default(),
-                "text": row.try_get::<String, _>("text").unwrap_or_default(),
-                "started_at_ms": row.try_get::<i64, _>("started_at_ms").unwrap_or_default(),
-                "ended_at_ms": row.try_get::<i64, _>("ended_at_ms").unwrap_or_default(),
-                "language": row.try_get::<Option<String>, _>("language").ok().flatten(),
-                "confidence": row.try_get::<Option<f64>, _>("confidence").ok().flatten(),
-                "supersedes_segment_id": row.try_get::<Option<String>, _>("supersedes_segment_id").ok().flatten(),
-                "finalized_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("finalized_at").ok(),
-                "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
+                "segment_id": row.segment_id.clone(),
+                "voice_session_id": row.voice_session_id.clone(),
+                "channel_id": row.channel_id.clone(),
+                "participant_session_id": row.participant_session_id.clone(),
+                "user_id": row.user_id.clone(),
+                "speaker_name": row.speaker_name.clone().unwrap_or_else(|| "Member".into()),
+                "provider_segment_id": row.provider_segment_id.clone(),
+                "track_id": row.track_id.clone(),
+                "channel_seq": row.channel_seq.clone(),
+                "text": row.text.clone(),
+                "started_at_ms": row.started_at_ms.clone(),
+                "ended_at_ms": row.ended_at_ms.clone(),
+                "language": row.language.clone(),
+                "confidence": row.confidence.clone(),
+                "supersedes_segment_id": row.supersedes_segment_id.clone(),
+                "finalized_at": Some(row.finalized_at.clone()),
+                "created_at": Some(row.created_at.clone()),
             })
         })
         .collect();

@@ -11,7 +11,7 @@
 //! the REST `PUT/GET .../bots/:bot_id/monitoring` endpoints for the same reason.
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
@@ -58,15 +58,14 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
         "db error",
         "claim evaluation begin",
     ))?;
-    let eval = sqlx::query("SELECT source_seq_to,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND channel_id=$2 AND bot_id=$3 FOR UPDATE")
-        .bind(evaluation_id.to_string()).bind(channel_id.to_string()).bind(principal.principal_id.to_string())
-        .fetch_optional(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "claim evaluation lookup"))?
+    let eval = sqlx::query!(
+        "SELECT source_seq_to,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND channel_id=$2 AND bot_id=$3 FOR UPDATE",
+        evaluation_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
+    ).fetch_optional(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "claim evaluation lookup"))?
         .ok_or_else(|| super::resource_error("NOT_FOUND", "task-claim evaluation not found"))?;
-    let status: String = eval.try_get("status").map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "claim evaluation status",
-    ))?;
+    let status: String = eval.status.clone();
     if status != "dispatched" {
         return Err(super::resource_error(
             "CONFLICT",
@@ -74,8 +73,17 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
         ));
     }
     if decision == "ignore" {
-        sqlx::query("UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1")
-            .bind(evaluation_id.to_string()).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "record ignored claim"))?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
+            evaluation_id.to_string(),
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(internal_err(
+            "TASK_CLAIM_DB",
+            "db error",
+            "record ignored claim",
+        ))?;
         tx.commit().await.map_err(internal_err(
             "TASK_CLAIM_DB",
             "db error",
@@ -85,12 +93,17 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
             json!({"evaluation_id":evaluation_id,"channel_id":channel_id,"status":"ignored"}),
         );
     }
-    let threshold: f64 = sqlx::query_scalar("SELECT confidence_threshold::float8 FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2")
-        .bind(channel_id.to_string()).bind(principal.principal_id.to_string()).fetch_one(&mut *tx).await
+    let threshold: f64 = sqlx::query_scalar!(
+        r#"SELECT confidence_threshold::float8 AS "value!" FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2"#,
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
+    ).fetch_one(&mut *tx).await
         .map_err(internal_err("TASK_CLAIM_DB", "db error", "claim confidence threshold"))?;
     if confidence < threshold {
-        sqlx::query("UPDATE task_claim_evaluations SET status='ignored',error='below confidence threshold',completed_at=NOW() WHERE evaluation_id=$1")
-            .bind(evaluation_id.to_string()).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "record low-confidence claim"))?;
+        sqlx::query!(
+            "UPDATE task_claim_evaluations SET status='ignored',error='below confidence threshold',completed_at=NOW() WHERE evaluation_id=$1",
+            evaluation_id.to_string(),
+        ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "record low-confidence claim"))?;
         tx.commit().await.map_err(internal_err(
             "TASK_CLAIM_DB",
             "db error",
@@ -100,32 +113,17 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
             json!({"evaluation_id":evaluation_id,"channel_id":channel_id,"status":"ignored"}),
         );
     }
-    let source_seq: i64 = eval.try_get("source_seq_to").map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "claim source sequence",
-    ))?;
-    let source = sqlx::query("SELECT msg_id,sender_id,content FROM messages WHERE channel_id=$1 AND channel_seq=$2 AND sender_type='user' LIMIT 1")
-        .bind(channel_id.to_string()).bind(source_seq).fetch_optional(&mut *tx).await
+    let source_seq: i64 = eval.source_seq_to.clone();
+    let source = sqlx::query!(
+        "SELECT msg_id,sender_id,content FROM messages WHERE channel_id=$1 AND channel_seq=$2 AND sender_type='user' LIMIT 1",
+        channel_id.to_string(),
+        source_seq,
+    ).fetch_optional(&mut *tx).await
         .map_err(internal_err("TASK_CLAIM_DB", "db error", "claim source message"))?
         .ok_or_else(|| super::resource_error("INVALID_STATE", "claim evaluation source is not a user message"))?;
-    let source_message_id: String = source.try_get("msg_id").map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "claim source id",
-    ))?;
-    let requester_id: String = source.try_get("sender_id").map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "claim requester",
-    ))?;
-    let summary: String = source
-        .try_get::<String, _>("content")
-        .unwrap_or_default()
-        .trim()
-        .chars()
-        .take(1000)
-        .collect();
+    let source_message_id: String = source.msg_id.clone();
+    let requester_id: String = source.sender_id.clone();
+    let summary: String = source.content.clone().trim().chars().take(1000).collect();
     if summary.is_empty() {
         return Err(super::resource_error(
             "INVALID_STATE",
@@ -133,8 +131,7 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
         ));
     }
     let requester_name =
-        sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE user_id=$1")
-            .bind(&requester_id)
+        sqlx::query_scalar!("SELECT username FROM users WHERE user_id=$1", &requester_id,)
             .fetch_optional(&mut *tx)
             .await
             .map_err(internal_err(
@@ -147,10 +144,31 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
     let confirmation_id = Uuid::new_v4();
     let action = "Start the requested work and report the result in this channel.";
     let impact = "medium";
-    sqlx::query("UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1")
-        .bind(evaluation_id.to_string()).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "complete claim evaluation"))?;
-    sqlx::query("INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id,confirmation_message_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
-        .bind(claim_id.to_string()).bind(evaluation_id.to_string()).bind(channel_id.to_string()).bind(principal.principal_id.to_string()).bind(&summary).bind(action).bind(confidence).bind(impact).bind(&requester_id).bind(&source_message_id).bind(confirmation_id.to_string()).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create task claim"))?;
+    sqlx::query!(
+        "UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1",
+        evaluation_id.to_string(),
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(internal_err(
+        "TASK_CLAIM_DB",
+        "db error",
+        "complete claim evaluation",
+    ))?;
+    sqlx::query!(
+        "INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id,confirmation_message_id) VALUES($1,$2,$3,$4,$5,$6,$7::float8,$8,$9,$10,$11)",
+        claim_id.to_string(),
+        evaluation_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
+        &summary,
+        action,
+        confidence,
+        impact,
+        &requester_id,
+        &source_message_id,
+        confirmation_id.to_string(),
+    ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create task claim"))?;
     let seq = crate::domain::channel_seq::allocate(&mut tx, channel_id)
         .await
         .map_err(internal_err(
@@ -160,18 +178,28 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
         ))?;
     let content = format!("@{requester_name} OpenCode 想认领这个任务：{summary}\n\n{action}");
     let data = json!({"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false});
-    sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)")
-        .bind(confirmation_id.to_string()).bind(channel_id.to_string()).bind(principal.principal_id.to_string()).bind(&content).bind(&source_message_id).bind(seq).bind(&data).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create confirmation message"))?;
-    sqlx::query("INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')")
-        .bind(confirmation_id.to_string())
-        .bind(&requester_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal_err(
-            "TASK_CLAIM_DB",
-            "db error",
-            "mention claim requester",
-        ))?;
+    sqlx::query!(
+        "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)",
+        confirmation_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
+        &content,
+        &source_message_id,
+        seq,
+        &data,
+    ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create confirmation message"))?;
+    sqlx::query!(
+        "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
+        confirmation_id.to_string(),
+        &requester_id,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(internal_err(
+        "TASK_CLAIM_DB",
+        "db error",
+        "mention claim requester",
+    ))?;
     tx.commit().await.map_err(internal_err(
         "TASK_CLAIM_DB",
         "db error",
@@ -196,7 +224,7 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         .and_then(|v| v.as_i64())
         .unwrap_or(50)
         .clamp(1, 100);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r#"SELECT r.claim_id, r.evaluation_id, r.channel_id, r.bot_id,
                   COALESCE(NULLIF(b.display_name, ''), b.username) AS bot_name,
                   r.summary, r.proposed_action, r.confidence::float8 AS confidence,
@@ -206,10 +234,10 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
            JOIN bot_accounts b ON b.bot_id = r.bot_id
            WHERE r.channel_id = $1 AND ($2::text IS NULL OR r.status = $2)
            ORDER BY r.created_at DESC LIMIT $3"#,
+        channel_id.to_string(),
+        status,
+        limit,
     )
-    .bind(channel_id.to_string())
-    .bind(status)
-    .bind(limit)
     .fetch_all(db)
     .await
     .map_err(internal_err(
@@ -221,21 +249,21 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         .into_iter()
         .map(|row| {
             json!({
-                "claim_id": row.try_get::<String, _>("claim_id").unwrap_or_default(),
-                "evaluation_id": row.try_get::<String, _>("evaluation_id").unwrap_or_default(),
-                "channel_id": row.try_get::<String, _>("channel_id").unwrap_or_default(),
-                "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
-                "bot_name": row.try_get::<String, _>("bot_name").unwrap_or_default(),
-                "summary": row.try_get::<String, _>("summary").unwrap_or_default(),
-                "proposed_action": row.try_get::<String, _>("proposed_action").unwrap_or_default(),
-                "confidence": row.try_get::<f64, _>("confidence").unwrap_or_default(),
-                "impact": row.try_get::<String, _>("impact").unwrap_or_default(),
-                "status": row.try_get::<String, _>("status").unwrap_or_default(),
-                "resolved_by": row.try_get::<Option<String>, _>("resolved_by").ok().flatten(),
-                "resolution_note": row.try_get::<Option<String>, _>("resolution_note").ok().flatten(),
-                "execution_msg_id": row.try_get::<Option<String>, _>("execution_msg_id").ok().flatten(),
-                "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok().map(|d| d.to_rfc3339()),
-                "resolved_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("resolved_at").ok().flatten().map(|d| d.to_rfc3339()),
+                "claim_id": row.claim_id.clone(),
+                "evaluation_id": row.evaluation_id.clone(),
+                "channel_id": row.channel_id.clone(),
+                "bot_id": row.bot_id.clone(),
+                "bot_name": row.bot_name.clone().unwrap_or_default(),
+                "summary": row.summary.clone(),
+                "proposed_action": row.proposed_action.clone(),
+                "confidence": row.confidence.clone().unwrap_or_default(),
+                "impact": row.impact.clone(),
+                "status": row.status.clone(),
+                "resolved_by": row.resolved_by.clone(),
+                "resolution_note": row.resolution_note.clone(),
+                "execution_msg_id": row.execution_msg_id.clone(),
+                "created_at": Some(row.created_at.clone()).map(|d| d.to_rfc3339()),
+                "resolved_at": row.resolved_at.clone().map(|d| d.to_rfc3339()),
             })
         })
         .collect();

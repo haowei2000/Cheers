@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE friendships SET message = $1, updated_at = NOW()\n                     WHERE pair_key = $2 AND status = 'pending' AND user_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51cfee71e558c36eba708cf5972f5fa4ce634ab6570f88a08e915b5ac1430e5d"
+}

@@ -13,7 +13,7 @@
 //! ```
 //! Ordered by bot, then primary-first, then most-recently-used.
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -30,7 +30,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // All sessions bound to this channel (every bot). Same liveness rule as the
     // switcher (domain::sessions::list_channel_sessions): no detached_at filter —
     // an idle session stays addressable; exclude only truly-closed sessions.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT s.session_id, b.bot_id, b.role, s.status, s.last_used_at, s.created_at,
                 s.metadata, COALESCE(ba.display_name, ba.username) AS bot_name
          FROM cheers_session_bindings b
@@ -39,8 +39,8 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
          WHERE b.scope_type = 'channel' AND b.scope_id = $1
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
          ORDER BY b.bot_id, (b.role = 'primary') DESC, s.last_used_at DESC",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(db)
     .await
     .map_err(super::db_err("sessions.read: select channel sessions"))?;
@@ -48,8 +48,8 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     let sessions: Vec<Value> = rows
         .into_iter()
         .map(|r| {
-            let role: String = r.try_get("role").unwrap_or_default();
-            let metadata = r.try_get::<Option<Value>, _>("metadata").ok().flatten();
+            let role: String = r.role.clone();
+            let metadata = r.metadata.clone();
             // Per-session mode/config override (set via set_mode / set_config_option).
             let session_config = metadata
                 .as_ref()
@@ -61,18 +61,16 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
                 .and_then(|m| m.get("workspace").cloned())
                 .unwrap_or_else(|| json!({}));
             json!({
-                "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
-                "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
-                "bot_name": r.try_get::<Option<String>, _>("bot_name").ok().flatten(),
+                "session_id": r.session_id.clone(),
+                "bot_id": r.bot_id.clone(),
+                "bot_name": r.bot_name.clone(),
                 "role": role.clone(),
                 "is_primary": role == "primary",
-                "status": r.try_get::<String, _>("status").unwrap_or_default(),
-                "created_at": r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                "status": r.status.clone(),
+                "created_at": Some(r.created_at.clone())
                     .map(|t| t.to_rfc3339())
                     .unwrap_or_default(),
-                "last_used_at": r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("last_used_at")
+                "last_used_at": Some(r.last_used_at.clone())
                     .map(|t| t.to_rfc3339())
                     .unwrap_or_default(),
                 "session_config": session_config,

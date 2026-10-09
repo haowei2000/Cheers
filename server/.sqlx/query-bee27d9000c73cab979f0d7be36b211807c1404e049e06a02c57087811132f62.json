@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.host_id, i.bot_id, b.is_disabled\n         FROM connector_hosts i\n         JOIN bot_accounts b ON b.bot_id = i.bot_id\n         WHERE i.host_id = $1 AND i.credential_hash = $2 AND i.status = 'active'\n           AND i.revoked_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bee27d9000c73cab979f0d7be36b211807c1404e049e06a02c57087811132f62"
+}

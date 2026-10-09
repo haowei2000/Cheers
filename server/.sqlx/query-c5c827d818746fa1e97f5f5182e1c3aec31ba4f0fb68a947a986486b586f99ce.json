@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channels (channel_id, workspace_id, name, type, dm_key)\n         VALUES ($1, $2, '', 'dm', $3)\n         ON CONFLICT (dm_key) WHERE type = 'dm' DO NOTHING\n         RETURNING channel_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c5c827d818746fa1e97f5f5182e1c3aec31ba4f0fb68a947a986486b586f99ce"
+}

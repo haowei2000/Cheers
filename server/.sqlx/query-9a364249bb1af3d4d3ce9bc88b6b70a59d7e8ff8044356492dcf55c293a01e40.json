@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status='completed',updated_at=NOW() WHERE execution_msg_id=$1 AND status='executing' RETURNING claim_id,channel_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9a364249bb1af3d4d3ce9bc88b6b70a59d7e8ff8044356492dcf55c293a01e40"
+}

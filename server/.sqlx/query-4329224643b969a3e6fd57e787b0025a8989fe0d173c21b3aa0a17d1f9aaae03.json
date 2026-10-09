@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE two_factor_login_sessions SET used = TRUE WHERE session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4329224643b969a3e6fd57e787b0025a8989fe0d173c21b3aa0a17d1f9aaae03"
+}

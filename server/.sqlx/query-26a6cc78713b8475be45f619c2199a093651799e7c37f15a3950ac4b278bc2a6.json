@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2\n         RETURNING role, invited_by",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "invited_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "26a6cc78713b8475be45f619c2199a093651799e7c37f15a3950ac4b278bc2a6"
+}

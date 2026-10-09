@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages\n         SET channel_seq = $1,\n             content = $2,\n             is_partial = FALSE,\n             file_ids = COALESCE($3::jsonb, file_ids)\n         WHERE msg_id = $4 AND is_partial = TRUE AND channel_seq IS NULL\n         RETURNING channel_id, channel_seq, depth, file_ids, msg_type,\n                   in_reply_to_msg_id AS reply_to_msg_id, chain_id, context_bundle, content_data",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "depth",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "file_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "msg_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "reply_to_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "chain_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "context_bundle",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "content_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5aa4793cdade89902a9ae1fe37deabb7cb6139311e0ea770d008b4495def39ec"
+}

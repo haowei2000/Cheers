@@ -40,6 +40,7 @@ COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
 COPY server/src ./src
 COPY server/migrations ./migrations
 COPY server/.sqlx ./.sqlx
+COPY server/queries ./queries
 # assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
 COPY server/assets ./assets
 # CRITICAL: `docker COPY` preserves the source files' original mtimes, which are

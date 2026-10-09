@@ -37,10 +37,12 @@ pub struct SttSettingsUpdate {
 /// longer decrypts (master key rotated) degrades to `api_key: None` with a log —
 /// the admin UI shows the key as unset and asks for re-entry.
 pub async fn load(db: &PgPool, master_key: &[u8; 32]) -> Result<Option<SttSettings>, AppError> {
-    let value = sqlx::query_scalar::<_, Value>("SELECT value FROM system_settings WHERE key = $1")
-        .bind(SETTINGS_KEY)
-        .fetch_optional(db)
-        .await?;
+    let value = sqlx::query_scalar!(
+        "SELECT value FROM system_settings WHERE key = $1",
+        SETTINGS_KEY,
+    )
+    .fetch_optional(db)
+    .await?;
     let Some(value) = value else {
         return Ok(None);
     };
@@ -83,17 +85,18 @@ pub async fn save(
     master_key: &[u8; 32],
     update: SttSettingsUpdate,
 ) -> Result<(), AppError> {
-    let existing_enc =
-        sqlx::query_scalar::<_, Value>("SELECT value FROM system_settings WHERE key = $1")
-            .bind(SETTINGS_KEY)
-            .fetch_optional(db)
-            .await?
-            .and_then(|v| {
-                v.get("api_key_enc")
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string)
-            });
+    let existing_enc = sqlx::query_scalar!(
+        "SELECT value FROM system_settings WHERE key = $1",
+        SETTINGS_KEY,
+    )
+    .fetch_optional(db)
+    .await?
+    .and_then(|v| {
+        v.get("api_key_enc")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    });
 
     let api_key_enc = match update.api_key.as_deref() {
         None => existing_enc,
@@ -111,12 +114,12 @@ pub async fn save(
         "api_key_enc": api_key_enc,
     });
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO system_settings (key, value) VALUES ($1, $2)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        SETTINGS_KEY,
+        &value,
     )
-    .bind(SETTINGS_KEY)
-    .bind(&value)
     .execute(db)
     .await?;
     Ok(())

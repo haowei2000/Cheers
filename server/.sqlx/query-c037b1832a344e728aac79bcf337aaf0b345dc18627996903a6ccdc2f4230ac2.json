@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id, cm.member_type,\n                    COALESCE(u.username, ba.username)         AS username,\n                    COALESCE(u.display_name, ba.display_name) AS display_name\n             FROM channel_memberships cm\n             LEFT JOIN users u\n               ON u.user_id = cm.member_id AND cm.member_type = 'user'\n             LEFT JOIN bot_accounts ba\n               ON ba.bot_id = cm.member_id AND cm.member_type = 'bot'\n             WHERE cm.channel_id = $1\n               AND (\n                 (cm.member_type = 'user' AND (u.username = ANY($2) OR u.display_name = ANY($2)))\n                 OR\n                 (cm.member_type = 'bot' AND (ba.username = ANY($2) OR ba.display_name = ANY($2)))\n               )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "member_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "c037b1832a344e728aac79bcf337aaf0b345dc18627996903a6ccdc2f4230ac2"
+}

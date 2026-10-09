@@ -11,7 +11,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 use webauthn_rs::prelude::PublicKeyCredential;
 
@@ -61,12 +61,12 @@ pub async fn cancel(
         claims.as_ref().map(|value| &value.0),
     )
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'failed', consumed_at = NOW(), updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL",
+        &flow.transaction_id,
     )
-    .bind(&flow.transaction_id)
     .execute(&state.db)
     .await?;
     record_event(
@@ -121,12 +121,12 @@ pub async fn start(
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| AppError::BadRequest("identifier required".into()))?
                 .to_lowercase();
-            let user_id = sqlx::query_scalar::<_, String>(
+            let user_id = sqlx::query_scalar!(
                 "SELECT user_id FROM users
                  WHERE is_deleted = FALSE
                    AND (LOWER(username) = $1 OR LOWER(email) = $1)",
+                &identifier,
             )
-            .bind(&identifier)
             .fetch_optional(&state.db)
             .await?;
             ("login", user_id, None, Some(identifier))
@@ -140,19 +140,19 @@ pub async fn start(
         "device_name": body.device_name,
         "action_class": normalize_action_class(body.action_class.as_deref()),
     });
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, user_id, session_id, kind, status, client_type,
           context_json, expires_at)
          VALUES ($1, $2, $3, $4, 'method_required', $5, $6,
                  NOW() + INTERVAL '10 minutes')",
+        &transaction_id,
+        user_id.as_deref(),
+        session_id.as_deref(),
+        kind,
+        client.as_str(),
+        context,
     )
-    .bind(&transaction_id)
-    .bind(&user_id)
-    .bind(&session_id)
-    .bind(kind)
-    .bind(client.as_str())
-    .bind(context)
     .execute(&state.db)
     .await?;
 
@@ -185,13 +185,13 @@ pub async fn password(
         .user_id
         .as_deref()
         .ok_or_else(|| invalid_factor("password"))?;
-    let hash = sqlx::query_scalar::<_, String>(
+    let hash = sqlx::query_scalar!(
         "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await?;
-    let valid = match hash {
+    let valid = match hash.flatten() {
         Some(hash) => crypto::verify_password(body.password, hash)
             .await
             .unwrap_or(false),
@@ -377,44 +377,38 @@ async fn load_flow(
     transaction_id: &str,
     claims: Option<&Claims>,
 ) -> Result<Flow, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT transaction_id, kind, status, user_id, session_id, client_type,
                 context_json, failed_attempts, expires_at
          FROM auth_transactions
          WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
            AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL",
+        transaction_id,
     )
-    .bind(transaction_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid authentication transaction".into()))?;
-    let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
-    let failed_attempts: i16 = row.try_get("failed_attempts").unwrap_or(0);
+    let expires_at: DateTime<Utc> = row.expires_at.clone();
+    let failed_attempts: i16 = row.failed_attempts.clone();
     if expires_at <= Utc::now() || failed_attempts >= MAX_ATTEMPTS {
         let status = if failed_attempts >= MAX_ATTEMPTS {
             "failed"
         } else {
             "expired"
         };
-        sqlx::query(
+        sqlx::query!(
             "UPDATE auth_transactions SET status = $2, updated_at = NOW()
              WHERE transaction_id = $1 AND consumed_at IS NULL",
+            transaction_id,
+            status,
         )
-        .bind(transaction_id)
-        .bind(status)
         .execute(&state.db)
         .await?;
         record_event(
             state,
-            row.try_get::<Option<String>, _>("user_id")
-                .ok()
-                .flatten()
-                .as_deref(),
-            row.try_get::<Option<String>, _>("session_id")
-                .ok()
-                .flatten()
-                .as_deref(),
+            row.user_id.clone().as_deref(),
+            row.session_id.clone().as_deref(),
             if status == "failed" {
                 "auth_flow_locked"
             } else {
@@ -428,9 +422,9 @@ async fn load_flow(
             "authentication transaction expired".into(),
         ));
     }
-    let kind: String = row.try_get("kind")?;
-    let user_id: Option<String> = row.try_get("user_id").ok().flatten();
-    let session_id: Option<String> = row.try_get("session_id").ok().flatten();
+    let kind: String = row.kind.clone();
+    let user_id: Option<String> = row.user_id.clone();
+    let session_id: Option<String> = row.session_id.clone();
     if kind == "step_up" {
         let claims =
             claims.ok_or_else(|| AppError::Unauthorized("authentication required".into()))?;
@@ -441,15 +435,13 @@ async fn load_flow(
         }
     }
     Ok(Flow {
-        transaction_id: row.try_get("transaction_id")?,
+        transaction_id: row.transaction_id.clone(),
         kind,
-        status: row.try_get("status")?,
+        status: row.status.clone(),
         user_id,
         session_id,
-        client: auth_sessions::ClientType::parse(Some(
-            row.try_get::<String, _>("client_type")?.as_str(),
-        ))?,
-        context: row.try_get("context_json").unwrap_or_else(|_| json!({})),
+        client: auth_sessions::ClientType::parse(Some(row.client_type.clone().as_str()))?,
+        context: row.context_json.clone(),
         failed_attempts,
     })
 }
@@ -462,12 +454,12 @@ async fn available_methods(
     let Some(user_id) = user_id else {
         return Ok(vec!["passkey".into(), "password".into(), "email".into()]);
     };
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT password_hash IS NOT NULL AS has_password,
                 email IS NOT NULL AND btrim(email) <> '' AS has_email
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_one(&state.db)
     .await?;
     let armed = two_factor::methods(&state.db, user_id).await?;
@@ -480,14 +472,10 @@ async fn available_methods(
     if state.webauthn.is_some() && webauthn::user_has_passkeys(&state.db, user_id).await? {
         methods.push("passkey".into());
     }
-    if row.try_get::<bool, _>("has_password").unwrap_or(false)
-        && !(login && sole_second_factor("password"))
-    {
+    if row.has_password.clone().unwrap_or(false) && !(login && sole_second_factor("password")) {
         methods.push("password".into());
     }
-    if row.try_get::<bool, _>("has_email").unwrap_or(false)
-        && !(login && sole_second_factor("email"))
-    {
+    if row.has_email.clone().unwrap_or(false) && !(login && sole_second_factor("email")) {
         methods.push("email".into());
     }
     if !login {
@@ -545,11 +533,11 @@ async fn require_second_factor(
                 .into(),
         ));
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions SET status = 'factor_required', updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL",
+        &flow.transaction_id,
     )
-    .bind(&flow.transaction_id)
     .execute(&state.db)
     .await?;
     Ok(Json(json!({
@@ -591,12 +579,12 @@ async fn complete_verified(
         .into_response());
     }
 
-    let consumed = sqlx::query(
+    let consumed = sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL AND expires_at > NOW()",
+        &flow.transaction_id,
     )
-    .bind(&flow.transaction_id)
     .execute(&state.db)
     .await?;
     if consumed.rows_affected() != 1 {
@@ -625,14 +613,14 @@ async fn complete_verified(
 
 async fn fail_attempt(state: &AppState, flow: &Flow, factor: &str) -> Result<(), AppError> {
     let attempts = flow.failed_attempts + 1;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions
          SET failed_attempts = LEAST(failed_attempts + 1, 5),
              status = CASE WHEN failed_attempts + 1 >= 5 THEN 'failed' ELSE status END,
              updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL",
+        &flow.transaction_id,
     )
-    .bind(&flow.transaction_id)
     .execute(&state.db)
     .await?;
     record_event(
@@ -663,17 +651,17 @@ async fn record_event(
     factor: Option<&str>,
     metadata: Value,
 ) {
-    let _ = sqlx::query(
+    let _ = sqlx::query!(
         "INSERT INTO auth_security_events
          (event_id, user_id, session_id, event_type, factor, metadata)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        Uuid::new_v4().to_string(),
+        user_id,
+        session_id,
+        event_type,
+        factor,
+        metadata,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(user_id)
-    .bind(session_id)
-    .bind(event_type)
-    .bind(factor)
-    .bind(metadata)
     .execute(&state.db)
     .await;
 }

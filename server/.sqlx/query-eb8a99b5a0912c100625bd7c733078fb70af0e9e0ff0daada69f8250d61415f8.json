@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts\n         SET mcp_token_issued_at = NOW(),\n             mcp_connection_state = CASE WHEN mcp_connection_state = 'connected'\n                                         THEN mcp_connection_state ELSE $2 END,\n             mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'\n                                         THEN mcp_state_updated_at ELSE NOW() END\n         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb8a99b5a0912c100625bd7c733078fb70af0e9e0ff0daada69f8250d61415f8"
+}

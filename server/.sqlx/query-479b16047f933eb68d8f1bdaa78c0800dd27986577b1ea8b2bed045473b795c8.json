@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           (password_hash IS NOT NULL AND NOT password_2fa_enabled)\n           OR EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = users.user_id)\n           OR EXISTS(SELECT 1 AS present FROM auth_external_identities i\n                     WHERE i.user_id = users.user_id AND i.provider <> 'apple') AS ok\n         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "479b16047f933eb68d8f1bdaa78c0800dd27986577b1ea8b2bed045473b795c8"
+}

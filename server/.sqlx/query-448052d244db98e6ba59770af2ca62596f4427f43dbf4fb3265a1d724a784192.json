@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET challenge_json = $2, updated_at = NOW()\n         WHERE transaction_id = $1 AND kind IN ('login', 'step_up')\n           AND status IN ('method_required', 'factor_required', 'verified')\n           AND consumed_at IS NULL AND expires_at > NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "448052d244db98e6ba59770af2ca62596f4427f43dbf4fb3265a1d724a784192"
+}

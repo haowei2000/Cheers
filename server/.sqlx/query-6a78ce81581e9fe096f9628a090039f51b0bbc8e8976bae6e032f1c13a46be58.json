@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM approval_delegations ad\n         USING channels c\n         WHERE ad.channel_id = c.channel_id AND c.workspace_id = $1\n           AND c.type <> 'dm' AND ad.user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a78ce81581e9fe096f9628a090039f51b0bbc8e8976bae6e032f1c13a46be58"
+}

@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,\n                ARRAY(SELECT cf.feature FROM channel_features cf\n                      WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE\n                      ORDER BY cf.feature) AS features,\n                c.conversation_mode, c.purpose,\n                c.auto_assist, c.allow_member_invites, c.allow_bot_adds,\n                cm.role AS \"my_role?\",\n                (cm.role IN ('owner', 'admin') OR $2::boolean) AS can_manage\n         FROM channels c\n         LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1\n         WHERE c.channel_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "features",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "conversation_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "auto_assist",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "allow_member_invites",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "allow_bot_adds",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "my_role?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "can_manage",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "31703e261619991904a8cbfbf357556d3456479e5f42f7493188eb2c15ebee85"
+}

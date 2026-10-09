@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_sessions\n         SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('session_config', $2::jsonb),\n             updated_at = NOW()\n         WHERE session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb2be6a41d1903720288191bc12c33fb6c1162b500cea64038d19ecb3924d610"
+}

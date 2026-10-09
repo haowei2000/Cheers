@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 AS present FROM channel_memberships\n             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot') AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "70742df6ebb39ac47e1492845b1c52e5ebcd81b2f8138e1e135bf80973b7bfe2"
+}

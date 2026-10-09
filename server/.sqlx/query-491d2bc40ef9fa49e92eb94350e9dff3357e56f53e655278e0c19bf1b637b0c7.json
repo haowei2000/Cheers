@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT il.link_id, il.workspace_id, il.channel_id, il.created_by,\n                (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,\n                (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted,\n                w.kind\n         FROM invite_links il\n         JOIN workspaces w ON w.workspace_id = il.workspace_id\n         WHERE il.token = $1 AND NOT il.revoked",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "link_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "expired",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "exhausted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "491d2bc40ef9fa49e92eb94350e9dff3357e56f53e655278e0c19bf1b637b0c7"
+}

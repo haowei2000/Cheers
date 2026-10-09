@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE context_files\n             SET content = $3,\n                 is_dir = $4,\n                 version = version + 1,\n                 updated_at = NOW()\n             WHERE channel_id = $1 AND path = $2\n             RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5a185ffdd4bd70116a67ec10dc6c9a4cc9703c868cb959da5296d70cc3f0eaea"
+}

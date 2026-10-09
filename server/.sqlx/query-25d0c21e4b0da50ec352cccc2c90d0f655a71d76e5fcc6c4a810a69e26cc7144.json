@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id, c.workspace_id, c.name AS title, ci.role,\n                ci.invited_by AS actor_id,\n                COALESCE(iu.display_name, iu.username) AS actor_name,\n                ci.invited_at::text AS created_at\n         FROM channel_invites ci\n         JOIN channels c ON c.channel_id = ci.channel_id\n         JOIN workspace_memberships wm\n           ON wm.workspace_id = c.workspace_id\n          AND wm.user_id = ci.user_id AND wm.status = 'active'\n         LEFT JOIN users iu ON iu.user_id = ci.invited_by\n         WHERE ci.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "25d0c21e4b0da50ec352cccc2c90d0f655a71d76e5fcc6c4a810a69e26cc7144"
+}

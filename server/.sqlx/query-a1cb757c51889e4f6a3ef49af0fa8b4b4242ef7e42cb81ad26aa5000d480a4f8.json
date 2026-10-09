@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM channel_memberships cm USING channels c\n             WHERE cm.channel_id = c.channel_id AND c.workspace_id = $1\n               AND cm.member_id = $2 AND cm.member_type = 'bot'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1cb757c51889e4f6a3ef49af0fa8b4b4242ef7e42cb81ad26aa5000d480a4f8"
+}

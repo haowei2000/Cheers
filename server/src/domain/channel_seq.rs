@@ -7,6 +7,7 @@
 //! - 用户消息（born final，`is_partial=FALSE`）：在 INSERT 当场分配。
 //! - bot 占位（born partial）：在 finalize（`is_partial` TRUE→FALSE）时分配，
 //!   被遗弃的流式占位永不消费 seq → 无间隙。
+
 use uuid::Uuid;
 
 /// 在事务 `tx` 内、行锁下分配频道的下一个 `channel_seq`。
@@ -19,10 +20,12 @@ pub async fn allocate(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,
 ) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar!(
+    let row = sqlx::query!(
         "UPDATE channels SET next_seq = next_seq + 1 WHERE channel_id = $1 RETURNING next_seq",
         channel_id.to_string(),
     )
     .fetch_one(&mut **tx)
-    .await
+    .await?;
+
+    Ok(row.next_seq)
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::json;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -77,17 +77,20 @@ pub async fn create_message(
     }
 
     // ── 1. 验成员资格 ─────────────────────────────────────────────────────
-    let is_member = sqlx::query_scalar!(
+    let is_member = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        ) AS \"ok!\"",
+        ) AS ok",
         params.channel_id.to_string(),
         params.user_id.to_string(),
     )
     .fetch_one(db)
     .await
-    .map_err(AppError::Db)?;
+    .map_err(AppError::Db)?
+    .ok
+    .clone()
+    .unwrap_or(false);
 
     if !is_member {
         info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message denied: user is not a member");
@@ -95,14 +98,15 @@ pub async fn create_message(
     }
 
     // ── 2. 查发送者名字（用于 DTO）───────────────────────────────────────
-    let sender_name: Option<String> =
-        sqlx::query("SELECT display_name FROM users WHERE user_id = $1")
-            .bind(params.user_id.to_string())
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|r| r.try_get("display_name").ok());
+    let sender_name: Option<String> = sqlx::query!(
+        "SELECT display_name FROM users WHERE user_id = $1",
+        params.user_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.display_name.clone());
 
     // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
     // Names first (group tokens like @all/@bots expand here — the same path bots
@@ -169,24 +173,24 @@ pub async fn create_message(
         .await
         .map_err(AppError::Db)?;
 
-    let thread_root_msg_id: Option<String> = sqlx::query_scalar(
+    let thread_root_msg_id: Option<String> = sqlx::query_scalar!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
              is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
              context_bundle)
          VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9, $10)
          RETURNING thread_root_msg_id",
+        msg_id.to_string(),
+        params.channel_id.to_string(),
+        params.user_id.to_string(),
+        &params.content,
+        msg_type,
+        params.reply_to_msg_id.map(|id| id.to_string()),
+        json!(file_ids.clone()),
+        now,
+        seq,
+        row_bundle.clone(),
     )
-    .bind(msg_id.to_string())
-    .bind(params.channel_id.to_string())
-    .bind(params.user_id.to_string())
-    .bind(&params.content)
-    .bind(msg_type)
-    .bind(params.reply_to_msg_id.map(|id| id.to_string()))
-    .bind(json!(file_ids.clone()))
-    .bind(now)
-    .bind(seq)
-    .bind(row_bundle.clone())
     .fetch_one(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -303,17 +307,17 @@ pub async fn create_message(
         }
     };
     // Sender's channel role (for the INITIATE matrix); default 'member'.
-    let sender_role: String = sqlx::query(
+    let sender_role: String = sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        params.channel_id.to_string(),
+        params.user_id.to_string(),
     )
-    .bind(params.channel_id.to_string())
-    .bind(params.user_id.to_string())
     .fetch_optional(db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string());
     // Shared across all bots triggered by THIS message so identical trigger
     // attachments / pinned files are fetched from S3 once, not once per bot.
@@ -451,16 +455,15 @@ pub async fn resolve_provider_account_id_for_bot(
     db: &PgPool,
     bot_id: Uuid,
 ) -> Result<String, AppError> {
-    let binding_config = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(db)
-        .await
-        .map_err(AppError::Db)?
-        .and_then(|row| {
-            row.try_get::<Option<serde_json::Value>, _>("binding_config")
-                .ok()
-        })
-        .ok_or(AppError::NotFound)?;
+    let binding_config = sqlx::query!(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .and_then(|row| Some(row.binding_config.clone()))
+    .ok_or(AppError::NotFound)?;
 
     let value = binding_config.ok_or(AppError::NotFound)?;
     resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
@@ -532,18 +535,18 @@ async fn validate_file_ids(
     file_ids: &[String],
 ) -> Result<(), AppError> {
     for file_id in file_ids {
-        let status = sqlx::query(
+        let status = sqlx::query!(
             "SELECT status
              FROM file_records
              WHERE file_id = $1 AND channel_id = $2 AND uploader_id = $3",
+            file_id,
+            channel_id.to_string(),
+            uploader_id.to_string(),
         )
-        .bind(file_id)
-        .bind(channel_id.to_string())
-        .bind(uploader_id.to_string())
         .fetch_optional(db)
         .await
         .map_err(AppError::Db)?
-        .and_then(|row| row.try_get::<Option<String>, _>("status").ok().flatten());
+        .and_then(|row| Some(row.status.clone()));
 
         match status {
             Some(status) if status == "uploaded" => {}
@@ -600,13 +603,13 @@ async fn resolve_bot_triggers(
     //    注入；成员资格/可写角色由下游 filter_writable_bots 统一把关（与
     //    mention 路径一致）。此路径只在用户发消息时走到（bot 回帖不经过这里）。
     if let Some(reply_id) = reply_to_msg_id {
-        let bot: Option<String> = sqlx::query_scalar(
+        let bot: Option<String> = sqlx::query_scalar!(
             "SELECT sender_id FROM messages
              WHERE msg_id = $1 AND channel_id = $2 AND sender_type = 'bot'
                AND is_deleted = FALSE",
+            reply_id.to_string(),
+            channel_id.to_string(),
         )
-        .bind(reply_id.to_string())
-        .bind(channel_id.to_string())
         .fetch_optional(db)
         .await
         .ok()
@@ -619,9 +622,8 @@ async fn resolve_bot_triggers(
     }
 
     // 3. 无 @bot、非回复 bot → 回落 channels.default_bot_id
-    use sqlx::Row;
 
-    match sqlx::query(
+    match sqlx::query!(
         "SELECT COALESCE(c.default_bot_id, w.default_bot_id) AS default_bot_id
          FROM channels c
          LEFT JOIN workspaces w ON w.workspace_id = c.workspace_id
@@ -632,13 +634,13 @@ async fn resolve_bot_triggers(
          WHERE c.channel_id = $1
            AND COALESCE(c.default_bot_id, w.default_bot_id) IS NOT NULL
          LIMIT 1",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
     {
-        Ok(Some(row)) => match row.try_get::<Option<String>, _>("default_bot_id") {
-            Ok(Some(raw)) => Uuid::parse_str(&raw).into_iter().collect(),
+        Ok(Some(row)) => match row.default_bot_id.clone() {
+            Some(raw) => Uuid::parse_str(&raw).into_iter().collect(),
             _ => vec![],
         },
         _ => vec![],
@@ -657,14 +659,14 @@ pub(crate) async fn filter_writable_bots(
         return bots;
     }
     let ids: Vec<String> = bots.iter().map(Uuid::to_string).collect();
-    let writable: Result<Vec<String>, _> = sqlx::query_scalar(
+    let writable: Result<Vec<String>, _> = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships
          WHERE channel_id = $1 AND member_type = 'bot'
            AND member_id = ANY($2)
            AND role IN ('owner', 'admin', 'member')",
+        channel_id.to_string(),
+        &ids,
     )
-    .bind(channel_id.to_string())
-    .bind(&ids)
     .fetch_all(db)
     .await;
     match writable {
@@ -745,17 +747,20 @@ pub async fn search_messages(
 /// Channel membership guard shared by the read paths. Any membership row
 /// (user or bot) grants read access to the channel's history.
 async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    let is_member = sqlx::query_scalar!(
+    let is_member = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2
-        ) AS \"ok!\"",
+        ) AS ok",
         channel_id.to_string(),
         user_id.to_string(),
     )
     .fetch_one(db)
     .await
-    .map_err(AppError::Db)?;
+    .map_err(AppError::Db)?
+    .ok
+    .clone()
+    .unwrap_or(false);
 
     if is_member {
         Ok(())
@@ -767,10 +772,25 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
 /// 无权限透传的消息列表读取（供 resource 层复用统一消息模型）。
 ///
 /// 返回顺序为创建时间升序（调用者可直接返回）。
-/// Shared SELECT projection + FROM/JOIN for channel message listing.
-/// Callers append their own WHERE / ORDER BY / LIMIT (with placeholders).
-pub(crate) const MESSAGE_LIST_SELECT: &str =
-    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+pub async fn list_channel_messages(
+    db: &PgPool,
+    channel_id: &Uuid,
+    before: Option<String>,
+    after: Option<String>,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    let limit = limit.clamp(1, 200);
+    let requested_limit = limit;
+
+    let (rows, anchor_found, has_more_before, has_more_after, reverse_rows) = match (before, after)
+    {
+        (Some(before_id), None) => {
+            let anchor = fetch_anchor(db, &before_id, channel_id).await?;
+
+            if let Some((created_at, anchor_msg_id)) = anchor {
+                let rows = sqlx::query_as!(
+                    crate::infra::db::query_rows::MessageRow,
+                    r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
         m.channel_seq, u.display_name AS sender_name,
         m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
         m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
@@ -788,26 +808,7 @@ pub(crate) const MESSAGE_LIST_SELECT: &str =
            ), FALSE) AS trace_has_failure
       FROM message_traces mt
      WHERE mt.msg_id = m.msg_id
- ) trace_stats ON TRUE";
-
-pub async fn list_channel_messages(
-    db: &PgPool,
-    channel_id: &Uuid,
-    before: Option<String>,
-    after: Option<String>,
-    limit: i64,
-) -> Result<MessageListPage, AppError> {
-    let limit = limit.clamp(1, 200);
-    let requested_limit = limit;
-
-    let (rows, anchor_found, has_more_before, has_more_after, reverse_rows) = match (before, after)
-    {
-        (Some(before_id), None) => {
-            let anchor = fetch_anchor(db, &before_id, channel_id).await?;
-
-            if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(&format!(
-                    "{MESSAGE_LIST_SELECT}
+ ) trace_stats ON TRUE
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND m.is_secret = FALSE
@@ -816,27 +817,46 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id < $3)
                        )
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $4"
-                ))
-                .bind(channel_id.to_string())
-                .bind(created_at)
-                .bind(anchor_msg_id)
-                .bind(requested_limit + 1)
+                     LIMIT $4"###,
+                    channel_id.to_string(),
+                    created_at,
+                    anchor_msg_id,
+                    requested_limit + 1,
+                )
                 .fetch_all(db)
                 .await
                 .map_err(AppError::Db)?;
                 (rows, true, true, false, true)
             } else {
-                let rows = sqlx::query(&format!(
-                    "{MESSAGE_LIST_SELECT}
+                let rows = sqlx::query_as!(
+                    crate::infra::db::query_rows::MessageRow,
+                    r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND m.is_secret = FALSE
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $2"
-                ))
-                .bind(channel_id.to_string())
-                .bind(requested_limit + 1)
+                     LIMIT $2"###,
+                    channel_id.to_string(),
+                    requested_limit + 1,
+                )
                 .fetch_all(db)
                 .await
                 .map_err(AppError::Db)?;
@@ -847,8 +867,27 @@ pub async fn list_channel_messages(
             let anchor = fetch_anchor(db, &after_id, channel_id).await?;
 
             if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(&format!(
-                    "{MESSAGE_LIST_SELECT}
+                let rows = sqlx::query_as!(
+                    crate::infra::db::query_rows::MessageRow,
+                    r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND m.is_secret = FALSE
@@ -857,12 +896,12 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id > $3)
                        )
                      ORDER BY m.created_at ASC, m.msg_id ASC
-                     LIMIT $4"
-                ))
-                .bind(channel_id.to_string())
-                .bind(created_at)
-                .bind(anchor_msg_id)
-                .bind(requested_limit + 1)
+                     LIMIT $4"###,
+                    channel_id.to_string(),
+                    created_at,
+                    anchor_msg_id,
+                    requested_limit + 1,
+                )
                 .fetch_all(db)
                 .await
                 .map_err(AppError::Db)?;
@@ -872,16 +911,35 @@ pub async fn list_channel_messages(
             }
         }
         (None, None) => {
-            let rows = sqlx::query(&format!(
-                "{MESSAGE_LIST_SELECT}
+            let rows = sqlx::query_as!(
+                crate::infra::db::query_rows::MessageRow,
+                r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
                  WHERE m.channel_id = $1
                    AND m.is_partial = FALSE
                    AND m.is_secret = FALSE
                  ORDER BY m.created_at DESC, m.msg_id DESC
-                 LIMIT $2"
-            ))
-            .bind(channel_id.to_string())
-            .bind(requested_limit + 1)
+                 LIMIT $2"###,
+                channel_id.to_string(),
+                requested_limit + 1,
+            )
             .fetch_all(db)
             .await
             .map_err(AppError::Db)?;
@@ -916,19 +974,38 @@ pub async fn list_channel_messages_since_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(&format!(
-        "{MESSAGE_LIST_SELECT}
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq > $2
          ORDER BY m.channel_seq ASC
-         LIMIT $3"
-    ))
-    .bind(channel_id.to_string())
-    .bind(since_seq.max(0))
-    .bind(limit + 1)
+         LIMIT $3"###,
+        channel_id.to_string(),
+        since_seq.max(0),
+        limit + 1,
+    )
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
@@ -958,8 +1035,27 @@ pub async fn list_channel_messages_by_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(&format!(
-        "{MESSAGE_LIST_SELECT}
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
@@ -967,12 +1063,12 @@ pub async fn list_channel_messages_by_seq(
            AND m.channel_seq >= $2
            AND ($3::bigint IS NULL OR m.channel_seq <= $3)
          ORDER BY m.channel_seq ASC
-         LIMIT $4"
-    ))
-    .bind(channel_id.to_string())
-    .bind(min_seq.max(1))
-    .bind(max_seq)
-    .bind(limit + 1)
+         LIMIT $4"###,
+        channel_id.to_string(),
+        min_seq.max(1),
+        max_seq,
+        limit + 1,
+    )
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
@@ -1012,8 +1108,27 @@ pub async fn search_channel_messages(
     let (rows, anchor_found) = if let Some(before_id) = before {
         let anchor = fetch_anchor(db, &before_id, channel_id).await?;
         if let Some((created_at, anchor_msg_id)) = anchor {
-            let rows = sqlx::query(&format!(
-                "{MESSAGE_LIST_SELECT}
+            let rows = sqlx::query_as!(
+                crate::infra::db::query_rows::MessageRow,
+                r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
                  WHERE m.channel_id = $1
                    AND m.is_partial = FALSE
                    AND m.is_secret = FALSE
@@ -1023,13 +1138,13 @@ pub async fn search_channel_messages(
                        OR (m.created_at = $3 AND m.msg_id < $4)
                    )
                  ORDER BY m.created_at DESC, m.msg_id DESC
-                 LIMIT $5"
-            ))
-            .bind(channel_id.to_string())
-            .bind(&pattern)
-            .bind(created_at)
-            .bind(anchor_msg_id)
-            .bind(limit + 1)
+                 LIMIT $5"###,
+                channel_id.to_string(),
+                &pattern,
+                created_at,
+                anchor_msg_id,
+                limit + 1,
+            )
             .fetch_all(db)
             .await
             .map_err(AppError::Db)?;
@@ -1038,18 +1153,37 @@ pub async fn search_channel_messages(
             (Vec::new(), false)
         }
     } else {
-        let rows = sqlx::query(&format!(
-            "{MESSAGE_LIST_SELECT}
+        let rows = sqlx::query_as!(
+            crate::infra::db::query_rows::MessageRow,
+            r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
              WHERE m.channel_id = $1
                AND m.is_partial = FALSE
                AND m.is_secret = FALSE
                AND m.content ILIKE $2
              ORDER BY m.created_at DESC, m.msg_id DESC
-             LIMIT $3"
-        ))
-        .bind(channel_id.to_string())
-        .bind(&pattern)
-        .bind(limit + 1)
+             LIMIT $3"###,
+            channel_id.to_string(),
+            &pattern,
+            limit + 1,
+        )
         .fetch_all(db)
         .await
         .map_err(AppError::Db)?;
@@ -1096,14 +1230,15 @@ async fn fetch_anchor(
     anchor_id: &str,
     channel_id: &Uuid,
 ) -> Result<Option<(chrono::DateTime<Utc>, String)>, AppError> {
-    let anchor = sqlx::query_as::<_, AnchorRow>(
+    let anchor = sqlx::query_as!(
+        AnchorRow,
         "SELECT msg_id, created_at
          FROM messages
          WHERE msg_id = $1 AND channel_id = $2 AND is_secret = FALSE
          LIMIT 1",
+        anchor_id,
+        channel_id.to_string(),
     )
-    .bind(anchor_id)
-    .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
@@ -1113,7 +1248,7 @@ async fn fetch_anchor(
 
 pub(crate) async fn hydrate_message_rows(
     db: &PgPool,
-    rows: &[sqlx::postgres::PgRow],
+    rows: &[crate::infra::db::query_rows::MessageRow],
 ) -> Result<Vec<MessageDto>, AppError> {
     let mut msgs: Vec<MessageDto> = rows.iter().map(MessageDto::from_row).collect();
     if msgs.is_empty() {
@@ -1205,13 +1340,14 @@ async fn load_message_files_map(
         summary_3lines: Option<String>,
     }
 
-    let rows = sqlx::query_as::<_, FileRow>(
+    let rows = sqlx::query_as!(
+        FileRow,
         "SELECT file_id, original_filename, content_type, size_bytes, status,
                 expires_at, summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
+        file_ids,
     )
-    .bind(file_ids)
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
@@ -1255,7 +1391,8 @@ async fn load_message_mentions(
         display_name: Option<String>,
     }
 
-    let rows = sqlx::query_as::<_, MentionRow>(
+    let rows = sqlx::query_as!(
+        MentionRow,
         "SELECT mm.msg_id,
                 mm.member_type,
                 mm.member_id,
@@ -1269,8 +1406,8 @@ async fn load_message_mentions(
                 ON mm.member_type = 'bot'
                AND ba.bot_id = mm.member_id
          WHERE mm.msg_id = ANY($1)",
+        msg_ids,
     )
-    .bind(msg_ids)
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;

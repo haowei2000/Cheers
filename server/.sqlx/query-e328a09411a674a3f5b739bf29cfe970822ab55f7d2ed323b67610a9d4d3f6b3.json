@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                 SELECT 1 AS present FROM workspace_memberships\n                  WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'\n             ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e328a09411a674a3f5b739bf29cfe970822ab55f7d2ed323b67610a9d4d3f6b3"
+}

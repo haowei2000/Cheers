@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_records\n         SET status = 'expired', last_error = 'expired'\n         WHERE file_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e33833c537971e5e6a4b885b0c793b72c446730d54b529396847391f7d8b68bc"
+}

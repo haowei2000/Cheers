@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 AS present FROM connector_hosts\n         WHERE host_id = $1 AND bot_id = $2 AND revoked_at IS NULL\n           AND status IN ('active', 'standby') AND credential_hash IS NOT NULL) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0caaa53088cdf5f7bb2cb9ffe6baa95d877e7729a66c4f6c8d7b307ebbaad3ee"
+}

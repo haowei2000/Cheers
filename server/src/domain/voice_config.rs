@@ -123,15 +123,15 @@ impl VoiceConfig {
     /// Load the config for a channel from the DB. Returns defaults if the
     /// channel has no Voice feature config yet.
     pub async fn load(db: &PgPool, channel_id: &str) -> Result<Self, AppError> {
-        let raw = sqlx::query_scalar::<_, Option<serde_json::Value>>(
+        let raw = sqlx::query_scalar!(
             "SELECT COALESCE(
                     (SELECT cf.config FROM channel_features cf
                      WHERE cf.channel_id = channels.channel_id
                        AND cf.feature = 'voice' AND cf.enabled = TRUE),
                     voice_config)
              FROM channels WHERE channel_id = $1",
+            channel_id,
         )
-        .bind(channel_id)
         .fetch_optional(db)
         .await?
         .flatten();
@@ -143,12 +143,12 @@ impl VoiceConfig {
     pub async fn save(&self, db: &PgPool, channel_id: &str) -> Result<(), AppError> {
         let value = serde_json::to_value(self).map_err(|e| AppError::Internal(e.to_string()))?;
         let mut tx = db.begin().await?;
-        let updated = sqlx::query(
+        let updated = sqlx::query!(
             "UPDATE channel_features SET config = $1, updated_at = NOW()
              WHERE channel_id = $2 AND feature = 'voice' AND enabled = TRUE",
+            &value,
+            channel_id,
         )
-        .bind(&value)
-        .bind(channel_id)
         .execute(&mut *tx)
         .await?
         .rows_affected();
@@ -158,11 +158,13 @@ impl VoiceConfig {
             ));
         }
         // Compatibility mirror for gateways rolling across migration 0090.
-        sqlx::query("UPDATE channels SET voice_config = $1 WHERE channel_id = $2")
-            .bind(value)
-            .bind(channel_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE channels SET voice_config = $1 WHERE channel_id = $2",
+            value,
+            channel_id,
+        )
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }

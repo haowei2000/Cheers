@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO resource_idempotency_keys\n                 (principal_type, principal_id, resource, idempotency_key, request_hash)\n             VALUES ($1, $2, $3, $4, $5)\n             ON CONFLICT (principal_type, principal_id, resource, idempotency_key) DO UPDATE\n                 SET request_hash = EXCLUDED.request_hash, response = NULL, created_at = NOW()\n                 WHERE resource_idempotency_keys.created_at <= NOW() - make_interval(hours => $6)\n             RETURNING 1 AS claimed",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claimed",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Bpchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "93a3a533f44687f75115bf8311cc662d5ac8c2ec4d1870243d3d7e7656c4144d"
+}

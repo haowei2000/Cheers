@@ -8,7 +8,7 @@
 //! See docs/arch/TRACE_PERSISTENCE.md.
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Public wire contract shared by durable REST reads and live `bot_trace`
@@ -253,34 +253,34 @@ pub async fn record(db: &PgPool, ev: TraceEvent) -> Result<(), sqlx::Error> {
     let event_id = ev.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let mut last_err: Option<sqlx::Error> = None;
     for _ in 0..SEQ_RETRY {
-        let res = sqlx::query(
+        let res = sqlx::query!(
             "INSERT INTO message_traces
                 (id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream,
                  kind, phase, status, title, message, data,
                  request_id, approval_kind, decision, option_id, actor_id)
              VALUES ($1, $2, $3, $4, $5, $6,
-                 (SELECT COALESCE(MAX(trace_seq), 0) + 1 FROM message_traces WHERE msg_id = $2),
+                 (SELECT COALESCE(MAX(trace_seq), 0) + 1 FROM message_traces WHERE msg_id = $2::varchar),
                  $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
              ON CONFLICT (id) DO NOTHING",
+            &event_id,
+            &ev.msg_id,
+            &ev.channel_id,
+            ev.bot_id.as_deref(),
+            ev.task_id.as_deref(),
+            ev.run_id.as_deref(),
+            &stream,
+            kind,
+            &ev.phase,
+            ev.status.as_deref(),
+            ev.title.as_deref(),
+            ev.message.as_deref(),
+            ev.data.as_ref(),
+            ev.request_id.as_deref(),
+            ev.approval_kind.as_deref(),
+            ev.decision.as_deref(),
+            ev.option_id.as_deref(),
+            ev.actor_id.as_deref(),
         )
-        .bind(&event_id)
-        .bind(&ev.msg_id)
-        .bind(&ev.channel_id)
-        .bind(&ev.bot_id)
-        .bind(&ev.task_id)
-        .bind(&ev.run_id)
-        .bind(&stream)
-        .bind(kind)
-        .bind(&ev.phase)
-        .bind(&ev.status)
-        .bind(&ev.title)
-        .bind(&ev.message)
-        .bind(&ev.data)
-        .bind(&ev.request_id)
-        .bind(&ev.approval_kind)
-        .bind(&ev.decision)
-        .bind(&ev.option_id)
-        .bind(&ev.actor_id)
         .execute(db)
         .await;
         match res {
@@ -298,29 +298,28 @@ pub async fn record(db: &PgPool, ev: TraceEvent) -> Result<(), sqlx::Error> {
     }))
 }
 
-fn row_to_json(r: sqlx::postgres::PgRow) -> Value {
+fn row_to_json(r: crate::infra::db::query_rows::TraceRow) -> Value {
     normalize_event_payload(json!({
-        "id": r.try_get::<String, _>("id").unwrap_or_default(),
-        "msg_id": r.try_get::<String, _>("msg_id").unwrap_or_default(),
-        "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
-        "bot_id": r.try_get::<Option<String>, _>("bot_id").ok().flatten(),
-        "task_id": r.try_get::<Option<String>, _>("task_id").ok().flatten(),
-        "run_id": r.try_get::<Option<String>, _>("run_id").ok().flatten(),
-        "trace_seq": r.try_get::<i64, _>("trace_seq").unwrap_or_default(),
-        "stream": r.try_get::<String, _>("stream").unwrap_or_default(),
-        "kind": r.try_get::<String, _>("kind").unwrap_or_default(),
-        "phase": r.try_get::<String, _>("phase").unwrap_or_default(),
-        "status": r.try_get::<Option<String>, _>("status").ok().flatten(),
-        "title": r.try_get::<Option<String>, _>("title").ok().flatten(),
-        "message": r.try_get::<Option<String>, _>("message").ok().flatten(),
-        "data": r.try_get::<Option<Value>, _>("data").ok().flatten(),
-        "request_id": r.try_get::<Option<String>, _>("request_id").ok().flatten(),
-        "approval_kind": r.try_get::<Option<String>, _>("approval_kind").ok().flatten(),
-        "decision": r.try_get::<Option<String>, _>("decision").ok().flatten(),
-        "option_id": r.try_get::<Option<String>, _>("option_id").ok().flatten(),
-        "actor_id": r.try_get::<Option<String>, _>("actor_id").ok().flatten(),
-        "created_at": r
-            .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+        "id": r.id.clone(),
+        "msg_id": r.msg_id.clone(),
+        "channel_id": r.channel_id.clone(),
+        "bot_id": r.bot_id.clone(),
+        "task_id": r.task_id.clone(),
+        "run_id": r.run_id.clone(),
+        "trace_seq": r.trace_seq.clone(),
+        "stream": r.stream.clone(),
+        "kind": r.kind.clone(),
+        "phase": r.phase.clone(),
+        "status": r.status.clone(),
+        "title": r.title.clone(),
+        "message": r.message.clone(),
+        "data": r.data.clone(),
+        "request_id": r.request_id.clone(),
+        "approval_kind": r.approval_kind.clone(),
+        "decision": r.decision.clone(),
+        "option_id": r.option_id.clone(),
+        "actor_id": r.actor_id.clone(),
+        "created_at": Some(r.created_at.clone())
             .map(|t| t.to_rfc3339())
             .unwrap_or_default(),
     }))
@@ -451,21 +450,16 @@ mod contract_tests {
     }
 }
 
-const SELECT_COLS: &str = "SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, \
-     stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, \
-     option_id, actor_id, created_at FROM message_traces";
-
 /// All traces for one bot turn, oldest-first (the per-turn replay/display query).
 pub async fn list_for_message(
     db: &PgPool,
     msg_id: &str,
     limit: i64,
 ) -> Result<Vec<Value>, sqlx::Error> {
-    let sql = format!("{SELECT_COLS} WHERE msg_id = $1 ORDER BY trace_seq ASC LIMIT $2");
-    let rows = sqlx::query(&sql)
-        .bind(msg_id)
-        .bind(limit)
-        .fetch_all(db)
+    let rows = sqlx::query_as!(crate::infra::db::query_rows::TraceRow, r###"SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, option_id, actor_id, created_at FROM message_traces WHERE msg_id = $1 ORDER BY trace_seq ASC LIMIT $2"###,
+        msg_id,
+        limit,
+    ).fetch_all(db)
         .await?;
     Ok(rows.into_iter().map(row_to_json).collect())
 }
@@ -478,21 +472,17 @@ pub async fn list_for_channel(
     limit: i64,
 ) -> Result<Vec<Value>, sqlx::Error> {
     let rows = if let Some(k) = kind {
-        let sql = format!(
-            "{SELECT_COLS} WHERE channel_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT $3"
-        );
-        sqlx::query(&sql)
-            .bind(channel_id)
-            .bind(k)
-            .bind(limit)
-            .fetch_all(db)
+        sqlx::query_as!(crate::infra::db::query_rows::TraceRow, r###"SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, option_id, actor_id, created_at FROM message_traces WHERE channel_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT $3"###,
+            channel_id,
+            k,
+            limit,
+        ).fetch_all(db)
             .await?
     } else {
-        let sql = format!("{SELECT_COLS} WHERE channel_id = $1 ORDER BY created_at DESC LIMIT $2");
-        sqlx::query(&sql)
-            .bind(channel_id)
-            .bind(limit)
-            .fetch_all(db)
+        sqlx::query_as!(crate::infra::db::query_rows::TraceRow, r###"SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, option_id, actor_id, created_at FROM message_traces WHERE channel_id = $1 ORDER BY created_at DESC LIMIT $2"###,
+            channel_id,
+            limit,
+        ).fetch_all(db)
             .await?
     };
     Ok(rows.into_iter().map(row_to_json).collect())

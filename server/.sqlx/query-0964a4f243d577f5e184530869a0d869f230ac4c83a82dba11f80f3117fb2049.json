@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ps.endpoint, ps.p256dh, ps.auth\n         FROM push_subscriptions ps\n         JOIN users u ON u.user_id = ps.user_id\n         WHERE ps.user_id = $1 AND NOT u.is_suspended AND NOT u.is_deleted",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "endpoint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "p256dh",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "auth",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0964a4f243d577f5e184530869a0d869f230ac4c83a82dba11f80f3117fb2049"
+}

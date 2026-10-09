@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO connector_hosts\n           (host_id, bot_id, device_name, agent_type, status)\n         VALUES ($1, $2, $3, $4, 'pending')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "864c18ac95179def9d804d0fe8b340841b92d278691ed790de63da7c4c707820"
+}

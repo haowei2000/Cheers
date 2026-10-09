@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.friendship_id, f.friend_id AS other_id, f.created_at, f.message,\n                COALESCE(u.username, b.username) AS username,\n                COALESCE(u.display_name, b.display_name) AS display_name,\n                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,\n                (b.bot_id IS NOT NULL) AS is_bot,\n                NULL::text AS target_bot_id,\n                NULL::text AS target_bot_name\n         FROM friendships f\n         LEFT JOIN users u ON u.user_id = f.friend_id\n         LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id\n         WHERE f.user_id = $1 AND f.status = 'pending'\n         ORDER BY f.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friendship_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "other_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_bot",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "target_bot_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "target_bot_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ee623de6bf4ea92bb9721ac3608c5915ac6cfcbbe56520cc56823e64df5916cd"
+}

@@ -1,5 +1,5 @@
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, PrincipalType, ResourceResult};
@@ -24,7 +24,7 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
     // room with context — who's here, what they do, and their current status. A
     // membership row is exactly one of user|bot, so the other side of each COALESCE
     // is NULL from the LEFT JOIN.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r#"
         SELECT cm.member_id, cm.member_type, cm.joined_at,
                COALESCE(u.display_name, b.display_name) AS display_name,
@@ -39,9 +39,9 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
         WHERE cm.channel_id = $1
         LIMIT $2
         "#,
+        channel_id.to_string(),
+        limit,
     )
-    .bind(channel_id.to_string())
-    .bind(limit)
     .fetch_all(db)
     .await
     .map_err(super::db_err("members.list: select channel memberships"))?;
@@ -55,20 +55,20 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
     let members: Vec<Value> = rows
         .iter()
         .map(|r| {
-            let member_id = r.try_get::<String, _>("member_id").unwrap_or_default();
-            let member_type = r.try_get::<String, _>("member_type").unwrap_or_default();
+            let member_id = r.member_id.clone();
+            let member_type = r.member_type.clone();
             let is_self = member_id == self_id && member_type == self_type;
             serde_json::json!({
                 "member_id": member_id,
                 "member_type": member_type,
                 "is_self": is_self,
-                "display_name": r.try_get::<Option<String>, _>("display_name").unwrap_or(None),
-                "username": r.try_get::<Option<String>, _>("username").unwrap_or(None),
-                "info": r.try_get::<Option<String>, _>("info").unwrap_or(None),
-                "status_text": r.try_get::<Option<String>, _>("status_text").unwrap_or(None),
-                "status_emoji": r.try_get::<Option<String>, _>("status_emoji").unwrap_or(None),
-                "status_updated_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at").unwrap_or(None),
-                "joined_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("joined_at").unwrap_or(None),
+                "display_name": r.display_name.clone(),
+                "username": r.username.clone(),
+                "info": r.info.clone(),
+                "status_text": r.status_text.clone(),
+                "status_emoji": r.status_emoji.clone(),
+                "status_updated_at": r.status_updated_at.clone(),
+                "joined_at": Some(r.joined_at.clone()),
             })
         })
         .collect();
@@ -100,12 +100,13 @@ pub async fn handle_leave(db: &PgPool, principal: &Principal, params: &Value) ->
     }
     authorize_channel_read(db, principal, channel_id).await?;
 
-    let channel_type: Option<String> =
-        sqlx::query_scalar("SELECT type FROM channels WHERE channel_id = $1")
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(super::db_err("members.leave: select channel type"))?;
+    let channel_type: Option<String> = sqlx::query_scalar!(
+        "SELECT type FROM channels WHERE channel_id = $1",
+        channel_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(super::db_err("members.leave: select channel type"))?;
     if channel_type.as_deref() == Some("dm") {
         return Err(super::resource_error(
             "INVALID_PARAMS",
@@ -113,12 +114,12 @@ pub async fn handle_leave(db: &PgPool, principal: &Principal, params: &Value) ->
         ));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "DELETE FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'",
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(principal.principal_id.to_string())
     .execute(db)
     .await
     .map_err(super::db_err("members.leave: delete membership"))?;

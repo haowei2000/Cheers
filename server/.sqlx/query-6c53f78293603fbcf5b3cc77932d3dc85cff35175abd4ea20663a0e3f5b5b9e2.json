@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_sessions\n         SET transcription_status = 'starting', transcriber_dispatch_id = $2, updated_at = NOW()\n         WHERE voice_session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c53f78293603fbcf5b3cc77932d3dc85cff35175abd4ea20663a0e3f5b5b9e2"
+}

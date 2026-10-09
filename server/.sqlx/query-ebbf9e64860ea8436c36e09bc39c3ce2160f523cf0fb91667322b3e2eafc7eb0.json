@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id, c.name\n         FROM channels c\n         JOIN channel_memberships mine\n           ON mine.channel_id = c.channel_id\n          AND mine.member_id = $2 AND mine.member_type = 'user' AND mine.role = 'owner'\n         WHERE c.workspace_id = $1 AND c.type <> 'dm' AND c.archived_at IS NULL\n           AND NOT EXISTS (\n               SELECT 1 AS present FROM channel_memberships other\n               WHERE other.channel_id = c.channel_id AND other.member_type = 'user'\n                 AND other.role = 'owner' AND other.member_id <> $2\n           )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ebbf9e64860ea8436c36e09bc39c3ce2160f523cf0fb91667322b3e2eafc7eb0"
+}

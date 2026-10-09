@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_memberships SET role = 'owner' WHERE channel_id = $1 AND member_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac16dcfc88b3e0814ea92a95c25fdd4596533f8c357c77d31fec2b503e088473"
+}

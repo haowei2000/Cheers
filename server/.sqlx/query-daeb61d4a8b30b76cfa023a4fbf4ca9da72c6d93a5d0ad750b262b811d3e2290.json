@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "daeb61d4a8b30b76cfa023a4fbf4ca9da72c6d93a5d0ad750b262b811d3e2290"
+}

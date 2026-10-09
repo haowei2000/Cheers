@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_id, object_key, original_filename\n           FROM file_records\n           WHERE status = 'uploaded'\n             AND preview_object_key IS NULL\n             AND converted_at IS NULL\n             AND conversion_attempts < $1\n             AND (expires_at IS NULL OR expires_at > NOW())\n             AND (\n                 content_type ILIKE '%officedocument%'\n                 OR content_type ILIKE '%msword%'\n                 OR content_type ILIKE '%ms-excel%'\n                 OR content_type ILIKE '%ms-powerpoint%'\n                 OR content_type ILIKE '%opendocument%'\n                 OR lower(coalesce(original_filename, '')) ~ '\\.(doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf)$'\n             )\n           ORDER BY conversion_attempts ASC, created_at ASC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "original_filename",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "18b1013631a28292b3e3d9d1bc0adcb1d1b44562865e2d51deaa6b6bcc96c380"
+}

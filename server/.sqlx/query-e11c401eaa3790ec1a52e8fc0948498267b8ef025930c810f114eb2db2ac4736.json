@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth_security_events\n             (event_id, user_id, session_id, event_type)\n             VALUES ($1, $2, $3, 'refresh_token_reuse')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e11c401eaa3790ec1a52e8fc0948498267b8ef025930c810f114eb2db2ac4736"
+}

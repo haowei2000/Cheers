@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO approval_delegations\n            (id, bot_id, channel_id, user_id, operation_kind, granted_by)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         ON CONFLICT (bot_id, channel_id, user_id, operation_kind)\n         DO UPDATE SET revoked_at = NULL, revoked_by = NULL,\n                       granted_by = EXCLUDED.granted_by, granted_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fefd13e6ab093358464ccaa7e66473bc869b5d2ae5bf51c0b6c57b6865718b65"
+}

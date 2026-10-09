@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mm.msg_id,\n                mm.member_type,\n                mm.member_id,\n                COALESCE(u.username, ba.username) AS username,\n                COALESCE(u.display_name, ba.display_name) AS display_name\n         FROM message_mentions mm\n         LEFT JOIN users u\n                ON mm.member_type = 'user'\n               AND u.user_id = mm.member_id\n         LEFT JOIN bot_accounts ba\n                ON mm.member_type = 'bot'\n               AND ba.bot_id = mm.member_id\n         WHERE mm.msg_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "member_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "25761a5d00f14424920df2908b93c561d1d2c904a3d00b965e040a25b9ff87c1"
+}

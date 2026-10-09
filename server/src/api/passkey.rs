@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 use crate::{
@@ -62,16 +62,16 @@ pub async fn register_options(
 ) -> Result<Json<Value>, AppError> {
     let service = require_webauthn(&state)?;
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT username, display_name FROM users
          WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let username: String = row.get("username");
-    let display_name: Option<String> = row.try_get("display_name").ok().flatten();
+    let username: String = row.username.clone();
+    let display_name: Option<String> = row.display_name.clone();
     let display = display_name.as_deref().unwrap_or(username.as_str());
     let (options, transaction_id) = webauthn::start_registration_with_tx(
         &state.db,
@@ -148,17 +148,18 @@ pub async fn delete_credential(
 ) -> Result<Json<Value>, AppError> {
     let _ = require_webauthn(&state)?;
     let mut tx = state.db.begin().await?;
-    let active_user =
-        sqlx::query("SELECT 1 FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE")
-            .bind(&claims.sub)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let active_user = sqlx::query!(
+        "SELECT 1 AS present FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE",
+        &claims.sub,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
     if active_user.is_none() {
         return Err(AppError::NotFound);
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT
-           EXISTS(SELECT 1 FROM webauthn_credentials
+           EXISTS(SELECT 1 AS present FROM webauthn_credentials
                   WHERE credential_pk = $1 AND user_id = $2) AS exists,
            (SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $2) AS total,
            (SELECT password_hash IS NOT NULL OR totp_enabled
@@ -167,24 +168,20 @@ pub async fn delete_credential(
               FROM users WHERE user_id = $2) AS has_other_second_factor,
            (SELECT password_2fa_enabled
               FROM users WHERE user_id = $2) AS password_factor_armed,
-           EXISTS(SELECT 1 FROM auth_external_identities
+           EXISTS(SELECT 1 AS present FROM auth_external_identities
                   WHERE user_id = $2) AS has_external_primary",
+        &credential_pk,
+        &claims.sub,
     )
-    .bind(&credential_pk)
-    .bind(&claims.sub)
     .fetch_one(&mut *tx)
     .await?;
-    if !row.try_get::<bool, _>("exists").unwrap_or(false) {
+    if !row.exists.clone().unwrap_or(false) {
         return Err(AppError::NotFound);
     }
-    let last_passkey = row.try_get::<i64, _>("total").unwrap_or(0) <= 1;
+    let last_passkey = row.total.clone().unwrap_or(0) <= 1;
     if last_passkey
-        && row
-            .try_get::<bool, _>("password_factor_armed")
-            .unwrap_or(false)
-        && !row
-            .try_get::<bool, _>("has_external_primary")
-            .unwrap_or(false)
+        && row.password_factor_armed.clone().unwrap_or(false)
+        && !row.has_external_primary.clone().unwrap_or(false)
     {
         return Err(AppError::Conflict(
             "turn off password two-step verification or add another sign-in method before deleting this passkey"
@@ -192,26 +189,22 @@ pub async fn delete_credential(
         ));
     }
     let removing_last_strong_factor = last_passkey
-        && !row
-            .try_get::<bool, _>("has_local_strong_factor")
-            .unwrap_or(false)
-        && !row
-            .try_get::<bool, _>("has_external_primary")
-            .unwrap_or(false);
+        && !row.has_local_strong_factor.clone().unwrap_or(false)
+        && !row.has_external_primary.clone().unwrap_or(false);
     // Passkeys arm two-step verification on their own, so dropping the last one
     // can silently turn 2FA off. That is authority growth: make it step up.
-    let removing_last_second_factor = last_passkey
-        && !row
-            .try_get::<bool, _>("has_other_second_factor")
-            .unwrap_or(false);
+    let removing_last_second_factor =
+        last_passkey && !row.has_other_second_factor.clone().unwrap_or(false);
     if removing_last_strong_factor || removing_last_second_factor {
         auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     }
-    sqlx::query("DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2")
-        .bind(&credential_pk)
-        .bind(&claims.sub)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2",
+        &credential_pk,
+        &claims.sub,
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     two_factor::clear_recovery_codes_if_unprotected(&state.db, &claims.sub).await?;
     Ok(Json(json!({ "ok": true })))

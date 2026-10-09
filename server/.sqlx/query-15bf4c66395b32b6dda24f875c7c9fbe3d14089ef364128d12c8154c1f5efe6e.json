@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()\n         WHERE state_hash = $1 AND kind = 'oauth' AND provider = $2\n           AND status = 'pending' AND expires_at > NOW() AND consumed_at IS NULL\n         RETURNING transaction_id, client_type, redirect_uri, context_json,\n                   oauth_code_verifier_encrypted, expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "client_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "redirect_uri",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "context_json",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "oauth_code_verifier_encrypted",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "15bf4c66395b32b6dda24f875c7c9fbe3d14089ef364128d12c8154c1f5efe6e"
+}

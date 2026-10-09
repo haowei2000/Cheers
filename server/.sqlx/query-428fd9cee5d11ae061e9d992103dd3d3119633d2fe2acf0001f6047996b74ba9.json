@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_session_bindings SET role = 'primary', detached_at = NULL\n         WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3 AND session_id = $4\n         RETURNING binding_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "binding_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "428fd9cee5d11ae061e9d992103dd3d3119633d2fe2acf0001f6047996b74ba9"
+}

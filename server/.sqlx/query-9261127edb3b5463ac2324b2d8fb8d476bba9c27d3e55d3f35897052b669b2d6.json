@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_messages SET channel_id=$3,title=$4,content=$5,mention_ids=$6,\n         schedule_kind=$7,run_at=$8,interval_minutes=$9,local_time=$10,timezone=$11,\n         next_run_at=$12,enabled=$13,source_extension_id=$14,source_automation_id=$15,\n         lease_until=NULL,last_error=NULL,retry_attempt=0,retry_scheduled_for=NULL,\n         consecutive_failures=0,updated_at=NOW()\n         WHERE task_id=$1 AND created_by=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Jsonb",
+        "Varchar",
+        "Timestamptz",
+        "Int4",
+        "Time",
+        "Varchar",
+        "Timestamptz",
+        "Bool",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9261127edb3b5463ac2324b2d8fb8d476bba9c27d3e55d3f35897052b669b2d6"
+}

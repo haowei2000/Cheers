@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.friendship_id,\n                CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END AS friend_id,\n                f.status,\n                COALESCE(u.username, b.username) AS username,\n                COALESCE(u.display_name, b.display_name) AS display_name,\n                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,\n                (b.bot_id IS NOT NULL) AS is_bot\n         FROM friendships f\n         LEFT JOIN users u ON u.user_id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END\n         LEFT JOIN bot_accounts b ON b.bot_id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END\n         WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted'\n         ORDER BY username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friendship_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "friend_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_bot",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fb0d4e2cdbb187f6cd8e971cc938e3b261988764214861f4e94587ff1b1fc4b4"
+}

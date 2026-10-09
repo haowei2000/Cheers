@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT request_hash, response FROM resource_idempotency_keys\n             WHERE principal_type = $1 AND principal_id = $2 AND resource = $3\n               AND idempotency_key = $4\n               AND created_at > NOW() - make_interval(hours => $5)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request_hash",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "response",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "f3f1645da45c1d93d6530ffc655d7f2a6175062eae79813a937f19bbc6f491c2"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.channel_id, c.name\n         FROM channel_memberships cm\n         JOIN channels c ON c.channel_id = cm.channel_id\n         WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f63dbcd29c1e833700f8e087f622cf8895571ce9df36aabce0c505df6df4b28a"
+}

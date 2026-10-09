@@ -6,7 +6,7 @@
 //! back every method rather than belonging to TOTP.
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -87,54 +87,51 @@ pub fn master_key(secret_store_key: Option<&str>, jwt_private_key_pem: &str) -> 
 
 /// Read which second factors are armed for a user.
 pub async fn methods(db: &PgPool, user_id: &str) -> Result<TwoFactorMethods, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT u.totp_enabled,
                 u.email_2fa_enabled AND u.email IS NOT NULL AND btrim(u.email) <> ''
                     AS email_armed,
                 u.password_2fa_enabled AND u.password_hash IS NOT NULL AS password_armed,
-                EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)
                     AS has_passkey
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
     Ok(TwoFactorMethods {
-        totp: row.try_get::<bool, _>("totp_enabled").unwrap_or(false),
-        passkey: row.try_get::<bool, _>("has_passkey").unwrap_or(false),
-        email: row.try_get::<bool, _>("email_armed").unwrap_or(false),
-        password: row.try_get::<bool, _>("password_armed").unwrap_or(false),
+        totp: row.totp_enabled.clone(),
+        passkey: row.has_passkey.clone().unwrap_or(false),
+        email: row.email_armed.clone().unwrap_or(false),
+        password: row.password_armed.clone().unwrap_or(false),
     })
 }
 
 pub async fn status(db: &PgPool, user_id: &str) -> Result<TwoFactorStatus, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT u.totp_enabled, u.totp_verified_at,
                 u.email_2fa_enabled AND u.email IS NOT NULL AND btrim(u.email) <> ''
                     AS email_armed,
                 u.password_2fa_enabled AND u.password_hash IS NOT NULL AS password_armed,
-                EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)
                     AS has_passkey
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
     let methods = TwoFactorMethods {
-        totp: row.try_get::<bool, _>("totp_enabled").unwrap_or(false),
-        passkey: row.try_get::<bool, _>("has_passkey").unwrap_or(false),
-        email: row.try_get::<bool, _>("email_armed").unwrap_or(false),
-        password: row.try_get::<bool, _>("password_armed").unwrap_or(false),
+        totp: row.totp_enabled.clone(),
+        passkey: row.has_passkey.clone().unwrap_or(false),
+        email: row.email_armed.clone().unwrap_or(false),
+        password: row.password_armed.clone().unwrap_or(false),
     };
     Ok(TwoFactorStatus {
         enabled: methods.any(),
         methods,
-        verified_at: row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("totp_verified_at")
-            .ok()
-            .flatten(),
+        verified_at: row.totp_verified_at.clone(),
     })
 }
 
@@ -148,15 +145,15 @@ pub async fn setup(
 ) -> Result<(), AppError> {
     let encrypted = encrypt_secret(master_key, secret)
         .map_err(|e| AppError::Internal(format!("encrypt: {e}")))?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users
          SET totp_secret_encrypted = $2,
              totp_enabled = FALSE,
              totp_verified_at = NULL
          WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+        &encrypted,
     )
-    .bind(user_id)
-    .bind(&encrypted)
     .execute(db)
     .await?;
     Ok(())
@@ -171,15 +168,15 @@ pub async fn enable(
     code: &str,
     master_key: &[u8; 32],
 ) -> Result<Vec<String>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT totp_secret_encrypted FROM users
          WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let encrypted: Option<String> = row.try_get("totp_secret_encrypted").ok().flatten();
+    let encrypted: Option<String> = row.totp_secret_encrypted.clone();
     let encrypted =
         encrypted.ok_or_else(|| AppError::BadRequest("2FA setup not started".into()))?;
     let secret = decrypt_secret(master_key, &encrypted)
@@ -188,13 +185,13 @@ pub async fn enable(
         return Err(AppError::Unauthorized("invalid verification code".into()));
     }
     let was_armed = methods(db, user_id).await?.any();
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users
          SET totp_enabled = TRUE,
              totp_verified_at = NOW()
          WHERE user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .execute(db)
     .await?;
     complete_arming(db, user_id, was_armed).await
@@ -208,11 +205,11 @@ pub async fn set_email_factor(
     enabled: bool,
 ) -> Result<Vec<String>, AppError> {
     if enabled {
-        let has_email: bool = sqlx::query_scalar(
-            "SELECT email IS NOT NULL AND btrim(email) <> '' FROM users
-             WHERE user_id = $1 AND is_deleted = FALSE",
+        let has_email: bool = sqlx::query_scalar!(
+            r#"SELECT email IS NOT NULL AND btrim(email) <> '' AS "value!" FROM users
+             WHERE user_id = $1 AND is_deleted = FALSE"#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(db)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -225,12 +222,11 @@ pub async fn set_email_factor(
         // An email code is only a *second* factor when something else proves the
         // first one. Without a password or a passkey the mailbox would be both
         // steps, so arming it here would be security theatre.
-        let has_other_primary: bool = sqlx::query_scalar(
-            "SELECT (u.password_hash IS NOT NULL)
-                 OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
-             FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+        let has_other_primary: bool = sqlx::query_scalar!(
+            r#"SELECT (u.password_hash IS NOT NULL)
+                 OR EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id) AS "value!" FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE"#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(db)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -242,11 +238,11 @@ pub async fn set_email_factor(
         }
     }
     let was_armed = methods(db, user_id).await?.any();
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET email_2fa_enabled = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+        enabled,
     )
-    .bind(user_id)
-    .bind(enabled)
     .execute(db)
     .await?;
     if enabled {
@@ -285,23 +281,22 @@ pub async fn set_password_factor(
     enabled: bool,
 ) -> Result<Vec<String>, AppError> {
     if enabled {
-        let row = sqlx::query(
-            "SELECT u.password_hash IS NOT NULL AS has_password,
-                    EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
-                        OR EXISTS(SELECT 1 FROM auth_external_identities e
+        let row = sqlx::query!(
+                "SELECT u.password_hash IS NOT NULL AS has_password,
+                    EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                        OR EXISTS(SELECT 1 AS present FROM auth_external_identities e
                                   WHERE e.user_id = u.user_id) AS has_other_primary
              FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
-        )
-        .bind(user_id)
-        .fetch_optional(db)
+                user_id,
+            ).fetch_optional(db)
         .await?
         .ok_or(AppError::NotFound)?;
-        if !row.try_get::<bool, _>("has_password").unwrap_or(false) {
+        if !row.has_password.clone().unwrap_or(false) {
             return Err(AppError::BadRequest(
                 "set a password before using it for two-step verification".into(),
             ));
         }
-        if !row.try_get::<bool, _>("has_other_primary").unwrap_or(false) {
+        if !row.has_other_primary.clone().unwrap_or(false) {
             return Err(AppError::BadRequest(
                 "add a passkey or link a sign-in provider first: a password cannot be both sign-in steps"
                     .into(),
@@ -309,11 +304,11 @@ pub async fn set_password_factor(
         }
     }
     let was_armed = methods(db, user_id).await?.any();
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET password_2fa_enabled = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+        enabled,
     )
-    .bind(user_id)
-    .bind(enabled)
     .execute(db)
     .await?;
     if enabled {
@@ -327,12 +322,12 @@ pub async fn set_password_factor(
 /// they were just generated (the only time they can be shown), else an empty list.
 pub async fn ensure_recovery_codes(db: &PgPool, user_id: &str) -> Result<Vec<String>, AppError> {
     let mut tx = db.begin().await?;
-    let stored: Value = sqlx::query_scalar(
+    let stored: Value = sqlx::query_scalar!(
         "SELECT backup_codes FROM users
          WHERE user_id = $1 AND is_deleted = FALSE
          FOR UPDATE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -345,11 +340,13 @@ pub async fn ensure_recovery_codes(db: &PgPool, user_id: &str) -> Result<Vec<Str
         .iter()
         .map(|c| json!({ "hash": sha256_hex(c), "used_at": Value::Null }))
         .collect();
-    sqlx::query("UPDATE users SET backup_codes = $2 WHERE user_id = $1")
-        .bind(user_id)
-        .bind(Value::Array(hashes))
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE users SET backup_codes = $2 WHERE user_id = $1",
+        user_id,
+        Value::Array(hashes),
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(codes)
 }
@@ -364,12 +361,13 @@ pub async fn regenerate_recovery_codes(
         .iter()
         .map(|c| json!({ "hash": sha256_hex(c), "used_at": Value::Null }))
         .collect();
-    let updated =
-        sqlx::query("UPDATE users SET backup_codes = $2 WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(user_id)
-            .bind(Value::Array(hashes))
-            .execute(db)
-            .await?;
+    let updated = sqlx::query!(
+        "UPDATE users SET backup_codes = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+        Value::Array(hashes),
+    )
+    .execute(db)
+    .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -378,10 +376,10 @@ pub async fn regenerate_recovery_codes(
 
 /// How many unused recovery codes remain.
 pub async fn recovery_codes_remaining(db: &PgPool, user_id: &str) -> Result<usize, AppError> {
-    let stored: Value = sqlx::query_scalar(
+    let stored: Value = sqlx::query_scalar!(
         "SELECT backup_codes FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -405,10 +403,12 @@ pub async fn clear_recovery_codes_if_unprotected(
     if methods(db, user_id).await?.any() {
         return Ok(());
     }
-    sqlx::query("UPDATE users SET backup_codes = '[]'::jsonb WHERE user_id = $1")
-        .bind(user_id)
-        .execute(db)
-        .await?;
+    sqlx::query!(
+        "UPDATE users SET backup_codes = '[]'::jsonb WHERE user_id = $1",
+        user_id,
+    )
+    .execute(db)
+    .await?;
     Ok(())
 }
 
@@ -424,14 +424,14 @@ pub async fn verify_and_disable(
     if !verify_login(db, user_id, code, master_key).await? {
         return Err(AppError::Unauthorized("invalid verification code".into()));
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users
          SET totp_enabled = FALSE,
              totp_secret_encrypted = NULL,
              totp_verified_at = NULL
          WHERE user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .execute(db)
     .await?;
     clear_recovery_codes_if_unprotected(db, user_id).await
@@ -482,27 +482,28 @@ pub async fn issue_email_code(
     config: &Config,
     user_id: &str,
 ) -> Result<Option<EmailCodeIssue>, AppError> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await?
-            .flatten();
+    let email: Option<String> = sqlx::query_scalar!(
+        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .flatten();
     let Some(email) = email.filter(|value| !value.trim().is_empty()) else {
         return Ok(None);
     };
     let normalized = email.trim().to_lowercase();
-    let cooling_down: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM email_codes
+    let cooling_down: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM email_codes
             WHERE email = $1 AND purpose = $2 AND used = FALSE
               AND created_at > NOW() - ($3::double precision * INTERVAL '1 second')
               AND expires_at > NOW()
-         )",
+         ) AS "value!" "#,
+        &normalized,
+        EMAIL_CODE_PURPOSE,
+        EMAIL_CODE_RESEND_COOLDOWN_SECS as f64,
     )
-    .bind(&normalized)
-    .bind(EMAIL_CODE_PURPOSE)
-    .bind(EMAIL_CODE_RESEND_COOLDOWN_SECS as f64)
     .fetch_one(db)
     .await?;
     if cooling_down {
@@ -512,11 +513,11 @@ pub async fn issue_email_code(
         }));
     }
     // One live code at a time: a resend invalidates whatever was mailed before.
-    sqlx::query(
+    sqlx::query!(
         "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = $2 AND used = FALSE",
+        &normalized,
+        EMAIL_CODE_PURPOSE,
     )
-    .bind(&normalized)
-    .bind(EMAIL_CODE_PURPOSE)
     .execute(db)
     .await?;
     let code = generate_email_code();
@@ -527,13 +528,13 @@ pub async fn issue_email_code(
         EMAIL_CODE_PURPOSE,
         &code,
     );
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
          VALUES ($1, NULL, $2, $3, NOW() + INTERVAL '10 minutes')",
+        &normalized,
+        hash,
+        EMAIL_CODE_PURPOSE,
     )
-    .bind(&normalized)
-    .bind(hash)
-    .bind(EMAIL_CODE_PURPOSE)
     .execute(db)
     .await?;
     crate::infra::email::send_login_2fa_code(config, &email, &code).await;
@@ -550,12 +551,13 @@ pub async fn verify_email_code(
     user_id: &str,
     code: &str,
 ) -> Result<bool, AppError> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await?
-            .flatten();
+    let email: Option<String> = sqlx::query_scalar!(
+        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .flatten();
     let Some(email) = email.filter(|value| !value.trim().is_empty()) else {
         return Ok(false);
     };
@@ -566,14 +568,14 @@ pub async fn verify_email_code(
         EMAIL_CODE_PURPOSE,
         code,
     );
-    let consumed = sqlx::query(
+    let consumed = sqlx::query!(
         "UPDATE email_codes SET used = TRUE
          WHERE email = $1 AND purpose = $2 AND code_hash = $3
            AND used = FALSE AND expires_at > NOW()",
+        email.trim().to_lowercase(),
+        EMAIL_CODE_PURPOSE,
+        hash,
     )
-    .bind(email.trim().to_lowercase())
-    .bind(EMAIL_CODE_PURPOSE)
-    .bind(hash)
     .execute(db)
     .await?;
     Ok(consumed.rows_affected() == 1)
@@ -588,18 +590,18 @@ pub async fn verify_login(
     master_key: &[u8; 32],
 ) -> Result<bool, AppError> {
     let mut tx = db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT totp_secret_encrypted, backup_codes, totp_enabled
          FROM users WHERE user_id = $1 AND is_deleted = FALSE
          FOR UPDATE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
-    let totp_enrolled: bool = row.try_get("totp_enabled").unwrap_or(false);
+    let totp_enrolled: bool = row.totp_enabled.clone();
     if totp_enrolled {
-        let encrypted: Option<String> = row.try_get("totp_secret_encrypted").ok().flatten();
+        let encrypted: Option<String> = row.totp_secret_encrypted.clone();
         let encrypted =
             encrypted.ok_or_else(|| AppError::Internal("2FA enabled but no secret".into()))?;
         let secret = decrypt_secret(master_key, &encrypted)
@@ -611,7 +613,7 @@ pub async fn verify_login(
     }
     // Recovery codes back every armed factor, not just the authenticator, so
     // they stay valid for passkey- and email-only accounts.
-    let backup_codes: Value = row.try_get("backup_codes").unwrap_or(json!([]));
+    let backup_codes: Value = row.backup_codes.clone();
     if let Some(codes) = backup_codes.as_array() {
         let input_hash = sha256_hex(code);
         for (i, entry) in codes.iter().enumerate() {
@@ -620,11 +622,13 @@ pub async fn verify_login(
             {
                 let mut updated = codes.clone();
                 updated[i]["used_at"] = json!(chrono::Utc::now().to_rfc3339());
-                sqlx::query("UPDATE users SET backup_codes = $2 WHERE user_id = $1")
-                    .bind(user_id)
-                    .bind(Value::Array(updated))
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query!(
+                    "UPDATE users SET backup_codes = $2 WHERE user_id = $1",
+                    user_id,
+                    Value::Array(updated),
+                )
+                .execute(&mut *tx)
+                .await?;
                 tx.commit().await?;
                 return Ok(true);
             }
@@ -638,13 +642,13 @@ pub async fn verify_login(
 pub async fn create_login_session(db: &PgPool, user_id: &str) -> Result<String, AppError> {
     let session_id = Uuid::new_v4().to_string();
     let expires = chrono::Utc::now() + chrono::Duration::minutes(TWOFA_SESSION_TTL_MINUTES);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO two_factor_login_sessions (session_id, user_id, expires_at)
          VALUES ($1, $2, $3)",
+        &session_id,
+        user_id,
+        expires,
     )
-    .bind(&session_id)
-    .bind(user_id)
-    .bind(expires)
     .execute(db)
     .await?;
     Ok(session_id)
@@ -656,19 +660,21 @@ pub async fn consume_login_session(
     db: &PgPool,
     session_id: &str,
 ) -> Result<Option<String>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT user_id FROM two_factor_login_sessions
          WHERE session_id = $1 AND used = FALSE AND expires_at > NOW()",
+        session_id,
     )
-    .bind(session_id)
     .fetch_optional(db)
     .await?;
     let Some(row) = row else { return Ok(None) };
-    let user_id: String = row.try_get("user_id").map_err(AppError::Db)?;
-    sqlx::query("UPDATE two_factor_login_sessions SET used = TRUE WHERE session_id = $1")
-        .bind(session_id)
-        .execute(db)
-        .await?;
+    let user_id: String = row.user_id.clone();
+    sqlx::query!(
+        "UPDATE two_factor_login_sessions SET used = TRUE WHERE session_id = $1",
+        session_id,
+    )
+    .execute(db)
+    .await?;
     Ok(Some(user_id))
 }
 

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ai_data_consents SET revoked_at = NOW() WHERE user_id = $1 AND channel_id = $2 AND bot_id = $3 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f535af54d25a790a98e9e19ed479b8b654c8f003e9dafe349f74fcb9619db4c"
+}

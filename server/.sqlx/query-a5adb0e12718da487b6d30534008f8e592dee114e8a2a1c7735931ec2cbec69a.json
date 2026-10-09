@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_messages SET last_run_at=NOW(),last_error=$2,\n                 consecutive_failures=consecutive_failures+1,updated_at=NOW() WHERE task_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5adb0e12718da487b6d30534008f8e592dee114e8a2a1c7735931ec2cbec69a"
+}

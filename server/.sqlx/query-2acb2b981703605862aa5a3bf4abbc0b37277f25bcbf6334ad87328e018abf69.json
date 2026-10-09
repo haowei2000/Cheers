@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_secret,is_partial) VALUES($1,$2,$3,'user',$4,'task_claim',TRUE,FALSE) ON CONFLICT(msg_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2acb2b981703605862aa5a3bf4abbc0b37277f25bcbf6334ad87328e018abf69"
+}

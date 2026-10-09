@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = 'update_email' AND used = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "757b85accc9a343f7dbbb573ac550fac35159436a24fa29a867ca0cdc45428bc"
+}

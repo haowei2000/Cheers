@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id, integration_id, installation_id, external_kind, external_id, created_by FROM channel_integration_bindings\n          WHERE integration_id = $1 AND installation_id = $2\n            AND external_kind = $3 AND external_id = $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "integration_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "installation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "external_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "external_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0bfcd03bb9fada3ac4995745c0de9d37ca31719f3926b82187d609a5903fa45e"
+}

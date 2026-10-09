@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'completed')\n             WHERE sender_id = $1 AND msg_type = 'elicitation'\n               AND content_data ->> 'elicitation_id' = $2\n               AND content_data ->> 'status' = 'accept'\n             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "ce418582ccca635678c91fc61b06ca0fa50bad353febac4ae6db91d7762dbb93"
+}

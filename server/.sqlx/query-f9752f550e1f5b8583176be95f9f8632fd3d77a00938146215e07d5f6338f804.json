@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE integration_credentials\n            SET revoked_at = NOW(), updated_at = NOW()\n          WHERE credential_id = $1 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9752f550e1f5b8583176be95f9f8632fd3d77a00938146215e07d5f6338f804"
+}

@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{error::DatabaseError, Row};
+use sqlx::error::DatabaseError;
 use uuid::Uuid;
 
 use crate::infra::crypto::MIN_PASSWORD_CHARS;
@@ -354,10 +354,12 @@ pub async fn register_request_code(
     // flips is_deleted), so `register`'s INSERT would 409 on any email already on
     // file — deleted or not. Mirror that here (no is_deleted filter) instead of
     // handing out a code that leads to a dead-end conflict.
-    let taken = sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 LIMIT 1")
-        .bind(&email)
-        .fetch_optional(&state.db)
-        .await?;
+    let taken = sqlx::query!(
+        "SELECT 1 AS ok FROM users WHERE lower(email) = $1 LIMIT 1",
+        &email,
+    )
+    .fetch_optional(&state.db)
+    .await?;
     if taken.is_some() {
         return Err(AppError::Conflict(
             "that email is already registered".into(),
@@ -373,13 +375,13 @@ pub async fn register_request_code(
         &code,
     );
     let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
          VALUES ($1, NULL, $2, 'register', $3)",
+        &email,
+        code_hash,
+        expires,
     )
-    .bind(&email)
-    .bind(code_hash)
-    .bind(expires)
     .execute(&state.db)
     .await?;
     crate::infra::email::send_registration_code(&state.config, &email, &code).await;
@@ -458,14 +460,14 @@ pub async fn register(
         "register",
         &code,
     );
-    let valid = sqlx::query(
+    let valid = sqlx::query!(
         "SELECT 1 AS ok FROM email_codes
          WHERE email = $1 AND code_hash = $2 AND purpose = 'register'
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
+        &email,
+        code_hash,
     )
-    .bind(&email)
-    .bind(code_hash)
     .fetch_optional(&state.db)
     .await?;
     if valid.is_none() {
@@ -484,15 +486,15 @@ pub async fn register(
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
     let user_id = Uuid::new_v4();
 
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "INSERT INTO users (user_id, username, email, password_hash, display_name, role)
          VALUES ($1, $2, $3, $4, $5, 'member')",
+        user_id.to_string(),
+        &username,
+        &email,
+        &hash,
+        display_name.as_deref(),
     )
-    .bind(user_id.to_string())
-    .bind(&username)
-    .bind(&email)
-    .bind(&hash)
-    .bind(&display_name)
     .execute(&state.db)
     .await;
     if let Err(e) = res {
@@ -505,11 +507,11 @@ pub async fn register(
     }
 
     // Burn this + any other live register codes for the email (single-use).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE email_codes SET used = TRUE
          WHERE email = $1 AND purpose = 'register' AND used = FALSE",
+        &email,
     )
-    .bind(&email)
     .execute(&state.db)
     .await?;
 
@@ -555,16 +557,16 @@ pub async fn change_password(
             "new password must be at least {MIN_PASSWORD_CHARS} characters"
         )));
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT password_hash, role, token_version FROM users
          WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed: Option<String> = row.password_hash.clone();
     let hashed = hashed.ok_or_else(|| {
         AppError::BadRequest(
             "this account has no password; add one from Sign in with Apple settings".into(),
@@ -595,12 +597,12 @@ pub async fn change_password(
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
     // Revoke all existing tokens (other devices) by bumping the version.
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1
          WHERE user_id = $1",
+        &claims.sub,
+        &new_hash,
     )
-    .bind(&claims.sub)
-    .bind(&new_hash)
     .execute(&state.db)
     .await?;
     // Tear down live WS sessions authenticated with the now-stale version; the
@@ -647,14 +649,15 @@ pub async fn set_password(
             "password must be at least {MIN_PASSWORD_CHARS} characters"
         )));
     }
-    let row =
-        sqlx::query("SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(&claims.sub)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
+    let row = sqlx::query!(
+        "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
 
-    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed: Option<String> = row.password_hash.clone();
     if hashed.is_some() {
         return Err(AppError::BadRequest(
             "account already has a password; use change-password instead".into(),
@@ -664,12 +667,12 @@ pub async fn set_password(
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1
          WHERE user_id = $1 AND password_hash IS NULL",
+        &claims.sub,
+        &new_hash,
     )
-    .bind(&claims.sub)
-    .bind(&new_hash)
     .execute(&state.db)
     .await?;
 
@@ -715,35 +718,36 @@ pub async fn request_email_update_code(
     if !looks_like_email(&email) {
         return Err(AppError::BadRequest("a valid email is required".into()));
     }
-    let taken =
-        sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1")
-            .bind(&email)
-            .bind(&claims.sub)
-            .fetch_optional(&state.db)
-            .await?;
+    let taken = sqlx::query!(
+        "SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1",
+        &email,
+        &claims.sub,
+    )
+    .fetch_optional(&state.db)
+    .await?;
     if taken.is_some() {
         return Err(AppError::Conflict("that email is already in use".into()));
     }
 
-    let cooling_down: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM email_codes
+    let cooling_down: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM email_codes
             WHERE email = $1 AND purpose = 'update_email' AND used = FALSE
               AND created_at > NOW() - INTERVAL '60 seconds'
               AND expires_at > NOW()
-         )",
+         ) AS "value!" "#,
+        &email,
     )
-    .bind(&email)
     .fetch_one(&state.db)
     .await?;
     if cooling_down {
         return Ok(Json(json!({ "ok": true, "sent": false })));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = 'update_email' AND used = FALSE",
+        &email,
     )
-    .bind(&email)
     .execute(&state.db)
     .await?;
 
@@ -756,13 +760,13 @@ pub async fn request_email_update_code(
         &code,
     );
     let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
          VALUES ($1, NULL, $2, 'update_email', $3)",
+        &email,
+        code_hash,
+        expires,
     )
-    .bind(&email)
-    .bind(code_hash)
-    .bind(expires)
     .execute(&state.db)
     .await?;
 
@@ -801,13 +805,13 @@ pub async fn update_email(
         "update_email",
         &code,
     );
-    let valid = sqlx::query(
+    let valid = sqlx::query!(
         "UPDATE email_codes SET used = TRUE
          WHERE email = $1 AND code_hash = $2 AND purpose = 'update_email'
            AND used = FALSE AND expires_at > NOW()",
+        &email,
+        code_hash,
     )
-    .bind(&email)
-    .bind(code_hash)
     .execute(&state.db)
     .await?;
     if valid.rows_affected() == 0 {
@@ -816,21 +820,24 @@ pub async fn update_email(
         ));
     }
 
-    let taken =
-        sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1")
-            .bind(&email)
-            .bind(&claims.sub)
-            .fetch_optional(&state.db)
-            .await?;
+    let taken = sqlx::query!(
+        "SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND user_id != $2 LIMIT 1",
+        &email,
+        &claims.sub,
+    )
+    .fetch_optional(&state.db)
+    .await?;
     if taken.is_some() {
         return Err(AppError::Conflict("that email is already in use".into()));
     }
 
-    sqlx::query("UPDATE users SET email = $2 WHERE user_id = $1 AND is_deleted = FALSE")
-        .bind(&claims.sub)
-        .bind(&email)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "UPDATE users SET email = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
+        &email,
+    )
+    .execute(&state.db)
+    .await?;
 
     Ok(Json(json!({ "ok": true, "email": email })))
 }
@@ -921,10 +928,10 @@ pub async fn refresh(
         csrf.as_deref(),
     )
     .await?;
-    let client = sqlx::query_scalar::<_, String>(
+    let client = sqlx::query_scalar!(
         "SELECT client_type FROM auth_sessions WHERE session_id = $1",
+        &rotated.session_id,
     )
-    .bind(&rotated.session_id)
     .fetch_one(&state.db)
     .await?;
     let is_web = client == "web";
@@ -1073,10 +1080,10 @@ pub async fn forgot_password(
 
     let email = body.email.trim().to_lowercase();
     if !email.is_empty() {
-        let found = sqlx::query(
+        let found = sqlx::query!(
             "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
+            &email,
         )
-        .bind(&email)
         .fetch_optional(&state.db)
         .await?;
         if found.is_some() {
@@ -1089,13 +1096,13 @@ pub async fn forgot_password(
                 &code,
             );
             let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
-            sqlx::query(
+            sqlx::query!(
                 "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
                  VALUES ($1, NULL, $2, 'password_reset', $3)",
+                &email,
+                code_hash,
+                expires,
             )
-            .bind(&email)
-            .bind(code_hash)
-            .bind(expires)
             .execute(&state.db)
             .await?;
             crate::infra::email::send_password_reset_code(&state.config, &email, &code).await;
@@ -1143,14 +1150,14 @@ pub async fn reset_password(
         &code,
     );
 
-    let valid = sqlx::query(
+    let valid = sqlx::query!(
         "SELECT 1 AS ok FROM email_codes
          WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
+        &email,
+        code_hash,
     )
-    .bind(&email)
-    .bind(code_hash)
     .fetch_optional(&state.db)
     .await?;
     if valid.is_none() {
@@ -1158,23 +1165,23 @@ pub async fn reset_password(
         return Err(AppError::BadRequest("invalid or expired code".into()));
     }
 
-    let user = sqlx::query(
+    let user = sqlx::query!(
         "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
+        &email,
     )
-    .bind(&email)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let user_id: String = user.try_get("user_id").map_err(AppError::Db)?;
+    let user_id: String = user.user_id.clone();
 
     let hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE user_id = $1",
+        &user_id,
+        &hash,
     )
-    .bind(&user_id)
-    .bind(&hash)
     .execute(&state.db)
     .await?;
     // Revocation must reach live sockets too (a reset usually means the old
@@ -1187,11 +1194,11 @@ pub async fn reset_password(
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
     crate::notify::revoke_user_devices(&state.db, &user_id).await;
     // Burn this + any other live reset codes for the email.
-    sqlx::query(
+    sqlx::query!(
         "UPDATE email_codes SET used = TRUE
          WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE",
+        &email,
     )
-    .bind(&email)
     .execute(&state.db)
     .await?;
 
@@ -1256,27 +1263,26 @@ pub async fn two_factor_status(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorStatusResponse>, AppError> {
     let status = two_factor::status(&state.db, &claims.sub).await?;
-    let availability = sqlx::query(
+    let availability = sqlx::query!(
         "SELECT u.email IS NOT NULL AND btrim(u.email) <> ''
                 AND ((u.password_hash IS NOT NULL)
-                     OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id))
+                     OR EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id))
                     AS email_available,
                 u.password_hash IS NOT NULL
-                AND (EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
-                     OR EXISTS(SELECT 1 FROM auth_external_identities e WHERE e.user_id = u.user_id))
+                AND (EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                     OR EXISTS(SELECT 1 AS present FROM auth_external_identities e WHERE e.user_id = u.user_id))
                     AS password_available
          FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
-    )
-    .bind(&claims.sub)
-    .fetch_optional(&state.db)
+        &claims.sub,
+    ).fetch_optional(&state.db)
     .await?;
     let email_available = availability
         .as_ref()
-        .and_then(|row| row.try_get::<bool, _>("email_available").ok())
+        .and_then(|row| row.email_available.clone())
         .unwrap_or(false);
     let password_available = availability
         .as_ref()
-        .and_then(|row| row.try_get::<bool, _>("password_available").ok())
+        .and_then(|row| row.password_available.clone())
         .unwrap_or(false);
     Ok(Json(TwoFactorStatusResponse {
         enabled: status.enabled,
@@ -1308,12 +1314,14 @@ pub async fn setup_two_factor(
         &state.config.jwt_private_key_pem,
     );
     let secret = crate::infra::totp::generate_secret();
-    let row = sqlx::query("SELECT username FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-        .bind(&claims.sub)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let username: String = row.try_get("username").map_err(AppError::Db)?;
+    let row = sqlx::query!(
+        "SELECT username FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let username: String = row.username.clone();
     let provisioning_uri = crate::infra::totp::provisioning_uri(&secret, &username, "Cheers");
     two_factor::setup(&state.db, &claims.sub, &secret, &master_key).await?;
     Ok(Json(TwoFactorSetupResponse {
@@ -1387,16 +1395,16 @@ pub async fn verify_two_factor_login(
     );
     let methods = two_factor::methods(&state.db, &user_id).await?;
     let mut verified = if body.method.as_deref() == Some("password") {
-        let hash = sqlx::query_scalar::<_, String>(
+        let hash = sqlx::query_scalar!(
             "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+            &user_id,
         )
-        .bind(&user_id)
         .fetch_optional(&state.db)
         .await?;
         primary_factor.as_deref() != Some("password")
             && primary_factor.is_some()
             && methods.password
-            && match hash {
+            && match hash.flatten() {
                 Some(hash) => crate::infra::crypto::verify_password(body.code.clone(), hash)
                     .await
                     .unwrap_or(false),
@@ -1528,12 +1536,13 @@ pub async fn send_email_2fa_enroll_code(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(&claims.sub)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten();
+    let email: Option<String> = sqlx::query_scalar!(
+        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
 
     let Some(email) = email.filter(|e| !e.trim().is_empty()) else {
         return Err(AppError::BadRequest(
@@ -1543,15 +1552,15 @@ pub async fn send_email_2fa_enroll_code(
     };
     let normalized = email.trim().to_lowercase();
 
-    let cooling_down: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM email_codes
+    let cooling_down: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM email_codes
             WHERE email = $1 AND purpose = 'enroll_email_2fa' AND used = FALSE
               AND created_at > NOW() - INTERVAL '60 seconds'
               AND expires_at > NOW()
-         )",
+         ) AS "value!" "#,
+        &normalized,
     )
-    .bind(&normalized)
     .fetch_one(&state.db)
     .await?;
 
@@ -1563,10 +1572,10 @@ pub async fn send_email_2fa_enroll_code(
         })));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE email_codes SET used = TRUE WHERE email = $1 AND purpose = 'enroll_email_2fa' AND used = FALSE",
+        &normalized,
     )
-    .bind(&normalized)
     .execute(&state.db)
     .await?;
 
@@ -1579,13 +1588,13 @@ pub async fn send_email_2fa_enroll_code(
         &code,
     );
     let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
          VALUES ($1, NULL, $2, 'enroll_email_2fa', $3)",
+        &normalized,
+        code_hash,
+        expires,
     )
-    .bind(&normalized)
-    .bind(code_hash)
-    .bind(expires)
     .execute(&state.db)
     .await?;
 
@@ -1617,12 +1626,13 @@ pub async fn set_email_two_factor(
                     "verification code is required to enable email two-step verification".into(),
                 )
             })?;
-        let email: Option<String> =
-            sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-                .bind(&claims.sub)
-                .fetch_optional(&state.db)
-                .await?
-                .flatten();
+        let email: Option<String> = sqlx::query_scalar!(
+            "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+            &claims.sub,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .flatten();
         let email = email
             .filter(|e| !e.trim().is_empty())
             .ok_or_else(|| {
@@ -1640,13 +1650,13 @@ pub async fn set_email_two_factor(
             "enroll_email_2fa",
             &code.to_uppercase(),
         );
-        let valid = sqlx::query(
+        let valid = sqlx::query!(
             "UPDATE email_codes SET used = TRUE
              WHERE email = $1 AND code_hash = $2 AND purpose = 'enroll_email_2fa'
                AND used = FALSE AND expires_at > NOW()",
+            &email,
+            code_hash,
         )
-        .bind(&email)
-        .bind(code_hash)
         .execute(&state.db)
         .await?;
         if valid.rows_affected() == 0 {
@@ -1694,10 +1704,10 @@ pub async fn set_password_two_factor(
                     "account password is required to enable password two-step verification".into(),
                 )
             })?;
-        let hash: Option<String> = sqlx::query_scalar(
+        let hash: Option<String> = sqlx::query_scalar!(
             "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+            &claims.sub,
         )
-        .bind(&claims.sub)
         .fetch_optional(&state.db)
         .await?
         .flatten();

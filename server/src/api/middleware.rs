@@ -6,7 +6,6 @@ use axum::{
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 use crate::app_state::AppState;
 
@@ -83,26 +82,25 @@ pub async fn optional_jwt_auth(
 
 /// A user token is valid only while both its account and exact session are active.
 async fn is_revoked(db: &sqlx::PgPool, claims: &Claims) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT u.token_version, u.is_suspended, u.is_deleted,
                 s.revoked_at, s.absolute_expires_at
          FROM users u
          JOIN auth_sessions s ON s.user_id = u.user_id
          WHERE u.user_id = $1 AND s.session_id = $2",
+        &claims.sub,
+        &claims.sid,
     )
-    .bind(&claims.sub)
-    .bind(&claims.sid)
     .fetch_optional(db)
     .await?;
     let Some(row) = row else {
         return Ok(true); // unknown user_id → treat as revoked
     };
-    let db_version: i32 = row.try_get("token_version").unwrap_or(0);
-    let suspended: bool = row.try_get("is_suspended").unwrap_or(false);
-    let deleted: bool = row.try_get("is_deleted").unwrap_or(false);
-    let session_revoked: Option<chrono::DateTime<chrono::Utc>> =
-        row.try_get("revoked_at").ok().flatten();
-    let session_expiry: chrono::DateTime<chrono::Utc> = row.try_get("absolute_expires_at")?;
+    let db_version: i32 = row.token_version.clone();
+    let suspended: bool = row.is_suspended.clone();
+    let deleted: bool = row.is_deleted.clone();
+    let session_revoked: Option<chrono::DateTime<chrono::Utc>> = row.revoked_at.clone();
+    let session_expiry: chrono::DateTime<chrono::Utc> = row.absolute_expires_at.clone();
     Ok(deleted
         || suspended
         || session_revoked.is_some()

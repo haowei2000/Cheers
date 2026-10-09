@@ -5,7 +5,7 @@ use axum::{
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+
 use std::{
     collections::HashMap,
     sync::{LazyLock, Mutex},
@@ -80,37 +80,36 @@ pub async fn request_suggestions(
         .sub
         .parse()
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
-    let member: Option<String> = sqlx::query_scalar(
+    let member: Option<String> = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'",
-    ).bind(channel_id.to_string()).bind(user_id.to_string()).fetch_optional(&state.db).await
+        channel_id.to_string(),
+        user_id.to_string(),
+    ).fetch_optional(&state.db).await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     if member.is_none() {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    let source = sqlx::query(
+    let source = sqlx::query!(
         "SELECT m.sender_id, m.content,
-                EXISTS(SELECT 1 FROM channel_memberships cm
+                EXISTS(SELECT 1 AS present FROM channel_memberships cm
                        WHERE cm.channel_id=m.channel_id AND cm.member_id=m.sender_id AND cm.member_type='bot') AS bot_is_member,
                 COALESCE((b.binding_config->'connector_control'->'capabilities'->>'suggested_questions')::boolean, FALSE) AS suggestions_supported
          FROM messages m LEFT JOIN bot_accounts b ON b.bot_id=m.sender_id
          WHERE m.msg_id=$1 AND m.channel_id=$2 AND m.sender_type='bot' AND m.is_partial=FALSE AND m.is_deleted=FALSE AND m.is_secret=FALSE",
-    ).bind(msg_id.to_string()).bind(channel_id.to_string()).fetch_optional(&state.db).await
+        msg_id.to_string(),
+        channel_id.to_string(),
+    ).fetch_optional(&state.db).await
         .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or(AppError::NotFound)?;
-    let bot_id: Uuid = source
-        .try_get::<String, _>("sender_id")
-        .ok()
+    let bot_id: Uuid = Some(source.sender_id.clone())
         .and_then(|s| s.parse().ok())
         .ok_or(AppError::NotFound)?;
-    if !source.try_get::<bool, _>("bot_is_member").unwrap_or(false) {
+    if !source.bot_is_member.clone().unwrap_or(false) {
         return Err(AppError::Forbidden(
             "That bot is no longer in this channel".into(),
         ));
     }
-    if !source
-        .try_get::<bool, _>("suggestions_supported")
-        .unwrap_or(false)
-    {
+    if !source.suggestions_supported.clone().unwrap_or(false) {
         return Err(AppError::BadRequest(
             "This bot needs a newer connector to suggest questions".into(),
         ));
@@ -118,7 +117,7 @@ pub async fn request_suggestions(
     if !state.bot_locator.is_online(bot_id).await {
         return Err(AppError::BadRequest("That bot is offline".into()));
     }
-    let source_text = source.try_get::<String, _>("content").unwrap_or_default();
+    let source_text = source.content.clone();
     let request_id = Uuid::new_v4();
     let (send, receive) = oneshot::channel();
     pending_suggestions().insert(
@@ -492,40 +491,35 @@ pub async fn cancel_message(
     ensure_channel_member(&state, channel_id, user_id, &claims.role).await?;
 
     // 找到还在运行的占位消息，取出 bot_id + chain_id（后者用于整链取消）。
-    let clicked = sqlx::query(
+    let clicked = sqlx::query!(
         "SELECT sender_id, chain_id FROM messages
          WHERE msg_id = $1 AND channel_id = $2
            AND is_partial = TRUE AND sender_type = 'bot'",
+        msg_id.to_string(),
+        channel_id.to_string(),
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let bot_id = clicked
-        .try_get::<String, _>("sender_id")
-        .ok()
+    let bot_id = Some(clicked.sender_id.clone())
         .and_then(|raw| raw.parse::<Uuid>().ok())
         .ok_or(AppError::NotFound)?;
-    let chain_id = clicked
-        .try_get::<Option<String>, _>("chain_id")
-        .ok()
-        .flatten();
+    let chain_id = clicked.chain_id.clone();
 
     // INITIATE(cancel) gate (docs/arch/ACP_EVENT_TAXONOMY.md): may this user cancel
     // the bot's running turn here? Default-allow for members; an owner can deny it
     // per role/user via the event matrix. Fail-open on a rules error.
-    let role: String = sqlx::query(
+    let role: String = sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string());
     let may_cancel = crate::domain::acp_policy::allows(
         &state.db,
@@ -586,19 +580,19 @@ async fn dm_peer(
     channel_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
-    let peer = sqlx::query(
+    let peer = sqlx::query!(
         "SELECT cm.member_id
          FROM channels c
          JOIN channel_memberships cm ON cm.channel_id = c.channel_id
         WHERE c.channel_id = $1 AND c.type = 'dm'
           AND cm.member_type = 'user' AND cm.member_id <> $2
         LIMIT 1",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_optional(&state.db)
     .await?
-    .and_then(|row| row.try_get::<String, _>("member_id").ok());
+    .and_then(|row| Some(row.member_id.clone()));
     Ok(peer)
 }
 
@@ -612,17 +606,18 @@ async fn ensure_channel_member(
         return Ok(());
     }
 
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
         ) AS ok",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
 
     if ok {

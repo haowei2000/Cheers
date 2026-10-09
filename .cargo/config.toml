@@ -1,3 +1,4 @@
-# Ordinary builds use checked-in metadata; prepare explicitly overrides this.
 [env]
+# Checked SQLx queries use committed schema metadata for ordinary builds.
+# `cargo sqlx prepare` switches to online mode to refresh/check that metadata.
 SQLX_OFFLINE = { value = "true", force = false }

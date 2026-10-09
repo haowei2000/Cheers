@@ -21,6 +21,23 @@ describe("ChannelChrome", () => {
     expect(markup).toContain("Files");
   });
 
+  it("places PanelWorkspace navigation in the shared channel header", () => {
+    const markup = renderToStaticMarkup(
+      <WindowChromeProvider placement="inline">
+        <ChannelChrome
+          title="release"
+          isDm={false}
+          actions={null}
+          panelNavigation={<div role="tablist" aria-label="Workspace panels">Viewboard Workbench</div>}
+        />
+      </WindowChromeProvider>,
+    );
+
+    expect(markup).toContain('data-channel-panel-tabs=""');
+    expect(markup).toContain("Viewboard");
+    expect(markup).toContain("Workbench");
+  });
+
   it("does not render a second inline header in window chrome shells", () => {
     const markup = renderToStaticMarkup(
       <WindowChromeProvider placement="window">

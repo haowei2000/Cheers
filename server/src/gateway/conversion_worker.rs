@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aws_sdk_s3::Client as S3Client;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 use crate::config::Config;
 use crate::infra::{gotenberg, s3};
@@ -36,7 +36,7 @@ async fn convert_batch(
     bucket: &str,
     gotenberg_url: &str,
 ) -> usize {
-    let rows = match sqlx::query(
+    let rows = match sqlx::query!(
         r#"SELECT file_id, object_key, original_filename
            FROM file_records
            WHERE status = 'uploaded'
@@ -54,10 +54,9 @@ async fn convert_batch(
              )
            ORDER BY conversion_attempts ASC, created_at ASC
            LIMIT $2"#,
-    )
-    .bind(MAX_ATTEMPTS)
-    .bind(BATCH)
-    .fetch_all(db)
+        MAX_ATTEMPTS,
+        BATCH,
+    ).fetch_all(db)
     .await
     {
         Ok(r) => r,
@@ -69,16 +68,12 @@ async fn convert_batch(
 
     let mut converted = 0usize;
     for row in &rows {
-        let file_id: String = row.try_get("file_id").unwrap_or_default();
+        let file_id: String = row.file_id.clone();
         let filename: String = row
-            .try_get::<Option<String>, _>("original_filename")
-            .ok()
-            .flatten()
+            .original_filename
+            .clone()
             .unwrap_or_else(|| format!("{file_id}.bin"));
-        let object_key: Option<String> = row
-            .try_get::<Option<String>, _>("object_key")
-            .ok()
-            .flatten();
+        let object_key: Option<String> = row.object_key.clone();
         let Some(object_key) = object_key else {
             record_failure(db, &file_id, "missing object_key").await;
             continue;
@@ -128,13 +123,13 @@ async fn convert_one(
     let pdf = gotenberg::convert_to_pdf(http, gotenberg_url, filename, src).await?;
     let preview_key = format!("previews/{file_id}.pdf");
     s3::put_object(s3client, bucket, &preview_key, "application/pdf", pdf).await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE file_records
          SET preview_object_key = $1, converted_at = NOW(), last_error = NULL
          WHERE file_id = $2",
+        &preview_key,
+        file_id,
     )
-    .bind(&preview_key)
-    .bind(file_id)
     .execute(db)
     .await?;
     Ok(())
@@ -144,13 +139,13 @@ async fn convert_one(
 /// file is retried (until `MAX_ATTEMPTS`) and the UI can surface a "download instead".
 async fn record_failure(db: &PgPool, file_id: &str, err: &str) {
     let truncated: String = err.chars().take(500).collect();
-    if let Err(e) = sqlx::query(
+    if let Err(e) = sqlx::query!(
         "UPDATE file_records
          SET conversion_attempts = conversion_attempts + 1, last_error = $1
          WHERE file_id = $2",
+        &truncated,
+        file_id,
     )
-    .bind(&truncated)
-    .bind(file_id)
     .execute(db)
     .await
     {

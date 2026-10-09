@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET user_id = $2, status = 'verified', handoff_code_hash = $3,\n             consumed_at = NULL, updated_at = NOW()\n         WHERE transaction_id = $1 AND status = 'consumed' AND consumed_at IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de1f06dc1ff0ad22cbd6cfd124149ddc95fbc7aef91dd193e773647a98f31fb4"
+}

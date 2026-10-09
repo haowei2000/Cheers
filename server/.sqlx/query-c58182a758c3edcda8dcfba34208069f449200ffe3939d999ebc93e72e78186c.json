@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.bot_id, COALESCE(b.display_name,b.username) AS bot_name, b.processor_name,\n                b.processor_privacy_url, b.processor_data_use, b.processor_policy_version\n         FROM channel_memberships m JOIN bot_accounts b ON b.bot_id = m.member_id\n         WHERE m.channel_id = $1 AND m.member_type = 'bot' AND b.external_processor = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "processor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "processor_privacy_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "processor_data_use",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "processor_policy_version",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c58182a758c3edcda8dcfba34208069f449200ffe3939d999ebc93e72e78186c"
+}

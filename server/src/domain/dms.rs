@@ -61,10 +61,10 @@ fn dm_key(a: Participant, b: Participant) -> Result<String, AppError> {
 }
 
 async fn find_by_key(db: &PgPool, key: &str) -> Result<Option<Uuid>, AppError> {
-    match sqlx::query_scalar::<_, String>(
+    match sqlx::query_scalar!(
         "SELECT channel_id FROM channels WHERE type = 'dm' AND dm_key = $1 LIMIT 1",
+        key,
     )
-    .bind(key)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
@@ -96,15 +96,15 @@ pub async fn open_dm(
     let workspace_id = workspaces::get_or_create_personal_workspace(db, anchor_user).await?;
     let proposed_channel_id = Uuid::new_v4();
     let mut tx = db.begin().await.map_err(AppError::Db)?;
-    let created = sqlx::query_scalar::<_, String>(
+    let created = sqlx::query_scalar!(
         "INSERT INTO channels (channel_id, workspace_id, name, type, dm_key)
          VALUES ($1, $2, '', 'dm', $3)
          ON CONFLICT (dm_key) WHERE type = 'dm' DO NOTHING
          RETURNING channel_id",
+        proposed_channel_id.to_string(),
+        workspace_id.to_string(),
+        &key,
     )
-    .bind(proposed_channel_id.to_string())
-    .bind(workspace_id.to_string())
-    .bind(&key)
     .fetch_optional(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -121,20 +121,20 @@ pub async fn open_dm(
     };
 
     for participant in [initiator, target] {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO channel_memberships
                 (channel_id, member_id, member_type, role, added_by)
              VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            &channel_id,
+            participant.id().to_string(),
+            participant.member_type(),
+            if matches!(participant, Participant::User(_)) {
+                "owner"
+            } else {
+                "member"
+            },
+            initiator.id().to_string(),
         )
-        .bind(&channel_id)
-        .bind(participant.id().to_string())
-        .bind(participant.member_type())
-        .bind(if matches!(participant, Participant::User(_)) {
-            "owner"
-        } else {
-            "member"
-        })
-        .bind(initiator.id().to_string())
         .execute(&mut *tx)
         .await
         .map_err(AppError::Db)?;

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspace_bot_memberships (workspace_id, bot_id, role, added_by)\n         SELECT workspace_id, $2, 'member', $3 FROM channels WHERE channel_id = $1 AND type <> 'dm'\n         ON CONFLICT (workspace_id, bot_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34a83e47a18dad62f576b4835ee59139adca2b13e369ff2a1f1d593e1e3df9fe"
+}

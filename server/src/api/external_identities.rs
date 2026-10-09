@@ -4,7 +4,6 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
-use sqlx::Row;
 
 use crate::{
     api::{apple_auth, middleware::Claims},
@@ -37,34 +36,33 @@ pub async fn status(
     Path(provider): Path<String>,
 ) -> Result<Json<ExternalIdentityStatus>, AppError> {
     let provider = checked_provider(&provider)?;
-    let identity = sqlx::query(
+    let identity = sqlx::query!(
         "SELECT display_name, email FROM auth_external_identities
          WHERE user_id = $1 AND provider = $2
          ORDER BY created_at DESC LIMIT 1",
+        &claims.sub,
+        provider,
     )
-    .bind(&claims.sub)
-    .bind(provider)
     .fetch_optional(&state.db)
     .await?;
-    let alternatives: i64 = sqlx::query_scalar(
-        "SELECT
+    let alternatives: i64 = sqlx::query_scalar!(
+        r#"SELECT
            (CASE WHEN password_hash IS NOT NULL AND NOT password_2fa_enabled THEN 1 ELSE 0 END) +
            (SELECT COUNT(*) FROM auth_external_identities
               WHERE user_id = users.user_id AND provider <> $2) +
            (SELECT COUNT(*) FROM webauthn_credentials
-              WHERE user_id = users.user_id)
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+              WHERE user_id = users.user_id) AS "value!" FROM users WHERE user_id = $1 AND is_deleted = FALSE"#,
+        &claims.sub,
+        provider,
     )
-    .bind(&claims.sub)
-    .bind(provider)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let has_password: bool = sqlx::query_scalar(
-        "SELECT password_hash IS NOT NULL FROM users
-         WHERE user_id = $1 AND is_deleted = FALSE",
+    let has_password: bool = sqlx::query_scalar!(
+        r#"SELECT password_hash IS NOT NULL AS "value!" FROM users
+         WHERE user_id = $1 AND is_deleted = FALSE"#,
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -75,10 +73,8 @@ pub async fn status(
     Ok(Json(ExternalIdentityStatus {
         provider: provider.to_owned(),
         linked: identity.is_some(),
-        display_name: identity
-            .as_ref()
-            .and_then(|row| row.try_get("display_name").ok()),
-        email: identity.as_ref().and_then(|row| row.try_get("email").ok()),
+        display_name: identity.as_ref().and_then(|row| row.display_name.clone()),
+        email: identity.as_ref().and_then(|row| row.email.clone()),
         has_password,
         can_unlink: identity.is_some() && alternatives > 0,
         recent_authentication,
@@ -109,26 +105,26 @@ pub async fn unlink(
     let mut tx = state.db.begin().await?;
     // Serialize identity removal per user. Otherwise simultaneous Apple and
     // Google requests could each observe the other as the remaining method.
-    let active_user =
-        sqlx::query("SELECT 1 FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE")
-            .bind(&claims.sub)
-            .fetch_optional(&mut *tx)
-            .await?
-            .is_some();
+    let active_user = sqlx::query!(
+        "SELECT 1 AS present FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE",
+        &claims.sub,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
     if !active_user {
         return Err(AppError::NotFound);
     }
-    let alternatives: i64 = sqlx::query_scalar(
-        "SELECT
+    let alternatives: i64 = sqlx::query_scalar!(
+        r#"SELECT
            (CASE WHEN password_hash IS NOT NULL AND NOT password_2fa_enabled THEN 1 ELSE 0 END) +
            (SELECT COUNT(*) FROM auth_external_identities
               WHERE user_id = users.user_id AND provider <> $2) +
            (SELECT COUNT(*) FROM webauthn_credentials
-              WHERE user_id = users.user_id)
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+              WHERE user_id = users.user_id) AS "value!" FROM users WHERE user_id = $1 AND is_deleted = FALSE"#,
+        &claims.sub,
+        provider,
     )
-    .bind(&claims.sub)
-    .bind(provider)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
@@ -138,12 +134,12 @@ pub async fn unlink(
         ));
     }
 
-    let linked: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM auth_external_identities
-         WHERE user_id = $1 AND provider = $2)",
+    let linked: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM auth_external_identities
+         WHERE user_id = $1 AND provider = $2) AS "value!" "#,
+        &claims.sub,
+        provider,
     )
-    .bind(&claims.sub)
-    .bind(provider)
     .fetch_one(&mut *tx)
     .await?;
     if !linked {
@@ -156,11 +152,13 @@ pub async fn unlink(
     if provider == "apple" {
         apple_auth::revoke_for_user(&state, &claims.sub).await?;
     }
-    sqlx::query("DELETE FROM auth_external_identities WHERE user_id = $1 AND provider = $2")
-        .bind(&claims.sub)
-        .bind(provider)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM auth_external_identities WHERE user_id = $1 AND provider = $2",
+        &claims.sub,
+        provider,
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     auth_sessions::revoke_other_sessions_and_trusted_devices(&state.db, &claims.sub, &claims.sid)
         .await?;

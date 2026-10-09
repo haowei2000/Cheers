@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status=$3,resolved_by=$4,resolution_note=$5,resolved_at=NOW(),updated_at=NOW() WHERE claim_id=$1 AND channel_id=$2 AND status='pending' RETURNING bot_id,summary,proposed_action",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "proposed_action",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6b8d445220e0d0d72af2e8da2c4db98efe8e351e7f18d0de9052a98b7101694"
+}

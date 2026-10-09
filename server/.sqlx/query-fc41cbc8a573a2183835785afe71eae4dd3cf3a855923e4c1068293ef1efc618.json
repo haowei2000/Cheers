@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.friendship_id, f.user_id AS actor_id,\n                COALESCE(u.display_name, u.username) AS actor_name,\n                f.message,\n                f.created_at::text AS created_at,\n                b.bot_id AS \"bot_id?\",\n                b.display_name AS bot_name\n         FROM friendships f\n         JOIN users u ON u.user_id = f.user_id\n         LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id\n         WHERE (f.friend_id = $1 OR (b.created_by = $1 AND b.friend_policy = 'require_approval'))\n           AND f.status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friendship_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "bot_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      true,
+      null,
+      false,
+      true
+    ]
+  },
+  "hash": "fc41cbc8a573a2183835785afe71eae4dd3cf3a855923e4c1068293ef1efc618"
+}

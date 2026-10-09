@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
@@ -268,21 +268,21 @@ async fn create_placeholder(
     context_bundle: Option<&Value>,
     content_data: Option<&Value>,
 ) -> Result<bool, String> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id,
              context_bundle, in_reply_to_msg_id, content_data)
          VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5, $6, $7, $8)
          ON CONFLICT (msg_id) DO NOTHING",
+        placeholder_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+        depth,
+        chain_id,
+        context_bundle,
+        trigger_msg_id.to_string(),
+        content_data,
     )
-    .bind(placeholder_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(depth)
-    .bind(chain_id)
-    .bind(context_bundle)
-    .bind(trigger_msg_id.to_string())
-    .bind(content_data)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;
@@ -348,11 +348,10 @@ async fn load_task_context(
         sender_name: Option<String>,
     }
 
-    let row = sqlx::query_as::<_, TaskRow>(
+    let row = sqlx::query_as!(
+        TaskRow,
         "SELECT
-            m.msg_id,
             m.sender_id,
-            m.sender_type,
             m.content,
             m.created_at,
             m.msg_type,
@@ -364,8 +363,8 @@ async fn load_task_context(
          LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
          LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id
          WHERE m.msg_id = $1",
+        msg_id.to_string(),
     )
-    .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
     .ok()??;
@@ -446,25 +445,26 @@ async fn load_attachments(
     // Whether this bot's agent accepts native ACP audio blocks (persisted from
     // the connector's ready frame). NULL/missing = false: don't spend frame
     // budget on bytes the connector would degrade to a summary line anyway.
-    let bot_accepts_audio = sqlx::query_scalar::<_, Option<bool>>(
+    let bot_accepts_audio = sqlx::query_scalar!(
         "SELECT (binding_config->'connector_control'->'capabilities'->>'audio')::boolean
          FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_optional(db)
     .await
     .ok()
     .flatten()
     .flatten()
     .unwrap_or(false);
-    let rows = sqlx::query_as::<_, AttachmentRow>(
-        "SELECT file_id, original_filename, content_type, size_bytes, object_key,
+    let rows = sqlx::query_as!(
+        AttachmentRow,
+        r#"SELECT file_id, original_filename, content_type, size_bytes, object_key,
                 storage_bucket, status, md_path,
-                COALESCE(expires_at < NOW(), FALSE) AS expired
+                COALESCE(expires_at < NOW(), FALSE) AS "expired!"
          FROM file_records
-         WHERE file_id = ANY($1)",
+         WHERE file_id = ANY($1)"#,
+        file_ids,
     )
-    .bind(file_ids)
     .fetch_all(db)
     .await
     .unwrap_or_else(|e| {
@@ -610,10 +610,10 @@ async fn fetch_media_b64(row: &AttachmentRow, cache: &MediaCache) -> Option<Stri
 /// and format each into a prompt block. These are injected into the agent prompt on
 /// EVERY request (the semantic layer) — a controlled push, not auto-memory.
 pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
-    let cfg = sqlx::query_scalar::<_, String>(
+    let cfg = sqlx::query_scalar!(
         "SELECT content FROM context_files WHERE channel_id = $1 AND path = '.workbench.json'",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
     .ok()
@@ -633,11 +633,11 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
         .unwrap_or_default();
     let mut out = Vec::new();
     for path in paths {
-        if let Ok(Some(content)) = sqlx::query_scalar::<_, String>(
+        if let Ok(Some(content)) = sqlx::query_scalar!(
             "SELECT content FROM context_files WHERE channel_id = $1 AND path = $2",
+            channel_id.to_string(),
+            &path,
         )
-        .bind(channel_id.to_string())
-        .bind(&path)
         .fetch_optional(db)
         .await
         {
@@ -653,24 +653,24 @@ pub(crate) async fn remove_placeholder(
     db: &PgPool,
     placeholder_id: Uuid,
 ) -> Result<Option<FailedPlaceholder>, sqlx::Error> {
-    let Some(channel_id) = sqlx::query(
+    let Some(channel_id) = sqlx::query!(
         "SELECT channel_id
          FROM messages
          WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
+        placeholder_id.to_string(),
     )
-    .bind(placeholder_id.to_string())
     .fetch_optional(db)
     .await?
-    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|row| Some(row.channel_id.clone()))
     .and_then(|raw| raw.parse::<Uuid>().ok()) else {
         return Ok(None);
     };
 
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "DELETE FROM messages
          WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
+        placeholder_id.to_string(),
     )
-    .bind(placeholder_id.to_string())
     .execute(db)
     .await?;
 
@@ -689,16 +689,16 @@ type SessionWorkspace = (Option<String>, Vec<String>);
 /// `additionalDirectories`). Missing row / key ⇒ `(None, [])`, so the connector
 /// falls back to its default_cwd. Best-effort: any DB error degrades to the default.
 async fn load_session_workspace(db: &PgPool, provider_session_key: &str) -> SessionWorkspace {
-    let ws = sqlx::query(
+    let ws = sqlx::query!(
         "SELECT metadata->'workspace' AS ws FROM cheers_sessions
          WHERE provider_session_key = $1 LIMIT 1",
+        provider_session_key,
     )
-    .bind(provider_session_key)
     .fetch_optional(db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<Value>, _>("ws").ok().flatten());
+    .and_then(|r| r.ws.clone());
     match ws {
         Some(ws) => {
             let cwd = ws.get("cwd").and_then(Value::as_str).map(str::to_string);

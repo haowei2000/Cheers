@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_available_commands\n            (channel_id, bot_id, session_id, commands, updated_at)\n         VALUES ($1, $2, $3, $4::text::jsonb, now())\n         ON CONFLICT (channel_id, bot_id)\n         DO UPDATE SET session_id = EXCLUDED.session_id,\n                       commands   = EXCLUDED.commands,\n                       updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3e8f3d0dc877bc4a19c13195b9272681cb1a57e99885c5db42c935e1ea84583"
+}

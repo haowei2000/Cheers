@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT host_id FROM connector_hosts\n         WHERE credential_hash = $1 AND bot_id = $2\n           AND status = 'active' AND revoked_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "70bfda06af8ba39516218beddf569d84aea48a5fc3e8e87f3543d43bb1e8b298"
+}

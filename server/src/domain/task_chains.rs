@@ -8,7 +8,7 @@
 //!   （不建占位、不派发）——这是权威停止点，即使取消广播漏掉了离线 bot 也成立。
 //!
 //! chain 状态机：`active → cancelled`（或 `done`/`paused`，本期只用 active/cancelled）。
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// 开启一条新链，根于 `root_msg_id`（触发级联的那条消息）。返回 `chain_id`。
@@ -20,14 +20,14 @@ pub async fn start_chain(
     root_msg_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
     let chain_id = Uuid::new_v4();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO task_chains (chain_id, channel_id, root_task_id, root_msg_id, status)
          VALUES ($1, $2, $3, $4, 'active')",
+        chain_id.to_string(),
+        channel_id.to_string(),
+        root_task_id.to_string(),
+        root_msg_id.to_string(),
     )
-    .bind(chain_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(root_task_id.to_string())
-    .bind(root_msg_id.to_string())
     .execute(db)
     .await?;
     Ok(chain_id)
@@ -37,10 +37,12 @@ pub async fn start_chain(
 /// 终态的链会阻断一切后续派发。未知/无 chain（`None` 行）视为「非链跟踪派发」直接
 /// 放行（如定向 session、无级联的单发）。查询出错 fail-open（与其它闸门一致）。
 pub async fn is_active(db: &PgPool, chain_id: &str) -> bool {
-    match sqlx::query_scalar::<_, String>("SELECT status FROM task_chains WHERE chain_id = $1")
-        .bind(chain_id)
-        .fetch_optional(db)
-        .await
+    match sqlx::query_scalar!(
+        "SELECT status FROM task_chains WHERE chain_id = $1",
+        chain_id,
+    )
+    .fetch_optional(db)
+    .await
     {
         Ok(Some(status)) => status == "active",
         Ok(None) => true, // 无 chain 行 → 未跟踪 → 放行
@@ -51,11 +53,13 @@ pub async fn is_active(db: &PgPool, chain_id: &str) -> bool {
 /// 解析某条消息所属的 chain（占位/回复消息带 `chain_id`）。用于把 ⏹ 落在某条
 /// bot 消息上时反查它属于哪条链。
 pub async fn chain_of_message(db: &PgPool, msg_id: Uuid) -> Result<Option<String>, sqlx::Error> {
-    let row = sqlx::query("SELECT chain_id FROM messages WHERE msg_id = $1")
-        .bind(msg_id.to_string())
-        .fetch_optional(db)
-        .await?;
-    Ok(row.and_then(|r| r.try_get::<Option<String>, _>("chain_id").ok().flatten()))
+    let row = sqlx::query!(
+        "SELECT chain_id FROM messages WHERE msg_id = $1",
+        msg_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(|r| r.chain_id.clone()))
 }
 
 /// 某个 bot 在某频道当前「进行中」任务所属的 chain：取该 bot 最新的未完成
@@ -67,18 +71,18 @@ pub async fn chain_of_active_bot_task(
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT chain_id FROM messages
          WHERE channel_id = $1 AND sender_id = $2 AND sender_type = 'bot'
            AND is_partial = TRUE AND chain_id IS NOT NULL
          ORDER BY created_at DESC
          LIMIT 1",
+        channel_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_optional(db)
     .await?;
-    Ok(row.and_then(|r| r.try_get::<Option<String>, _>("chain_id").ok().flatten()))
+    Ok(row.and_then(|r| r.chain_id.clone()))
 }
 
 /// 取消一条链：原子地把 `active → cancelled`，并返回链上仍在进行中的 bot 占位
@@ -89,31 +93,31 @@ pub async fn cancel_chain(
     chain_id: &str,
     cancelled_by: Uuid,
 ) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE task_chains
          SET status = 'cancelled', cancelled_by = $2, cancelled_at = NOW()
          WHERE chain_id = $1 AND status = 'active'",
+        chain_id,
+        cancelled_by.to_string(),
     )
-    .bind(chain_id)
-    .bind(cancelled_by.to_string())
     .execute(db)
     .await?;
     if updated.rows_affected() == 0 {
         return Ok(Vec::new()); // 已终态 / 未知 chain → 幂等空
     }
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT msg_id, sender_id FROM messages
          WHERE chain_id = $1 AND sender_type = 'bot' AND is_partial = TRUE",
+        chain_id,
     )
-    .bind(chain_id)
     .fetch_all(db)
     .await?;
     Ok(rows
         .iter()
         .filter_map(|r| {
-            let msg_id = r.try_get::<String, _>("msg_id").ok()?.parse().ok()?;
-            let bot_id = r.try_get::<String, _>("sender_id").ok()?.parse().ok()?;
+            let msg_id = Some(r.msg_id.clone())?.parse().ok()?;
+            let bot_id = Some(r.sender_id.clone())?.parse().ok()?;
             Some((msg_id, bot_id))
         })
         .collect())

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id, created_by, COALESCE(friend_policy, 'open') AS friend_policy,\n                    COALESCE(visibility, 'public') AS visibility, is_disabled, display_name\n             FROM bot_accounts WHERE bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "friend_policy",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "visibility",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "display_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null,
+      null,
+      false,
+      true
+    ]
+  },
+  "hash": "b2eba542a0e05d0d91d44bb50a45096703ab63e74979d02e752bb5363037178d"
+}
