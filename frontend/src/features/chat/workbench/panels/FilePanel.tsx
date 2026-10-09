@@ -378,9 +378,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     void sessionRef.current.reload(true);
   }, [filesTick, refresh, selected]);
 
-  // Broadcast presence focus so other clients and bots see who is viewing/editing this file.
+  // Broadcast presence focus without depending on ctx identity; presence updates replace ctx.
+  const sendPresenceFocus = ctx.sendPresenceFocus;
+  const channelId = ctx.channelId;
   useEffect(() => {
-    const { sendPresenceFocus, channelId } = ctx;
     if (!sendPresenceFocus) return;
     if (selected) {
       sendPresenceFocus(channelId, { bot_id: "", path: selected });
@@ -390,7 +391,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     return () => {
       sendPresenceFocus(channelId, null);
     };
-  }, [ctx, selected]);
+  }, [sendPresenceFocus, channelId, selected]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selected, ctx.currentUserId, ctx.memberNames),
