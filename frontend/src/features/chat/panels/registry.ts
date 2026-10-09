@@ -75,6 +75,8 @@ export interface PanelContribution {
   /** "session" makes the host offer its session-scope selector and pass
    *  `scopeSessionId`. Replaces ViewBoardDef.sessionScoped. */
   scope?: "channel" | "session";
+  /** Return a React element for hook-using components; never call them directly.
+   * Hosts invoke this factory conditionally as profile and visibility change. */
   render: (ctx: PanelContext) => ReactNode;
 }
 
