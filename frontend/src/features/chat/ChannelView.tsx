@@ -65,7 +65,7 @@ import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Banner } from "@/components/ui/banner";
 import { ErrorState } from "@/components/ui/error-state";
-import { ChannelChrome } from "./ChannelChrome";
+import { ChannelChrome, ChannelPanelSwitcher } from "./ChannelChrome";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
@@ -1468,6 +1468,22 @@ export function ChannelView({
     ],
     [filesOpen, vbOpen, wbOpen, wsOpen],
   );
+  const activeWorkspacePanel = workspacePanels.some(
+    (panel) => panel.id === panelRequest?.id,
+  )
+    ? panelRequest?.id
+    : workspacePanels.some(
+          (panel) => panel.id === currentWorkspaceSnapshot?.layout.active,
+        )
+      ? currentWorkspaceSnapshot?.layout.active
+      : workspacePanels.at(-1)?.id;
+  const workspacePanelSwitcher = (
+    <ChannelPanelSwitcher
+      panels={workspacePanels.map((panel) => panel.id)}
+      activePanel={activeWorkspacePanel}
+      onSelect={(id) => setWindowOpen[id](true)}
+    />
+  );
 
   if (!channel) {
     return (
@@ -1570,6 +1586,7 @@ export function ChannelView({
           sidebarToggle={sidebarToggle}
           onBack={onBack}
           actions={channelToolbar}
+          panelSwitcher={workspacePanelSwitcher}
         />
 
         <PanelWorkspace
