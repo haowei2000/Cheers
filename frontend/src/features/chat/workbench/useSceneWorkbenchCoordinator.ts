@@ -47,6 +47,7 @@ export function useSceneWorkbenchCoordinator({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
+  const refreshId = useRef(0);
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const reconciled = useMemo(
     () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
@@ -63,18 +64,21 @@ export function useSceneWorkbenchCoordinator({
   const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
 
   const refresh = useCallback(async () => {
+    const requestId = ++refreshId.current;
     setLoading(true);
+    setStatus(null);
     try {
       const listing = await ctx.fs.ls("");
+      if (requestId !== refreshId.current) return;
       setEntries(listing.entries);
-      setStatus(null);
       void readDiscoverableFiles(listing.entries, ctx, (values) =>
         setContents((previous) => ({ ...previous, ...values }))
       );
     } catch (error) {
+      if (requestId !== refreshId.current) return;
       setStatus(error instanceof Error ? error.message : "Couldn’t load Workbench items");
     } finally {
-      setLoading(false);
+      if (requestId === refreshId.current) setLoading(false);
     }
   }, [ctx]);
 

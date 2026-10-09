@@ -3,7 +3,7 @@ import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FloatingPanel } from "@/components/ui/floating-panel";
+import { FloatingPanel, FloatingPanelContextPortal } from "@/components/ui/floating-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import { FsTreeIcon } from "./FsTreeIcon";
@@ -28,7 +28,6 @@ import {
   FolderPlus,
   History,
   Loader2,
-  PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Save,
@@ -1355,6 +1354,26 @@ export function RemoteWorkspaceDialog({
     </div>
   );
 
+  const workspacePathControl = botId && leftView === "files" ? (
+    <FloatingPanelContextPortal>
+      <div className="flex min-w-0 max-w-64 items-center gap-1">
+        <UiButton
+          variant="plain"
+          onClick={() => parent !== null && loadDir(parent)}
+          disabled={!cwd}
+          title="Go up one level"
+          aria-label="Go up one level"
+          content="icon"
+          controlSize="compact"
+          className="shrink-0 rounded-sm hover:bg-control disabled:opacity-50"
+        >
+          <ArrowUp className="h-3.5 w-3.5" />
+        </UiButton>
+        <WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />
+      </div>
+    </FloatingPanelContextPortal>
+  ) : null;
+
   return (
     <>
     <FloatingPanel
@@ -1451,6 +1470,7 @@ export function RemoteWorkspaceDialog({
         </>
       )}
     >
+      {workspacePathControl}
       <div
         data-workspace-content=""
         className="flex min-h-0 flex-1 flex-col p-3 md:absolute md:inset-0"
@@ -1564,18 +1584,6 @@ export function RemoteWorkspaceDialog({
               {leftView === "changes" && git ? (
                 <>
                   <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
-                    <UiButton
-                      action="collapse"
-                      content="icon"
-                      variant="plain"
-                      controlSize="compact"
-                      onClick={() => setSidebarOpen(false)}
-                      title="Hide file tree"
-                      aria-label="Hide file tree"
-                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                    >
-                      <PanelLeftClose className="w-3.5 h-3.5" />
-                    </UiButton>
                     <UiButton action="diffWorking" content="iconText" variant="plain"
                     onClick={() => openDiff("", false)}
                     selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
@@ -1595,9 +1603,6 @@ export function RemoteWorkspaceDialog({
                     <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
                   <div className="flex-1" />
                   {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </UiButton>
                 </div>
                 <div className="flex-1 overflow-auto">
                   {(() => {
@@ -1659,30 +1664,10 @@ export function RemoteWorkspaceDialog({
             ) : leftView === "history" && git ? (
               <>
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
-                  <UiButton
-                    action="collapse"
-                    content="icon"
-                    variant="plain"
-                    controlSize="compact"
-                    onClick={() => setSidebarOpen(false)}
-                    title="Hide file tree"
-                    aria-label="Hide file tree"
-                    className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                  >
-                    <PanelLeftClose className="w-3.5 h-3.5" />
-                  </UiButton>
                   <span className="flex items-center gap-1 flex-1">
                     <History className="w-3.5 h-3.5" /> Commits
                   </span>
                   {logBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                  <UiButton variant="plain"
-                    onClick={() => void loadLog()}
-                    title="Refresh"
-                    content="icon" controlSize="compact"
-                    className="rounded-sm hover:bg-control"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </UiButton>
                 </div>
                 <div className="flex-1 overflow-auto">
                   {log?.map((c) => {
@@ -1734,18 +1719,6 @@ export function RemoteWorkspaceDialog({
             ) : (
               <>
                 <div className="flex items-center gap-1 px-2 py-2 border-b border-control text-compact text-content-muted">
-                  <UiButton
-                    action="collapse"
-                    content="icon"
-                    variant="plain"
-                    controlSize="compact"
-                    onClick={() => setSidebarOpen(false)}
-                    title="Hide file tree"
-                    aria-label="Hide file tree"
-                    className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                  >
-                    <PanelLeftClose className="w-3.5 h-3.5" />
-                  </UiButton>
                   <UiButton variant="plain"
                     onClick={() => parent !== null && loadDir(parent)}
                     disabled={!cwd}
@@ -1755,7 +1728,6 @@ export function RemoteWorkspaceDialog({
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </UiButton>
-                  <WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />
                   {git && !!cwd && (
                     <UiButton variant="plain"
                       onClick={() => openDiff(cwd, false)}
@@ -1777,9 +1749,6 @@ export function RemoteWorkspaceDialog({
                       <FolderPlus className="w-3.5 h-3.5" />
                     </UiButton>
                   )}
-                  <UiButton variant="plain" onClick={() => void refreshAll()} title="Refresh" content="icon" controlSize="compact" className="rounded-sm hover:bg-control">
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </UiButton>
                 </div>
                 <div className="flex-1 overflow-auto">
                   {entries?.map((ent) => (
