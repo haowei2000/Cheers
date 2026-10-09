@@ -29,6 +29,13 @@ class PlanTests(unittest.TestCase):
     def test_gateway_change_selects_gateway_only(self):
         self.assertEqual(self.selected("ci", ["server/src/main.rs"]), {"gateway"})
 
+    def test_sqlx_offline_inputs_select_gateway(self):
+        for path in ["server/.sqlx/query-example.json", "server/.cargo/config.toml",
+                     ".cargo/config.toml", "scripts/sqlx-offline.sh"]:
+            with self.subTest(path=path):
+                self.assertEqual(self.selected("ci", [path]), {"gateway"})
+        self.assertEqual(self.selected("cd", [".cargo/config.toml"]), {"gateway"})
+
     def test_bridge_protocol_selects_gateway_and_plugin(self):
         self.assertEqual(
             self.selected(

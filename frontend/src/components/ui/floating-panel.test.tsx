@@ -85,6 +85,23 @@ describe("FloatingPanel visibility", () => {
     expect(rootClasses(markup)).not.toContain("hidden");
     expect(markup).toContain("body");
   });
+
+  it("renders an empty panel through the shared EmptyState component", () => {
+    const markup = render(
+      <FloatingPanel
+        title="Files"
+        onClose={() => {}}
+        storageKey="t.empty"
+        emptyState={{ title: "No files yet", hint: "Upload a file to get started." }}
+      >
+        <div>stale child content</div>
+      </FloatingPanel>,
+    );
+
+    expect(markup).toContain("No files yet");
+    expect(markup).toContain("Upload a file to get started.");
+    expect(markup).not.toContain("stale child content");
+  });
 });
 
 describe("FloatingPanel managed full screen", () => {
@@ -249,6 +266,7 @@ describe("FloatingPanel window chrome", () => {
         title="Remote workspace"
         onClose={() => {}}
         storageKey="t.chrome"
+        chromeTitle="Annotations · 0"
         primaryNavigation={{
           ariaLabel: "Workspace views",
           items: [
@@ -264,6 +282,7 @@ describe("FloatingPanel window chrome", () => {
     );
 
     expect(markup).toContain('data-floating-panel-title=""');
+    expect(markup).toContain("Annotations · 0");
     expect(markup).toContain('data-floating-panel-navigation=""');
     expect(markup).toContain('data-floating-panel-actions=""');
     expect(markup).toContain("Files");

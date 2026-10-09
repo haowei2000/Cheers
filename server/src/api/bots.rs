@@ -90,41 +90,6 @@ fn validate_bot_username(raw: &str) -> Result<String, AppError> {
     Ok(value.to_string())
 }
 
-#[cfg(test)]
-mod username_tests {
-    use super::validate_bot_username;
-
-    #[test]
-    fn accepts_addressable_names_and_trims() {
-        assert_eq!(
-            validate_bot_username("  research-assistant  ").unwrap(),
-            "research-assistant"
-        );
-        assert_eq!(validate_bot_username("Bot_2").unwrap(), "Bot_2");
-    }
-
-    /// Each of these previously reached Postgres: the long one as a 500 from a
-    /// VARCHAR(64) overflow, the rest as a stored name that no longer matches
-    /// its own `@mention` or connector account id.
-    #[test]
-    fn rejects_names_that_break_addressing() {
-        for bad in [
-            "",
-            "   ",
-            "my bot",
-            "@helper",
-            "-leading",
-            "_leading",
-            "bot!",
-            "b\u{00e9}ta",
-        ] {
-            assert!(validate_bot_username(bad).is_err(), "should reject {bad:?}");
-        }
-        assert!(validate_bot_username(&"x".repeat(65)).is_err());
-        assert!(validate_bot_username(&"x".repeat(64)).is_ok());
-    }
-}
-
 pub(crate) fn is_admin(claims: &Claims) -> bool {
     matches!(claims.role.as_str(), "system_admin" | "admin")
 }
@@ -1445,5 +1410,43 @@ mod tests {
         assert!(!version_is_newer("0.1.25", "0.1.26"));
         assert!(!version_is_newer("latest", "0.1.26"));
         assert!(!version_is_newer("0.1.27", "unknown"));
+    }
+}
+
+// Kept at the end of the file: clippy's `items_after_test_module` rejects
+// production items that follow a `#[cfg(test)] mod`, and this module used to sit
+// in the middle of the username helpers.
+#[cfg(test)]
+mod username_tests {
+    use super::validate_bot_username;
+
+    #[test]
+    fn accepts_addressable_names_and_trims() {
+        assert_eq!(
+            validate_bot_username("  research-assistant  ").unwrap(),
+            "research-assistant"
+        );
+        assert_eq!(validate_bot_username("Bot_2").unwrap(), "Bot_2");
+    }
+
+    /// Each of these previously reached Postgres: the long one as a 500 from a
+    /// VARCHAR(64) overflow, the rest as a stored name that no longer matches
+    /// its own `@mention` or connector account id.
+    #[test]
+    fn rejects_names_that_break_addressing() {
+        for bad in [
+            "",
+            "   ",
+            "my bot",
+            "@helper",
+            "-leading",
+            "_leading",
+            "bot!",
+            "b\u{00e9}ta",
+        ] {
+            assert!(validate_bot_username(bad).is_err(), "should reject {bad:?}");
+        }
+        assert!(validate_bot_username(&"x".repeat(65)).is_err());
+        assert!(validate_bot_username(&"x".repeat(64)).is_ok());
     }
 }

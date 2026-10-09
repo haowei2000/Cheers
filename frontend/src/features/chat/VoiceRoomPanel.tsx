@@ -21,6 +21,7 @@ import {
   setVoiceTranscription,
 } from "@/api/channels";
 import { VoiceRoomToolbar } from "./VoiceRoomToolbar";
+import { VoiceToolbarPortal } from "./VoiceRoomToolbar";
 import type { VoiceInterimSegment, VoiceTranscriptSegment } from "@/types";
 
 interface Props {
@@ -357,72 +358,73 @@ export function VoiceRoomPanel({
   const captionText = latestInterim?.text || latestTranscript?.text || null;
 
   return (
-    <section className="mx-4 mb-2 shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
-      <div ref={audioRootRef} className="hidden" aria-hidden="true" />
-      <VoiceRoomToolbar
-        connected={connected}
-        joining={joining}
-        reconnecting={reconnecting}
-        micEnabled={micEnabled}
-        canPublish={canPublish}
-        playbackMuted={playbackMuted}
-        participantNames={participantNames}
-        participantCount={participantCount}
-        transcriptionStatus={transcriptionStatus}
-        canManage={serverCanManage}
-        changingTranscription={changingTranscription}
-        onJoin={() => void join()}
-        onLeave={() => void disconnect()}
-        onToggleMic={() => void toggleMic()}
-        onTogglePlayback={togglePlayback}
-        onToggleTranscription={() => void toggleTranscription()}
-      />
+    <>
+      <VoiceToolbarPortal>
+        <VoiceRoomToolbar
+          connected={connected}
+          joining={joining}
+          reconnecting={reconnecting}
+          micEnabled={micEnabled}
+          canPublish={canPublish}
+          playbackMuted={playbackMuted}
+          participantNames={participantNames}
+          participantCount={participantCount}
+          activeSpeaker={activeSpeaker}
+          transcriptionStatus={transcriptionStatus}
+          canManage={serverCanManage}
+          changingTranscription={changingTranscription}
+          onJoin={() => void join()}
+          onLeave={() => void disconnect()}
+          onToggleMic={() => void toggleMic()}
+          onTogglePlayback={togglePlayback}
+          onToggleTranscription={() => void toggleTranscription()}
+        />
+      </VoiceToolbarPortal>
+      <section className="mx-4 mb-2 shrink-0 overflow-hidden rounded-sm bg-zinc-900/50">
+        <div ref={audioRootRef} className="hidden" aria-hidden="true" />
 
-      {(transcriptionStatus !== "off" || captionText) && (
-        <div className="flex min-h-7 items-center gap-2 px-3 pb-2 text-compact text-content-muted" role="status">
-          <Captions className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 truncate">
-            {captionText ? (
+        {captionText && (
+          <div className="flex min-h-7 items-center gap-2 px-3 pb-2 text-compact text-content-muted" role="status">
+            <Captions className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <p className="min-w-0 truncate">
               <>
                 {speakingName && <span className="font-medium">{speakingName} · </span>}
                 <span className={latestInterim ? "italic" : undefined}>{captionText}</span>
               </>
-            ) : transcriptionStatus === "active" ? "Live captions on"
-              : transcriptionStatus === "starting" ? "Starting captions…"
-              : "Live captions unavailable"}
-          </p>
-        </div>
-      )}
+            </p>
+          </div>
+        )}
 
-      {consentRequired && connected && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-elevation-edge/40 bg-control/40 px-3 py-2 text-compact">
-          <p className="min-w-0 flex-1 text-content-secondary">
-            Live captions send final spoken text to this channel; audio is not recorded.
+        {consentRequired && connected && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-elevation-edge/40 bg-control/40 px-3 py-2 text-compact">
+            <p className="min-w-0 flex-1 text-content-secondary">
+              Live captions send final spoken text to this channel; audio is not recorded.
+            </p>
+            <UiButton action="accept" variant="primary"
+              type="button"
+              disabled={consenting}
+              onClick={() => void grantConsent()}
+              controlSize="comfortable" className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:opacity-50"
+            >
+              {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
+              Accept &amp; speak
+            </UiButton>
+            <UiButton action="cancel" variant="secondary"
+              type="button"
+              disabled={consenting}
+              onClick={() => setConsentRequired(false)}
+              controlSize="comfortable"
+            >
+              Listen only
+            </UiButton>
+          </div>
+        )}
+        {!canPublish && connected && !consentRequired && (
+          <p className="border-t border-zinc-800/80 px-3 py-2 text-compact text-content-muted">
+            You have listen-only access in this channel.
           </p>
-          <UiButton action="accept" variant="primary"
-            type="button"
-            disabled={consenting}
-            onClick={() => void grantConsent()}
-            controlSize="comfortable" className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:opacity-50"
-          >
-            {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
-            Accept &amp; speak
-          </UiButton>
-          <UiButton action="cancel" variant="secondary"
-            type="button"
-            disabled={consenting}
-            onClick={() => setConsentRequired(false)}
-            controlSize="comfortable"
-          >
-            Listen only
-          </UiButton>
-        </div>
-      )}
-      {!canPublish && connected && !consentRequired && (
-        <p className="border-t border-zinc-800/80 px-3 py-2 text-compact text-content-muted">
-          You have listen-only access in this channel.
-        </p>
-      )}
-    </section>
+        )}
+      </section>
+    </>
   );
 }

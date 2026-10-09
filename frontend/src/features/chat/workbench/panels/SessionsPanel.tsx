@@ -24,6 +24,7 @@ import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { Layers, CircleDot, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   getSessionControls,
   closeChannelBotSession,
@@ -661,10 +662,7 @@ function SessionsBody({
       </div>
 
       {sessions.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
-          <Layers className="w-4 h-4" />
-          No sessions yet
-        </div>
+        <EmptyState icon={Layers} title="No sessions yet" hint="Create a session to start work in this channel." className="py-6" />
       ) : (
         groups.map((g) => (
           <BotGroup

@@ -5,7 +5,8 @@ import {
 import { AdaptiveControlGroup, type AdaptiveControlPresentation } from "@/components/ui/adaptive-control-group";
 import { Button } from "@/components/ui/button";
 import { ResponsiveActionButton } from "@/components/ui/responsive-action-button";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
+import { WorkbenchCardDeck } from "./WorkbenchCardDeck";
 import {
   Crosshair,
   Eye,
@@ -13,6 +14,8 @@ import {
   FileQuestion,
   Frame,
   Save,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { workbenchFileContextItem } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
@@ -90,6 +93,7 @@ export function SceneWorkbench({
   onLoadCollection: () => void;
   onShowRaw: () => void;
 }) {
+  const [cardExpanded, setCardExpanded] = useState(false);
   const coord = useSceneWorkbenchCoordinator({
     ctx,
     sceneState,
@@ -269,8 +273,9 @@ export function SceneWorkbench({
         )}
       >
         {(availableWidth) => (
+          <div className="flex min-w-0 flex-nowrap items-center gap-1">
           <WorkbenchHierarchyNavigation
-            availableWidth={availableWidth}
+            availableWidth={Math.max(28, availableWidth - 100 - (canAddTab ? 32 : 0))}
             collections={collectionMenuItems}
             activeCollection={coord.activeScene}
             collectionTitle={title}
@@ -281,17 +286,20 @@ export function SceneWorkbench({
             onLoadCollection={onLoadCollection}
             onShowRaw={onShowRaw}
           />
+          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["collapsed"]} />
+          {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={coord.addTabAndSelect} />}
+          </div>
         )}
       </FloatingPanelNavigationPortal>
-      {itemNavigationItems.length > 0 && (
-        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-control/80 px-2 py-1 bg-panel/50">
-          <AdaptiveControlGroup kind="navigation" ariaLabel={`${title} Tabs`} controlSize={workbenchControlSize.tab} items={itemNavigationItems} presentationOrder={["iconText", "collapsed"]} />
-          {canAddTab && <AddTabControl candidates={tabCandidates} onSelect={coord.addTabAndSelect} />}
-        </div>
-      )}
       {/* Floating Panel Action Portals for Chrome Header */}
       {selectedPath && (
         <>
+          <FloatingPanelActionPortal action={{
+            id: "card-fill",
+            label: cardExpanded ? "Restore card deck" : "Fill panel with card",
+            icon: cardExpanded ? Minimize2 : Maximize2,
+            onSelect: () => setCardExpanded((value) => !value),
+          }} />
           <FloatingPanelActionPortal
             action={{
               id: "view-mode",
@@ -380,7 +388,25 @@ export function SceneWorkbench({
             </Button>
           </div>
         ) : selectedPath ? (
-          (() => {
+          <WorkbenchCardDeck
+            tabs={coord.activePaths.map((path) => ({
+              path,
+              label: itemTitle(coord.activeScene, path, templates),
+              isDirty: path === selectedPath && coord.session.dirty,
+              hasError: path === selectedPath && Boolean(coord.session.parseError),
+              hasContext: coord.pickedIds.has(workbenchFileContextItem(path).id),
+              rendererId: coord.renderers[path]?.id,
+              rendererTitle: coord.renderers[path]?.title,
+              previewSnippet: path === selectedPath ? coord.session.text : coord.contents[path],
+            }))}
+            selectedPath={selectedPath}
+            onSelectTab={coord.selectPath}
+            onAddToContext={coord.addPathToContext}
+            isLocked={coord.session.dirty}
+            onLockedAttempt={() => coord.setStatus("Save your changes before switching cards.")}
+            isMaximized={cardExpanded}
+            onToggleMaximize={() => setCardExpanded((value) => !value)}
+            renderActiveCardContent={() => {
             const activeRenderer = coord.renderers[selectedPath];
             const effMode = coord.rawPaths.has(selectedPath) || !activeRenderer ? "raw" : "preview";
             return (
@@ -457,7 +483,8 @@ export function SceneWorkbench({
                 </div>
               </div>
             );
-          })()
+          }}
+          />
         ) : null}
       </div>
 

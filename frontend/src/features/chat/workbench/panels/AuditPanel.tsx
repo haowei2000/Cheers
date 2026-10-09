@@ -18,6 +18,7 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
+import { EmptyState } from "@/components/ui/empty-state";
 import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
 import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
 
@@ -348,10 +349,7 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
       {events == null ? (
         <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
       ) : events.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4" />
-          No permission decisions yet
-        </div>
+        <EmptyState icon={ShieldCheck} title="No permission decisions yet" className="py-6" />
       ) : (
         <ul className="px-2 py-2" aria-label="Permission audit log">
           {events.map((e, i) => {

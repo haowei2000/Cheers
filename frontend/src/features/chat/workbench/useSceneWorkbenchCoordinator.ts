@@ -47,6 +47,9 @@ export function useSceneWorkbenchCoordinator({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
+  const refreshId = useRef(0);
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const reconciled = useMemo(
     () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
@@ -62,26 +65,28 @@ export function useSceneWorkbenchCoordinator({
   const picked = usePendingContext(ctx.channelId);
   const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
 
+  // Presence updates replace ctx, but they do not require another filesystem listing.
   const refresh = useCallback(async () => {
+    const requestId = ++refreshId.current;
+    const fs = ctx.fs;
     setLoading(true);
+    setStatus(null);
     try {
-      const listing = await ctx.fs.ls("");
+      const listing = await fs.ls("");
+      if (requestId !== refreshId.current || ctxRef.current.fs !== fs) return;
       setEntries(listing.entries);
-      setStatus(null);
-      void readDiscoverableFiles(listing.entries, ctx, (values) =>
+      void readDiscoverableFiles(listing.entries, ctxRef.current, (values) =>
         setContents((previous) => ({ ...previous, ...values }))
       );
     } catch (error) {
+      if (requestId !== refreshId.current) return;
       setStatus(error instanceof Error ? error.message : "Couldn’t load Workbench items");
     } finally {
-      setLoading(false);
+      if (requestId === refreshId.current) setLoading(false);
     }
-  }, [ctx]);
+  }, [ctx.fs]);
 
   useEffect(() => void refresh(), [refresh]);
-  useEffect(() => {
-    if (ctx.filesTick !== undefined) void refresh();
-  }, [ctx.filesTick, refresh]);
 
   const existing = useMemo(
     () => new Set(entries.filter((entry) => !entry.is_dir).map((entry) => entry.path)),
@@ -159,9 +164,11 @@ export function useSceneWorkbenchCoordinator({
     void sessionRef.current.reload(true);
   }, [filesTick, refresh, selectedPath]);
 
-  // Presence focus broadcast
+  // Keep focus reporting independent of ctx identity; presence updates replace ctx.
+  // Depending on ctx here would clear and rebroadcast focus on every presence update.
+  const sendPresenceFocus = ctx.sendPresenceFocus;
+  const channelId = ctx.channelId;
   useEffect(() => {
-    const { sendPresenceFocus, channelId } = ctx;
     if (!sendPresenceFocus) return;
     if (selectedPath) {
       sendPresenceFocus(channelId, { bot_id: "", path: selectedPath });
@@ -171,7 +178,7 @@ export function useSceneWorkbenchCoordinator({
     return () => {
       sendPresenceFocus(channelId, null);
     };
-  }, [ctx, selectedPath]);
+  }, [sendPresenceFocus, channelId, selectedPath]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
@@ -292,6 +299,7 @@ export function useSceneWorkbenchCoordinator({
   }, [activeScene, onAddTab, storagePrefix]);
 
   return {
+    contents,
     entries,
     loading,
     status,

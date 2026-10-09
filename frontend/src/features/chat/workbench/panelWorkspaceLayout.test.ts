@@ -63,6 +63,31 @@ describe("local workspace preference", () => {
     })).toEqual({ width: 420, split: false, ratio: 0.5, floats: {} });
   });
 
+  it("parses and restores remembered open panel preferences", () => {
+    const parsed = parseLocalWorkspacePreference({
+      width: 420,
+      split: false,
+      ratio: 0.5,
+      open: {
+        files: true,
+        workbench: false,
+        invalid: true,
+      },
+    });
+    expect(parsed?.open).toEqual({ files: true, workbench: false });
+
+    const saved = JSON.stringify({
+      width: 420,
+      split: false,
+      ratio: 0.5,
+      open: { files: true, workspace: true },
+    });
+    expect(restoreLocalWorkspacePreference(saved, "viewboard").open).toEqual({
+      files: true,
+      workspace: true,
+    });
+  });
+
   it("resets every channel-scoped field when stored JSON is malformed", () => {
     expect(restoreLocalWorkspacePreference("{", "files")).toEqual({
       width: 400,

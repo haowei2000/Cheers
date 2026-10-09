@@ -3699,6 +3699,9 @@ mod tests {
 
     #[test]
     fn default_mcp_access_token_ttl_is_at_least_one_day() {
-        assert!(DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS >= 86_400);
+        // `const {}`: both operands are compile-time constants, so a plain
+        // `assert!` here is dead at runtime (and clippy rejects it). Evaluating
+        // it in a const block makes a regression a build failure instead.
+        const { assert!(DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS >= 86_400) };
     }
 }

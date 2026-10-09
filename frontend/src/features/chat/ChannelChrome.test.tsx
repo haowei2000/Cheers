@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { WindowChromeProvider } from "@/features/desktop/WindowChromeContext";
-import { ChannelChrome, ChannelPanelSwitcher } from "./ChannelChrome";
+import { ChannelChrome } from "./ChannelChrome";
 
 describe("ChannelChrome", () => {
   it("renders the channel header and actions in inline shells", () => {
@@ -21,26 +21,20 @@ describe("ChannelChrome", () => {
     expect(markup).toContain("Files");
   });
 
-  it("places open panel navigation in the shared channel header", () => {
+  it("places PanelWorkspace navigation in the shared channel header", () => {
     const markup = renderToStaticMarkup(
       <WindowChromeProvider placement="inline">
         <ChannelChrome
           title="release"
           isDm={false}
           actions={null}
-          panelSwitcher={(
-            <ChannelPanelSwitcher
-              panels={["viewboard", "workbench"]}
-              activePanel="workbench"
-              onSelect={() => {}}
-            />
-          )}
+          panelNavigation={<div role="tablist" aria-label="Workspace panels">Viewboard Workbench</div>}
         />
       </WindowChromeProvider>,
     );
 
-    expect(markup).toContain('aria-label="Open channel panels"');
-    expect(markup).toContain("ViewBoard");
+    expect(markup).toContain('data-channel-panel-tabs=""');
+    expect(markup).toContain("Viewboard");
     expect(markup).toContain("Workbench");
   });
 

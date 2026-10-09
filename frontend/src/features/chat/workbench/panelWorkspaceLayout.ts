@@ -40,6 +40,7 @@ export interface LocalWorkspacePreference {
   ratio: number;
   active?: SpawnKind;
   floats: Partial<Record<SpawnKind, Rect>>;
+  open?: Partial<Record<SpawnKind, boolean>>;
 }
 
 export interface RestoredWorkspacePreference extends LocalWorkspacePreference {
@@ -79,12 +80,21 @@ export function parseLocalWorkspacePreference(
         };
     }
   }
+  const open: Partial<Record<SpawnKind, boolean>> = {};
+  if (source.open && typeof source.open === "object") {
+    for (const [kind, val] of Object.entries(source.open as Record<string, unknown>)) {
+      if ((SPAWN_KINDS as readonly string[]).includes(kind) && typeof val === "boolean") {
+        open[kind as SpawnKind] = val;
+      }
+    }
+  }
   return {
     width: source.width as number,
     split: source.split === true,
     ratio: Math.max(0.25, Math.min(0.75, source.ratio as number)),
     ...(active ? { active } : {}),
     floats,
+    ...(Object.keys(open).length > 0 ? { open } : {}),
   };
 }
 
@@ -104,6 +114,7 @@ export function restoreLocalWorkspacePreference(
     ratio: saved?.ratio ?? 0.5,
     active: saved?.active ?? fallbackActive,
     floats: saved?.floats ?? {},
+    ...(saved?.open ? { open: saved.open } : {}),
     overridden: saved !== null,
   };
 }

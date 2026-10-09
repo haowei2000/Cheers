@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
+import { EmptyState } from "@/components/ui/empty-state";
 import { type PanelContext } from "@/features/chat/panels/registry";
 import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
@@ -138,15 +139,7 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: PanelContext }) 
   const members = useMembersIndex(ctx.channelId);
   const plans = data.plans ?? [];
   if (plans.length === 0) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-2 text-content-muted">
-        <ClipboardList className="w-5 h-5" />
-        <span className="text-compact text-content-muted">No plan yet</span>
-        <span className="text-compact text-content-muted">
-          A plan appears here when an agent shares one.
-        </span>
-      </div>
-    );
+    return <EmptyState icon={ClipboardList} title="No plan yet" hint="A plan appears here when an agent shares one." className="h-full" />;
   }
   return (
     <div className="p-3">

@@ -4,42 +4,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { WindowChromeActions } from "@/features/desktop/WindowChromeActions";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { ChannelHeaderSlot } from "./extensions/ChannelHeaderSlot";
-import { AdaptiveControlGroup } from "@/components/ui/adaptive-control-group";
-import { LANE_WINDOWS } from "@/features/chat/panels/laneWindows";
-import type { SpawnKind } from "./workbench/laneSnap";
-
-export function ChannelPanelSwitcher({
-  panels,
-  activePanel,
-  onSelect,
-}: {
-  panels: SpawnKind[];
-  activePanel?: SpawnKind;
-  onSelect: (id: SpawnKind) => void;
-}) {
-  const items = LANE_WINDOWS.filter((panel) => panels.includes(panel.id)).map((panel) => ({
-    id: panel.id,
-    label: panel.title,
-    icon: panel.icon,
-    selected: panel.id === activePanel,
-    onSelect: () => onSelect(panel.id),
-  }));
-  if (!items.length) return null;
-
-  return (
-    <div className="min-w-0 max-w-[min(36vw,420px)] shrink">
-      <AdaptiveControlGroup
-        items={items}
-        kind="navigation"
-        ariaLabel="Open channel panels"
-        controlSize="compact"
-        presentationOrder={["iconText", "icon", "collapsed"]}
-        collapsedContent="text"
-        className="flex-nowrap overflow-hidden"
-      />
-    </div>
-  );
-}
+import { VoiceToolbarHost } from "./VoiceRoomToolbar";
 
 export function ChannelChrome({
   title,
@@ -49,7 +14,8 @@ export function ChannelChrome({
   onBack,
   actions,
   channelId,
-  panelSwitcher,
+  panelNavigation,
+  isVoiceChannel = false,
 }: {
   title: string;
   purpose?: string | null;
@@ -58,16 +24,17 @@ export function ChannelChrome({
   onBack?: () => void;
   actions: ReactNode;
   channelId?: string;
-  panelSwitcher?: ReactNode;
+  panelNavigation?: ReactNode;
+  isVoiceChannel?: boolean;
 }) {
   const placement = useWindowChromePlacement();
 
   if (placement === "window") {
-    return <WindowChromeActions>{panelSwitcher}{actions}</WindowChromeActions>;
+    return <WindowChromeActions>{isVoiceChannel && <VoiceToolbarHost />}{panelNavigation}{actions}</WindowChromeActions>;
   }
 
   return (
-    <div className="relative z-30 mb-2 flex h-11 shrink-0 items-center gap-3 bg-panel px-4 max-md:gap-1 max-md:px-2">
+    <div className="relative z-30 flex h-11 shrink-0 items-center gap-3 bg-panel px-4 max-md:gap-1 max-md:px-2">
       {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
       {onBack && (
         <UiButton
@@ -88,7 +55,7 @@ export function ChannelChrome({
         <Hash className="h-4 w-4 shrink-0 text-content-muted max-md:hidden" aria-hidden="true" />
       )}
       <div className="flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate font-serif text-regular font-bold tracking-tight text-content-strong max-md:pl-1">
+        <span className="min-w-0 truncate font-utility text-regular font-semibold tracking-tight text-content-strong max-md:pl-1">
           {title}
         </span>
         <span className="hidden items-center gap-1 font-code text-minimal uppercase tracking-overline text-content-muted/75 lg:inline-flex" aria-label="Dispatch channel">
@@ -96,15 +63,16 @@ export function ChannelChrome({
           DISPATCH
         </span>
       </div>
-      {panelSwitcher}
-      {purpose && (
+      {isVoiceChannel && <VoiceToolbarHost />}
+      {!panelNavigation && purpose && (
         <div className="hidden min-w-0 items-center gap-2 pl-1 md:flex">
           <span className="select-none font-serif text-content-muted/40" aria-hidden="true">—</span>
           <span className="truncate font-reading text-compact italic text-content-muted">{purpose}</span>
         </div>
       )}
       {channelId && <ChannelHeaderSlot channelId={channelId} />}
-      <div className="flex-1" />
+      <div className="min-w-0 flex-1" />
+      {panelNavigation && <div data-channel-panel-tabs="" className="min-w-0 shrink overflow-hidden">{panelNavigation}</div>}
       {actions}
     </div>
   );

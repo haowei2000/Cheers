@@ -1,0 +1,3 @@
+# Ordinary builds use checked-in metadata; prepare explicitly overrides this.
+[env]
+SQLX_OFFLINE = { value = "true", force = false }

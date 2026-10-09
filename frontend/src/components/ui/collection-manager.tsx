@@ -34,6 +34,7 @@ export function CollectionManager({
   addDisabled,
   showAdd = true,
   showSearch = true,
+  showHeader = true,
   searchDisabled,
   headerAction,
   tabs,
@@ -53,6 +54,8 @@ export function CollectionManager({
   addDisabled?: boolean;
   showAdd?: boolean;
   showSearch?: boolean;
+  /** Hide the collection's local toolbar when its title and actions live in panel chrome. */
+  showHeader?: boolean;
   searchDisabled?: boolean;
   headerAction?: ReactNode;
   tabs?: ReactNode;
@@ -79,7 +82,7 @@ export function CollectionManager({
 
   return (
     <section className={cn("min-w-0", className)}>
-      {isSearching ? (
+      {showHeader && (isSearching ? (
         <div
           className={cn(
             "flex min-w-0 items-center gap-2 px-1 pb-2",
@@ -153,7 +156,7 @@ export function CollectionManager({
             {addControl}
           </ButtonGroup>
         </header>
-      )}
+      ))}
 
       {tabs && (
         <div className="pb-2">
