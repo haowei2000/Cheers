@@ -117,9 +117,10 @@ export function NewSessionDialog({
     <Dialog title="New session" onClose={onClose} maxWidth="max-w-md">
       <div className="space-y-3">
         <div className="space-y-1">
-          <span className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
+          <span id="new-session-bot-label" className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
           <DropdownSelect
             ariaLabel="Bot"
+            ariaLabelledBy="new-session-bot-label"
             leading={<Bot className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
             label={bots.find((b) => b.id === botId)?.label ?? "Select a bot"}
             value={botId}

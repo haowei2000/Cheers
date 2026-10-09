@@ -1309,32 +1309,6 @@ export function RemoteWorkspaceDialog({
           <span className="truncate max-w-36">{selectedBot.host_name}</span>
         </span>
       )}
-      {botId && rootOptions.length > 1 && (
-        <DropdownSelect
-          ariaLabel={`Workspace root: ${root ?? "auto"}`}
-          leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
-          label={root ? basename(root) : "Auto"}
-          value={root ?? ""}
-          options={rootPickerOptions}
-          onSelect={(value) =>
-            selectRoot(rootOptions.find((option) => option.path === value) ?? null)
-          }
-          controlSize="compact"
-          controlWidth="fill"
-          className="min-w-24 max-w-52 flex-1"
-          menuClassName="max-w-96"
-        />
-      )}
-      {botId && sessionId && (
-        <CheckboxField
-          label="Entire allowed roots"
-          className="shrink-0 select-none text-compact text-content-muted"
-          title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-          checked={!scoped}
-          onChange={toggleScoped}
-          controlSize="compact"
-        />
-      )}
       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted shrink-0" />}
       {err && <span className="truncate text-danger-400 max-w-32" title={err}>{err}</span>}
       {degraded && !err && (
@@ -1490,7 +1464,32 @@ export function RemoteWorkspaceDialog({
               </span>
             )}
           </div>
-
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {botId && rootOptions.length > 1 && (
+              <DropdownSelect
+                ariaLabel={`Workspace root: ${root ?? "auto"}`}
+                leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                label={root ? basename(root) : "Auto"}
+                value={root ?? ""}
+                options={rootPickerOptions}
+                onSelect={(value) => selectRoot(rootOptions.find((option) => option.path === value) ?? null)}
+                controlSize="compact"
+                controlWidth="fill"
+                className="min-w-24 max-w-52 flex-1"
+                menuClassName="max-w-96"
+              />
+            )}
+            {botId && sessionId && (
+              <CheckboxField
+                label="Entire allowed roots"
+                className="shrink-0 select-none text-compact text-content-muted"
+                title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
+                checked={!scoped}
+                onChange={toggleScoped}
+                controlSize="compact"
+              />
+            )}
+          </div>
         </div>
       )}
 
