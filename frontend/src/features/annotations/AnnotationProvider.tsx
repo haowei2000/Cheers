@@ -104,6 +104,8 @@ export function AnnotationProvider({
     }
   };
   const selected = store.notes.find((n) => n.id === active);
+  const isUnsupported =
+    (store.error as { status?: number } | null | undefined)?.status === 404;
   const editable = (item: SavedAnnotation) =>
     canWrite && (item.author_id === userId || Boolean(canManage));
   const visible = store.notes.filter(
@@ -240,7 +242,12 @@ export function AnnotationProvider({
                 label: "Add annotation",
                 priority: "secondary",
                 icon: Plus,
-                disabled: !canWrite || !selection.target || mode !== "browse" || store.pending,
+                disabled:
+                  !canWrite ||
+                  !selection.target ||
+                  mode !== "browse" ||
+                  store.pending ||
+                  isUnsupported,
                 onSelect: () => {
                   setDraft("");
                   setMode("add");
@@ -286,8 +293,11 @@ export function AnnotationProvider({
                 <Banner severity="warning">{store.importWarning}</Banner>
               )}
               {(error || store.error) && (
-                <Banner severity="error">
-                  {error ?? store.error?.message}
+                <Banner severity={isUnsupported ? "warning" : "error"}>
+                  {error ??
+                    (isUnsupported
+                      ? "Annotations are not available on this server version."
+                      : store.error?.message)}
                   <ActionButton
                     action="refresh"
                     context="windowChrome"
@@ -310,7 +320,7 @@ export function AnnotationProvider({
                   setMode("add");
                   setActive(null);
                 }}
-                addDisabled={mode !== "browse" || store.pending}
+                addDisabled={mode !== "browse" || store.pending || isUnsupported}
               >
                 {mode === "add" && <ItemGroup>{editor()}</ItemGroup>}
                 {store.isLoading && (
@@ -318,7 +328,18 @@ export function AnnotationProvider({
                 )}
                 {!store.isLoading && visible.length === 0 && (
                   <EmptyState
-                    title={query ? "No matching annotations" : "No annotations in this scope"}
+                    title={
+                      isUnsupported
+                        ? "Annotations not supported"
+                        : query
+                          ? "No matching annotations"
+                          : "No annotations in this scope"
+                    }
+                    hint={
+                      isUnsupported
+                        ? "The connected server does not support annotations. Upgrade the gateway to enable this feature."
+                        : undefined
+                    }
                     className="py-4"
                   />
                 )}
