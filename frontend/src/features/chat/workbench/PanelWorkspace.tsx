@@ -788,25 +788,6 @@ export function PanelWorkspace({
                     <ArrowLeft className="h-4 w-4" />
                   </IconButton>
                 )}
-                {docked.map((panel) => (
-                  <ControlTrigger
-                    key={panel.id}
-                    selected={effectiveActive === panel.id}
-                    onClick={() => {
-                      setActive(panel.id);
-                      remember(requestedWidth, split, ratio, panel.id);
-                    }}
-                    role="tab"
-                    className={cn(
-                      "rounded-none border-b-2 bg-transparent shadow-none ring-0",
-                      effectiveActive === panel.id
-                        ? "border-content-strong text-content-strong font-semibold"
-                        : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
-                    )}
-                  >
-                    {panel.label}
-                  </ControlTrigger>
-                ))}
                 {canSplitWorkspace(stageHeight, docked.length) && (
                   <IconButton
                     label={split ? "Use panel tabs" : "Split panels vertically"}
