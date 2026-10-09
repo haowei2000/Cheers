@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  getBotSocialPolicy,
-  updateBotSocialPolicy,
-  type BotSocialPolicy,
-} from "@/api/bots";
+import { getBotSocialPolicy, updateBotSocialPolicy } from "@/api/bots";
 import { Field, SectionHead } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 
 export function BotSocialAccessSection({ botId }: { botId: string }) {
-  const [policy, setPolicy] = useState<BotSocialPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +17,6 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
     setLoading(true);
     getBotSocialPolicy(botId)
       .then((p) => {
-        setPolicy(p);
         setVisibility(p.visibility);
         setFriendPolicy(p.friend_policy);
         setInvitePolicy(p.invite_policy);
@@ -39,8 +33,7 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
     setVisibility(next);
     setBusy(true);
     try {
-      const updated = await updateBotSocialPolicy(botId, { visibility: next });
-      setPolicy(updated);
+      await updateBotSocialPolicy(botId, { visibility: next });
       toast.success("Discovery visibility updated");
     } catch {
       toast.error("Failed to update visibility");
@@ -53,8 +46,7 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
     setFriendPolicy(next);
     setBusy(true);
     try {
-      const updated = await updateBotSocialPolicy(botId, { friend_policy: next });
-      setPolicy(updated);
+      await updateBotSocialPolicy(botId, { friend_policy: next });
       toast.success("Friend request policy updated");
     } catch {
       toast.error("Failed to update friend request policy");
@@ -67,8 +59,7 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
     setInvitePolicy(next);
     setBusy(true);
     try {
-      const updated = await updateBotSocialPolicy(botId, { invite_policy: next });
-      setPolicy(updated);
+      await updateBotSocialPolicy(botId, { invite_policy: next });
       toast.success("Channel invitation policy updated");
     } catch {
       toast.error("Failed to update invitation policy");

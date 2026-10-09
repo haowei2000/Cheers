@@ -102,10 +102,11 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
                 )
               : undefined;
             const choices = schema.enum ?? schema.items?.enum ?? oneOfChoices;
-            return <label key={name} className="block text-compact text-content-secondary">
-              <span>{label}{required.has(name) ? " *" : ""}</span>
+            const controlId = `elicitation-${name}`;
+            return <div key={name} className="block text-compact text-content-secondary">
+              <span id={`${controlId}-label`}>{label}{required.has(name) ? " *" : ""}</span>
               {schema.description && <span className="ml-2 text-content-muted">{schema.description}</span>}
-              {choices ? <UiSelect controlSize="regular" multiple={schema.type === "array"} className="mt-1" value={schema.type === "array" ? ((values[name] as Array<string | number> | undefined) ?? []).map(String) : String(values[name] ?? (schema.default != null ? String(schema.default) : ""))} onChange={e => setValues(v => ({...v, [name]: schema.type === "array" ? Array.from(e.target.selectedOptions, option => choices.find(choice => String(choice) === option.value) ?? option.value) : choices.find(choice => String(choice) === e.target.value) ?? e.target.value}))}>
+              {choices ? <UiSelect id={controlId} aria-labelledby={`${controlId}-label`} controlSize="regular" multiple={schema.type === "array"} className="mt-1" value={schema.type === "array" ? ((values[name] as Array<string | number> | undefined) ?? []).map(String) : String(values[name] ?? (schema.default != null ? String(schema.default) : ""))} onChange={e => setValues(v => ({...v, [name]: schema.type === "array" ? Array.from(e.target.selectedOptions, option => choices.find(choice => String(choice) === option.value) ?? option.value) : choices.find(choice => String(choice) === e.target.value) ?? e.target.value}))}>
                 {schema.type !== "array" && <option value="">Select…</option>}
                 {choices.map(choice => {
                   const s = String(choice);
@@ -114,8 +115,8 @@ export function ElicitationCard({ message, channelId, currentUserId }: Props) {
                     : s;
                   return <option key={s} value={s}>{title}</option>;
                 })}
-              </UiSelect> : <UiInput controlSize="regular" className="mt-1" type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} required={required.has(name)} value={String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "number" || schema.type === "integer" ? Number(e.target.value) : e.target.value}))} />}
-            </label>;
+              </UiSelect> : <UiInput id={controlId} aria-labelledby={`${controlId}-label`} controlSize="regular" className="mt-1" type={schema.type === "number" || schema.type === "integer" ? "number" : "text"} required={required.has(name)} value={String(values[name] ?? "")} onChange={e => setValues(v => ({...v, [name]: schema.type === "number" || schema.type === "integer" ? Number(e.target.value) : e.target.value}))} />}
+            </div>;
           })}
         </div>}
         {data.mode === "url" && <div className="mt-3 rounded-sm bg-zinc-950/40 px-3 py-2 text-compact text-content-muted">

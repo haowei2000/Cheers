@@ -61,7 +61,6 @@ export function locatorToContextItem(uri: string, customLabel?: string): Context
   if (!loc) return null;
   switch (loc.kind) {
     case "desk": {
-      const base = loc.path.split("/").pop() || loc.path;
       if (loc.line !== undefined) {
         const item = rangedFileContextItem(loc.path, loc.line, loc.lineEnd ?? loc.line);
         return customLabel ? { ...item, label: customLabel } : item;
@@ -70,12 +69,11 @@ export function locatorToContextItem(uri: string, customLabel?: string): Context
       return customLabel ? { ...item, label: customLabel } : item;
     }
     case "ws": {
-      const base = loc.path.split("/").pop() || loc.path;
       return {
         id: `ws:${loc.bot}::${loc.path}`,
         verb: "workspace.read",
         params: { bot_id: loc.bot, path: loc.path },
-        label: customLabel ?? `${base} (@${loc.bot} workspace)`,
+        label: customLabel ?? `${loc.path.split("/").pop() || loc.path} (@${loc.bot} workspace)`,
         kind: "file",
       };
     }

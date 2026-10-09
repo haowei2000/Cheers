@@ -632,15 +632,17 @@ function Row({
       kind="identity"
       title={
         <div className="flex items-center gap-2">
-          <span
+          <button
+            type="button"
             className={cn(
               "font-medium text-content-strong",
               onTitleClick && "cursor-pointer hover:underline"
             )}
+            disabled={!onTitleClick}
             onClick={onTitleClick}
           >
             {name}
-          </span>
+          </button>
           {isBot && (
             <Badge tone="neutral">
               Bot
@@ -657,12 +659,14 @@ function Row({
         ) : undefined
       }
       leading={
-        <div
+        <button
+          type="button"
           className={cn(onTitleClick && "cursor-pointer")}
+          disabled={!onTitleClick}
           onClick={onTitleClick}
         >
           <Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />
-        </div>
+        </button>
       }
       actions={<>{children}</>}
       className="gap-3 hover:bg-zinc-900/60"

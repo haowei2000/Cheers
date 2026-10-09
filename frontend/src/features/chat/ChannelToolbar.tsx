@@ -229,6 +229,7 @@ export function ChannelToolbar(props: Props) {
             <div
               ref={panelsMenuRef}
               role="menu"
+              tabIndex={-1}
               aria-label="Panels"
               onKeyDown={onPanelsMenuKeyDown}
             >

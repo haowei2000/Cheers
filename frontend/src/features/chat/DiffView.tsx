@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 /**
  * Self-contained unified-diff renderer (no external highlighter).

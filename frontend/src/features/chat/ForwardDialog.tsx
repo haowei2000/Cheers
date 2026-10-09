@@ -99,7 +99,6 @@ export function ForwardDialog({
     >
       <SearchInput
         aria-label="Search channels and direct messages"
-        autoFocus
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search channels and DMs…"

@@ -108,13 +108,14 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
                 {c.label}
               </th>
             ))}
-            <th className="w-8" />
+            <th className="w-8" aria-label="Row actions" />
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
             <tr
               key={i}
+              aria-label={`Row ${i + 1}`}
               data-workbench-context-target="row"
               data-workbench-anchor={sourcePathKey([i])}
               className="border-b border-control/30 transition-colors hover:bg-control/20"
@@ -245,6 +246,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
     );
   };
 
+  /* eslint-disable jsx-a11y/no-static-element-interactions -- Kanban item context menus are optional secondary actions; the items themselves are accessible content and actions are also exposed by controls. */
   return (
     <div className="p-3 text-compact flex gap-4 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-content-muted">Empty board</div>}
@@ -315,6 +317,7 @@ function KanbanLens({ data, onChange, readOnly, requestContextPick }: LensProps)
       ))}
     </div>
   );
+  /* eslint-enable jsx-a11y/no-static-element-interactions */
 }
 
 // ── markdown: a string (prompt templates, notes, drafts). Inert <UiTextarea> edit;
@@ -803,7 +806,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
   const initializedDocRef = useRef<unknown>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ pointer: number; x: number; y: number; ox: number; oy: number } | null>(null);
+  const drag = useRef<{ pointer: number; x: number; y: number; ox: number; oy: number; target: HTMLElement } | null>(null);
   const panned = useRef(false);
 
   useEffect(() => {
@@ -849,18 +852,14 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
   return (
     <div className="relative flex h-full min-h-0">
       <div
+        role="application"
+        aria-label="Codemap canvas"
         className="relative min-w-0 flex-1 overflow-hidden touch-none"
-        onClick={(event) => {
-          if ((event.target as HTMLElement).closest("button")) return;
-          // A pan finishes with a click on the canvas. Without this guard,
-          // every drag of the map also cleared the selected module.
-          if (panned.current) return;
-          setSelectedId(null);
-        }}
         onPointerDown={(event) => {
-          if ((event.target as HTMLElement).closest("button")) return;
+          const target = event.target as HTMLElement;
+          if (target.closest("button")) return;
           panned.current = false;
-          drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+          drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y, target };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
@@ -870,7 +869,10 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
           if (Math.abs(dx) > DRAG_SLOP_PX || Math.abs(dy) > DRAG_SLOP_PX) panned.current = true;
           setOffset({ x: drag.current.ox + dx, y: drag.current.oy + dy });
         }}
-        onPointerUp={() => { drag.current = null; }}
+        onPointerUp={() => {
+          if (drag.current && !panned.current && !drag.current.target.closest("button")) setSelectedId(null);
+          drag.current = null;
+        }}
         onPointerCancel={() => { drag.current = null; panned.current = false; }}
       >
         <div

@@ -67,7 +67,7 @@ export default function PermissionsPage() {
       })
       .catch(() => toast.error("Failed to load bots"))
       .finally(() => setLoadingBots(false));
-  }, []);
+  }, [selectedBotId, setSearchParams]);
 
   const selectBot = (id: string) => {
     setSelectedBotId(id);
@@ -410,16 +410,11 @@ function PolicyOptionCard({
   recommended?: boolean;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={title}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
       className={cn(
         "cursor-pointer rounded-lg p-4 transition-all relative flex flex-col justify-between",
         selected
@@ -452,7 +447,7 @@ function PolicyOptionCard({
           {selected && <Check className="w-4 h-4 stroke-[2.5]" />}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

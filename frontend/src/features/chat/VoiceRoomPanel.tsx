@@ -41,7 +41,6 @@ interface Props {
 export function VoiceRoomPanel({
   channelId,
   transcripts = [],
-  speakerNames = {},
   canManage = false,
   onFinalSegment,
 }: Props) {
@@ -81,7 +80,6 @@ export function VoiceRoomPanel({
   // listen-only; `consentrequired` drives the disclosure card until they do.
   const [consentRequired, setConsentRequired] = useState(false);
   const [consenting, setConsenting] = useState(false);
-  const [consentVersion, setConsentVersion] = useState<string | null>(null);
   // Ephemeral interim captions keyed by segment_id. Revisions replace in place;
   // when a final for the same segment_id arrives the entry is cleared (A7).
   const [interimSegments, setInterimSegments] = useState<
@@ -283,7 +281,7 @@ export function VoiceRoomPanel({
     } finally {
       setJoining(false);
     }
-  }, [channelId, connected, disconnect, joining, refreshVoicePresence]);
+  }, [channelId, connected, disconnect, joining, onFinalSegment, refreshVoicePresence]);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
@@ -321,7 +319,6 @@ export function VoiceRoomPanel({
         setMicEnabled(true);
       }
       setConsentRequired(false);
-      setConsentVersion(result.consented ? "v1" : null);
       toast.success("You can now speak in this room.");
     } catch (error) {
       toast.error(

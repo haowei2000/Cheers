@@ -144,16 +144,17 @@ export interface NewAnnotation {
 // gateway persistence; soft-deleted imported ids can never be resurrected.
 export function useAnnotations(path: string, channelId: string) {
   const store = useChannelAnnotations(channelId);
-  const doc: AnnotationDoc = useMemo(() => ({ seeded: true, notes: store.notes.flatMap((item, at) => item.target.kind === "file" ? [{
+  const { notes: storedNotes, add: addAnnotation, remove: removeAnnotation } = store;
+  const doc: AnnotationDoc = useMemo(() => ({ seeded: true, notes: storedNotes.flatMap((item, at) => item.target.kind === "file" ? [{
     id: item.id, at, path: item.target.path, anchor: item.target.anchor, label: item.label, note: item.note, created: item.created_at,
-  }] : []) }), [store.notes]);
+  }] : []) }), [storedNotes]);
   const notes = useMemo(() => annotationsFor(doc, path), [doc, path]);
   const add = useCallback(async (entry: NewAnnotation) => {
-    await store.add({ target: { kind: "file", path: entry.path, anchor: entry.anchor }, label: entry.label, note: entry.note });
-  }, [store.add]);
+    await addAnnotation({ target: { kind: "file", path: entry.path, anchor: entry.anchor }, label: entry.label, note: entry.note });
+  }, [addAnnotation]);
   const remove = useCallback(async (id: string) => {
-    const item = store.notes.find(n => n.id === id);
-    if (item) await store.remove(item);
-  }, [store.notes, store.remove]);
+    const item = storedNotes.find(n => n.id === id);
+    if (item) await removeAnnotation(item);
+  }, [storedNotes, removeAnnotation]);
   return { doc, notes, add, remove, status: store.error?.message ?? (store.isLoading ? "Loading annotations…" : "") };
 }

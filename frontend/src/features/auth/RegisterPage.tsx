@@ -7,9 +7,9 @@ import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import {
   PublicPageShell,
-  publicLabelClass,
   publicLinkClass,
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
@@ -159,7 +159,6 @@ export default function RegisterPage() {
     }
   }
 
-  const labelCls = publicLabelClass;
   return (
     <PublicPageShell
       title="Create your account"
@@ -172,24 +171,25 @@ export default function RegisterPage() {
           className={publicPanelClass}
         >
           <div className="space-y-2">
-            <label className={labelCls}>Username</label>
+            <Field label="Username" htmlFor="register-username">
             <Input
+              id="register-username"
               type="text"
               placeholder="jane"
               autoComplete="username"
-              autoFocus
               value={form.username}
               onChange={set("username")}
             />
+            </Field>
           </div>
           <div className="space-y-2">
-            <label className={labelCls}>Display name (optional)</label>
-            <Input type="text" placeholder="Jane Doe" value={form.display_name} onChange={set("display_name")} />
+            <Field label="Display name (optional)" htmlFor="register-display-name"><Input id="register-display-name" type="text" placeholder="Jane Doe" value={form.display_name} onChange={set("display_name")} /></Field>
           </div>
           <div className="space-y-2">
-            <label className={labelCls}>Email</label>
+            <Field label="Email" htmlFor="register-email">
             <div className="flex gap-2">
               <Input
+                id="register-email"
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
@@ -211,6 +211,7 @@ export default function RegisterPage() {
                 {cooldown > 0 ? `Resend ${cooldown}s` : "Send code"}
               </Button>
             </div>
+            </Field>
             {errors.email && (
               <p id="email-error" role="alert" className="text-compact text-danger-400">
                 {errors.email}
@@ -218,18 +219,21 @@ export default function RegisterPage() {
             )}
           </div>
           <div className="space-y-2">
-            <label className={labelCls}>Verification code</label>
+            <Field label="Verification code" htmlFor="register-code">
             <Input
+              id="register-code"
               type="text"
               placeholder="8-character code"
               className="font-code tracking-overline uppercase"
               value={form.code}
               onChange={set("code")}
             />
+            </Field>
           </div>
           <div className="space-y-2">
-            <label className={labelCls}>Password</label>
+            <Field label="Password" htmlFor="register-password">
             <Input
+              id="register-password"
               type="password"
               placeholder="min 12 characters"
               autoComplete="new-password"
@@ -240,6 +244,7 @@ export default function RegisterPage() {
               aria-invalid={!!errors.password}
               aria-describedby={errors.password ? "password-error" : undefined}
             />
+            </Field>
             {errors.password && (
               <p id="password-error" role="alert" className="text-compact text-danger-400">
                 {errors.password}
@@ -247,8 +252,9 @@ export default function RegisterPage() {
             )}
           </div>
           <div className="space-y-2">
-            <label className={labelCls}>Confirm password</label>
+            <Field label="Confirm password" htmlFor="register-confirm-password">
             <Input
+              id="register-confirm-password"
               type="password"
               placeholder="repeat password"
               autoComplete="new-password"
@@ -259,6 +265,7 @@ export default function RegisterPage() {
               aria-invalid={!!errors.confirm}
               aria-describedby={errors.confirm ? "confirm-error" : undefined}
             />
+            </Field>
             {errors.confirm && (
               <p id="confirm-error" role="alert" className="text-compact text-danger-400">
                 {errors.confirm}

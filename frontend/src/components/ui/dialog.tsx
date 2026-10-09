@@ -113,7 +113,16 @@ export function Dialog({
   const content = (
     <div
       className="fixed inset-0 z-100 flex items-start justify-center bg-black/50 pt-24 max-md:items-end max-md:pt-0"
-      onClick={onClose}
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && event.key === "Escape") onClose();
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
       <div
         ref={cardRef}
@@ -131,7 +140,6 @@ export function Dialog({
             ? "max-md:h-full max-md:max-h-none max-md:rounded-none max-md:pt-[max(1rem,env(safe-area-inset-top))]"
             : "max-md:max-h-[92dvh]"
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         {title !== undefined && (
           <div className="flex items-center gap-2 shrink-0 px-4 pt-4 pb-3 max-md:shrink-0">

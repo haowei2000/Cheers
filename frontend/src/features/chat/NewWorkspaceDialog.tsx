@@ -32,7 +32,6 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="New workspace" onClose={onClose}>
       <div className="space-y-3">
         <UiInput
-          autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}

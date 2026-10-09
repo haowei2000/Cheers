@@ -207,10 +207,12 @@ export function UserProfileDialog({
         {/* Note input when adding friend */}
         {showNoteInput && status === "none" && (
           <div className="space-y-2 rounded bg-surface-raised p-3">
-            <label className="block text-minimal font-medium text-content-primary">
+            {/* eslint-disable-next-line jsx-a11y/label-has-for -- The Textarea component forwards the matching id to its native textarea. */}
+            <label htmlFor="friend-verification-message" className="block text-minimal font-medium text-content-primary">
               Verification Message (Optional)
             </label>
             <Textarea
+              id="friend-verification-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Hi, I'd like to add you as a friend..."

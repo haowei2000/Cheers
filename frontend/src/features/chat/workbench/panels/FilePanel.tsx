@@ -222,10 +222,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // switches modes rather than pretending the preview can highlight a line range.
   const [revealLine, setRevealLine] = useState<number | undefined>();
   const revealedCard = useRef<string | null>(null);
+  const { openInspectableId, openTarget } = ctx;
   useEffect(() => {
-    const id = ctx.openInspectableId;
+    const id = openInspectableId;
     if (!id) { revealedCard.current = null; return; }
-    if (!selected || selected !== ctx.openTarget || session.path !== selected || session.version === null) return;
+    if (!selected || selected !== openTarget || session.path !== selected || session.version === null) return;
     const key = `${selected}#^${id}`;
     if (revealedCard.current === key) return;
     const range = inspectableIdLineRange(session.parsedText, id);
@@ -233,7 +234,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     revealedCard.current = key;
     showRaw(selected, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selected, session.path, session.version, session.parsedText, session.version, session.status, showRaw]);
+  }, [openInspectableId, openTarget, selected, session.path, session.version, session.parsedText, session.status, showRaw]);
   const onRevealNote = useCallback(
     (range: { start: number; end: number }) => {
       if (!selected) return;
@@ -378,16 +379,17 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   // Broadcast presence focus so other clients and bots see who is viewing/editing this file.
   useEffect(() => {
-    if (!ctx.sendPresenceFocus) return;
+    const { sendPresenceFocus, channelId } = ctx;
+    if (!sendPresenceFocus) return;
     if (selected) {
-      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selected });
+      sendPresenceFocus(channelId, { bot_id: "", path: selected });
     } else {
-      ctx.sendPresenceFocus(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     }
     return () => {
-      ctx.sendPresenceFocus?.(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     };
-  }, [ctx.sendPresenceFocus, ctx.channelId, selected]);
+  }, [ctx, selected]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selected, ctx.currentUserId, ctx.memberNames),
@@ -495,7 +497,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
       <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
       <UiInput
-        autoFocus
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
         onKeyDown={(e) => {

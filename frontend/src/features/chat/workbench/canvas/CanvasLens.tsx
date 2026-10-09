@@ -504,12 +504,14 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     (selectedId && document_.nodes.some((node) => node.id === selectedId) ? selectedId : null) ??
     document_.nodes[0]?.id;
 
+  /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- The diagram is a keyboard-operable application surface with pointer gestures and dedicated focusable nodes. */
   return (
     <div className="relative flex h-full min-h-0">
       <div
         ref={viewportRef}
-        role="application"
+        role="region"
         aria-label="Canvas"
+        aria-roledescription="interactive diagram"
         tabIndex={0}
         // `select-none`: on this surface a left drag MOVES a node, so it can never also be
         // a text selection — and without this the browser painted one anyway, which then
@@ -719,4 +721,5 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       </div>
     </div>
   );
+  /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
 }

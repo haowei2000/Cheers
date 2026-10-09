@@ -10,7 +10,7 @@ import {
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
-import { IconButton } from "./icon-button";
+import { Button } from "./button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
 import { isPointerFocus, markPointerInteraction, onDisarmHover, whenPointerRests } from "@/lib/hoverIntent";
 
@@ -90,9 +90,9 @@ export function OverflowText({
 
   return (
     <span ref={rootRef} className={cn("relative inline-flex min-w-0 max-w-full items-center", className)} {...props}>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Hover-only text reveals a tooltip; keyboard disclosure is a native button. */}
       <span
         ref={textRef}
-        tabIndex={canReveal ? 0 : undefined}
         aria-describedby={open ? id : undefined}
         className={cn(
           "min-w-0 max-w-full",
@@ -116,23 +116,24 @@ export function OverflowText({
           hide();
         }}
         onFocus={(event) => {
-          if (isPointerFocus(event.nativeEvent)) return;
-          if (canReveal) setOpen(true);
+          if (!isPointerFocus(event.nativeEvent) && canReveal) setOpen(true);
         }}
         onBlur={hide}
       >
         {children ?? fullText}
       </span>
       {canReveal && touchDisclosure && (
-        <IconButton
-          label={`Show full text: ${fullText}`}
+        <Button
+          variant="plain"
+          content="icon"
           controlSize="compact"
-          className="ml-1 hidden max-md:inline-flex"
+          aria-label={`Show full text: ${fullText}`}
           aria-expanded={open}
+          className="ml-1 hidden max-md:inline-flex"
           onClick={() => setOpen((value) => !value)}
         >
           <Info className="h-3.5 w-3.5" />
-        </IconButton>
+        </Button>
       )}
       {canReveal && open && (
         <FloatingLayer
