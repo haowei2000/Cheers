@@ -4,8 +4,8 @@ import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PresenceDot } from "@/components/ui/presence-dot";
-import { CheckboxField } from "@/components/ui/checkbox-field";
 import { FsTreeIcon } from "./FsTreeIcon";
 import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
@@ -1259,7 +1259,7 @@ export function RemoteWorkspaceDialog({
   ];
 
   const workspaceContextControls = (
-    <div className="flex w-full min-w-0 flex-wrap items-center gap-1 text-compact">
+    <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 text-compact">
       {/* A DropdownSelect, not a native <select>. A native one sizes itself to its
           LONGEST option — here a display name plus "(no access)" — so in the panel's
           capped corner it either blew the island open or, constrained, shrank past its
@@ -1295,9 +1295,42 @@ export function RemoteWorkspaceDialog({
         }}
         controlSize="compact"
         controlWidth="fill"
-        className="min-w-24 max-w-44 flex-1"
+        className="min-w-0 flex-1"
         menuClassName="max-w-72"
       />
+            {botId && rootOptions.length > 1 && (
+              <DropdownSelect
+                ariaLabel={`Workspace root: ${root ?? "auto"}`}
+                leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                label={root ? basename(root) : "Auto"}
+                value={root ?? ""}
+                options={rootPickerOptions}
+                onSelect={(value) => selectRoot(rootOptions.find((option) => option.path === value) ?? null)}
+                controlSize="compact"
+                controlWidth="fill"
+                className="min-w-0 flex-1"
+                menuClassName="max-w-96"
+              />
+            )}
+            {botId && sessionId && (
+              <DropdownSelect
+                ariaLabel="Workspace scope"
+                label={scoped ? "Session" : "All roots"}
+                value={scoped ? "session" : "all"}
+                options={[{ value: "session", label: "Current session roots" }, { value: "all", label: "Entire allowed roots" }]}
+                onSelect={(value) => { if ((value === "session") !== scoped) toggleScoped(); }}
+                controlSize="compact"
+                controlWidth="fill"
+                className="min-w-0 flex-1"
+              />
+            )}
+      {git && (
+        <span className="shrink-0 text-content-muted" role="img"
+          aria-label={`Git: ${git.branch || "detached"}, ${git.entries.length} changes, ${git.ahead ?? 0} ahead, ${git.behind ?? 0} behind`}
+          title={`${git.branch || "detached"} · ${git.entries.length} changes · ↑${git.ahead ?? 0} ↓${git.behind ?? 0}${git.upstream ? ` · ${git.upstream}` : ""}`}>
+          <GitBranch className="h-4 w-4" aria-hidden="true" />
+        </span>
+      )}
       {/* Which machine, read-only. `allowed_roots` are that host's config, so the
           workspace below only means anything once you know the machine it is on. */}
       {selectedBot?.host_name && (
@@ -1422,76 +1455,6 @@ export function RemoteWorkspaceDialog({
         data-workspace-content=""
         className="flex min-h-0 flex-1 flex-col p-3 md:absolute md:inset-0"
       >
-
-      {/* Workspace toolbar / scope bar: git status + root & session scope controls */}
-      {botId && (
-        <div className="flex items-center justify-between gap-3 mb-2 text-compact text-content-muted shrink-0 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
-            {git ? (
-              <div className="flex items-center gap-1 font-code">
-                <GitBranch className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                <span
-                  className="text-content-secondary font-code truncate max-w-48"
-                  title={git.branch ?? undefined}
-                >
-                  {git.branch || "(detached)"}
-                </span>
-                {!!git.ahead && <span className="text-success-400">↑{git.ahead}</span>}
-                {!!git.behind && <span className="text-warning-400">↓{git.behind}</span>}
-                {git.upstream && (
-                  <span
-                    className="text-content-muted font-code truncate hidden sm:inline"
-                    title={`Tracking ${git.upstream}`}
-                  >
-                    vs {git.upstream}
-                  </span>
-                )}
-                <span className="text-content-muted hidden sm:inline">
-                  · {git.entries.length} change{git.entries.length === 1 ? "" : "s"}
-                </span>
-              </div>
-            ) : meta?.git_ops === "off" ? (
-              <span
-                className="text-content-muted"
-                title="This connector's policy disables git inspection (git_ops = off)"
-              >
-                git off
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-content-muted">
-                <FolderTree className="w-3.5 h-3.5 shrink-0" />
-                <span>Files</span>
-              </span>
-            )}
-          </div>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
-            {botId && rootOptions.length > 1 && (
-              <DropdownSelect
-                ariaLabel={`Workspace root: ${root ?? "auto"}`}
-                leading={<FolderTree className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
-                label={root ? basename(root) : "Auto"}
-                value={root ?? ""}
-                options={rootPickerOptions}
-                onSelect={(value) => selectRoot(rootOptions.find((option) => option.path === value) ?? null)}
-                controlSize="compact"
-                controlWidth="fill"
-                className="min-w-24 max-w-52 flex-1"
-                menuClassName="max-w-96"
-              />
-            )}
-            {botId && sessionId && (
-              <CheckboxField
-                label="Entire allowed roots"
-                className="shrink-0 select-none text-compact text-content-muted"
-                title="Browse this bot's entire allowed roots (not limited to the current session's root set)"
-                checked={!scoped}
-                onChange={toggleScoped}
-                controlSize="compact"
-              />
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Workspace presence — who ELSE is viewing this bot's workspace right now, so
           co-editing is visible before conflicts happen. */}
@@ -1752,7 +1715,7 @@ export function RemoteWorkspaceDialog({
                     );
                   })}
                   {log !== null && log.length === 0 && !logBusy && (
-                    <div className="px-2 py-3 text-compact text-content-muted">No commits</div>
+                    <EmptyState icon={GitCommit} title="No commits" className="py-3" />
                   )}
                   {log === null && logBusy && (
                     <div className="px-2 py-3 text-compact text-content-muted">Loading…</div>
@@ -1830,7 +1793,7 @@ export function RemoteWorkspaceDialog({
                     />
                   ))}
                   {entries?.length === 0 && (
-                    <div className="px-2 py-3 text-compact text-content-muted">Empty directory</div>
+                    <EmptyState icon={FolderTree} title="Empty directory" className="py-3" />
                   )}
                 </div>
               </>

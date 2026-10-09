@@ -1,13 +1,16 @@
 import { createPortal } from "react-dom";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { Plus, Search, X } from "lucide-react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AnnotationTarget, SavedAnnotation } from "@/api/annotations";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { CollectionManager } from "@/components/ui/collection-manager";
-import { ControlTrigger } from "@/components/ui/control-trigger";
+import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
+import { SearchInput } from "@/components/ui/search-input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ItemGroup, WorkbenchItem } from "@/components/ui/item";
 import { Textarea } from "@/components/ui/textarea";
 import { Banner } from "@/components/ui/banner";
@@ -49,6 +52,11 @@ export function AnnotationProvider({
   const store = useChannelAnnotations(channelId);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (searchOpen) searchRef.current?.focus();
+  }, [searchOpen]);
   const [scope, setScope] = useState<"target" | "all" | "file" | "event">(
     "all",
   );
@@ -188,7 +196,57 @@ export function AnnotationProvider({
             storageKey={`cheers.annotations.${channelId}`}
             viewport
             className="h-[min(40rem,calc(100dvh-10rem))] w-96 max-w-[calc(100vw-2rem)]"
+            chromeTitle={<>Annotations <span className="font-normal tabular-nums text-content-muted">{visible.length}</span></>}
+            panelContext={searchOpen ? (
+              <SearchInput
+                ref={searchRef}
+                containerClassName="w-28"
+                controlSize="compact"
+                aria-label="Search annotations"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search"
+              />
+            ) : (
+              <DropdownSelect
+                label={scope === "all" ? "Channel" : scope === "file" ? "Files" : scope === "event" ? "Events" : "This object"}
+                content="text"
+                controlSize="compact"
+                controlWidth="slot"
+                ariaLabel="Change annotation scope"
+                value={scope}
+                options={[
+                  ...(selection.target ? [{ value: "target", label: "This object" }] : []),
+                  { value: "all", label: "Channel" },
+                  { value: "file", label: "Files" },
+                  { value: "event", label: "Events" },
+                ]}
+                onSelect={(value) => setScope(value as typeof scope)}
+              />
+            )}
             panelActions={[
+              {
+                id: "search-annotations",
+                label: searchOpen ? "Close search" : "Search annotations",
+                priority: "primary",
+                icon: searchOpen ? X : Search,
+                onSelect: () => {
+                  if (searchOpen) setQuery("");
+                  setSearchOpen((open) => !open);
+                },
+              },
+              {
+                id: "add-annotation",
+                label: "Add annotation",
+                priority: "secondary",
+                icon: Plus,
+                disabled: !canWrite || !selection.target || mode !== "browse" || store.pending,
+                onSelect: () => {
+                  setDraft("");
+                  setMode("add");
+                  setActive(null);
+                },
+              },
               {
                 id: "refresh-annotations",
                 label: "Refresh annotations",
@@ -244,57 +302,24 @@ export function AnnotationProvider({
                 query={query}
                 onQueryChange={setQuery}
                 addLabel="Add annotation on selected object"
-                showAdd={canWrite && Boolean(selection.target)}
+                showHeader={false}
+                showSearch={false}
+                showAdd={false}
                 onAdd={() => {
                   setDraft("");
                   setMode("add");
                   setActive(null);
                 }}
                 addDisabled={mode !== "browse" || store.pending}
-                tabs={
-                  <div
-                    className="flex flex-wrap gap-2"
-                    role="group"
-                    aria-label="Annotation scope"
-                  >
-                    {(
-                      [
-                        ...(selection.target ? ["target"] : []),
-                        "all",
-                        "file",
-                        "event",
-                      ] as const
-                    ).map((value) => (
-                      <ControlTrigger
-                        key={value}
-                        controlSize="regular"
-                        selected={scope === value}
-                        aria-pressed={scope === value}
-                        onClick={() => setScope(value as typeof scope)}
-                      >
-                        {value === "target"
-                          ? "This object"
-                          : value === "all"
-                            ? "Channel"
-                            : value === "file"
-                              ? "Files"
-                              : "Events"}
-                      </ControlTrigger>
-                    ))}
-                  </div>
-                }
               >
                 {mode === "add" && <ItemGroup>{editor()}</ItemGroup>}
                 {store.isLoading && (
                   <WorkbenchItem title="Loading annotations…" />
                 )}
                 {!store.isLoading && visible.length === 0 && (
-                  <WorkbenchItem
-                    title={
-                      query
-                        ? "No matching annotations"
-                        : "No annotations in this scope"
-                    }
+                  <EmptyState
+                    title={query ? "No matching annotations" : "No annotations in this scope"}
+                    className="py-4"
                   />
                 )}
                 {visible.map((item) => (

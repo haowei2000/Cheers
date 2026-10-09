@@ -5,6 +5,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { Input as UiInput } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -658,7 +659,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       <div className="flex-1 overflow-auto py-1">
         {creatingIn === "" && createInput(0)}
         {tree.length === 0 && creatingIn === null && (
-          <div className="px-2 py-3 text-compact text-content-muted">No files</div>
+          <EmptyState icon={Folder} title="No files" className="py-3" />
         )}
         {renderNodes(tree, 0)}
       </div>

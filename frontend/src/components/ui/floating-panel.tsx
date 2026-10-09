@@ -13,6 +13,7 @@ import { AdaptiveControlGroup, type AdaptiveControlItem, type AdaptiveControlPre
 import { ButtonGroup } from "@/components/ui/button-group";
 import type { ButtonProps } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { ControlSizeProvider, FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import type { AnchorPlacement } from "@/components/ui/floating-layer";
@@ -45,6 +46,12 @@ export interface FloatingPanelAction {
   overflow?: ReactNode;
 }
 
+export interface FloatingPanelEmptyState {
+  title: ReactNode;
+  hint?: ReactNode;
+  icon?: ComponentType<{ className?: string }>;
+}
+
 export function floatingPanelNavigationBudget(
   panelWidth: number,
   titleWidth: number,
@@ -56,6 +63,7 @@ export function floatingPanelNavigationBudget(
 }
 
 type PanelNavigationHost = {
+  unified: boolean;
   availableWidth: number;
   target: HTMLElement | null;
 };
@@ -81,7 +89,7 @@ export function FloatingPanelNavigationPortal({
   const content = typeof children === "function" ? children(host?.availableWidth ?? 0) : children;
   return (
     <>
-      {mobile && <div className="md:hidden">{mobile}</div>}
+      {mobile && !host?.unified && <div className="md:hidden">{mobile}</div>}
       {host?.target && createPortal(
         <ControlSizeProvider size={FLOATING_CHROME_CONTROL_SIZE}>
           <div data-floating-panel-primary-navigation="" className="min-w-0 max-w-full shrink overflow-hidden">
@@ -180,9 +188,11 @@ export function FloatingPanel({
   className,
   defaultPosClassName = "top-20 left-1/2 -translate-x-1/2",
   bodyClassName,
+  chromeTitle,
   primaryNavigation,
   panelContext,
   panelActions = [],
+  emptyState,
   collapsedSummary,
   spawnKind,
   viewport = false,
@@ -207,12 +217,16 @@ export function FloatingPanel({
    *  Ignored once auto-spawn or a persisted geom places the window. */
   defaultPosClassName?: string;
   bodyClassName?: string;
+  /** Optional visible title in the single-line desktop chrome, after the drag grip. */
+  chromeTitle?: ReactNode;
   /** Panel-level primary navigation rendered in its own floating island. */
   primaryNavigation?: FloatingPanelNavigation;
   /** Panel-wide source/scope controls rendered in the single-line navigation island. */
   panelContext?: ReactNode;
   /** Structured panel actions; secondary actions collapse into More when narrow. */
   panelActions?: FloatingPanelAction[];
+  /** Show the shared EmptyState in place of panel content when loaded data is empty. */
+  emptyState?: FloatingPanelEmptyState;
   /** Minimized glance (ViewBoard-style): a compact key-signal summary shown in
    *  place of the body while collapsed. `expand` reopens the panel — wire it to
    *  the glance rows so clicking a signal expands straight to the full view.
@@ -394,10 +408,11 @@ export function FloatingPanel({
   );
 
   const hasContext = panelContext != null || portalContextPresent;
-  const chromeTop = `${chromeHeight + 16}px`;
+  const docked = Boolean(managed && !managed.floating);
+  const chromeTop = `${chromeHeight + (docked ? 0 : 16)}px`;
   const panelStyle = {
     ...style,
-    ...(managed ? { ...managed.style, maxWidth: "none", maxHeight: "none", transform: "none", display: open && managed.visible ? "flex" : "none", ...(managed.floating ? {} : { borderRadius: 0, boxShadow: "none" }) } : {}),
+    ...(managed ? { ...managed.style, maxWidth: "none", maxHeight: "none", transform: "none", translate: "none", display: open && managed.visible ? "flex" : "none", ...(managed.floating ? {} : { borderRadius: 0, boxShadow: "none" }) } : {}),
     "--floating-panel-chrome-top": chromeTop,
     // Content that consumes this variable also renders below the separate mobile
     // header. The desktop chrome is measured, but that hidden desktop element has no
@@ -405,11 +420,12 @@ export function FloatingPanel({
     "--floating-panel-safe-top": "3.5rem",
   } as CSSProperties;
   const navigationHost = {
+    unified: docked,
     availableWidth: navigationSlotWidth,
     target: navigationTarget,
   };
   const contextHost = {
-    target: isMobile ? mobileContextTarget : desktopContextTarget,
+    target: isMobile && !docked ? mobileContextTarget : desktopContextTarget,
     setPresent: setPortalContextPresent,
   };
   const registerPortalAction = useCallback<PanelActionRegistrar>((ownerId, action) => {
@@ -436,10 +452,10 @@ export function FloatingPanel({
     [managed, panelActions, portalActions, toggleCollapsed]
   );
   const desktopPanelActions = useMemo(
-    () => panelWidth > 0 && panelWidth < 300
+    () => docked || (panelWidth > 0 && panelWidth < 300)
       ? allPanelActions.map((action) => ({ ...action, priority: "secondary" as const }))
       : allPanelActions,
-    [allPanelActions, panelWidth]
+    [allPanelActions, docked, panelWidth]
   );
   // Chrome adapts to the rendered controls rather than a fixed panel-width breakpoint.
   // This matters when a localized title, a longer tab set, or extension actions change
@@ -562,10 +578,10 @@ export function FloatingPanel({
           />
           {/* Navigation and actions are two single-line islands. The measured action
               island determines the exact width available to navigation. */}
-          <div ref={setChromeElement} className="pointer-events-none absolute left-2 right-2 top-2 z-30 hidden flex-nowrap items-start justify-between gap-2 overflow-hidden md:flex">
+          <div ref={setChromeElement} data-panel-toolbar="" className={cn("pointer-events-none absolute z-30 flex-nowrap items-center justify-between gap-2 overflow-hidden", docked ? "inset-x-0 top-0 flex border-b border-control/80 bg-panel px-2" : "left-2 right-2 top-2 hidden md:flex")}>
             <ButtonGroup
               label="Panel navigation and options"
-              floating
+              floating={!docked}
               // The chrome band owns its density. Both islands sit on one row, so a
               // feature portaling navigation in must not pick its own control size:
               // the two sides then differ by 8px and the band reads as ragged.
@@ -594,10 +610,16 @@ export function FloatingPanel({
                   mark stays where it earns its place — the collapsed pill and the mobile
                   header, where there is no content to say it for you. */}
               <GripHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {chromeTitle && (
+                <span className="ml-2 max-w-32 truncate font-utility text-compact font-semibold text-content-primary">
+                  {chromeTitle}
+                </span>
+              )}
             </div>
             <div
               ref={setNavigationTarget}
               data-floating-panel-navigation=""
+              style={{ maxWidth: navigationSlotWidth }}
               className="pointer-events-auto flex min-w-0 max-w-full flex-nowrap items-center gap-1 overflow-hidden"
             >
               {primaryNavigation && (
@@ -632,7 +654,7 @@ export function FloatingPanel({
             <ButtonGroup
               ref={setActionsElement}
               label="Panel actions"
-              floating
+              floating={!docked}
               controlSize={FLOATING_CHROME_CONTROL_SIZE}
               data-floating-panel-actions=""
               className="pointer-events-auto ml-auto flex-nowrap"
@@ -668,10 +690,17 @@ export function FloatingPanel({
           <div
             {...(managed?.dragProps ?? drag.handleProps)}
             data-floating-panel-handle=""
-            className="flex min-h-11 shrink-0 flex-wrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden"
+            className={cn("min-h-11 shrink-0 flex-nowrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden", docked ? "hidden" : "flex")}
           >
             <GripHorizontal className="h-4 w-4 shrink-0 text-content-muted" aria-hidden="true" />
             {titleLabel}
+            {hasContext && (
+              <div
+                ref={setMobileContextTarget}
+                data-floating-panel-context=""
+                className="pointer-events-auto min-w-0 max-w-32 shrink"
+              />
+            )}
             <div className="flex-1" />
             <ButtonGroup label="Panel actions" controlSize={FLOATING_CHROME_CONTROL_SIZE} className="ml-auto">
             <AdaptiveControlGroup kind="actions" ariaLabel="Panel actions" items={allPanelActions} presentationOrder={["icon", "collapsed"]} />
@@ -684,32 +713,24 @@ export function FloatingPanel({
             />
             </ButtonGroup>
           </div>
-          {hasContext && (
-            <ButtonGroup label="Panel options" floating
-              controlSize={FLOATING_CHROME_CONTROL_SIZE}
-              data-floating-panel-context=""
-              className="pointer-events-auto relative z-30 mx-3 mt-2 md:hidden"
-            >
-              {panelContext && <div className="pointer-events-auto min-w-0 flex-1">{panelContext}</div>}
-              <div
-                ref={setMobileContextTarget}
-                className={cn(
-                  "pointer-events-auto min-w-0",
-                  portalContextPresent ? "max-w-full" : "hidden"
-                )}
-              />
-            </ButtonGroup>
-          )}
           <PanelActionContext.Provider value={registerPortalAction}>
             <div
               data-floating-panel-content=""
               className={cn(
                 // Reserve the measured height when button groups wrap.
                 "relative flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 md:absolute md:inset-x-0 md:bottom-0 md:top-(--floating-panel-chrome-top)",
-                bodyClassName
+                bodyClassName,
+                docked && "absolute inset-x-0 bottom-0 top-(--floating-panel-chrome-top)"
               )}
             >
-              {children}
+              {emptyState ? (
+                <EmptyState
+                  icon={emptyState.icon}
+                  title={emptyState.title}
+                  hint={emptyState.hint}
+                  className="min-h-full"
+                />
+              ) : children}
             </div>
           </PanelActionContext.Provider>
           {!isMobile && (!managed || managed.floating) && <ResizeGrip resizeProps={managed?.resizeProps ?? drag.resizeProps} />}
